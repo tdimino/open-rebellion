@@ -98,7 +98,7 @@ fn main() -> anyhow::Result<()> {
             "\n{} succeeded, {} failed out of {} files",
             success,
             failed,
-            success + failed
+            total
         );
     }
 

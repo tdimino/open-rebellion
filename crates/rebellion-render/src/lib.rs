@@ -117,17 +117,18 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) {
     // Two-pass: first collect which system is hovered so the selected glow
     // renders on top without requiring Z-sort.
 
-    // Pass 1: hover detection only.
+    // Pass 1: hover detection — pick the nearest system within hover_radius.
     if mx < map_width {
+        let mut best_dist = hover_radius;
         for (key, system) in &world.systems {
             let (sx, sy) = to_screen(system.x as f32, system.y as f32);
             if sx < -20.0 || sx > map_width + 20.0 || sy < -20.0 || sy > sh + 20.0 {
                 continue;
             }
             let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
-            if dist < hover_radius {
+            if dist < best_dist {
+                best_dist = dist;
                 state.hovered_system = Some(key);
-                break; // first hit wins
             }
         }
     }

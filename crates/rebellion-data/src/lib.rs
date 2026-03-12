@@ -8,7 +8,7 @@ use dat_dumper::codec::ByteReader;
 use dat_dumper::dat_record::DatRecord;
 use dat_dumper::types::capital_ships::CapitalShipsFile;
 use dat_dumper::types::fighters::FightersFile;
-use dat_dumper::types::major_characters::MajorCharactersFile;
+use dat_dumper::types::major_characters::{CharacterEntry, MajorCharactersFile};
 use dat_dumper::types::minor_characters::MinorCharactersFile;
 use dat_dumper::types::sectors::SectorsFile;
 use dat_dumper::types::systems::SystemsFile;
@@ -46,7 +46,8 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         let group = match dat.group {
             1 => SectorGroup::Core,
             2 => SectorGroup::RimInner,
-            _ => SectorGroup::RimOuter,
+            3 => SectorGroup::RimOuter,
+            other => anyhow::bail!("sector {} has unknown group value {}", dat.id, other),
         };
         let sector = Sector {
             dat_id: DatId::new(dat.id),
@@ -140,57 +141,41 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     let major_file: MajorCharactersFile = read_dat_file(&gdata_path.join("MJCHARSD.DAT"))?;
 
     for dat in &major_file.characters {
-        let character = Character {
-            dat_id: DatId::new(dat.id),
-            name: format!("Character {}", dat.text_stra_dll_id),
-            is_alliance: dat.is_alliance != 0,
-            is_empire: dat.is_empire != 0,
-            is_major: true,
-            diplomacy: SkillPair { base: dat.diplomacy_base, variance: dat.diplomacy_variance },
-            espionage: SkillPair { base: dat.espionage_base, variance: dat.espionage_variance },
-            ship_design: SkillPair { base: dat.ship_design_base, variance: dat.ship_design_variance },
-            troop_training: SkillPair { base: dat.troop_training_base, variance: dat.troop_training_variance },
-            facility_design: SkillPair { base: dat.facility_design_base, variance: dat.facility_design_variance },
-            combat: SkillPair { base: dat.combat_base, variance: dat.combat_variance },
-            leadership: SkillPair { base: dat.leadership_base, variance: dat.leadership_variance },
-            loyalty: SkillPair { base: dat.loyalty_base, variance: dat.loyalty_variance },
-            jedi_probability: dat.jedi_probability,
-            jedi_level: SkillPair { base: dat.jedi_level_base, variance: dat.jedi_level_variance },
-            can_be_admiral: dat.can_be_admiral != 0,
-            can_be_commander: dat.can_be_commander != 0,
-            can_be_general: dat.can_be_general != 0,
-        };
-        world.characters.insert(character);
+        world.characters.insert(convert_character(dat, true));
     }
 
     // ── 6. Minor characters ──────────────────────────────────────────────────
     let minor_file: MinorCharactersFile = read_dat_file(&gdata_path.join("MNCHARSD.DAT"))?;
 
     for dat in &minor_file.characters {
-        let character = Character {
-            dat_id: DatId::new(dat.id),
-            name: format!("Character {}", dat.text_stra_dll_id),
-            is_alliance: dat.is_alliance != 0,
-            is_empire: dat.is_empire != 0,
-            is_major: false,
-            diplomacy: SkillPair { base: dat.diplomacy_base, variance: dat.diplomacy_variance },
-            espionage: SkillPair { base: dat.espionage_base, variance: dat.espionage_variance },
-            ship_design: SkillPair { base: dat.ship_design_base, variance: dat.ship_design_variance },
-            troop_training: SkillPair { base: dat.troop_training_base, variance: dat.troop_training_variance },
-            facility_design: SkillPair { base: dat.facility_design_base, variance: dat.facility_design_variance },
-            combat: SkillPair { base: dat.combat_base, variance: dat.combat_variance },
-            leadership: SkillPair { base: dat.leadership_base, variance: dat.leadership_variance },
-            loyalty: SkillPair { base: dat.loyalty_base, variance: dat.loyalty_variance },
-            jedi_probability: dat.jedi_probability,
-            jedi_level: SkillPair { base: dat.jedi_level_base, variance: dat.jedi_level_variance },
-            can_be_admiral: dat.can_be_admiral != 0,
-            can_be_commander: dat.can_be_commander != 0,
-            can_be_general: dat.can_be_general != 0,
-        };
-        world.characters.insert(character);
+        world.characters.insert(convert_character(dat, false));
     }
 
     Ok(world)
+}
+
+/// Convert a DAT character entry into a world Character.
+fn convert_character(dat: &CharacterEntry, is_major: bool) -> Character {
+    Character {
+        dat_id: DatId::new(dat.id),
+        name: format!("Character {}", dat.text_stra_dll_id),
+        is_alliance: dat.is_alliance != 0,
+        is_empire: dat.is_empire != 0,
+        is_major,
+        diplomacy: SkillPair { base: dat.diplomacy_base, variance: dat.diplomacy_variance },
+        espionage: SkillPair { base: dat.espionage_base, variance: dat.espionage_variance },
+        ship_design: SkillPair { base: dat.ship_design_base, variance: dat.ship_design_variance },
+        troop_training: SkillPair { base: dat.troop_training_base, variance: dat.troop_training_variance },
+        facility_design: SkillPair { base: dat.facility_design_base, variance: dat.facility_design_variance },
+        combat: SkillPair { base: dat.combat_base, variance: dat.combat_variance },
+        leadership: SkillPair { base: dat.leadership_base, variance: dat.leadership_variance },
+        loyalty: SkillPair { base: dat.loyalty_base, variance: dat.loyalty_variance },
+        jedi_probability: dat.jedi_probability,
+        jedi_level: SkillPair { base: dat.jedi_level_base, variance: dat.jedi_level_variance },
+        can_be_admiral: dat.can_be_admiral != 0,
+        can_be_commander: dat.can_be_commander != 0,
+        can_be_general: dat.can_be_general != 0,
+    }
 }
 
 /// Read and parse a single .DAT file into type `T`.
