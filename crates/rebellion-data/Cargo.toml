@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 rebellion-core = { path = "../rebellion-core" }
+dat-dumper = { path = "../../tools/dat-dumper" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+slotmap = { workspace = true }

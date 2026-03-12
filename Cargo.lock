@@ -1036,9 +1036,11 @@ name = "rebellion-data"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dat-dumper",
  "rebellion-core",
  "serde",
  "serde_json",
+ "slotmap",
 ]
 
 [[package]]

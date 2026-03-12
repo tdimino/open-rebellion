@@ -3,6 +3,10 @@ name = "dat-dumper"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "dat_dumper"
+path = "src/lib.rs"
+
 [[bin]]
 name = "dat-dumper"
 path = "src/main.rs"

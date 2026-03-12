@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Rebellion — Star Wars Rebellion</title>
+    <style>
+        html, body { margin: 0; padding: 0; overflow: hidden; background: #050510; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas" tabindex="1"></canvas>
+    <!-- macroquad/miniquad JS glue — provides load() and WebGL bindings -->
+    <script src="gl.js"></script>
+    <script>load("open-rebellion.wasm");</script>
+</body>
+</html>
