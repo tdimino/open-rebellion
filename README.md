@@ -164,5 +164,5 @@ MIT. The engine is free. The game data is yours—bring your own copy.
 </p>
 
 <p align="center">
-  <sub>Built by <a href="https://github.com/tdimino">Tom di Mino</a> and <a href="https://claude.com/claude-code">Claude</a> · Minoan Mystery LLC</sub>
+  <sub>Built by <a href="https://github.com/tdimino">Tom di Mino</a> and <a href="https://claude.com/claude-code">Claudius, Artifex Maximus</a> · Minoan Mystery LLC</sub>
 </p>
