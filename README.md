@@ -1,4 +1,10 @@
 <p align="center">
+  <img src="assets/rebellion-menu.jpg" alt="Star Wars Rebellion main menu" width="720"/>
+  <br/>
+  <sub>Screenshot from <a href="https://x.com/oldyzach/status/2023783273046933925">@oldyzach</a></sub>
+</p>
+
+<p align="center">
   <img src="assets/tanit.svg" alt="Symbol of Tanit" width="80"/>
 </p>
 
@@ -83,7 +89,7 @@ Five Rust crates in a Cargo workspace:
 | `rebellion-app` | Entry point—runs the main loop on desktop and WASM. |
 | `dat-dumper` | CLI tool that exports all `.DAT` files to human-readable JSON. |
 
-Every parser passes round-trip byte validation—we can reconstruct the original binary files bit-for-bit from our parsed data.
+The original game's 49KB of binary data files have been fully reverse-engineered using [Metasharp's editor](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET) as our Rosetta Stone. Every parser passes round-trip byte validation—we can reconstruct the original binary files bit-for-bit from our parsed data.
 
 ## Roadmap
 
