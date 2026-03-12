@@ -1,0 +1,9 @@
+/target
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Game data (not redistributable)
+data/base/*.DAT
+data/base/*.DLL

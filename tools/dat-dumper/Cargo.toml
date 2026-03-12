@@ -1,0 +1,14 @@
+[package]
+name = "dat-dumper"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "dat-dumper"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }

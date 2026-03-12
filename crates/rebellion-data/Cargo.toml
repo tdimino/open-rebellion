@@ -1,0 +1,10 @@
+[package]
+name = "rebellion-data"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rebellion-core = { path = "../rebellion-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

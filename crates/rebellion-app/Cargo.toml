@@ -1,0 +1,16 @@
+[package]
+name = "rebellion-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "open-rebellion"
+path = "src/main.rs"
+
+[dependencies]
+rebellion-core = { path = "../rebellion-core" }
+rebellion-data = { path = "../rebellion-data" }
+rebellion-render = { path = "../rebellion-render" }
+macroquad = "0.4"
+serde_json = { workspace = true }
+anyhow = { workspace = true }
