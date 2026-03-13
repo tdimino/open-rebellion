@@ -1,10 +1,4 @@
 <p align="center">
-  <img src="assets/rebellion-menu.jpg" alt="Star Wars Rebellion main menu" width="720"/>
-  <br/>
-  <sub>Screenshot from <a href="https://x.com/oldyzach/status/2023783273046933925">@oldyzach</a></sub>
-</p>
-
-<p align="center">
   <img src="assets/tanit.svg" alt="Symbol of Tanit" width="80"/>
 </p>
 
@@ -22,6 +16,12 @@
 </p>
 
 ---
+
+<p align="center">
+  <img src="assets/rebellion-menu.jpg" alt="Star Wars Rebellion main menu" width="720"/>
+  <br/>
+  <sub>Screenshot from <a href="https://x.com/oldyzach/status/2023783273046933925">@oldyzach</a></sub>
+</p>
 
 If you ever stayed up past midnight watching your fleet crawl across the galaxy map toward Coruscant, wondering if your three Mon Cal cruisers could take the Super Star Destroyer parked there—this project is for you.
 
