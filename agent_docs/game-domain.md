@@ -72,11 +72,24 @@ Starting unit/facility deployments for new games:
 - CMUNHQTB/CMUNYVTB -- Alliance HQ and Yavin
 - FACLCRTB/FACLHQTB -- starting facilities
 
-## Key Unimplemented Mechanics
+## Implemented Systems
 
-- **Missions**: diplomacy, espionage, sabotage, assassination, recruitment, rescue, incite uprising
-- **Combat**: space (fleet engagement, 4-arc weapons, shields) and ground (troops + orbital bombardment)
+See `@agent_docs/simulation.md` for full API reference.
+
+- **Tick system** (`tick.rs`): Frame-independent GameClock, GameSpeed (Paused/Normal/Fast/Faster), TickEvent markers
+- **Manufacturing** (`manufacturing.rs`): Per-system production queues with overflow propagation
+- **Missions** (`missions.rs`): Diplomacy and recruitment — quadratic probability formula from rebellion2
+- **Events** (`events.rs`): Conditional triggers (TickReached, CharacterAtSystem, Random, EventFired), event chaining
+- **AI** (`ai.rs`): Rule-based opponent — officer assignment, production priority, fleet deployment. Re-evaluates every 7 ticks.
+- **Movement** (`movement.rs`): Fleet hyperspace transit with speed from slowest hyperdrive rating
+- **Fog of war** (`fog.rs`): Per-faction monotonic visibility with advance intel at 50% transit
+- **Mod loader** (`rebellion-data/src/mods.rs`): TOML manifests, RFC 7396 merge patch, semver, hot reload
+
+## Unimplemented Mechanics
+
+- **Combat**: space (fleet engagement, 4-arc weapons, shields) and ground (troops + orbital bombardment). Formulas in STRATEGY.DLL (29MB) — Ghidra RE required.
+- **Espionage missions**: sabotage, assassination, abduction, rescue, incite uprising (diplomacy and recruitment ARE implemented)
 - **Research**: tech tree via `research_order` + `research_difficulty` per unit class
-- **Fog of war**: systems start unexplored (family_id 0x92 vs 0x90). Probe droids, character recon.
-- **Events**: scripted triggers (Luke to Dagobah, bounty hunters, natural disasters)
-- **AI**: fleet deployment, attack/defend priority, production strategy, officer assignment
+- **Probe droids / sensor range**: fog of war currently uses fleet presence only, no sensor radius
+- **Special character abilities**: Jedi training, betrayal, decoys, Han Solo speed bonus
+- **Victory conditions**: capture enemy HQ, destroy Death Star / find Rebel base

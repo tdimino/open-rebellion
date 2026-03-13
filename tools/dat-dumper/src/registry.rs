@@ -25,7 +25,7 @@ fn parse_and_dump<T: DatRecord>(data: &[u8], filename: &str) -> anyhow::Result<S
 pub fn build_registry() -> HashMap<&'static str, ParseFn> {
     let mut m: HashMap<&'static str, ParseFn> = HashMap::new();
 
-    // Pattern 1 — entity tables
+    // Pattern 1 — entity tables (original)
     m.insert("CAPSHPSD.DAT", parse_and_dump::<capital_ships::CapitalShipsFile> as ParseFn);
     m.insert("FIGHTSD.DAT",  parse_and_dump::<fighters::FightersFile> as ParseFn);
     m.insert("TROOPSD.DAT",  parse_and_dump::<troops::TroopsFile> as ParseFn);
@@ -38,9 +38,58 @@ pub fn build_registry() -> HashMap<&'static str, ParseFn> {
     m.insert("MANFACSD.DAT", parse_and_dump::<manufacturing_facilities::ManufacturingFacilitiesFile> as ParseFn);
     m.insert("PROFACSD.DAT", parse_and_dump::<production_facilities::ProductionFacilitiesFile> as ParseFn);
 
-    // Pattern 2 — parameter tables
+    // Pattern 1 — new entity tables
+    m.insert("MISSNSD.DAT",  parse_and_dump::<missions::MissionsFile> as ParseFn);
+    m.insert("FLEETSD.DAT",  parse_and_dump::<fleets_seed::FleetsSeedFile> as ParseFn);
+    m.insert("ALLFACSD.DAT", parse_and_dump::<all_facilities::AllFacilitiesFile> as ParseFn);
+
+    // Pattern 1 — generic 24-byte entity tables (UNIQUESD, ABODESD, BASICSD, MANMGRSD)
+    for name in &[
+        "UNIQUESD.DAT",
+        "ABODESD.DAT",
+        "BASICSD.DAT",
+        "MANMGRSD.DAT",
+    ] {
+        m.insert(name, parse_and_dump::<entity_table::EntityTableFile> as ParseFn);
+    }
+
+    // Pattern 2 — parameter tables (original)
     m.insert("GNPRTB.DAT", parse_and_dump::<general_params::GeneralParamsFile> as ParseFn);
     m.insert("SDPRTB.DAT", parse_and_dump::<side_params::SideParamsFile> as ParseFn);
+
+    // Pattern 2 — int lookup tables (IntTableEntry, 16 bytes each)
+    for name in &[
+        "DIPLMSTB.DAT",
+        "ESPIMSTB.DAT",
+        "ASSNMSTB.DAT",
+        "INCTMSTB.DAT",
+        "DSSBMSTB.DAT",
+        "ABDCMSTB.DAT",
+        "RCRTMSTB.DAT",
+        "RESCMSTB.DAT",
+        "SBTGMSTB.DAT",
+        "SUBDMSTB.DAT",
+        "ESCAPETB.DAT",
+        "FDECOYTB.DAT",
+        "FOILTB.DAT",
+        "INFORMTB.DAT",
+        "CSCRHTTB.DAT",
+        "UPRIS1TB.DAT",
+        "UPRIS2TB.DAT",
+        "RLEVADTB.DAT",
+        "RESRCTB.DAT",
+        "TDECOYTB.DAT",
+    ] {
+        m.insert(name, parse_and_dump::<int_table::IntTableFile> as ParseFn);
+    }
+
+    // Pattern 2 — system facility seed tables (SeedTableEntry, 16 bytes each)
+    for name in &[
+        "SYFCCRTB.DAT",
+        "SYFCRMTB.DAT",
+    ] {
+        m.insert(name, parse_and_dump::<syfc_table::SyfcTableFile> as ParseFn);
+    }
 
     // Pattern 3 — seed tables (all share SeedTableFile)
     for name in &[

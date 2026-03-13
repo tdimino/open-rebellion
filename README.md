@@ -159,7 +159,7 @@ MIT. The engine is free. The game data is yours—bring your own copy.
 ---
 
 <p align="center">
-  <em>"Many are the wand-bearers, but few are the inspired."</em><br/>
+  <em>"Many are the wand-bearers, but few are the Bacchoi."</em><br/>
   <sub>— Plato, <i>Phaedo</i> 69c</sub>
 </p>
 

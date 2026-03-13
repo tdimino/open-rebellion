@@ -13,31 +13,38 @@ Delivered:
 - rebellion-render: macroquad galaxy map with pan/zoom/click-to-select, egui info panel + status bar
 - WASM build: 2.9MB browser artifact via scripts/build-wasm.sh
 
-## Living Galaxy -- NEXT
-*Automated galaxy simulation*
+## Living Galaxy -- COMPLETE
+*Automated galaxy simulation — shipped 2026-03-13 by Knesset Athirat*
 
-1. Parse TEXTSTRA.DLL string resources -- replace placeholder entity names
-2. Game tick system with time controls (pause/1x/2x/4x)
-3. Mission system (diplomacy, recruitment) -- port from rebellion2's Mission.cs
-4. Manufacturing system (production queues) -- port from rebellion2
-5. Event system (conditionals + actions)
-6. AI manager (officer assignment, production priority)
-7. Message log UI (egui panel)
-8. Mod loader: TOML manifests, JSON overlay, hot reload (native only)
+All 11 deliverables shipped. ~8.7K LOC, 105+ unit tests. See `docs/reports/2026-03-13-knesset-athirat-swarm-report.md`.
 
-Dependencies: None -- all source material available.
+Delivered:
+- TEXTSTRA.DLL string extraction via pelite (real entity names)
+- GameClock with pause/1x/2x/4x speed controls
+- 9 seed table loaders + fleet instantiation
+- All 51/51 DAT parsers with round-trip validation (29 new)
+- Manufacturing system with production queues
+- Mission system (diplomacy, recruitment) -- ported from rebellion2's Mission.cs
+- Event system (conditional triggers, chaining, deterministic rng)
+- AI manager (officer assignment, production priority, fleet deployment)
+- Message log UI (egui bottom panel, 6 color-coded categories)
+- Mod loader: TOML manifests, RFC 7396 merge patch, semver, hot reload
+- Main loop integration (all systems wired)
 
-## War Room
+## War Room -- NEAR COMPLETE (1 integration task remaining)
 *Full strategy game without combat*
 
-1. Player faction selection (Empire/Alliance)
-2. Full egui UI: officers, fleets, manufacturing, research, missions
-3. Fleet movement on galaxy map (animated hyperspace routes)
-4. Fog of war and intel system
-5. Encyclopedia viewer (loaded from extracted BMPs in EData/)
-6. Audio via kira crate (CoreAudio on macOS, WebAudio in browser)
+Delivered:
+- Player faction selection + 5 UI panels (officers, fleets, manufacturing, missions)
+- Fleet movement on galaxy map (diamond icons, dashed routes, ETA labels)
+- Fog of war with monotonic reveal + advance intel at 50% transit
+- Encyclopedia viewer with 4 tabs + BMP texture cache from EData/
+- Audio system via quad-snd (CoreAudio/ALSA/WebAudio)
 
-Dependencies: Living Galaxy tick system and simulation.
+Remaining:
+- [ ] Wire fog/fleet/panels/encyclopedia/audio into main loop (draw calls + event hooks)
+
+Dependencies: Living Galaxy tick system and simulation (DONE).
 
 ## War Machine -- BLOCKED on Ghidra RE
 *Complete strategy game*
@@ -69,9 +76,10 @@ Blocked: Combat formulas live in STRATEGY.DLL (29MB) and TACTICAL.DLL (7.5MB). N
 
 ## Immediate Next Steps
 
-1. **TEXTSTRA.DLL parsing** -- Win32 PE string resource extraction. Unlocks real entity names ("Coruscant" instead of "System 11648").
-2. **Tick system** -- Frame-independent game clock with pause/speed controls. Foundation for all simulation.
-3. **MISSNSD.DAT parsing** -- Mission definitions (2,816B). Likely Pattern 1 or 2. Needed for Living Galaxy mission system.
+1. **Wire remaining systems into main loop** -- draw_fog_overlay, draw_fleet_overlays, draw_panels, draw_encyclopedia, audio event hooks
+2. **Full `cargo check` + WASM build verification**
+3. **Ghidra RE of STRATEGY.DLL** -- Combat formulas (project created, GhidraMCP bridge active on :8080)
+4. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
 
 ## Known Technical Debt
 

@@ -14,5 +14,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { version = "4", features = ["derive"] }
+pelite = "0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }

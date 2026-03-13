@@ -12,13 +12,18 @@ use dat_dumper::types::major_characters::{CharacterEntry, MajorCharactersFile};
 use dat_dumper::types::minor_characters::MinorCharactersFile;
 use dat_dumper::types::sectors::SectorsFile;
 use dat_dumper::types::systems::SystemsFile;
-use rebellion_core::dat::SectorGroup;
+use dat_dumper::types::textstra;
+use rebellion_core::dat::{ExplorationStatus, SectorGroup};
 use rebellion_core::ids::*;
 use rebellion_core::world::*;
+
+pub mod seeds;
+pub mod mods;
 
 /// Load all game data from a GData directory into a GameWorld.
 ///
 /// Expected files under `gdata_path`:
+/// - `TEXTSTRA.DLL` (optional: if absent, placeholder names are used)
 /// - `SECTORSD.DAT`
 /// - `SYSTEMSD.DAT`
 /// - `CAPSHPSD.DAT`
@@ -26,6 +31,26 @@ use rebellion_core::world::*;
 /// - `MJCHARSD.DAT`
 /// - `MNCHARSD.DAT`
 pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
+    // ── 0. String table ──────────────────────────────────────────────────────
+    // Load TEXTSTRA.DLL for real entity names. Fall back to placeholders if
+    // the file is absent (WASM builds, test environments, stripped installs).
+    let textstra_path = gdata_path.join("TEXTSTRA.DLL");
+    let string_table: HashMap<u16, String> = if textstra_path.exists() {
+        textstra::load_strings(&textstra_path)
+            .with_context(|| format!("loading strings from {}", textstra_path.display()))?
+    } else {
+        HashMap::new()
+    };
+
+    // Convenience closure: look up a string by its DLL id, or fall back to
+    // "<kind> <id>" if the DLL was absent or the id is not present.
+    let lookup = |id: u16, kind: &str| -> String {
+        string_table
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("{} {}", kind, id))
+    };
+
     let mut world = GameWorld {
         systems: slotmap::SlotMap::with_key(),
         sectors: slotmap::SlotMap::with_key(),
@@ -33,6 +58,11 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         fighter_classes: slotmap::SlotMap::with_key(),
         characters: slotmap::SlotMap::with_key(),
         fleets: slotmap::SlotMap::with_key(),
+        troops: slotmap::SlotMap::with_key(),
+        special_forces: slotmap::SlotMap::with_key(),
+        defense_facilities: slotmap::SlotMap::with_key(),
+        manufacturing_facilities: slotmap::SlotMap::with_key(),
+        production_facilities: slotmap::SlotMap::with_key(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────
@@ -51,7 +81,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         };
         let sector = Sector {
             dat_id: DatId::new(dat.id),
-            name: format!("Sector {}", dat.text_stra_dll_id),
+            name: lookup(dat.text_stra_dll_id, "Sector"),
             group,
             x: dat.x_position,
             y: dat.y_position,
@@ -75,16 +105,25 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
                 dat.id, dat.sector_id
             ))?;
 
+        // family_id 0x90 (144) = Explored, 0x92 (146) = Unexplored (per SYSTEMSD.DAT format).
+        let exploration_status = if dat.family_id == 0x90 {
+            ExplorationStatus::Explored
+        } else {
+            ExplorationStatus::Unexplored
+        };
+
         let system = System {
             dat_id: DatId::new(dat.id),
-            name: format!("System {}", dat.text_stra_dll_id),
+            name: lookup(dat.text_stra_dll_id, "System"),
             sector: sector_key,
             x: dat.x_position,
             y: dat.y_position,
+            exploration_status,
             popularity_alliance: 0.0,
             popularity_empire: 0.0,
             fleets: Vec::new(),
             ground_units: Vec::new(),
+            special_forces: Vec::new(),
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),
@@ -102,7 +141,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     for dat in &capships_file.ships {
         let class = CapitalShipClass {
             dat_id: DatId::new(dat.id),
-            name: format!("CapShip {}", dat.text_stra_dll_id),
+            name: lookup(dat.text_stra_dll_id, "CapShip"),
             is_alliance: dat.is_alliance != 0,
             is_empire: dat.is_empire != 0,
             refined_material_cost: dat.refined_material_cost,
@@ -126,7 +165,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     for dat in &fighters_file.fighters {
         let class = FighterClass {
             dat_id: DatId::new(dat.id),
-            name: format!("Fighter {}", dat.text_stra_dll_id),
+            name: lookup(dat.text_stra_dll_id, "Fighter"),
             is_alliance: dat.is_alliance != 0,
             is_empire: dat.is_empire != 0,
             refined_material_cost: dat.refined_material_cost,
@@ -141,24 +180,31 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     let major_file: MajorCharactersFile = read_dat_file(&gdata_path.join("MJCHARSD.DAT"))?;
 
     for dat in &major_file.characters {
-        world.characters.insert(convert_character(dat, true));
+        let name = lookup(dat.text_stra_dll_id, "Character");
+        world.characters.insert(convert_character(dat, true, name));
     }
 
     // ── 6. Minor characters ──────────────────────────────────────────────────
     let minor_file: MinorCharactersFile = read_dat_file(&gdata_path.join("MNCHARSD.DAT"))?;
 
     for dat in &minor_file.characters {
-        world.characters.insert(convert_character(dat, false));
+        let name = lookup(dat.text_stra_dll_id, "Character");
+        world.characters.insert(convert_character(dat, false, name));
     }
+
+    // ── 7. Seed tables ───────────────────────────────────────────────────────
+    // Populate starting fleets, ground units, and facilities from the 9 seed
+    // DAT files.  Missing files are silently skipped (stripped installs).
+    seeds::apply_seeds(gdata_path, &mut world, &system_key_map)?;
 
     Ok(world)
 }
 
 /// Convert a DAT character entry into a world Character.
-fn convert_character(dat: &CharacterEntry, is_major: bool) -> Character {
+fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Character {
     Character {
         dat_id: DatId::new(dat.id),
-        name: format!("Character {}", dat.text_stra_dll_id),
+        name,
         is_alliance: dat.is_alliance != 0,
         is_empire: dat.is_empire != 0,
         is_major,
@@ -179,7 +225,7 @@ fn convert_character(dat: &CharacterEntry, is_major: bool) -> Character {
 }
 
 /// Read and parse a single .DAT file into type `T`.
-fn read_dat_file<T: DatRecord>(path: &Path) -> anyhow::Result<T> {
+pub(crate) fn read_dat_file<T: DatRecord>(path: &Path) -> anyhow::Result<T> {
     let data = std::fs::read(path)
         .with_context(|| format!("reading {}", path.display()))?;
     let mut reader = ByteReader::new(&data);

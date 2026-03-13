@@ -10,3 +10,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 slotmap = { workspace = true }
+toml = "0.8"
+semver = "1"
+
+# Hot reload: file watching on native only (no WASM support)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+notify = "6"

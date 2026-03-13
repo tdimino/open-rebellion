@@ -28,7 +28,7 @@ PATH="/usr/bin:$PATH" cargo check
 | `rebellion-data` | DAT to GameWorld loader. Uses dat-dumper as library | rebellion-core, dat-dumper |
 | `rebellion-render` | macroquad 0.4 + egui-macroquad 0.17 galaxy map | rebellion-core, macroquad |
 | `rebellion-app` | Entry point and main loop | all crates above |
-| `dat-dumper` (tools/) | 22/22 DAT parsers with round-trip byte validation. CLI + library | clap, serde |
+| `dat-dumper` (tools/) | 51/51 DAT parsers with round-trip byte validation. CLI + library | clap, serde |
 
 ## Conventions
 
@@ -41,21 +41,27 @@ PATH="/usr/bin:$PATH" cargo check
 
 ## Known Limitations
 
-- Entity names are placeholders ("System 11648") -- real names live in TEXTSTRA.DLL (Win32 string resources), not yet parsed
-- 22 of ~51 DAT files have parsers; remaining ~29 are undocumented
 - WASM compiles but `std::process::exit` and `std::fs::read` need `#[cfg(not(target_arch = "wasm32"))]` guards
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
+- Many MISSNSD.DAT mission field names are semantic guesses (flag_col6..flag_col21) -- Ghidra RE needed for full semantics
 
 ## Agent Docs
 
 @agent_docs/architecture.md -- Crate graph, type system layers, entity identity, data flow, render architecture. Read when adding entity types or crates.
+@agent_docs/simulation.md -- 7 simulation systems, stateless advance() pattern, state types, RNG contract, integration order. Read when touching game logic.
 @agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
-@agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, unimplemented systems. Read when implementing simulation logic.
+@agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
+@agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
+@agent_docs/ghidra-re.md -- STRATEGY.DLL reverse engineering: Ghidra setup, MCP bridge, combat formula targets, GNPRTB mapping. Read when doing RE work.
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
+
+## Reports
+
+- [Knesset Athirat Swarm Report (2026-03-13)](docs/reports/2026-03-13-knesset-athirat-swarm-report.md) — Living Galaxy (COMPLETE) + War Room (80%). 4 daborot, ~45 min, ~11.7K LOC, 105+ tests.
 
 ## External References
 
 - Metasharp editor (C# DAT parsers): `~/Desktop/Programming/StarWarsRebellionEditor.NET/`
 - rebellion2 (C# game models): `~/Desktop/Programming/rebellion2/`
 - Extracted game data: `~/Desktop/Programming/star-wars-rebellion/GData/`
-- Project plan: `~/.claude/plans/2026-03-11-open-rebellion-star-wars-rebellion-reimplementation.md`
+- Project plan: `~/.claude/plans/2026-03-12-claude-md-agent-docs-for-open-rebellion.md`

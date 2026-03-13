@@ -1,0 +1,77 @@
+//! War Room player-facing UI panels.
+//!
+//! Each panel is a standalone function that accepts the egui context, read-only
+//! world data, and mutable panel-local state.  Every panel returns
+//! `Option<PanelAction>` — the caller applies the action to game state rather
+//! than letting the panel borrow mutable world references, which would conflict
+//! with egui's FnMut closure requirements.
+//!
+//! # Integration
+//!
+//! Call panel draw functions inside the `egui_macroquad::ui` closure:
+//!
+//! ```ignore
+//! egui_macroquad::ui(|ctx| {
+//!     if let Some(action) = panels::draw_officers(ctx, world, &mut officer_state) {
+//!         apply_officer_action(&mut world, &mut missions, action);
+//!     }
+//! });
+//! egui_macroquad::draw();
+//! ```
+
+pub mod faction_select;
+pub mod fleets;
+pub mod manufacturing;
+pub mod missions;
+pub mod officers;
+
+pub use faction_select::{draw_faction_select, FactionSelectState};
+pub use fleets::{draw_fleets, FleetsState};
+pub use manufacturing::{draw_manufacturing, ManufacturingPanelState};
+pub use missions::{draw_missions, MissionsPanelState};
+pub use officers::{draw_officers, OfficersState};
+
+use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
+use rebellion_core::manufacturing::BuildableKind;
+use rebellion_core::missions::{MissionFaction, MissionKind};
+
+/// Player-initiated actions returned by War Room panels.
+///
+/// The caller applies these to `GameWorld`, `ManufacturingState`, and
+/// `MissionState` rather than the panels borrowing mutable world refs.
+#[derive(Debug, Clone)]
+pub enum PanelAction {
+    // ── Faction Selection ─────────────────────────────────────────────────────
+    /// Player has chosen a starting faction.  Gates all other panels.
+    SelectFaction(MissionFaction),
+
+    // ── Officers ──────────────────────────────────────────────────────────────
+    /// Show detailed stats for the selected character (sets panel focus).
+    FocusCharacter(CharacterKey),
+
+    // ── Fleets ────────────────────────────────────────────────────────────────
+    /// Focus the galaxy map on the system where a fleet is located.
+    FocusFleetSystem(SystemKey),
+    /// Assign a character to a fleet as commander.
+    AssignCharacterToFleet { character: CharacterKey, fleet: FleetKey },
+
+    // ── Manufacturing ─────────────────────────────────────────────────────────
+    /// Add a buildable to the production queue at a system.
+    Enqueue { system: SystemKey, kind: BuildableKind, cost: u32, ticks: u32 },
+    /// Cancel the queue item at `index` in a system's production queue.
+    CancelQueueItem { system: SystemKey, index: usize },
+    /// Move queue item at `index` to the front (prioritize).
+    PrioritizeQueueItem { system: SystemKey, index: usize },
+
+    // ── Missions ──────────────────────────────────────────────────────────────
+    /// Dispatch a mission.  `duration_roll` is a pre-supplied [0,1) random value.
+    DispatchMission {
+        kind: MissionKind,
+        faction: MissionFaction,
+        character: CharacterKey,
+        target: SystemKey,
+        duration_roll: f64,
+    },
+    /// Cancel a mission that is currently in progress.
+    CancelMission(u64),
+}

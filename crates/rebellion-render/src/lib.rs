@@ -1,9 +1,40 @@
 //! Galaxy map rendering and egui UI panels.
 
+pub mod audio;
+pub mod encyclopedia;
+pub mod fleet_movement;
+pub mod fog;
+pub mod message_log;
+pub mod panels;
+
 use egui_macroquad::egui;
 use macroquad::prelude::*;
 use rebellion_core::ids::SystemKey;
+use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::GameWorld;
+
+pub use audio::{draw_audio_controls, AudioVolumeState, MusicTrack, SfxKind};
+pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
+pub use fleet_movement::draw_fleet_overlays;
+pub use fog::draw_fog_overlay;
+pub use message_log::{draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState};
+pub use panels::{
+    draw_faction_select, draw_fleets, draw_manufacturing, draw_missions, draw_officers,
+    FactionSelectState, FleetsState, ManufacturingPanelState, MissionsPanelState, OfficersState,
+    PanelAction,
+};
+
+/// Computed camera parameters for overlay rendering.
+///
+/// Returned by `draw_galaxy_map` so fog/fleet overlays can use matching
+/// coordinates without recomputing screen dimensions.
+pub struct CameraView {
+    pub cam_x: f32,
+    pub cam_y: f32,
+    pub zoom: f32,
+    pub map_width: f32,
+    pub screen_height: f32,
+}
 
 /// All mutable UI state for the galaxy map view.
 pub struct GalaxyMapState {
@@ -37,9 +68,9 @@ impl Default for GalaxyMapState {
 /// Render the galaxy star map for one frame.
 ///
 /// Handles all input (pan, zoom, click-to-select) and draws every system as a
-/// colored dot sized by selection state. The info panel width is reserved on
-/// the right so mouse hit-testing stays within the map area only.
-pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) {
+/// colored dot sized by selection state. Returns a `CameraView` so fog and fleet
+/// overlays can use matching coordinates.
+pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraView {
     clear_background(Color::new(0.02, 0.02, 0.08, 1.0));
 
     let sw = screen_width();
@@ -176,70 +207,118 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) {
     if is_mouse_button_pressed(MouseButton::Left) && mx < map_width {
         state.selected_system = state.hovered_system;
     }
+
+    CameraView {
+        cam_x,
+        cam_y,
+        zoom,
+        map_width,
+        screen_height: sh,
+    }
 }
 
-/// Render the egui side panel (system info) and bottom status bar.
+/// Draw the system info side panel (right side).
 ///
-/// Must be called after `draw_galaxy_map` in the same frame. Calls
-/// `egui_macroquad::draw()` internally — do not call it again after this.
-pub fn draw_info_panel(world: &GameWorld, state: &GalaxyMapState) {
-    egui_macroquad::ui(|ctx| {
-        if let Some(sys_key) = state.selected_system {
-            if let Some(system) = world.systems.get(sys_key) {
-                egui::SidePanel::right("system_info")
-                    .min_width(280.0)
-                    .max_width(300.0)
-                    .show(ctx, |ui| {
-                        ui.heading(&system.name);
-                        ui.separator();
+/// Shows details for the currently selected system. Call inside
+/// `egui_macroquad::ui(|ctx| { ... })`.
+pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &GalaxyMapState) {
+    if let Some(sys_key) = state.selected_system {
+        if let Some(system) = world.systems.get(sys_key) {
+            egui::SidePanel::right("system_info")
+                .min_width(280.0)
+                .max_width(300.0)
+                .show(ctx, |ui| {
+                    ui.heading(&system.name);
+                    ui.separator();
 
-                        if let Some(sector) = world.sectors.get(system.sector) {
-                            ui.label(format!("Sector: {}", sector.name));
-                            let region_label = match sector.group {
-                                rebellion_core::dat::SectorGroup::Core => "Core",
-                                rebellion_core::dat::SectorGroup::RimInner => "Inner Rim",
-                                rebellion_core::dat::SectorGroup::RimOuter => "Outer Rim",
-                            };
-                            ui.label(format!("Region: {}", region_label));
-                        }
+                    if let Some(sector) = world.sectors.get(system.sector) {
+                        ui.label(format!("Sector: {}", sector.name));
+                        let region_label = match sector.group {
+                            rebellion_core::dat::SectorGroup::Core => "Core",
+                            rebellion_core::dat::SectorGroup::RimInner => "Inner Rim",
+                            rebellion_core::dat::SectorGroup::RimOuter => "Outer Rim",
+                        };
+                        ui.label(format!("Region: {}", region_label));
+                    }
 
-                        ui.separator();
-                        ui.label(format!("Position: ({}, {})", system.x, system.y));
-                        ui.label(format!(
-                            "Alliance Support: {:.0}%",
-                            system.popularity_alliance * 100.0
-                        ));
-                        ui.label(format!(
-                            "Empire Support: {:.0}%",
-                            system.popularity_empire * 100.0
-                        ));
+                    ui.separator();
+                    ui.label(format!("Position: ({}, {})", system.x, system.y));
+                    ui.label(format!(
+                        "Alliance Support: {:.0}%",
+                        system.popularity_alliance * 100.0
+                    ));
+                    ui.label(format!(
+                        "Empire Support: {:.0}%",
+                        system.popularity_empire * 100.0
+                    ));
 
-                        ui.separator();
-                        ui.label(format!("Fleets: {}", system.fleets.len()));
-                        ui.label(format!("Ground Units: {}", system.ground_units.len()));
-                        ui.label(format!("Defenses: {}", system.defense_facilities.len()));
-                        ui.label(format!(
-                            "Manufacturing: {}",
-                            system.manufacturing_facilities.len()
-                        ));
-                        ui.label(format!("Production: {}", system.production_facilities.len()));
-                    });
-            }
+                    ui.separator();
+                    ui.label(format!("Fleets: {}", system.fleets.len()));
+                    ui.label(format!("Ground Units: {}", system.ground_units.len()));
+                    ui.label(format!("Defenses: {}", system.defense_facilities.len()));
+                    ui.label(format!(
+                        "Manufacturing: {}",
+                        system.manufacturing_facilities.len()
+                    ));
+                    ui.label(format!("Production: {}", system.production_facilities.len()));
+                });
         }
+    }
+}
 
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(format!(
-                    "Systems: {} | Sectors: {} | Ships: {} | Fighters: {} | Characters: {}",
-                    world.systems.len(),
-                    world.sectors.len(),
-                    world.capital_ship_classes.len(),
-                    world.fighter_classes.len(),
-                    world.characters.len(),
-                ));
-            });
+/// Draw the bottom status bar with speed controls, day counter, world stats,
+/// and audio volume controls.
+///
+/// Call inside `egui_macroquad::ui(|ctx| { ... })`.
+pub fn draw_status_bar(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    clock: &mut GameClock,
+    audio_vol: &mut AudioVolumeState,
+) {
+    egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            // ── Speed controls ───────────────────────────────────────────
+            if ui
+                .selectable_label(clock.speed == GameSpeed::Paused, "⏸ Pause")
+                .clicked()
+            {
+                clock.set_speed(GameSpeed::Paused);
+            }
+            if ui
+                .selectable_label(clock.speed == GameSpeed::Normal, "▶ 1×")
+                .clicked()
+            {
+                clock.set_speed(GameSpeed::Normal);
+            }
+            if ui
+                .selectable_label(clock.speed == GameSpeed::Fast, "▶▶ 2×")
+                .clicked()
+            {
+                clock.set_speed(GameSpeed::Fast);
+            }
+            if ui
+                .selectable_label(clock.speed == GameSpeed::Faster, "▶▶▶ 4×")
+                .clicked()
+            {
+                clock.set_speed(GameSpeed::Faster);
+            }
+
+            ui.separator();
+            ui.label(format!("Day {}", clock.tick));
+            ui.separator();
+
+            ui.label(format!(
+                "Systems: {} | Sectors: {} | Ships: {} | Fighters: {} | Characters: {}",
+                world.systems.len(),
+                world.sectors.len(),
+                world.capital_ship_classes.len(),
+                world.fighter_classes.len(),
+                world.characters.len(),
+            ));
+
+            // ── Audio controls ───────────────────────────────────────────
+            audio::draw_audio_controls(ui, audio_vol);
         });
     });
-
-    egui_macroquad::draw();
 }

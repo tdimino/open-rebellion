@@ -7,3 +7,13 @@
 # Game data (not redistributable)
 data/base/*.DAT
 data/base/*.DLL
+
+# Exported JSON (generated from DAT files)
+data/base/json/
+
+# Ghidra project files (binary, large)
+ghidra/
+*.gpr
+*.rep/
+*.lock
+*.lock~

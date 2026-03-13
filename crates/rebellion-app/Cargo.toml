@@ -12,5 +12,7 @@ rebellion-core = { path = "../rebellion-core" }
 rebellion-data = { path = "../rebellion-data" }
 rebellion-render = { path = "../rebellion-render" }
 macroquad = "0.4"
+egui-macroquad = "0.17"
+quad-snd = "0.2"
 serde_json = { workspace = true }
 anyhow = { workspace = true }

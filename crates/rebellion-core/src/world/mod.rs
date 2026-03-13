@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::dat::ExplorationStatus;
 use crate::ids::*;
 
 /// A star system in the galaxy — the atomic unit of territory and production.
@@ -25,6 +26,9 @@ pub struct System {
     pub x: u16,
     /// Galactic map Y coordinate (in sector-relative units).
     pub y: u16,
+    /// Whether this system has been explored (from SYSTEMSD family_id).
+    /// Unexplored systems reveal name only; facilities and units are hidden.
+    pub exploration_status: ExplorationStatus,
     /// Alliance popularity fraction in [0.0, 1.0].
     pub popularity_alliance: f32,
     /// Empire popularity fraction in [0.0, 1.0].
@@ -33,6 +37,8 @@ pub struct System {
     pub fleets: Vec<FleetKey>,
     /// Ground troop units stationed on the surface.
     pub ground_units: Vec<TroopKey>,
+    /// Special forces units assigned to this system.
+    pub special_forces: Vec<SpecialForceKey>,
     /// Planetary shields, turbolaser batteries, and similar fixed defenses.
     pub defense_facilities: Vec<DefenseFacilityKey>,
     /// Shipyards and troop training centers.
@@ -147,14 +153,77 @@ pub struct SkillPair {
 ///
 /// Fleets are the primary unit of strategic movement. They orbit systems,
 /// travel hyperlanes, and carry characters in command roles.
+///
+/// Ship and fighter slots are stored as `(class_key, count)` pairs so that
+/// multiple instances of the same class can be represented without duplicating
+/// the class record in the arena.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fleet {
     /// System the fleet is currently orbiting or departing from.
     pub location: SystemKey,
-    pub capital_ships: Vec<CapitalShipKey>,
-    pub fighters: Vec<FighterKey>,
+    /// Capital ship class references with counts.  One entry per unique class in
+    /// this fleet; `count` indicates how many hulls of that class are present.
+    pub capital_ships: Vec<ShipEntry>,
+    /// Fighter squadron class references with counts.
+    pub fighters: Vec<FighterEntry>,
     /// Characters assigned to this fleet (admiral, general, etc.).
     pub characters: Vec<CharacterKey>,
+    /// True if this fleet belongs to the Rebel Alliance; false = Empire.
+    pub is_alliance: bool,
+}
+
+/// One entry in a fleet's capital-ship roster: a class plus the number of hulls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShipEntry {
+    pub class: CapitalShipKey,
+    pub count: u32,
+}
+
+/// One entry in a fleet's fighter roster: a class plus the number of squadrons.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FighterEntry {
+    pub class: FighterKey,
+    pub count: u32,
+}
+
+/// A troop regiment stationed at a system — a deployed instance of a troop class.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TroopUnit {
+    /// The class definition (from TROOPSD.DAT).
+    pub class_dat_id: DatId,
+    pub is_alliance: bool,
+}
+
+/// A special-forces unit stationed at a system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpecialForceUnit {
+    /// The class definition (from SPECFCSD.DAT).
+    pub class_dat_id: DatId,
+    pub is_alliance: bool,
+}
+
+/// A defense facility instance on a system surface.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DefenseFacilityInstance {
+    /// The class definition (from DEFFACSD.DAT).
+    pub class_dat_id: DatId,
+    pub is_alliance: bool,
+}
+
+/// A manufacturing facility instance (shipyard, training center, construction yard).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManufacturingFacilityInstance {
+    /// The class definition (from MANFACSD.DAT).
+    pub class_dat_id: DatId,
+    pub is_alliance: bool,
+}
+
+/// A production facility instance (mine, refinery).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionFacilityInstance {
+    /// The class definition (from PROFACSD.DAT).
+    pub class_dat_id: DatId,
+    pub is_alliance: bool,
 }
 
 /// The complete game world state — the root of all simulation data.
@@ -169,4 +238,14 @@ pub struct GameWorld {
     pub fighter_classes: slotmap::SlotMap<FighterKey, FighterClass>,
     pub characters: slotmap::SlotMap<CharacterKey, Character>,
     pub fleets: slotmap::SlotMap<FleetKey, Fleet>,
+    /// Deployed troop regiments (instances, not class definitions).
+    pub troops: slotmap::SlotMap<TroopKey, TroopUnit>,
+    /// Deployed special-forces units.
+    pub special_forces: slotmap::SlotMap<SpecialForceKey, SpecialForceUnit>,
+    /// Defense facilities on system surfaces.
+    pub defense_facilities: slotmap::SlotMap<DefenseFacilityKey, DefenseFacilityInstance>,
+    /// Manufacturing facilities (shipyards, training centers, construction yards).
+    pub manufacturing_facilities: slotmap::SlotMap<ManufacturingFacilityKey, ManufacturingFacilityInstance>,
+    /// Production facilities (mines, refineries).
+    pub production_facilities: slotmap::SlotMap<ProductionFacilityKey, ProductionFacilityInstance>,
 }

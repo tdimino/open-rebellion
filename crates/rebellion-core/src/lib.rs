@@ -1,3 +1,10 @@
+pub mod ai;
 pub mod dat;
+pub mod events;
+pub mod fog;
 pub mod ids;
+pub mod manufacturing;
+pub mod missions;
+pub mod movement;
+pub mod tick;
 pub mod world;

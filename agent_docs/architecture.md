@@ -3,16 +3,69 @@
 ## Crate Dependency Graph
 
 ```
-rebellion-app
-├── rebellion-render (macroquad 0.4, egui-macroquad 0.17)
+rebellion-app (quad-snd)
+├── rebellion-render (macroquad 0.4, egui-macroquad 0.17, image)
 │   └── rebellion-core
-├── rebellion-data
+├── rebellion-data (notify [native only])
 │   ├── rebellion-core
 │   └── dat-dumper (library mode)
 └── rebellion-core (slotmap 1.0, serde 1)
 
 dat-dumper (tools/) -- standalone CLI + library
-└── clap 4, serde, serde_json, anyhow
+└── clap 4, serde, serde_json, anyhow, pelite
+```
+
+## Simulation Modules (rebellion-core)
+
+All simulation systems follow a stateless advance pattern:
+```rust
+System::advance(state, world, &[TickEvent]) -> Vec<ResultEvent>
+```
+Caller applies effects to GameWorld. Deterministic—same inputs produce same outputs. Testable in isolation.
+
+```
+crates/rebellion-core/src/
+├── tick.rs           — GameClock, GameSpeed, TickEvent (280 LOC, 13 tests)
+├── manufacturing.rs  — ProductionQueue, ManufacturingState, CompletionEvent (520 LOC, 13 tests)
+├── missions.rs       — MissionSystem, quadratic probability formula from rebellion2 (880 LOC, 14 tests)
+├── events.rs         — EventCondition/Action, chaining, deterministic rng (728 LOC, 17 tests)
+├── ai.rs             — AISystem, officer assignment, production, fleet deployment (936 LOC, 13 tests)
+├── movement.rs       — MovementOrder, tick-based hop progression (453 LOC, 11 tests)
+└── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
+```
+
+## Render Modules (rebellion-render)
+
+```
+crates/rebellion-render/src/
+├── message_log.rs      — Scrollable egui event feed, 6 color-coded categories (380 LOC)
+├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels (280 LOC)
+├── fog.rs              — Dim overlays for unexplored/unseen systems
+├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget)
+├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
+└── panels/
+    ├── mod.rs           — PanelAction enum
+    ├── faction_select.rs — Empire/Alliance choice modal
+    ├── officers.rs       — Character roster with skill bars
+    ├── fleets.rs         — Fleet composition browser
+    ├── manufacturing.rs  — Production queue manager
+    └── missions.rs       — Mission dispatch with probability preview
+```
+
+## App Modules (rebellion-app)
+
+```
+crates/rebellion-app/src/
+├── main.rs   — Entry point, simulation loop, effect application helpers (323 LOC)
+└── audio.rs  — quad-snd AudioEngine: load, play_sfx, play_music, volume sync
+```
+
+## Data Modules (rebellion-data)
+
+```
+crates/rebellion-data/src/
+├── seeds.rs  — 9 seed table loader, fleet/unit/facility instantiation (545 LOC)
+└── mods.rs   — Mod loader: TOML manifest, RFC 7396 merge patch, semver, hot reload (637 LOC)
 ```
 
 ## Type System: Two Layers
@@ -57,6 +110,20 @@ world types (GameWorld with SlotMap arenas)
     v
 macroquad drawing + egui panels
 ```
+
+### Simulation Loop (rebellion-app/src/main.rs)
+```
+Each frame:
+  tick_events = clock.advance(dt)
+  if tick_events not empty:
+    ManufacturingSystem::advance → CompletionEvents → apply to MessageLog
+    MissionSystem::advance      → MissionResults   → apply to GameWorld + MessageLog
+    EventSystem::advance        → FiredEvents       → apply to GameWorld + MessageLog
+    AISystem::advance           → AIActions         → apply to MissionState, ManufacturingState
+  draw_galaxy_map + draw_info_panel + draw_message_log
+```
+
+See `@agent_docs/simulation.md` for full API reference on the advance() pattern.
 
 ### Loading Order (rebellion-data/src/lib.rs)
 1. Sectors (SECTORSD.DAT) -- must come first, systems reference sectors
