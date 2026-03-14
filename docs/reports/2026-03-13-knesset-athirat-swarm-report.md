@@ -6,7 +6,7 @@ team: athirat
 agents: 4 (Deborah, Kaptaru, Mami, Melissa)
 model: claude-sonnet-4-6 (daborot), claude-opus-4-6 (lead)
 duration: ~45 minutes
-status: near-complete (integration wiring remaining)
+status: complete
 ---
 
 # Knesset Athirat — Swarm Report
@@ -35,7 +35,7 @@ All 11 planned deliverables shipped:
 | 14 | Message log UI (egui panel) | Deborah | 380 | — |
 | 15 | Main loop integration (all systems wired) | Mami | 323 | — |
 
-### War Room — NEAR COMPLETE (integration wiring remaining)
+### War Room — COMPLETE
 
 | # | Deliverable | Agent | LOC | Status |
 |---|------------|-------|-----|--------|

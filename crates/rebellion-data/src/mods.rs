@@ -82,6 +82,7 @@ pub struct ModManifest {
 
 impl ModManifest {
     /// Parse a manifest from a `mod.toml` file.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("reading {}", path.display()))?;
@@ -93,6 +94,11 @@ impl ModManifest {
             .unwrap_or(Path::new("."))
             .to_path_buf();
         Ok(manifest)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_file(_path: &Path) -> anyhow::Result<Self> {
+        anyhow::bail!("mod loading from filesystem not supported on WASM")
     }
 
     /// Parse the version field as a `semver::Version`.
@@ -118,6 +124,7 @@ pub struct ModContent {
 
 impl ModContent {
     /// Load all `*.json` overlay files from the mod directory.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn from_dir(dir: &Path) -> anyhow::Result<Self> {
         let mut content = ModContent::default();
         let entries = match std::fs::read_dir(dir) {
@@ -145,6 +152,11 @@ impl ModContent {
         }
         Ok(content)
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_dir(_dir: &Path) -> anyhow::Result<Self> {
+        anyhow::bail!("mod content loading from filesystem not supported on WASM")
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +170,7 @@ impl ModLoader {
     /// Scan `mods_dir` for subdirectories containing `mod.toml`.
     ///
     /// Returns an unsorted list of discovered manifests.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn discover(mods_dir: &Path) -> anyhow::Result<Vec<ModManifest>> {
         let mut manifests = Vec::new();
         if !mods_dir.exists() {
@@ -180,6 +193,13 @@ impl ModLoader {
             }
         }
         Ok(manifests)
+    }
+
+    /// On WASM, mod discovery from the filesystem is not supported.
+    /// Returns an empty list — mods must be loaded via other means (not yet implemented).
+    #[cfg(target_arch = "wasm32")]
+    pub fn discover(_mods_dir: &Path) -> anyhow::Result<Vec<ModManifest>> {
+        Ok(Vec::new())
     }
 
     /// Resolve a topological load order for the given manifests.
@@ -431,6 +451,23 @@ impl ModWatcher {
             }
         }
         any
+    }
+}
+
+/// WASM stub for `ModWatcher` — hot reload is not available in the browser.
+#[cfg(target_arch = "wasm32")]
+pub struct ModWatcher;
+
+#[cfg(target_arch = "wasm32")]
+impl ModWatcher {
+    /// No-op on WASM — always returns `Ok`.
+    pub fn new(_mods_dir: &Path) -> anyhow::Result<Self> {
+        Ok(Self)
+    }
+
+    /// Always returns `false` on WASM — no filesystem events.
+    pub fn changed(&self) -> bool {
+        false
     }
 }
 

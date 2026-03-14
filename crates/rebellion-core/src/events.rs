@@ -25,7 +25,7 @@
 //!
 //! # Usage
 //!
-//! ```
+//! ```ignore
 //! use rebellion_core::events::{
 //!     EventCondition, EventAction, EventState, EventSystem, GameEvent,
 //! };

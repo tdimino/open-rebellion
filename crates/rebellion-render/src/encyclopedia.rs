@@ -399,6 +399,8 @@ fn show_placeholder_image(ui: &mut egui::Ui) {
 /// Load an EDATA BMP file and register it as an egui texture.
 ///
 /// Returns `None` if the file doesn't exist, can't be read, or fails to decode.
+/// On WASM targets, always returns `None` (filesystem access not available).
+#[cfg(not(target_arch = "wasm32"))]
 fn load_edata_texture(
     ctx: &egui::Context,
     edata_n: u16,
@@ -431,6 +433,15 @@ fn load_edata_texture(
     );
 
     Some(handle)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_edata_texture(
+    _ctx: &egui::Context,
+    _edata_n: u16,
+    _edata_path: Option<&Path>,
+) -> Option<TextureHandle> {
+    None
 }
 
 // ---------------------------------------------------------------------------

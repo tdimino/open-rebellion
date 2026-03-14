@@ -37,19 +37,25 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     // Accept an optional GData path as the first CLI argument.
-    let args: Vec<String> = std::env::args().collect();
-    let gdata_path = if args.len() > 1 {
-        PathBuf::from(&args[1])
-    } else {
-        let candidate = PathBuf::from("data/base");
-        if candidate.join("SYSTEMSD.DAT").exists() {
-            candidate
+    // On WASM there is no CLI, so always use the hardcoded default.
+    #[cfg(not(target_arch = "wasm32"))]
+    let gdata_path = {
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() > 1 {
+            PathBuf::from(&args[1])
         } else {
-            eprintln!("Usage: open-rebellion <path-to-GData>");
-            eprintln!("  GData directory must contain .DAT files (SYSTEMSD.DAT, etc.)");
-            std::process::exit(1);
+            let candidate = PathBuf::from("data/base");
+            if candidate.join("SYSTEMSD.DAT").exists() {
+                candidate
+            } else {
+                eprintln!("Usage: open-rebellion <path-to-GData>");
+                eprintln!("  GData directory must contain .DAT files (SYSTEMSD.DAT, etc.)");
+                std::process::exit(1);
+            }
         }
     };
+    #[cfg(target_arch = "wasm32")]
+    let gdata_path = PathBuf::from("data/base");
 
     let mut world = match rebellion_data::load_game_data(&gdata_path) {
         Ok(w) => w,
@@ -59,7 +65,10 @@ async fn main() {
                 gdata_path.display(),
                 e
             );
+            #[cfg(not(target_arch = "wasm32"))]
             std::process::exit(1);
+            #[cfg(target_arch = "wasm32")]
+            panic!("Failed to load game data from {}: {}", gdata_path.display(), e);
         }
     };
 

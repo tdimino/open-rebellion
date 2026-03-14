@@ -12,6 +12,7 @@ use dat_dumper::types::major_characters::{CharacterEntry, MajorCharactersFile};
 use dat_dumper::types::minor_characters::MinorCharactersFile;
 use dat_dumper::types::sectors::SectorsFile;
 use dat_dumper::types::systems::SystemsFile;
+#[cfg(not(target_arch = "wasm32"))]
 use dat_dumper::types::textstra;
 use rebellion_core::dat::{ExplorationStatus, SectorGroup};
 use rebellion_core::ids::*;
@@ -34,13 +35,18 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     // ── 0. String table ──────────────────────────────────────────────────────
     // Load TEXTSTRA.DLL for real entity names. Fall back to placeholders if
     // the file is absent (WASM builds, test environments, stripped installs).
-    let textstra_path = gdata_path.join("TEXTSTRA.DLL");
-    let string_table: HashMap<u16, String> = if textstra_path.exists() {
-        textstra::load_strings(&textstra_path)
-            .with_context(|| format!("loading strings from {}", textstra_path.display()))?
-    } else {
-        HashMap::new()
+    #[cfg(not(target_arch = "wasm32"))]
+    let string_table: HashMap<u16, String> = {
+        let textstra_path = gdata_path.join("TEXTSTRA.DLL");
+        if textstra_path.exists() {
+            textstra::load_strings(&textstra_path)
+                .with_context(|| format!("loading strings from {}", textstra_path.display()))?
+        } else {
+            HashMap::new()
+        }
     };
+    #[cfg(target_arch = "wasm32")]
+    let string_table: HashMap<u16, String> = HashMap::new();
 
     // Convenience closure: look up a string by its DLL id, or fall back to
     // "<kind> <id>" if the DLL was absent or the id is not present.
@@ -225,9 +231,16 @@ fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Char
 }
 
 /// Read and parse a single .DAT file into type `T`.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn read_dat_file<T: DatRecord>(path: &Path) -> anyhow::Result<T> {
     let data = std::fs::read(path)
         .with_context(|| format!("reading {}", path.display()))?;
     let mut reader = ByteReader::new(&data);
     T::parse(&mut reader).with_context(|| format!("parsing {}", path.display()))
+}
+
+/// WASM stub — filesystem DAT loading is not supported in the browser.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn read_dat_file<T: DatRecord>(path: &Path) -> anyhow::Result<T> {
+    anyhow::bail!("WASM data loading not yet supported ({})", path.display())
 }

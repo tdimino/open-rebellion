@@ -31,8 +31,10 @@ Delivered:
 - Mod loader: TOML manifests, RFC 7396 merge patch, semver, hot reload
 - Main loop integration (all systems wired)
 
-## War Room -- NEAR COMPLETE (1 integration task remaining)
+## War Room -- COMPLETE
 *Full strategy game without combat*
+
+Committed: `6d47a10` (integration wiring — fog/fleet/panels/encyclopedia/audio into main loop)
 
 Delivered:
 - Player faction selection + 5 UI panels (officers, fleets, manufacturing, missions)
@@ -40,11 +42,7 @@ Delivered:
 - Fog of war with monotonic reveal + advance intel at 50% transit
 - Encyclopedia viewer with 4 tabs + BMP texture cache from EData/
 - Audio system via quad-snd (CoreAudio/ALSA/WebAudio)
-
-Remaining:
-- [ ] Wire fog/fleet/panels/encyclopedia/audio into main loop (draw calls + event hooks)
-
-Dependencies: Living Galaxy tick system and simulation (DONE).
+- Main loop integration: all draw calls + event hooks wired
 
 ## War Machine -- BLOCKED on Ghidra RE
 *Complete strategy game*
@@ -76,10 +74,10 @@ Blocked: Combat formulas live in STRATEGY.DLL (29MB) and TACTICAL.DLL (7.5MB). N
 
 ## Immediate Next Steps
 
-1. **Wire remaining systems into main loop** -- draw_fog_overlay, draw_fleet_overlays, draw_panels, draw_encyclopedia, audio event hooks
-2. **Full `cargo check` + WASM build verification**
+1. **WASM build verification** -- `bash scripts/build-wasm.sh` with all War Room systems (in progress)
+2. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
 3. **Ghidra RE of STRATEGY.DLL** -- Combat formulas (project created, GhidraMCP bridge active on :8080)
-4. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
+4. **Victory conditions implementation** -- capture enemy HQ, destroy Death Star / find Rebel base
 
 ## Known Technical Debt
 

@@ -1,6 +1,6 @@
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). Phase 0 complete: interactive galaxy data viewer.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). Living Galaxy + War Room complete; WASM verification in progress.
 
 ## Build
 
@@ -57,7 +57,7 @@ PATH="/usr/bin:$PATH" cargo check
 
 ## Reports
 
-- [Knesset Athirat Swarm Report (2026-03-13)](docs/reports/2026-03-13-knesset-athirat-swarm-report.md) — Living Galaxy (COMPLETE) + War Room (80%). 4 daborot, ~45 min, ~11.7K LOC, 105+ tests.
+- [Knesset Athirat Swarm Report (2026-03-13)](docs/reports/2026-03-13-knesset-athirat-swarm-report.md) — Living Galaxy (COMPLETE) + War Room (COMPLETE). 4 daborot, ~45 min, ~11.7K LOC, 105+ tests.
 
 ## External References
 
