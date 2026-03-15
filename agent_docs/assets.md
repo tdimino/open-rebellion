@@ -291,6 +291,55 @@ Keyboard: `←`/`→` nav images, `[`/`]` nav categories, `G` pixel grid overlay
 
 ---
 
+## Pipeline 5: Audio Generation
+
+Voice cloning, SFX, music, and audio upscaling for combat, missions, and atmosphere.
+
+### Tools (all macOS ARM64)
+
+| Domain | Tool | Location | Type |
+|--------|------|----------|------|
+| Voice cloning | Voicebox (Qwen3-TTS + MLX) | `~/Applications/Voicebox.app` | Local |
+| Audio upscaling | LavaSR v2 | `~/tools/lavasr/` | Local |
+| Music generation | ACE-Step 1.5 | `~/tools/ace-step/` | Local |
+| Sound effects | ElevenLabs SFX v2 | API | Credits |
+| SFX fallback | AudioLDM2 | `diffusers` package | Local |
+
+### Voice Cloning Pipeline
+
+```
+Original voice WAVs (8-11kHz, VOICEFX*.DLL)
+  → LavaSR v2: upscale to 48kHz
+  → Select 15-20s reference per speaker
+  → Qwen3-TTS Base: clone to new dialogue lines
+  → Output: data/sounds/voices/{faction}/{line_id}.wav
+```
+
+Source: 142 Empire lines (VOICEFXE.DLL, IDs 15001-15144) + ~140 Alliance lines (VOICEFXA.DLL).
+
+### SFX Generation
+
+```bash
+# ElevenLabs API (best quality for transients)
+curl -X POST "https://api.elevenlabs.io/v1/sound-generation" \
+  -H "xi-api-key: $ELEVENLABS_API_KEY" \
+  -d '{"text": "sci-fi laser cannon blast", "duration_seconds": 2}'
+
+# AudioLDM2 local fallback (ambient loops)
+from diffusers import AudioLDM2Pipeline
+pipe = AudioLDM2Pipeline.from_pretrained("cvssp/audioldm2")
+```
+
+### Music Generation
+
+```bash
+cd ~/tools/ace-step && bash start_api_server_macos.sh  # MLX backend, port 8001
+# Tags: "orchestral, epic, space opera, brass fanfare, strings, war"
+# LoRA fine-tuning available for original soundtrack style transfer
+```
+
+---
+
 ## WWW Pipeline Reference
 
 World War Watcher's 3D pipeline is the direct ancestor. Key files to reference:
