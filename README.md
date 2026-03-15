@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Phase-Galaxy%20Viewer-green.svg" alt="Phase">
+  <img src="https://img.shields.io/badge/Phase-War%20Machine-yellow.svg" alt="Phase">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
 </p>
 
@@ -37,17 +37,15 @@ Rebellion was a game about grand strategy in the Star Wars universe—not the li
 
 Open Rebellion reads the original game data files, converts them to clean JSON, and reimplements the simulation from the ground up in Rust. It runs natively on macOS and in the browser via WebAssembly.
 
-### Current State: Galaxy Viewer
+### Current State: War Machine (Next)
 
-We've completed the first milestone—a fully interactive galaxy map viewer:
+Three phases complete, combat implementation unblocked:
 
-- **200 star systems** across 20 sectors, rendered with faction colors (blue = Alliance, red = Empire)
-- **Pan, zoom, click-to-select**—right-drag to pan, scroll to zoom, left-click to inspect any system
-- **System info panel**—sector, region, position, faction support percentages, asset counts
-- **22 of ~51 game data files** fully parsed with byte-level round-trip validation
-- **2.9MB WebAssembly build**—runs in any modern browser
-
-Entity names are placeholders for now ("System 11648" instead of "Coruscant")—the real names are stored in the original `TEXTSTRA.DLL` file, which we haven't parsed yet. That's next.
+- **Galaxy Viewer** — 200 star systems, pan/zoom/click, 51/51 DAT parsers with byte-level round-trip validation, 3.4MB WASM build
+- **Living Galaxy** — Game clock, manufacturing, missions (diplomacy, recruitment, espionage, sabotage, assassination, rescue, abduction, uprising), AI manager, event system, mod loader. ~8.7K LOC, 105+ tests.
+- **War Room** — Player faction selection, 5 UI panels, fleet movement with diamond icons and route lines, fog of war, encyclopedia viewer with BMP texture cache, audio system (quad-snd)
+- **Ghidra RE Complete** — 5,127 functions decompiled from REBEXE.EXE, combat call chain traced, bombardment formula decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
+- **Asset Pipeline** — 5 pipelines: HD upscaling (waifu2x), 3D models (4 providers), sprite sheet rendering (Blender), reference image generation (Gemini), audio (voice cloning, SFX, music, upscaling). See [CREDITS.md](CREDITS.md).
 
 ## You Will Need
 
@@ -89,7 +87,7 @@ Five Rust crates in a Cargo workspace:
 | `rebellion-app` | Entry point—runs the main loop on desktop and WASM. |
 | `dat-dumper` | CLI tool that exports all `.DAT` files to human-readable JSON. |
 
-The original game's 49KB of binary data files have been fully reverse-engineered using [Metasharp's editor](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET) as our Rosetta Stone. Every parser passes round-trip byte validation—we can reconstruct the original binary files bit-for-bit from our parsed data.
+The original game's binary data files (51 DAT files) and executable (REBEXE.EXE, 22,741 functions) have been fully reverse-engineered using [Metasharp's editor](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET) and [Ghidra](https://ghidra-sre.org/). Every DAT parser passes round-trip byte validation. Combat formulas, AI decision trees, and game balance parameters are documented in `ghidra/notes/`.
 
 ## Roadmap
 
@@ -146,7 +144,7 @@ We stand on their shoulders.
 
 This is early—we're one developer and one AI collaborator, building in public. If you want to help:
 
-- **Reverse engineering**: The 71% of undocumented `GNPRTB` parameters, combat formulas in `STRATEGY.DLL`, AI decision trees
+- **Combat implementation**: Ghidra RE is complete — combat formulas, GNPRTB parameters, and C++ class hierarchy are documented in `ghidra/notes/`. Help implement them in Rust.
 - **Game data expertise**: If you know what parameter #147 does, or how diplomatic mission success probability actually works, open an issue
 - **Modding infrastructure**: JSON schema design, mod loader architecture, hot reload
 - **Testing**: Run it with your GOG copy, report what looks wrong

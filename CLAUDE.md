@@ -1,6 +1,6 @@
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.3.0 (~42% complete). Living Galaxy + War Room COMPLETE. Ghidra RE of REBEXE.EXE COMPLETE (~4,900 functions decompiled). War Machine implementation UNBLOCKED.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.3.0 (~42% complete). Living Galaxy + War Room COMPLETE. Ghidra RE of REBEXE.EXE COMPLETE (5,127 functions decompiled). War Machine implementation UNBLOCKED.
 
 ## Build
 
@@ -55,7 +55,7 @@ agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patte
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
 agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: 5,127 decompiled functions, combat formulas, 111 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
-agent_docs/assets.md -- Asset pipeline: 4 pipelines (HD upscaling, 3D models, sprite sheets, reference image generation). 11 reference collections, 4 providers, ASSET ARCHAEOLOGY STATION viewer. Read when working on visual assets.
+agent_docs/assets.md -- Asset pipeline: 5 pipelines (HD upscaling, 3D models, sprite sheets, reference image generation, audio). 11 reference collections, 4 3D providers, 6 audio tools. Read when working on visual or audio assets.
 
 ## Reports
 
