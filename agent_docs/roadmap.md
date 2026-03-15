@@ -44,7 +44,7 @@ Delivered:
 - Audio system via quad-snd (CoreAudio/ALSA/WebAudio)
 - Main loop integration: all draw calls + event hooks wired
 
-## War Machine -- BLOCKED on Ghidra RE
+## War Machine -- UNBLOCKED (RE complete, ready to implement)
 *Complete strategy game*
 
 1. Space combat: auto-resolve first, then tactical 2D view
@@ -53,7 +53,7 @@ Delivered:
 4. Victory conditions (capture enemy HQ, destroy Death Star / find Rebel base)
 5. 3D tactical models: nano-banana-pro concept art → Hunyuan3D Pro/Meshy → Blender sprite sheets. Pipeline proven in World War Watcher (14 models). See `@agent_docs/assets.md`.
 
-Blocked: Combat formulas live in REBEXE.EXE (2.8MB, 22,741 functions), NOT STRATEGY.DLL (resource-only, 29MB sprites, 9KB of CRT boilerplate). swrebellion.net community has no RE work — empirical data editing only. We're on our own with Ghidra. See `@agent_docs/ghidra-re.md`.
+Ghidra RE of REBEXE.EXE complete: 109 functions decompiled, combat call chain fully traced, bombardment formula decoded, 71 combat GNPRTB parameters mapped, game object layout documented. See `ghidra/notes/` for modular docs and 1,662-line annotated function reference.
 
 ## Full Parity
 *Feature-complete*
@@ -76,10 +76,10 @@ Blocked: Combat formulas live in REBEXE.EXE (2.8MB, 22,741 functions), NOT STRAT
 
 ## Immediate Next Steps
 
-1. **WASM build verification** -- `bash scripts/build-wasm.sh` with all War Room systems (in progress)
+1. **Launch Knesset Tiamat** -- War Machine implementation swarm (combat, missions, victory, save/load)
 2. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
-3. **Ghidra RE of REBEXE.EXE** -- Combat formulas (STRATEGY.DLL is resource-only; project created, GhidraMCP bridge active on :8080)
-4. **Victory conditions implementation** -- capture enemy HQ, destroy Death Star / find Rebel base
+3. **WASM build verification** -- confirmed 3.4MB artifact at v0.3.0
+4. **Ghidra RE** -- COMPLETE. 109 functions, bombardment formula decoded, GNPRTB mapped. Continue decompiling for modder documentation.
 
 ## Known Technical Debt
 

@@ -1,11 +1,14 @@
 # Ghidra RE Notes — Index
 
+**115 decompiled C files, 8 Jython scripts, 7 markdown docs**
+
 ## Summary Documents
 
-| File | Content |
-|------|---------|
-| [combat-formulas.md](combat-formulas.md) | **Master reference** — binary overview, architecture, confirmed functions, scripted events, Ghidra scripts, next steps |
-| [COMBAT-SUMMARY.md](COMBAT-SUMMARY.md) | Combat call chain diagram, confirmed formulas, entity type codes, implementation readiness |
+| File | Lines | Content |
+|------|-------|---------|
+| [combat-formulas.md](combat-formulas.md) | ~200 | **Master reference** — binary overview, architecture, confirmed functions, scripted events, Ghidra scripts, next steps |
+| [COMBAT-SUMMARY.md](COMBAT-SUMMARY.md) | ~115 | Combat call chain diagram, confirmed formulas, entity type codes, implementation readiness |
+| [annotated-functions.md](annotated-functions.md) | 1,662 | **Annotated function reference** — renamed variables, struct layouts, cross-references, game rules |
 
 ## Combat Subsystem Docs
 

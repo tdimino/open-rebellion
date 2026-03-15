@@ -40,7 +40,7 @@ Two MCP servers configured in `~/.claude/settings.json`:
 - Fleet auto-resolve: how the game decides battle outcomes without tactical view
 - Blockade mechanics: when/how blockades trigger
 
-Note: STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT boilerplate). All game logic lives in REBEXE.EXE (2.8MB, 22,741 functions). The swrebellion.net community has no RE work.
+Note: STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT boilerplate). All game logic lives in REBEXE.EXE (2.8MB, 22,741 functions). See `ghidra/notes/` for 109+ decompiled C files, modular docs (space-combat.md, ground-combat.md, bombardment.md), and 1,662 lines of annotated function reference.
 
 ### GNPRTB Parameter Usage
 GNPRTB has 213 entries but only ~29% are documented. Each has 8 values (difficulty levels). Finding which GNPRTB index maps to which game mechanic requires tracing references in REBEXE.EXE.
