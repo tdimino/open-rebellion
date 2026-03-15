@@ -1,0 +1,26 @@
+
+void __fastcall FUN_00433be0(undefined4 *param_1)
+
+{
+  void *local_c;
+  undefined1 *puStack_8;
+  int local_4;
+  
+  puStack_8 = &LAB_0062d28e;
+  local_c = ExceptionList;
+  ExceptionList = &local_c;
+  *param_1 = &PTR_FUN_00658d70;
+  local_4 = 2;
+  param_1[0xf] = 0;
+  param_1[0x10] = 0;
+  FUN_00619730();
+  local_4._0_1_ = 1;
+  FUN_00619730();
+  local_4 = (uint)local_4._1_3_ << 8;
+  FUN_00619730();
+  local_4 = 0xffffffff;
+  FUN_004ecd30(param_1);
+  ExceptionList = local_c;
+  return;
+}
+

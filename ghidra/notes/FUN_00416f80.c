@@ -1,0 +1,15 @@
+
+void * __thiscall
+FUN_00416f80(void *this,undefined4 param_1,undefined4 param_2,undefined4 param_3,int param_4,
+            int param_5,int param_6,undefined4 param_7,undefined4 param_8,int param_9,
+            undefined4 param_10,uint param_11,undefined4 param_12,undefined4 param_13,
+            undefined4 param_14,undefined4 param_15,undefined4 param_16)
+
+{
+  FUN_00416b90(this,param_1,param_2,param_3,param_4,param_5,param_6,param_7,param_8,param_9,param_10
+               ,param_11,param_12,param_13,param_14,param_15);
+  *(undefined ***)this = &PTR_FUN_006589a8;
+  *(undefined4 *)((int)this + 0x120) = param_16;
+  return this;
+}
+
