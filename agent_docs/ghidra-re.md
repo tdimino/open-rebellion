@@ -1,6 +1,6 @@
 # Ghidra Reverse Engineering
 
-STRATEGY.DLL (29MB) and TACTICAL.DLL (7.5MB) contain the combat formulas, mission probability tables, and AI decision logic for the original game. Ghidra RE is needed to fully understand these mechanics.
+REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions across 2.4MB of .text. STRATEGY.DLL is resource-only (29MB of sprites, 9KB of CRT boilerplate). See `ghidra/notes/combat-formulas.md` for the full RE dossier.
 
 ## Setup
 
@@ -24,11 +24,13 @@ Two MCP servers configured in `~/.claude/settings.json`:
 
 ## Target Files
 
-| DLL | Size | Contains | Priority |
-|-----|------|----------|----------|
-| STRATEGY.DLL | 29MB | Combat resolution, AI strategy, mission formulas, event triggers, diplomacy calculations | High — blocks War Machine milestone |
-| TACTICAL.DLL | 7.5MB | Tactical combat (2D battle view), weapon damage, shield mechanics, squadron behavior | Medium — needed for tactical combat mode |
-| TEXTSTRA.DLL | 150KB | String resources (entity names) | Done — parsed via pelite in Rust |
+| File | Size | .text | Functions | Content | Priority |
+|------|------|-------|-----------|---------|----------|
+| **REBEXE.EXE** | 2.8MB | 2.4MB | **22,741** | ALL game logic (combat, missions, AI, events) | **Primary RE target** |
+| COMMON.DLL | 2.9MB | TBD | TBD | MFC/Win32 shared library | Medium — may have combat utilities |
+| STRATEGY.DLL | 29MB | 9KB | 43 (CRT) | Resource-only (strategy view sprites) | None — no game logic |
+| TACTICAL.DLL | 7.8MB | TBD | TBD | Likely resource-only (tactical sprites) | Low |
+| TEXTSTRA.DLL | 150KB | — | — | String resources (entity names) | Done — parsed via pelite in Rust |
 
 ## What to Look For
 
