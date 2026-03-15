@@ -117,10 +117,13 @@ Each frame:
   tick_events = clock.advance(dt)
   if tick_events not empty:
     ManufacturingSystem::advance → CompletionEvents → apply to MessageLog
+    MovementSystem::advance     → ArrivalEvents    → apply to GameWorld + MessageLog
+    FogSystem::advance          → RevealEvents      → apply to MessageLog
     MissionSystem::advance      → MissionResults   → apply to GameWorld + MessageLog
     EventSystem::advance        → FiredEvents       → apply to GameWorld + MessageLog
     AISystem::advance           → AIActions         → apply to MissionState, ManufacturingState
-  draw_galaxy_map + draw_info_panel + draw_message_log
+  draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays
+  egui_macroquad::ui: panels + encyclopedia + system_info + message_log + status_bar
 ```
 
 See `@agent_docs/simulation.md` for full API reference on the advance() pattern.
@@ -138,9 +141,15 @@ Round-trip validation is enforced inside `parse_and_dump` in `tools/dat-dumper/s
 
 ## Rendering Architecture
 
-`rebellion-render/src/lib.rs` exposes two public functions called each frame:
-1. `draw_galaxy_map(world, state)` -- star map with pan/zoom/click, faction-colored dots
-2. `draw_info_panel(world, state)` -- egui side panel (selected system) + bottom status bar
+`rebellion-render/src/lib.rs` exposes composable functions called each frame:
+1. `draw_galaxy_map(world, state) -> CameraView` -- star map with pan/zoom/click, returns camera params
+2. `draw_fog_overlay(world, fog, cam)` -- dim non-visible systems
+3. `draw_fleet_overlays(world, movement, cam)` -- fleet icons and route lines
+4. `draw_system_info_panel(ctx, world, state)` -- egui right panel (selected system)
+5. `draw_status_bar(ctx, world, clock, audio_vol)` -- bottom bar with speed/audio controls
+6. `draw_message_log(ctx, log, state)` -- scrollable event feed
+7. Panel functions: `draw_faction_select`, `draw_officers`, `draw_fleets`, `draw_manufacturing`, `draw_missions`
+8. `draw_encyclopedia(ctx, world, state)` -- floating 4-tab entity browser
 
 `GalaxyMapState` holds all mutable UI state: camera position, zoom, selected/hovered system, drag tracking.
 

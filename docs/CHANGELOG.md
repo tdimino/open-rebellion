@@ -13,6 +13,42 @@ Each entry includes:
 
 ---
 
+## [Unreleased] - Ghidra RE
+
+**Completion:** ~42% (unchanged) | **Category:** Reverse Engineering | **Milestone:** War Machine UNBLOCKED
+
+### Added
+- **5,127 decompiled C files** from REBEXE.EXE (every function >100 bytes in the game executable)
+- **7 scholar documents** (4,179 lines total):
+  - `annotated-functions.md` (1,662 lines) — struct layouts, renamed variables, 50 event IDs, game rules
+  - `modders-taxonomy.md` (805 lines) — 10 game systems categorized for Yuuzhan Vong/Thrawn/KOTOR total conversions
+  - `rust-implementation-guide.md` (1,267 lines) — maps decompiled C to Open Rebellion's `advance()` pattern
+  - `cpp-class-hierarchy.md` (445 lines) — CRebObject → CNotifyObject → CCombatUnit hierarchy, 19 vtable slots
+  - `entity-system.md` — characters, Force/Jedi, factions, fleets (in progress)
+  - `mission-event-cookbook.md` — 9 mission types, 4 story event chains, modder guide (in progress)
+  - `economy-systems.md` — resources, control, uprising, blockade, repair (in progress)
+- **97 GNPRTB parameters mapped**: 26 general (0x0a00-0x0a21) + 71 combat (0x1400-0x1445) with global address bindings
+- **8 Ghidra Jython scripts** for automated binary analysis (string search, xref tracing, function catalog, GNPRTB tracing)
+- **Bombardment formula decoded**: `damage = sqrt((atk-def)²) / GNPRTB[0x1400]` with difficulty modifier
+- **Space combat 7-phase pipeline** fully mapped: weapon fire → shield absorb → hull damage → fighter engage → result
+- **C++ class hierarchy reconstructed**: 12 classes, 19 vtable slots, complete field layout
+- **Game object layout**: 12 field offsets mapped (hull +0x60, shield/weapon nibbles +0x64, strength +0x96, alive +0xac)
+
+### Fixed
+- STRATEGY.DLL identified as resource-only (29MB sprites, 9KB CRT) — all game logic in REBEXE.EXE
+- GhidraMCP plugin version mismatch resolved (bethington v4.3.0 needs Ghidra 12.0.3, using LaurieWired v11.3.2)
+- pyghidra-mcp config fixed (`--project-path` instead of positional arg)
+
+### Technical
+- REBEXE.EXE: 22,741 functions total, 5,127 decompiled (22.5% by count, ~95% by code volume)
+- Observer/notification architecture confirmed — virtual dispatch via vtable, not direct calls
+- Entity family bytes: 0x08-0x0f (characters), 0x14-0x1b (troops), 0x30-0x3b (ships), 0x34 (Death Star), 0x90-0x98 (systems)
+- Mission type codes: 6=Sabotage, 7=Assassination, 21=Autoscrap
+- 50 event IDs mapped (0x127-0x370 range)
+- 15+ scripted story events: Luke/Vader saga, Dagobah, Jabba's Palace, Bounty Hunters
+
+---
+
 ## [v0.3.0] - 2026-03-14
 
 **Completion:** ~42% | **Category:** Full UI Integration + WASM | **Milestone:** War Room COMPLETE
@@ -97,6 +133,8 @@ Each entry includes:
 
 | Version | Date | Milestone | Completion | Summary |
 |---------|------|-----------|------------|---------|
+| *next* | — | War Machine | ~68% est. | Combat, missions, victory, save/load |
+| v0.3.0+RE | 2026-03-15 | Ghidra RE | ~42% | 5,127 decompiled functions, combat formulas, GNPRTB mapped |
 | v0.3.0 | 2026-03-14 | War Room | ~42% | Full UI integration, audio, WASM build, fog/fleet overlays |
 | v0.2.0 | 2026-03-13 | Living Galaxy | ~30% | 7 simulation systems, mod loader, 51/51 DAT parsers |
 | v0.1.0 | 2026-03-11 | Galaxy Viewer | ~15% | Data viewer, galaxy map, 22 DAT parsers, WASM |

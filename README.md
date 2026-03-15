@@ -95,14 +95,14 @@ The original game's 49KB of binary data files have been fully reverse-engineered
 
 | Milestone | Status | What You Get |
 |-----------|--------|-------------|
-| **Galaxy Viewer** | Complete | Interactive star map, data parsing, WASM build |
-| **Living Galaxy** | Next | Game clock, missions, manufacturing, AI, events, mod loader |
-| **War Room** | Planned | Player UI, fleet movement, fog of war, encyclopedia, audio |
-| **War Machine** | Blocked | Space and ground combat, Death Star, victory conditions |
+| **Galaxy Viewer** | Complete | Interactive star map, 51/51 DAT parsers, WASM build |
+| **Living Galaxy** | Complete | Game clock, missions, manufacturing, AI, events, mod loader |
+| **War Room** | Complete | Player UI, fleet movement, fog of war, encyclopedia, audio |
+| **War Machine** | Next | Space and ground combat, Death Star, victory conditions |
 | **Full Parity** | Planned | All missions, scripted events, Jedi training, save/load |
 | **Mod Workshop** | Planned | Mod manager, asset generation, community distribution |
 
-**War Machine** is blocked on reverse-engineering the combat formulas from `STRATEGY.DLL` (29MB) and `TACTICAL.DLL` (7.5MB) via Ghidra. If you've done RE work on Rebellion or have documentation on combat mechanics, we'd love to hear from you.
+**Ghidra RE complete.** We reverse-engineered 5,127 functions from `REBEXE.EXE` (the actual game executable—`STRATEGY.DLL` turned out to be sprites only). Combat formulas decoded, 97 GNPRTB parameters mapped, C++ class hierarchy reconstructed. War Machine implementation is unblocked. See `ghidra/notes/` for the full corpus.
 
 ## The Data Pipeline
 
@@ -113,7 +113,7 @@ GData/SYSTEMSD.DAT  →  JSON  →  200 star systems
 GData/CAPSHPSD.DAT  →  JSON  →  30 capital ship classes
 GData/MJCHARSD.DAT  →  JSON  →  6 major characters (Luke, Vader, ...)
 GData/GNPRTB.DAT    →  JSON  →  213 game balance parameters
-TEXTSTRA.DLL        →  (TODO) → Real entity names
+TEXTSTRA.DLL        →  pelite → Real entity names ("Coruscant", "Luke Skywalker")
 ```
 
 Run `cargo run -p dat-dumper -- --gdata data/base --output data/base/json` to export everything.
@@ -122,7 +122,7 @@ Run `cargo run -p dat-dumper -- --gdata data/base --output data/base/json` to ex
 
 The entire point of rebuilding from scratch is to make Rebellion *moddable*. The original game hardcoded everything. We won't.
 
-The mod system (coming in **Living Galaxy**) will support:
+The mod system supports:
 - **Add anything**—new systems, characters, ships, fighters, missions, events
 - **Patch anything**—field-level JSON overlays using RFC 7396 Merge Patch
 - **Hot reload**—edit a mod, see changes instantly (native only)
