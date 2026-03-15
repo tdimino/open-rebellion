@@ -4,6 +4,8 @@ use macroquad::prelude::*;
 use std::path::{Path, PathBuf};
 
 use rebellion_core::ai::{AiFaction, AIAction, AIState, AISystem, FleetMoveReason};
+use rebellion_core::bombardment::BombardmentSystem;
+use rebellion_core::combat::{CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
 use rebellion_core::events::{EventAction, EventState, EventSystem, SkillField};
 use rebellion_core::fog::{FogState, FogSystem};
@@ -90,6 +92,7 @@ async fn main() {
     let mut movement_state = MovementState::new();
     let mut fog_state = FogState::new(Faction::Alliance);
     FogSystem::seed(&mut fog_state, &world);
+    let mut combat_cooldowns: std::collections::HashMap<rebellion_core::ids::SystemKey, u64> = std::collections::HashMap::new();
 
     // ── UI state ────────────────────────────────────────────────────────────
     let mut map_state = GalaxyMapState::default();
@@ -238,6 +241,109 @@ async fn main() {
                 ));
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::FleetArrival, &audio_vol);
+            }
+
+            // ── Combat ──────────────────────────────────────────────────────
+            // After fleet arrivals, check every system for opposing fleets.
+            // Collect combat triggers first (immutable world borrow).
+            let current_tick = tick_events.last().map(|e| e.tick).unwrap_or(0);
+            let combat_triggers: Vec<_> = world.systems.keys()
+                .filter_map(|sys_key| {
+                    // Combat cooldown: skip systems that had combat within last 5 ticks.
+                    if let Some(&last_battle) = combat_cooldowns.get(&sys_key) {
+                        if current_tick < last_battle + 5 { return None; }
+                    }
+                    let sys = &world.systems[sys_key];
+                    let alliance_fleets: Vec<_> = sys.fleets.iter()
+                        .copied()
+                        .filter(|&k| world.fleets.get(k).map(|f| f.is_alliance).unwrap_or(false))
+                        .collect();
+                    let empire_fleets: Vec<_> = sys.fleets.iter()
+                        .copied()
+                        .filter(|&k| world.fleets.get(k).map(|f| !f.is_alliance).unwrap_or(false))
+                        .collect();
+                    if !alliance_fleets.is_empty() && !empire_fleets.is_empty() {
+                        Some((sys_key, alliance_fleets[0], empire_fleets[0]))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            for (sys_key, atk_fleet, def_fleet) in combat_triggers {
+                let sys_name = world.systems.get(sys_key)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "Unknown".into());
+
+                // Generate RNG rolls: 256 rolls covers fleets up to 16 ships each.
+                let combat_rolls: Vec<f64> =
+                    (0..256).map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                let space_result = CombatSystem::resolve_space(
+                    &world, atk_fleet, def_fleet, sys_key,
+                    2, // medium difficulty
+                    &combat_rolls,
+                    current_tick,
+                );
+
+                // Apply ship damage: reduce counts proportional to destroyed hulls.
+                apply_space_combat_result(&space_result, &mut world);
+                // Record combat cooldown to prevent infinite re-trigger on draws.
+                combat_cooldowns.insert(sys_key, current_tick);
+
+                let winner_str = match space_result.winner {
+                    CombatSide::Attacker => "Alliance victory",
+                    CombatSide::Defender => "Empire victory",
+                    CombatSide::Draw     => "Draw",
+                };
+                msg_log.push(GameMessage::at_system(
+                    current_tick,
+                    format!("Space battle at {} — {}", sys_name, winner_str),
+                    MessageCategory::Combat,
+                    sys_key,
+                ));
+                #[cfg(not(target_arch = "wasm32"))]
+                audio_engine.play_sfx(SfxKind::FleetArrival, &audio_vol);
+
+                // Ground combat: if attacker wins space battle and system has enemy troops.
+                if space_result.winner == CombatSide::Attacker {
+                    let ground_rolls: Vec<f64> =
+                        (0..256).map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                    let ground_result = CombatSystem::resolve_ground(
+                        &world, sys_key, true, // alliance is attacker
+                        &ground_rolls, current_tick,
+                    );
+                    apply_ground_combat_result(&ground_result, &mut world);
+
+                    if !ground_result.troop_damage.is_empty() {
+                        let ground_str = match ground_result.winner {
+                            CombatSide::Attacker => "Alliance ground victory",
+                            CombatSide::Defender => "Empire ground holds",
+                            CombatSide::Draw     => "Ground combat draw",
+                        };
+                        msg_log.push(GameMessage::at_system(
+                            current_tick,
+                            format!("Ground battle at {} — {}", sys_name, ground_str),
+                            MessageCategory::Combat,
+                            sys_key,
+                        ));
+                    }
+
+                    // Orbital bombardment: empire fleet bombards remaining defenders.
+                    let brd_result = BombardmentSystem::resolve_bombardment(
+                        &world, atk_fleet, sys_key, 2, current_tick,
+                    );
+                    if brd_result.damage > 0 {
+                        msg_log.push(GameMessage::at_system(
+                            current_tick,
+                            format!(
+                                "Orbital bombardment at {} — {} damage",
+                                sys_name, brd_result.damage
+                            ),
+                            MessageCategory::Combat,
+                            sys_key,
+                        ));
+                    }
+                }
             }
 
             // ── Fog of war ──────────────────────────────────────────────────
@@ -554,8 +660,15 @@ fn apply_panel_action(
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| "unknown".into());
             let kind_name = match kind {
-                MissionKind::Diplomacy => "Diplomacy",
-                MissionKind::Recruitment => "Recruitment",
+                MissionKind::Diplomacy      => "Diplomacy",
+                MissionKind::Recruitment    => "Recruitment",
+                MissionKind::Sabotage       => "Sabotage",
+                MissionKind::Assassination  => "Assassination",
+                MissionKind::Espionage      => "Espionage",
+                MissionKind::Rescue         => "Rescue",
+                MissionKind::Abduction      => "Abduction",
+                MissionKind::InciteUprising => "Incite Uprising",
+                MissionKind::Autoscrap      => "Autoscrap",
             };
             msg_log.push(GameMessage::at_system(
                 clock.tick,
@@ -567,6 +680,13 @@ fn apply_panel_action(
         PanelAction::CancelMission(id) => {
             mission_state.cancel(id);
         }
+        // Save/load actions are handled by the caller before dispatching here;
+        // they require access to the full save state and are not routed through
+        // this helper.
+        PanelAction::SaveGame { .. }
+        | PanelAction::LoadGame { .. }
+        | PanelAction::DeleteSave { .. }
+        | PanelAction::CloseSaveLoadPanel => {}
     }
 }
 
@@ -586,8 +706,15 @@ fn apply_mission_result(
         MissionFaction::Empire => "Empire",
     };
     let kind_name = match result.kind {
-        MissionKind::Diplomacy => "Diplomacy",
-        MissionKind::Recruitment => "Recruitment",
+        MissionKind::Diplomacy      => "Diplomacy",
+        MissionKind::Recruitment    => "Recruitment",
+        MissionKind::Sabotage       => "Sabotage",
+        MissionKind::Assassination  => "Assassination",
+        MissionKind::Espionage      => "Espionage",
+        MissionKind::Rescue         => "Rescue",
+        MissionKind::Abduction      => "Abduction",
+        MissionKind::InciteUprising => "Incite Uprising",
+        MissionKind::Autoscrap      => "Autoscrap",
     };
     let sys_name = world
         .systems
@@ -601,8 +728,15 @@ fn apply_mission_result(
     };
 
     let category = match result.kind {
-        MissionKind::Diplomacy => MessageCategory::Diplomacy,
-        MissionKind::Recruitment => MessageCategory::Mission,
+        MissionKind::Diplomacy                => MessageCategory::Diplomacy,
+        MissionKind::InciteUprising           => MessageCategory::Diplomacy,
+        MissionKind::Recruitment
+        | MissionKind::Sabotage
+        | MissionKind::Assassination
+        | MissionKind::Espionage
+        | MissionKind::Rescue
+        | MissionKind::Abduction
+        | MissionKind::Autoscrap              => MessageCategory::Mission,
     };
     log.push(GameMessage::at_system(
         result.tick,
@@ -627,11 +761,7 @@ fn apply_mission_result(
 
     for effect in &result.effects {
         match effect {
-            MissionEffect::PopularityShifted {
-                system,
-                faction,
-                delta,
-            } => {
+            MissionEffect::PopularityShifted { system, faction, delta } => {
                 if let Some(sys) = world.systems.get_mut(*system) {
                     match faction {
                         MissionFaction::Alliance => {
@@ -645,8 +775,29 @@ fn apply_mission_result(
                     }
                 }
             }
-            MissionEffect::CharacterRecruited { .. } => {
-                // Deferred: character location tracking lands with full character system.
+            MissionEffect::UprisingStarted { system, popularity_delta } => {
+                // Shift popularity against the controlling faction.
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    sys.popularity_alliance =
+                        (sys.popularity_alliance + popularity_delta).clamp(0.0, 1.0);
+                    sys.popularity_empire =
+                        (sys.popularity_empire - popularity_delta).clamp(0.0, 1.0);
+                }
+            }
+            MissionEffect::SystemIntelligenceGathered { system, .. } => {
+                // Reveal fog: mark system as explored (full implementation in fog task).
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    sys.exploration_status = rebellion_core::dat::ExplorationStatus::Explored;
+                }
+            }
+            // These effects require richer world state (character capture list, facility
+            // indexing) that lands with the full espionage system. Stubs for now.
+            MissionEffect::CharacterRecruited { .. }
+            | MissionEffect::FacilitySabotaged { .. }
+            | MissionEffect::CharacterKilled { .. }
+            | MissionEffect::CharacterCaptured { .. }
+            | MissionEffect::CharacterRescued { .. } => {
+                // Deferred: full implementation in espionage system (task #14 continuation).
             }
         }
     }
@@ -719,6 +870,108 @@ fn apply_event_actions(
                 // Deferred: character location tracking lands with full character system.
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Combat effect application helpers
+// ---------------------------------------------------------------------------
+
+/// Apply a `SpaceCombatResult` to `GameWorld`.
+///
+/// Maps destroyed hull snapshots (hull_after == 0) back to fleet `capital_ships`
+/// counts. Since `ShipDamageEvent.ship_index` is the per-hull expansion index
+/// (not a class index), we convert: the first `entry.count` indices map to
+/// entry[0], the next `entry.count` to entry[1], and so on.
+/// Ships reduced to hull=0 decrement their entry count.
+/// Entries reaching count=0 are removed; fleets with no ships are removed from
+/// their system's fleet list.
+fn apply_space_combat_result(
+    result: &rebellion_core::combat::SpaceCombatResult,
+    world: &mut GameWorld,
+) {
+    for evt in &result.ship_damage {
+        if evt.hull_after > 0 { continue; } // still alive — no removal needed
+
+        let fleet_key = evt.fleet;
+        // Determine which entry this ship_index falls into.
+        let entry_idx = {
+            let fleet = match world.fleets.get(fleet_key) {
+                Some(f) => f,
+                None => continue,
+            };
+            let mut offset = 0usize;
+            let mut found = None;
+            for (i, entry) in fleet.capital_ships.iter().enumerate() {
+                if evt.ship_index < offset + entry.count as usize {
+                    found = Some(i);
+                    break;
+                }
+                offset += entry.count as usize;
+            }
+            found
+        };
+        if let Some(idx) = entry_idx {
+            if let Some(fleet) = world.fleets.get_mut(fleet_key) {
+                if fleet.capital_ships[idx].count > 0 {
+                    fleet.capital_ships[idx].count -= 1;
+                }
+            }
+        }
+    }
+
+    // Remove empty fleets from system fleet lists.
+    for &fleet_key in &[result.attacker_fleet, result.defender_fleet] {
+        let is_empty = world.fleets.get(fleet_key)
+            .map(|f| f.capital_ships.iter().all(|e| e.count == 0)
+                && f.fighters.iter().all(|e| e.count == 0))
+            .unwrap_or(true);
+        if is_empty {
+            if let Some(fleet) = world.fleets.get(fleet_key) {
+                let loc = fleet.location;
+                if let Some(sys) = world.systems.get_mut(loc) {
+                    sys.fleets.retain(|&k| k != fleet_key);
+                }
+            }
+            world.fleets.remove(fleet_key);
+        }
+    }
+}
+
+/// Apply a `GroundCombatResult` to `GameWorld`.
+///
+/// Updates `TroopUnit.regiment_strength` for all damaged units.
+/// Units reaching strength ≤ 0 are removed from the system's ground_units list.
+fn apply_ground_combat_result(
+    result: &rebellion_core::combat::GroundCombatResult,
+    world: &mut GameWorld,
+) {
+    // Apply the last recorded strength for each troop.
+    let mut final_strengths: std::collections::HashMap<rebellion_core::ids::TroopKey, i16> =
+        std::collections::HashMap::new();
+    for evt in &result.troop_damage {
+        final_strengths.insert(evt.troop, evt.strength_after);
+    }
+    for (&key, &strength) in &final_strengths {
+        if let Some(troop) = world.troops.get_mut(key) {
+            troop.regiment_strength = strength;
+        }
+    }
+
+    // Remove destroyed troops from system.
+    let sys_key = result.system;
+    if let Some(sys) = world.systems.get_mut(sys_key) {
+        sys.ground_units.retain(|&k| {
+            world.troops.get(k).map(|t| t.regiment_strength > 0).unwrap_or(false)
+        });
+    }
+    // Remove destroyed troops from the world arena.
+    let dead: Vec<_> = final_strengths.iter()
+        .filter(|(_, &s)| s <= 0)
+        .map(|(&k, _)| k)
+        .collect();
+    for key in dead {
+        world.troops.remove(key);
     }
 }
 
