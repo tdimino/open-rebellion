@@ -42,6 +42,7 @@ LOG_FILE = SCRIPT_DIR / "logs" / "rebellion-models.jsonl"
 
 MESHY_API_BASE = "https://api.meshy.ai/openapi/v2/text-to-3d"
 WAVESPEED_API_BASE = "https://api.wavespeed.ai/api/v3/wavespeed-ai"
+THREEDAI_API_BASE = "https://api.3daistudio.com/v1/3d-models/trellis2"
 POLL_INTERVAL = 5
 
 # ── Model definitions ─────────────────────────────────────────────────────────
@@ -337,6 +338,14 @@ def get_wavespeed_key() -> str:
     return key
 
 
+def get_threedai_key() -> str:
+    key = os.environ.get("THREEDAI_API_KEY", "")
+    if not key:
+        print("ERROR: THREEDAI_API_KEY not set. Sign up at 3daistudio.com", file=sys.stderr)
+        sys.exit(1)
+    return key
+
+
 def log_event(event: dict) -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a") as f:
@@ -514,6 +523,78 @@ def wavespeed_generate(session: requests.Session, model_id: str, model: dict, qu
     return None
 
 
+# ── Trellis 2 provider (via 3D AI Studio) ────────────────────────────────────
+
+def trellis_generate(session: requests.Session, model_id: str, model: dict, quiet: bool, image_url: str | None = None) -> Path | None:
+    """Generate via Trellis 2 on 3D AI Studio. Image-to-3D only — requires image_url.
+
+    For text-only prompts without a reference image, falls back to generating
+    a concept image via nano-banana-pro first (not yet automated — pass image_url manually).
+    15 credits per generation, decimation_target=5000 for low-poly output.
+    """
+    if not image_url:
+        print(f"  [{model_id}] Trellis 2 requires --image-url (image-to-3D only)", file=sys.stderr)
+        return None
+
+    endpoint = f"{THREEDAI_API_BASE}/generate/"
+    payload = {
+        "image_url": image_url,
+        "resolution": "512",
+        "textures": False,
+        "decimation_target": 5000,
+    }
+
+    if not quiet:
+        print(f"  [{model_id}] Trellis 2 (3D AI Studio) — image-to-3D, 5K tris target...")
+    log_event({"action": "trellis_submit", "model_id": model_id, "image_url": image_url})
+
+    resp = session.post(endpoint, json=payload)
+    if resp.status_code != 200:
+        error = resp.json().get("error", resp.text)
+        print(f"  [{model_id}] Trellis 2 submit FAILED: {error}", file=sys.stderr)
+        log_event({"action": "trellis_failed", "model_id": model_id, "error": error})
+        return None
+
+    task_id = resp.json().get("task_id")
+    if not task_id:
+        print(f"  [{model_id}] Trellis 2: no task_id in response", file=sys.stderr)
+        return None
+
+    if not quiet:
+        print(f"  [{model_id}] Task submitted: {task_id}")
+
+    # Poll for completion
+    status_url = f"{THREEDAI_API_BASE}/status/{task_id}"
+    for _ in range(60):  # 5 min max
+        time.sleep(POLL_INTERVAL)
+        poll_resp = session.get(status_url)
+        poll_resp.raise_for_status()
+        poll_data = poll_resp.json()
+        status = poll_data.get("status", "unknown")
+
+        if status == "completed":
+            glb_url = poll_data.get("result_url") or poll_data.get("output_url")
+            if not glb_url:
+                # Try nested result
+                glb_url = poll_data.get("result", {}).get("glb_url")
+            if not glb_url:
+                print(f"  [{model_id}] Trellis 2 completed but no GLB URL in response", file=sys.stderr)
+                print(f"  Response keys: {list(poll_data.keys())}", file=sys.stderr)
+                return None
+            if not quiet:
+                print(f"  [{model_id}] Complete!")
+            return download_glb(session, glb_url, model_id, "-trellis2")
+
+        if status == "failed":
+            error = poll_data.get("error", "unknown")
+            print(f"  [{model_id}] Trellis 2 FAILED: {error}", file=sys.stderr)
+            log_event({"action": "trellis_failed", "model_id": model_id, "error": error})
+            return None
+
+    print(f"  [{model_id}] Trellis 2 timed out after 5 min", file=sys.stderr)
+    return None
+
+
 # ── Shared utilities ──────────────────────────────────────────────────────────
 
 def download_glb(session: requests.Session, url: str, model_id: str, suffix: str) -> Path | None:
@@ -540,8 +621,9 @@ def main() -> None:
     parser.add_argument("--models", nargs="+", help="Specific model IDs to generate")
     parser.add_argument("--list", action="store_true", help="List all model IDs")
     parser.add_argument("--status", action="store_true", help="Show staging directory contents")
-    parser.add_argument("--provider", choices=["hunyuan", "meshy", "wavespeed", "both"], default="both",
-                        help="Which provider to use (default: both, per model config). wavespeed=$0.0225/model.")
+    parser.add_argument("--provider", choices=["hunyuan", "meshy", "wavespeed", "trellis", "both"], default="both",
+                        help="Which provider to use (default: both, per model config). wavespeed=$0.0225, trellis=15 credits.")
+    parser.add_argument("--image-url", help="Reference image URL for Trellis 2 image-to-3D")
     parser.add_argument("--skip-refine", action="store_true", help="Meshy preview only")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
     args = parser.parse_args()
@@ -575,6 +657,7 @@ def main() -> None:
     needs_hunyuan = args.provider in ("hunyuan", "both")
     needs_meshy = args.provider in ("meshy", "both")
     needs_wavespeed = args.provider == "wavespeed"
+    needs_trellis = args.provider == "trellis"
 
     if needs_hunyuan:
         get_fal_key()  # validates FAL_KEY is set
@@ -591,6 +674,13 @@ def main() -> None:
         wavespeed_session = requests.Session()
         wavespeed_session.headers["Authorization"] = f"Bearer {key}"
         wavespeed_session.headers["Content-Type"] = "application/json"
+
+    trellis_session = None
+    if needs_trellis:
+        key = get_threedai_key()
+        trellis_session = requests.Session()
+        trellis_session.headers["Authorization"] = f"Bearer {key}"
+        trellis_session.headers["Content-Type"] = "application/json"
 
     print(f"Generating {len(model_ids)} model(s)...\n")
 
@@ -611,7 +701,9 @@ def main() -> None:
         print(f"[{mid}] {model['name']} via {provider}")
 
         output = None
-        if provider == "wavespeed" and wavespeed_session:
+        if provider == "trellis" and trellis_session:
+            output = trellis_generate(trellis_session, mid, model, args.quiet, args.image_url)
+        elif provider == "wavespeed" and wavespeed_session:
             output = wavespeed_generate(wavespeed_session, mid, model, args.quiet)
         elif provider == "hunyuan":
             output = hunyuan_generate(mid, model, args.quiet)
