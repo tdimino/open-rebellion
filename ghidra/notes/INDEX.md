@@ -1,6 +1,6 @@
 # Ghidra RE Notes — Index
 
-**~4,900 decompiled C files, 8 Jython scripts, 11 markdown docs, 4,179 lines of scholar analysis**
+**5,127 decompiled C files, 8 Jython scripts, 14 markdown docs, 6,049 lines of scholar analysis**
 
 ## Scholar Documents
 
@@ -10,6 +10,9 @@
 | [modders-taxonomy.md](modders-taxonomy.md) | 805 | 10 game systems categorized for total conversion mods (Yuuzhan Vong, Thrawn, KOTOR). Function addresses, GNPRTB params, mod guidance per system |
 | [rust-implementation-guide.md](rust-implementation-guide.md) | 1,267 | Maps decompiled C to Open Rebellion's `advance()` pattern. `CombatSystem::resolve_space()`, `GnprtbParams`, `MstbTable`, 15 new CapitalShipClass fields |
 | [cpp-class-hierarchy.md](cpp-class-hierarchy.md) | 445 | CRebObject → CNotifyObject → CCombatUnit hierarchy. 19 vtable slots, 6 vtable pointer constants, complete field layout, setter-notify-event pattern |
+| [entity-system.md](entity-system.md) | 668 | Characters (8 enhanced skills, Force/Jedi 6-tier system, betrayal), game objects (5 destruction variants), fleets (4 events), factions (Alliance/Empire/Neutral bits) |
+| [mission-event-cookbook.md](mission-event-cookbook.md) | 724 | 9+ mission types (FUN_0050d5a0 13-case switch), 4 story event chains (Dagobah, Vader, Palace, Bounty), event ID registry (0x12c-0x370), Thrawn Campaign example |
+| [economy-systems.md](economy-systems.md) | 478 | Resources (energy/material at +0x5c-0x68), 5 ControlKind states, uprising (UPRIS1TB/2TB), blockade manufacturing halt, repair (GNPRTB 0x305/0x386), 36 system notif handlers |
 
 ## Reference Documents
 
