@@ -23,3 +23,9 @@ ghidra/
 *.rep/
 *.lock
 *.lock~
+# Reference images (extracted from game, not redistributable)
+# Keep prompt templates, ignore the actual PNGs
+assets/references/**/*.png
+
+# Generated assets (large, reproducible)
+data/generated/
