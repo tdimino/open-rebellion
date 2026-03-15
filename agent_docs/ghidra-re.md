@@ -10,7 +10,7 @@ REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,900 decompil
 | Bombardment formula | **Decoded**: `sqrt(delta²) / GNPRTB[0x1400]` |
 | Space combat pipeline | 7 phases mapped, vtable dispatch identified |
 | Ground combat | Troop iteration at +0x96, per-unit via vtable +0x330 |
-| GNPRTB parameters | **97 mapped**: 26 general + 71 combat |
+| GNPRTB parameters | **111 mapped**: 34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side) |
 | Game object layout | 10+ field offsets confirmed across all entity types |
 | C++ class hierarchy | Reconstructed: CRebObject → CNotifyObject → CCombatUnit |
 | Entity type codes | 8 family byte ranges identified |
@@ -45,8 +45,8 @@ REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,900 decompil
 
 ### GNPRTB Parameter System
 Two binding tables map GNPRTB parameter IDs to global data addresses:
-- **FUN_0053e450**: 26 general parameters (IDs 0x0a00-0x0a21) — travel, skills, economy
-- **FUN_0055cb60**: 71 combat parameters (IDs 0x1400-0x1445) — damage, shields, bombardment
+- **FUN_0053e450**: 34 general bindings (28 base + 6 per-side, IDs 0x0a00-0x0a21) — travel, skills, economy
+- **FUN_0055cb60**: 77 combat parameters (IDs 0x1400-0x1445) — damage, shields, bombardment
 - `DAT_006bb6e8` = parameter 0x1400 = bombardment base divisor
 - `DAT_00661a88` = difficulty modifier table
 - Runtime struct: 68 bytes (vtable + base fields + 8 i32 difficulty values at offset 36)

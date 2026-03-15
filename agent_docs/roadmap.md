@@ -53,7 +53,7 @@ Delivered:
 4. Victory conditions (capture enemy HQ, destroy Death Star / find Rebel base)
 5. 3D tactical models: nano-banana-pro concept art → Hunyuan3D Pro/Meshy → Blender sprite sheets. Pipeline proven in World War Watcher (14 models). See `@agent_docs/assets.md`.
 
-Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain fully traced, bombardment formula decoded, 97 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for 7 scholar docs (4,179 lines) and 5,127 decompiled C files.
+Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain fully traced, bombardment formula decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for 7 scholar docs (4,179 lines) and 5,127 decompiled C files.
 
 ## Full Parity
 *Feature-complete*
@@ -79,7 +79,7 @@ Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain 
 1. **Launch Knesset Tiamat** -- War Machine implementation swarm (combat, missions, victory, save/load)
 2. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
 3. **WASM build verification** -- confirmed 3.4MB artifact at v0.3.0
-4. **Ghidra RE** -- COMPLETE. 5,127 functions decompiled, 7 scholar docs, 97 GNPRTB params, C++ hierarchy reconstructed.
+4. **Ghidra RE** -- COMPLETE. 5,127 functions decompiled, 7 scholar docs, 111 GNPRTB params, C++ hierarchy reconstructed.
 
 ## Known Technical Debt
 

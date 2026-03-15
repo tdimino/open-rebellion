@@ -18,7 +18,7 @@
 
 | File | Lines | Content |
 |------|-------|---------|
-| [combat-formulas.md](combat-formulas.md) | ~200 | **Master reference** — binary overview, 97 GNPRTB mappings, confirmed functions, scripted events, Ghidra scripts |
+| [combat-formulas.md](combat-formulas.md) | ~200 | **Master reference** — binary overview, 111 GNPRTB mappings, confirmed functions, scripted events, Ghidra scripts |
 | [COMBAT-SUMMARY.md](COMBAT-SUMMARY.md) | ~115 | Combat call chain diagram, confirmed formulas, entity type codes, implementation readiness |
 
 ## Combat Subsystem Docs
@@ -58,7 +58,7 @@
 
 | Function | Lines | Purpose |
 |----------|-------|---------|
-| FUN_0053e450 | 240 | General parameter binding (26 params: 0x0a00-0x0a21) |
+| FUN_0053e450 | 240 | General parameter binding (34 bindings: 28 base + 6 per-side, IDs 0x0a00-0x0a21) |
 | FUN_0055cb60 | 84 | Combat parameter binding (71 params: 0x1400-0x1445) |
 | FUN_00585640 | 27 | GNPRTB entry constructor (68-byte runtime struct, 8 i32 values) |
 | FUN_00569280 | 12 | DAT type registry (5 parser types by info string) |

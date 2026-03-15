@@ -27,7 +27,7 @@ Each entry includes:
   - `entity-system.md` — characters, Force/Jedi, factions, fleets (in progress)
   - `mission-event-cookbook.md` — 9 mission types, 4 story event chains, modder guide (in progress)
   - `economy-systems.md` — resources, control, uprising, blockade, repair (in progress)
-- **97 GNPRTB parameters mapped**: 26 general (0x0a00-0x0a21) + 71 combat (0x1400-0x1445) with global address bindings
+- **111 GNPRTB parameters mapped**: 34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side) = 111 total with global address bindings
 - **8 Ghidra Jython scripts** for automated binary analysis (string search, xref tracing, function catalog, GNPRTB tracing)
 - **Bombardment formula decoded**: `damage = sqrt((atk-def)²) / GNPRTB[0x1400]` with difficulty modifier
 - **Space combat 7-phase pipeline** fully mapped: weapon fire → shield absorb → hull damage → fighter engage → result

@@ -214,7 +214,7 @@ if damage == 0: damage = 1   // minimum 1 damage always dealt
 
 ## 3. GNPRTB Parameter System
 
-*The 26 general + 71 combat parameter bindings. GNPRTB.DAT has 213 entries × 8 difficulty values = 1,704 i32 scalars. SDPRTB.DAT has 35 entries × 76 bytes each.*
+*34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side) = 111 total parameter bindings. GNPRTB.DAT has 213 entries × 8 difficulty values = 1,704 i32 scalars. SDPRTB.DAT has 35 entries × 76 bytes each.*
 
 ### Parameter Table Loader
 

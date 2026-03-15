@@ -54,7 +54,7 @@ agent_docs/simulation.md -- 7 simulation systems, stateless advance() pattern, s
 agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
-agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: ~4,900 decompiled functions, combat formulas, 97 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
+agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: 5,127 decompiled functions, combat formulas, 111 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
 agent_docs/assets.md -- Asset pipeline: 4 pipelines (HD upscaling, 3D models, sprite sheets, reference image generation). 11 reference collections, 4 providers, ASSET ARCHAEOLOGY STATION viewer. Read when working on visual assets.
 
 ## Reports

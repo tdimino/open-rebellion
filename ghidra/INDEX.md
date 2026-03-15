@@ -53,7 +53,7 @@ ghidra/
 
 - **STRATEGY.DLL is resource-only** — all game logic in REBEXE.EXE
 - **Bombardment formula**: `damage = sqrt((atk[0]-def[0])² + (atk[1]-def[1])²) / GNPRTB[0x1400]`
-- **97 GNPRTB parameters mapped**: 26 general (0x0a00-0x0a21) + 71 combat (0x1400-0x1445)
+- **111 GNPRTB parameters mapped**: 34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side)
 - **Hull and squad_size share offset +0x60** — polymorphism by vtable, not separate structs
 - **Shield/weapon recharge packed into 4-bit nibbles** at offset +0x64
 - **Observer/notification architecture** — all combat dispatched via vtable, not direct calls

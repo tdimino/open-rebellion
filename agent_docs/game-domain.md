@@ -87,7 +87,7 @@ See `@agent_docs/simulation.md` for full API reference.
 
 ## Unimplemented Mechanics
 
-- **Combat**: space (fleet engagement, 4-arc weapons, shields) and ground (troops + orbital bombardment). **RE COMPLETE** — 5,127 functions decompiled from REBEXE.EXE. Bombardment formula decoded (Euclidean distance / GNPRTB). Space combat 7-phase pipeline mapped. 71 combat GNPRTB parameters identified. See `ghidra/notes/` for full docs.
+- **Combat**: space (fleet engagement, 4-arc weapons, shields) and ground (troops + orbital bombardment). **RE COMPLETE** — 5,127 functions decompiled from REBEXE.EXE. Bombardment formula decoded (Euclidean distance / GNPRTB). Space combat 7-phase pipeline mapped. 111 GNPRTB parameters mapped (34 general + 77 combat). See `ghidra/notes/` for full docs.
 - **Espionage missions**: sabotage, assassination, abduction, rescue, incite uprising (diplomacy and recruitment ARE implemented)
 - **Research**: tech tree via `research_order` + `research_difficulty` per unit class
 - **Probe droids / sensor range**: fog of war currently uses fleet presence only, no sensor radius
