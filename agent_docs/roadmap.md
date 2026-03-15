@@ -44,7 +44,7 @@ Delivered:
 - Audio system via quad-snd (CoreAudio/ALSA/WebAudio)
 - Main loop integration: all draw calls + event hooks wired
 
-## War Machine -- UNBLOCKED (RE complete, ready to implement)
+## War Machine -- COMPLETE
 *Complete strategy game*
 
 1. Space combat: auto-resolve first, then tactical 2D view

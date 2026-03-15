@@ -13,7 +13,53 @@ Each entry includes:
 
 ---
 
-## [Unreleased] - Ghidra RE
+## [v0.4.0] - 2026-03-15
+
+**Completion:** ~68% | **Category:** Combat + Missions + Victory + Save/Load | **Milestone:** War Machine COMPLETE
+
+### Added
+- **Space combat auto-resolve**: 7-phase pipeline (weapon fire → shield absorb → hull damage → fighter engage → result) with CombatPhaseFlags bitfield matching original C++ architecture
+- **Ground combat**: troop iteration with regiment_strength comparison, per-unit resolution
+- **Orbital bombardment**: Euclidean distance formula `sqrt(delta²) / GNPRTB[0x1400]` with difficulty modifier, minimum 1 damage
+- **7 new mission types**: Sabotage(6), Assassination(7), Espionage, Rescue, Abduction, InciteUprising, SubdueUprising — all wired to MSTB probability tables
+- **Research system**: tech tree progression using research_order/research_difficulty from DAT
+- **Jedi training**: 4-tier Force progression (Aware → Potential → Training → Experienced)
+- **AI espionage**: AI dispatches sabotage, assassination, espionage missions against player
+- **Victory conditions**: HQ capture, Death Star destruction, galactic conquest detection
+- **Death Star**: construction countdown, planet destruction (fires when alive_flag bit0==0), NearbyWarning scan
+- **Blockade mechanics**: fleet presence blocks manufacturing, TroopRegDestroyedRunningBlockade (event 0x340)
+- **Uprising system**: incite (UPRIS1TB, 3 thresholds) / subdue (UPRIS2TB, 4 thresholds) with 10-tick incident cooldown
+- **Save/load system**: bincode serialization with OPENREB header, 10 save slots, auto-save UI
+- **15 new CapitalShipClass fields**: weapon arcs (turbolaser/ion/laser × 4 arcs), shield_strength, shield_recharge_rate, bombardment, damage_control, detection, maneuverability
+- **ShipInstance type**: per-hull combat state (hull_current, shield_weapon_packed nibbles, alive)
+- **GnprtbParams**: 213 entries × 8 difficulty values loaded from GNPRTB.DAT, `value(param_id, difficulty)` accessor
+- **MstbTable**: 19 probability tables loaded with linear-interpolation `lookup(skill_score)`
+- **Victory/defeat screen**: egui modal with faction-colored narrative and game stats
+- **Combat results UI**: message log integration for space/ground/bombardment outcomes
+- **Combat cooldown**: 5-tick per-system cooldown prevents infinite re-trigger on draws
+
+### Fixed (from 4 parallel code reviews — 12 bugs total)
+- Assassination/Abduction/Rescue targeted the mission agent instead of the victim — added `target_character` field
+- Death Star ConstructionCompleted re-emitted every tick — now self-clears
+- Victory screen dim layer invisible (Order::Background → Order::Foreground)
+- UprisingIncident fired every tick with no cooldown — added 10-tick cooldown
+- MstbTable::lookup() silently truncated negative interpolation — added .max(0.0) clamp
+- GnprtbParams struct doc described wrong 4-level mapping — corrected to 8-level
+- Space combat phase 3 gate inverted (ACTIVE && PHASES_ENABLED → ACTIVE && !PHASES_ENABLED)
+- Alt-shield path used range 0x71-0x72 — corrected to exact == 0x71
+- Fighter losses never applied (empty Vec) — now computed from initial vs surviving counts
+- Combat trigger re-fired every tick on draws — added per-system cooldown
+- Bombardment comment contradicted code — clarified minimum-1 semantics
+
+### Technical
+- Knesset Tiamat swarm: 4 Sonnet daborot (Karme, Tehom, Al-Uzza, Manat) + Opus lead
+- 23 tasks completed, 188 tests passing
+- 4 parallel code reviewers found and fixed 12 bugs before release
+- New crates/modules: combat.rs, bombardment.rs, victory.rs, blockade.rs, uprising.rs, death_star.rs, research.rs, jedi.rs, espionage effects in missions.rs, save.rs, save_load.rs, victory_screen.rs, combat_view.rs
+
+---
+
+## [v0.3.0+RE] - 2026-03-15
 
 **Completion:** ~42% (unchanged) | **Category:** Reverse Engineering | **Milestone:** War Machine UNBLOCKED
 
@@ -133,7 +179,7 @@ Each entry includes:
 
 | Version | Date | Milestone | Completion | Summary |
 |---------|------|-----------|------------|---------|
-| *next* | — | War Machine | ~68% est. | Combat, missions, victory, save/load |
+| **v0.4.0** | **2026-03-15** | **War Machine** | **~68%** | **Combat, 9 missions, victory, save/load, Death Star** |
 | v0.3.0+RE | 2026-03-15 | Ghidra RE | ~42% | 5,127 decompiled functions, combat formulas, GNPRTB mapped |
 | v0.3.0 | 2026-03-14 | War Room | ~42% | Full UI integration, audio, WASM build, fog/fleet overlays |
 | v0.2.0 | 2026-03-13 | Living Galaxy | ~30% | 7 simulation systems, mod loader, 51/51 DAT parsers |

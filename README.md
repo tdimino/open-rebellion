@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Phase-War%20Machine-yellow.svg" alt="Phase">
+  <img src="https://img.shields.io/badge/Phase-War%20Machine%20Complete-green.svg" alt="Phase">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
 </p>
 
@@ -96,7 +96,7 @@ The original game's binary data files (51 DAT files) and executable (REBEXE.EXE,
 | **Galaxy Viewer** | Complete | Interactive star map, 51/51 DAT parsers, WASM build |
 | **Living Galaxy** | Complete | Game clock, missions, manufacturing, AI, events, mod loader |
 | **War Room** | Complete | Player UI, fleet movement, fog of war, encyclopedia, audio |
-| **War Machine** | Next | Space and ground combat, Death Star, victory conditions |
+| **War Machine** | Complete | Space and ground combat, Death Star, victory conditions, save/load |
 | **Full Parity** | Planned | All missions, scripted events, Jedi training, save/load |
 | **Mod Workshop** | Planned | Mod manager, asset generation, community distribution |
 

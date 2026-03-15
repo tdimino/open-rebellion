@@ -1,6 +1,6 @@
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.3.0 (~42% complete). Living Galaxy + War Room COMPLETE. Ghidra RE of REBEXE.EXE COMPLETE (5,127 functions decompiled). War Machine implementation UNBLOCKED.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.4.0 (~68% complete). Living Galaxy + War Room + War Machine COMPLETE. Combat, 9 mission types, victory conditions, save/load, Death Star. 188 tests passing.
 
 ## Build
 
