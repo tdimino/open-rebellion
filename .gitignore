@@ -7,9 +7,14 @@
 # Game data (not redistributable)
 data/base/*.DAT
 data/base/*.DLL
+data/base/EData/
 
 # Exported JSON (generated from DAT files)
 data/base/json/
+
+# 3D model staging (raw GLBs from Hunyuan/Meshy, not checked in)
+scripts/models-staging/
+scripts/logs/
 
 # Ghidra project files (binary, large)
 ghidra/

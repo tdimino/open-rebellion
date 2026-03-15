@@ -1,0 +1,234 @@
+# Asset Pipeline
+
+Three pipelines handle HD upscaling, 3D model generation, and encyclopedia content. Read when adding visual assets, generating models, or working on the encyclopedia viewer.
+
+## Differentiation from swrebellion.net
+
+The swrebellion.net community's 25th Anniversary pack (2023) substitutes original art with new interpretations. Our approach: **upscale the original 1998 assets with 2026 AI technology** and **generate 3D models for tactical combat**. Authentic aesthetic, freed from Win32.
+
+## Pipeline 1: HD Upscaling
+
+### Source Assets
+
+Original BMPs from game's installed directories:
+
+| Category | Count | Source | EDATA Range |
+|----------|-------|--------|-------------|
+| Facilities | ~14 | EData/ | 001-014 |
+| Troops | ~10 | EData/ | 015-024 |
+| Special forces | ~9 | EData/ | 025-033 |
+| Fighters | ~8 | EData/ | 034-041 |
+| Capital ships | ~30 | EData/ | 042-071 |
+| Characters (major) | ~6 | EData/ | 072-077 |
+| Characters (minor) | ~54 | EData/ | 078-137 |
+| Systems (planets) | ~200 | EData/ | 138+ |
+| DLL sprites | ~1500+ | GOKRES/STRATEGY/TACTICAL.DLL | Resource IDs |
+
+**Prerequisite**: `data/base/EData/` must contain extracted BMPs from a legal game copy. Extracted game data also at `~/Desktop/Programming/star-wars-rebellion/GData/`.
+
+### Upscaling Tools
+
+**Primary: waifu2x-ncnn-vulkan**
+
+```bash
+brew install waifu2x-ncnn-vulkan
+```
+
+Zero Python friction. Native Apple Silicon via Vulkan. Denoise level 1 preserves detail while removing 256-color palette dithering artifacts.
+
+**Important**: Do not call waifu2x directly on `EData/` — the original BMPs are indexed-palette and use extensionless names (`EDATA.042`). Use `scripts/upscale-assets.py` which handles palette→RGB conversion and renames output to `EDATA_NNN.png` (the format `encyclopedia.rs` expects).
+
+**Comparison: PBRify_UpscalerV4 via chaiNNer or Upscayl**
+
+OpenModelDB's **PBRify_UpscalerV4** (Kim2091, May 2025) — DAT2 architecture, purpose-built for 2000s-era game textures with DDS compression removal. Supersedes the older 4x SGI model by the same author. **UltraSharpV2** (Kim2091, May 2025) is a strong secondary comparison. Download `.pth` files from openmodeldb.info, load in chaiNNer (chainner.app, macOS MPS backend) or **Upscayl v2.5** (Feb 2026, free, wraps ncnn-vulkan with custom model import).
+
+### Scale Factors
+
+| Source | Factor | Output | Use Case |
+|--------|--------|--------|----------|
+| 64x64 | 4x | 256x256 | Unit icons, small sprites |
+| 128x128 | 4x | 512x512 | Character portraits, ship profiles |
+| 256x256 | 4x | 1024x1024 | Encyclopedia full images |
+
+### BMP Preprocessing (Critical)
+
+Rebellion BMPs are 256-color indexed palette. All upscalers require RGB:
+```python
+from PIL import Image
+img = Image.open("EDATA.042").convert('RGB')  # palette → RGB before upscaling
+```
+
+### Batch Script
+
+```bash
+uv run scripts/upscale-assets.py                    # All EData BMPs
+uv run scripts/upscale-assets.py --input EDATA.042   # Single file
+uv run scripts/upscale-assets.py --scale 8            # 8x for hero assets
+uv run scripts/upscale-assets.py --dry-run            # Preview without processing
+```
+
+### File Organization
+
+```
+data/
+├── base/              # Original game data (user-extracted, gitignored)
+│   ├── *.DAT
+│   ├── EData/         # Original BMPs (EDATA.NNN, 3-digit zero-padded)
+│   └── TEXTSTRA.DLL
+├── hd/                # AI-upscaled PNGs (generated, checked in)
+│   ├── EData/         # EDATA_NNN.png (underscore, PNG extension)
+│   ├── sprites/       # Upscaled DLL sprites
+│   └── manifest.json
+└── models/            # 3D tactical models (final outputs only)
+    ├── optimized/     # DRACO-compressed GLBs (from prepare-rebellion-models.sh)
+    └── sprites/       # Pre-rendered sprite sheets (from Blender)
+
+scripts/
+├── models-staging/    # Raw GLBs from Hunyuan/Meshy (gitignored, not in data/)
+└── logs/              # JSONL generation logs (gitignored)
+```
+
+### Code Integration
+
+`crates/rebellion-render/src/encyclopedia.rs` loads HD PNGs with BMP fallback:
+
+1. Check `data/hd/EData/EDATA_NNN.png` (HD upscaled)
+2. Fall back to `data/base/EData/EDATA.NNN` (original BMP)
+
+Requires `"png"` feature in `rebellion-render/Cargo.toml`:
+```toml
+image = { version = "0.25", default-features = false, features = ["bmp", "png"] }
+```
+
+---
+
+## Pipeline 2: 3D Tactical Combat Models
+
+### Architecture: Pre-Rendered Sprite Sheets
+
+macroquad 0.4 has no native glTF/GLB loading (GitHub issue #456, still open). Solution: pre-render 3D models to sprite sheets via Blender — authentically how the original 1998 game worked.
+
+### 3D Generation: Dual-Provider Strategy
+
+Adapted from World War Watcher's proven pipeline (14 Hunyuan3D Pro models).
+
+**Primary: Hunyuan3D Pro via fal.ai**
+- Endpoint: `fal-ai/hunyuan-3d/v3.1/pro/image-to-3d`
+- Cost: ~$0.375/model (Geometry $0.225 + 80K faces $0.15)
+- 63 models = **~$23.63 total**
+- Use synchronous `fal.run` (not queue API)
+- `generate_type: "Geometry"` — untextured mesh for custom rendering
+
+**Budget: WaveSpeedAI Hunyuan3D v3.1 Rapid**
+- Endpoint: WaveSpeedAI API (Feb 2026)
+- Cost: **$0.0225/model** — 16x cheaper than fal.ai Pro
+- Single required parameter: `image` (reference image URL)
+- Ideal for bulk iteration on non-hero units
+
+**Comparison: Meshy (fallback)**
+- `--model-type lowpoly` (Meshy-6 Low Poly Mode)
+- 20 credits preview, 30 credits with texture
+- Use existing skill: `uv run ~/.claude/skills/meshy/scripts/meshy_text_to_3d.py`
+
+**Rapid iteration: Microsoft Trellis 2**
+- Available via 3D AI Studio and Scenario (March 2026)
+- Cost: ~$0.05-0.10/model, 1-3 min, PBR always included
+- Image-only input, automatic polygon count (no user control)
+- Use for cheap drafts before committing to Hunyuan Pro for hero assets
+
+### Concept Art: nano-banana-pro → Reference Images
+
+```
+Star Wars [unit name], orthographic 3/4 front view,
+white background, flat cel-shaded, no drop shadows, no text,
+no labels, no annotations, no dimension lines, no arrows,
+clean silhouette, stylized low-poly game asset, 1024x1024
+```
+
+**CRITICAL**: Hunyuan reproduces annotation text as 3D geometry. Negative prompt is mandatory.
+
+### Asset Split
+
+| Category | Count | Method | Rationale |
+|----------|-------|--------|-----------|
+| Capital ships (hero) | ~10 | Image-to-3D (Hunyuan) | Iconic silhouettes need reference |
+| Capital ships (generic) | ~20 | Text-to-3D (Meshy) | Less silhouette-critical |
+| Fighters | 8 | Image-to-3D (Hunyuan) | All iconic |
+| Troops | 10 | Text-to-3D (Meshy) | Generic ground units |
+| Special forces | 9 | Text-to-3D (Meshy) | Generic spec ops |
+| Defense facilities | 6 | Text-to-3D (Meshy) | Stationary structures |
+
+### Model Optimization Pipeline
+
+```
+Hunyuan3D/Meshy → raw GLBs (scripts/models-staging/)
+  → strip-textures.mjs (geometry only)
+  → gltf-transform optimize (simplify, weld, prune)
+  → gltf-transform draco (14-bit position, edgebreaker)
+  → Blender batch render (8 directional frames)
+  → PNG sprite atlases (data/models/sprites/)
+```
+
+### Scripts
+
+```bash
+# Generate 3D models (Hunyuan + Meshy)
+uv run scripts/generate-rebellion-models.py                    # All models
+uv run scripts/generate-rebellion-models.py --models isd xwing # Specific
+uv run scripts/generate-rebellion-models.py --status           # Check pending
+uv run scripts/generate-rebellion-models.py --provider meshy   # Meshy only
+
+# Optimize GLBs
+bash scripts/prepare-rebellion-models.sh                       # All staging
+bash scripts/prepare-rebellion-models.sh star-destroyer.glb    # Specific
+
+# Render sprite sheets (requires Blender)
+blender --background --python scripts/render-sprite-sheets.py  # All models
+```
+
+### Blender Addons
+
+- **Spritehandler 2** (July 2025) — purpose-built for directional/animated sprite sheet generation, eliminates most custom scripting
+- **Omnidirectional Isometric Render** (itch.io, free, April 2025) — specifically for isometric directional renders
+
+### Sprite Sheet Format
+
+8 directional frames per model (0°, 45°, 90°, ..., 315°):
+- Standard: 128x128 per frame → 1024x128 strip atlas
+- Hero units: 256x256 per frame → 2048x256 strip atlas
+- Output: `data/models/sprites/{unit-id}.png`
+
+### Model Comparison Viewer
+
+Adapted from WWW's `scripts/model-compare.html` — Three.js side-by-side viewer for A/B testing Hunyuan vs Meshy outputs. Auto-detects staging variants.
+
+---
+
+## Pipeline 3: Encyclopedia Content
+
+Original TEXTSTRA.DLL strings extracted via pelite (already implemented). Encyclopedia text entries written from canonical Star Wars sources:
+
+- Store as: `data/encyclopedia.json` mapping `dat_id → { name, description, faction, category }`
+- Render in existing encyclopedia viewer text panel
+
+---
+
+## WWW Pipeline Reference
+
+World War Watcher's 3D pipeline is the direct ancestor. Key files to reference:
+
+| WWW File | Purpose | Adapt For |
+|----------|---------|-----------|
+| `scripts/generate-models.py` | Hunyuan3D fal.ai batch generation | `generate-rebellion-models.py` |
+| `scripts/prepare-models.sh` | GLB optimization + DRACO | `prepare-rebellion-models.sh` |
+| `scripts/strip-textures.mjs` | Remove textures from GLBs | Reuse directly |
+| `scripts/model-compare.html` | Three.js comparison viewer | Adapt for SW units |
+| `agent_docs/3d-models.md` | Pipeline docs, best practices | Reference patterns |
+| `agent_docs/asset-pipeline.md` | Full asset flow diagram | Reference patterns |
+
+### WWW Lessons Learned
+- Hunyuan3D Pro via fal.ai outperformed Meshy — all 14 production models are Hunyuan
+- 3/4 front view reference images produce far better geometry than side views
+- `generate_type: "Geometry"` (untextured) is cheaper and better for custom materials
+- DRACO position quantization: 14-bit minimum (11-bit destroys silhouettes)
+- Always strip textures before optimizing (prevents texture atlas bloat)

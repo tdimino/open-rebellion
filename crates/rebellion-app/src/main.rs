@@ -105,6 +105,13 @@ async fn main() {
     let mut missions_panel_state = MissionsPanelState::default();
     let mut enc_state = EncyclopediaState::new();
     enc_state.set_edata_path(gdata_path.join("EData"));
+    // HD upscaled PNGs live as a sibling of the base data directory.
+    let hd_path = gdata_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("hd")
+        .join("EData");
+    enc_state.set_hd_path(hd_path);
 
     // Panel visibility (mutually exclusive left panels)
     let mut show_officers = false;

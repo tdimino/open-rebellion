@@ -52,7 +52,8 @@ PATH="/usr/bin:$PATH" cargo check
 @agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 @agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 @agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
-@agent_docs/ghidra-re.md -- STRATEGY.DLL reverse engineering: Ghidra setup, MCP bridge, combat formula targets, GNPRTB mapping. Read when doing RE work.
+@agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering: Ghidra setup, MCP bridge, combat formula targets, GNPRTB mapping. Read when doing RE work.
+@agent_docs/assets.md -- Asset pipeline: HD upscaling (waifu2x/chaiNNer), 3D model generation (Hunyuan3D/Meshy), sprite sheet rendering (Blender). Read when working on visual assets.
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
 
 ## Reports

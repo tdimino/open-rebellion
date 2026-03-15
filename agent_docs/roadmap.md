@@ -51,8 +51,9 @@ Delivered:
 2. Ground combat: regiment engagement, orbital bombardment
 3. Blockade mechanics, Death Star construction/destruction
 4. Victory conditions (capture enemy HQ, destroy Death Star / find Rebel base)
+5. 3D tactical models: nano-banana-pro concept art → Hunyuan3D Pro/Meshy → Blender sprite sheets. Pipeline proven in World War Watcher (14 models). See `@agent_docs/assets.md`.
 
-Blocked: Combat formulas live in STRATEGY.DLL (29MB) and TACTICAL.DLL (7.5MB). Need Ghidra RE or community documentation (swrebellion.net forums).
+Blocked: Combat formulas live in REBEXE.EXE (2.8MB, 22,741 functions), NOT STRATEGY.DLL (resource-only, 29MB sprites, 9KB of CRT boilerplate). swrebellion.net community has no RE work — empirical data editing only. We're on our own with Ghidra. See `@agent_docs/ghidra-re.md`.
 
 ## Full Parity
 *Feature-complete*
@@ -62,12 +63,13 @@ Blocked: Combat formulas live in STRATEGY.DLL (29MB) and TACTICAL.DLL (7.5MB). N
 3. Special character abilities (Jedi training, betrayal, decoys)
 4. Video playback (Smacker to WebM), sound effects, music
 5. Save/load with mod compatibility metadata (bincode + mod version hash)
+6. HD asset pack: all original BMPs upscaled 4x via waifu2x-ncnn-vulkan (4x SGI model via chaiNNer for comparison). PNG format, `data/hd/` with fallback to originals. See `@agent_docs/assets.md`.
 
 ## Mod Workshop
 *Release candidate*
 
 1. Mod manager UI (egui)
-2. AI asset generation toolkit (nano-banana-pro + image-forge + meshy + Qwen3-TTS)
+2. AI asset generation toolkit: nano-banana-pro (concept art) → Hunyuan3D Pro/Meshy (3D models) → Blender (sprite sheets) → waifu2x/chaiNNer (texture upscaling) → image-forge (compositing) + Qwen3-TTS (voice). Modders regenerate any asset via the same pipeline. See `@agent_docs/assets.md`.
 3. Modder documentation + example mods
 4. Hot reload for mod development (notify crate on native)
 5. Distribution: itch.io (web), Homebrew (macOS), GitHub Releases
@@ -76,7 +78,7 @@ Blocked: Combat formulas live in STRATEGY.DLL (29MB) and TACTICAL.DLL (7.5MB). N
 
 1. **WASM build verification** -- `bash scripts/build-wasm.sh` with all War Room systems (in progress)
 2. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
-3. **Ghidra RE of STRATEGY.DLL** -- Combat formulas (project created, GhidraMCP bridge active on :8080)
+3. **Ghidra RE of REBEXE.EXE** -- Combat formulas (STRATEGY.DLL is resource-only; project created, GhidraMCP bridge active on :8080)
 4. **Victory conditions implementation** -- capture enemy HQ, destroy Death Star / find Rebel base
 
 ## Known Technical Debt

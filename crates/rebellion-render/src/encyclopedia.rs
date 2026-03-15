@@ -67,8 +67,10 @@ pub struct EncyclopediaState {
     pub tab: EncyclopediaTab,
     /// Selected entity within the current tab (list index).
     pub selected_index: usize,
-    /// Path to the EData/ directory.  Set by the caller before first open.
+    /// Path to the EData/ directory (original BMPs).
     pub edata_path: Option<PathBuf>,
+    /// Path to HD upscaled PNGs directory (checked first, falls back to BMPs).
+    pub hd_path: Option<PathBuf>,
     /// Cached textures keyed by EDATA file number (1-based).
     textures: HashMap<u16, Option<TextureHandle>>,
 }
@@ -82,6 +84,12 @@ impl EncyclopediaState {
     pub fn set_edata_path(&mut self, path: impl Into<PathBuf>) {
         self.edata_path = Some(path.into());
     }
+
+    /// Configure the HD upscaled PNGs directory.  Images here take priority
+    /// over original BMPs.  Expected naming: `EDATA_NNN.png`.
+    pub fn set_hd_path(&mut self, path: impl Into<PathBuf>) {
+        self.hd_path = Some(path.into());
+    }
 }
 
 impl Default for EncyclopediaState {
@@ -91,6 +99,7 @@ impl Default for EncyclopediaState {
             tab: EncyclopediaTab::default(),
             selected_index: 0,
             edata_path: None,
+            hd_path: None,
             textures: HashMap::new(),
         }
     }
@@ -369,9 +378,15 @@ fn show_edata_image(
     edata_n: u16,
     state: &mut EncyclopediaState,
 ) {
-    // Lazy-load the texture if not yet cached.
+    // Lazy-load the texture if not yet cached.  HD PNGs take priority over
+    // original BMPs — check hd_path first, fall back to edata_path.
     if !state.textures.contains_key(&edata_n) {
-        let handle = load_edata_texture(ctx, edata_n, state.edata_path.as_deref());
+        let handle = load_edata_texture(
+            ctx,
+            edata_n,
+            state.hd_path.as_deref(),
+            state.edata_path.as_deref(),
+        );
         state.textures.insert(edata_n, handle);
     }
 
@@ -396,28 +411,50 @@ fn show_placeholder_image(ui: &mut egui::Ui) {
     );
 }
 
-/// Load an EDATA BMP file and register it as an egui texture.
+/// Load an EDATA image and register it as an egui texture.
 ///
-/// Returns `None` if the file doesn't exist, can't be read, or fails to decode.
+/// Checks for an HD upscaled PNG first (`EDATA_NNN.png` in `hd_path`),
+/// then falls back to the original BMP (`EDATA.NNN` in `edata_path`).
+/// Returns `None` if neither exists or decoding fails.
 /// On WASM targets, always returns `None` (filesystem access not available).
 #[cfg(not(target_arch = "wasm32"))]
 fn load_edata_texture(
     ctx: &egui::Context,
     edata_n: u16,
+    hd_path: Option<&Path>,
     edata_path: Option<&Path>,
 ) -> Option<TextureHandle> {
-    let dir = edata_path?;
-    let file_name = format!("EDATA.{:03}", edata_n);
-    let path = dir.join(&file_name);
-
-    if !path.exists() {
-        return None;
+    // 1. Try HD upscaled PNG first.
+    if let Some(hd_dir) = hd_path {
+        let hd_file = hd_dir.join(format!("EDATA_{:03}.png", edata_n));
+        if hd_file.exists() {
+            if let Some(handle) = load_image_file(ctx, edata_n, &hd_file) {
+                return Some(handle);
+            }
+        }
     }
 
-    let bytes = std::fs::read(&path).ok()?;
+    // 2. Fall back to original BMP.
+    let dir = edata_path?;
+    let bmp_file = dir.join(format!("EDATA.{:03}", edata_n));
+    if bmp_file.exists() {
+        return load_image_file(ctx, edata_n, &bmp_file);
+    }
 
-    // Decode BMP (8-bit indexed) → RGBA8.
-    let img = image::load_from_memory_with_format(&bytes, image::ImageFormat::Bmp).ok()?;
+    None
+}
+
+/// Decode an image file (BMP or PNG) and register it as an egui texture.
+#[cfg(not(target_arch = "wasm32"))]
+fn load_image_file(
+    ctx: &egui::Context,
+    edata_n: u16,
+    path: &Path,
+) -> Option<TextureHandle> {
+    let bytes = std::fs::read(path).ok()?;
+
+    // image crate auto-detects format from magic bytes.
+    let img = image::load_from_memory(&bytes).ok()?;
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
 
@@ -439,6 +476,7 @@ fn load_edata_texture(
 fn load_edata_texture(
     _ctx: &egui::Context,
     _edata_n: u16,
+    _hd_path: Option<&Path>,
     _edata_path: Option<&Path>,
 ) -> Option<TextureHandle> {
     None

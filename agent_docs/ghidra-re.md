@@ -34,14 +34,16 @@ Two MCP servers configured in `~/.claude/settings.json`:
 
 ## What to Look For
 
-### Combat Formulas (STRATEGY.DLL)
+### Combat Formulas (REBEXE.EXE)
 - Space combat: damage calculation per weapon arc, shield absorption, hull damage
 - Ground combat: troop engagement, orbital bombardment effectiveness
 - Fleet auto-resolve: how the game decides battle outcomes without tactical view
 - Blockade mechanics: when/how blockades trigger
 
+Note: STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT boilerplate). All game logic lives in REBEXE.EXE (2.8MB, 22,741 functions). The swrebellion.net community has no RE work.
+
 ### GNPRTB Parameter Usage
-GNPRTB has 213 entries but only ~29% are documented. Each has 8 values (difficulty levels). Finding which GNPRTB index maps to which game mechanic requires tracing references in STRATEGY.DLL.
+GNPRTB has 213 entries but only ~29% are documented. Each has 8 values (difficulty levels). Finding which GNPRTB index maps to which game mechanic requires tracing references in REBEXE.EXE.
 
 Known mappings (from community + rebellion2):
 - Travel time multipliers
@@ -53,7 +55,7 @@ Known mappings (from community + rebellion2):
 Unknown (~150 parameters): Ghidra RE target. Look for functions that index into the GNPRTB table (likely a global array of 213 × 8 i32 values loaded at startup).
 
 ### Mission Probability Tables
-The `*MSTB.DAT` files (IntTableEntry format) define skill threshold → probability curves for each mission type. STRATEGY.DLL reads these at mission execution time. Trace the code path from mission dispatch → table lookup → probability roll → outcome.
+The `*MSTB.DAT` files (IntTableEntry format) define skill threshold → probability curves for each mission type. REBEXE.EXE reads these at mission execution time. Trace the code path from mission dispatch → table lookup → probability roll → outcome.
 
 ## Analysis Tips
 

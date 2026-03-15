@@ -7,5 +7,5 @@ edition = "2021"
 rebellion-core = { path = "../rebellion-core" }
 macroquad = "0.4"
 egui-macroquad = "0.17"
-image = { version = "0.25", default-features = false, features = ["bmp"] }
+image = { version = "0.25", default-features = false, features = ["bmp", "png"] }
 
