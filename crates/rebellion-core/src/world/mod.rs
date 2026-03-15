@@ -6,10 +6,38 @@
 //!
 //! The `GameWorld` struct is the root of the entire simulation state.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::dat::ExplorationStatus;
 use crate::ids::*;
+
+/// Force sensitivity tier for a character.
+///
+/// Maps to the 2-bit value at `entity[9] >> 6 & 3` in REBEXE.EXE's C++ layout:
+/// 0=None/Low, 1=Aware (ForcePotential tier), 2=Training (ForceTraining tier),
+/// 3=Experienced (ForceExperience tier).
+///
+/// Characters start as `None`. Those with `jedi_probability > 0` may advance
+/// through tiers via the Jedi training system (`jedi.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ForceTier {
+    /// No Force sensitivity detected.
+    None = 0,
+    /// Force potential recognized — character is Force-aware but untrained.
+    Aware = 1,
+    /// Actively training in the Force.
+    Training = 2,
+    /// Full Jedi Knight / Sith Lord tier. Maximum Force capability.
+    Experienced = 3,
+}
+
+impl Default for ForceTier {
+    fn default() -> Self {
+        ForceTier::None
+    }
+}
 
 /// A star system in the galaxy — the atomic unit of territory and production.
 ///
@@ -45,6 +73,20 @@ pub struct System {
     pub manufacturing_facilities: Vec<ManufacturingFacilityKey>,
     /// Mines, refineries, and other resource extractors.
     pub production_facilities: Vec<ProductionFacilityKey>,
+    /// True if this system is a faction's headquarters (from SYSTEMSD IsHeadquarters flag).
+    ///
+    /// Capturing the enemy HQ is the primary victory condition.
+    pub is_headquarters: bool,
+    /// True if this system's planet has been destroyed (Death Star fired; `alive_flag` bit0 == 0).
+    ///
+    /// From RE: the Death Star fires when the target's alive_flag bit0 == 0 — inverted from
+    /// normal combat units. A destroyed planet cannot produce resources or be colonized.
+    pub is_destroyed: bool,
+    /// Which faction currently controls this system, or `None` for unclaimed/contested.
+    ///
+    /// Derived from the 2-bit faction_side field (`entity+0x24 bits 6-7`):
+    /// 0 = neutral, 1 = Alliance, 2 = Empire, 3 = contested.
+    pub controlling_faction: Option<crate::dat::Faction>,
 }
 
 /// A sector — a named galactic region containing multiple star systems.
@@ -93,6 +135,32 @@ pub struct CapitalShipClass {
     pub fighter_capacity: u32,
     /// Number of troop units this ship can transport.
     pub troop_capacity: u32,
+
+    // ── Combat stats (from CAPSHPSD.DAT — needed for War Machine) ────────────
+
+    /// Sensor range for detecting enemy units.
+    pub detection: u32,
+    /// Turbolaser batteries per arc (fore/aft/port/starboard).
+    pub turbolaser_fore: u32,
+    pub turbolaser_aft: u32,
+    pub turbolaser_port: u32,
+    pub turbolaser_starboard: u32,
+    /// Ion cannon batteries per arc.
+    pub ion_cannon_fore: u32,
+    pub ion_cannon_aft: u32,
+    pub ion_cannon_port: u32,
+    pub ion_cannon_starboard: u32,
+    /// Laser cannon batteries per arc.
+    pub laser_cannon_fore: u32,
+    pub laser_cannon_aft: u32,
+    pub laser_cannon_port: u32,
+    pub laser_cannon_starboard: u32,
+    /// Shield recharge rate per combat round.
+    pub shield_recharge_rate: u32,
+    /// Hull repair rate per combat round.
+    pub damage_control: u32,
+    /// Orbital bombardment attack stat (used in bombardment formula §4).
+    pub bombardment_modifier: u32,
 }
 
 /// Class definition for a fighter squadron — template, not an instance.
@@ -107,6 +175,10 @@ pub struct FighterClass {
     /// Number of individual craft in one squadron.
     pub squadron_size: u32,
     pub torpedoes: u32,
+    /// Fighter attack stat for combat resolution.
+    pub overall_attack_strength: u32,
+    /// Bombardment defense modifier.
+    pub bombardment_defense: u32,
 }
 
 /// A character — either a named major hero/villain or a generic minor character.
@@ -137,6 +209,21 @@ pub struct Character {
     pub can_be_admiral: bool,
     pub can_be_commander: bool,
     pub can_be_general: bool,
+
+    // ── Force / Jedi fields (entity-system.md §1.3) ───────────────────────────
+
+    /// Current Force sensitivity tier (None → Aware → Training → Experienced).
+    /// Driven by `jedi.rs` JediSystem.
+    #[serde(default)]
+    pub force_tier: ForceTier,
+    /// Accumulated Force experience points. Increments via Jedi training missions;
+    /// threshold crossings trigger tier advancement.
+    #[serde(default)]
+    pub force_experience: u32,
+    /// True once the opposing faction has discovered this character's Force ability.
+    /// Maps to `!(entity[0x1e] & 1)` in REBEXE.EXE — initially hidden.
+    #[serde(default)]
+    pub is_discovered_jedi: bool,
 }
 
 /// A base value paired with a random variance for character skill generation.
@@ -170,6 +257,11 @@ pub struct Fleet {
     pub characters: Vec<CharacterKey>,
     /// True if this fleet belongs to the Rebel Alliance; false = Empire.
     pub is_alliance: bool,
+    /// True if this fleet contains a Death Star (family `0x34`).
+    ///
+    /// Enables the Death Star win-condition check in `VictorySystem`.
+    /// Set by `rebellion-data` when loading fleet composition from CAPSHPSD.
+    pub has_death_star: bool,
 }
 
 /// One entry in a fleet's capital-ship roster: a class plus the number of hulls.
@@ -186,12 +278,186 @@ pub struct FighterEntry {
     pub count: u32,
 }
 
+/// A single hull of a capital ship — runtime per-hull combat state.
+///
+/// Distinct from `ShipEntry` which is a (class, count) summary for fleets.
+/// `ShipInstance` is the unit-level record used by the combat resolver.
+///
+/// Mirrors the C++ entity object fields confirmed by Ghidra:
+/// - `hull_current` → offset +0x60 (int)
+/// - `shield_weapon_packed` → offset +0x64 (bits 0-3 = shield, 4-7 = weapon)
+/// - `alive` → offset +0xac bit0
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShipInstance {
+    /// Reference to the class template in `GameWorld::capital_ship_classes`.
+    pub class: CapitalShipKey,
+    /// Current hull. Starts at `CapitalShipClass::hull`, reduced by combat.
+    pub hull_current: i32,
+    /// Packed nibbles: bits 0-3 = shield_recharge_allocated, bits 4-7 = weapon_recharge_allocated.
+    /// The C++ binary uses XOR-mask writes `(new ^ old) & 0xf ^ old` — functionally a nibble store.
+    pub shield_weapon_packed: u8,
+    /// True while hull_current > 0 and the ship has not been destroyed.
+    pub alive: bool,
+    /// True = Rebel Alliance; false = Empire.
+    pub faction_is_alliance: bool,
+}
+
+impl ShipInstance {
+    /// Shield recharge allocation nibble (bits 0-3).
+    pub fn shield_nibble(&self) -> u8 {
+        self.shield_weapon_packed & 0x0f
+    }
+
+    /// Weapon recharge allocation nibble (bits 4-7).
+    pub fn weapon_nibble(&self) -> u8 {
+        (self.shield_weapon_packed >> 4) & 0x0f
+    }
+}
+
+/// Game-balance parameters loaded from GNPRTB.DAT.
+///
+/// Each entry in GNPRTB.DAT has a `parameter_id` (0-212) and 8 i32 values
+/// keyed by difficulty/faction mode. The `value()` accessor returns the
+/// appropriate value for a given difficulty index (0-7).
+///
+/// Difficulty index mapping (8 levels, from the DAT binary format):
+///   0 = development
+///   1 = Alliance SP Easy (`alliance_sp_easy`)
+///   2 = Alliance SP Medium (`alliance_sp_medium`)
+///   3 = Alliance SP Hard (`alliance_sp_hard`)
+///   4 = Empire SP Easy (`empire_sp_easy`)
+///   5 = Empire SP Medium (`empire_sp_medium`)
+///   6 = Empire SP Hard (`empire_sp_hard`)
+///   7 = Multiplayer
+///
+/// The C++ `difficulty_packed` at offset +0x24 bits 4-5 is a 2-bit selector
+/// (0-3) used by `FUN_004fd600` to pick Alliance(1) or Empire(2). The full
+/// 8-level index is computed at the caller level.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GnprtbParams {
+    /// All 213 entries, indexed by `parameter_id`.
+    entries: Vec<GnprtbEntry>,
+}
+
+/// One entry from GNPRTB.DAT.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GnprtbEntry {
+    pub parameter_id: u32,
+    pub development: i32,
+    pub alliance_sp_easy: i32,
+    pub alliance_sp_medium: i32,
+    pub alliance_sp_hard: i32,
+    pub empire_sp_easy: i32,
+    pub empire_sp_medium: i32,
+    pub empire_sp_hard: i32,
+    pub multiplayer: i32,
+}
+
+impl Default for GnprtbParams {
+    fn default() -> Self {
+        Self { entries: Vec::new() }
+    }
+}
+
+impl GnprtbParams {
+    /// Construct from raw entries (called by `rebellion-data` loader).
+    pub fn new(entries: Vec<GnprtbEntry>) -> Self {
+        Self { entries }
+    }
+
+    /// Return the parameter value for `param_id` at `difficulty`.
+    ///
+    /// `difficulty`: 0=development, 1=alliance_easy, 2=alliance_medium, 3=alliance_hard,
+    ///               4=empire_easy, 5=empire_medium, 6=empire_hard, 7=multiplayer.
+    /// Returns 0 if `param_id` is out of range.
+    pub fn value(&self, param_id: u16, difficulty: u8) -> i32 {
+        self.entries
+            .iter()
+            .find(|e| e.parameter_id == param_id as u32)
+            .map(|e| match difficulty {
+                0 => e.development,
+                1 => e.alliance_sp_easy,
+                2 => e.alliance_sp_medium,
+                3 => e.alliance_sp_hard,
+                4 => e.empire_sp_easy,
+                5 => e.empire_sp_medium,
+                6 => e.empire_sp_hard,
+                _ => e.multiplayer,
+            })
+            .unwrap_or(0)
+    }
+}
+
+/// A lookup table loaded from one of the `*MSTB.DAT` / `*TB.DAT` files.
+///
+/// Each table is a sorted list of `(threshold, value)` pairs where `threshold`
+/// is a signed skill delta (negative = below average, 0 = average, positive =
+/// above average). `lookup()` performs linear interpolation between the two
+/// bracketing entries, matching the C++ table-lookup function.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MstbTable {
+    /// Entries sorted ascending by threshold.
+    entries: Vec<MstbEntry>,
+}
+
+/// One row in an `MstbTable`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MstbEntry {
+    pub threshold: i32,
+    pub value: u32,
+}
+
+impl MstbTable {
+    /// Construct from raw `(threshold, value)` pairs. Sorts by threshold.
+    pub fn new(mut entries: Vec<MstbEntry>) -> Self {
+        entries.sort_by_key(|e| e.threshold);
+        Self { entries }
+    }
+
+    /// Look up the value for `skill_score` using linear interpolation.
+    ///
+    /// - If `skill_score` is below the lowest threshold, returns the lowest value.
+    /// - If `skill_score` is above the highest threshold, returns the highest value.
+    /// - Otherwise interpolates between the two bracketing entries.
+    pub fn lookup(&self, skill_score: i32) -> u32 {
+        if self.entries.is_empty() {
+            return 0;
+        }
+        // Below minimum
+        if skill_score <= self.entries[0].threshold {
+            return self.entries[0].value;
+        }
+        // Above maximum
+        let last = self.entries.last().unwrap();
+        if skill_score >= last.threshold {
+            return last.value;
+        }
+        // Find bracketing pair
+        for i in 0..self.entries.len() - 1 {
+            let lo = &self.entries[i];
+            let hi = &self.entries[i + 1];
+            if skill_score >= lo.threshold && skill_score < hi.threshold {
+                let span = hi.threshold - lo.threshold;
+                if span == 0 {
+                    return lo.value;
+                }
+                let frac = (skill_score - lo.threshold) as f64 / span as f64;
+                let interpolated = lo.value as f64 + frac * (hi.value as i64 - lo.value as i64) as f64;
+                return interpolated.round().max(0.0) as u32;
+            }
+        }
+        last.value
+    }
+}
+
 /// A troop regiment stationed at a system — a deployed instance of a troop class.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TroopUnit {
     /// The class definition (from TROOPSD.DAT).
     pub class_dat_id: DatId,
     pub is_alliance: bool,
+    /// Current regiment strength (C++ offset +0x96). Starts at class max, reduced by ground combat.
+    pub regiment_strength: i16,
 }
 
 /// A special-forces unit stationed at a system.
@@ -230,7 +496,7 @@ pub struct ProductionFacilityInstance {
 ///
 /// All entity arenas live here. Cross-entity references use slotmap keys;
 /// they're meaningless outside the arena they index into.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GameWorld {
     pub systems: slotmap::SlotMap<SystemKey, System>,
     pub sectors: slotmap::SlotMap<SectorKey, Sector>,
@@ -248,4 +514,8 @@ pub struct GameWorld {
     pub manufacturing_facilities: slotmap::SlotMap<ManufacturingFacilityKey, ManufacturingFacilityInstance>,
     /// Production facilities (mines, refineries).
     pub production_facilities: slotmap::SlotMap<ProductionFacilityKey, ProductionFacilityInstance>,
+    /// Game-balance parameters from GNPRTB.DAT (combat formulas, bombardment divisors, etc.).
+    pub gnprtb: GnprtbParams,
+    /// Mission probability tables keyed by DAT file stem (e.g. "DIPLMSTB", "ESPIMSTB").
+    pub mission_tables: HashMap<String, MstbTable>,
 }

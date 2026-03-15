@@ -1,8 +1,9 @@
-//! Mission system: diplomacy and recruitment mission lifecycle.
+//! Mission system: all 9 mission types with MSTB probability lookup.
 //!
 //! Missions are assigned to characters and execute over multiple game-days.
-//! When a mission completes, success is determined by a quadratic probability
-//! formula derived from the character's relevant skill score.
+//! When a mission completes, success is determined either by a quadratic
+//! probability formula (fallback) or by a piecewise-linear MSTB table lookup
+//! when `world.mission_tables` is populated by rebellion-data.
 //!
 //! # Design
 //!
@@ -12,15 +13,21 @@
 //! - The caller provides pre-generated random rolls so rebellion-core stays
 //!   dependency-free and fully deterministic in tests
 //!
-//! # Probability Formula
+//! # Probability
 //!
-//! Ported from rebellion2's Mission.cs (quadratic):
-//! ```text
-//! agent_prob = clamp(a·score² + b·score + c,  min%, max%)
-//! total_prob = agent_prob · (1 − foil_prob)
-//! success    = roll < total_prob
-//! ```
-//! Coefficients are mission-type constants defined in `MissionKind`.
+//! Two paths, in priority order:
+//! 1. **MSTB lookup**: if `world.mission_tables` contains an entry for this mission kind,
+//!    use `MstbTable::lookup(skill_score)` (piecewise-linear over IntTableEntry thresholds).
+//! 2. **Quadratic fallback**: `clamp(a·score² + b·score + c, min%, max%)` — same as
+//!    rebellion2's Mission.cs coefficients. Used when MSTB tables are not yet loaded.
+//!
+//! Combined: `total_prob = agent_prob · (1 − foil_prob)`.
+//!
+//! # Mission Types
+//!
+//! Nine types ported from REBEXE.EXE's 13-case dispatch (FUN_0050d5a0):
+//! Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction,
+//! InciteUprising, Autoscrap.
 //!
 //! # Lifecycle
 //!
@@ -31,46 +38,122 @@
 //! 4. Repeatable missions (diplomacy below threshold, recruitment with officers
 //!    remaining) are re-queued automatically by the caller based on the result.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{CharacterKey, SystemKey};
 use crate::tick::TickEvent;
-use crate::world::{Character, GameWorld};
+use crate::world::{Character, GameWorld, MstbTable};
 
 // ---------------------------------------------------------------------------
 // MissionKind
 // ---------------------------------------------------------------------------
 
-/// The two mission types in Living Galaxy scope.
+/// All nine mission types recognised by the REBEXE.EXE dispatch (FUN_0050d5a0).
 ///
-/// Additional types (sabotage, assassination, rescue, incite uprising) are
-/// reserved for later phases once MISSNSD.DAT is parsed.
+/// Type codes match the original binary's 13-case switch where applicable.
+/// Coefficients are ported from rebellion2's Mission.cs; they serve as
+/// fallback when `GameWorld::mission_tables` is not yet populated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MissionKind {
+    // ── Living Galaxy (implemented) ─────────────────────────────────────────
+
     /// Shift a system's popularity toward the sending faction.
-    ///
-    /// Uses the character's `diplomacy` skill.
-    /// Coefficients from rebellion2 DiplomacyMission.cs.
+    /// DIPLMSTB.DAT. Skill: diplomacy.
     Diplomacy,
 
     /// Recruit an available character for the sending faction.
-    ///
-    /// Uses the character's `leadership` skill.
-    /// Coefficients from rebellion2 RecruitmentMission.cs.
+    /// RCRTMSTB.DAT. Skill: leadership.
     Recruitment,
+
+    // ── War Machine phase ────────────────────────────────────────────────────
+
+    /// Destroy an enemy facility (type code 6 in REBEXE.EXE).
+    /// SBTGMSTB.DAT. Skill: espionage.
+    Sabotage,
+
+    /// Kill an enemy character (type code 7 in REBEXE.EXE).
+    /// ASSNMSTB.DAT. Skill: combat.
+    Assassination,
+
+    /// Gather intelligence on an enemy system.
+    /// ESPIMSTB.DAT. Skill: espionage.
+    Espionage,
+
+    /// Free a captured character.
+    /// RESCMSTB.DAT. Skill: combat.
+    Rescue,
+
+    /// Capture an enemy character.
+    /// ABDCMSTB.DAT. Skill: espionage.
+    Abduction,
+
+    /// Trigger a planetary uprising.
+    /// INCTMSTB.DAT. Skill: diplomacy.
+    InciteUprising,
+
+    /// Automatic scrapping of obsolete units (type code 21 / 0x15).
+    /// No character required; always succeeds.
+    Autoscrap,
 }
 
 impl MissionKind {
-    /// Quadratic success-probability coefficients: (a, b, c).
+    /// DAT file stem for this kind's *MSTB probability table.
+    ///
+    /// This is the key used to look up `world.mission_tables`. `None` for
+    /// `Autoscrap` (no probability table — it always succeeds).
+    pub fn mstb_key(self) -> Option<&'static str> {
+        match self {
+            MissionKind::Diplomacy     => Some("DIPLMSTB"),
+            MissionKind::Recruitment   => Some("RCRTMSTB"),
+            MissionKind::Sabotage      => Some("SBTGMSTB"),
+            MissionKind::Assassination => Some("ASSNMSTB"),
+            MissionKind::Espionage     => Some("ESPIMSTB"),
+            MissionKind::Rescue        => Some("RESCMSTB"),
+            MissionKind::Abduction     => Some("ABDCMSTB"),
+            MissionKind::InciteUprising=> Some("INCTMSTB"),
+            MissionKind::Autoscrap     => None,
+        }
+    }
+
+    /// Quadratic success-probability fallback coefficients: (a, b, c).
     ///
     /// Formula: `prob% = a·score² + b·score + c`, clamped to [min%, max%].
+    ///
+    /// Diplomacy and Recruitment are from rebellion2 Mission.cs.
+    /// Other types use placeholder coefficients fit to approximate MSTB curves.
+    /// Once `world.mission_tables` is populated, these are never used.
     pub fn coefficients(self) -> (f64, f64, f64) {
         match self {
-            MissionKind::Diplomacy => (0.005558, 0.7656, 20.15),
-            MissionKind::Recruitment => (-0.001748, 0.8657, 11.923),
+            MissionKind::Diplomacy     => ( 0.005558, 0.7656, 20.15),
+            MissionKind::Recruitment   => (-0.001748, 0.8657, 11.923),
+            MissionKind::Sabotage      => (-0.002,    0.75,   15.0),
+            MissionKind::Assassination => (-0.003,    0.80,   10.0),
+            MissionKind::Espionage     => (-0.002,    0.78,   12.0),
+            MissionKind::Rescue        => (-0.002,    0.72,   10.0),
+            MissionKind::Abduction     => (-0.002,    0.70,    8.0),
+            MissionKind::InciteUprising=> (-0.003,    0.65,   18.0),
+            MissionKind::Autoscrap     => ( 0.0,      0.0,  100.0), // always succeeds
         }
+    }
+
+    /// Extract the relevant skill score from a character for this mission type.
+    pub fn skill_score(self, character: &Character) -> u32 {
+        let pair = match self {
+            MissionKind::Diplomacy      => character.diplomacy,
+            MissionKind::Recruitment    => character.leadership,
+            MissionKind::Sabotage       => character.espionage,
+            MissionKind::Assassination  => character.combat,
+            MissionKind::Espionage      => character.espionage,
+            MissionKind::Rescue         => character.combat,
+            MissionKind::Abduction      => character.espionage,
+            MissionKind::InciteUprising => character.diplomacy,
+            // Autoscrap has no character; callers guard against passing None.
+            MissionKind::Autoscrap      => return 100,
+        };
+        // Expected value: base + half variance (variance resolved at scenario start).
+        pair.base + pair.variance / 2
     }
 
     /// Minimum success probability (percent, 1–100).
@@ -85,17 +168,24 @@ impl MissionKind {
 
     /// Mission duration range in game-days: (min_ticks, max_ticks).
     ///
-    /// The actual duration is chosen randomly by the caller at dispatch time
-    /// using `MissionKind::sample_duration(roll)`.
+    /// Drawn from MISSNSD.DAT base_duration. War Machine types use longer
+    /// ranges reflecting the original game's espionage timescales.
     pub fn tick_range(self) -> (u32, u32) {
-        // Both types share the same range from rebellion2 (15–20 days).
-        (15, 20)
+        match self {
+            MissionKind::Diplomacy | MissionKind::Recruitment => (15, 20),
+            MissionKind::Sabotage                             => (20, 30),
+            MissionKind::Assassination                        => (25, 35),
+            MissionKind::Espionage                            => (15, 25),
+            MissionKind::Rescue                               => (20, 30),
+            MissionKind::Abduction                            => (25, 35),
+            MissionKind::InciteUprising                       => (20, 30),
+            MissionKind::Autoscrap                            => (1,  1),
+        }
     }
 
-    /// Sample a concrete duration from the tick range given a uniform roll in [0,1].
+    /// Sample a concrete duration from the tick range given a uniform roll in [0,1).
     pub fn sample_duration(self, roll: f64) -> u32 {
         let (min, max) = self.tick_range();
-        // Map [0,1] → [min, max] inclusive, clamped to guard against roll == 1.0.
         let raw = min + (roll * (max - min + 1) as f64).floor() as u32;
         raw.min(max)
     }
@@ -129,6 +219,8 @@ pub struct ActiveMission {
     pub character: CharacterKey,
     /// The target system.
     pub target_system: SystemKey,
+    /// The target character (for assassination, abduction, rescue). None for area missions.
+    pub target_character: Option<CharacterKey>,
     /// Game-days remaining until execution.
     pub ticks_remaining: u32,
     /// Original duration (for progress display).
@@ -151,6 +243,7 @@ impl ActiveMission {
             faction,
             character,
             target_system,
+            target_character: None,
             ticks_remaining: duration,
             total_ticks: duration,
         }
@@ -237,8 +330,13 @@ impl MissionState {
 // ---------------------------------------------------------------------------
 
 /// What actually changed in the game world as a result of a mission.
+///
+/// The caller in `main.rs` is responsible for applying these effects to
+/// `GameWorld`. `MissionSystem` is stateless — it only produces the events.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MissionEffect {
+    // ── Living Galaxy ────────────────────────────────────────────────────────
+
     /// System popularity shifted toward the faction by `delta` (0.0–1.0 scale).
     PopularityShifted {
         system: SystemKey,
@@ -252,6 +350,59 @@ pub enum MissionEffect {
         /// The character who conducted the recruitment.
         recruiter: CharacterKey,
         faction: MissionFaction,
+    },
+
+    // ── War Machine ──────────────────────────────────────────────────────────
+
+    /// A facility was sabotaged — reduce its remaining production ticks.
+    ///
+    /// The caller applies `ticks_lost` to the appropriate facility at
+    /// `system.manufacturing_facilities[facility_index]` or
+    /// `system.defense_facilities[facility_index]`.
+    FacilitySabotaged {
+        system: SystemKey,
+        /// Index into the system's facility list (manufacturing or defense).
+        facility_index: usize,
+        /// Production ticks lost due to sabotage.
+        ticks_lost: u32,
+    },
+
+    /// A character was killed — remove from the game.
+    CharacterKilled {
+        character: CharacterKey,
+        faction: MissionFaction,
+    },
+
+    /// A character was captured by the opposing faction.
+    ///
+    /// The captured character is held at `at_system` until rescued or the game ends.
+    CharacterCaptured {
+        character: CharacterKey,
+        /// Which faction now holds the character.
+        captured_by: MissionFaction,
+        at_system: SystemKey,
+    },
+
+    /// A captured character was successfully rescued.
+    CharacterRescued {
+        character: CharacterKey,
+        /// Faction the character was returned to.
+        returned_to: MissionFaction,
+        at_system: SystemKey,
+    },
+
+    /// Intelligence gathered — reveal fog of war over the target system.
+    SystemIntelligenceGathered {
+        system: SystemKey,
+        /// Faction that gained the intelligence.
+        faction: MissionFaction,
+    },
+
+    /// An uprising was incited — shift popularity against the controlling faction.
+    UprisingStarted {
+        system: SystemKey,
+        /// Popularity delta applied against the controlling faction (positive = shift toward other side).
+        popularity_delta: f32,
     },
 }
 
@@ -380,6 +531,7 @@ impl MissionSystem {
         }
         state.missions = remaining;
 
+
         results
     }
 
@@ -392,7 +544,7 @@ impl MissionSystem {
     ) -> MissionResult {
         let character = world.characters.get(mission.character);
         let (outcome, effects) =
-            Self::determine_outcome(mission, character, tick, roll);
+            Self::determine_outcome(mission, character, tick, roll, &world.mission_tables);
 
         MissionResult {
             mission_id: mission.id,
@@ -407,48 +559,62 @@ impl MissionSystem {
     }
 
     /// Compute outcome and effects given a pre-rolled value.
+    ///
+    /// Uses MSTB table lookup when available in `world.mission_tables`,
+    /// falls back to quadratic coefficients otherwise.
     fn determine_outcome(
         mission: &ActiveMission,
         character: Option<&Character>,
         _tick: u64,
         roll: f64,
+        mission_tables: &HashMap<String, MstbTable>, // from world.mission_tables
     ) -> (MissionOutcome, Vec<MissionEffect>) {
-        // Skill score: base + half variance (expected value; variance resolved at scenario start).
-        let skill_score = character
-            .map(|c| {
-                let pair = match mission.kind {
-                    MissionKind::Diplomacy => c.diplomacy,
-                    MissionKind::Recruitment => c.leadership,
-                };
-                // Use base + half variance as the expected skill.
-                // Full variance resolution happens at game start (not stored here yet).
-                pair.base as f64 + pair.variance as f64 * 0.5
-            })
-            .unwrap_or(0.0);
+        // Autoscrap always succeeds — no character or probability check needed.
+        if mission.kind == MissionKind::Autoscrap {
+            return (MissionOutcome::Success, Self::build_effects(mission));
+        }
 
-        let (a, b, c) = mission.kind.coefficients();
-        let raw_prob = quadratic_prob(skill_score, a, b, c);
-        let agent_prob =
-            clamp_prob(raw_prob, mission.kind.min_success_prob(), mission.kind.max_success_prob());
+        let skill_score: u32 = character
+            .map(|c| mission.kind.skill_score(c))
+            .unwrap_or(0);
 
-        // For Living Galaxy scope, foil probability is 0 (no defense score system yet).
-        // This is consistent with rebellion2's own-system behavior and is a safe stub
-        // until espionage counters are implemented.
+        // Priority 1: MSTB table lookup (piecewise-linear over IntTableEntry data).
+        // Priority 2: quadratic fallback (rebellion2 Mission.cs coefficients).
+        let agent_prob = if let Some(key) = mission.kind.mstb_key() {
+            if let Some(table) = mission_tables.get(key) {
+                // world::MstbTable::lookup takes a signed i32 skill delta and returns u32 (0-100).
+                let raw = table.lookup(skill_score as i32) as f64;
+                clamp_prob(raw, mission.kind.min_success_prob(), mission.kind.max_success_prob())
+            } else {
+                // Table not loaded yet — fall back to quadratic.
+                let (a, b, c) = mission.kind.coefficients();
+                let raw = quadratic_prob(skill_score as f64, a, b, c);
+                clamp_prob(raw, mission.kind.min_success_prob(), mission.kind.max_success_prob())
+            }
+        } else {
+            100.0 // No MSTB key → always succeeds (only Autoscrap, handled above)
+        };
+
+        // Foil probability: 0 until counter-espionage defense score is tracked.
+        // This is consistent with rebellion2's own-system behavior and is a safe
+        // stub until the defense score system is implemented.
         let foil = foil_prob(0.0, true);
         let success_prob = total_success_prob(agent_prob, foil);
 
-        let roll_pct = roll * 100.0;
-
-        if roll_pct <= success_prob {
+        if roll * 100.0 <= success_prob {
             let effects = Self::build_effects(mission);
             (MissionOutcome::Success, effects)
         } else {
-            // No foil detection for Living Galaxy scope (no counter-espionage yet).
+            // No foil detection until counter-intelligence is implemented.
             (MissionOutcome::Failure, Vec::new())
         }
     }
 
     /// Build the world-state effects for a successful mission.
+    ///
+    /// Conservative defaults for War Machine types: the caller is expected to
+    /// apply these effects to `GameWorld` and may override the values based on
+    /// additional game state (e.g. facility selection for Sabotage).
     fn build_effects(mission: &ActiveMission) -> Vec<MissionEffect> {
         match mission.kind {
             MissionKind::Diplomacy => {
@@ -466,6 +632,67 @@ impl MissionSystem {
                     faction: mission.faction,
                 }]
             }
+            MissionKind::Sabotage => {
+                // Target facility index 0 as default — callers should select the
+                // specific facility based on game state before dispatching.
+                vec![MissionEffect::FacilitySabotaged {
+                    system: mission.target_system,
+                    facility_index: 0,
+                    // ~10 ticks of production lost per successful sabotage.
+                    ticks_lost: 10,
+                }]
+            }
+            MissionKind::Assassination => {
+                if let Some(target) = mission.target_character {
+                    vec![MissionEffect::CharacterKilled {
+                        character: target,
+                        faction: mission.faction,
+                    }]
+                } else {
+                    vec![]  // No target specified — no effect
+                }
+            }
+            MissionKind::Espionage => {
+                vec![MissionEffect::SystemIntelligenceGathered {
+                    system: mission.target_system,
+                    faction: mission.faction,
+                }]
+            }
+            MissionKind::Rescue => {
+                if let Some(target) = mission.target_character {
+                    vec![MissionEffect::CharacterRescued {
+                        character: target,
+                        returned_to: mission.faction,
+                        at_system: mission.target_system,
+                    }]
+                } else {
+                    vec![]
+                }
+            }
+            MissionKind::Abduction => {
+                if let Some(target) = mission.target_character {
+                    let captured_by = mission.faction;
+                    vec![MissionEffect::CharacterCaptured {
+                        character: target,
+                        captured_by,
+                        at_system: mission.target_system,
+                    }]
+                } else {
+                    vec![]
+                }
+            }
+            MissionKind::InciteUprising => {
+                vec![MissionEffect::UprisingStarted {
+                    system: mission.target_system,
+                    // +0.05 popularity delta: more impactful than diplomacy (+0.01).
+                    popularity_delta: 0.05,
+                }]
+            }
+            MissionKind::Autoscrap => {
+                // Autoscrap has no world-state effects — the actual unit removal
+                // is handled outside the mission system.
+                Vec::new()
+            }
         }
     }
 }
@@ -478,7 +705,7 @@ impl MissionSystem {
 mod tests {
     use super::*;
     use crate::ids::{CharacterKey, SystemKey};
-    use crate::world::{Character, GameWorld, SkillPair};
+    use crate::world::{Character, ForceTier, GameWorld, SkillPair};
 
     // --- Probability formula tests ---
 
@@ -588,19 +815,7 @@ mod tests {
     // --- MissionSystem::advance tests ---
 
     fn minimal_world() -> GameWorld {
-        GameWorld {
-            systems: slotmap::SlotMap::with_key(),
-            sectors: slotmap::SlotMap::with_key(),
-            capital_ship_classes: slotmap::SlotMap::with_key(),
-            fighter_classes: slotmap::SlotMap::with_key(),
-            characters: slotmap::SlotMap::with_key(),
-            fleets: slotmap::SlotMap::with_key(),
-            troops: slotmap::SlotMap::with_key(),
-            special_forces: slotmap::SlotMap::with_key(),
-            defense_facilities: slotmap::SlotMap::with_key(),
-            manufacturing_facilities: slotmap::SlotMap::with_key(),
-            production_facilities: slotmap::SlotMap::with_key(),
-        }
+        GameWorld::default()
     }
 
     fn skill_pair(base: u32) -> SkillPair {
@@ -628,6 +843,9 @@ mod tests {
             can_be_admiral: false,
             can_be_commander: true,
             can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
         })
     }
 
@@ -819,6 +1037,9 @@ mod tests {
             can_be_admiral: false,
             can_be_commander: true,
             can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
         });
 
         let mut state = MissionState::new();
@@ -876,5 +1097,246 @@ mod tests {
         assert_eq!(results[0].mission_id, 0);
         assert_eq!(state.len(), 1);
         assert_eq!(state.missions()[0].ticks_remaining, 2);
+    }
+
+    // --- New mission kind tests ---
+
+    #[test]
+    fn all_new_kinds_have_tick_ranges_in_bounds() {
+        let kinds = [
+            MissionKind::Sabotage,
+            MissionKind::Assassination,
+            MissionKind::Espionage,
+            MissionKind::Rescue,
+            MissionKind::Abduction,
+            MissionKind::InciteUprising,
+            MissionKind::Autoscrap,
+        ];
+        for kind in kinds {
+            for roll in [0.0_f64, 0.5, 0.99] {
+                let d = kind.sample_duration(roll);
+                let (min, max) = kind.tick_range();
+                assert!(
+                    d >= min && d <= max,
+                    "{kind:?}: duration {d} out of [{min}, {max}] at roll {roll}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn autoscrap_always_succeeds() {
+        // Autoscrap has no character in world — use a mock key from an empty slotmap.
+        let (system, character) = mock_keys();
+        let world = minimal_world();
+        let mut state = MissionState::new();
+        state.missions.push_back(ActiveMission::new(
+            0, MissionKind::Autoscrap, MissionFaction::Empire, character, system, 1,
+        ));
+        state.next_id = 1;
+
+        // roll = 1.0 → Autoscrap ignores the roll and always succeeds.
+        let results = MissionSystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], &[1.0]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].outcome, MissionOutcome::Success);
+    }
+
+    #[test]
+    fn sabotage_success_emits_facility_sabotaged() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let zero = skill_pair(0);
+        let character = world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Spy".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: zero,
+            espionage: skill_pair(80), // high espionage
+            ship_design: zero,
+            troop_training: zero,
+            facility_design: zero,
+            combat: zero,
+            leadership: zero,
+            loyalty: zero,
+            jedi_probability: 0,
+            jedi_level: zero,
+            can_be_admiral: false,
+            can_be_commander: true,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+        });
+
+        let mut state = MissionState::new();
+        state.missions.push_back(ActiveMission::new(
+            0, MissionKind::Sabotage, MissionFaction::Alliance, character, system, 1,
+        ));
+        state.next_id = 1;
+
+        let results = MissionSystem::advance(
+            &mut state, &world, &[TickEvent { tick: 1 }], &[0.0], // guaranteed success
+        );
+        assert_eq!(results[0].outcome, MissionOutcome::Success);
+        assert!(results[0].effects.iter().any(|e| matches!(e, MissionEffect::FacilitySabotaged { .. })));
+    }
+
+    #[test]
+    fn incite_uprising_success_emits_uprising_started() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let zero = skill_pair(0);
+        let character = world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Agitator".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: skill_pair(70),
+            espionage: zero,
+            ship_design: zero,
+            troop_training: zero,
+            facility_design: zero,
+            combat: zero,
+            leadership: zero,
+            loyalty: zero,
+            jedi_probability: 0,
+            jedi_level: zero,
+            can_be_admiral: false,
+            can_be_commander: true,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+        });
+
+        let mut state = MissionState::new();
+        state.missions.push_back(ActiveMission::new(
+            0, MissionKind::InciteUprising, MissionFaction::Alliance, character, system, 1,
+        ));
+        state.next_id = 1;
+
+        let results = MissionSystem::advance(
+            &mut state, &world, &[TickEvent { tick: 1 }], &[0.0],
+        );
+        assert_eq!(results[0].outcome, MissionOutcome::Success);
+        assert!(results[0].effects.iter().any(|e| matches!(e, MissionEffect::UprisingStarted { .. })));
+    }
+
+    #[test]
+    fn mstb_table_lookup_used_when_populated() {
+        use crate::world::{MstbEntry, MstbTable};
+
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let zero = skill_pair(0);
+        let character = world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Diplomat".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: skill_pair(50), // score = 50 → threshold delta = 0 → table midpoint
+            espionage: zero,
+            ship_design: zero,
+            troop_training: zero,
+            facility_design: zero,
+            combat: zero,
+            leadership: zero,
+            loyalty: zero,
+            jedi_probability: 0,
+            jedi_level: zero,
+            can_be_admiral: false,
+            can_be_commander: true,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+        });
+
+        // Install a minimal DIPLMSTB table: two entries, threshold 0 = value 99.
+        // With score=50 → delta=0 → table lookup returns 99 → guaranteed success.
+        let table = MstbTable::new(vec![
+            MstbEntry { threshold: -50, value: 1 },
+            MstbEntry { threshold:   0, value: 99 },
+            MstbEntry { threshold:  50, value: 100 },
+        ]);
+        world.mission_tables.insert("DIPLMSTB".to_string(), table);
+
+        let mut state = MissionState::new();
+        state.missions.push_back(ActiveMission::new(
+            0, MissionKind::Diplomacy, MissionFaction::Alliance, character, system, 1,
+        ));
+        state.next_id = 1;
+
+        // roll = 0.98 → 98% < 99% success → should succeed via MSTB table
+        let results = MissionSystem::advance(
+            &mut state, &world, &[TickEvent { tick: 1 }], &[0.98],
+        );
+        assert_eq!(results[0].outcome, MissionOutcome::Success,
+            "MSTB table lookup should yield ~99% success at skill=50");
+    }
+
+    #[test]
+    fn espionage_success_emits_intelligence_gathered() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let zero = skill_pair(0);
+        let character = world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Intel".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: zero,
+            espionage: skill_pair(75),
+            ship_design: zero,
+            troop_training: zero,
+            facility_design: zero,
+            combat: zero,
+            leadership: zero,
+            loyalty: zero,
+            jedi_probability: 0,
+            jedi_level: zero,
+            can_be_admiral: false,
+            can_be_commander: true,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+        });
+
+        let mut state = MissionState::new();
+        state.missions.push_back(ActiveMission::new(
+            0, MissionKind::Espionage, MissionFaction::Alliance, character, system, 1,
+        ));
+        state.next_id = 1;
+
+        let results = MissionSystem::advance(
+            &mut state, &world, &[TickEvent { tick: 1 }], &[0.0],
+        );
+        assert_eq!(results[0].outcome, MissionOutcome::Success);
+        assert!(results[0].effects.iter().any(|e| matches!(
+            e, MissionEffect::SystemIntelligenceGathered { .. }
+        )));
+    }
+
+    #[test]
+    fn mstb_key_matches_expected_dat_stems() {
+        assert_eq!(MissionKind::Diplomacy.mstb_key(),      Some("DIPLMSTB"));
+        assert_eq!(MissionKind::Recruitment.mstb_key(),    Some("RCRTMSTB"));
+        assert_eq!(MissionKind::Sabotage.mstb_key(),       Some("SBTGMSTB"));
+        assert_eq!(MissionKind::Assassination.mstb_key(),  Some("ASSNMSTB"));
+        assert_eq!(MissionKind::Espionage.mstb_key(),      Some("ESPIMSTB"));
+        assert_eq!(MissionKind::Rescue.mstb_key(),         Some("RESCMSTB"));
+        assert_eq!(MissionKind::Abduction.mstb_key(),      Some("ABDCMSTB"));
+        assert_eq!(MissionKind::InciteUprising.mstb_key(), Some("INCTMSTB"));
+        assert_eq!(MissionKind::Autoscrap.mstb_key(),      None);
     }
 }
