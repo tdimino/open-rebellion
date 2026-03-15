@@ -1,6 +1,6 @@
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). Living Galaxy + War Room complete; WASM verification in progress.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.3.0 (~42% complete). Living Galaxy + War Room COMPLETE. Ghidra RE of REBEXE.EXE COMPLETE (~4,900 functions decompiled). War Machine implementation UNBLOCKED.
 
 ## Build
 
@@ -41,9 +41,10 @@ PATH="/usr/bin:$PATH" cargo check
 
 ## Known Limitations
 
-- WASM compiles but `std::process::exit` and `std::fs::read` need `#[cfg(not(target_arch = "wasm32"))]` guards
+- WASM cfg guards added (v0.3.0) but browser data loading still returns error stub
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
-- Many MISSNSD.DAT mission field names are semantic guesses (flag_col6..flag_col21) -- Ghidra RE needed for full semantics
+- MISSNSD.DAT flag_col6..flag_col21 semantics partially resolved via Ghidra RE -- see `ghidra/notes/annotated-functions.md`
+- CapitalShipClass/FighterClass world models carry only ~10 of 50+ DAT fields -- 15 more needed for combat (see `ghidra/notes/rust-implementation-guide.md`)
 
 ## Agent Docs
 
@@ -52,7 +53,7 @@ PATH="/usr/bin:$PATH" cargo check
 @agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 @agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 @agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
-@agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering: Ghidra setup, MCP bridge, combat formula targets, GNPRTB mapping. Read when doing RE work.
+@agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: ~4,900 decompiled functions, combat formulas, 97 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
 @agent_docs/assets.md -- Asset pipeline: HD upscaling (waifu2x/chaiNNer), 3D model generation (Hunyuan3D/Meshy), sprite sheet rendering (Blender). Read when working on visual assets.
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
 

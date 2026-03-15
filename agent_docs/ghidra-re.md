@@ -1,85 +1,133 @@
 # Ghidra Reverse Engineering
 
-REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions across 2.4MB of .text. STRATEGY.DLL is resource-only (29MB of sprites, 9KB of CRT boilerplate). See `ghidra/notes/combat-formulas.md` for the full RE dossier.
+REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,900 decompiled. STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT). RE is **complete** for implementation purposes. See `ghidra/notes/` for the full corpus: 4 scholar documents (4,179 lines), 11 markdown docs, ~4,900 decompiled C files, 8 Jython scripts.
+
+## RE Status: COMPLETE
+
+| What | Status |
+|------|--------|
+| Combat call chain | Fully traced (orchestrator → 4 subsystems → per-unit) |
+| Bombardment formula | **Decoded**: `sqrt(delta²) / GNPRTB[0x1400]` |
+| Space combat pipeline | 7 phases mapped, vtable dispatch identified |
+| Ground combat | Troop iteration at +0x96, per-unit via vtable +0x330 |
+| GNPRTB parameters | **97 mapped**: 26 general + 71 combat |
+| Game object layout | 10+ field offsets confirmed across all entity types |
+| C++ class hierarchy | Reconstructed: CRebObject → CNotifyObject → CCombatUnit |
+| Entity type codes | 8 family byte ranges identified |
+| Scripted events | 15+ story events mapped, 50 event IDs |
+| Modder documentation | 4 scholar documents ready |
 
 ## Setup
 
 | Component | Location |
 |-----------|----------|
 | Ghidra install | `~/ghidra/` |
-| Launch | `ghidra` (alias in ~/.zshrc → `~/ghidra/ghidraRun`) |
-| Java | Temurin JDK 25.0.2 (via `brew install --cask temurin`) |
+| Launch | `ghidra` (alias in ~/.zshrc) |
+| Java | Temurin JDK 25.0.2 |
 | Project | `open-rebellion/ghidra/Open Rebellion Ghidra.gpr` |
-| GhidraMCP plugin | Enabled in Developer Plugins — REST API on `:8080` |
-| Bridge script | `~/ghidra/GhidraMCP/bridge_mcp_ghidra.py` |
+| GhidraMCP plugin | LaurieWired v11.3.2 — REST API on `:8080` (caps at 99 results) |
+| Bridge script | `~/ghidra/GhidraMCP/bridge_mcp_ghidra.py` (bethington v4.3.0 script, old plugin JAR) |
+| pyghidra-mcp | Config fixed: `--project-path`, `--force-analysis`, `--wait-for-analysis` |
 
-## MCP Access
-
-Two MCP servers configured in `~/.claude/settings.json`:
-
-1. **`ghidra`** (bridge): `bridge_mcp_ghidra.py` → REST API at `http://127.0.0.1:8080/`
-2. **`pyghidra-mcp`** (direct): targets project files via stdio
-
-**Important**: MCP tools likely do NOT propagate to spawned teammate agents. For swarm tasks requiring Ghidra, the lead agent should query Ghidra and pass results to teammates via task descriptions.
+**Note**: Bethington GhidraMCP v4.3.0 JAR requires Ghidra 12.0.3 (we have 11.3.2). The bridge script is updated but the Java plugin is the old LaurieWired version. Use Jython scripts for unlimited function access.
 
 ## Target Files
 
-| File | Size | .text | Functions | Content | Priority |
-|------|------|-------|-----------|---------|----------|
-| **REBEXE.EXE** | 2.8MB | 2.4MB | **22,741** | ALL game logic (combat, missions, AI, events) | **Primary RE target** |
-| COMMON.DLL | 2.9MB | TBD | TBD | MFC/Win32 shared library | Medium — may have combat utilities |
-| STRATEGY.DLL | 29MB | 9KB | 43 (CRT) | Resource-only (strategy view sprites) | None — no game logic |
-| TACTICAL.DLL | 7.8MB | TBD | TBD | Likely resource-only (tactical sprites) | Low |
-| TEXTSTRA.DLL | 150KB | — | — | String resources (entity names) | Done — parsed via pelite in Rust |
+| File | Size | Functions | Decompiled | Content |
+|------|------|-----------|------------|---------|
+| **REBEXE.EXE** | 2.8MB | 22,741 | **~4,900** | ALL game logic |
+| COMMON.DLL | 2.9MB | TBD | 0 | MFC/Win32 shared library |
+| STRATEGY.DLL | 29MB | 43 (CRT) | N/A | Resource-only (sprites) |
+| TACTICAL.DLL | 7.8MB | TBD | 0 | Likely resource-only |
+| TEXTSTRA.DLL | 150KB | — | — | Done — parsed via pelite |
 
-## What to Look For
+## Key Findings
 
-### Combat Formulas (REBEXE.EXE)
-- Space combat: damage calculation per weapon arc, shield absorption, hull damage
-- Ground combat: troop engagement, orbital bombardment effectiveness
-- Fleet auto-resolve: how the game decides battle outcomes without tactical view
-- Blockade mechanics: when/how blockades trigger
+### GNPRTB Parameter System
+Two binding tables map GNPRTB parameter IDs to global data addresses:
+- **FUN_0053e450**: 26 general parameters (IDs 0x0a00-0x0a21) — travel, skills, economy
+- **FUN_0055cb60**: 71 combat parameters (IDs 0x1400-0x1445) — damage, shields, bombardment
+- `DAT_006bb6e8` = parameter 0x1400 = bombardment base divisor
+- `DAT_00661a88` = difficulty modifier table
+- Runtime struct: 68 bytes (vtable + base fields + 8 i32 difficulty values at offset 36)
 
-Note: STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT boilerplate). All game logic lives in REBEXE.EXE (2.8MB, 22,741 functions). See `ghidra/notes/` for 109+ decompiled C files, modular docs (space-combat.md, ground-combat.md, bombardment.md), and 1,662 lines of annotated function reference.
+### Game Object Layout
+| Offset | Type | Field | Notes |
+|--------|------|-------|-------|
+| +0x00 | void* | vtable | C++ vtable pointer |
+| +0x50 | uint | status_flags | bit0=active, bit3=fighter_combat_eligible |
+| +0x58 | uint | combat_phase_flags | Space combat bitfield |
+| +0x60 | int | hull_current / squad_size | Polymorphic by vtable — same offset for ships and squadrons |
+| +0x64 bits 0-3 | 4-bit | shield_recharge_rate | 0-15, XOR-masked read-modify-write |
+| +0x64 bits 4-7 | 4-bit | weapon_recharge_rate | 0-15, same word as shield |
+| +0x66 | short | base_loyalty | 0-100 |
+| +0x78 bit 7 | bit | special_entity_flag | Alt shield path for special entities |
+| +0x8a | short | enhanced_loyalty | Bonus from missions, 0-0x7fff |
+| +0x96 | short | regiment_strength | Ground troops, 0=destroyed |
+| +0x9a | short | hyperdrive_modifier | Han Solo bonus, no upper bound |
+| +0xac bit 0 | bit | alive_flag | Combat-ready when set |
 
-### GNPRTB Parameter Usage
-GNPRTB has 213 entries but only ~29% are documented. Each has 8 values (difficulty levels). Finding which GNPRTB index maps to which game mechanic requires tracing references in REBEXE.EXE.
+### Entity Family Bytes (DatId >> 24)
+| Range | Type |
+|-------|------|
+| 0x08-0x0f | Characters |
+| 0x14-0x1b | Troops / Special Forces |
+| 0x30-0x3b | Capital Ships + Fighters |
+| 0x34 | Death Star (special) |
+| 0x71-0x72 | Fighter squadron types |
+| 0x73-0x74 | Special combat entity |
+| 0x90-0x98 | Star Systems |
 
-Known mappings (from community + rebellion2):
-- Travel time multipliers
-- Combat recovery rates
-- Mission reward/penalty amounts
-- Diplomacy shift magnitudes
-- Uprising thresholds
-
-Unknown (~150 parameters): Ghidra RE target. Look for functions that index into the GNPRTB table (likely a global array of 213 × 8 i32 values loaded at startup).
-
-### Mission Probability Tables
-The `*MSTB.DAT` files (IntTableEntry format) define skill threshold → probability curves for each mission type. REBEXE.EXE reads these at mission execution time. Trace the code path from mission dispatch → table lookup → probability roll → outcome.
-
-## Analysis Tips
-
-1. **Auto-analysis**: Run Analysis → Auto Analyze with all options checked. The initial 43-function count was likely incomplete.
-2. **String search**: Search for known string literals from TEXTSTRA to find cross-references
-3. **Table access patterns**: Look for array indexing with constants matching GNPRTB entry counts (213) or mission counts (25)
-4. **C++ vtables**: STRATEGY.DLL is likely C++ — check for vtable patterns to identify class hierarchies
-5. **Export table**: Win32 DLL exports may reveal function names
-
-## Project Files
-
+### C++ Class Hierarchy
 ```
-open-rebellion/ghidra/
-├── Open Rebellion Ghidra.gpr     # Ghidra project
-├── Open Rebellion Ghidra.rep/    # Project repository (analysis DB)
-├── notes/                        # RE notes (findings go here)
-└── scripts/                      # Ghidra Python scripts
+CRebObject
+└── CNotifyObject
+    ├── CCombatUnit
+    │   ├── CCapitalShip
+    │   ├── CDeathStar
+    │   └── CFighterSquadron
+    ├── CTroopRegiment
+    ├── CSpecialForces
+    ├── CFacility
+    ├── CCharacter
+    │   ├── CMajorCharacter
+    │   └── CMinorCharacter
+    ├── CStarSystem
+    ├── CFleet
+    └── CMission
 ```
+
+## Scholar Documents
+
+Read these when implementing or modding:
+
+| Document | When to Read |
+|----------|-------------|
+| `ghidra/notes/rust-implementation-guide.md` | Before implementing combat in Rust |
+| `ghidra/notes/modders-taxonomy.md` | When designing mod system or total conversion support |
+| `ghidra/notes/cpp-class-hierarchy.md` | When mapping C++ objects to Rust structs |
+| `ghidra/notes/annotated-functions.md` | When you need exact field offsets or game rules |
+| `ghidra/notes/combat-formulas.md` | Master reference for all RE findings |
+
+## Ghidra Scripts (8 total)
+
+Run via Jython: `exec(open("path/to/script.py").read())`
+
+| Script | Purpose |
+|--------|---------|
+| FindAllFunctions.py | x86 prologue scanner (found 22,741 functions) |
+| DumpStrings.py | Keyword string search → ~/Desktop/rebellion-strings.txt |
+| DumpCombatXrefs.py | String → function xref tracer |
+| DumpCallers.py | Direct caller finder (confirmed virtual dispatch) |
+| DumpCombatRegion.py | Function listing in combat area |
+| FindCombatMath.py | Combat math pattern search |
+| DumpAllGameFunctions.py | Exhaustive 4,938-function catalog with string references |
+| DumpGNPRTBXrefs.py | GNPRTB parameter → consuming function tracer |
 
 ## Workflow
 
-1. Open Ghidra: `ghidra` in terminal
-2. Open project: `open-rebellion/ghidra/Open Rebellion Ghidra.gpr`
-3. Double-click STRATEGY.DLL in project tree to open CodeBrowser
-4. Ensure GhidraMCP plugin is active (Developer Plugins)
-5. Use MCP tools from Claude Code, or browse manually in the decompiler
-6. Document findings in `ghidra/notes/` as markdown files
+1. Open Ghidra → Open Rebellion Ghidra project → double-click REBEXE.EXE
+2. Enable GhidraMCP plugin (File → Configure → Developer)
+3. Decompile via API: `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"`
+4. Or use Jython scripts for batch operations
+5. Document findings in `ghidra/notes/`

@@ -84,7 +84,9 @@ Ghidra RE of REBEXE.EXE complete: 109 functions decompiled, combat call chain fu
 ## Known Technical Debt
 
 - dat-dumper in `tools/` is also a library dep of rebellion-data -- works but unconventional
-- WASM uses `std::process::exit` and `std::fs::read` -- need `#[cfg]` guards for browser target
+- WASM cfg guards added but browser data loading returns error stub (no fetch API yet)
 - `web/gl.js` fetched from external URL on first build -- should vendor or pin version
-- `CapitalShipClass`/`FighterClass` world models carry only ~10 of 50+ DAT fields -- expand when combat lands
+- `CapitalShipClass`/`FighterClass` world models carry only ~10 of 50+ DAT fields -- 15 more needed for combat (see `ghidra/notes/rust-implementation-guide.md`)
 - `SectorGroup` enum lives in `dat/` module but is a world-layer concept -- move to `world/`
+- `GameWorld` needs `gnprtb: GnprtbParams` and `mission_tables: HashMap<String, MstbTable>` for combat
+- Need `ShipInstance` type (per-hull combat state) to replace count-only `ShipEntry` in fleets
