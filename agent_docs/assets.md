@@ -171,11 +171,11 @@ clean silhouette, stylized low-poly game asset, 1024x1024
 
 ```
 Hunyuan3D/Meshy → raw GLBs (scripts/models-staging/)
-  → strip-textures.mjs (geometry only)
-  → gltf-transform optimize (simplify, weld, prune)
-  → gltf-transform draco (14-bit position, edgebreaker)
+  → strip-textures.mjs (geometry only) [not yet ported from WWW]
+  → gltf-transform simplify (ratio 0.10) + optimize (weld, prune)
+  → gltf-transform draco (14-bit position quantization)
   → Blender batch render (8 directional frames)
-  → PNG sprite atlases (data/models/sprites/)
+  → PNG sprite atlases (data/models/sprites/) [not yet created]
 ```
 
 ### Scripts
@@ -230,7 +230,7 @@ World War Watcher's 3D pipeline is the direct ancestor. Key files to reference:
 |----------|---------|-----------|
 | `scripts/generate-models.py` | Hunyuan3D fal.ai batch generation | `generate-rebellion-models.py` |
 | `scripts/prepare-models.sh` | GLB optimization + DRACO | `prepare-rebellion-models.sh` |
-| `scripts/strip-textures.mjs` | Remove textures from GLBs | Reuse directly |
+| `scripts/strip-textures.mjs` | Remove textures from GLBs | Port from WWW (not yet copied) |
 | `scripts/model-compare.html` | Three.js comparison viewer | Adapt for SW units |
 | `agent_docs/3d-models.md` | Pipeline docs, best practices | Reference patterns |
 | `agent_docs/asset-pipeline.md` | Full asset flow diagram | Reference patterns |

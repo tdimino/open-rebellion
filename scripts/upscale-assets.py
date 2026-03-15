@@ -163,14 +163,21 @@ def main() -> None:
     manifest = load_manifest()
 
     # Determine method
-    use_waifu2x = False
-    if args.method == "waifu2x" or (args.method == "auto" and find_waifu2x()):
+    if args.method == "waifu2x":
+        if not find_waifu2x():
+            print("waifu2x-ncnn-vulkan not found. Install or add to PATH.", file=sys.stderr)
+            print("  Binary: ~/tools/waifu2x/waifu2x-ncnn-vulkan-20250915-macos/", file=sys.stderr)
+            print("  Wrapper: ~/.local/bin/waifu2x", file=sys.stderr)
+            sys.exit(1)
         use_waifu2x = True
+    elif args.method == "auto":
+        use_waifu2x = bool(find_waifu2x())
+    else:
+        use_waifu2x = False
+
+    if use_waifu2x:
         print(f"Method: waifu2x-ncnn-vulkan (scale={args.scale}x, denoise={args.denoise})")
     else:
-        if args.method == "waifu2x":
-            print("waifu2x-ncnn-vulkan not found. Install: brew install waifu2x-ncnn-vulkan")
-            sys.exit(1)
         print(f"Method: PIL nearest-neighbor (scale={args.scale}x)")
 
     if use_waifu2x:

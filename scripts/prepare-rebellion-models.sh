@@ -94,7 +94,6 @@ for filename in "${FILES[@]}"; do
   basename="${filename%.glb}"
   out="$OUTPUT_DIR/$filename"
   tmp_dir=$(mktemp -d)
-  trap 'rm -rf "$tmp_dir"' EXIT
 
   in_size=$(stat -f%z "$src" 2>/dev/null || stat -c%s "$src" 2>/dev/null)
   in_kb=$((in_size / 1024))
@@ -140,14 +139,12 @@ for filename in "${FILES[@]}"; do
 
   # Step 3: DRACO compress
   echo "  draco: pos=${QUANTIZE_POSITION}bit, normal=${QUANTIZE_NORMAL}bit..."
+  # Note: edgebreaker is the internal default for mesh connectivity — not a CLI flag
   npx gltf-transform draco \
     "$current" "$out" \
     --quantize-position "$QUANTIZE_POSITION" \
     --quantize-normal "$QUANTIZE_NORMAL" \
     --quantize-texcoord "$QUANTIZE_TEXCOORD" \
-    --method edgebreaker \
-    --encode-speed 3 \
-    --decode-speed 5 \
     2>/dev/null || {
       echo "  WARNING: DRACO failed, copying optimized version"
       cp "$current" "$out"
@@ -169,7 +166,6 @@ for filename in "${FILES[@]}"; do
   fi
 
   rm -rf "$tmp_dir"
-  trap - EXIT
   echo ""
 done
 

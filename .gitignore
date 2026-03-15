@@ -12,8 +12,9 @@ data/base/EData/
 # Exported JSON (generated from DAT files)
 data/base/json/
 
-# 3D model staging (raw GLBs from Hunyuan/Meshy, not checked in)
+# 3D model staging and intermediates (not checked in)
 scripts/models-staging/
+scripts/models-optimized/
 scripts/logs/
 
 # Ghidra project files (binary, large)

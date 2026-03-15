@@ -90,12 +90,16 @@ def setup_render(resolution):
     scene.render.image_settings.color_mode = 'RGBA'
     # Use Eevee for speed (sufficient for sprite rendering)
     # Blender 5.x: 'BLENDER_EEVEE', 4.x: 'BLENDER_EEVEE_NEXT'
+    eevee_set = False
     for engine in ('BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT'):
         try:
             scene.render.engine = engine
+            eevee_set = True
             break
         except TypeError:
             continue
+    if not eevee_set:
+        print(f"WARNING: Could not set Eevee — using {scene.render.engine}. Renders may be slow.")
 
 
 def setup_camera(size):

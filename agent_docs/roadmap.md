@@ -53,7 +53,7 @@ Delivered:
 4. Victory conditions (capture enemy HQ, destroy Death Star / find Rebel base)
 5. 3D tactical models: nano-banana-pro concept art → Hunyuan3D Pro/Meshy → Blender sprite sheets. Pipeline proven in World War Watcher (14 models). See `@agent_docs/assets.md`.
 
-Ghidra RE of REBEXE.EXE complete: 109 functions decompiled, combat call chain fully traced, bombardment formula decoded, 71 combat GNPRTB parameters mapped, game object layout documented. See `ghidra/notes/` for modular docs and 1,662-line annotated function reference.
+Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain fully traced, bombardment formula decoded, 97 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for 7 scholar docs (4,179 lines) and 5,127 decompiled C files.
 
 ## Full Parity
 *Feature-complete*
@@ -63,7 +63,7 @@ Ghidra RE of REBEXE.EXE complete: 109 functions decompiled, combat call chain fu
 3. Special character abilities (Jedi training, betrayal, decoys)
 4. Video playback (Smacker to WebM), sound effects, music
 5. Save/load with mod compatibility metadata (bincode + mod version hash)
-6. HD asset pack: all original BMPs upscaled 4x via waifu2x-ncnn-vulkan (4x SGI model via chaiNNer for comparison). PNG format, `data/hd/` with fallback to originals. See `@agent_docs/assets.md`.
+6. HD asset pack: all original BMPs upscaled 4x via waifu2x-ncnn-vulkan (PBRify_UpscalerV4 via chaiNNer for comparison). PNG format, `data/hd/` with fallback to originals. See `@agent_docs/assets.md`.
 
 ## Mod Workshop
 *Release candidate*
@@ -79,7 +79,7 @@ Ghidra RE of REBEXE.EXE complete: 109 functions decompiled, combat call chain fu
 1. **Launch Knesset Tiamat** -- War Machine implementation swarm (combat, missions, victory, save/load)
 2. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
 3. **WASM build verification** -- confirmed 3.4MB artifact at v0.3.0
-4. **Ghidra RE** -- COMPLETE. 109 functions, bombardment formula decoded, GNPRTB mapped. Continue decompiling for modder documentation.
+4. **Ghidra RE** -- COMPLETE. 5,127 functions decompiled, 7 scholar docs, 97 GNPRTB params, C++ hierarchy reconstructed.
 
 ## Known Technical Debt
 
