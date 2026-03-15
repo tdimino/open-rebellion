@@ -41,6 +41,7 @@ STAGING_DIR = SCRIPT_DIR / "models-staging"
 LOG_FILE = SCRIPT_DIR / "logs" / "rebellion-models.jsonl"
 
 MESHY_API_BASE = "https://api.meshy.ai/openapi/v2/text-to-3d"
+WAVESPEED_API_BASE = "https://api.wavespeed.ai/api/v3/wavespeed-ai"
 POLL_INTERVAL = 5
 
 # ── Model definitions ─────────────────────────────────────────────────────────
@@ -328,6 +329,14 @@ def get_fal_key() -> str:
     return key
 
 
+def get_wavespeed_key() -> str:
+    key = os.environ.get("WAVESPEED_API_KEY", "")
+    if not key:
+        print("ERROR: WAVESPEED_API_KEY not set. Sign up at wavespeed.ai", file=sys.stderr)
+        sys.exit(1)
+    return key
+
+
 def log_event(event: dict) -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a") as f:
@@ -452,6 +461,59 @@ def hunyuan_generate(model_id: str, model: dict, quiet: bool) -> Path | None:
     return download_glb(session, glb_url, model_id, "-hunyuan")
 
 
+# ── WaveSpeedAI provider ─────────────────────────────────────────────────────
+
+def wavespeed_generate(session: requests.Session, model_id: str, model: dict, quiet: bool) -> Path | None:
+    """Generate via WaveSpeedAI Hunyuan3D v3.1 Rapid ($0.0225/model). Returns output path or None."""
+    endpoint = f"{WAVESPEED_API_BASE}/hunyuan-3d-v3.1/text-to-3d-rapid"
+    payload = {"prompt": model["prompt"]}
+
+    if not quiet:
+        print(f"  [{model_id}] WaveSpeedAI Hunyuan3D v3.1 Rapid — text-to-3D...")
+    log_event({"action": "wavespeed_submit", "model_id": model_id})
+
+    resp = session.post(endpoint, json=payload)
+    resp.raise_for_status()
+    data = resp.json().get("data", {})
+    task_id = data.get("id")
+    result_url = data.get("urls", {}).get("get")
+
+    if not task_id or not result_url:
+        print(f"  [{model_id}] WaveSpeedAI: no task ID in response", file=sys.stderr)
+        return None
+
+    if not quiet:
+        print(f"  [{model_id}] Task submitted: {task_id}")
+
+    # Poll for completion
+    for _ in range(60):  # 5 min max
+        time.sleep(POLL_INTERVAL)
+        poll_resp = session.get(result_url)
+        poll_resp.raise_for_status()
+        poll_data = poll_resp.json().get("data", {})
+        status = poll_data.get("status", "unknown")
+
+        if status == "completed":
+            outputs = poll_data.get("outputs", [])
+            if not outputs:
+                print(f"  [{model_id}] WaveSpeedAI completed but no outputs", file=sys.stderr)
+                return None
+            glb_url = outputs[0]
+            exec_ms = poll_data.get("executionTime", 0)
+            if not quiet:
+                print(f"  [{model_id}] Complete ({exec_ms}ms)")
+            return download_glb(session, glb_url, model_id, "-wavespeed")
+
+        if status == "failed":
+            error = poll_data.get("error", "unknown")
+            print(f"  [{model_id}] WaveSpeedAI FAILED: {error}", file=sys.stderr)
+            log_event({"action": "wavespeed_failed", "model_id": model_id, "error": error})
+            return None
+
+    print(f"  [{model_id}] WaveSpeedAI timed out after 5 min", file=sys.stderr)
+    return None
+
+
 # ── Shared utilities ──────────────────────────────────────────────────────────
 
 def download_glb(session: requests.Session, url: str, model_id: str, suffix: str) -> Path | None:
@@ -478,8 +540,8 @@ def main() -> None:
     parser.add_argument("--models", nargs="+", help="Specific model IDs to generate")
     parser.add_argument("--list", action="store_true", help="List all model IDs")
     parser.add_argument("--status", action="store_true", help="Show staging directory contents")
-    parser.add_argument("--provider", choices=["hunyuan", "meshy", "both"], default="both",
-                        help="Which provider to use (default: both, per model config)")
+    parser.add_argument("--provider", choices=["hunyuan", "meshy", "wavespeed", "both"], default="both",
+                        help="Which provider to use (default: both, per model config). wavespeed=$0.0225/model.")
     parser.add_argument("--skip-refine", action="store_true", help="Meshy preview only")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
     args = parser.parse_args()
@@ -512,6 +574,7 @@ def main() -> None:
     # Validate API keys early — fail fast before the loop
     needs_hunyuan = args.provider in ("hunyuan", "both")
     needs_meshy = args.provider in ("meshy", "both")
+    needs_wavespeed = args.provider == "wavespeed"
 
     if needs_hunyuan:
         get_fal_key()  # validates FAL_KEY is set
@@ -521,6 +584,13 @@ def main() -> None:
         key = get_meshy_key()
         meshy_session = requests.Session()
         meshy_session.headers["Authorization"] = f"Bearer {key}"
+
+    wavespeed_session = None
+    if needs_wavespeed:
+        key = get_wavespeed_key()
+        wavespeed_session = requests.Session()
+        wavespeed_session.headers["Authorization"] = f"Bearer {key}"
+        wavespeed_session.headers["Content-Type"] = "application/json"
 
     print(f"Generating {len(model_ids)} model(s)...\n")
 
@@ -541,7 +611,9 @@ def main() -> None:
         print(f"[{mid}] {model['name']} via {provider}")
 
         output = None
-        if provider == "hunyuan":
+        if provider == "wavespeed" and wavespeed_session:
+            output = wavespeed_generate(wavespeed_session, mid, model, args.quiet)
+        elif provider == "hunyuan":
             output = hunyuan_generate(mid, model, args.quiet)
         elif provider == "meshy" and meshy_session:
             output = meshy_generate(meshy_session, mid, model, args.skip_refine, args.quiet)
