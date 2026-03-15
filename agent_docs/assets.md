@@ -222,6 +222,75 @@ Original TEXTSTRA.DLL strings extracted via pelite (already implemented). Encycl
 
 ---
 
+## Pipeline 4: Reference Image Generation (nano-banana-pro)
+
+Generate new assets using curated reference collections from the original game.
+Up to 14 reference images per generation via Gemini 3 Pro Image (or Flash via `--fast`).
+
+### Reference Collections (11 categories, 91 images)
+
+Each collection in `assets/references/ref-{category}/` contains:
+- `{name}.png` — 4x upscaled via waifu2x (for Gemini detail visibility)
+- `{name}-orig.png` — original resolution (ground truth for style matching)
+- `prompt-template.txt` — category-specific prompt with `{description}` placeholder
+
+| Collection | Refs | Use Case |
+|------------|------|----------|
+| `ref-capital-ships` | 5 | Ship encyclopedia entries, 3D model concept art |
+| `ref-fighters` | 4 | Fighter profiles, squadron sprites |
+| `ref-characters` | 7 | Character portraits, status panels |
+| `ref-planets` | 9 | System/planet encyclopedia views |
+| `ref-troops` | 8 | Ground unit illustrations |
+| `ref-special-forces` | 6 | Covert operative portraits |
+| `ref-facilities` | 9 | Military/industrial architecture |
+| `ref-missions` | 8 | Mission briefing scenes |
+| `ref-damage-diagrams` | 14 | Ship technical schematics |
+| `ref-squadron-sprites` | 14 | Top-down fighter sprites |
+| `ref-battle-backgrounds` | 7 | Tactical combat space scenes |
+
+### Scripts
+
+```bash
+# Curate reference collections from MetasharpNet editor
+uv run scripts/curate-references.py --list              # show categories
+uv run scripts/curate-references.py --upscale            # extract + upscale all
+
+# Generate new assets
+uv run scripts/generate-rebellion-assets.py --list       # show categories
+uv run scripts/generate-rebellion-assets.py \
+  --category capital-ships \
+  --description "Victory-class warship, shorter wedge hull"
+uv run scripts/generate-rebellion-assets.py \
+  --category planets \
+  --manifest data/manifests/planets.json               # batch mode
+
+# Compare Pro vs Flash quality
+uv run scripts/generate-rebellion-assets.py \
+  --category fighters \
+  --description "TIE Defender, three-wing configuration" \
+  --compare
+```
+
+### Safety Filter Note
+
+Gemini blocks "Star Wars" + weapon terms (e.g., "Star Destroyer"). Prompt templates use
+"sci-fi space" phrasing instead. The reference images anchor the style — Gemini matches
+the 1998 CGI aesthetic from the references, not from the text prompt.
+
+### ASSET ARCHAEOLOGY STATION (Reference Viewer)
+
+`scripts/reference-viewer.html` — PHOSPHOR VIGIL CRT-styled comparison viewer for all
+11 reference collections. Shows original vs 4x-upscaled side-by-side with draggable slider.
+
+```bash
+cd open-rebellion && python3 -m http.server 8080
+# Open http://localhost:8080/scripts/reference-viewer.html
+```
+
+Keyboard: `←`/`→` nav images, `[`/`]` nav categories, `G` pixel grid overlay, `D` slider/side-by-side, `Space` fit/1:1 zoom.
+
+---
+
 ## WWW Pipeline Reference
 
 World War Watcher's 3D pipeline is the direct ancestor. Key files to reference:

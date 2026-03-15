@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASSET ARCHAEOLOGY STATION — Open Rebellion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --void: #0a0c14;
+    --console: #10131e;
+    --screen: #181c2a;
+    --phosphor: #2dd4bf;
+    --phosphor-dim: rgba(45, 212, 191, 0.15);
+    --phosphor-glow: rgba(45, 212, 191, 0.4);
+    --amber: #c4a35a;
+    --amber-dim: rgba(196, 163, 90, 0.15);
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --border: rgba(45, 212, 191, 0.12);
+    --border-hover: rgba(45, 212, 191, 0.3);
+    --header-h: 48px;
+    --footer-h: 32px;
+    --sidebar-w: 260px;
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: 'IBM Plex Mono', monospace;
+    background: var(--void);
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* ── BOOT ANIMATION ── */
+  @keyframes boot-flash {
+    0%   { filter: brightness(0); }
+    15%  { filter: brightness(2.5); }
+    30%  { filter: brightness(0.6); }
+    60%  { filter: brightness(1.2); }
+    100% { filter: brightness(1); }
+  }
+
+  body.booting { animation: boot-flash 0.6s ease-out forwards; }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: grid;
+    grid-template-rows: var(--header-h) 1fr var(--footer-h);
+    grid-template-columns: var(--sidebar-w) 1fr;
+    grid-template-areas:
+      "header header"
+      "sidebar main"
+      "footer footer";
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    grid-area: header;
+    background: var(--console);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 10;
+  }
+
+  .header-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--phosphor);
+    letter-spacing: 0.15em;
+    text-shadow: 0 0 8px var(--phosphor-glow);
+  }
+
+  .header-title span {
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .header-stats {
+    display: flex;
+    gap: 20px;
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .header-stats .stat-val {
+    color: var(--phosphor);
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    grid-area: sidebar;
+    background: var(--console);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .sidebar-scroll::-webkit-scrollbar { width: 3px; }
+  .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+  .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--phosphor-dim); border-radius: 2px; }
+
+  .category-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+    color: var(--text-secondary);
+    user-select: none;
+  }
+
+  .category-item:hover {
+    background: var(--phosphor-dim);
+    color: var(--text-primary);
+    border-left-color: var(--border-hover);
+  }
+
+  .category-item.active {
+    background: rgba(45, 212, 191, 0.08);
+    color: var(--phosphor);
+    border-left-color: var(--phosphor);
+  }
+
+  .category-icon {
+    font-size: 14px;
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .category-label {
+    flex: 1;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .category-badge {
+    font-size: 10px;
+    background: rgba(45, 212, 191, 0.1);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 0 6px;
+    line-height: 16px;
+    flex-shrink: 0;
+  }
+
+  .category-item.active .category-badge {
+    background: rgba(45, 212, 191, 0.2);
+    color: var(--phosphor);
+    border-color: var(--phosphor-glow);
+  }
+
+  /* ── PROMPT PANEL ── */
+  .prompt-panel {
+    border-top: 1px solid var(--border);
+    padding: 10px 12px;
+    flex-shrink: 0;
+  }
+
+  .prompt-panel-title {
+    font-size: 10px;
+    color: var(--text-secondary);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .prompt-text {
+    font-size: 10px;
+    color: var(--amber);
+    background: rgba(196, 163, 90, 0.05);
+    border: 1px solid rgba(196, 163, 90, 0.15);
+    border-radius: 3px;
+    padding: 6px 8px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow-y: auto;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .prompt-text:hover {
+    border-color: rgba(196, 163, 90, 0.4);
+  }
+
+  .prompt-text::-webkit-scrollbar { width: 3px; }
+  .prompt-text::-webkit-scrollbar-thumb { background: rgba(196, 163, 90, 0.2); border-radius: 2px; }
+
+  .prompt-copy-hint {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    text-align: right;
+    opacity: 0.6;
+  }
+
+  .copy-flash {
+    color: var(--phosphor) !important;
+    opacity: 1 !important;
+  }
+
+  /* ── MAIN AREA ── */
+  .main {
+    grid-area: main;
+    background: var(--void);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── COMPARISON VIEWPORT ── */
+  .viewport-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .viewport {
+    flex: 1;
+    position: relative;
+    background: var(--screen);
+    overflow: hidden;
+    cursor: col-resize;
+  }
+
+  /* Scanline overlay */
+  .viewport::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 2px,
+      rgba(0, 0, 0, 0.07) 2px,
+      rgba(0, 0, 0, 0.07) 4px
+    );
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  /* Side-by-side mode */
+  .viewport.mode-sbs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    cursor: default;
+  }
+
+  .viewport.mode-sbs .img-original,
+  .viewport.mode-sbs .img-upscaled {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .viewport.mode-sbs .img-upscaled {
+    clip-path: none !important;
+  }
+
+  .viewport.mode-sbs .slider-track { display: none; }
+
+  .viewport.mode-sbs .label-original { left: 10px; }
+  .viewport.mode-sbs .label-upscaled { right: 10px; }
+
+  .img-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .viewport.mode-sbs .img-layer {
+    position: relative;
+    height: 100%;
+  }
+
+  .viewport.mode-sbs .img-layer.img-original {
+    border-right: 1px solid var(--border);
+  }
+
+  .img-layer img {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+    transition: none;
+  }
+
+  .img-original img {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  .img-upscaled img {
+    image-rendering: smooth;
+  }
+
+  /* Zoom: 1:1 */
+  .viewport.zoom-1to1 .img-layer img {
+    max-width: none;
+    max-height: none;
+    width: auto;
+    height: auto;
+  }
+
+  /* Pixel grid overlay */
+  .pixel-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 15;
+    display: none;
+  }
+
+  .pixel-grid.visible { display: block; }
+
+  /* Image labels */
+  .img-label {
+    position: absolute;
+    bottom: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    z-index: 25;
+    pointer-events: none;
+  }
+
+  .label-original {
+    left: 10px;
+    color: var(--amber);
+    background: rgba(196, 163, 90, 0.12);
+    border: 1px solid rgba(196, 163, 90, 0.3);
+  }
+
+  .label-upscaled {
+    right: 10px;
+    color: var(--phosphor);
+    background: rgba(45, 212, 191, 0.12);
+    border: 1px solid rgba(45, 212, 191, 0.3);
+    text-shadow: 0 0 6px var(--phosphor-glow);
+  }
+
+  /* ── SLIDER ── */
+  .slider-track {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--phosphor);
+    box-shadow: 0 0 8px var(--phosphor-glow), 0 0 20px rgba(45, 212, 191, 0.2);
+    transform: translateX(-50%);
+    z-index: 30;
+    pointer-events: none;
+    transition: box-shadow 0.1s;
+  }
+
+  .slider-grip {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(45deg);
+    width: 14px;
+    height: 14px;
+    background: var(--void);
+    border: 2px solid var(--phosphor);
+    box-shadow: 0 0 8px var(--phosphor-glow);
+  }
+
+  /* Viewport empty state */
+  .viewport-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    gap: 12px;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .viewport-empty .empty-icon {
+    font-size: 48px;
+    opacity: 0.2;
+  }
+
+  .viewport-empty p {
+    font-size: 12px;
+    opacity: 0.5;
+    letter-spacing: 0.1em;
+  }
+
+  /* ── THUMBNAIL STRIP ── */
+  .thumb-strip {
+    height: 80px;
+    background: var(--console);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 6px 8px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .thumb-strip::-webkit-scrollbar { height: 3px; }
+  .thumb-strip::-webkit-scrollbar-track { background: transparent; }
+  .thumb-strip::-webkit-scrollbar-thumb { background: var(--phosphor-dim); border-radius: 2px; }
+
+  .thumb-item {
+    flex-shrink: 0;
+    width: 60px;
+    height: 60px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    background: var(--screen);
+    transition: border-color 0.1s, box-shadow 0.1s;
+  }
+
+  .thumb-item:hover {
+    border-color: var(--border-hover);
+  }
+
+  .thumb-item.active {
+    border-color: var(--phosphor);
+    box-shadow: 0 0 6px var(--phosphor-glow);
+  }
+
+  .thumb-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    image-rendering: pixelated;
+    display: block;
+  }
+
+  /* ── RIGHT PANEL ── */
+  .right-panel {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--console);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-secondary);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .metadata-dl {
+    padding: 10px 14px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .metadata-dl::-webkit-scrollbar { width: 3px; }
+  .metadata-dl::-webkit-scrollbar-thumb { background: var(--phosphor-dim); border-radius: 2px; }
+
+  .meta-group {
+    margin-bottom: 12px;
+  }
+
+  .meta-group-title {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .meta-group.group-original .meta-group-title { color: var(--amber); border-color: rgba(196, 163, 90, 0.2); }
+  .meta-group.group-upscaled .meta-group-title { color: var(--phosphor); border-color: var(--border); }
+
+  dl.meta-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+
+  dt {
+    font-size: 10px;
+    color: var(--text-secondary);
+    align-self: start;
+  }
+
+  dd {
+    font-size: 10px;
+    word-break: break-all;
+  }
+
+  .meta-group.group-original dd { color: var(--amber); }
+  .meta-group.group-upscaled dd { color: var(--phosphor); }
+
+  /* ── MAIN CONTENT ROW ── */
+  .main-content-row {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── FOOTER ── */
+  .footer {
+    grid-area: footer;
+    background: var(--console);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 20px;
+    overflow: hidden;
+  }
+
+  .shortcut {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  kbd {
+    display: inline-block;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 2px;
+    padding: 0 4px;
+    font-family: inherit;
+    font-size: 9px;
+    color: var(--text-primary);
+    line-height: 16px;
+  }
+
+  /* ── MODE INDICATORS ── */
+  .mode-badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    letter-spacing: 0.08em;
+    transition: opacity 0.15s;
+  }
+
+  .mode-badge.inactive { opacity: 0.3; }
+
+  #badge-slider { color: var(--phosphor); border: 1px solid var(--phosphor-glow); background: rgba(45,212,191,0.06); }
+  #badge-sbs    { color: var(--amber); border: 1px solid rgba(196,163,90,0.3); background: rgba(196,163,90,0.06); }
+  #badge-zoom   { color: var(--text-secondary); border: 1px solid rgba(255,255,255,0.1); }
+  #badge-grid   { color: var(--text-secondary); border: 1px solid rgba(255,255,255,0.1); }
+
+  /* ── NO IMAGE PLACEHOLDER ── */
+  .img-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--text-secondary);
+    font-size: 10px;
+    opacity: 0.4;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .img-error-icon { font-size: 32px; opacity: 0.5; }
+</style>
+</head>
+<body class="booting">
+
+<div class="layout">
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <div class="header-title">
+      ASSET ARCHAEOLOGY STATION <span>— Open Rebellion</span>
+    </div>
+    <div class="header-stats">
+      <span><span class="stat-val" id="stat-category">—</span> category</span>
+      <span><span class="stat-val" id="stat-index">—</span> / <span class="stat-val" id="stat-total">—</span></span>
+      <span id="stat-mode-label" class="stat-val">SLIDER</span>
+    </div>
+  </header>
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-scroll" id="category-list"></div>
+    <div class="prompt-panel" id="prompt-panel" style="display:none">
+      <div class="prompt-panel-title">PROMPT TEMPLATE</div>
+      <div class="prompt-text" id="prompt-text" title="Click to copy"></div>
+      <div class="prompt-copy-hint" id="copy-hint">click to copy</div>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+    <div class="main-content-row">
+
+      <!-- ── VIEWPORT + THUMBNAILS ── -->
+      <div class="viewport-wrap">
+
+        <div class="viewport" id="viewport">
+          <div class="viewport-empty" id="viewport-empty">
+            <div class="empty-icon">◈</div>
+            <p>SELECT A CATEGORY</p>
+          </div>
+
+          <!-- Original (left / bottom layer) -->
+          <div class="img-layer img-original" id="layer-original">
+            <img id="img-original" src="" alt="Original" draggable="false">
+          </div>
+
+          <!-- Upscaled (right / clip layer) -->
+          <div class="img-layer img-upscaled" id="layer-upscaled">
+            <img id="img-upscaled" src="" alt="Upscaled" draggable="false">
+          </div>
+
+          <!-- Pixel grid canvas -->
+          <canvas class="pixel-grid" id="pixel-grid"></canvas>
+
+          <!-- Slider -->
+          <div class="slider-track" id="slider-track" style="left: 50%">
+            <div class="slider-grip"></div>
+          </div>
+
+          <!-- Labels -->
+          <div class="img-label label-original" id="label-original">ORIGINAL</div>
+          <div class="img-label label-upscaled" id="label-upscaled">UPSCALED 4×</div>
+        </div>
+
+        <div class="thumb-strip" id="thumb-strip"></div>
+      </div>
+
+      <!-- ── RIGHT METADATA PANEL ── -->
+      <div class="right-panel">
+        <div class="panel-header">Metadata</div>
+        <div class="metadata-dl" id="metadata-dl">
+          <div style="color: var(--text-secondary); font-size:11px; padding: 8px 0; opacity:0.5;">
+            No image selected
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── FOOTER ── -->
+    <footer class="footer">
+      <div class="shortcut"><kbd>←</kbd><kbd>→</kbd> prev/next</div>
+      <div class="shortcut"><kbd>[</kbd><kbd>]</kbd> category</div>
+      <div class="shortcut"><kbd>Space</kbd> fit/1:1</div>
+      <div class="shortcut"><kbd>G</kbd> pixel grid</div>
+      <div class="shortcut"><kbd>D</kbd> slider/sbs</div>
+      <div class="shortcut"><kbd>0</kbd> reset slider</div>
+      <div style="flex:1"></div>
+      <span class="mode-badge" id="badge-slider">SLIDER</span>
+      <span class="mode-badge inactive" id="badge-sbs">SBS</span>
+      <span class="mode-badge inactive" id="badge-zoom">1:1</span>
+      <span class="mode-badge inactive" id="badge-grid">GRID</span>
+    </footer>
+  </main>
+
+</div>
+
+<script>
+'use strict';
+
+// ── IMAGE MANIFEST ──────────────────────────────────────────────────────────
+
+const MANIFEST = [
+  {
+    id: 'ref-capital-ships',
+    label: 'Capital Ships',
+    icon: '☄',
+    images: [
+      '042-edata-2010-ship-alliance-mon-calamari-cruiser_mc80-liberty-cruiser',
+      '044-edata-2030-ship-alliance-assault-frigate',
+      '045-edata-2040-ship-alliance-nebulon-b-frigate',
+      '047-edata-2060-ship-alliance-corellian-corvette',
+      '063-edata-2570-ship-empire-super-star-destroyer',
+    ]
+  },
+  {
+    id: 'ref-fighters',
+    label: 'Fighters',
+    icon: '✈',
+    images: [
+      '034-edata-fighter-alliance-a-wing',
+      '035-edata-fighter-alliance-b-wing',
+      '036-edata-fighter-alliance-x-wing',
+      '037-edata-fighter-alliance-y-wing',
+    ]
+  },
+  {
+    id: 'ref-characters',
+    label: 'Characters',
+    icon: '⚔',
+    images: [
+      '072-edata-character-alliance-mon-mothma',
+      '074-edata-character-alliance-luke-skywalker',
+      '075-edata-character-alliance-han-solo',
+      '077-edata-character-empire-darth-vader',
+      '078-edata-character-alliance-ackbar',
+      '121-edata-character-empire-thrawn',
+      '192-edata-character-alliance-luke-skywalker-jedi-knight',
+    ]
+  },
+  {
+    id: 'ref-planets',
+    label: 'Planets',
+    icon: '●',
+    images: [
+      '14013-edata-system-bespin-(gas-giant)-(atlas)',
+      '14035-edata-system-coruscant',
+      '14040-edata-system-dagobah-(atlas)',
+      '14056-edata-system-endor-(moon)-(atlas)',
+      '14075-edata-system-hoth-(atlas)',
+      '14089-edata-system-kashyyyk-(atlas)',
+      '14168-edata-system-tatooine',
+      '14194-edata-system-yavin-4-(moon)-(atlas)',
+      '14195-edata-system-yavin-prime-(gas-giant)',
+    ]
+  },
+  {
+    id: 'ref-troops',
+    label: 'Troops',
+    icon: '⚓',
+    images: [
+      '015-edata-troop-alliance-alliance-fleet-regiment',
+      '016-edata-troop-alliance-alliance-army-regiment',
+      '017-edata-troop-alliance-sullustan-regiment',
+      '018-edata-troop-alliance-wookiee-regiment',
+      '019-edata-troop-alliance-mon-calamari-regiment',
+      '020-edata-troop-empire-stormtrooper-regiment',
+      '021-edata-troop-empire-imperial-fleet-regiment',
+      '022-edata-troop-empire-imperial-army-regiment',
+    ]
+  },
+  {
+    id: 'ref-special-forces',
+    label: 'Special Forces',
+    icon: '☠',
+    images: [
+      '025-edata-special-force-alliance-guerillas',
+      '026-edata-special-force-alliance-infiltrators',
+      '027-edata-special-force-alliance-longprobe-y-wing-recon-team',
+      '028-edata-special-force-alliance-bothan-spies',
+      '031-edata-special-force-empire-imperial-commandos',
+      '032-edata-special-force-empire-noghri-death-commandos',
+    ]
+  },
+  {
+    id: 'ref-facilities',
+    label: 'Facilities',
+    icon: '⌂',
+    images: [
+      '001-edata-facility-mine',
+      '002-edata-facility-refinery',
+      '003-edata-facility-orbital-shipyard',
+      '006-edata-facility-advanced-shipyard',
+      '009-edata-facility-kdy-150',
+      '010-edata-facility-lnr-series-1',
+      '011-edata-facility-gencore-level-1',
+      '012-edata-facility-lnr-series-2',
+      '013-edata-facility-gencore-level-2',
+    ]
+  },
+  {
+    id: 'ref-missions',
+    label: 'Missions',
+    icon: '⚑',
+    images: [
+      '132-edata-events-fleet-alliance',
+      '133-edata-events-fleet-empire',
+      '139-edata-mission-sabotage-empire',
+      '140-edata-mission-espionage-alliance',
+      '141-edata-mission-espionage-empire',
+      '142-edata-mission-ship-design-research-alliance',
+      '143-edata-mission-ship-design-research-empire',
+      '146-edata-mission-facility-design-research',
+    ]
+  },
+  {
+    id: 'ref-damage-diagrams',
+    label: 'Damage Diagrams',
+    icon: '⚠',
+    images: [
+      '10048-1033-gokres-status-damage-ship-alliance-mon-calamari-cruiser_mc80-liberty-cruiser',
+      '10050-1033-gokres-status-damage-ship-alliance-assault-frigate',
+      '10051-1033-gokres-status-damage-ship-alliance-nebulon-b-frigate',
+      '10053-1033-gokres-status-damage-ship-alliance-corellian-corvette',
+      '10117-1033-gokres-status-damage-ship-empire-imperial-star-destroyer_imperial-1-star-destroyer',
+      '10118-1033-gokres-status-damage-ship-empire-super-star-destroyer',
+      '10119-1033-gokres-status-damage-ship-empire-assault-transport_gladiator-star-destroyer',
+      '26432-1033-gokres-damage-ship-alliance-mon-calamari-cruiser_mc80-liberty-cruiser',
+      '26434-1033-gokres-damage-ship-alliance-assault-frigate',
+      '26435-1033-gokres-damage-ship-alliance-nebulon-b-frigate',
+      '26437-1033-gokres-damage-ship-alliance-corellian-corvette',
+      '26501-1033-gokres-damage-ship-empire-imperial-star-destroyer_imperial-1-star-destroyer',
+      '26502-1033-gokres-damage-ship-empire-super-star-destroyer',
+      '26503-1033-gokres-damage-ship-empire-assault-transport_gladiator-star-destroyer',
+    ]
+  },
+  {
+    id: 'ref-squadron-sprites',
+    label: 'Squadron Sprites',
+    icon: '✦',
+    images: [
+      '4000-1033-tactical-fighter-alliance-x-wing-red-close',
+      '4001-1033-tactical-fighter-alliance-x-wing-blue-close',
+      '4002-1033-tactical-fighter-alliance-x-wing-green-close',
+      '4003-1033-tactical-fighter-alliance-x-wing-gold-close',
+      '4004-1033-tactical-fighter-alliance-x-wing-gray-close',
+      '4010-1033-tactical-fighter-alliance-y-wing-red-close',
+      '4011-1033-tactical-fighter-alliance-y-wing-blue-close',
+      '4012-1033-tactical-fighter-alliance-y-wing-green-close',
+      '4013-1033-tactical-fighter-alliance-y-wing-gold-close',
+      '4014-1033-tactical-fighter-alliance-y-wing-gray-close',
+      '4020-1033-tactical-fighter-alliance-a-wing-red-close',
+      '4021-1033-tactical-fighter-alliance-a-wing-blue-close',
+      '4022-1033-tactical-fighter-alliance-a-wing-green-close',
+      '4023-1033-tactical-fighter-alliance-a-wing-gold-close',
+    ]
+  },
+  {
+    id: 'ref-battle-backgrounds',
+    label: 'Battle Backgrounds',
+    icon: '☀',
+    images: [
+      '14013-1033-tactical-system-bespin-(gas-giant)-(atlas)',
+      '14035-1033-tactical-system-coruscant',
+      '14056-1033-tactical-system-endor-(moon)-(atlas)',
+      '14075-1033-tactical-system-hoth-(atlas)',
+      '14168-1033-tactical-system-tatooine',
+      '14194-1033-tactical-system-yavin-4-(moon)-(atlas)',
+      '14195-1033-tactical-system-yavin-prime-(gas-giant)',
+    ]
+  },
+];
+
+// Total images across all categories
+const TOTAL_IMAGES = MANIFEST.reduce((n, cat) => n + cat.images.length, 0);
+
+// ── STATE ───────────────────────────────────────────────────────────────────
+
+const state = {
+  catIdx: 0,
+  imgIdx: 0,
+  sliderX: 0.5,       // 0..1
+  isDragging: false,
+  mode: 'slider',     // 'slider' | 'sbs'
+  zoom: 'fit',        // 'fit' | '1to1'
+  gridVisible: false,
+  origNaturalW: 0,
+  origNaturalH: 0,
+  upscNaturalW: 0,
+  upscNaturalH: 0,
+  origFileSize: null,
+  upscFileSize: null,
+};
+
+// ── DOM REFS ─────────────────────────────────────────────────────────────────
+
+const $ = id => document.getElementById(id);
+
+const DOM = {
+  viewport:       $('viewport'),
+  empty:          $('viewport-empty'),
+  layerOriginal:  $('layer-original'),
+  layerUpscaled:  $('layer-upscaled'),
+  imgOriginal:    $('img-original'),
+  imgUpscaled:    $('img-upscaled'),
+  sliderTrack:    $('slider-track'),
+  pixelGrid:      $('pixel-grid'),
+  thumbStrip:     $('thumb-strip'),
+  catList:        $('category-list'),
+  metadata:       $('metadata-dl'),
+  promptPanel:    $('prompt-panel'),
+  promptText:     $('prompt-text'),
+  copyHint:       $('copy-hint'),
+  statCategory:   $('stat-category'),
+  statIndex:      $('stat-index'),
+  statTotal:      $('stat-total'),
+  statModeLabel:  $('stat-mode-label'),
+  badgeSlider:    $('badge-slider'),
+  badgeSbs:       $('badge-sbs'),
+  badgeZoom:      $('badge-zoom'),
+  badgeGrid:      $('badge-grid'),
+};
+
+// ── URL ENCODING ─────────────────────────────────────────────────────────────
+
+function encodeImgId(id) {
+  // Encode parentheses for use in URLs while preserving other characters
+  return id.replace(/\(/g, '%28').replace(/\)/g, '%29');
+}
+
+function imgPath(catId, imgId, orig) {
+  const encoded = encodeImgId(imgId);
+  const suffix = orig ? '-orig' : '';
+  return `assets/references/${catId}/${encoded}${suffix}.png`;
+}
+
+// ── CATEGORY LIST ─────────────────────────────────────────────────────────────
+
+function buildCategoryList() {
+  const frag = document.createDocumentFragment();
+  MANIFEST.forEach((cat, i) => {
+    const el = document.createElement('div');
+    el.className = 'category-item' + (i === state.catIdx ? ' active' : '');
+    el.dataset.idx = i;
+    el.innerHTML = `
+      <span class="category-icon">${cat.icon}</span>
+      <span class="category-label">${cat.label}</span>
+      <span class="category-badge">${cat.images.length}</span>
+    `;
+    el.addEventListener('click', () => selectCategory(i));
+    frag.appendChild(el);
+  });
+  DOM.catList.appendChild(frag);
+}
+
+function updateCategoryActive() {
+  document.querySelectorAll('.category-item').forEach((el, i) => {
+    el.classList.toggle('active', i === state.catIdx);
+  });
+}
+
+// ── THUMBNAIL STRIP ───────────────────────────────────────────────────────────
+
+function buildThumbs() {
+  const cat = MANIFEST[state.catIdx];
+  DOM.thumbStrip.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  cat.images.forEach((imgId, i) => {
+    const el = document.createElement('div');
+    el.className = 'thumb-item' + (i === state.imgIdx ? ' active' : '');
+    el.dataset.idx = i;
+
+    const img = document.createElement('img');
+    // Thumbs use the original (pixelated) version for quick load
+    img.src = imgPath(cat.id, imgId, true);
+    img.alt = imgId;
+    img.loading = 'lazy';
+    img.onerror = () => { img.style.display = 'none'; };
+
+    el.appendChild(img);
+    el.addEventListener('click', () => selectImage(i));
+    frag.appendChild(el);
+  });
+  DOM.thumbStrip.appendChild(frag);
+}
+
+function updateThumbActive() {
+  DOM.thumbStrip.querySelectorAll('.thumb-item').forEach((el, i) => {
+    el.classList.toggle('active', i === state.imgIdx);
+  });
+  // Scroll active thumb into view
+  const active = DOM.thumbStrip.querySelector('.thumb-item.active');
+  if (active) active.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+}
+
+// ── PROMPT TEMPLATE ───────────────────────────────────────────────────────────
+
+async function loadPromptTemplate(catId) {
+  try {
+    const res = await fetch(`assets/references/${catId}/prompt-template.txt`);
+    if (!res.ok) throw new Error('not found');
+    const text = await res.text();
+    DOM.promptText.textContent = text.trim();
+    DOM.promptPanel.style.display = '';
+  } catch {
+    DOM.promptPanel.style.display = 'none';
+  }
+}
+
+DOM.promptText.addEventListener('click', () => {
+  const text = DOM.promptText.textContent;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    DOM.copyHint.textContent = 'copied!';
+    DOM.copyHint.classList.add('copy-flash');
+    setTimeout(() => {
+      DOM.copyHint.textContent = 'click to copy';
+      DOM.copyHint.classList.remove('copy-flash');
+    }, 1500);
+  }).catch(() => {});
+});
+
+// ── IMAGE LOADING & METADATA ──────────────────────────────────────────────────
+
+// Fetch file size via HEAD request (best-effort)
+async function fetchFileSize(url) {
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    if (!res.ok) return null;
+    const cl = res.headers.get('content-length');
+    return cl ? parseInt(cl, 10) : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatBytes(n) {
+  if (n === null || n === undefined) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function humanizeName(id) {
+  return id
+    .replace(/^\d+-/, '')              // strip leading number-
+    .replace(/1033-/g, '')             // strip 1033-
+    .replace(/edata-/g, '')            // strip edata-
+    .replace(/gokres-/g, '')           // strip gokres-
+    .replace(/-/g, ' ')                // dashes to spaces
+    .replace(/_/g, ' ')                // underscores to spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function updateMetadata() {
+  const cat = MANIFEST[state.catIdx];
+  const imgId = cat.images[state.imgIdx];
+
+  const origDims = state.origNaturalW ? `${state.origNaturalW} × ${state.origNaturalH}` : '—';
+  const upscDims = state.upscNaturalW ? `${state.upscNaturalW} × ${state.upscNaturalH}` : '—';
+
+  let scaleLabel = '—';
+  if (state.origNaturalW && state.upscNaturalW) {
+    const ratio = Math.round(state.upscNaturalW / state.origNaturalW);
+    scaleLabel = ratio > 1 ? `${ratio}×` : '1×';
+  }
+
+  DOM.metadata.innerHTML = `
+    <div class="meta-group group-original">
+      <div class="meta-group-title">Original</div>
+      <dl class="meta-rows">
+        <dt>file</dt><dd>${imgId}-orig.png</dd>
+        <dt>size</dt><dd>${origDims}</dd>
+        <dt>bytes</dt><dd>${formatBytes(state.origFileSize)}</dd>
+        <dt>category</dt><dd>${cat.label}</dd>
+      </dl>
+    </div>
+    <div class="meta-group group-upscaled">
+      <div class="meta-group-title">Upscaled</div>
+      <dl class="meta-rows">
+        <dt>file</dt><dd>${imgId}.png</dd>
+        <dt>size</dt><dd>${upscDims}</dd>
+        <dt>bytes</dt><dd>${formatBytes(state.upscFileSize)}</dd>
+        <dt>scale</dt><dd>${scaleLabel}</dd>
+      </dl>
+    </div>
+    <div class="meta-group">
+      <div class="meta-group-title" style="color:var(--text-secondary)">Asset ID</div>
+      <dl class="meta-rows">
+        <dt>id</dt><dd style="color:var(--text-primary)">${imgId.split('-')[0]}</dd>
+        <dt>name</dt><dd style="color:var(--text-primary)">${humanizeName(imgId)}</dd>
+      </dl>
+    </div>
+  `;
+}
+
+function loadImages() {
+  const cat = MANIFEST[state.catIdx];
+  const imgId = cat.images[state.imgIdx];
+
+  if (!imgId) return;
+
+  DOM.empty.style.display = 'none';
+
+  const origSrc = imgPath(cat.id, imgId, true);
+  const upscSrc = imgPath(cat.id, imgId, false);
+
+  // Reset naturals
+  state.origNaturalW = 0;
+  state.origNaturalH = 0;
+  state.upscNaturalW = 0;
+  state.upscNaturalH = 0;
+  state.origFileSize = null;
+  state.upscFileSize = null;
+
+  // Load original
+  const origImg = new Image();
+  origImg.onload = () => {
+    state.origNaturalW = origImg.naturalWidth;
+    state.origNaturalH = origImg.naturalHeight;
+    DOM.imgOriginal.src = origSrc;
+    updateMetadata();
+    if (state.gridVisible) drawPixelGrid();
+  };
+  origImg.onerror = () => {
+    DOM.imgOriginal.src = '';
+  };
+  origImg.src = origSrc;
+
+  // Load upscaled
+  const upscImg = new Image();
+  upscImg.onload = () => {
+    state.upscNaturalW = upscImg.naturalWidth;
+    state.upscNaturalH = upscImg.naturalHeight;
+    DOM.imgUpscaled.src = upscSrc;
+    updateMetadata();
+  };
+  upscImg.onerror = () => {
+    DOM.imgUpscaled.src = '';
+  };
+  upscImg.src = upscSrc;
+
+  // Fetch file sizes asynchronously
+  fetchFileSize(origSrc).then(n => { state.origFileSize = n; updateMetadata(); });
+  fetchFileSize(upscSrc).then(n => { state.upscFileSize = n; updateMetadata(); });
+
+  // Prefetch neighbors
+  prefetch(cat, state.imgIdx + 1);
+  prefetch(cat, state.imgIdx - 1);
+
+  applySlider();
+  updateStats();
+}
+
+function prefetch(cat, idx) {
+  if (idx < 0 || idx >= cat.images.length) return;
+  const id = cat.images[idx];
+  [imgPath(cat.id, id, true), imgPath(cat.id, id, false)].forEach(src => {
+    const img = new Image();
+    img.src = src;
+  });
+}
+
+// ── SLIDER ────────────────────────────────────────────────────────────────────
+
+function applySlider() {
+  if (state.mode !== 'slider') return;
+  const pct = (state.sliderX * 100).toFixed(2);
+  DOM.layerUpscaled.style.clipPath = `inset(0 0 0 ${pct}%)`;
+  DOM.sliderTrack.style.left = pct + '%';
+}
+
+function setSliderX(x) {
+  state.sliderX = Math.max(0.02, Math.min(0.98, x));
+  applySlider();
+}
+
+// ── VIEWPORT DRAG ─────────────────────────────────────────────────────────────
+
+function viewportX(e) {
+  const rect = DOM.viewport.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  return (clientX - rect.left) / rect.width;
+}
+
+DOM.viewport.addEventListener('mousedown', e => {
+  if (state.mode !== 'slider') return;
+  state.isDragging = true;
+  setSliderX(viewportX(e));
+  e.preventDefault();
+});
+
+DOM.viewport.addEventListener('touchstart', e => {
+  if (state.mode !== 'slider') return;
+  state.isDragging = true;
+  setSliderX(viewportX(e));
+}, { passive: true });
+
+document.addEventListener('mousemove', e => {
+  if (!state.isDragging) return;
+  setSliderX(viewportX(e));
+});
+
+document.addEventListener('touchmove', e => {
+  if (!state.isDragging) return;
+  setSliderX(viewportX(e));
+}, { passive: true });
+
+document.addEventListener('mouseup', () => { state.isDragging = false; });
+document.addEventListener('touchend', () => { state.isDragging = false; });
+
+// ── PIXEL GRID ────────────────────────────────────────────────────────────────
+
+function drawPixelGrid() {
+  const canvas = DOM.pixelGrid;
+  const vp = DOM.viewport;
+  const ow = state.origNaturalW;
+  const oh = state.origNaturalH;
+  if (!ow || !oh) return;
+
+  const vpW = vp.clientWidth;
+  const vpH = vp.clientHeight;
+  canvas.width = vpW;
+  canvas.height = vpH;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, vpW, vpH);
+
+  // Compute rendered size of original image (fit mode)
+  const imgAspect = ow / oh;
+  const vpAspect = vpW / vpH;
+  let drawW, drawH;
+  if (imgAspect > vpAspect) {
+    drawW = vpW;
+    drawH = vpW / imgAspect;
+  } else {
+    drawH = vpH;
+    drawW = vpH * imgAspect;
+  }
+
+  const offsetX = (vpW - drawW) / 2;
+  const offsetY = (vpH - drawH) / 2;
+
+  const cellW = drawW / ow;
+  const cellH = drawH / oh;
+
+  // Only draw grid if cells are large enough to be visible
+  if (cellW < 2 || cellH < 2) return;
+
+  ctx.strokeStyle = 'rgba(45, 212, 191, 0.25)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+
+  for (let x = 0; x <= ow; x++) {
+    const px = offsetX + x * cellW;
+    ctx.moveTo(px, offsetY);
+    ctx.lineTo(px, offsetY + drawH);
+  }
+  for (let y = 0; y <= oh; y++) {
+    const py = offsetY + y * cellH;
+    ctx.moveTo(offsetX, py);
+    ctx.lineTo(offsetX + drawW, py);
+  }
+  ctx.stroke();
+}
+
+function toggleGrid() {
+  state.gridVisible = !state.gridVisible;
+  DOM.pixelGrid.classList.toggle('visible', state.gridVisible);
+  if (state.gridVisible) drawPixelGrid();
+  DOM.badgeGrid.classList.toggle('inactive', !state.gridVisible);
+}
+
+// Redraw grid on resize
+const resizeObserver = new ResizeObserver(() => {
+  if (state.gridVisible) drawPixelGrid();
+});
+resizeObserver.observe(DOM.viewport);
+
+// ── MODE SWITCHING ────────────────────────────────────────────────────────────
+
+function setMode(mode) {
+  state.mode = mode;
+  DOM.viewport.classList.toggle('mode-sbs', mode === 'sbs');
+
+  if (mode === 'slider') {
+    DOM.layerOriginal.style.position = '';
+    DOM.layerUpscaled.style.position = '';
+    applySlider();
+    DOM.statModeLabel.textContent = 'SLIDER';
+  } else {
+    // side-by-side: reset clip
+    DOM.layerUpscaled.style.clipPath = 'none';
+    DOM.statModeLabel.textContent = 'SBS';
+  }
+
+  DOM.badgeSlider.classList.toggle('inactive', mode !== 'slider');
+  DOM.badgeSbs.classList.toggle('inactive', mode !== 'sbs');
+}
+
+function toggleMode() {
+  setMode(state.mode === 'slider' ? 'sbs' : 'slider');
+}
+
+function toggleZoom() {
+  state.zoom = state.zoom === 'fit' ? '1to1' : 'fit';
+  DOM.viewport.classList.toggle('zoom-1to1', state.zoom === '1to1');
+  DOM.badgeZoom.classList.toggle('inactive', state.zoom === 'fit');
+  DOM.badgeZoom.textContent = state.zoom === '1to1' ? '1:1' : 'FIT';
+  if (state.gridVisible) drawPixelGrid();
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────────
+
+function selectCategory(idx) {
+  state.catIdx = Math.max(0, Math.min(MANIFEST.length - 1, idx));
+  state.imgIdx = 0;
+  updateCategoryActive();
+  buildThumbs();
+  loadPromptTemplate(MANIFEST[state.catIdx].id);
+  loadImages();
+}
+
+function selectImage(idx) {
+  const cat = MANIFEST[state.catIdx];
+  state.imgIdx = Math.max(0, Math.min(cat.images.length - 1, idx));
+  updateThumbActive();
+  loadImages();
+}
+
+function nextImage() {
+  const cat = MANIFEST[state.catIdx];
+  if (state.imgIdx < cat.images.length - 1) {
+    selectImage(state.imgIdx + 1);
+  } else {
+    // Wrap to next category
+    if (state.catIdx < MANIFEST.length - 1) {
+      selectCategory(state.catIdx + 1);
+    }
+  }
+}
+
+function prevImage() {
+  if (state.imgIdx > 0) {
+    selectImage(state.imgIdx - 1);
+  } else {
+    // Wrap to prev category
+    if (state.catIdx > 0) {
+      selectCategory(state.catIdx - 1);
+      const newCat = MANIFEST[state.catIdx];
+      selectImage(newCat.images.length - 1);
+    }
+  }
+}
+
+function nextCategory() {
+  if (state.catIdx < MANIFEST.length - 1) selectCategory(state.catIdx + 1);
+]
+function prevCategory() {
+  if (state.catIdx > 0) selectCategory(state.catIdx - 1);
+}
+
+// ── STATS ─────────────────────────────────────────────────────────────────────
+
+function updateStats() {
+  const cat = MANIFEST[state.catIdx];
+  DOM.statCategory.textContent = cat.label;
+  DOM.statIndex.textContent = state.imgIdx + 1;
+  DOM.statTotal.textContent = cat.images.length;
+}
+
+// ── KEYBOARD ──────────────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  // Ignore when typing in inputs
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  switch (e.key) {
+    case 'ArrowRight': e.preventDefault(); nextImage(); break;
+    case 'ArrowLeft':  e.preventDefault(); prevImage(); break;
+    case ']':          e.preventDefault(); nextCategory(); break;
+    case '[':          e.preventDefault(); prevCategory(); break;
+    case ' ':          e.preventDefault(); toggleZoom(); break;
+    case 'g':
+    case 'G':          toggleGrid(); break;
+    case 'd':
+    case 'D':          toggleMode(); break;
+    case '0':          state.sliderX = 0.5; applySlider(); break;
+  }
+});
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+
+function boot() {
+  buildCategoryList();
+  // Auto-select first category after boot flash
+  setTimeout(() => {
+    selectCategory(0);
+  }, 100);
+
+  // Remove boot class after animation
+  setTimeout(() => {
+    document.body.classList.remove('booting');
+  }, 700);
+}
+
+boot();
+</script>
+</body>
+</html>
