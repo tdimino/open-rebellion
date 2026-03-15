@@ -33,7 +33,7 @@ Hull, shield, and weapon change-event slots. Used by the validate-write-notify s
 
 ```
 +0x1c4  ResolveWeaponFire(side, ctx)    — phase 3: per-side weapon fire resolver
-                                           (FUN_00543b60 → gate on combat_phase_flags bit0 & ~bit6)
+                                           (FUN_00543b60 → inner gate mask 0x04/bit2; outer wrapper FUN_00544030 gates on bit0 & ~bit6)
 +0x1c8  ResolveShieldAbsorb(side, ctx)  — phase 4: per-side shield absorption resolver
                                            (FUN_00543bd0 → gate on combat_phase_flags bit5/0x20)
 +0x1d0  ResolveHullDamage(side, ctx)    — phase 5: per-side hull damage resolver

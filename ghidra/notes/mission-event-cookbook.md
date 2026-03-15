@@ -25,7 +25,7 @@ REBEXE.EXE recognizes 9 active mission type codes, dispatched via a 13-case swit
 | 4 | Abduction | ABDCMSTB.DAT | Two ranges: 0xa0/0xb0 and 0x28/0x30 |
 | 5 | Incite Uprising | INCTMSTB.DAT | Two ranges: 0x08/0x10 and 0x01/0xff; fleet enabled |
 | 6 | Assassination | ASSNMSTB.DAT | Fleet + side filter + `special_flag=true`; two ranges |
-| 7 | Rescue | RESCMSTB.DAT | Three ranges (0x08-0x10, 0x01-0xff, 0x10-0x20); special flag; `bVar3=true` decoy enable |
+| 7 | Rescue | RESCMSTB.DAT | Three ranges (0x08-0x10, 0x01-0xff, 0x01-0xff); special flag; `bVar3=true` decoy enable |
 | 8 | Subdue Uprising | SUBDMSTB.DAT | Six ranges; `local_150=1`; `bVar1=true` (vtable path) |
 | 9 | Espionage | ESPIMSTB.DAT | Single range 0x30/0x40 |
 | 10 | (Death Star Sabotage) | DSSBMSTB.DAT | `bVar1=true`; three ranges; no fleet filter |

@@ -8,7 +8,7 @@ Entity family byte quick reference (from `id >> 0x18`):
 - `0x14-0x1b` — Troops / Special Forces
 - `0x30-0x3b` — Capital Ships + Fighters
 - `0x34` — Death Star (special ship)
-- `0x71-0x72` — Fighter squadron types (shield absorb special path)
+- `0x71` — Fighter squadron type (shield absorb alt-path, exact match only — NOT a range)
 - `0x73-0x74` — Special combat entity (combat result special path, see FUN_005445d0)
 - `0x90-0x98` — Star Systems
 
@@ -789,7 +789,7 @@ bool death_star_fire(void* death_star, void* context) {
 - The Death Star can only fire when: (a) target system is **not** already destroyed (`!(alive_flag & 1)`), AND (b) Death Star is active (`status_flags & 1`)
 - `0x90000109` = a specific system DatId (family 0x90 = explored system, sequential index 0x109 = 265). This is likely **Alderaan** hardcoded as the canonical target, or the system currently targeted.
 - Faction control check: `(faction_control & 0xc0) == 0x80` — the 0x80 bit in the high nibble of `+0x24` indicates Empire control
-- The check `!(alive_flag & 1)` AND `(status_flags & 1)` implements "target must be alive AND Death Star must be operational"
+- The check `(alive_flag & 1) == 0` means target system's bit0 is clear (eligible for destruction). Note: bit0 semantics may differ between entity types — for combat units bit0=alive, but for Death Star targets bit0=0 may mean "not yet destroyed" (inverted encoding). The pseudocode `!(alive_flag & 1)` is what the C code does.
 - `FUN_0055f650` is the actual superlaser effect applicator
 
 ---
@@ -1349,7 +1349,7 @@ bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
         // Regiment strength check
         if (parent->regiment_strength == 0) return success;  // no combat unit
 
-        // Validate both sides are characters (0x08-0x0f)
+        // Validate both sides are troops (0x14-0x1b)
         if (defender_family in [0x14..0x1b] && context_family in [0x14..0x1b]) {
             // Get faction sides — skip if same faction (no friendly fire)
             void* atk_side = get_faction(defender_id);

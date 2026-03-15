@@ -297,7 +297,7 @@ is the largest constructor observed — 4,856 bytes, allocates 0x3a8 words.
 
 | Mission Type Code | Constant | Notif String | Event ID |
 |-------------------|----------|-------------|----------|
-| 0 | `Autoscrap` | `GameObjDestroyedAutoscrapNotif` / `DestroyedAutoscrap` | `0x304` (772) |
+| 0x15 (21) | `Autoscrap` | `GameObjDestroyedAutoscrapNotif` / `DestroyedAutoscrap` | `0x304` (772) |
 | 6 | `Sabotage` | `GameObjDestroyedSabotageNotif` / `DestroyedSabotage` | `0x305` (773) |
 | 7 | `Assassination` | `GameObjDestroyedAssassinationNotif` / `DestroyedAssassination` | `0x306` (774) |
 | — | `OnArrival` | `GameObjDestroyedOnArrivalNotif` / `DestroyedOnArrival` | `0x303` (771) |

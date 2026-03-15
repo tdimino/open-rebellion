@@ -87,6 +87,8 @@ pub struct ShipInstance {
     pub hull_current: i32,
     /// Packed nibbles: bits 0-3 = shield_recharge_allocated, bits 4-7 = weapon_recharge_allocated.
     /// Mirrors C++ offset +0x64. Read via helpers shield_nibble() / weapon_nibble().
+    /// Note: C++ writes via XOR-mask pattern `(new ^ old) & 0xf ^ old` — functionally equivalent
+    /// to simple mask-OR for in-range values, but the XOR is what the original binary does.
     pub shield_weapon_packed: u8,
     /// bit0 = alive; cleared when hull_current reaches 0.
     pub alive: bool,
@@ -156,11 +158,12 @@ bitflags! {
     /// Controls which phases are active and which type codes are set.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     pub struct CombatPhaseFlags: u32 {
-        /// Space combat active (gate for weapon-fire phase).
+        /// Space combat active (outer wrapper gate, checked by FUN_00544030).
         const ACTIVE           = 0x0001;
         /// Weapon fire is in progress (attacker side).
         const WEAPON_FIRE      = 0x0002;
-        /// Type code: weapon fire phase (0x04).
+        /// Inner gate mask for weapon fire phase (0x04, checked by FUN_0053a640).
+        /// Note: outer wrapper gates on ACTIVE & !PHASES_ENABLED; inner vtable dispatch uses this mask.
         const WEAPON_TYPE      = 0x0004;
         /// Type code: shield absorb phase (0x20).
         const SHIELD_TYPE      = 0x0020;
