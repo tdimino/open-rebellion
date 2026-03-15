@@ -28,19 +28,28 @@ Original BMPs from game's installed directories:
 
 ### Upscaling Tools
 
-**Primary: waifu2x-ncnn-vulkan**
+**Primary: waifu2x-ncnn-vulkan** (INSTALLED)
 
 ```bash
-brew install waifu2x-ncnn-vulkan
+# Wrapper with model path baked in:
+~/.local/bin/waifu2x -i input.png -o output.png -n 1 -s 4 -f png
+
+# Binary: ~/tools/waifu2x/waifu2x-ncnn-vulkan-20250915-macos/
+# Models: models-cunet (default), models-upconv_7_anime_style_art_rgb, models-upconv_7_photo
 ```
 
-Zero Python friction. Native Apple Silicon via Vulkan. Denoise level 1 preserves detail while removing 256-color palette dithering artifacts.
+Universal binary (x86_64 + arm64). Native Apple Silicon via Vulkan. Tested on M4 Max — 400x200 → 1600x800 in <1s.
 
 **Important**: Do not call waifu2x directly on `EData/` — the original BMPs are indexed-palette and use extensionless names (`EDATA.042`). Use `scripts/upscale-assets.py` which handles palette→RGB conversion and renames output to `EDATA_NNN.png` (the format `encyclopedia.rs` expects).
 
-**Comparison: PBRify_UpscalerV4 via chaiNNer or Upscayl**
+**Comparison: PBRify_UpscalerV4 via chaiNNer or Upscayl** (MODELS DOWNLOADED)
 
-OpenModelDB's **PBRify_UpscalerV4** (Kim2091, May 2025) — DAT2 architecture, purpose-built for 2000s-era game textures with DDS compression removal. Supersedes the older 4x SGI model by the same author. **UltraSharpV2** (Kim2091, May 2025) is a strong secondary comparison. Download `.pth` files from openmodeldb.info, load in chaiNNer (chainner.app, macOS MPS backend) or **Upscayl v2.5** (Feb 2026, free, wraps ncnn-vulkan with custom model import).
+```
+~/tools/upscale-models/4x-PBRify_UpscalerV4.pth  (134MB, Kim2091, May 2025)
+~/tools/upscale-models/4x-UltraSharpV2.pth        (134MB, Kim2091, May 2025)
+```
+
+**PBRify_UpscalerV4** — DAT2 architecture, purpose-built for 2000s-era game textures with DDS compression removal. Supersedes the older 4x SGI model by the same author. **UltraSharpV2** is a strong secondary comparison. Load `.pth` files in chaiNNer (chainner.app, macOS MPS backend) or **Upscayl v2.5** (Feb 2026, free, wraps ncnn-vulkan with custom model import).
 
 ### Scale Factors
 
