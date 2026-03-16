@@ -1,7 +1,25 @@
 # UI Element Reference Collection
 
-316 UI element files extracted from Star Wars Rebellion (1998) via MetasharpNet editor.
+316 UI elements cataloged from Star Wars Rebellion (1998) via MetasharpNet editor.
+~302 extracted to disk; ~14 remaining (3 galaxy chrome frames, 11 facility/tab icons).
 Organized by function for upscaling pipeline and total conversion modding.
+
+## Resource ID Numbering Scheme
+
+File names follow `{resource_id}-{locale}-{dll}-{description}.bmp`. Locale `1033` = English (US).
+
+| Range | DLL | Content |
+|-------|-----|---------|
+| 900-999 | STRATEGY.DLL | Galaxy chrome, display toggles |
+| 1000-2200 | TACTICAL.DLL | HUD panels, buttons, squadron controls, weapon gauges, Death Star |
+| 9000-9999 | STRATEGY.DLL | Facility/system status indicators |
+| 10000-11700 | STRATEGY.DLL | Event screens, battle results, bombardment, fleet events |
+| 17000-17800 | GOKRES.DLL | Troops + special forces entity sprites |
+| 17900-18600 | GOKRES.DLL | Fighters + capital ships + major characters |
+| 19000-19100 | GOKRES.DLL | Minor character portraits |
+| 20000+ | COMMON.DLL | Main menu screens + restart buttons |
+| (animated) | ALSPRITE.DLL | C-3PO + R2-D2 advisor frames (Alliance, 251 frames) |
+| (animated) | EMSPRITE.DLL | Imperial droid advisor frames (Empire, 250 frames) |
 
 ## Upscaling Strategy
 
@@ -18,10 +36,10 @@ Organized by function for upscaling pipeline and total conversion modding.
 - Restart button: unpressed, pressed, disabled states
 - **TC note:** Replace entirely with new faction menu art
 
-### 02 — Galaxy Chrome (5 files)
+### 02 — Galaxy Chrome (2 extracted, ~5 expected)
 *STRATEGY.DLL. Galaxy map toggle buttons + generic UI frames.*
-- Galaxy display on/off toggles
-- Generic strategy UI frame elements
+- Galaxy display on/off toggles (2 extracted)
+- Generic strategy UI frame elements (3 remaining — not yet extracted)
 - **TC note:** Keep as-is (faction-neutral chrome)
 
 ### 03 — Tactical HUD (29 files)
@@ -53,21 +71,24 @@ Organized by function for upscaling pipeline and total conversion modding.
 - Refinery: active, Empire/Alliance construction, enroute
 - **TC note:** Replace industrial icons with organic Vong equivalents for Vong faction
 
-### 06 — Status Panels (129 files)
+### 06 — Status Panels (118 extracted, 129 expected)
 *GOKRES.DLL. Unit icons for info panels and fleet management.*
 - All 10 troop types (5 Alliance + 5 Empire)
 - All 9 special forces (4 Alliance + 5 Empire)
 - All 8 fighter types (4 Alliance + 4 Empire)
 - All 30 capital ship types (15 Alliance + 15 Empire)
-- All 60+ character portraits (31 Alliance + 30 Empire)
-- All 11 facility status icons + tab icons
+- All 61 character portraits (31 Alliance + 30 Empire, including Luke Knight variant)
+- 11 facility status icons + tab icons (not yet extracted — 11 remaining)
 - **TC note:** All entity-specific — full replacement for TC
 
-### 07 — Droid Advisors (2 files)
-*Resources. C-3PO advisor images.*
-- C-3PO portrait (400x200) — the in-game advisor character
-- C-3PO icon (16x16) — toolbar/panel icon
-- **TC note:** Replace with Vong equivalent (yammosk tentacle? villip face?)
+### 07 — Droid Advisors (2 static + 501 animated frames in DLLs)
+*Resources (static fallbacks) + ALSPRITE.DLL (251 Alliance frames) + EMSPRITE.DLL (250 Empire frames).*
+- C-3PO portrait (400x200) — static fallback from Resources
+- C-3PO icon (16x16) — toolbar/panel icon from Resources
+- **ALSPRITE.DLL** — 251 animated frames: C-3PO gestures (12+ sequences) + R2-D2 (2+ sequences). Alliance advisor.
+- **EMSPRITE.DLL** — 250 animated frames: Imperial droid advisor. Empire advisor.
+- Requires separate DLL frame extraction (not yet done — see extraction plan)
+- **TC note:** Replace with Vong equivalent (villip face? yammosk tentacle? priest hologram?)
 
 ### 08 — Backgrounds & Screens (83 files)
 *STRATEGY.DLL + Resources. Event screens, mission results, galaxy backgrounds.*

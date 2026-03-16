@@ -6,13 +6,14 @@ Open Rebellion is built on the work of many open-source projects, AI services, a
 
 - **Star Wars: Rebellion** (1998) — Coolhand Interactive / LucasArts. The original game this project reimplements.
 - **swrebellion.net** — The fan community that kept the game alive for 25+ years with patches, mods, and documentation.
-- **MetasharpNet / StarWarsRebellionEditor.NET** — Metasharp's open-source C# editor ([GitHub](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET)). Source of DAT field semantics and asset organization knowledge.
+- **MetasharpNet / StarWarsRebellionEditor.NET** — Metasharp's open-source C# editor ([GitHub](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET)). Source of DAT field semantics, asset organization knowledge, and DLL resource extraction (316+ UI elements from COMMON/STRATEGY/TACTICAL/GOKRES/ALSPRITE/EMSPRITE.DLL).
 - **rebellion2** — C# Unity port reference. Source of mission probability formulas (Mission.cs).
 
 ## AI Image Generation & Upscaling
 
 - **Gemini 3 Pro Image** (nano-banana-pro) — Google DeepMind. Reference-based asset generation for encyclopedia images, concept art, and style-consistent new graphics.
-- **waifu2x-ncnn-vulkan** — nihui ([GitHub](https://github.com/nihui/waifu2x-ncnn-vulkan)). Primary image upscaler for original 1998 BMPs. MIT license.
+- **Vertex AI Imagen 4.0** — Google Cloud. Non-generative super-resolution upscaler (`imagen-4.0-upscale-preview`). Primary upscaler for portraits, fighters, sprites, and planets where fidelity is critical.
+- **waifu2x-ncnn-vulkan** — nihui ([GitHub](https://github.com/nihui/waifu2x-ncnn-vulkan)). Batch image upscaler for original 1998 BMPs. MIT license.
 - **PBRify_UpscalerV4** — Kim2091 ([OpenModelDB](https://openmodeldb.info/models/4x-PBRify-UpscalerV4)). ESRGAN model purpose-built for 2000s game texture upscaling.
 - **UltraSharpV2** — Kim2091 ([OpenModelDB](https://openmodeldb.info/models/4x-UltraSharpV2)). General multi-domain ESRGAN model for comparison.
 - **Upscayl** — Free GUI upscaler with custom model import ([upscayl.org](https://upscayl.org)).
