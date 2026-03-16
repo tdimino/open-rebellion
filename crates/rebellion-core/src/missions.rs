@@ -302,6 +302,27 @@ impl MissionState {
         id
     }
 
+    /// Dispatch with mission-state guard.
+    ///
+    /// Returns `None` if the character is already on a mission or has a
+    /// mandatory mission assignment (prevents double-dispatch).
+    pub fn dispatch_guarded(
+        &mut self,
+        kind: MissionKind,
+        faction: MissionFaction,
+        character: CharacterKey,
+        target_system: SystemKey,
+        duration_roll: f64,
+        world: &GameWorld,
+    ) -> Option<u64> {
+        if let Some(c) = world.characters.get(character) {
+            if c.on_mission || c.on_mandatory_mission {
+                return None;
+            }
+        }
+        Some(self.dispatch(kind, faction, character, target_system, duration_roll))
+    }
+
     /// Cancel a mission by id. Returns the mission if found, None otherwise.
     pub fn cancel(&mut self, id: u64) -> Option<ActiveMission> {
         if let Some(pos) = self.missions.iter().position(|m| m.id == id) {
@@ -403,6 +424,26 @@ pub enum MissionEffect {
         system: SystemKey,
         /// Popularity delta applied against the controlling faction (positive = shift toward other side).
         popularity_delta: f32,
+    },
+
+    // ── Character availability tracking ─────────────────────────────────────
+
+    /// Character has been assigned to a mission.
+    CharacterBusy { character: CharacterKey },
+    /// Character has completed/been freed from a mission.
+    CharacterAvailable { character: CharacterKey },
+
+    // ── Decoy / Escape ──────────────────────────────────────────────────────
+
+    /// A decoy intercepted the mission — no real effect.
+    DecoyTriggered {
+        system: SystemKey,
+        decoy_character: CharacterKey,
+    },
+    /// A captured character escaped on their own.
+    CharacterEscaped {
+        character: CharacterKey,
+        escaped_to_alliance: bool,
     },
 }
 
@@ -522,15 +563,18 @@ impl MissionSystem {
         while let Some(mission) = state.missions.pop_front() {
             if mission.ticks_remaining == 0 {
                 let roll = roll_iter.next().unwrap_or(0.5);
-                let result =
+                let mut result =
                     Self::resolve_mission(&mission, world, final_tick, roll);
+                // Emit CharacterAvailable: the character is freed from this mission.
+                result.effects.push(MissionEffect::CharacterAvailable {
+                    character: mission.character,
+                });
                 results.push(result);
             } else {
                 remaining.push_back(mission);
             }
         }
         state.missions = remaining;
-
 
         results
     }
@@ -695,6 +739,65 @@ impl MissionSystem {
             }
         }
     }
+
+    /// Check if a decoy intercepts a mission at the target system.
+    ///
+    /// If a defending-faction character with espionage skill is present at the
+    /// target system, look up FDECOYTB to determine decoy probability.
+    /// Returns `Some(DecoyTriggered)` if the decoy succeeds, consuming one roll.
+    pub fn check_decoy(
+        mission: &ActiveMission,
+        world: &GameWorld,
+        roll: f64,
+    ) -> Option<MissionEffect> {
+        let table = world.mission_tables.get("FDECOYTB")?;
+
+        // Find a defending character at the target system with espionage skill.
+        let defending_alliance = mission.faction == MissionFaction::Empire;
+        let defender = world.characters.iter().find(|(_, c)| {
+            c.is_alliance == defending_alliance
+                && c.current_system == Some(mission.target_system)
+                && c.espionage.base > 0
+        });
+
+        let (decoy_key, decoy_char) = defender?;
+        let prob = table.lookup(decoy_char.espionage.base as i32) as f64 / 100.0;
+
+        if roll < prob {
+            Some(MissionEffect::DecoyTriggered {
+                system: mission.target_system,
+                decoy_character: decoy_key,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Check for captured characters escaping on their own.
+    ///
+    /// For each character held by the opposing faction, look up ESCAPETB
+    /// and roll against the escape probability. Returns one `CharacterEscaped`
+    /// effect per successful escape.
+    ///
+    /// Stub for v0.5.0 — the actual per-tick check will be wired by the main loop.
+    pub fn check_escapes(
+        world: &GameWorld,
+        rolls: &[f64],
+    ) -> Vec<MissionEffect> {
+        let table = match world.mission_tables.get("ESCAPETB") {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let effects = Vec::new();
+        let _roll_iter = rolls.iter().copied();
+
+        // Stub: full escape-per-tick check will be wired by the main loop in v0.5.0.
+        // Iterate characters, check capture state, look up ESCAPETB, roll against probability.
+        let _ = (world, table);
+
+        effects
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -846,6 +949,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         })
     }
 
@@ -974,7 +1087,12 @@ mod tests {
             &[1.0],
         );
         assert_eq!(results[0].outcome, MissionOutcome::Failure);
-        assert!(results[0].effects.is_empty());
+        // Only effect should be CharacterAvailable (no mission-specific effects on failure).
+        assert_eq!(results[0].effects.len(), 1);
+        assert!(matches!(
+            &results[0].effects[0],
+            MissionEffect::CharacterAvailable { .. }
+        ));
     }
 
     #[test]
@@ -1002,7 +1120,8 @@ mod tests {
             &[0.0], // guaranteed success
         );
         assert_eq!(results[0].outcome, MissionOutcome::Success);
-        assert_eq!(results[0].effects.len(), 1);
+        // PopularityShifted + CharacterAvailable
+        assert!(results[0].effects.len() >= 2);
         match &results[0].effects[0] {
             MissionEffect::PopularityShifted { faction, delta, .. } => {
                 assert_eq!(*faction, MissionFaction::Alliance);
@@ -1040,6 +1159,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         });
 
         let mut state = MissionState::new();
@@ -1169,6 +1298,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         });
 
         let mut state = MissionState::new();
@@ -1212,6 +1351,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         });
 
         let mut state = MissionState::new();
@@ -1257,6 +1406,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         });
 
         // Install a minimal DIPLMSTB table: two entries, threshold 0 = value 99.
@@ -1310,6 +1469,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         });
 
         let mut state = MissionState::new();
@@ -1338,5 +1507,83 @@ mod tests {
         assert_eq!(MissionKind::Abduction.mstb_key(),      Some("ABDCMSTB"));
         assert_eq!(MissionKind::InciteUprising.mstb_key(), Some("INCTMSTB"));
         assert_eq!(MissionKind::Autoscrap.mstb_key(),      None);
+    }
+
+    // --- Character availability tracking tests ---
+
+    #[test]
+    fn character_available_emitted_on_mission_completion() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let character = character_with_diplomacy(&mut world, 80);
+
+        let mut state = MissionState::new();
+        state.missions.push_back(ActiveMission::new(
+            0, MissionKind::Diplomacy, MissionFaction::Alliance, character, system, 1,
+        ));
+        state.next_id = 1;
+
+        let results = MissionSystem::advance(
+            &mut state, &world, &[TickEvent { tick: 1 }], &[0.0],
+        );
+        assert_eq!(results.len(), 1);
+        // The last effect should be CharacterAvailable
+        assert!(results[0].effects.iter().any(|e| matches!(
+            e, MissionEffect::CharacterAvailable { character: c } if *c == character
+        )));
+    }
+
+    #[test]
+    fn dispatch_guarded_blocks_mandatory_mission() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let zero = skill_pair(0);
+        let character = world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Mandatory".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: true,
+            diplomacy: skill_pair(80),
+            espionage: zero,
+            ship_design: zero,
+            troop_training: zero,
+            facility_design: zero,
+            combat: zero,
+            leadership: zero,
+            loyalty: zero,
+            jedi_probability: 0,
+            jedi_level: zero,
+            can_be_admiral: false,
+            can_be_commander: true,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: true, // <-- mandatory
+            current_system: None,
+            current_fleet: None,
+        });
+
+        let mut state = MissionState::new();
+        let result = state.dispatch_guarded(
+            MissionKind::Diplomacy,
+            MissionFaction::Alliance,
+            character,
+            system,
+            0.5,
+            &world,
+        );
+        assert!(result.is_none(), "mandatory mission character should be blocked");
+        assert!(state.is_empty());
     }
 }

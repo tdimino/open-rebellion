@@ -33,6 +33,7 @@
 use serde::{Deserialize, Serialize};
 
 use rebellion_core::ai::AIState;
+use rebellion_core::betrayal::BetrayalState;
 use rebellion_core::blockade::BlockadeState;
 use rebellion_core::death_star::DeathStarState;
 use rebellion_core::events::EventState;
@@ -55,7 +56,7 @@ use rebellion_core::world::GameWorld;
 pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes.
-pub const SAVE_VERSION: u32 = 2;
+pub const SAVE_VERSION: u32 = 3;
 
 /// Maximum number of named save slots.
 pub const MAX_SAVE_SLOTS: usize = 10;
@@ -90,6 +91,7 @@ pub struct SaveState {
     pub research: ResearchState,
     pub jedi: JediState,
     pub victory: VictoryState,
+    pub betrayal: BetrayalState,
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +363,7 @@ mod tests {
             research: ResearchState::new(),
             jedi: JediState::new(),
             victory: rebellion_core::victory::VictoryState::new(sys_a, sys_b),
+            betrayal: BetrayalState::new(),
         }
     }
 

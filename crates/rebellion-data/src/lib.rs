@@ -234,6 +234,21 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     // DAT files.  Missing files are silently skipped (stripped installs).
     seeds::apply_seeds(gdata_path, &mut world, &system_key_map)?;
 
+    // ── 7b. Populate character location tracking ─────────────────────────────
+    // Scan all fleets to back-fill each character's current_system and current_fleet.
+    let fleet_keys: Vec<_> = world.fleets.keys().collect();
+    for fleet_key in fleet_keys {
+        let fleet = &world.fleets[fleet_key];
+        let location = fleet.location;
+        let char_keys: Vec<_> = fleet.characters.clone();
+        for char_key in char_keys {
+            if let Some(c) = world.characters.get_mut(char_key) {
+                c.current_fleet = Some(fleet_key);
+                c.current_system = Some(location);
+            }
+        }
+    }
+
     // ── 8. GNPRTB — game balance parameters ──────────────────────────────────
     let gnprtb_path = gdata_path.join("GNPRTB.DAT");
     if gnprtb_path.exists() {
@@ -299,9 +314,19 @@ fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Char
         can_be_admiral: dat.can_be_admiral != 0,
         can_be_commander: dat.can_be_commander != 0,
         can_be_general: dat.can_be_general != 0,
-        force_tier: rebellion_core::world::ForceTier::None,
+        force_tier: if dat.is_known_jedi != 0 { rebellion_core::world::ForceTier::Aware } else { rebellion_core::world::ForceTier::None },
         force_experience: 0,
         is_discovered_jedi: false,
+        is_unable_to_betray: dat.is_unable_to_betray != 0,
+        is_jedi_trainer: dat.is_jedi_trainer != 0,
+        is_known_jedi: dat.is_known_jedi != 0,
+        hyperdrive_modifier: 0,
+        enhanced_loyalty: 0,
+        on_mission: false,
+        on_hidden_mission: false,
+        on_mandatory_mission: false,
+        current_system: None,
+        current_fleet: None,
     }
 }
 

@@ -1,6 +1,6 @@
 # Simulation Systems
 
-Fourteen modules in `rebellion-core/src/` implement the game simulation. All follow the same stateless advance pattern.
+Fifteen modules in `rebellion-core/src/` implement the game simulation. All follow the same stateless advance pattern.
 
 ## The Advance Contract
 
@@ -35,8 +35,9 @@ The caller (rebellion-app `main.rs`) applies effects to `GameWorld` after each s
 | 12 | **Research** | `research.rs` | `advance(state, world, ticks)` | Mutates state internally (deviation) |
 | 13 | **Jedi** | `jedi.rs` | `advance(state, world, ticks, rolls)` | XP stored in `JediTrainingRecord`, not world |
 | 14 | **Victory** | `victory.rs` | `check(state, world, ticks)` | Death Star checks supersede HQ capture |
+| 15 | **Betrayal** | `betrayal.rs` | `advance(state, world, ticks, rolls, loyalty_tb)` | `is_unable_to_betray` immunity; 50-tick cooldown |
 
-Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star,research,jedi,victory}.md`
+Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star,research,jedi,victory,betrayal}.md`
 
 ## Mission Types and Effects
 

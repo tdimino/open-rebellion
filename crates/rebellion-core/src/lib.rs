@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod betrayal;
 pub mod blockade;
 pub mod bombardment;
 pub mod combat;
@@ -12,6 +13,7 @@ pub mod manufacturing;
 pub mod missions;
 pub mod movement;
 pub mod research;
+pub mod story_events;
 pub mod tick;
 pub mod uprising;
 pub mod victory;

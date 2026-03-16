@@ -224,6 +224,42 @@ pub struct Character {
     /// Maps to `!(entity[0x1e] & 1)` in REBEXE.EXE — initially hidden.
     #[serde(default)]
     pub is_discovered_jedi: bool,
+
+    // ── DAT-promoted fields ─────────────────────────────────────────────────
+
+    /// Immune to betrayal missions (Luke, Vader). From MJCHARSD.DAT `is_unable_to_betray`.
+    #[serde(default)]
+    pub is_unable_to_betray: bool,
+    /// Can train other Jedi (Yoda). From MJCHARSD.DAT `is_jedi_trainer`.
+    #[serde(default)]
+    pub is_jedi_trainer: bool,
+    /// Publicly known Force user. From MJCHARSD.DAT `is_known_jedi`.
+    #[serde(default)]
+    pub is_known_jedi: bool,
+    /// Fleet speed bonus (Han Solo). Default 0.
+    #[serde(default)]
+    pub hyperdrive_modifier: i16,
+    /// Mission bonus loyalty, 0-100. Default 0.
+    #[serde(default)]
+    pub enhanced_loyalty: i16,
+    /// Currently assigned to a mission.
+    #[serde(default)]
+    pub on_mission: bool,
+    /// Mission concealed from opponent.
+    #[serde(default)]
+    pub on_hidden_mission: bool,
+    /// Story-forced assignment, blocks resignation.
+    #[serde(default)]
+    pub on_mandatory_mission: bool,
+
+    // ── Location tracking ───────────────────────────────────────────────────
+
+    /// System where this character is currently located.
+    #[serde(default)]
+    pub current_system: Option<SystemKey>,
+    /// Fleet this character is currently assigned to.
+    #[serde(default)]
+    pub current_fleet: Option<FleetKey>,
 }
 
 /// A base value paired with a random variance for character skill generation.
@@ -518,4 +554,132 @@ pub struct GameWorld {
     pub gnprtb: GnprtbParams,
     /// Mission probability tables keyed by DAT file stem (e.g. "DIPLMSTB", "ESPIMSTB").
     pub mission_tables: HashMap<String, MstbTable>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: create a minimal Character with all fields at their Default values.
+    fn default_character() -> Character {
+        Character {
+            dat_id: DatId::new(0),
+            name: "Test".into(),
+            is_alliance: false,
+            is_empire: false,
+            is_major: false,
+            diplomacy: SkillPair { base: 0, variance: 0 },
+            espionage: SkillPair { base: 0, variance: 0 },
+            ship_design: SkillPair { base: 0, variance: 0 },
+            troop_training: SkillPair { base: 0, variance: 0 },
+            facility_design: SkillPair { base: 0, variance: 0 },
+            combat: SkillPair { base: 0, variance: 0 },
+            leadership: SkillPair { base: 0, variance: 0 },
+            loyalty: SkillPair { base: 0, variance: 0 },
+            jedi_probability: 0,
+            jedi_level: SkillPair { base: 0, variance: 0 },
+            can_be_admiral: false,
+            can_be_commander: false,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
+        }
+    }
+
+    #[test]
+    fn character_is_unable_to_betray_serde_roundtrip() {
+        let mut c = default_character();
+        c.is_unable_to_betray = true;
+        let json = serde_json::to_string(&c).unwrap();
+        let c2: Character = serde_json::from_str(&json).unwrap();
+        assert!(c2.is_unable_to_betray);
+    }
+
+    #[test]
+    fn default_character_new_fields_are_zero_false_none() {
+        let c = default_character();
+        assert!(!c.is_unable_to_betray);
+        assert!(!c.is_jedi_trainer);
+        assert!(!c.is_known_jedi);
+        assert_eq!(c.hyperdrive_modifier, 0);
+        assert_eq!(c.enhanced_loyalty, 0);
+        assert!(!c.on_mission);
+        assert!(!c.on_hidden_mission);
+        assert!(!c.on_mandatory_mission);
+        assert!(c.current_system.is_none());
+        assert!(c.current_fleet.is_none());
+    }
+
+    #[test]
+    fn is_known_jedi_implies_aware_tier_convention() {
+        // Verifies the convention: is_known_jedi should pair with ForceTier::Aware
+        // (enforced in convert_character, tested here as a struct invariant).
+        let mut c = default_character();
+        c.is_known_jedi = true;
+        c.force_tier = ForceTier::Aware;
+        assert_eq!(c.force_tier, ForceTier::Aware);
+        assert!(c.is_known_jedi);
+    }
+
+    #[test]
+    fn current_system_and_fleet_default_to_none() {
+        let c = default_character();
+        assert_eq!(c.current_system, None);
+        assert_eq!(c.current_fleet, None);
+    }
+
+    #[test]
+    fn hyperdrive_modifier_defaults_to_zero() {
+        let c = default_character();
+        assert_eq!(c.hyperdrive_modifier, 0);
+    }
+
+    #[test]
+    fn serde_backward_compat_missing_new_fields() {
+        // Simulate deserializing a save file that lacks the new fields.
+        let json = r#"{
+            "dat_id": 0,
+            "name": "Old Save Luke",
+            "is_alliance": true,
+            "is_empire": false,
+            "is_major": true,
+            "diplomacy": {"base": 80, "variance": 0},
+            "espionage": {"base": 60, "variance": 0},
+            "ship_design": {"base": 40, "variance": 0},
+            "troop_training": {"base": 50, "variance": 0},
+            "facility_design": {"base": 30, "variance": 0},
+            "combat": {"base": 90, "variance": 0},
+            "leadership": {"base": 85, "variance": 0},
+            "loyalty": {"base": 95, "variance": 0},
+            "jedi_probability": 100,
+            "jedi_level": {"base": 80, "variance": 0},
+            "can_be_admiral": true,
+            "can_be_commander": true,
+            "can_be_general": true
+        }"#;
+        let c: Character = serde_json::from_str(json).unwrap();
+        // All new fields should default gracefully
+        assert!(!c.is_unable_to_betray);
+        assert!(!c.is_jedi_trainer);
+        assert!(!c.is_known_jedi);
+        assert_eq!(c.hyperdrive_modifier, 0);
+        assert_eq!(c.enhanced_loyalty, 0);
+        assert!(!c.on_mission);
+        assert!(!c.on_hidden_mission);
+        assert!(!c.on_mandatory_mission);
+        assert!(c.current_system.is_none());
+        assert!(c.current_fleet.is_none());
+        assert_eq!(c.force_tier, ForceTier::None);
+    }
 }

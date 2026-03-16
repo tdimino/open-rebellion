@@ -74,7 +74,18 @@ pub fn fleet_ticks_per_hop(fleet: &Fleet, world: &GameWorld) -> u32 {
         .max(1); // guard against 0 in DAT data
 
     // Invert: higher rating = fewer ticks.
-    let ticks = BASE_TICKS_PER_HOP / slowest;
+    let base_ticks = BASE_TICKS_PER_HOP / slowest;
+
+    // Han Solo speed bonus: best hyperdrive_modifier among fleet characters.
+    let han_bonus = fleet
+        .characters
+        .iter()
+        .filter_map(|&ck| world.characters.get(ck))
+        .map(|c| c.hyperdrive_modifier.max(0) as u32)
+        .max()
+        .unwrap_or(0);
+
+    let ticks = base_ticks.saturating_sub(han_bonus);
     ticks.max(MIN_TICKS_PER_HOP)
 }
 
@@ -448,6 +459,163 @@ mod tests {
     fn high_hyperdrive_clamped_to_min() {
         // hyperdrive=100 → 30/100 = 0 → clamped to MIN_TICKS_PER_HOP
         let ticks = (BASE_TICKS_PER_HOP / 100).max(MIN_TICKS_PER_HOP);
+        assert_eq!(ticks, MIN_TICKS_PER_HOP);
+    }
+
+    // --- Han Solo speed bonus tests ---
+
+    use crate::world::{
+        CapitalShipClass, Character, Fleet, ForceTier, GameWorld, ShipEntry, SkillPair,
+    };
+
+    fn zero_skill() -> SkillPair {
+        SkillPair { base: 0, variance: 0 }
+    }
+
+    fn test_character(name: &str, hyperdrive_modifier: i16) -> Character {
+        Character {
+            dat_id: crate::ids::DatId::new(0),
+            name: name.into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: zero_skill(),
+            espionage: zero_skill(),
+            ship_design: zero_skill(),
+            troop_training: zero_skill(),
+            facility_design: zero_skill(),
+            combat: zero_skill(),
+            leadership: zero_skill(),
+            loyalty: zero_skill(),
+            jedi_probability: 0,
+            jedi_level: zero_skill(),
+            can_be_admiral: false,
+            can_be_commander: false,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
+        }
+    }
+
+    fn test_ship_class(hyperdrive: u32) -> CapitalShipClass {
+        CapitalShipClass {
+            dat_id: crate::ids::DatId::new(0),
+            name: "TestShip".into(),
+            is_alliance: true,
+            is_empire: false,
+            refined_material_cost: 0,
+            maintenance_cost: 0,
+            research_order: 0,
+            research_difficulty: 0,
+            hull: 100,
+            shield_strength: 50,
+            sub_light_engine: 5,
+            maneuverability: 5,
+            hyperdrive,
+            fighter_capacity: 0,
+            troop_capacity: 0,
+            detection: 0,
+            turbolaser_fore: 0,
+            turbolaser_aft: 0,
+            turbolaser_port: 0,
+            turbolaser_starboard: 0,
+            ion_cannon_fore: 0,
+            ion_cannon_aft: 0,
+            ion_cannon_port: 0,
+            ion_cannon_starboard: 0,
+            laser_cannon_fore: 0,
+            laser_cannon_aft: 0,
+            laser_cannon_port: 0,
+            laser_cannon_starboard: 0,
+            shield_recharge_rate: 0,
+            damage_control: 0,
+            bombardment_modifier: 0,
+        }
+    }
+
+    #[test]
+    fn han_solo_bonus_reduces_ticks() {
+        let mut world = GameWorld::default();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let location = sys_sm.insert(());
+
+        // Ship with hyperdrive=3 → base ticks = 30/3 = 10
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(3));
+        // Han Solo with hyperdrive_modifier=5
+        let han_key = world.characters.insert(test_character("Han Solo", 5));
+
+        let fleet = Fleet {
+            location,
+            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            fighters: vec![],
+            characters: vec![han_key],
+            is_alliance: true,
+            has_death_star: false,
+        };
+
+        let ticks = fleet_ticks_per_hop(&fleet, &world);
+        // base=10, han_bonus=5 → 10-5=5 → clamped to max(5, MIN_TICKS_PER_HOP=5) = 5
+        assert_eq!(ticks, 5);
+    }
+
+    #[test]
+    fn zero_hyperdrive_modifier_no_change() {
+        let mut world = GameWorld::default();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let location = sys_sm.insert(());
+
+        // Ship with hyperdrive=3 → base ticks = 30/3 = 10
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(3));
+        // Regular character with hyperdrive_modifier=0
+        let char_key = world.characters.insert(test_character("Regular", 0));
+
+        let fleet = Fleet {
+            location,
+            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            fighters: vec![],
+            characters: vec![char_key],
+            is_alliance: true,
+            has_death_star: false,
+        };
+
+        let ticks = fleet_ticks_per_hop(&fleet, &world);
+        // base=10, bonus=0 → 10
+        assert_eq!(ticks, 10);
+    }
+
+    #[test]
+    fn han_bonus_clamped_to_min_ticks() {
+        let mut world = GameWorld::default();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let location = sys_sm.insert(());
+
+        // Ship with hyperdrive=3 → base ticks = 30/3 = 10
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(3));
+        // Extreme modifier that would reduce below MIN
+        let han_key = world.characters.insert(test_character("Han Solo", 100));
+
+        let fleet = Fleet {
+            location,
+            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            fighters: vec![],
+            characters: vec![han_key],
+            is_alliance: true,
+            has_death_star: false,
+        };
+
+        let ticks = fleet_ticks_per_hop(&fleet, &world);
+        // base=10, han_bonus=100 → saturating_sub → 0 → clamped to MIN_TICKS_PER_HOP=5
         assert_eq!(ticks, MIN_TICKS_PER_HOP);
     }
 }

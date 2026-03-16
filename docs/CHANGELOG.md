@@ -13,6 +13,73 @@ Each entry includes:
 
 ---
 
+## [v0.5.0] - 2026-03-16
+
+**Completion:** ~90% | **Category:** Story Events + Character Abilities + Integration | **Milestone:** Full Parity IN PROGRESS
+
+### Added
+- **4 scripted story event chains**: Luke Dagobah Training (0x221→0x210), Vader/Luke Final Battle (0x220), Bounty Hunter Attack (0x212), Jabba's Palace rescue (0x380–0x383) — all data-driven via EventState
+- **6 new EventCondition variants**: CharacterHasForceLevel, FactionControlsSystem, CharacterIsForceUser, CharacterExists, CharacterOnMandatoryMission, FactionControlsNSystems
+- **6 new EventAction variants**: SetMandatoryMission, ModifyForceTier, RemoveCharacter, StartJediTraining, TransferCharacter, TriggerEvent
+- **15 Ghidra RE event ID constants** (EVT_RECRUITMENT_DONE through EVT_ESPIONAGE_EXTRA)
+- **Han Solo speed bonus**: `hyperdrive_modifier` field on Character, consulted by `fleet_ticks_per_hop()` in movement.rs
+- **Betrayal system**: new `betrayal.rs` module following advance() pattern — loyalty threshold check via UPRIS1TB, `is_unable_to_betray` immunity (Luke, Vader), 50-tick cooldown
+- **Decoy system**: `check_decoy()` consults FDECOYTB during mission resolution, `DecoyTriggered` effect
+- **Escape system**: `check_escapes()` stub with ESCAPETB signature, `CharacterEscaped` effect
+- **Mission state flags**: `on_mission`, `on_hidden_mission`, `on_mandatory_mission` tracked on Character; `dispatch_guarded()` blocks mandatory-mission characters
+- **10 new Character fields**: `is_unable_to_betray`, `is_jedi_trainer`, `is_known_jedi`, `hyperdrive_modifier`, `enhanced_loyalty`, `on_mission`, `on_hidden_mission`, `on_mandatory_mission`, `current_system`, `current_fleet`
+- **3 DAT fields promoted**: `is_known_jedi`, `is_unable_to_betray`, `is_jedi_trainer` from MJCHARSD.DAT/MNCHARSD.DAT into Character world model
+- **Character location tracking**: `current_system` and `current_fleet` populated from fleet scan after seed loading
+- **BetrayalState** added to SaveState (version 3)
+
+### Fixed (from v0.4.1)
+- Fleet arrivals now update `System.fleets` (remove from origin, add to destination)
+- 6 new systems wired into main loop: blockade, uprising, Death Star, research, Jedi, victory
+- Mission effects mutate world: FacilitySabotaged, CharacterKilled, CharacterCaptured, CharacterRescued
+- Jedi XP persists via `accumulated_xp` in JediTrainingRecord
+- Blockade halts manufacturing via `advance_with_blockade()`
+- Uprising incident cooldown: first incident always fires (no cooldown entry)
+- All 14 simulation states serialized in SaveState
+
+### Technical
+- Knesset Shapash swarm: 4 Sonnet daborot (Tanit, Nikkal, Anat, Pidray) + Opus lead
+- 23 tasks completed, 237 tests passing (26 new)
+- New modules: betrayal.rs, story_events.rs
+- SaveState version bumped from 2 to 3
+
+---
+
+## [v0.4.1] - 2026-03-15
+
+**Completion:** ~70% | **Category:** Integration Fixes + Documentation | **Milestone:** War Machine HARDENED
+
+### Fixed
+- Fleet arrivals update `System.fleets` — combat, fog, blockade, victory see correct positions
+- 6 new systems (blockade, uprising, Death Star, research, Jedi, victory) wired into main loop
+- All 6 states added to SaveState (version 2)
+- Mission effects now mutate world: FacilitySabotaged removes facility, CharacterKilled/Captured/Rescued update arenas
+- Jedi XP persists via `accumulated_xp` in JediTrainingRecord
+- Blockade halts manufacturing via `advance_with_blockade()`
+- Uprising incident cooldown bug: first incident fires immediately (was blocked until tick 10)
+
+### Added
+- `agent_docs/systems/` — 7 per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory)
+- 3 "how to add" guides in simulation.md: new system, new mission type, new event type
+- Mission effects documentation table in game-domain.md
+- Fleet arrival lifecycle documented in architecture.md
+
+### Changed
+- simulation.md pruned from 346→132 lines (lean index with detail docs split to systems/)
+- architecture.md updated with all 14 simulation modules + render modules
+- game-domain.md: missions section reflects all 9 implemented types
+- CLAUDE.md updated to v0.4.1 (~70% complete, 211 tests)
+
+### Technical
+- 211 tests passing, 0 failures
+- SaveState version bumped from 1 to 2
+
+---
+
 ## [v0.4.0] - 2026-03-15
 
 **Completion:** ~68% | **Category:** Combat + Missions + Victory + Save/Load | **Milestone:** War Machine COMPLETE
@@ -179,7 +246,9 @@ Each entry includes:
 
 | Version | Date | Milestone | Completion | Summary |
 |---------|------|-----------|------------|---------|
-| **v0.4.0** | **2026-03-15** | **War Machine** | **~68%** | **Combat, 9 missions, victory, save/load, Death Star** |
+| **v0.5.0** | **2026-03-16** | **Full Parity** | **~90%** | **Story events, Han speed, betrayal, decoys, 10 Character fields** |
+| v0.4.1 | 2026-03-15 | War Machine Fix | ~70% | Integration fixes, 14 systems wired, doc overhaul |
+| v0.4.0 | 2026-03-15 | War Machine | ~68% | Combat, 9 missions, victory, save/load, Death Star |
 | v0.3.0+RE | 2026-03-15 | Ghidra RE | ~42% | 5,127 decompiled functions, combat formulas, GNPRTB mapped |
 | v0.3.0 | 2026-03-14 | War Room | ~42% | Full UI integration, audio, WASM build, fog/fleet overlays |
 | v0.2.0 | 2026-03-13 | Living Galaxy | ~30% | 7 simulation systems, mod loader, 51/51 DAT parsers |

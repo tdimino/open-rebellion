@@ -55,9 +55,30 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+use crate::dat::Faction;
 use crate::ids::{CharacterKey, SystemKey};
 use crate::tick::TickEvent;
-use crate::world::GameWorld;
+use crate::world::{ForceTier, GameWorld};
+
+// ---------------------------------------------------------------------------
+// Ghidra RE event IDs (from annotated-functions.md)
+// ---------------------------------------------------------------------------
+
+pub const EVT_RECRUITMENT_DONE: u32 = 0x12c; // 300
+pub const EVT_SYSTEM_BATTLE: u32 = 0x14d; // 333
+pub const EVT_SYSTEM_BLOCKADE: u32 = 0x14e; // 334
+pub const EVT_UPRISING_INCIDENT: u32 = 0x152; // 338
+pub const EVT_FLEET_BATTLE: u32 = 0x180; // 384
+pub const EVT_CHARACTER_FORCE: u32 = 0x1e1; // 481
+pub const EVT_FORCE_TRAINING: u32 = 0x1e5; // 485
+pub const EVT_DAGOBAH_COMPLETED: u32 = 0x210; // 528
+pub const EVT_BOUNTY_ATTACK: u32 = 0x212; // 530
+pub const EVT_FINAL_BATTLE: u32 = 0x220; // 544
+pub const EVT_LUKE_DAGOBAH: u32 = 0x221; // 545
+pub const EVT_GAME_OBJ_DESTROYED: u32 = 0x302; // 770
+pub const EVT_TROOP_BLOCKADE_KILL: u32 = 0x340; // 832
+pub const EVT_FORCE_DISCOVERED: u32 = 0x362; // 866
+pub const EVT_ESPIONAGE_EXTRA: u32 = 0x370; // 880
 
 // ---------------------------------------------------------------------------
 // EventCondition
@@ -103,6 +124,39 @@ pub enum EventCondition {
     /// Useful for event chains (e.g., "Bounty hunter arrives after Luke event").
     EventFired {
         id: u32,
+    },
+
+    /// Character's Force tier is at least `min_tier`.
+    CharacterHasForceLevel {
+        character: CharacterKey,
+        min_tier: ForceTier,
+    },
+
+    /// A specific faction controls a system.
+    FactionControlsSystem {
+        faction: Faction,
+        system: SystemKey,
+    },
+
+    /// Character is a Force user (any tier above None).
+    CharacterIsForceUser {
+        character: CharacterKey,
+    },
+
+    /// Character exists in the world (not killed/removed).
+    CharacterExists {
+        character: CharacterKey,
+    },
+
+    /// Character is on a mandatory mission (unavailable for player assignment).
+    CharacterOnMandatoryMission {
+        character: CharacterKey,
+    },
+
+    /// A specific number of systems are controlled by a faction.
+    FactionControlsNSystems {
+        faction: Faction,
+        min_count: usize,
     },
 }
 
@@ -152,6 +206,40 @@ pub enum EventAction {
     RelocateCharacter {
         character: CharacterKey,
         destination: SystemKey,
+    },
+
+    /// Set a character's mandatory mission flag.
+    SetMandatoryMission {
+        character: CharacterKey,
+        mandatory: bool,
+    },
+
+    /// Change a character's Force tier.
+    ModifyForceTier {
+        character: CharacterKey,
+        new_tier: ForceTier,
+    },
+
+    /// Remove a character from the game.
+    RemoveCharacter {
+        character: CharacterKey,
+    },
+
+    /// Start Jedi training for a character.
+    StartJediTraining {
+        character: CharacterKey,
+    },
+
+    /// Transfer a character to a system and optionally change faction.
+    TransferCharacter {
+        character: CharacterKey,
+        destination: SystemKey,
+        new_faction: Option<Faction>,
+    },
+
+    /// Fire another event by ID (for chaining story beats).
+    TriggerEvent {
+        event_id: u32,
     },
 }
 
@@ -400,6 +488,49 @@ fn evaluate_condition(
         }
 
         EventCondition::EventFired { id } => fired_ids.contains(id),
+
+        EventCondition::CharacterHasForceLevel {
+            character,
+            min_tier,
+        } => world
+            .characters
+            .get(*character)
+            .map(|c| c.force_tier >= *min_tier)
+            .unwrap_or(false),
+
+        EventCondition::FactionControlsSystem { faction, system } => world
+            .systems
+            .get(*system)
+            .map(|s| s.controlling_faction == Some(*faction))
+            .unwrap_or(false),
+
+        EventCondition::CharacterIsForceUser { character } => world
+            .characters
+            .get(*character)
+            .map(|c| c.force_tier > ForceTier::None)
+            .unwrap_or(false),
+
+        EventCondition::CharacterExists { character } => {
+            world.characters.contains_key(*character)
+        }
+
+        EventCondition::CharacterOnMandatoryMission { character } => world
+            .characters
+            .get(*character)
+            .map(|c| c.on_mandatory_mission)
+            .unwrap_or(false),
+
+        EventCondition::FactionControlsNSystems {
+            faction,
+            min_count,
+        } => {
+            let count = world
+                .systems
+                .values()
+                .filter(|s| s.controlling_faction == Some(*faction))
+                .count();
+            count >= *min_count
+        }
     }
 }
 
@@ -427,9 +558,48 @@ fn character_is_at_system(world: &GameWorld, character: CharacterKey, system: Sy
 mod tests {
     use super::*;
     use crate::tick::TickEvent;
+    use crate::world::{Character, ForceTier, SkillPair};
 
     fn make_world() -> GameWorld {
         GameWorld::default()
+    }
+
+    /// Create a test character with sensible defaults. Override fields after creation.
+    fn make_character(name: &str, force_tier: ForceTier) -> Character {
+        let sp = SkillPair { base: 0, variance: 0 };
+        Character {
+            dat_id: crate::ids::DatId::new(0),
+            name: name.into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: true,
+            diplomacy: sp,
+            espionage: sp,
+            ship_design: sp,
+            troop_training: sp,
+            facility_design: sp,
+            combat: sp,
+            leadership: sp,
+            loyalty: sp,
+            jedi_probability: 0,
+            jedi_level: sp,
+            can_be_admiral: false,
+            can_be_commander: false,
+            can_be_general: false,
+            force_tier,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
+        }
     }
 
     fn tick(n: u64) -> Vec<TickEvent> {
@@ -712,5 +882,204 @@ mod tests {
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert!(fired.is_empty());
+    }
+
+    // --- New condition variants ---
+
+    #[test]
+    fn character_has_force_level_true_when_tier_matches() {
+        let mut world = make_world();
+        let key = world
+            .characters
+            .insert(make_character("Luke", ForceTier::Training));
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharacterHasForceLevel {
+                character: key,
+                min_tier: ForceTier::Aware,
+            }],
+            vec![],
+        ));
+
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert_eq!(fired.len(), 1, "Training >= Aware should fire");
+    }
+
+    #[test]
+    fn character_has_force_level_false_when_tier_too_low() {
+        let mut world = make_world();
+        let key = world
+            .characters
+            .insert(make_character("Han", ForceTier::None));
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharacterHasForceLevel {
+                character: key,
+                min_tier: ForceTier::Aware,
+            }],
+            vec![],
+        ));
+
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert!(fired.is_empty(), "None < Aware should not fire");
+    }
+
+    #[test]
+    fn faction_controls_system_evaluates_correctly() {
+        use crate::dat::{ExplorationStatus, Faction};
+
+        let mut world = make_world();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Test Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Coruscant".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.3,
+            popularity_empire: 0.7,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            controlling_faction: Some(Faction::Empire),
+        });
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::FactionControlsSystem {
+                faction: Faction::Empire,
+                system: sys_key,
+            }],
+            vec![],
+        ));
+
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert_eq!(fired.len(), 1, "Empire controls the system");
+    }
+
+    #[test]
+    fn character_exists_false_for_removed_character() {
+        let mut world = make_world();
+        let key = world
+            .characters
+            .insert(make_character("Doomed", ForceTier::None));
+
+        // Remove the character
+        world.characters.remove(key);
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharacterExists { character: key }],
+            vec![],
+        ));
+
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert!(fired.is_empty(), "removed character should not exist");
+    }
+
+    #[test]
+    fn faction_controls_n_systems_counts_correctly() {
+        use crate::dat::{ExplorationStatus, Faction};
+
+        let mut world = make_world();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+
+        let make_sys = |world: &mut GameWorld, name: &str, faction: Option<Faction>| {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(0),
+                name: name.into(),
+                sector: sector_key,
+                x: 0,
+                y: 0,
+                exploration_status: ExplorationStatus::Explored,
+                popularity_alliance: 0.5,
+                popularity_empire: 0.5,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
+                is_destroyed: false,
+                controlling_faction: faction,
+            })
+        };
+
+        make_sys(&mut world, "Sys1", Some(Faction::Alliance));
+        make_sys(&mut world, "Sys2", Some(Faction::Alliance));
+        make_sys(&mut world, "Sys3", Some(Faction::Empire));
+
+        // Require 2 Alliance systems — should fire
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::FactionControlsNSystems {
+                faction: Faction::Alliance,
+                min_count: 2,
+            }],
+            vec![],
+        ));
+
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert_eq!(fired.len(), 1, "Alliance controls 2 systems, threshold is 2");
+
+        // Require 3 Alliance systems — should NOT fire
+        let mut state2 = EventState::new();
+        state2.define(event(
+            2,
+            vec![EventCondition::FactionControlsNSystems {
+                faction: Faction::Alliance,
+                min_count: 3,
+            }],
+            vec![],
+        ));
+
+        let fired2 = EventSystem::advance(&mut state2, &world, &tick(1), &[]);
+        assert!(fired2.is_empty(), "Alliance only controls 2, threshold is 3");
+    }
+
+    #[test]
+    fn character_is_force_user_true_for_aware_tier() {
+        let mut world = make_world();
+        let key = world
+            .characters
+            .insert(make_character("Leia", ForceTier::Aware));
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharacterIsForceUser { character: key }],
+            vec![],
+        ));
+
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert_eq!(fired.len(), 1, "Aware > None, so is a Force user");
     }
 }

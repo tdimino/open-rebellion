@@ -4,6 +4,7 @@ use macroquad::prelude::*;
 use std::path::{Path, PathBuf};
 
 use rebellion_core::ai::{AiFaction, AIAction, AIState, AISystem, FleetMoveReason};
+use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
 use rebellion_core::combat::{CombatSide, CombatSystem};
@@ -104,6 +105,7 @@ async fn main() {
     let mut death_star_state = DeathStarState::default();
     let mut research_state = ResearchState::new();
     let mut jedi_state = JediState::new();
+    let mut betrayal_state = BetrayalState::new();
     // Find HQ systems for victory detection
     let alliance_hq = world.systems.iter()
         .find(|(_, s)| s.is_headquarters && s.controlling_faction == Some(Faction::Alliance))
@@ -121,6 +123,9 @@ async fn main() {
             VictoryState::new(a, e)
         }
     };
+
+    // Register scripted story events
+    rebellion_core::story_events::define_story_events(&mut event_state, &world);
 
     // ── UI state ────────────────────────────────────────────────────────────
     let mut map_state = GalaxyMapState::default();
@@ -431,6 +436,18 @@ async fn main() {
                 apply_event_actions(&fired.actions, &mut world, &mut msg_log, fired.tick);
             }
 
+            // Apply Jedi training from story events (outside apply_event_actions
+            // because it needs jedi_state which is not passed to that function)
+            for fired in &fired_events {
+                for action in &fired.actions {
+                    if let EventAction::StartJediTraining { character } = action {
+                        if let Some(c) = world.characters.get(*character) {
+                            jedi_state.start_training(*character, c.is_alliance, current_tick);
+                        }
+                    }
+                }
+            }
+
             // ── AI ──────────────────────────────────────────────────────────
             let ai_actions = AISystem::advance(
                 &mut ai_state,
@@ -509,6 +526,27 @@ async fn main() {
                         msg_log.push(GameMessage::at_system(*tick, format!("Uprising subdued at {}", name), MessageCategory::Diplomacy, *system));
                     }
                 }
+            }
+
+            // ── Betrayal ─────────────────────────────────────────────────────
+            let betrayal_rolls: Vec<f64> = (0..world.characters.len())
+                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+            let empty_loyalty_tb = MstbTable::new(vec![]);
+            let loyalty_tb = world.mission_tables.get("UPRIS1TB").unwrap_or(&empty_loyalty_tb);
+            let betrayal_events = BetrayalSystem::advance(&mut betrayal_state, &world, &tick_events, &betrayal_rolls, loyalty_tb);
+            for evt in &betrayal_events {
+                let rebellion_core::betrayal::BetrayalEvent::CharacterBetrayed { character, defected_to_alliance } = evt;
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.is_alliance = *defected_to_alliance;
+                    c.is_empire = !*defected_to_alliance;
+                }
+                // Remove from current fleet
+                for (_, fleet) in world.fleets.iter_mut() {
+                    fleet.characters.retain(|&k| k != *character);
+                }
+                let name = world.characters.get(*character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
+                let to_faction = if *defected_to_alliance { "Alliance" } else { "Empire" };
+                msg_log.push(GameMessage::new(current_tick, format!("{} has betrayed and defected to the {}!", name, to_faction), MessageCategory::Event));
             }
 
             // ── Death Star ───────────────────────────────────────────────────
@@ -1038,6 +1076,30 @@ fn apply_mission_result(
                     }
                 }
             }
+            MissionEffect::CharacterBusy { character } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.on_mission = true;
+                }
+            }
+            MissionEffect::CharacterAvailable { character } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.on_mission = false;
+                    c.on_hidden_mission = false;
+                }
+            }
+            MissionEffect::DecoyTriggered { system, decoy_character } => {
+                let sys_name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                let char_name = world.characters.get(*decoy_character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
+                log.push(GameMessage::at_system(result.tick, format!("Mission intercepted by decoy {} at {}", char_name, sys_name), MessageCategory::Mission, *system));
+            }
+            MissionEffect::CharacterEscaped { character, escaped_to_alliance } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.is_alliance = *escaped_to_alliance;
+                    c.is_empire = !*escaped_to_alliance;
+                }
+                let name = world.characters.get(*character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
+                log.push(GameMessage::new(result.tick, format!("{} has escaped captivity!", name), MessageCategory::Event));
+            }
         }
     }
 }
@@ -1107,6 +1169,42 @@ fn apply_event_actions(
             }
             EventAction::RelocateCharacter { .. } => {
                 // Deferred: character location tracking lands with full character system.
+            }
+            // v0.5.0 story event actions — full implementation in Pidray's integration pass
+            EventAction::SetMandatoryMission { character, mandatory } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.on_mandatory_mission = *mandatory;
+                }
+            }
+            EventAction::ModifyForceTier { character, new_tier } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.force_tier = *new_tier;
+                }
+            }
+            EventAction::RemoveCharacter { character } => {
+                for (_, fleet) in world.fleets.iter_mut() {
+                    fleet.characters.retain(|&k| k != *character);
+                }
+                world.characters.remove(*character);
+            }
+            EventAction::StartJediTraining { .. } => {
+                // Handled by the StartJediTraining extraction loop above (needs jedi_state).
+                // Do NOT add logic here — it would double-enroll characters.
+            }
+            EventAction::TransferCharacter { character, destination, new_faction } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.current_system = Some(*destination);
+                    if let Some(faction) = new_faction {
+                        match faction {
+                            Faction::Alliance => { c.is_alliance = true; c.is_empire = false; }
+                            Faction::Empire => { c.is_alliance = false; c.is_empire = true; }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            EventAction::TriggerEvent { .. } => {
+                // Event chaining handled internally by EventSystem
             }
         }
     }

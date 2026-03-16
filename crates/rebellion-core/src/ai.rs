@@ -866,6 +866,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         })
     }
 
@@ -1177,6 +1187,16 @@ mod tests {
             force_tier: ForceTier::None,
             force_experience: 0,
             is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            current_system: None,
+            current_fleet: None,
         })
     }
 
