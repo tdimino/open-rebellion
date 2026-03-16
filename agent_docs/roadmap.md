@@ -65,7 +65,7 @@ Delivered (v0.5.0):
 - 6 new EventConditions + 6 new EventActions, 15 RE event ID constants
 - All 9 mission types with world-mutating effects (sabotage, assassination, rescue, abduction, incite uprising)
 
-## Mod Workshop -- IN PROGRESS
+## Mod Workshop -- COMPLETE
 *Release candidate — Knesset Elat (v0.6.0)*
 
 Delivered:
@@ -77,10 +77,19 @@ Delivered:
 - Mod Manager egui panel (discover, toggle, reload)
 - ESCAPETB per-tick escape check wired into main loop
 
+## Release -- READY
+*Release packaging — Knesset Hokhmah (v0.7.0)*
+
+Delivered:
+- 8 new story event chains (0x1e1, 0x1e5, 0x390-0x39A)
+- 4 new EventCondition variants + 3 new EventAction variants
+- Release packaging scripts (macOS + web)
+- Example mod (star-destroyer-rebalance)
+- GitHub Actions CI (test + WASM build)
+- Vendored web/gl.js
+- Release profile (LTO, strip, codegen-units=1)
+
 Remaining:
-- Modder documentation + example mod
-- Vendor web/gl.js (stop network fetch)
-- Release packaging scripts (macOS, browser zip)
 - HD asset pack bulk execution
 - Video playback (Smacker → WebM)
 - Distribution: itch.io (web), Homebrew (macOS), GitHub Releases

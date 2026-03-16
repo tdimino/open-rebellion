@@ -762,7 +762,9 @@ async fn main() {
                 }
 
                 // Mod Manager (floating window)
-                let mod_infos: Vec<rebellion_render::ModInfo> = Vec::new(); // TODO: populate from ModRuntime
+                // TODO: init_mod_runtime() from rebellion-data needs to be called at startup
+                // and the result stored in main loop state to populate this list.
+                let mod_infos: Vec<rebellion_render::ModInfo> = Vec::new();
                 let mod_actions = rebellion_render::draw_mod_manager(ctx, &mod_infos, &mut mod_manager_state);
                 for action in mod_actions {
                     match action {
@@ -1267,6 +1269,37 @@ fn apply_event_actions(
             }
             EventAction::TriggerEvent { .. } => {
                 // Event chaining handled internally by EventSystem
+            }
+            EventAction::AccumulateForceExperience { character, amount } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.force_experience += amount;
+                }
+            }
+            EventAction::CaptureCharacter { character, captor_faction } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.is_captive = true;
+                    c.captured_by = Some(*captor_faction);
+                    c.capture_tick = Some(tick);
+                }
+                // Remove from fleets
+                for (_, fleet) in world.fleets.iter_mut() {
+                    fleet.characters.retain(|&k| k != *character);
+                }
+            }
+            EventAction::SetCarboniteState { character, frozen } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.on_mandatory_mission = *frozen;
+                    if *frozen {
+                        // Carbonite freeze = captive state + mandatory mission lock
+                        c.is_captive = true;
+                        c.capture_tick = Some(tick);
+                    } else {
+                        // Thaw = clear all captivity
+                        c.is_captive = false;
+                        c.captured_by = None;
+                        c.capture_tick = None;
+                    }
+                }
             }
         }
     }

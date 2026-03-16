@@ -13,6 +13,27 @@ Each entry includes:
 
 ---
 
+## [v0.7.0] - 2026-03-16
+
+**Completion:** ~95% | **Category:** Story Events + Release Prep | **Milestone:** Release READY
+
+### Added
+- **8 new story event chains**: Force Detection (0x1e1), Force Training (0x1e5), Dagobah multi-phase gates (0x390-0x392), Final Battle full chain (0x393-0x396 + 0x220), Bounty Hunters Active gate (0x397), Han Carbonite (0x398), Palace captures (0x399-0x39A)
+- **4 new EventCondition variants**: CharacterForceExperience, CharacterIsCaptive, CharacterIsJediTrainer, EventNotFired
+- **3 new EventAction variants**: AccumulateForceExperience, CaptureCharacter, SetCarboniteState
+- **Release packaging**: scripts/package-web.sh (WASM zip), scripts/package-macos.sh (native archive)
+- **Example mod**: mods/examples/star-destroyer-rebalance/ (mod.toml + JSON patch)
+- **GitHub Actions CI**: test + WASM build on push
+- **Vendored web/gl.js**: WASM builds no longer fetch from network
+- **Release profile**: LTO, strip, codegen-units=1 for optimized builds
+
+### Technical
+- Knesset Hokhmah swarm: 3 daborot (Sopher, Sassuratu, Dikte)
+- 19 tasks completed
+- Event ID range 0x390-0x39A used for story gates
+
+---
+
 ## [v0.6.0] - 2026-03-16
 
 **Completion:** ~92% | **Category:** Mod Workshop + Integration Hardening | **Milestone:** Mod Workshop IN PROGRESS
@@ -267,7 +288,8 @@ Each entry includes:
 
 | Version | Date | Milestone | Completion | Summary |
 |---------|------|-----------|------------|---------|
-| **v0.6.0** | **2026-03-16** | **Mod Workshop** | **~92%** | **Mod manager panel, escape system, 3 reviewer bug fixes** |
+| **v0.7.0** | **2026-03-16** | **Release READY** | **~95%** | **8 story event chains, 7 new event variants, release packaging, CI, example mod** |
+| v0.6.0 | 2026-03-16 | Mod Workshop | ~92% | Mod manager panel, escape system, 3 reviewer bug fixes |
 | v0.5.0 | 2026-03-16 | Full Parity | ~90% | Story events, Han speed, betrayal, decoys, 10 Character fields |
 | v0.4.1 | 2026-03-15 | War Machine Fix | ~70% | Integration fixes, 14 systems wired, doc overhaul |
 | v0.4.0 | 2026-03-15 | War Machine | ~68% | Combat, 9 missions, victory, save/load, Death Star |

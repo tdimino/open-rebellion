@@ -1,0 +1,4 @@
+name = "star-destroyer-rebalance"
+version = "1.0.0"
+author = "Open Rebellion Team"
+description = "Example mod: increases Imperial Star Destroyer hull strength to 3000."

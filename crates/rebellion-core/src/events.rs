@@ -158,6 +158,27 @@ pub enum EventCondition {
         faction: Faction,
         min_count: usize,
     },
+
+    /// Character's accumulated Force XP meets threshold.
+    CharacterForceExperience {
+        character: CharacterKey,
+        min_xp: u32,
+    },
+
+    /// Character is currently held captive.
+    CharacterIsCaptive {
+        character: CharacterKey,
+    },
+
+    /// Character is a Jedi trainer (can teach others).
+    CharacterIsJediTrainer {
+        character: CharacterKey,
+    },
+
+    /// A specific event has NOT yet fired (inverse of EventFired).
+    EventNotFired {
+        id: u32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +261,24 @@ pub enum EventAction {
     /// Fire another event by ID (for chaining story beats).
     TriggerEvent {
         event_id: u32,
+    },
+
+    /// Add Force experience points to a character.
+    AccumulateForceExperience {
+        character: CharacterKey,
+        amount: u32,
+    },
+
+    /// Put a character into captive/carbonite state.
+    CaptureCharacter {
+        character: CharacterKey,
+        captor_faction: Faction,
+    },
+
+    /// Mark a character as in carbonite (can't be assigned to fleets or missions).
+    SetCarboniteState {
+        character: CharacterKey,
+        frozen: bool,
     },
 }
 
@@ -531,6 +570,29 @@ fn evaluate_condition(
                 .count();
             count >= *min_count
         }
+
+        EventCondition::CharacterForceExperience {
+            character,
+            min_xp,
+        } => world
+            .characters
+            .get(*character)
+            .map(|c| c.force_experience >= *min_xp)
+            .unwrap_or(false),
+
+        EventCondition::CharacterIsCaptive { character } => world
+            .characters
+            .get(*character)
+            .map(|c| c.is_captive)
+            .unwrap_or(false),
+
+        EventCondition::CharacterIsJediTrainer { character } => world
+            .characters
+            .get(*character)
+            .map(|c| c.is_jedi_trainer)
+            .unwrap_or(false),
+
+        EventCondition::EventNotFired { id } => !fired_ids.contains(id),
     }
 }
 

@@ -11,8 +11,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Parity-92%25-brightgreen.svg" alt="Parity">
-  <img src="https://img.shields.io/badge/Tests-259%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Parity-95%25-brightgreen.svg" alt="Parity">
+  <img src="https://img.shields.io/badge/Tests-266%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
 </p>
 
@@ -38,9 +38,9 @@ Rebellion was a game about grand strategy in the Star Wars universe—not the li
 
 Open Rebellion reads the original game data files, converts them to clean JSON, and reimplements the simulation from the ground up in Rust. It runs natively on macOS and in the browser via WebAssembly.
 
-### Current State: v0.6.0 — Mod Workshop (~92% parity)
+### Current State: v0.7.0 — Release READY (~95% parity)
 
-Six phases complete. 15 simulation systems, 259 tests passing:
+Seven phases complete. 15 simulation systems:
 
 - **Galaxy Viewer** — 200 star systems, pan/zoom/click, 51/51 DAT parsers with byte-level round-trip validation
 - **Living Galaxy** — Game clock, manufacturing, 9 mission types, AI manager, event system, mod loader
@@ -101,8 +101,8 @@ The original game's binary data files (51 DAT files) and executable (REBEXE.EXE,
 | **War Room** | Complete | Player UI, fleet movement, fog of war, encyclopedia, audio |
 | **War Machine** | Complete | Combat (space/ground/bombardment), blockade, uprising, Death Star, victory, save/load |
 | **Full Parity** | Complete | Story events, betrayal, decoys, escape, Han speed bonus, mission flags |
-| **Mod Workshop** | In Progress | Sensor fog, captivity, save migration, mod manager panel, ModRuntime |
-| **Release** | Planned | HD assets, packaging, distribution (itch.io, Homebrew, GitHub) |
+| **Mod Workshop** | Complete | Sensor fog, captivity, save migration, mod manager panel, ModRuntime |
+| **Release** | Ready | Release packaging, CI, example mod, vendored WASM deps |
 
 **Ghidra RE complete.** 5,127 functions decompiled from `REBEXE.EXE`, combat formulas decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for the full corpus (7 scholar documents, 4,179 lines).
 
