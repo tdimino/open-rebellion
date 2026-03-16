@@ -1,3 +1,11 @@
+---
+title: "Open Rebellion"
+description: "Project instructions and build configuration for the Open Rebellion Rust reimplementation"
+category: "reference"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 # Open Rebellion
 
 Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.7.0 (~95% complete). Living Galaxy + War Room + War Machine + Full Parity + Mod Workshop + Release READY. 15 simulation systems, 12 scripted story event chains, betrayal/decoy/escape mechanics, Han Solo speed bonus, mod manager panel, release packaging, CI.
@@ -61,7 +69,10 @@ agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patte
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
 agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: 5,127 decompiled functions, combat formulas, 111 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
-agent_docs/assets.md -- Asset pipeline: 6 pipelines (HD upscaling, 3D models, encyclopedia, reference image generation, audio, UI upscaling). 11 reference collections, 4 3D providers, 6 audio tools, 316+ UI elements. Read when working on visual or audio assets.
+agent_docs/assets.md -- Asset pipeline: 6 pipelines (HD upscaling, 3D models, encyclopedia, reference image generation, audio, UI upscaling). 11 reference collections, 4 3D providers, 6 audio tools, 450+ UI BMPs. Read when working on visual or audio assets.
+agent_docs/game-media.md -- Complete game media inventory: 18 DLLs, 450 UI BMPs, 2342 animation data files, 15 Smacker videos, 16 WAV soundtrack. Resource ID scheme, extraction status, upscaling strategy. Read when extracting or upscaling game assets.
+
+docs/mechanics/ -- Game mechanics wiki with 18 system docs. Read for player/modder-facing mechanics reference.
 
 ## Reports
 

@@ -1,3 +1,11 @@
+---
+title: "UI Element Reference Collection"
+description: "316 UI elements cataloged from Star Wars Rebellion via MetasharpNet editor"
+category: "reference"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # UI Element Reference Collection
 
 316 UI elements cataloged from Star Wars Rebellion (1998) via MetasharpNet editor.
