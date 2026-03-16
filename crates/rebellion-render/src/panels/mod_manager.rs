@@ -95,7 +95,7 @@ pub fn draw_mod_manager(
 
             if mods.is_empty() {
                 ui.label("No mods found. Place mod folders in the mods/ directory.");
-                return;
+                // Don't return early — footer buttons (Reload, Close) must always render.
             }
 
             // ── Mod list ────────────────────────────────────────────────────

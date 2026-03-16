@@ -74,7 +74,7 @@ Starting unit/facility deployments for new games:
 
 ## Implemented Systems
 
-See `@agent_docs/simulation.md` for full API reference on all 14 systems.
+See `@agent_docs/simulation.md` for full API reference on all 15 systems.
 
 ### Core Loop (v0.2.0)
 - **Tick system** (`tick.rs`): Frame-independent GameClock, GameSpeed (Paused/Normal/Fast/Faster), TickEvent markers
@@ -96,7 +96,25 @@ See `@agent_docs/simulation.md` for full API reference on all 14 systems.
 - **Research** (`research.rs`): 3 tech trees (Ship/Troop/Facility) per faction, `research_order` + `research_difficulty`
 - **Jedi training** (`jedi.rs`): 4-tier Force progression (None→Aware→Training→Experienced), XP accumulation, detection checks
 - **Victory conditions** (`victory.rs`): HQ capture, Death Star fire/destroyed, `resolved` flag prevents re-trigger
-- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, 10 slots, all 14 states serialized
+- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, v4 format with mod metadata + FNV-1a hash, migration framework, 10 slots. See `@agent_docs/save-load.md`.
+
+### Full Parity (v0.5.0)
+- **4 scripted story chains** (`story_events.rs`): Luke Dagobah (0x221→0x210), Final Battle (0x220), Bounty Hunters (0x212), Jabba's Palace (0x380-0x383)
+- **Han Solo speed bonus** (`movement.rs`): `hyperdrive_modifier` on Character, consulted by `fleet_ticks_per_hop()`
+- **Betrayal system** (`betrayal.rs`): loyalty threshold via UPRIS1TB, `is_unable_to_betray` immunity, 50-tick cooldown
+- **Decoy system** (`missions.rs`): FDECOYTB consultation during mission resolution
+- **Escape system** (`missions.rs`): ESCAPETB per-tick check for captive characters, `check_escapes()` in main loop
+- **Mission state flags**: `on_mission`, `on_hidden_mission`, `on_mandatory_mission` tracked on Character; `dispatch_guarded()` prevents double-dispatch
+- **6 new EventConditions** + **6 new EventActions** for story event mechanics
+- **15 Ghidra RE event ID constants** (0x12c–0x370)
+
+### Mod Workshop (v0.6.0)
+- **Sensor-radius fog** (`fog.rs`): fleets with detection capability reveal nearby systems within `detection * 15.0` coordinate radius
+- **Captivity state** (`world/mod.rs`): `is_captive`, `captured_by: Option<Faction>`, `capture_tick: Option<u64>` on Character — set on capture, cleared on rescue/escape
+- **Research pure contract** (`research.rs`): `advance()` returns results only, caller applies level-ups
+- **Mod runtime** (`mods.rs`): `ModRuntime`, `ModConfig`, enable/disable with `config.toml` persistence, structured `ModError`, hot reload integration. See `@agent_docs/mod-runtime.md`.
+- **Mod Manager panel** (`panels/mod_manager.rs`): egui floating window with mod list, enable/disable, reload, Tab shortcut
+- **Save migration framework** (`save.rs`): versioned dispatch, mod metadata in header, FNV-1a hash. See `@agent_docs/save-load.md`.
 
 ### Mission Effects (applied in main.rs)
 | Effect | World Mutation |
@@ -105,15 +123,19 @@ See `@agent_docs/simulation.md` for full API reference on all 14 systems.
 | `CharacterRecruited` | No-op (covered by popularity) |
 | `FacilitySabotaged` | Remove facility from system + arena by index |
 | `CharacterKilled` | Remove from all fleets, remove from character arena |
-| `CharacterCaptured` | Flip faction flags, remove from fleets |
-| `CharacterRescued` | Restore to returned_to faction |
+| `CharacterCaptured` | Set captivity fields, flip faction, remove from fleets |
+| `CharacterRescued` | Restore faction, clear captivity fields |
+| `CharacterEscaped` | Restore home faction (`is_alliance`), clear captivity |
 | `SystemIntelligenceGathered` | Set exploration_status to Explored |
 | `UprisingStarted` | Shift popularity against controller |
+| `CharacterBusy` | Set `on_mission = true` |
+| `CharacterAvailable` | Clear `on_mission`, `on_hidden_mission` |
+| `DecoyTriggered` | Log message (no world mutation) |
 
 ## Unimplemented Mechanics
 
-- **Probe droids / sensor range**: fog of war currently uses fleet presence only, no sensor radius
-- **Special character abilities**: betrayal, decoys, Han Solo speed bonus (Jedi training IS implemented)
-- **Scripted story events**: Luke/Vader saga, Dagobah, Jabba's Palace, Bounty Hunters (event system exists, data not loaded)
 - **Video playback**: Smacker to WebM, victory cutscenes
 - **Sound effects / music**: engine exists (quad-snd), asset coverage incomplete
+- **Remaining story events**: ~15 additional story beats documented in RE but not implemented (Noghri, special forces chains)
+- **WASM save/load**: no IndexedDB/localStorage fallback
+- **WASM mod loading**: no browser file picker integration

@@ -84,14 +84,23 @@ On WASM targets, `ModWatcher` is a no-op stub. Browser mod loading would use a f
 
 | Type | Purpose |
 |------|---------|
-| `ModManifest` | Parsed `mod.toml` — name, version, author, description, dependencies, path |
+| `ModManifest` | Parsed `mod.toml` — name, version, author, description, dependencies, enabled |
 | `ModContent` | `HashMap<String, Vec<Value>>` — entity type → patch objects from JSON files |
 | `ModLoader` | Stateless namespace: `discover()`, `resolve_load_order()`, `apply()` |
 | `ModWatcher` | File system watcher (native) / no-op (WASM) |
+| `ModRuntime` | Runtime orchestrator: discover, validate, apply enabled, toggle, refresh |
+| `ModConfig` | Persisted enable/disable state (`mods/config.toml`) |
+| `ModError` | Structured error: MissingDependency, VersionMismatch, ParseError |
+| `ModInfo` | Display-only struct for UI panel (rebellion-render, no data dep) |
 
-## Integration Point
+## Integration Points
 
-Mods are applied after base data loading in `rebellion-data/src/lib.rs`. The apply step walks each mod's patches, looks up entities by `dat_id`, and merges fields via the RFC 7396 algorithm.
+1. **Startup**: `load_game_data()` calls `ModRuntime::discover()` + `apply_enabled()` after base DAT loading
+2. **UI**: `init_mod_runtime(gdata_path)` returns `Option<ModRuntime>` for the Mod Manager panel
+3. **Save**: `ModRuntime::enabled_mod_list()` provides (name, version) pairs for save metadata
+4. **Hot reload**: `ModRuntime::check_reload(&watcher)` checked each tick (native only)
+
+For full runtime details see `@agent_docs/mod-runtime.md`.
 
 ## Creating a Mod
 

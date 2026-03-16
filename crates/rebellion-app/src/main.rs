@@ -1100,18 +1100,11 @@ fn apply_mission_result(
                 world.characters.remove(*character);
             }
             MissionEffect::CharacterCaptured { character, captured_by, .. } => {
-                // Transfer character to the capturing faction
+                // Set captivity state — do NOT flip is_alliance/is_empire.
+                // Those fields encode faction *identity*, not current holder.
+                // Flipping them corrupts escape direction (check_escapes uses
+                // is_alliance to determine where the character escapes TO).
                 if let Some(c) = world.characters.get_mut(*character) {
-                    match captured_by {
-                        MissionFaction::Alliance => {
-                            c.is_alliance = true;
-                            c.is_empire = false;
-                        }
-                        MissionFaction::Empire => {
-                            c.is_alliance = false;
-                            c.is_empire = true;
-                        }
-                    }
                     c.is_captive = true;
                     c.captured_by = Some(match captured_by {
                         MissionFaction::Alliance => Faction::Alliance,

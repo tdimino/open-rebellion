@@ -45,13 +45,18 @@ PATH="/usr/bin:$PATH" cargo check
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
 - MISSNSD.DAT flag_col6..flag_col21 semantics partially resolved via Ghidra RE -- see `ghidra/notes/annotated-functions.md`
 - CapitalShipClass/FighterClass world models carry only ~10 of 50+ DAT fields -- 15 more needed for combat (see `ghidra/notes/rust-implementation-guide.md`)
+- Save v3 files rejected (bincode layout incompatible) -- migration from v3 not possible without SaveStateV3 struct
+- Mod Manager panel shows empty list until ModRuntime is fully wired with mod data population
+- `web/gl.js` still fetched from external URL on first WASM build -- should vendor
 
 ## Agent Docs
 
 @agent_docs/architecture.md -- Crate graph, type system layers, entity identity, data flow, render architecture. Read when adding entity types or crates.
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
-agent_docs/simulation.md -- 14 simulation systems index, advance() pattern, integration order, "how to add" guides. Read when touching game logic.
-agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory). Read when modifying a specific system.
+agent_docs/simulation.md -- 15 simulation systems index, advance() pattern, integration order, "how to add" guides. Read when touching game logic.
+agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory, betrayal). Read when modifying a specific system.
+agent_docs/save-load.md -- Save format (v4), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
+agent_docs/mod-runtime.md -- ModRuntime, ModConfig, enable/disable, hot reload, structured errors. Read when wiring mod features.
 agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.

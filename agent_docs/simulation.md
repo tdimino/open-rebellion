@@ -27,12 +27,12 @@ The caller (rebellion-app `main.rs`) applies effects to `GameWorld` after each s
 | 4 | **Events** | `events.rs` | `advance(state, world, ticks, rolls)` | `EventFired` chaining within same call |
 | 5 | **AI** | `ai.rs` | `advance(state, world, mfg, missions, ticks)` | Re-evaluates every 7 ticks only |
 | 6 | **Movement** | `movement.rs` | `advance(state, ticks) -> Vec<ArrivalEvent>` | Caller must update `fleet.location` + `system.fleets` |
-| 7 | **Fog** | `fog.rs` | `advance(state, world, movement)` | Advance intel at 50% transit; monotonic |
+| 7 | **Fog** | `fog.rs` | `advance(state, world, movement)` | Fleet presence + sensor radius (detection * 15.0); monotonic |
 | 8 | **Combat** | `combat.rs` | `resolve_space()` / `resolve_ground()` | Phase gate: `ACTIVE && !PHASES_ENABLED` (inverted) |
 | 9 | **Blockade** | `blockade.rs` | `advance(state, world, ticks)` | Hostile fleet + no defender = blockade |
 | 10 | **Uprising** | `uprising.rs` | `advance(state, world, ticks, rolls, upris1tb)` | First incident always fires (no cooldown entry) |
 | 11 | **Death Star** | `death_star.rs` | `advance(state, world, ticks)` | Self-clears construction on completion |
-| 12 | **Research** | `research.rs` | `advance(state, world, ticks)` | Mutates state internally (deviation) |
+| 12 | **Research** | `research.rs` | `advance(state, world, ticks)` | Pure return — caller applies level-ups (fixed v0.6.0) |
 | 13 | **Jedi** | `jedi.rs` | `advance(state, world, ticks, rolls)` | XP stored in `JediTrainingRecord`, not world |
 | 14 | **Victory** | `victory.rs` | `check(state, world, ticks)` | Death Star checks supersede HQ capture |
 | 15 | **Betrayal** | `betrayal.rs` | `advance(state, world, ticks, rolls, loyalty_tb)` | `is_unable_to_betray` immunity; 50-tick cooldown |
@@ -48,10 +48,16 @@ Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star
 | Sabotage | `FacilitySabotaged` → remove facility from system + arena |
 | Assassination | `CharacterKilled` → remove from fleets + arena |
 | Espionage | `SystemIntelligenceGathered` → set explored |
-| Rescue | `CharacterRescued` → restore faction |
-| Abduction | `CharacterCaptured` → flip faction, remove from fleets |
+| Rescue | `CharacterRescued` → restore faction, clear captivity |
+| Abduction | `CharacterCaptured` → set `is_captive`/`captured_by`/`capture_tick`, flip faction, remove from fleets |
 | InciteUprising | `UprisingStarted` → shift popularity |
 | Autoscrap | (no world effect) |
+
+Additional per-tick effects (not mission-driven):
+- `CharacterEscaped` (from `check_escapes()`) → restore home faction, clear captivity
+- `CharacterBusy` → set `on_mission = true`
+- `CharacterAvailable` → clear `on_mission`, `on_hidden_mission`
+- `DecoyTriggered` → log message, no world mutation
 
 Probability: MSTB table lookup (piecewise-linear) with quadratic fallback. Combined: `total_prob = agent_prob · (1 − foil_prob)`.
 

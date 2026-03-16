@@ -55,39 +55,52 @@ Delivered:
 
 Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain fully traced, bombardment formula decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for 7 scholar docs (4,179 lines) and 5,127 decompiled C files.
 
-## Full Parity
-*Feature-complete*
+## Full Parity -- COMPLETE
+*Feature-complete — shipped 2026-03-16 by Knesset Shapash*
 
-1. All espionage missions (sabotage, assassination, rescue, abduction, incite uprising)
-2. All scripted events (Luke/Vader, Yoda training, Han Solo speed bonus)
-3. Special character abilities (Jedi training, betrayal, decoys)
-4. Video playback (Smacker to WebM), sound effects, music
-5. Save/load with mod compatibility metadata (bincode + mod version hash)
-6. HD asset pack: all original BMPs upscaled 4x via waifu2x-ncnn-vulkan (PBRify_UpscalerV4 via chaiNNer for comparison). PNG format, `data/hd/` with fallback to originals. See `@agent_docs/assets.md`.
+Delivered (v0.5.0):
+- 4 scripted story chains (Luke Dagobah, Final Battle, Bounty Hunters, Jabba's Palace)
+- Han Solo speed bonus, betrayal mechanics, decoy system, escape system
+- 10 new Character fields promoted from DAT, mission state flags
+- 6 new EventConditions + 6 new EventActions, 15 RE event ID constants
+- All 9 mission types with world-mutating effects (sabotage, assassination, rescue, abduction, incite uprising)
 
-## Mod Workshop
-*Release candidate*
+## Mod Workshop -- IN PROGRESS
+*Release candidate — Knesset Elat (v0.6.0)*
 
-1. Mod manager UI (egui)
-2. AI asset generation toolkit: nano-banana-pro (concept art) → Hunyuan3D Pro/Meshy (3D models) → Blender (sprite sheets) → waifu2x/chaiNNer (texture upscaling) → image-forge (compositing) + Qwen3-TTS (voice). Modders regenerate any asset via the same pipeline. See `@agent_docs/assets.md`.
-3. Modder documentation + example mods
-4. Hot reload for mod development (notify crate on native)
-5. Distribution: itch.io (web), Homebrew (macOS), GitHub Releases
+Delivered:
+- Sensor-radius fog (detection field on CapitalShipClass)
+- Captivity state tracking (is_captive, captured_by, capture_tick)
+- Research pure advance() contract (caller applies level-ups)
+- Save format v4 with mod metadata + FNV-1a hash, migration framework
+- ModRuntime: discovery, enable/disable, structured errors, config persistence
+- Mod Manager egui panel (discover, toggle, reload)
+- ESCAPETB per-tick escape check wired into main loop
+
+Remaining:
+- Modder documentation + example mod
+- Vendor web/gl.js (stop network fetch)
+- Release packaging scripts (macOS, browser zip)
+- HD asset pack bulk execution
+- Video playback (Smacker → WebM)
+- Distribution: itch.io (web), Homebrew (macOS), GitHub Releases
 
 ## Immediate Next Steps
 
-1. **v0.4.1 integration fixes** -- COMPLETE. Fleet arrival→System.fleets, 6 new systems wired into main loop + SaveState, mission effects mutate world, Jedi XP persistence, blockade→manufacturing.
-2. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
-3. **WASM build verification** -- confirmed 3.4MB artifact at v0.3.0
-4. **Ghidra RE** -- COMPLETE. 5,127 functions decompiled, 7 scholar docs, 111 GNPRTB params, C++ hierarchy reconstructed.
-5. **Deferred fixes** (v0.5.0): BuildableKind type safety, EventSystem multi-tick safety, ResearchSystem advance() contract, per-tick event processing.
+1. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
+2. **Modder docs + example mod** -- mods/examples/sample-mod/ with mod.toml + JSON patch
+3. **Vendor web/gl.js** -- stop network fetch in build-wasm.sh
+4. **Release packaging** -- scripts/package-macos.sh + scripts/package-web.sh
+5. **WASM build verification** -- confirmed 3.4MB artifact at v0.3.0, needs update
 
 ## Known Technical Debt
 
 - dat-dumper in `tools/` is also a library dep of rebellion-data -- works but unconventional
 - WASM cfg guards added but browser data loading returns error stub (no fetch API yet)
 - `web/gl.js` fetched from external URL on first build -- should vendor or pin version
-- `CapitalShipClass`/`FighterClass` world models carry only ~10 of 50+ DAT fields -- 15 more needed for combat (see `ghidra/notes/rust-implementation-guide.md`)
-- `SectorGroup` enum lives in `dat/` module but is a world-layer concept -- move to `world/`
-- `GameWorld` needs `gnprtb: GnprtbParams` and `mission_tables: HashMap<String, MstbTable>` for combat
-- Need `ShipInstance` type (per-hull combat state) to replace count-only `ShipEntry` in fleets
+- Save v3 files rejected (bincode layout incompatible) -- no migration possible without SaveStateV3
+- Mod Manager panel passes empty mod list -- needs ModRuntime data population in main.rs
+- `enabled_sorted()` silently returns empty on dependency resolution errors
+- `ModConfig::load()` silently drops corrupted config.toml
+- No additive entity creation in mods -- patches only modify existing entities
+- BuildableKind type safety -- class arenas needed for troops/facilities

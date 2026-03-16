@@ -77,22 +77,39 @@ python3 ~/.claude/skills/nano-banana-pro/scripts/edit_image.py \
 
 **Best for:** Capital ships, large structures, facilities. Use traditional upscaling for fighters, sprites, portraits.
 
-### Vertex AI Imagen 4.0 Upscale (Non-Generative — SETUP PENDING)
+### Vertex AI Imagen 4.0 Upscale (Non-Generative — TESTED, WORKING)
 
 Pure super-resolution via `imagen-4.0-upscale-preview`. No text guidance, no hallucination.
-Requires GCP project with Vertex AI API enabled.
+GCP project: `dream-daimon`. Vertex AI API enabled.
 
 ```bash
-# Auth first:
-gcloud auth login && gcloud config set project YOUR_PROJECT
-gcloud services enable aiplatform.googleapis.com
+# Single image
+GOOGLE_CLOUD_PROJECT=dream-daimon uv run scripts/vertex-upscale.py --input image.png --factor 4
 
-# Then:
-uv run scripts/vertex-upscale.py --input image.png --factor 4
-uv run scripts/vertex-upscale.py --input-dir originals/ --output vertex/
+# Batch directory
+GOOGLE_CLOUD_PROJECT=dream-daimon uv run scripts/vertex-upscale.py --input-dir originals/ --output vertex/
 ```
 
-**Best for:** Portraits, fighters, sprites, anything where fidelity > detail invention.
+**Tested results (400x200 → 1600x800):**
+- Luke Skywalker portrait: PERFECT — preserves 1998 painted CGI style, no modernization
+- Mon Cal Cruiser: PERFECT — faithful enlargement, no invented detail
+- Nebulon-B Frigate: PERFECT — thin spar preserved cleanly
+- Coruscant: PERFECT — cityscape detail preserved
+- X-Wing: quota limit hit (5 req/min default), retry after cooldown
+
+**Best for:** Portraits, fighters, sprites — anything where fidelity > detail invention.
+**Quota:** 5 requests/minute default. Request increase for batch processing.
+
+### Upscaling Strategy (Per Category)
+
+| Category | Best Method | Why |
+|----------|------------|-----|
+| Capital ships | Gemini edit | Invents coherent hull detail |
+| Facilities | Gemini edit | Can add plausible architectural detail |
+| Portraits | Vertex AI Imagen | No face modernization |
+| Fighters/sprites | Vertex AI Imagen | No object duplication |
+| Planets | Vertex AI Imagen | No non-canonical detail |
+| Troops/beasts | Vertex AI Imagen | Faithful enlargement |
 
 ### Scale Factors
 

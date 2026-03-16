@@ -62,19 +62,25 @@ def upscale_image(input_path: Path, output_path: Path, factor: int = 4) -> Path 
 
     response = model.upscale_image(
         image=source_image,
-        upscale_factor=factor,
+        upscale_factor=f"x{factor}",
     )
 
-    if response.images:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Response may be a single GeneratedImage or have .images list
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if hasattr(response, 'images') and response.images:
         response.images[0].save(str(output_path))
-        from PIL import Image as PILImage
-        img = PILImage.open(output_path)
-        print(f"  Saved: {output_path.name} ({img.size[0]}x{img.size[1]})")
-        return output_path
+    elif hasattr(response, 'save'):
+        response.save(str(output_path))
+    elif hasattr(response, '_image_bytes'):
+        output_path.write_bytes(response._image_bytes)
     else:
-        print(f"  ERROR: No image in response", file=sys.stderr)
+        print(f"  ERROR: Unknown response type: {type(response)}", file=sys.stderr)
         return None
+
+    from PIL import Image as PILImage
+    img = PILImage.open(output_path)
+    print(f"  Saved: {output_path.name} ({img.size[0]}x{img.size[1]})")
+    return output_path
 
 
 def main() -> None:

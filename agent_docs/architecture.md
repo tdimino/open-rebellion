@@ -39,7 +39,9 @@ crates/rebellion-core/src/
 ├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan
 ├── research.rs       — 3 tech trees (Ship/Troop/Facility), MSTB difficulty lookup
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
-└── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
+├── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
+├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
+└── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba)
 ```
 
 ## Render Modules (rebellion-render)
@@ -60,7 +62,8 @@ crates/rebellion-render/src/
     ├── fleets.rs         — Fleet composition browser
     ├── manufacturing.rs  — Production queue manager
     ├── missions.rs       — Mission dispatch with probability preview
-    └── save_load.rs      — Save/load UI: 10 slots, auto-save
+    ├── save_load.rs      — Save/load UI: 10 slots, auto-save
+    └── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
 ```
 
 ## App Modules (rebellion-app)
