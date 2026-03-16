@@ -1,6 +1,6 @@
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.5.0 (~90% complete). Living Galaxy + War Room + War Machine + Full Parity (in progress). 15 simulation systems, 4 scripted story chains, betrayal/decoy/escape mechanics, Han Solo speed bonus. 237 tests passing.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.6.0 (~92% complete). Living Galaxy + War Room + War Machine + Full Parity + Mod Workshop (in progress). 15 simulation systems, 4 scripted story chains, betrayal/decoy/escape mechanics, Han Solo speed bonus, mod manager panel. 259 tests passing.
 
 ## Build
 

@@ -42,6 +42,7 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
+use crate::dat::Faction;
 use crate::ids::{CharacterKey, SystemKey};
 use crate::tick::TickEvent;
 use crate::world::{Character, GameWorld, MstbTable};
@@ -778,8 +779,6 @@ impl MissionSystem {
     /// For each character held by the opposing faction, look up ESCAPETB
     /// and roll against the escape probability. Returns one `CharacterEscaped`
     /// effect per successful escape.
-    ///
-    /// Stub for v0.5.0 — the actual per-tick check will be wired by the main loop.
     pub fn check_escapes(
         world: &GameWorld,
         rolls: &[f64],
@@ -789,12 +788,28 @@ impl MissionSystem {
             None => return Vec::new(),
         };
 
-        let effects = Vec::new();
-        let _roll_iter = rolls.iter().copied();
+        let mut effects = Vec::new();
+        let mut roll_iter = rolls.iter().copied();
 
-        // Stub: full escape-per-tick check will be wired by the main loop in v0.5.0.
-        // Iterate characters, check capture state, look up ESCAPETB, roll against probability.
-        let _ = (world, table);
+        for (char_key, character) in world.characters.iter() {
+            if !character.is_captive {
+                continue;
+            }
+            let roll = roll_iter.next().unwrap_or(1.0); // 1.0 = no escape (safe default)
+            // Use loyalty as the skill score for escape probability
+            let skill_score = character.loyalty.base as i32;
+            let escape_prob = table.lookup(skill_score) as f64 / 100.0;
+            if roll < escape_prob {
+                // Character escapes back to their home faction.
+                // is_alliance reflects original allegiance — capture tracks captor,
+                // not the character's identity.
+                let escaped_to_alliance = character.is_alliance;
+                effects.push(MissionEffect::CharacterEscaped {
+                    character: char_key,
+                    escaped_to_alliance,
+                });
+            }
+        }
 
         effects
     }
@@ -957,6 +972,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         })
@@ -1167,6 +1185,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         });
@@ -1306,6 +1327,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         });
@@ -1359,6 +1383,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         });
@@ -1414,6 +1441,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         });
@@ -1477,6 +1507,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         });
@@ -1534,6 +1567,133 @@ mod tests {
         )));
     }
 
+    // --- Escape tests ---
+
+    #[test]
+    fn check_escapes_returns_escaped_when_roll_below_prob() {
+        use crate::dat::Faction;
+        use crate::world::{MstbEntry, MstbTable};
+
+        let mut world = minimal_world();
+        let zero = skill_pair(0);
+        let _char_key = world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Captive".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: zero,
+            espionage: zero,
+            ship_design: zero,
+            troop_training: zero,
+            facility_design: zero,
+            combat: zero,
+            leadership: zero,
+            loyalty: skill_pair(50), // loyalty base = 50
+            jedi_probability: 0,
+            jedi_level: zero,
+            can_be_admiral: false,
+            can_be_commander: false,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            captured_by: Some(Faction::Empire),
+            capture_tick: Some(10),
+            is_captive: true,
+            current_system: None,
+            current_fleet: None,
+        });
+
+        // ESCAPETB: loyalty 50 → 80% escape probability
+        let table = MstbTable::new(vec![
+            MstbEntry { threshold: 0, value: 50 },
+            MstbEntry { threshold: 50, value: 80 },
+            MstbEntry { threshold: 100, value: 95 },
+        ]);
+        world.mission_tables.insert("ESCAPETB".to_string(), table);
+
+        // Roll 0.5 < 0.80 → escapes
+        let effects = MissionSystem::check_escapes(&world, &[0.5]);
+        assert_eq!(effects.len(), 1);
+        match &effects[0] {
+            MissionEffect::CharacterEscaped { escaped_to_alliance, .. } => {
+                // Captured by Empire → escapes TO Alliance
+                assert!(*escaped_to_alliance);
+            }
+            other => panic!("expected CharacterEscaped, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_escapes_skips_non_captive() {
+        use crate::world::{MstbEntry, MstbTable};
+
+        let mut world = minimal_world();
+        let zero = skill_pair(0);
+        world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Free".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: zero,
+            espionage: zero,
+            ship_design: zero,
+            troop_training: zero,
+            facility_design: zero,
+            combat: zero,
+            leadership: zero,
+            loyalty: skill_pair(90),
+            jedi_probability: 0,
+            jedi_level: zero,
+            can_be_admiral: false,
+            can_be_commander: false,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false, // NOT captive
+            current_system: None,
+            current_fleet: None,
+        });
+
+        let table = MstbTable::new(vec![
+            MstbEntry { threshold: 0, value: 100 }, // would always escape if checked
+        ]);
+        world.mission_tables.insert("ESCAPETB".to_string(), table);
+
+        // Roll that would succeed — but character is not captive
+        let effects = MissionSystem::check_escapes(&world, &[0.0]);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn check_escapes_returns_empty_without_escapetb() {
+        let world = minimal_world();
+        // No ESCAPETB in mission_tables
+        let effects = MissionSystem::check_escapes(&world, &[0.0, 0.0, 0.0]);
+        assert!(effects.is_empty());
+    }
+
     #[test]
     fn dispatch_guarded_blocks_mandatory_mission() {
         let mut world = minimal_world();
@@ -1570,6 +1730,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: true, // <-- mandatory
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         });

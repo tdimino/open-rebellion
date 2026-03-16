@@ -597,6 +597,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         }

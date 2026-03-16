@@ -169,6 +169,45 @@ impl FogSystem {
             }
         }
 
+        // Sensor-radius reveals: fleets with detection capability reveal nearby systems.
+        const SENSOR_MULTIPLIER: f32 = 15.0; // coordinate units per detection point
+        for (_, fleet) in world.fleets.iter() {
+            if fleet.is_alliance != is_alliance {
+                continue; // skip enemy fleets
+            }
+            // Find max detection from fleet's ship classes.
+            let max_detection = fleet.capital_ships.iter()
+                .filter_map(|entry| world.capital_ship_classes.get(entry.class))
+                .map(|c| c.detection)
+                .max()
+                .unwrap_or(0);
+            if max_detection == 0 {
+                continue;
+            }
+            // Use f64 to avoid i64 overflow at extreme detection values.
+            let radius = max_detection as f64 * SENSOR_MULTIPLIER as f64;
+            let radius_sq = radius * radius;
+
+            if let Some(fleet_sys) = world.systems.get(fleet.location) {
+                let fx = fleet_sys.x as f64;
+                let fy = fleet_sys.y as f64;
+                for (sys_key, sys) in world.systems.iter() {
+                    if fog.is_visible(sys_key) {
+                        continue; // already visible
+                    }
+                    let dx = sys.x as f64 - fx;
+                    let dy = sys.y as f64 - fy;
+                    if dx * dx + dy * dy <= radius_sq {
+                        fog.reveal(sys_key);
+                        events.push(RevealEvent {
+                            faction: fog.faction,
+                            system: sys_key,
+                        });
+                    }
+                }
+            }
+        }
+
         events
     }
 }
@@ -361,5 +400,157 @@ mod tests {
         FogSystem::seed(&mut fog, &world);
         assert!(!fog.is_visible(sys_keys[0]));
         assert!(fog.is_visible(sys_keys[1]));
+    }
+
+    #[test]
+    fn sensor_radius_reveals_nearby_systems() {
+        use crate::ids::DatId;
+        use crate::world::{CapitalShipClass, ShipEntry};
+
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0),
+            name: "Test".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0,
+            systems: vec![],
+        });
+
+        // Fleet at (0, 0), nearby system at (100, 0), far system at (1000, 0).
+        // detection=10 → radius = 10 * 15.0 = 150 units → (100,0) within range, (1000,0) not.
+        let sys0 = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Base".into(), sector,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: false, controlling_faction: None,
+        });
+        let sys_near = world.systems.insert(crate::world::System {
+            dat_id: DatId(1), name: "Near".into(), sector,
+            x: 100, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: false, controlling_faction: None,
+        });
+        let sys_far = world.systems.insert(crate::world::System {
+            dat_id: DatId(2), name: "Far".into(), sector,
+            x: 1000, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: false, controlling_faction: None,
+        });
+
+        let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId(0), name: "Sensor Ship".into(),
+            is_alliance: true, is_empire: false,
+            refined_material_cost: 100, maintenance_cost: 10,
+            research_order: 0, research_difficulty: 0,
+            hull: 100, shield_strength: 50,
+            sub_light_engine: 5, maneuverability: 5, hyperdrive: 2,
+            fighter_capacity: 0, troop_capacity: 0,
+            detection: 10,
+            turbolaser_fore: 0, turbolaser_aft: 0, turbolaser_port: 0, turbolaser_starboard: 0,
+            ion_cannon_fore: 0, ion_cannon_aft: 0, ion_cannon_port: 0, ion_cannon_starboard: 0,
+            laser_cannon_fore: 0, laser_cannon_aft: 0, laser_cannon_port: 0, laser_cannon_starboard: 0,
+            shield_recharge_rate: 0, damage_control: 0, bombardment_modifier: 0,
+        });
+
+        world.fleets.insert(Fleet {
+            location: sys0,
+            capital_ships: vec![ShipEntry { class: ship_class, count: 1 }],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(sys0); // fleet's own system already visible
+        let ms = MovementState::new();
+        let events = FogSystem::advance(&mut fog, &world, &ms);
+
+        assert!(fog.is_visible(sys_near), "nearby system should be revealed by sensor radius");
+        assert!(!fog.is_visible(sys_far), "far system should NOT be revealed");
+        assert!(events.iter().any(|e| e.system == sys_near));
+        assert!(!events.iter().any(|e| e.system == sys_far));
+    }
+
+    #[test]
+    fn sensor_detection_zero_reveals_only_own_system() {
+        use crate::ids::DatId;
+        use crate::world::{CapitalShipClass, ShipEntry};
+
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0),
+            name: "Test".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0,
+            systems: vec![],
+        });
+
+        let sys0 = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Base".into(), sector,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: false, controlling_faction: None,
+        });
+        let sys_near = world.systems.insert(crate::world::System {
+            dat_id: DatId(1), name: "Near".into(), sector,
+            x: 10, y: 0, // very close
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: false, controlling_faction: None,
+        });
+
+        // Ship with detection=0
+        let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId(0), name: "Blind Ship".into(),
+            is_alliance: true, is_empire: false,
+            refined_material_cost: 100, maintenance_cost: 10,
+            research_order: 0, research_difficulty: 0,
+            hull: 100, shield_strength: 50,
+            sub_light_engine: 5, maneuverability: 5, hyperdrive: 2,
+            fighter_capacity: 0, troop_capacity: 0,
+            detection: 0, // no detection
+            turbolaser_fore: 0, turbolaser_aft: 0, turbolaser_port: 0, turbolaser_starboard: 0,
+            ion_cannon_fore: 0, ion_cannon_aft: 0, ion_cannon_port: 0, ion_cannon_starboard: 0,
+            laser_cannon_fore: 0, laser_cannon_aft: 0, laser_cannon_port: 0, laser_cannon_starboard: 0,
+            shield_recharge_rate: 0, damage_control: 0, bombardment_modifier: 0,
+        });
+
+        world.fleets.insert(Fleet {
+            location: sys0,
+            capital_ships: vec![ShipEntry { class: ship_class, count: 1 }],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(sys0);
+        let ms = MovementState::new();
+        let events = FogSystem::advance(&mut fog, &world, &ms);
+
+        assert!(fog.is_visible(sys0), "own system should be visible");
+        assert!(!fog.is_visible(sys_near), "detection=0 should not reveal nearby systems");
+        assert!(events.is_empty());
     }
 }

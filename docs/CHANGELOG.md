@@ -13,6 +13,27 @@ Each entry includes:
 
 ---
 
+## [v0.6.0] - 2026-03-16
+
+**Completion:** ~92% | **Category:** Mod Workshop + Integration Hardening | **Milestone:** Mod Workshop IN PROGRESS
+
+### Added
+- **Mod Manager panel**: egui floating window with mod list, enable/disable checkboxes, reload button, Tab keyboard shortcut
+- **3 new PanelAction variants**: `OpenModManager`, `ToggleMod { name }`, `ReloadMods` — wired into `apply_panel_action()`
+- **Character escape system**: `check_escapes()` called every tick after mission resolution, rolls against ESCAPETB, clears captivity on success
+
+### Fixed (from v0.5.0 review)
+- **Research levels never applied**: `ResearchSystem::advance()` was made pure but caller never applied `TechUnlocked` results — now calls `research_state.{alliance,empire}.advance(tech_type)` after logging
+- **Captivity fields never set/cleared**: `CharacterCaptured` arm now sets `is_captive`, `captured_by`, `capture_tick`; `CharacterRescued` and `CharacterEscaped` arms now clear all three fields
+- **`check_escapes()` never called**: Escape check inserted into tick loop after mission results, with proper captivity clearing and fleet removal
+
+### Technical
+- Knesset Elat swarm: integration + reviewer fixes
+- 259 tests passing (206 core + 31 data + 19 render + 3 doctests), 0 failures
+- Mod Manager types (`ModManagerState`, `ModInfo`, `ModManagerAction`) re-exported from rebellion-render
+
+---
+
 ## [v0.5.0] - 2026-03-16
 
 **Completion:** ~90% | **Category:** Story Events + Character Abilities + Integration | **Milestone:** Full Parity IN PROGRESS
@@ -246,7 +267,8 @@ Each entry includes:
 
 | Version | Date | Milestone | Completion | Summary |
 |---------|------|-----------|------------|---------|
-| **v0.5.0** | **2026-03-16** | **Full Parity** | **~90%** | **Story events, Han speed, betrayal, decoys, 10 Character fields** |
+| **v0.6.0** | **2026-03-16** | **Mod Workshop** | **~92%** | **Mod manager panel, escape system, 3 reviewer bug fixes** |
+| v0.5.0 | 2026-03-16 | Full Parity | ~90% | Story events, Han speed, betrayal, decoys, 10 Character fields |
 | v0.4.1 | 2026-03-15 | War Machine Fix | ~70% | Integration fixes, 14 systems wired, doc overhaul |
 | v0.4.0 | 2026-03-15 | War Machine | ~68% | Combat, 9 missions, victory, save/load, Death Star |
 | v0.3.0+RE | 2026-03-15 | Ghidra RE | ~42% | 5,127 decompiled functions, combat formulas, GNPRTB mapped |

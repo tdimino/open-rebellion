@@ -290,7 +290,32 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         }
     }
 
+    // ── 10. Apply enabled mods ─────────────────────────────────────────────
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mods_dir = gdata_path.parent().and_then(|p| p.parent()).unwrap_or(Path::new(".")).join("mods");
+        if mods_dir.exists() {
+            let runtime = crate::mods::ModRuntime::discover(&mods_dir);
+            let errors = runtime.apply_enabled(&mut world);
+            for err in &errors {
+                eprintln!("Mod error: {:?}", err);
+            }
+        }
+    }
+
     Ok(world)
+}
+
+/// Initialize the mod runtime for UI access. Returns `None` if the mods
+/// directory does not exist (common for first-time players).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn init_mod_runtime(gdata_path: &Path) -> Option<crate::mods::ModRuntime> {
+    let mods_dir = gdata_path.parent().and_then(|p| p.parent()).unwrap_or(Path::new(".")).join("mods");
+    if mods_dir.exists() {
+        Some(crate::mods::ModRuntime::discover(&mods_dir))
+    } else {
+        None
+    }
 }
 
 /// Convert a DAT character entry into a world Character.
@@ -325,6 +350,9 @@ fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Char
         on_mission: false,
         on_hidden_mission: false,
         on_mandatory_mission: false,
+        captured_by: None,
+        capture_tick: None,
+        is_captive: false,
         current_system: None,
         current_fleet: None,
     }

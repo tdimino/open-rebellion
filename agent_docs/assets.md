@@ -51,6 +51,49 @@ Universal binary (x86_64 + arm64). Native Apple Silicon via Vulkan. Tested on M4
 
 **PBRify_UpscalerV4** — DAT2 architecture, purpose-built for 2000s-era game textures with DDS compression removal. Supersedes the older 4x SGI model by the same author. **UltraSharpV2** is a strong secondary comparison. Load `.pth` files in chaiNNer (chainner.app, macOS MPS backend) or **Upscayl v2.5** (Feb 2026, free, wraps ncnn-vulkan with custom model import).
 
+### Gemini Generative Upscale (Method A — TESTED)
+
+Gemini 3 Pro Image via `edit_image.py`. Generates a higher-resolution reimagining.
+400x200 → ~1376x768. Cost: ~$0.13/image at 2K, ~$0.24 at 4K.
+
+```bash
+python3 ~/.claude/skills/nano-banana-pro/scripts/edit_image.py \
+  "Enhance this image to high resolution with sharp details and crisp edges. Preserve all elements exactly." \
+  input.png --aspect-ratio 16:9 --output ./upscaled
+```
+
+**Results by category:**
+- **Capital ships**: HIGH fidelity — hull shape, colors, angle preserved. Excellent coherent detail.
+- **Planets**: MEDIUM — adds plausible but non-canonical surface detail (Aztec patterns on Coruscant).
+- **Portraits**: LOW — modernizes face to photorealistic, loses 1998 painted aesthetic.
+- **Fighters**: LOW — hallucinates extra ships (1 X-Wing → squadron of 7).
+
+**Prompt refinement to reduce hallucination:**
+- Add "Do not add any new objects or elements" for fighters/portraits
+- Add "Maintain the exact 1998 pre-rendered CGI art style" for portraits
+- Add "This is a single ship, do not duplicate it" for fighters
+- Use temperature 0.3 if the API exposes it (edit endpoint currently doesn't)
+- For portraits: try "Preserve the painted, slightly stylized art quality. Do not make photorealistic."
+
+**Best for:** Capital ships, large structures, facilities. Use traditional upscaling for fighters, sprites, portraits.
+
+### Vertex AI Imagen 4.0 Upscale (Non-Generative — SETUP PENDING)
+
+Pure super-resolution via `imagen-4.0-upscale-preview`. No text guidance, no hallucination.
+Requires GCP project with Vertex AI API enabled.
+
+```bash
+# Auth first:
+gcloud auth login && gcloud config set project YOUR_PROJECT
+gcloud services enable aiplatform.googleapis.com
+
+# Then:
+uv run scripts/vertex-upscale.py --input image.png --factor 4
+uv run scripts/vertex-upscale.py --input-dir originals/ --output vertex/
+```
+
+**Best for:** Portraits, fighters, sprites, anything where fidelity > detail invention.
+
 ### Scale Factors
 
 | Source | Factor | Output | Use Case |

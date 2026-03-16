@@ -23,10 +23,11 @@ pub use fleet_movement::draw_fleet_overlays;
 pub use fog::draw_fog_overlay;
 pub use message_log::{draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState};
 pub use panels::{
-    draw_faction_select, draw_fleets, draw_manufacturing, draw_missions, draw_officers,
-    draw_save_load,
-    FactionSelectState, FleetsState, ManufacturingPanelState, MissionsPanelState, OfficersState,
-    SaveLoadPanelState, SaveSlotInfo,
+    draw_faction_select, draw_fleets, draw_manufacturing, draw_missions, draw_mod_manager,
+    draw_officers, draw_save_load,
+    FactionSelectState, FleetsState, ManufacturingPanelState, MissionsPanelState,
+    ModInfo, ModManagerAction, ModManagerState,
+    OfficersState, SaveLoadPanelState, SaveSlotInfo,
     PanelAction,
 };
 

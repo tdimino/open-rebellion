@@ -78,6 +78,10 @@ pub struct ModManifest {
     /// Absolute path to the mod's directory (set during discovery, not from TOML).
     #[serde(skip)]
     pub path: PathBuf,
+    /// Whether this mod is currently enabled. Not stored in mod.toml —
+    /// managed by ModConfig.
+    #[serde(skip)]
+    pub enabled: bool,
 }
 
 impl ModManifest {
@@ -105,6 +109,46 @@ impl ModManifest {
     pub fn semver_version(&self) -> anyhow::Result<semver::Version> {
         semver::Version::parse(&self.version)
             .with_context(|| format!("mod '{}' has invalid version '{}'", self.name, self.version))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mod config (persisted enable/disable state)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Persisted mod enable/disable state. Stored in `mods/config.toml`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModConfig {
+    /// Mod names that are currently enabled.
+    pub enabled: Vec<String>,
+}
+
+impl ModConfig {
+    pub fn load(mods_dir: &Path) -> Self {
+        let path = mods_dir.join("config.toml");
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| toml::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self, mods_dir: &Path) -> anyhow::Result<()> {
+        let path = mods_dir.join("config.toml");
+        let content = toml::to_string_pretty(self)?;
+        std::fs::write(&path, content)?;
+        Ok(())
+    }
+
+    pub fn is_enabled(&self, name: &str) -> bool {
+        self.enabled.iter().any(|n| n == name)
+    }
+
+    pub fn toggle(&mut self, name: &str) {
+        if self.is_enabled(name) {
+            self.enabled.retain(|n| n != name);
+        } else {
+            self.enabled.push(name.to_string());
+        }
     }
 }
 
@@ -332,13 +376,22 @@ impl ModLoader {
                 // Find the matching entity in the arena by dat_id.
                 let mut matched = false;
                 for entity_val in arena_obj.values_mut() {
+                    // DatId is a newtype tuple struct — serde serializes it as a bare
+                    // number in JSON, not {"id": N}. Try bare number first, then
+                    // object form as fallback for hand-crafted patches.
                     let entity_id = entity_val
                         .get("dat_id")
-                        .and_then(|v| v.as_object())
-                        .and_then(|o| o.get("id"))
                         .and_then(|v| v.as_u64())
                         .or_else(|| {
-                            // Fallback: direct "id" field at top level.
+                            // Fallback: object form {"id": N} (for hand-crafted patches).
+                            entity_val
+                                .get("dat_id")
+                                .and_then(|v| v.as_object())
+                                .and_then(|o| o.get("id"))
+                                .and_then(|v| v.as_u64())
+                        })
+                        .or_else(|| {
+                            // Last resort: direct "id" field at top level.
                             entity_val.get("id").and_then(|v| v.as_u64())
                         });
 
@@ -472,6 +525,194 @@ impl ModWatcher {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Runtime (discovery + validation + application orchestrator)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Structured errors from mod validation.
+#[derive(Debug, Clone)]
+pub enum ModError {
+    MissingDependency { mod_name: String, dep_name: String },
+    VersionMismatch { mod_name: String, dep_name: String, required: String, found: String },
+    ParseError { mod_name: String, message: String },
+}
+
+/// Runtime mod management: discovery, validation, and application.
+///
+/// Created once at startup, queried by the mod manager UI, and used
+/// to apply enabled mods to the game world.
+pub struct ModRuntime {
+    /// All discovered mods (from scanning mods_dir).
+    pub discovered: Vec<ModManifest>,
+    /// Persisted enable/disable config.
+    pub config: ModConfig,
+    /// Structured errors from last validation pass.
+    pub errors: Vec<ModError>,
+    /// The mods directory path.
+    pub mods_dir: PathBuf,
+}
+
+impl ModRuntime {
+    /// Discover all mods in `mods_dir` and load config.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn discover(mods_dir: &Path) -> Self {
+        let config = ModConfig::load(mods_dir);
+        let mut errors = Vec::new();
+        let mut discovered = match ModLoader::discover(mods_dir) {
+            Ok(manifests) => manifests,
+            Err(e) => {
+                errors.push(ModError::ParseError {
+                    mod_name: String::new(),
+                    message: e.to_string(),
+                });
+                Vec::new()
+            }
+        };
+
+        // Set enabled flag from config.
+        for manifest in &mut discovered {
+            manifest.enabled = config.is_enabled(&manifest.name);
+        }
+
+        Self {
+            discovered,
+            config,
+            errors,
+            mods_dir: mods_dir.to_path_buf(),
+        }
+    }
+
+    /// On WASM, mod discovery is not supported.
+    #[cfg(target_arch = "wasm32")]
+    pub fn discover(mods_dir: &Path) -> Self {
+        Self {
+            discovered: Vec::new(),
+            config: ModConfig::default(),
+            errors: Vec::new(),
+            mods_dir: mods_dir.to_path_buf(),
+        }
+    }
+
+    /// Return only enabled mods in dependency-sorted order.
+    pub fn enabled_sorted(&self) -> Vec<&ModManifest> {
+        let enabled: Vec<ModManifest> = self
+            .discovered
+            .iter()
+            .filter(|m| m.enabled)
+            .cloned()
+            .collect();
+
+        match ModLoader::resolve_load_order(enabled) {
+            Ok(sorted) => {
+                // Map sorted names back to references into `discovered`.
+                let names: Vec<String> = sorted.iter().map(|m| m.name.clone()).collect();
+                let mut refs: Vec<&ModManifest> = Vec::with_capacity(names.len());
+                for name in &names {
+                    if let Some(m) = self.discovered.iter().find(|m| &m.name == name) {
+                        refs.push(m);
+                    }
+                }
+                refs
+            }
+            Err(e) => {
+                eprintln!("[mod-runtime] load order resolution failed: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
+    /// Apply all enabled mods to the world (RFC 7396 merge patch).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn apply_enabled(&self, world: &mut rebellion_core::world::GameWorld) -> Vec<ModError> {
+        let sorted = self.enabled_sorted();
+        if sorted.is_empty() {
+            return Vec::new();
+        }
+
+        // Serialize world to JSON for patching.
+        let mut world_json = match serde_json::to_value(&*world) {
+            Ok(v) => v,
+            Err(e) => {
+                return vec![ModError::ParseError {
+                    mod_name: String::new(),
+                    message: format!("failed to serialize world: {}", e),
+                }];
+            }
+        };
+
+        let mut errors = Vec::new();
+        for manifest in &sorted {
+            let content = match ModContent::from_dir(&manifest.path) {
+                Ok(c) => c,
+                Err(e) => {
+                    errors.push(ModError::ParseError {
+                        mod_name: manifest.name.clone(),
+                        message: e.to_string(),
+                    });
+                    continue;
+                }
+            };
+            if let Err(e) = ModLoader::apply(&mut world_json, &content) {
+                errors.push(ModError::ParseError {
+                    mod_name: manifest.name.clone(),
+                    message: e.to_string(),
+                });
+            }
+        }
+
+        // Deserialize patched JSON back into the world.
+        match serde_json::from_value(world_json) {
+            Ok(patched) => *world = patched,
+            Err(e) => {
+                errors.push(ModError::ParseError {
+                    mod_name: String::new(),
+                    message: format!("failed to deserialize patched world: {}", e),
+                });
+            }
+        }
+
+        errors
+    }
+
+    /// Toggle a mod's enabled state and persist config.
+    pub fn toggle_mod(&mut self, name: &str) {
+        self.config.toggle(name);
+        for m in &mut self.discovered {
+            if m.name == name {
+                m.enabled = self.config.is_enabled(name);
+            }
+        }
+        if let Err(e) = self.config.save(&self.mods_dir) {
+            eprintln!("[mod-runtime] failed to save config: {}", e);
+        }
+    }
+
+    /// Check for filesystem changes and return true if mods need reloading.
+    pub fn check_reload(&self, watcher: &ModWatcher) -> bool {
+        watcher.changed()
+    }
+
+    /// Re-discover mods (after file change or toggle).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn refresh(&mut self) {
+        let refreshed = Self::discover(&self.mods_dir);
+        self.discovered = refreshed.discovered;
+        self.errors = refreshed.errors;
+        // Preserve the live config (it may have been toggled since last discover).
+        for m in &mut self.discovered {
+            m.enabled = self.config.is_enabled(&m.name);
+        }
+    }
+
+    /// Return (name, version) pairs for all enabled mods (for save metadata).
+    pub fn enabled_mod_list(&self) -> Vec<(String, String)> {
+        self.enabled_sorted()
+            .iter()
+            .map(|m| (m.name.clone(), m.version.clone()))
+            .collect()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -568,6 +809,7 @@ version = "0.1.0"
                 .map(|(n, r)| (n.to_string(), r.to_string()))
                 .collect(),
             path: PathBuf::new(),
+            enabled: false,
         }
     }
 
@@ -670,5 +912,133 @@ version = "0.1.0"
         ModLoader::apply(&mut world, &content).unwrap();
         assert!(world["characters"]["1v1"].get("jedi_probability").is_none());
         assert_eq!(world["characters"]["1v1"]["name"], "Luke");
+    }
+
+    // ── ModRuntime tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn discover_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let runtime = ModRuntime::discover(tmp.path());
+        assert_eq!(runtime.discovered.len(), 0);
+        assert!(runtime.errors.is_empty());
+    }
+
+    #[test]
+    fn config_toggle_persistence() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut config = ModConfig::default();
+
+        // Toggle on
+        config.toggle("test-mod");
+        assert!(config.is_enabled("test-mod"));
+        config.save(tmp.path()).unwrap();
+
+        // Reload and verify
+        let reloaded = ModConfig::load(tmp.path());
+        assert!(reloaded.is_enabled("test-mod"));
+
+        // Toggle off
+        let mut config2 = reloaded;
+        config2.toggle("test-mod");
+        assert!(!config2.is_enabled("test-mod"));
+        config2.save(tmp.path()).unwrap();
+
+        let reloaded2 = ModConfig::load(tmp.path());
+        assert!(!reloaded2.is_enabled("test-mod"));
+    }
+
+    #[test]
+    fn apply_only_enabled() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        // Create mod-a (will be enabled)
+        let mod_a_dir = tmp.path().join("mod-a");
+        std::fs::create_dir(&mod_a_dir).unwrap();
+        std::fs::write(mod_a_dir.join("mod.toml"), r#"
+name = "mod-a"
+version = "1.0.0"
+"#).unwrap();
+        std::fs::write(mod_a_dir.join("capital_ships.json"), r#"[{"id": 1, "hull": 9999}]"#).unwrap();
+
+        // Create mod-b (will NOT be enabled)
+        let mod_b_dir = tmp.path().join("mod-b");
+        std::fs::create_dir(&mod_b_dir).unwrap();
+        std::fs::write(mod_b_dir.join("mod.toml"), r#"
+name = "mod-b"
+version = "1.0.0"
+"#).unwrap();
+        std::fs::write(mod_b_dir.join("capital_ships.json"), r#"[{"id": 1, "hull": 1}]"#).unwrap();
+
+        // Enable only mod-a
+        let mut config = ModConfig::default();
+        config.toggle("mod-a");
+        config.save(tmp.path()).unwrap();
+
+        let runtime = ModRuntime::discover(tmp.path());
+        assert_eq!(runtime.enabled_sorted().len(), 1);
+        assert_eq!(runtime.enabled_sorted()[0].name, "mod-a");
+    }
+
+    #[test]
+    fn structured_error_on_missing_dep() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        // Create a mod with a missing dependency
+        let mod_dir = tmp.path().join("mod-bad");
+        std::fs::create_dir(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("mod.toml"), r#"
+name = "mod-bad"
+version = "1.0.0"
+
+[dependencies]
+"nonexistent" = ">=1.0.0"
+"#).unwrap();
+
+        let mut config = ModConfig::default();
+        config.toggle("mod-bad");
+        config.save(tmp.path()).unwrap();
+
+        let runtime = ModRuntime::discover(tmp.path());
+        // enabled_sorted() should return empty (load order resolution fails)
+        let sorted = runtime.enabled_sorted();
+        assert!(sorted.is_empty());
+    }
+
+    #[test]
+    fn enabled_mod_list_sorted() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        // mod-base: no deps
+        let base_dir = tmp.path().join("mod-base");
+        std::fs::create_dir(&base_dir).unwrap();
+        std::fs::write(base_dir.join("mod.toml"), r#"
+name = "mod-base"
+version = "2.0.0"
+"#).unwrap();
+
+        // mod-ext: depends on mod-base
+        let ext_dir = tmp.path().join("mod-ext");
+        std::fs::create_dir(&ext_dir).unwrap();
+        std::fs::write(ext_dir.join("mod.toml"), r#"
+name = "mod-ext"
+version = "1.5.0"
+
+[dependencies]
+"mod-base" = ">=1.0.0"
+"#).unwrap();
+
+        // Enable both
+        let mut config = ModConfig::default();
+        config.toggle("mod-base");
+        config.toggle("mod-ext");
+        config.save(tmp.path()).unwrap();
+
+        let runtime = ModRuntime::discover(tmp.path());
+        let list = runtime.enabled_mod_list();
+        assert_eq!(list.len(), 2);
+        // mod-base must come before mod-ext (dependency order)
+        assert_eq!(list[0], ("mod-base".to_string(), "2.0.0".to_string()));
+        assert_eq!(list[1], ("mod-ext".to_string(), "1.5.0".to_string()));
     }
 }

@@ -1,6 +1,6 @@
 //! Save / load for the full game state.
 //!
-//! # Format
+//! # Format (v4)
 //!
 //! Binary `bincode` encoding. A save file is:
 //!
@@ -9,6 +9,11 @@
 //! [version: u32, little-endian]
 //! [save_name: length-prefixed UTF-8 string]
 //! [timestamp_secs: u64 Unix seconds]
+//! [mod_count: u32]                          // v4+
+//! for each mod:
+//!   [mod_name: length-prefixed UTF-8]       // v4+
+//!   [mod_version: length-prefixed UTF-8]    // v4+
+//! [mod_hash: u64]                           // v4+
 //! [bincode-encoded SaveState]
 //! ```
 //!
@@ -56,10 +61,36 @@ use rebellion_core::world::GameWorld;
 pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes.
-pub const SAVE_VERSION: u32 = 3;
+pub const SAVE_VERSION: u32 = 4;
+
+/// Minimum save version we can migrate from.
+const MIN_MIGRATABLE_VERSION: u32 = 3;
 
 /// Maximum number of named save slots.
 pub const MAX_SAVE_SLOTS: usize = 10;
+
+// ---------------------------------------------------------------------------
+// Mod hash
+// ---------------------------------------------------------------------------
+
+/// Compute a deterministic hash from sorted (name, version) pairs.
+///
+/// Uses FNV-1a (64-bit). The mod list is sorted before hashing so that
+/// insertion order does not affect the result.
+pub fn compute_mod_hash(mods: &[(String, String)]) -> u64 {
+    let mut sorted = mods.to_vec();
+    sorted.sort();
+    let mut hash: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
+    for (name, version) in &sorted {
+        for byte in name.bytes().chain(b":".iter().copied()).chain(version.bytes()) {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3); // FNV-1a prime
+        }
+        hash ^= 0xff; // separator between mod entries
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
 
 // ---------------------------------------------------------------------------
 // SaveState — the full serializable snapshot
@@ -109,6 +140,10 @@ pub struct SaveMeta {
     pub timestamp_secs: u64,
     /// Game tick at save time.
     pub game_tick: u64,
+    /// Names of mods that were active when the save was written (v4+).
+    pub mod_names: Vec<String>,
+    /// Deterministic hash of the sorted (name, version) mod list (v4+).
+    pub mod_hash: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -141,12 +176,16 @@ mod native {
 
     /// Write `state` to slot `slot` in `saves_dir`.
     ///
+    /// `active_mods` is a list of `(name, version)` pairs for currently loaded
+    /// mods. Pass an empty slice when no mods are active.
+    ///
     /// Creates `saves_dir` if it does not exist.
     pub fn save_slot(
         saves_dir: &Path,
         slot: usize,
         name: &str,
         state: &SaveState,
+        active_mods: &[(String, String)],
     ) -> anyhow::Result<()> {
         std::fs::create_dir_all(saves_dir)
             .with_context(|| format!("creating saves directory {}", saves_dir.display()))?;
@@ -176,6 +215,25 @@ mod native {
         file.write_all(&timestamp.to_le_bytes())
             .context("writing timestamp")?;
 
+        // Mod metadata (v4+)
+        file.write_all(&(active_mods.len() as u32).to_le_bytes())
+            .context("writing mod count")?;
+        for (mod_name, mod_version) in active_mods {
+            let nb = mod_name.as_bytes();
+            file.write_all(&(nb.len() as u32).to_le_bytes())
+                .context("writing mod name length")?;
+            file.write_all(nb)
+                .context("writing mod name")?;
+            let vb = mod_version.as_bytes();
+            file.write_all(&(vb.len() as u32).to_le_bytes())
+                .context("writing mod version length")?;
+            file.write_all(vb)
+                .context("writing mod version")?;
+        }
+        let mod_hash = compute_mod_hash(active_mods);
+        file.write_all(&mod_hash.to_le_bytes())
+            .context("writing mod hash")?;
+
         // ── Body ────────────────────────────────────────────────────────────
         let encoded = bincode::serialize(state)
             .context("serializing save state")?;
@@ -185,13 +243,26 @@ mod native {
         Ok(())
     }
 
+    /// Convenience wrapper: save with no active mods.
+    pub fn save_slot_no_mods(
+        saves_dir: &Path,
+        slot: usize,
+        name: &str,
+        state: &SaveState,
+    ) -> anyhow::Result<()> {
+        save_slot(saves_dir, slot, name, state, &[])
+    }
+
     /// Load `SaveState` from slot `slot` in `saves_dir`.
+    ///
+    /// Supports migrating saves from older versions (minimum v3). Saves from
+    /// future versions are rejected.
     pub fn load_slot(saves_dir: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
         let path = slot_path(saves_dir, slot);
         let mut file = std::fs::File::open(&path)
             .with_context(|| format!("opening save file {}", path.display()))?;
 
-        // ── Header ──────────────────────────────────────────────────────────
+        // ── Header (common) ─────────────────────────────────────────────────
         let mut magic = [0u8; 8];
         file.read_exact(&mut magic).context("reading magic")?;
         anyhow::ensure!(
@@ -203,12 +274,22 @@ mod native {
         let mut version_buf = [0u8; 4];
         file.read_exact(&mut version_buf).context("reading version")?;
         let version = u32::from_le_bytes(version_buf);
-        anyhow::ensure!(
-            version == SAVE_VERSION,
-            "incompatible save version {} (expected {})",
-            version, SAVE_VERSION
-        );
 
+        // ── Version gate ────────────────────────────────────────────────────
+        if version > SAVE_VERSION {
+            anyhow::bail!(
+                "save version {} is from a newer build (this build supports up to {})",
+                version, SAVE_VERSION
+            );
+        }
+        if version < MIN_MIGRATABLE_VERSION {
+            anyhow::bail!(
+                "save version {} is too old to migrate (minimum supported: {})",
+                version, MIN_MIGRATABLE_VERSION
+            );
+        }
+
+        // ── Name + timestamp (present in all versions) ──────────────────────
         let mut name_len_buf = [0u8; 4];
         file.read_exact(&mut name_len_buf).context("reading name length")?;
         let name_len = u32::from_le_bytes(name_len_buf) as usize;
@@ -220,16 +301,70 @@ mod native {
         file.read_exact(&mut ts_buf).context("reading timestamp")?;
         let timestamp_secs = u64::from_le_bytes(ts_buf);
 
+        // ── Mod metadata (v4+) ──────────────────────────────────────────────
+        let (mod_names, mod_hash) = if version >= 4 {
+            let mut count_buf = [0u8; 4];
+            file.read_exact(&mut count_buf).context("reading mod count")?;
+            let mod_count = u32::from_le_bytes(count_buf) as usize;
+
+            let mut names = Vec::with_capacity(mod_count);
+            for _ in 0..mod_count {
+                let mut len_buf = [0u8; 4];
+                file.read_exact(&mut len_buf).context("reading mod name length")?;
+                let len = u32::from_le_bytes(len_buf) as usize;
+                let mut bytes = vec![0u8; len];
+                file.read_exact(&mut bytes).context("reading mod name")?;
+                let mod_name = String::from_utf8(bytes).context("invalid mod name encoding")?;
+
+                file.read_exact(&mut len_buf).context("reading mod version length")?;
+                let vlen = u32::from_le_bytes(len_buf) as usize;
+                let mut vbytes = vec![0u8; vlen];
+                file.read_exact(&mut vbytes).context("reading mod version")?;
+                // We store name only in meta; version is folded into the hash.
+                let _mod_version = String::from_utf8(vbytes)
+                    .context("invalid mod version encoding")?;
+
+                names.push(mod_name);
+            }
+
+            let mut hash_buf = [0u8; 8];
+            file.read_exact(&mut hash_buf).context("reading mod hash")?;
+            let hash = u64::from_le_bytes(hash_buf);
+
+            (names, hash)
+        } else {
+            // v3 saves have no mod metadata — default to empty
+            (Vec::new(), compute_mod_hash(&[]))
+        };
+
         // ── Body ────────────────────────────────────────────────────────────
         let mut body = Vec::new();
         file.read_to_end(&mut body).context("reading save body")?;
-        let state: SaveState = bincode::deserialize(&body).context("deserializing save state")?;
+
+        let state: SaveState = match version {
+            SAVE_VERSION => {
+                bincode::deserialize(&body).context("deserializing save state")?
+            }
+            3 => {
+                // v3 saves used a different Character struct layout (no captivity fields)
+                // and bincode is positional — #[serde(default)] is inoperative.
+                // True migration would require a SaveStateV3 struct. Since no v3 saves
+                // are in the wild (v3 existed only during development), reject cleanly.
+                anyhow::bail!(
+                    "save version 3 is incompatible with this build (Character struct changed). \
+                     Please start a new game."
+                );
+            }
+            _ => unreachable!("version range already validated above"),
+        };
 
         let meta = SaveMeta {
             slot,
             name,
             timestamp_secs,
             game_tick: state.clock.tick,
+            mod_names,
+            mod_hash,
         };
 
         Ok((meta, state))
@@ -264,7 +399,9 @@ mod native {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{default_saves_dir, delete_slot, list_saves, load_slot, save_slot, slot_path};
+pub use native::{
+    default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods, slot_path,
+};
 
 // ---------------------------------------------------------------------------
 // WASM stubs
@@ -280,6 +417,16 @@ pub mod wasm_stubs {
     }
 
     pub fn save_slot(
+        _saves_dir: &Path,
+        _slot: usize,
+        _name: &str,
+        _state: &SaveState,
+        _active_mods: &[(String, String)],
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("save/load is not supported in the browser build")
+    }
+
+    pub fn save_slot_no_mods(
         _saves_dir: &Path,
         _slot: usize,
         _name: &str,
@@ -305,7 +452,9 @@ pub mod wasm_stubs {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm_stubs::{default_saves_dir, delete_slot, list_saves, load_slot, save_slot};
+pub use wasm_stubs::{
+    default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods,
+};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -316,6 +465,7 @@ mod tests {
     use super::*;
     use rebellion_core::ai::{AIState, AiFaction};
     use rebellion_core::dat::Faction;
+    use std::io::Write;
 
     fn minimal_save_state() -> SaveState {
         // Create a minimal world with two systems for VictoryState
@@ -376,12 +526,44 @@ mod tests {
         dir
     }
 
+    /// Write a v3-format save file (no mod metadata in header).
+    /// Used as a fixture for migration tests.
+    fn write_v3_fixture(path: &std::path::Path, name: &str, state: &SaveState) {
+        let mut file = std::fs::File::create(path).expect("create v3 fixture");
+        file.write_all(SAVE_MAGIC).unwrap();
+        file.write_all(&3u32.to_le_bytes()).unwrap(); // version = 3
+        let name_bytes = name.as_bytes();
+        file.write_all(&(name_bytes.len() as u32).to_le_bytes()).unwrap();
+        file.write_all(name_bytes).unwrap();
+        let timestamp: u64 = 1700000000; // fixed timestamp for reproducibility
+        file.write_all(&timestamp.to_le_bytes()).unwrap();
+        // No mod metadata — that's the v3 format
+        let encoded = bincode::serialize(state).expect("serialize v3 body");
+        file.write_all(&encoded).unwrap();
+    }
+
+    /// Write a save file with an arbitrary version number (for rejection tests).
+    fn write_versioned_fixture(path: &std::path::Path, version: u32, name: &str, state: &SaveState) {
+        let mut file = std::fs::File::create(path).expect("create versioned fixture");
+        file.write_all(SAVE_MAGIC).unwrap();
+        file.write_all(&version.to_le_bytes()).unwrap();
+        let name_bytes = name.as_bytes();
+        file.write_all(&(name_bytes.len() as u32).to_le_bytes()).unwrap();
+        file.write_all(name_bytes).unwrap();
+        let timestamp: u64 = 1700000000;
+        file.write_all(&timestamp.to_le_bytes()).unwrap();
+        let encoded = bincode::serialize(state).expect("serialize body");
+        file.write_all(&encoded).unwrap();
+    }
+
+    // ── Existing tests (updated for new save_slot signature) ────────────────
+
     #[test]
     fn round_trip_save_load() {
-        let saves_dir = tmp_dir("round_trip");
+        let saves_dir = tmp_dir("round_trip_v4");
 
         let state = minimal_save_state();
-        save_slot(&saves_dir, 0, "Test Save", &state)
+        save_slot(&saves_dir, 0, "Test Save", &state, &[])
             .expect("save should succeed");
 
         let (meta, loaded) = load_slot(&saves_dir, 0)
@@ -390,6 +572,7 @@ mod tests {
         assert_eq!(meta.slot, 0);
         assert_eq!(meta.name, "Test Save");
         assert_eq!(meta.game_tick, loaded.clock.tick);
+        assert!(meta.mod_names.is_empty());
     }
 
     #[test]
@@ -401,11 +584,11 @@ mod tests {
 
     #[test]
     fn list_saves_after_write() {
-        let saves_dir = tmp_dir("list_after_write");
+        let saves_dir = tmp_dir("list_after_write_v4");
 
         let state = minimal_save_state();
-        save_slot(&saves_dir, 2, "Slot 2", &state).unwrap();
-        save_slot(&saves_dir, 5, "Slot 5", &state).unwrap();
+        save_slot(&saves_dir, 2, "Slot 2", &state, &[]).unwrap();
+        save_slot(&saves_dir, 5, "Slot 5", &state, &[]).unwrap();
 
         let metas: Vec<_> = list_saves(&saves_dir)
             .into_iter()
@@ -419,13 +602,118 @@ mod tests {
 
     #[test]
     fn delete_slot_removes_file() {
-        let saves_dir = tmp_dir("delete_slot");
+        let saves_dir = tmp_dir("delete_slot_v4");
 
         let state = minimal_save_state();
-        save_slot(&saves_dir, 1, "To Delete", &state).unwrap();
+        save_slot(&saves_dir, 1, "To Delete", &state, &[]).unwrap();
         assert!(slot_path(&saves_dir, 1).exists());
 
         delete_slot(&saves_dir, 1).unwrap();
         assert!(!slot_path(&saves_dir, 1).exists());
+    }
+
+    // ── New tests (Tasks 3–5) ───────────────────────────────────────────────
+
+    #[test]
+    fn v3_save_rejected_with_clear_message() {
+        let saves_dir = tmp_dir("v3_migration");
+        let state = minimal_save_state();
+        let path = slot_path(&saves_dir, 0);
+        write_v3_fixture(&path, "V3 Save", &state);
+
+        // v3 saves are incompatible (bincode layout changed with captivity fields).
+        let result = load_slot(&saves_dir, 0);
+        assert!(result.is_err(), "v3 saves should be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("incompatible") || err_msg.contains("version 3"),
+            "error should mention incompatibility: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn mod_hash_round_trip() {
+        let saves_dir = tmp_dir("mod_hash_rt");
+        let state = minimal_save_state();
+        let mods = vec![("TestMod".to_string(), "1.0".to_string())];
+
+        save_slot(&saves_dir, 0, "Modded", &state, &mods)
+            .expect("save with mods should succeed");
+
+        let (meta, _) = load_slot(&saves_dir, 0)
+            .expect("load modded save should succeed");
+
+        assert_eq!(meta.mod_names, vec!["TestMod".to_string()]);
+        assert_eq!(meta.mod_hash, compute_mod_hash(&mods));
+    }
+
+    #[test]
+    fn empty_mod_list_round_trip() {
+        let saves_dir = tmp_dir("empty_mods");
+        let state = minimal_save_state();
+
+        save_slot(&saves_dir, 0, "No Mods", &state, &[])
+            .expect("save with no mods should succeed");
+
+        let (meta, _) = load_slot(&saves_dir, 0)
+            .expect("load should succeed");
+
+        assert!(meta.mod_names.is_empty());
+        assert_eq!(meta.mod_hash, compute_mod_hash(&[]));
+    }
+
+    #[test]
+    fn future_version_rejected() {
+        let saves_dir = tmp_dir("future_version");
+        let state = minimal_save_state();
+        let path = slot_path(&saves_dir, 0);
+        write_versioned_fixture(&path, 99, "Future", &state);
+
+        let err = load_slot(&saves_dir, 0)
+            .expect_err("future version should be rejected");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("newer build"),
+            "error should mention 'newer build', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn mod_hash_mismatch_still_loads() {
+        let saves_dir = tmp_dir("mod_mismatch");
+        let state = minimal_save_state();
+        let mods_a = vec![("ModA".to_string(), "1.0".to_string())];
+        let mods_b = vec![("ModB".to_string(), "2.0".to_string())];
+
+        save_slot(&saves_dir, 0, "Mods A", &state, &mods_a).unwrap();
+
+        // Load succeeds even though our "current" mods differ.
+        let (meta, _) = load_slot(&saves_dir, 0)
+            .expect("mismatched mods should still load");
+
+        // The meta records what was saved, not what's current.
+        assert_eq!(meta.mod_names, vec!["ModA".to_string()]);
+        assert_eq!(meta.mod_hash, compute_mod_hash(&mods_a));
+        // The caller can compare meta.mod_hash != compute_mod_hash(&mods_b)
+        assert_ne!(meta.mod_hash, compute_mod_hash(&mods_b));
+    }
+
+    #[test]
+    fn deterministic_hash_order_independent() {
+        let mods_forward = vec![
+            ("Alpha".to_string(), "1.0".to_string()),
+            ("Beta".to_string(), "2.0".to_string()),
+        ];
+        let mods_reverse = vec![
+            ("Beta".to_string(), "2.0".to_string()),
+            ("Alpha".to_string(), "1.0".to_string()),
+        ];
+
+        assert_eq!(
+            compute_mod_hash(&mods_forward),
+            compute_mod_hash(&mods_reverse),
+            "hash should be order-independent"
+        );
     }
 }

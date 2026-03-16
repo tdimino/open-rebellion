@@ -252,6 +252,18 @@ pub struct Character {
     #[serde(default)]
     pub on_mandatory_mission: bool,
 
+    // ── Captivity ─────────────────────────────────────────────────────────
+
+    /// Faction that captured this character (None if free).
+    #[serde(default)]
+    pub captured_by: Option<crate::dat::Faction>,
+    /// Tick when character was captured (for escape timing).
+    #[serde(default)]
+    pub capture_tick: Option<u64>,
+    /// True if character is currently held captive.
+    #[serde(default)]
+    pub is_captive: bool,
+
     // ── Location tracking ───────────────────────────────────────────────────
 
     /// System where this character is currently located.
@@ -592,6 +604,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         }
@@ -604,6 +619,19 @@ mod tests {
         let json = serde_json::to_string(&c).unwrap();
         let c2: Character = serde_json::from_str(&json).unwrap();
         assert!(c2.is_unable_to_betray);
+    }
+
+    #[test]
+    fn captive_character_serde_roundtrip() {
+        let mut c = default_character();
+        c.is_captive = true;
+        c.captured_by = Some(crate::dat::Faction::Empire);
+        c.capture_tick = Some(42);
+        let json = serde_json::to_string(&c).unwrap();
+        let c2: Character = serde_json::from_str(&json).unwrap();
+        assert!(c2.is_captive);
+        assert_eq!(c2.captured_by, Some(crate::dat::Faction::Empire));
+        assert_eq!(c2.capture_tick, Some(42));
     }
 
     #[test]

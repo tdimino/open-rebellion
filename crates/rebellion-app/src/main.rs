@@ -140,6 +140,7 @@ async fn main() {
     let mut mfg_panel_state = ManufacturingPanelState::default();
     let mut missions_panel_state = MissionsPanelState::default();
     let mut enc_state = EncyclopediaState::new();
+    let mut mod_manager_state = rebellion_render::ModManagerState::default();
     enc_state.set_edata_path(gdata_path.join("EData"));
     // HD upscaled PNGs live as a sibling of the base data directory.
     let hd_path = gdata_path
@@ -231,6 +232,9 @@ async fn main() {
         }
         if is_key_pressed(KeyCode::E) {
             enc_state.open = !enc_state.open;
+        }
+        if is_key_pressed(KeyCode::Tab) {
+            mod_manager_state.open = !mod_manager_state.open;
         }
 
         // ── Tick the clock ──────────────────────────────────────────────────
@@ -426,6 +430,27 @@ async fn main() {
                 ai_state.mark_available(result.character);
             }
 
+            // ── Character escapes ────────────────────────────────────────────
+            let escape_rolls: Vec<f64> = (0..world.characters.len())
+                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+            let escape_effects = MissionSystem::check_escapes(&world, &escape_rolls);
+            for effect in &escape_effects {
+                if let MissionEffect::CharacterEscaped { character, escaped_to_alliance } = effect {
+                    if let Some(c) = world.characters.get_mut(*character) {
+                        c.is_alliance = *escaped_to_alliance;
+                        c.is_empire = !*escaped_to_alliance;
+                        c.is_captive = false;
+                        c.captured_by = None;
+                        c.capture_tick = None;
+                    }
+                    for (_, fleet) in world.fleets.iter_mut() {
+                        fleet.characters.retain(|&k| k != *character);
+                    }
+                    let name = world.characters.get(*character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
+                    msg_log.push(GameMessage::new(current_tick, format!("{} has escaped captivity!", name), MessageCategory::Event));
+                }
+            }
+
             // ── Events ──────────────────────────────────────────────────────
             let event_rolls: Vec<f32> =
                 (0..16).map(|_| rand::gen_range(0.0f32, 1.0f32)).collect();
@@ -587,6 +612,15 @@ async fn main() {
                     MessageCategory::Event,
                 ));
             }
+            // Apply research level-ups (advance() is now pure — caller must apply)
+            for result in &research_results {
+                let rebellion_core::research::ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
+                if *faction_is_alliance {
+                    research_state.alliance.advance(*tech_type);
+                } else {
+                    research_state.empire.advance(*tech_type);
+                }
+            }
 
             // ── Jedi training ────────────────────────────────────────────────
             let jedi_rolls: Vec<f64> = (0..jedi_state.training.len().max(1))
@@ -725,6 +759,20 @@ async fn main() {
                 // Encyclopedia (floating window, always available when faction chosen)
                 if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state) {
                     panel_actions.push(PanelAction::FocusFleetSystem(sys_key));
+                }
+
+                // Mod Manager (floating window)
+                let mod_infos: Vec<rebellion_render::ModInfo> = Vec::new(); // TODO: populate from ModRuntime
+                let mod_actions = rebellion_render::draw_mod_manager(ctx, &mod_infos, &mut mod_manager_state);
+                for action in mod_actions {
+                    match action {
+                        rebellion_render::ModManagerAction::ToggleMod(name) => {
+                            panel_actions.push(PanelAction::ToggleMod { name });
+                        }
+                        rebellion_render::ModManagerAction::ReloadMods => {
+                            panel_actions.push(PanelAction::ReloadMods);
+                        }
+                    }
                 }
             }
 
@@ -913,6 +961,15 @@ fn apply_panel_action(
         | PanelAction::LoadGame { .. }
         | PanelAction::DeleteSave { .. }
         | PanelAction::CloseSaveLoadPanel => {}
+        PanelAction::OpenModManager => {
+            // Handled by UI state toggle (not a world mutation)
+        }
+        PanelAction::ToggleMod { name: _ } => {
+            // Will be handled when mod_runtime is wired
+        }
+        PanelAction::ReloadMods => {
+            // Will be handled when mod_runtime is wired
+        }
     }
 }
 
@@ -1055,6 +1112,12 @@ fn apply_mission_result(
                             c.is_empire = true;
                         }
                     }
+                    c.is_captive = true;
+                    c.captured_by = Some(match captured_by {
+                        MissionFaction::Alliance => Faction::Alliance,
+                        MissionFaction::Empire => Faction::Empire,
+                    });
+                    c.capture_tick = Some(result.tick);
                 }
                 // Remove from current fleet assignments
                 for (_, fleet) in world.fleets.iter_mut() {
@@ -1074,6 +1137,9 @@ fn apply_mission_result(
                             c.is_empire = true;
                         }
                     }
+                    c.is_captive = false;
+                    c.captured_by = None;
+                    c.capture_tick = None;
                 }
             }
             MissionEffect::CharacterBusy { character } => {
@@ -1096,6 +1162,9 @@ fn apply_mission_result(
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.is_alliance = *escaped_to_alliance;
                     c.is_empire = !*escaped_to_alliance;
+                    c.is_captive = false;
+                    c.captured_by = None;
+                    c.capture_tick = None;
                 }
                 let name = world.characters.get(*character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
                 log.push(GameMessage::new(result.tick, format!("{} has escaped captivity!", name), MessageCategory::Event));

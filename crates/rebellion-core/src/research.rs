@@ -206,9 +206,16 @@ impl ResearchSystem {
     /// Advance all active research projects by one tick per `TickEvent`.
     ///
     /// Returns a `ResearchResult::TechUnlocked` for each project that completes.
-    /// The caller must apply each result to `ResearchState` via
-    /// `state.alliance.advance(tech)` / `state.empire.advance(tech)`, and then
-    /// optionally re-dispatch a new project for the same slot.
+    ///
+    /// **IMPORTANT**: As of v0.6.0, this function no longer applies level-ups internally.
+    /// The caller must apply each TechUnlocked result:
+    /// ```ignore
+    /// for result in &results {
+    ///     let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
+    ///     if *faction_is_alliance { state.alliance.advance(*tech_type); }
+    ///     else { state.empire.advance(*tech_type); }
+    /// }
+    /// ```
     pub fn advance(
         state: &mut ResearchState,
         _world: &GameWorld,
@@ -242,16 +249,6 @@ impl ResearchSystem {
                     tech_type: project.tech_type,
                     new_level,
                 });
-            }
-        }
-
-        // Apply all unlocks.
-        for result in &results {
-            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
-            if *faction_is_alliance {
-                state.alliance.advance(*tech_type);
-            } else {
-                state.empire.advance(*tech_type);
             }
         }
 
@@ -386,6 +383,9 @@ mod tests {
             on_mission: false,
             on_hidden_mission: false,
             on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
             current_system: None,
             current_fleet: None,
         })
@@ -466,7 +466,14 @@ mod tests {
             }
         );
 
-        // Level advanced.
+        // advance() no longer auto-applies level-ups — caller must apply.
+        assert_eq!(state.alliance.ship, 0, "advance() should NOT mutate state");
+        // Caller applies:
+        for result in &r {
+            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
+            if *faction_is_alliance { state.alliance.advance(*tech_type); }
+            else { state.empire.advance(*tech_type); }
+        }
         assert_eq!(state.alliance.ship, 1);
         // Project removed.
         assert!(state.projects.is_empty());
@@ -580,12 +587,23 @@ mod tests {
             tech_type: TechType::Facility,
             new_level: 1,
         });
+        // Caller applies results.
+        for result in &r {
+            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
+            if *faction_is_alliance { state.alliance.advance(*tech_type); }
+            else { state.empire.advance(*tech_type); }
+        }
         assert_eq!(state.alliance.facility, 1);
         assert_eq!(state.empire.facility, 0);
 
         // Empire completes after 5 more ticks.
         let r2 = ResearchSystem::advance(&mut state, &world, &ticks(5));
         assert_eq!(r2.len(), 1);
+        for result in &r2 {
+            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
+            if *faction_is_alliance { state.alliance.advance(*tech_type); }
+            else { state.empire.advance(*tech_type); }
+        }
         assert_eq!(state.empire.facility, 1);
     }
 
@@ -610,5 +628,54 @@ mod tests {
 
         state.alliance.ship = 3;
         assert!(ResearchSystem::ship_class_is_available(&world, &state, true, class_key));
+    }
+
+    #[test]
+    fn advance_does_not_mutate_ship_level() {
+        let mut world = GameWorld::default();
+        let mut state = ResearchState::new();
+        let char_key = make_char_key(&mut world);
+
+        state.dispatch(ResearchProject {
+            tech_type: TechType::Ship,
+            character: char_key,
+            faction_is_alliance: true,
+            ticks_remaining: 5,
+            total_ticks: 5,
+        });
+
+        let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
+        assert_eq!(r.len(), 1);
+        // advance() must NOT auto-apply level-ups.
+        assert_eq!(state.alliance.ship, 0, "advance() should not mutate state internally");
+    }
+
+    #[test]
+    fn advance_returns_correct_new_level() {
+        let mut world = GameWorld::default();
+        let mut state = ResearchState::new();
+        let char_key = make_char_key(&mut world);
+
+        // Pre-advance alliance ship to level 3.
+        state.alliance.ship = 3;
+
+        state.dispatch(ResearchProject {
+            tech_type: TechType::Ship,
+            character: char_key,
+            faction_is_alliance: true,
+            ticks_remaining: 5,
+            total_ticks: 5,
+        });
+
+        let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
+        assert_eq!(r.len(), 1);
+        assert_eq!(
+            r[0],
+            ResearchResult::TechUnlocked {
+                faction_is_alliance: true,
+                tech_type: TechType::Ship,
+                new_level: 4,
+            }
+        );
     }
 }

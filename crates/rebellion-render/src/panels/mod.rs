@@ -23,6 +23,7 @@ pub mod faction_select;
 pub mod fleets;
 pub mod manufacturing;
 pub mod missions;
+pub mod mod_manager;
 pub mod officers;
 pub mod save_load;
 
@@ -30,6 +31,7 @@ pub use faction_select::{draw_faction_select, FactionSelectState};
 pub use fleets::{draw_fleets, FleetsState};
 pub use manufacturing::{draw_manufacturing, ManufacturingPanelState};
 pub use missions::{draw_missions, MissionsPanelState};
+pub use mod_manager::{draw_mod_manager, ModInfo, ModManagerAction, ModManagerState};
 pub use officers::{draw_officers, OfficersState};
 pub use save_load::{draw_save_load, SaveLoadPanelState, SaveSlotInfo};
 
@@ -86,4 +88,12 @@ pub enum PanelAction {
     DeleteSave { slot: usize },
     /// Player closed the save/load panel without taking an action.
     CloseSaveLoadPanel,
+
+    // ── Mod Manager ─────────────────────────────────────────────────────
+    /// Open/close the mod manager panel.
+    OpenModManager,
+    /// Toggle a mod's enabled state.
+    ToggleMod { name: String },
+    /// Reload all mods from disk.
+    ReloadMods,
 }
