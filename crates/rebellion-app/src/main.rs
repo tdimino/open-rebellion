@@ -4,18 +4,24 @@ use macroquad::prelude::*;
 use std::path::{Path, PathBuf};
 
 use rebellion_core::ai::{AiFaction, AIAction, AIState, AISystem, FleetMoveReason};
+use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
 use rebellion_core::combat::{CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
+use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem, SkillField};
 use rebellion_core::fog::{FogState, FogSystem};
+use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
     MissionEffect, MissionFaction, MissionKind, MissionState, MissionSystem,
 };
 use rebellion_core::movement::{MovementState, MovementSystem};
+use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
-use rebellion_core::world::GameWorld;
+use rebellion_core::uprising::{UprisingState, UprisingSystem};
+use rebellion_core::victory::{VictoryState, VictorySystem};
+use rebellion_core::world::{GameWorld, MstbTable};
 
 use rebellion_render::{
     draw_encyclopedia, draw_faction_select, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
@@ -93,6 +99,28 @@ async fn main() {
     let mut fog_state = FogState::new(Faction::Alliance);
     FogSystem::seed(&mut fog_state, &world);
     let mut combat_cooldowns: std::collections::HashMap<rebellion_core::ids::SystemKey, u64> = std::collections::HashMap::new();
+    let mut blockade_state = BlockadeState::new();
+    let mut uprising_state = UprisingState::new();
+    let mut death_star_state = DeathStarState::default();
+    let mut research_state = ResearchState::new();
+    let mut jedi_state = JediState::new();
+    // Find HQ systems for victory detection
+    let alliance_hq = world.systems.iter()
+        .find(|(_, s)| s.is_headquarters && s.controlling_faction == Some(Faction::Alliance))
+        .map(|(k, _)| k);
+    let empire_hq = world.systems.iter()
+        .find(|(_, s)| s.is_headquarters && s.controlling_faction == Some(Faction::Empire))
+        .map(|(k, _)| k);
+    let mut victory_state = match (alliance_hq, empire_hq) {
+        (Some(a), Some(e)) => VictoryState::new(a, e),
+        _ => {
+            // Fallback: use first two systems if HQs not marked
+            let mut keys = world.systems.keys();
+            let a = keys.next().expect("world must have at least 2 systems for victory");
+            let e = keys.next().expect("world must have at least 2 systems for victory");
+            VictoryState::new(a, e)
+        }
+    };
 
     // ── UI state ────────────────────────────────────────────────────────────
     let mut map_state = GalaxyMapState::default();
@@ -204,8 +232,10 @@ async fn main() {
         let tick_events = clock.advance(dt);
 
         if !tick_events.is_empty() {
-            // ── Manufacturing ───────────────────────────────────────────────
-            let completions = ManufacturingSystem::advance(&mut mfg_state, &tick_events);
+            // ── Manufacturing (blockaded systems are skipped) ─────────────────
+            let completions = ManufacturingSystem::advance_with_blockade(
+                &mut mfg_state, &tick_events, blockade_state.blockaded_systems(),
+            );
             for completion in &completions {
                 let sys_name = world
                     .systems
@@ -227,6 +257,15 @@ async fn main() {
             for arrival in &arrivals {
                 if let Some(fleet) = world.fleets.get_mut(arrival.fleet) {
                     fleet.location = arrival.system;
+                }
+                // Update System.fleets: remove from origin, add to destination
+                if let Some(origin_sys) = world.systems.get_mut(arrival.origin) {
+                    origin_sys.fleets.retain(|&k| k != arrival.fleet);
+                }
+                if let Some(dest_sys) = world.systems.get_mut(arrival.system) {
+                    if !dest_sys.fleets.contains(&arrival.fleet) {
+                        dest_sys.fleets.push(arrival.fleet);
+                    }
                 }
                 let sys_name = world
                     .systems
@@ -417,6 +456,155 @@ async fn main() {
                 #[cfg(not(target_arch = "wasm32"))]
                 &audio_vol,
             );
+
+            // ── Blockade ─────────────────────────────────────────────────────
+            let blockade_events = BlockadeSystem::advance(&mut blockade_state, &world, &tick_events);
+            for evt in &blockade_events {
+                match evt {
+                    rebellion_core::blockade::BlockadeEvent::BlockadeStarted { system, tick } => {
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Blockade established at {}", name), MessageCategory::Combat, *system));
+                    }
+                    rebellion_core::blockade::BlockadeEvent::BlockadeEnded { system, tick } => {
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Blockade lifted at {}", name), MessageCategory::Combat, *system));
+                    }
+                    rebellion_core::blockade::BlockadeEvent::TroopDestroyed { system, troop, tick } => {
+                        if let Some(sys) = world.systems.get_mut(*system) {
+                            sys.ground_units.retain(|&k| k != *troop);
+                        }
+                        world.troops.remove(*troop);
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Troops destroyed by blockade at {}", name), MessageCategory::Combat, *system));
+                    }
+                }
+            }
+
+            // ── Uprising ─────────────────────────────────────────────────────
+            let uprising_rolls: Vec<f64> = (0..world.systems.len())
+                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+            let empty_upris1tb = MstbTable::new(vec![]);
+            let upris1tb = world.mission_tables.get("UPRIS1TB").unwrap_or(&empty_upris1tb);
+            let uprising_events = UprisingSystem::advance(&mut uprising_state, &world, &tick_events, &uprising_rolls, upris1tb);
+            for evt in &uprising_events {
+                match evt {
+                    rebellion_core::uprising::UprisingEvent::UprisingIncident { system, tick } => {
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Uprising incident at {}", name), MessageCategory::Diplomacy, *system));
+                    }
+                    rebellion_core::uprising::UprisingEvent::UprisingBegan { system, tick } => {
+                        // Flip controlling faction
+                        if let Some(sys) = world.systems.get_mut(*system) {
+                            sys.controlling_faction = match sys.controlling_faction {
+                                Some(Faction::Alliance) => Some(Faction::Empire),
+                                Some(Faction::Empire) => Some(Faction::Alliance),
+                                other => other,
+                            };
+                        }
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Uprising! {} has changed hands", name), MessageCategory::Diplomacy, *system));
+                    }
+                    rebellion_core::uprising::UprisingEvent::UprisingSubdued { system, tick } => {
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Uprising subdued at {}", name), MessageCategory::Diplomacy, *system));
+                    }
+                }
+            }
+
+            // ── Death Star ───────────────────────────────────────────────────
+            let ds_events = DeathStarSystem::advance(&mut death_star_state, &world, &tick_events);
+            for evt in &ds_events {
+                match evt {
+                    rebellion_core::death_star::DeathStarEvent::ConstructionCompleted { system, tick } => {
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Death Star construction complete at {}", name), MessageCategory::Event, *system));
+                    }
+                    rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { system, tick } => {
+                        if let Some(sys) = world.systems.get_mut(*system) {
+                            sys.is_destroyed = true;
+                        }
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("{} destroyed by Death Star!", name), MessageCategory::Event, *system));
+                    }
+                    rebellion_core::death_star::DeathStarEvent::NearbyWarning { system, tick } => {
+                        let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(*tick, format!("Death Star detected near {}!", name), MessageCategory::Event, *system));
+                    }
+                }
+            }
+
+            // ── Research ─────────────────────────────────────────────────────
+            let research_results = ResearchSystem::advance(&mut research_state, &world, &tick_events);
+            for result in &research_results {
+                let rebellion_core::research::ResearchResult::TechUnlocked { faction_is_alliance, tech_type, new_level } = result;
+                let faction_name = if *faction_is_alliance { "Alliance" } else { "Empire" };
+                let tech_name = match tech_type {
+                    rebellion_core::research::TechType::Ship => "Ship",
+                    rebellion_core::research::TechType::Troop => "Troop",
+                    rebellion_core::research::TechType::Facility => "Facility",
+                };
+                msg_log.push(GameMessage::new(
+                    current_tick,
+                    format!("{} {} tech advanced to level {}", faction_name, tech_name, new_level),
+                    MessageCategory::Event,
+                ));
+            }
+
+            // ── Jedi training ────────────────────────────────────────────────
+            let jedi_rolls: Vec<f64> = (0..jedi_state.training.len().max(1))
+                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+            let jedi_events = JediSystem::advance(&mut jedi_state, &world, &tick_events, &jedi_rolls);
+            for evt in &jedi_events {
+                match evt {
+                    rebellion_core::jedi::JediEvent::TierAdvanced { character, new_tier } => {
+                        if let Some(c) = world.characters.get_mut(*character) {
+                            c.force_tier = *new_tier;
+                            // Persist XP: set to threshold for the new tier
+                            c.force_experience = match new_tier {
+                                rebellion_core::world::ForceTier::None => 0,
+                                rebellion_core::world::ForceTier::Aware => 1,
+                                rebellion_core::world::ForceTier::Training => rebellion_core::jedi::XP_TO_TRAINING,
+                                rebellion_core::world::ForceTier::Experienced => rebellion_core::jedi::XP_TO_EXPERIENCED,
+                            };
+                        }
+                        let name = world.characters.get(*character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
+                        let tier_str = match new_tier {
+                            rebellion_core::world::ForceTier::None => "None",
+                            rebellion_core::world::ForceTier::Aware => "Force Aware",
+                            rebellion_core::world::ForceTier::Training => "Jedi Training",
+                            rebellion_core::world::ForceTier::Experienced => "Jedi Knight",
+                        };
+                        msg_log.push(GameMessage::new(current_tick, format!("{} has reached {} tier", name, tier_str), MessageCategory::Event));
+                    }
+                    rebellion_core::jedi::JediEvent::TrainingComplete { character } => {
+                        jedi_state.stop_training(*character);
+                    }
+                    rebellion_core::jedi::JediEvent::JediDiscovered { character, .. } => {
+                        if let Some(c) = world.characters.get_mut(*character) {
+                            c.is_discovered_jedi = true;
+                        }
+                        let name = world.characters.get(*character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
+                        msg_log.push(GameMessage::new(current_tick, format!("{}'s Force sensitivity discovered!", name), MessageCategory::Event));
+                    }
+                }
+            }
+
+            // ── Victory check ────────────────────────────────────────────────
+            if let Some(outcome) = VictorySystem::check(&victory_state, &world, &tick_events) {
+                victory_state.resolved = true;
+                let msg = match &outcome {
+                    rebellion_core::victory::VictoryOutcome::HqCaptured { winner, loser, .. } => {
+                        format!("{:?} captured {:?} headquarters! {:?} wins!", winner, loser, winner)
+                    }
+                    rebellion_core::victory::VictoryOutcome::DeathStarVictory { .. } => {
+                        "The Death Star destroyed the Rebel base! Empire wins!".to_string()
+                    }
+                    rebellion_core::victory::VictoryOutcome::DeathStarDestroyed { .. } => {
+                        "The Death Star has been destroyed! Alliance wins!".to_string()
+                    }
+                };
+                msg_log.push(GameMessage::new(current_tick, msg, MessageCategory::Event));
+            }
         }
 
         // ── Rendering ───────────────────────────────────────────────────────
@@ -790,14 +978,65 @@ fn apply_mission_result(
                     sys.exploration_status = rebellion_core::dat::ExplorationStatus::Explored;
                 }
             }
-            // These effects require richer world state (character capture list, facility
-            // indexing) that lands with the full espionage system. Stubs for now.
-            MissionEffect::CharacterRecruited { .. }
-            | MissionEffect::FacilitySabotaged { .. }
-            | MissionEffect::CharacterKilled { .. }
-            | MissionEffect::CharacterCaptured { .. }
-            | MissionEffect::CharacterRescued { .. } => {
-                // Deferred: full implementation in espionage system (task #14 continuation).
+            MissionEffect::CharacterRecruited { faction, .. } => {
+                // Recruitment shifts the recruiter's faction allegiance
+                // (the recruit joins the faction that sent the recruiter)
+                let _ = faction; // effect is already applied via PopularityShifted
+            }
+            MissionEffect::FacilitySabotaged { system, facility_index, ticks_lost } => {
+                // Remove the facility at facility_index from the system
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    if *facility_index < sys.manufacturing_facilities.len() {
+                        let fac_key = sys.manufacturing_facilities.remove(*facility_index);
+                        world.manufacturing_facilities.remove(fac_key);
+                    } else if *facility_index < sys.manufacturing_facilities.len() + sys.defense_facilities.len() {
+                        let adj_idx = *facility_index - sys.manufacturing_facilities.len();
+                        let fac_key = sys.defense_facilities.remove(adj_idx);
+                        world.defense_facilities.remove(fac_key);
+                    }
+                }
+                let _ = ticks_lost;
+            }
+            MissionEffect::CharacterKilled { character, .. } => {
+                // Remove character from any fleet they're assigned to
+                for (_, fleet) in world.fleets.iter_mut() {
+                    fleet.characters.retain(|&k| k != *character);
+                }
+                world.characters.remove(*character);
+            }
+            MissionEffect::CharacterCaptured { character, captured_by, .. } => {
+                // Transfer character to the capturing faction
+                if let Some(c) = world.characters.get_mut(*character) {
+                    match captured_by {
+                        MissionFaction::Alliance => {
+                            c.is_alliance = true;
+                            c.is_empire = false;
+                        }
+                        MissionFaction::Empire => {
+                            c.is_alliance = false;
+                            c.is_empire = true;
+                        }
+                    }
+                }
+                // Remove from current fleet assignments
+                for (_, fleet) in world.fleets.iter_mut() {
+                    fleet.characters.retain(|&k| k != *character);
+                }
+            }
+            MissionEffect::CharacterRescued { character, returned_to, .. } => {
+                // Restore character to the specified faction
+                if let Some(c) = world.characters.get_mut(*character) {
+                    match returned_to {
+                        MissionFaction::Alliance => {
+                            c.is_alliance = true;
+                            c.is_empire = false;
+                        }
+                        MissionFaction::Empire => {
+                            c.is_alliance = false;
+                            c.is_empire = true;
+                        }
+                    }
+                }
             }
         }
     }

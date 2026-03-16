@@ -1,6 +1,6 @@
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.4.0 (~68% complete). Living Galaxy + War Room + War Machine COMPLETE. Combat, 9 mission types, victory conditions, save/load, Death Star. 188 tests passing.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.4.1 (~70% complete). Living Galaxy + War Room + War Machine COMPLETE. 14 simulation systems wired into main loop + save/load. Combat, 9 mission types with world-mutating effects, victory conditions, blockade→manufacturing, Jedi XP, Death Star. 211 tests passing.
 
 ## Build
 
@@ -50,7 +50,8 @@ PATH="/usr/bin:$PATH" cargo check
 
 @agent_docs/architecture.md -- Crate graph, type system layers, entity identity, data flow, render architecture. Read when adding entity types or crates.
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
-agent_docs/simulation.md -- 7 simulation systems, stateless advance() pattern, state types, RNG contract, integration order. Read when touching game logic.
+agent_docs/simulation.md -- 14 simulation systems index, advance() pattern, integration order, "how to add" guides. Read when touching game logic.
+agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory). Read when modifying a specific system.
 agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.

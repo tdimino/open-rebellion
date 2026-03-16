@@ -299,8 +299,15 @@ fn draw_dispatch_tab(
     {
         if let Some(character) = world.characters.get(char_key) {
             let skill = match kind {
-                MissionKind::Diplomacy => character.diplomacy,
-                MissionKind::Recruitment => character.leadership,
+                MissionKind::Diplomacy      => character.diplomacy,
+                MissionKind::Recruitment    => character.leadership,
+                MissionKind::Sabotage       => character.espionage,
+                MissionKind::Assassination  => character.combat,
+                MissionKind::Espionage      => character.espionage,
+                MissionKind::Rescue         => character.combat,
+                MissionKind::Abduction      => character.espionage,
+                MissionKind::InciteUprising => character.diplomacy,
+                MissionKind::Autoscrap      => character.leadership, // no-op; Autoscrap never shown in UI
             };
             let score = skill.base as f64 + skill.variance as f64 * 0.5;
             let (a, b, c) = kind.coefficients();
@@ -380,7 +387,14 @@ fn draw_dispatch_tab(
 
 fn mission_kind_display(kind: MissionKind) -> (&'static str, Color32) {
     match kind {
-        MissionKind::Diplomacy => ("[DIPLO]", Color32::from_rgb(255, 220, 80)),
-        MissionKind::Recruitment => ("[RECRT]", Color32::from_rgb(100, 220, 180)),
+        MissionKind::Diplomacy      => ("[DIPLO]", Color32::from_rgb(255, 220,  80)),
+        MissionKind::Recruitment    => ("[RECRT]", Color32::from_rgb(100, 220, 180)),
+        MissionKind::Sabotage       => ("[SBTGE]", Color32::from_rgb(220, 100,  60)),
+        MissionKind::Assassination  => ("[ASSN]",  Color32::from_rgb(200,  50,  50)),
+        MissionKind::Espionage      => ("[ESPI]",  Color32::from_rgb(160, 120, 220)),
+        MissionKind::Rescue         => ("[RESC]",  Color32::from_rgb( 80, 180, 255)),
+        MissionKind::Abduction      => ("[ABDC]",  Color32::from_rgb(220, 160,  60)),
+        MissionKind::InciteUprising => ("[INCT]",  Color32::from_rgb(255, 140,  40)),
+        MissionKind::Autoscrap      => ("[AUTO]",  Color32::from_rgb(120, 120, 120)),
     }
 }

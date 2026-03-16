@@ -1,11 +1,13 @@
 //! Galaxy map rendering and egui UI panels.
 
 pub mod audio;
+pub mod combat_view;
 pub mod encyclopedia;
 pub mod fleet_movement;
 pub mod fog;
 pub mod message_log;
 pub mod panels;
+pub mod victory_screen;
 
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -14,13 +16,17 @@ use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::GameWorld;
 
 pub use audio::{draw_audio_controls, AudioVolumeState, MusicTrack, SfxKind};
+pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
+pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
 pub use fleet_movement::draw_fleet_overlays;
 pub use fog::draw_fog_overlay;
 pub use message_log::{draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState};
 pub use panels::{
     draw_faction_select, draw_fleets, draw_manufacturing, draw_missions, draw_officers,
+    draw_save_load,
     FactionSelectState, FleetsState, ManufacturingPanelState, MissionsPanelState, OfficersState,
+    SaveLoadPanelState, SaveSlotInfo,
     PanelAction,
 };
 

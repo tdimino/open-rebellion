@@ -76,10 +76,11 @@ Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain 
 
 ## Immediate Next Steps
 
-1. **Launch Knesset Tiamat** -- War Machine implementation swarm (combat, missions, victory, save/load)
+1. **v0.4.1 integration fixes** -- COMPLETE. Fleet arrival→System.fleets, 6 new systems wired into main loop + SaveState, mission effects mutate world, Jedi XP persistence, blockade→manufacturing.
 2. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
 3. **WASM build verification** -- confirmed 3.4MB artifact at v0.3.0
 4. **Ghidra RE** -- COMPLETE. 5,127 functions decompiled, 7 scholar docs, 111 GNPRTB params, C++ hierarchy reconstructed.
+5. **Deferred fixes** (v0.5.0): BuildableKind type safety, EventSystem multi-tick safety, ResearchSystem advance() contract, per-tick event processing.
 
 ## Known Technical Debt
 

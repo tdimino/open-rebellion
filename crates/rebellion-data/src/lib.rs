@@ -8,6 +8,8 @@ use dat_dumper::codec::ByteReader;
 use dat_dumper::dat_record::DatRecord;
 use dat_dumper::types::capital_ships::CapitalShipsFile;
 use dat_dumper::types::fighters::FightersFile;
+use dat_dumper::types::general_params::GeneralParamsFile;
+use dat_dumper::types::int_table::IntTableFile;
 use dat_dumper::types::major_characters::{CharacterEntry, MajorCharactersFile};
 use dat_dumper::types::minor_characters::MinorCharactersFile;
 use dat_dumper::types::sectors::SectorsFile;
@@ -18,8 +20,9 @@ use rebellion_core::dat::{ExplorationStatus, SectorGroup};
 use rebellion_core::ids::*;
 use rebellion_core::world::*;
 
-pub mod seeds;
 pub mod mods;
+pub mod save;
+pub mod seeds;
 
 /// Load all game data from a GData directory into a GameWorld.
 ///
@@ -69,6 +72,8 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         defense_facilities: slotmap::SlotMap::with_key(),
         manufacturing_facilities: slotmap::SlotMap::with_key(),
         production_facilities: slotmap::SlotMap::with_key(),
+        gnprtb: GnprtbParams::default(),
+        mission_tables: std::collections::HashMap::new(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────
@@ -118,6 +123,11 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             ExplorationStatus::Unexplored
         };
 
+        // Coruscant (0x109) is the Empire HQ; Yavin (0x121) is the Alliance HQ.
+        // The lower 24 bits of `dat.id` are the sequential index.
+        let seq_id = dat.id & 0x00FF_FFFF;
+        let is_headquarters = seq_id == 0x109 || seq_id == 0x121;
+
         let system = System {
             dat_id: DatId::new(dat.id),
             name: lookup(dat.text_stra_dll_id, "System"),
@@ -133,6 +143,9 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             defense_facilities: Vec::new(),
             manufacturing_facilities: Vec::new(),
             production_facilities: Vec::new(),
+            is_headquarters,
+            is_destroyed: false,
+            controlling_faction: None,
         };
         let key = world.systems.insert(system);
         system_key_map.insert(dat.id, key);
@@ -161,6 +174,22 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             hyperdrive: dat.hyperdrive,
             fighter_capacity: dat.fighter_capacity,
             troop_capacity: dat.troop_capacity,
+            detection: dat.detection,
+            turbolaser_fore: dat.turbolaser_fore,
+            turbolaser_aft: dat.turbolaser_aft,
+            turbolaser_port: dat.turbolaser_port,
+            turbolaser_starboard: dat.turbolaser_starboard,
+            ion_cannon_fore: dat.ion_cannon_fore,
+            ion_cannon_aft: dat.ion_cannon_aft,
+            ion_cannon_port: dat.ion_cannon_port,
+            ion_cannon_starboard: dat.ion_cannon_starboard,
+            laser_cannon_fore: dat.laser_cannon_fore,
+            laser_cannon_aft: dat.laser_cannon_aft,
+            laser_cannon_port: dat.laser_cannon_port,
+            laser_cannon_starboard: dat.laser_cannon_starboard,
+            shield_recharge_rate: dat.shield_recharge_rate,
+            damage_control: dat.damage_control,
+            bombardment_modifier: dat.bombardment_modifier,
         };
         world.capital_ship_classes.insert(class);
     }
@@ -178,6 +207,8 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             maintenance_cost: dat.maintenance_cost,
             squadron_size: dat.squadron_size,
             torpedoes: dat.torpedoes,
+            overall_attack_strength: dat.overall_attack_strength,
+            bombardment_defense: dat.bombardment_defense,
         };
         world.fighter_classes.insert(class);
     }
@@ -203,6 +234,47 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     // DAT files.  Missing files are silently skipped (stripped installs).
     seeds::apply_seeds(gdata_path, &mut world, &system_key_map)?;
 
+    // ── 8. GNPRTB — game balance parameters ──────────────────────────────────
+    let gnprtb_path = gdata_path.join("GNPRTB.DAT");
+    if gnprtb_path.exists() {
+        let gnprtb_file: GeneralParamsFile = read_dat_file(&gnprtb_path)?;
+        let entries = gnprtb_file.entries.into_iter().map(|e| GnprtbEntry {
+            parameter_id: e.parameter_id,
+            development: e.development,
+            alliance_sp_easy: e.alliance_sp_easy,
+            alliance_sp_medium: e.alliance_sp_medium,
+            alliance_sp_hard: e.alliance_sp_hard,
+            empire_sp_easy: e.empire_sp_easy,
+            empire_sp_medium: e.empire_sp_medium,
+            empire_sp_hard: e.empire_sp_hard,
+            multiplayer: e.multiplayer,
+        }).collect();
+        world.gnprtb = GnprtbParams::new(entries);
+    }
+
+    // ── 9. Mission probability tables (*MSTB.DAT and *TB.DAT) ────────────────
+    // All 19 IntTableFile tables. Missing files are silently skipped.
+    const MSTB_FILES: &[&str] = &[
+        "DIPLMSTB.DAT", "ESPIMSTB.DAT", "ASSNMSTB.DAT", "INCTMSTB.DAT",
+        "DSSBMSTB.DAT", "ABDCMSTB.DAT", "RCRTMSTB.DAT", "RESCMSTB.DAT",
+        "SBTGMSTB.DAT", "SUBDMSTB.DAT", "ESCAPETB.DAT", "FDECOYTB.DAT",
+        "FOILTB.DAT",   "INFORMTB.DAT", "CSCRHTTB.DAT", "UPRIS1TB.DAT",
+        "UPRIS2TB.DAT", "RLEVADTB.DAT", "RESRCTB.DAT",  "TDECOYTB.DAT",
+    ];
+    for filename in MSTB_FILES {
+        let path = gdata_path.join(filename);
+        if path.exists() {
+            let table_file: IntTableFile = read_dat_file(&path)?;
+            let entries = table_file.entries.into_iter().map(|e| MstbEntry {
+                threshold: e.threshold,
+                value: e.value,
+            }).collect();
+            // Key = file stem without extension, uppercase (e.g. "DIPLMSTB")
+            let stem = filename.trim_end_matches(".DAT").to_string();
+            world.mission_tables.insert(stem, MstbTable::new(entries));
+        }
+    }
+
     Ok(world)
 }
 
@@ -227,6 +299,9 @@ fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Char
         can_be_admiral: dat.can_be_admiral != 0,
         can_be_commander: dat.can_be_commander != 0,
         can_be_general: dat.can_be_general != 0,
+        force_tier: rebellion_core::world::ForceTier::None,
+        force_experience: 0,
+        is_discovered_jedi: false,
     }
 }
 

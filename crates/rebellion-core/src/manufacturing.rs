@@ -39,6 +39,8 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashSet;
+
 use crate::ids::{
     CapitalShipKey, DefenseFacilityKey, FighterKey, ManufacturingFacilityKey, ProductionFacilityKey,
     SystemKey, TroopKey,
@@ -286,11 +288,26 @@ impl ManufacturingSystem {
     /// one frame (e.g., at Faster speed) they are batched into a single pass
     /// per queue.
     ///
+    /// Systems in `blocked_systems` (e.g., blockaded systems) are skipped —
+    /// their queues do not advance while blocked.
+    ///
     /// Returns a `Vec<CompletionEvent>` — one entry per completed item,
     /// across all systems. Empty if no items completed this frame.
     pub fn advance(
         state: &mut ManufacturingState,
         tick_events: &[TickEvent],
+    ) -> Vec<CompletionEvent> {
+        Self::advance_with_blockade(state, tick_events, &HashSet::new())
+    }
+
+    /// Like `advance`, but skips systems in `blocked_systems`.
+    ///
+    /// Called by the main loop with `BlockadeState::blockaded_systems()` to
+    /// halt manufacturing at blockaded systems.
+    pub fn advance_with_blockade(
+        state: &mut ManufacturingState,
+        tick_events: &[TickEvent],
+        blocked_systems: &HashSet<SystemKey>,
     ) -> Vec<CompletionEvent> {
         if tick_events.is_empty() {
             return Vec::new();
@@ -304,6 +321,10 @@ impl ManufacturingSystem {
         let mut completions = Vec::new();
 
         for (system_key, queue) in state.queues.iter_mut() {
+            // Skip blockaded systems — manufacturing halted
+            if blocked_systems.contains(system_key) {
+                continue;
+            }
             let finished = queue.advance_ticks(tick_count);
             for kind in finished {
                 completions.push(CompletionEvent {

@@ -277,6 +277,7 @@ fn apply_fleet_seed(
             fighters: fleet_fighters,
             characters: Vec::new(),
             is_alliance,
+            has_death_star: false,
         };
         let fleet_key = world.fleets.insert(fleet);
         world.systems[system_key].fleets.push(fleet_key);
@@ -431,7 +432,7 @@ fn dispatch_ground_item(
 
     match family {
         FAM_TROOP => {
-            let unit = TroopUnit { class_dat_id, is_alliance };
+            let unit = TroopUnit { class_dat_id, is_alliance, regiment_strength: 100 };
             let key = world.troops.insert(unit);
             world.systems[system_key].ground_units.push(key);
         }

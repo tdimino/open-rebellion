@@ -1,6 +1,6 @@
 # Simulation Systems
 
-Seven modules in `rebellion-core/src/` implement the game simulation. All follow the same stateless advance pattern.
+Fourteen modules in `rebellion-core/src/` implement the game simulation. All follow the same stateless advance pattern.
 
 ## The Advance Contract
 
@@ -19,121 +19,40 @@ The caller (rebellion-app `main.rs`) applies effects to `GameWorld` after each s
 
 ## System Inventory
 
-### 1. Tick (`tick.rs`, 280 LOC, 13 tests)
+| # | System | File | Signature | Key Gotcha |
+|---|--------|------|-----------|------------|
+| 1 | **Tick** | `tick.rs` | `clock.advance(dt) -> Vec<TickEvent>` | `TICK_DURATION = 1.0s` at Normal speed |
+| 2 | **Manufacturing** | `manufacturing.rs` | `advance_with_blockade(state, ticks, blocked)` | Blockaded systems skip production |
+| 3 | **Missions** | `missions.rs` | `advance(state, world, ticks, rolls)` | 9 kinds, MSTB tables, `target_character` for assassination/abduction/rescue |
+| 4 | **Events** | `events.rs` | `advance(state, world, ticks, rolls)` | `EventFired` chaining within same call |
+| 5 | **AI** | `ai.rs` | `advance(state, world, mfg, missions, ticks)` | Re-evaluates every 7 ticks only |
+| 6 | **Movement** | `movement.rs` | `advance(state, ticks) -> Vec<ArrivalEvent>` | Caller must update `fleet.location` + `system.fleets` |
+| 7 | **Fog** | `fog.rs` | `advance(state, world, movement)` | Advance intel at 50% transit; monotonic |
+| 8 | **Combat** | `combat.rs` | `resolve_space()` / `resolve_ground()` | Phase gate: `ACTIVE && !PHASES_ENABLED` (inverted) |
+| 9 | **Blockade** | `blockade.rs` | `advance(state, world, ticks)` | Hostile fleet + no defender = blockade |
+| 10 | **Uprising** | `uprising.rs` | `advance(state, world, ticks, rolls, upris1tb)` | First incident always fires (no cooldown entry) |
+| 11 | **Death Star** | `death_star.rs` | `advance(state, world, ticks)` | Self-clears construction on completion |
+| 12 | **Research** | `research.rs` | `advance(state, world, ticks)` | Mutates state internally (deviation) |
+| 13 | **Jedi** | `jedi.rs` | `advance(state, world, ticks, rolls)` | XP stored in `JediTrainingRecord`, not world |
+| 14 | **Victory** | `victory.rs` | `check(state, world, ticks)` | Death Star checks supersede HQ capture |
 
-The clock. Converts wall-time `dt: f32` into discrete game-day ticks.
+Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star,research,jedi,victory}.md`
 
-| Type | Purpose |
-|------|---------|
-| `GameClock` | Accumulates dt, emits `Vec<TickEvent>` when threshold crossed |
-| `GameSpeed` | Paused / Normal(1x) / Fast(2x) / Faster(4x) |
-| `TickEvent` | Marker: `{ tick: u64 }` — consumed by all downstream systems |
+## Mission Types and Effects
 
-```rust
-let tick_events = clock.advance(get_frame_time()); // 0 or more TickEvents
-```
+| Kind | Effect on Success |
+|------|-------------------|
+| Diplomacy | `PopularityShifted` |
+| Recruitment | `CharacterRecruited` |
+| Sabotage | `FacilitySabotaged` → remove facility from system + arena |
+| Assassination | `CharacterKilled` → remove from fleets + arena |
+| Espionage | `SystemIntelligenceGathered` → set explored |
+| Rescue | `CharacterRescued` → restore faction |
+| Abduction | `CharacterCaptured` → flip faction, remove from fleets |
+| InciteUprising | `UprisingStarted` → shift popularity |
+| Autoscrap | (no world effect) |
 
-Constant: `TICK_DURATION = 1.0` seconds at Normal speed.
-
-### 2. Manufacturing (`manufacturing.rs`, 520 LOC, 13 tests)
-
-Per-system production queues.
-
-| Type | Purpose |
-|------|---------|
-| `ManufacturingState` | `HashMap<SystemKey, VecDeque<QueueItem>>` |
-| `QueueItem` | `{ kind: BuildableKind, ticks_remaining, ticks_total }` |
-| `BuildableKind` | Enum: CapitalShip/Fighter/Troop/DefenseFacility/ManufacturingFacility/ProductionFacility |
-| `CompletionEvent` | `{ system, kind, tick }` |
-
-```rust
-let completions = ManufacturingSystem::advance(&mut mfg_state, &tick_events);
-```
-
-No GameWorld access needed — pure queue math. Overflow ticks propagate to the next item.
-
-### 3. Missions (`missions.rs`, 880 LOC, 14 tests)
-
-Diplomacy and recruitment mission lifecycle.
-
-| Type | Purpose |
-|------|---------|
-| `MissionState` | `VecDeque<ActiveMission>` across all factions |
-| `ActiveMission` | `{ kind, faction, character, target_system, ticks_remaining }` |
-| `MissionResult` | `{ outcome, effects: Vec<MissionEffect>, tick, ... }` |
-| `MissionEffect` | PopularityShifted / CharacterRecruited |
-
-```rust
-let results = MissionSystem::advance(&mut mission_state, &world, &tick_events, &rng_rolls);
-```
-
-Probability formula (from rebellion2's Mission.cs): `prob = clamp(a·score² + b·score + c, min%, max%)`. Coefficients per `MissionKind`.
-
-### 4. Events (`events.rs`, 728 LOC, 17 tests)
-
-Conditional trigger system for scripted game events.
-
-| Type | Purpose |
-|------|---------|
-| `EventState` | All defined events + set of fired IDs |
-| `GameEvent` | `{ id, name, conditions, actions, is_repeatable, enabled }` |
-| `EventCondition` | TickReached / TickAtLeast / CharacterAtSystem / Random / EventFired |
-| `EventAction` | ShiftPopularity / DisplayMessage / ModifyCharacterSkill / RelocateCharacter |
-| `FiredEvent` | `{ id, actions, tick }` |
-
-```rust
-let fired = EventSystem::advance(&mut event_state, &world, &tick_events, &rng_rolls);
-```
-
-Event chaining: `EventFired` conditions see events fired earlier in the same `advance()` call.
-
-### 5. AI (`ai.rs`, 936 LOC, 13 tests)
-
-Rule-based opponent faction controller (ported from rebellion2's AIManager.cs).
-
-| Type | Purpose |
-|------|---------|
-| `AIState` | Faction assignment, cooldowns, busy/available character tracking |
-| `AIAction` | DispatchMission / EnqueueProduction / MoveFleet |
-| `AiFaction` | Empire / Alliance |
-
-```rust
-let actions = AISystem::advance(&mut ai_state, &world, &mfg_state, &mission_state, &tick_events);
-```
-
-Only re-evaluates every `AI_TICK_INTERVAL` (7) game-days. Three heuristic modules: officer assignment (diplomacy skill > 60), production priority (fighters → facilities), fleet deployment (attack weak / reinforce).
-
-### 6. Movement (`movement.rs`, 453 LOC, 11 tests)
-
-Fleet hyperspace transit between star systems.
-
-| Type | Purpose |
-|------|---------|
-| `MovementState` | `HashMap<FleetKey, Transit>` — active movements |
-| `MovementOrder` | `{ fleet, origin, destination, ticks_per_hop }` |
-| `ArrivalEvent` | `{ fleet, system, tick }` |
-
-```rust
-let arrivals = MovementSystem::advance(&mut movement_state, &tick_events);
-```
-
-Speed: `ticks_per_hop = BASE_TICKS_PER_HOP(30) / slowest_hyperdrive`, clamped to `MIN_TICKS_PER_HOP(5)`. Fleets without capital ships use `DEFAULT_TICKS_PER_HOP(20)`.
-
-### 7. Fog of War (`fog.rs`, 373 LOC, 9 tests)
-
-Per-faction visibility tracking with monotonic reveal.
-
-| Type | Purpose |
-|------|---------|
-| `FogState` | `{ faction, visible: HashSet<SystemKey> }` |
-| `RevealEvent` | `{ system, tick }` |
-
-```rust
-FogSystem::seed(&mut fog, &world);           // at game start
-let reveals = FogSystem::advance(&mut fog, &world, &movement_state); // each tick
-```
-
-Visibility rules: fleet presence reveals instantly; advance intel reveals at 50% transit progress. Systems never become unexplored again.
+Probability: MSTB table lookup (piecewise-linear) with quadratic fallback. Combined: `total_prob = agent_prob · (1 − foil_prob)`.
 
 ## Integration Order (main.rs)
 
@@ -141,35 +60,73 @@ Visibility rules: fleet presence reveals instantly; advance intel reveals at 50%
 Each frame:
   tick_events = clock.advance(dt)
   if tick_events not empty:
-    completions  = ManufacturingSystem::advance(mfg_state, tick_events)
-    results      = MissionSystem::advance(mission_state, world, tick_events, rolls)
-    fired_events = EventSystem::advance(event_state, world, tick_events, rolls)
-    ai_actions   = AISystem::advance(ai_state, world, mfg_state, mission_state, tick_events)
-    // caller applies all effects to GameWorld + MessageLog
+    completions   = ManufacturingSystem::advance_with_blockade(mfg, ticks, blockade.blocked())
+    arrivals      = MovementSystem::advance(movement, ticks) → update fleet.location + system.fleets
+    combat        = per-system: CombatSystem::resolve_space/ground/bombardment (5-tick cooldown)
+    reveals       = FogSystem::advance(fog, world, movement)
+    results       = MissionSystem::advance(missions, world, ticks, rolls) → apply effects
+    fired_events  = EventSystem::advance(events, world, ticks, rolls) → apply actions
+    ai_actions    = AISystem::advance(ai, world, mfg, missions, ticks) → apply
+    blockade      = BlockadeSystem::advance(blockade, world, ticks) → apply troop destruction
+    uprising      = UprisingSystem::advance(uprising, world, ticks, rolls, upris1tb) → flip factions
+    ds_events     = DeathStarSystem::advance(ds, world, ticks) → apply planet destruction
+    research      = ResearchSystem::advance(research, world, ticks) → levels auto-applied
+    jedi          = JediSystem::advance(jedi, world, ticks, rolls) → apply tier/detection
+    victory       = VictorySystem::check(victory, world, ticks) → end game
 ```
 
-Order matters: missions read world state that events may have changed; AI reads mission and manufacturing state that earlier systems may have modified.
+Order matters: manufacturing needs blockade set from prior tick; combat needs fleet positions from movement; AI reads mission and manufacturing state that earlier systems may have modified.
 
 ## State Ownership
 
-| State | Created | Location | Mutated By |
-|-------|---------|----------|------------|
-| `GameClock` | `main.rs` | local | `clock.advance(dt)` |
-| `ManufacturingState` | `main.rs` | local | `ManufacturingSystem::advance`, AI effect application |
-| `MissionState` | `main.rs` | local | `MissionSystem::advance`, AI effect application |
-| `EventState` | `main.rs` | local | `EventSystem::advance` |
-| `AIState` | `main.rs` | local | `AISystem::advance`, mission result callbacks |
-| `MovementState` | `main.rs` | local | `MovementSystem::advance` |
-| `FogState` | `main.rs` | local | `FogSystem::advance` |
-| `GameWorld` | `rebellion-data` | `main.rs` | Effect application only (never inside advance()) |
+All simulation states are created in `main.rs` and included in `SaveState` (`rebellion-data/src/save.rs`, version 2) for serialization.
+
+| State | Mutated By |
+|-------|------------|
+| `GameClock` | `clock.advance(dt)` |
+| `ManufacturingState` | `ManufacturingSystem::advance_with_blockade`, AI |
+| `MissionState` | `MissionSystem::advance`, AI |
+| `EventState` | `EventSystem::advance` |
+| `AIState` | `AISystem::advance`, mission callbacks |
+| `MovementState` | `MovementSystem::advance`, AI fleet orders |
+| `FogState` | `FogSystem::advance` |
+| `BlockadeState` | `BlockadeSystem::advance` |
+| `UprisingState` | `UprisingSystem::advance`, `try_subdue()` |
+| `DeathStarState` | `DeathStarSystem::advance`, `fire()`, `start_construction()` |
+| `ResearchState` | `ResearchSystem::advance` (auto-applies level-ups) |
+| `JediState` | `JediSystem::advance`, `start_training()`, `stop_training()` |
+| `VictoryState` | Caller sets `resolved = true` after outcome |
+| `GameWorld` | Effect application only (never inside advance()) |
 
 ## Adding a New Simulation System
 
 1. Create `crates/rebellion-core/src/{name}.rs`
-2. Define `{Name}State` (persistent data) and `{Name}System` (stateless namespace)
+2. Define `{Name}State` (derive `Serialize, Deserialize`) and `{Name}System` (stateless namespace)
 3. Implement `{Name}System::advance(&mut State, ..., &[TickEvent]) -> Vec<ResultEvent>`
 4. Accept RNG as caller-provided slices, not internal `rand`
 5. Add `pub mod {name};` to `crates/rebellion-core/src/lib.rs`
 6. Wire into main loop in `crates/rebellion-app/src/main.rs` at the correct position
 7. Write effect application function in `main.rs`
-8. Add unit tests — the advance() pattern makes this trivial (no IO mocks needed)
+8. Add the state to `SaveState` in `crates/rebellion-data/src/save.rs`, bump `SAVE_VERSION`
+9. Add unit tests — the advance() pattern makes this trivial (no IO mocks needed)
+10. Add doc file at `agent_docs/systems/{name}.md`
+
+## Adding a New Mission Type
+
+1. Add variant to `MissionKind` enum in `missions.rs`
+2. Add match arm in `MissionSystem::compute_effects()` — return `Vec<MissionEffect>` for success
+3. If new effects are needed, add variant to `MissionEffect` enum
+4. Add match arm in `main.rs` `apply_mission_result()` to mutate `GameWorld`
+5. Add match arm in `main.rs` mission logging (kind_name mapping)
+6. Add to panel UI: `rebellion-render/src/panels/missions.rs`
+7. If the mission needs a probability table, add a `*MSTB.DAT` parser and register the table name in `world.mission_tables`
+8. Add `target_character` if the mission targets a specific character (assassination, abduction, rescue pattern)
+9. Test: create an `ActiveMission`, advance to completion, verify effects
+
+## Adding a New Event Type
+
+1. Add variant to `EventCondition` or `EventAction` in `events.rs`
+2. For conditions: add evaluation logic in `EventSystem::evaluate_condition()`
+3. For actions: add application logic in `main.rs` `apply_event_actions()`
+4. Events are data-driven — defined via `GameEvent` structs with `conditions` and `actions` vectors
+5. Event chaining: use `EventCondition::EventFired(id)` to sequence events

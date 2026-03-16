@@ -26,30 +26,41 @@ Caller applies effects to GameWorld. Deterministic—same inputs produce same ou
 ```
 crates/rebellion-core/src/
 ├── tick.rs           — GameClock, GameSpeed, TickEvent (280 LOC, 13 tests)
-├── manufacturing.rs  — ProductionQueue, ManufacturingState, CompletionEvent (520 LOC, 13 tests)
-├── missions.rs       — MissionSystem, quadratic probability formula from rebellion2 (880 LOC, 14 tests)
+├── manufacturing.rs  — ProductionQueue, ManufacturingState, blockade-aware advance (520 LOC, 13 tests)
+├── missions.rs       — 9 mission types, MSTB probability tables, 6 MissionEffect variants (880 LOC, 14 tests)
 ├── events.rs         — EventCondition/Action, chaining, deterministic rng (728 LOC, 17 tests)
 ├── ai.rs             — AISystem, officer assignment, production, fleet deployment (936 LOC, 13 tests)
 ├── movement.rs       — MovementOrder, tick-based hop progression (453 LOC, 11 tests)
-└── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
+├── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
+├── combat.rs         — Space combat 7-phase pipeline, ground combat, CombatPhaseFlags
+├── bombardment.rs    — Orbital bombardment: Euclidean distance / GNPRTB[0x1400]
+├── blockade.rs       — Fleet-presence blockade, manufacturing halt, troop destruction
+├── uprising.rs       — Incite/subdue with UPRIS1TB/UPRIS2TB, 10-tick incident cooldown
+├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan
+├── research.rs       — 3 tech trees (Ship/Troop/Facility), MSTB difficulty lookup
+├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
+└── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
 ```
 
 ## Render Modules (rebellion-render)
 
 ```
 crates/rebellion-render/src/
-├── message_log.rs      — Scrollable egui event feed, 6 color-coded categories (380 LOC)
+├── message_log.rs      — Scrollable egui event feed, 7 color-coded categories (380 LOC)
 ├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels (280 LOC)
 ├── fog.rs              — Dim overlays for unexplored/unseen systems
 ├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget)
 ├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
+├── combat_view.rs      — Combat results integration into message log
+├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
-    ├── mod.rs           — PanelAction enum
+    ├── mod.rs           — PanelAction enum (including SaveGame/LoadGame)
     ├── faction_select.rs — Empire/Alliance choice modal
     ├── officers.rs       — Character roster with skill bars
     ├── fleets.rs         — Fleet composition browser
     ├── manufacturing.rs  — Production queue manager
-    └── missions.rs       — Mission dispatch with probability preview
+    ├── missions.rs       — Mission dispatch with probability preview
+    └── save_load.rs      — Save/load UI: 10 slots, auto-save
 ```
 
 ## App Modules (rebellion-app)
@@ -79,7 +90,7 @@ Structs that exactly match .DAT file field layout. Used only for import/export. 
 
 ### Layer 2: Runtime world (`rebellion-core/src/world/`)
 Rich types used by game logic, rendering, save/load. Slotmap keys for all inter-entity references.
-- `GameWorld` -- root aggregate, 6 SlotMap arenas (systems, sectors, capital_ship_classes, fighter_classes, characters, fleets). Note: `ids.rs` defines 11 keys total -- the remaining 5 (TroopKey, SpecialForceKey, DefenseFacilityKey, ManufacturingFacilityKey, ProductionFacilityKey) are stubs for future arenas.
+- `GameWorld` -- root aggregate, 11 SlotMap arenas (systems, sectors, capital_ship_classes, fighter_classes, characters, fleets, troops, special_forces, defense_facilities, manufacturing_facilities, production_facilities) + `GnprtbParams` + `mission_tables: HashMap<String, MstbTable>`
 - `System` -- position, sector ref, popularity (alliance/empire f32), asset lists (fleets, units, facilities)
 - `Sector` -- named region, SectorGroup, position, child system list
 - `CapitalShipClass` / `FighterClass` -- class templates, not instances
@@ -116,15 +127,29 @@ macroquad drawing + egui panels
 Each frame:
   tick_events = clock.advance(dt)
   if tick_events not empty:
-    ManufacturingSystem::advance → CompletionEvents → apply to MessageLog
-    MovementSystem::advance     → ArrivalEvents    → apply to GameWorld + MessageLog
-    FogSystem::advance          → RevealEvents      → apply to MessageLog
-    MissionSystem::advance      → MissionResults   → apply to GameWorld + MessageLog
-    EventSystem::advance        → FiredEvents       → apply to GameWorld + MessageLog
+    ManufacturingSystem::advance_with_blockade → CompletionEvents (skips blockaded systems)
+    MovementSystem::advance     → ArrivalEvents    → update fleet.location + system.fleets
+    CombatSystem (per system)   → SpaceCombat/Ground/Bombardment → apply damage
+    FogSystem::advance          → RevealEvents
+    MissionSystem::advance      → MissionResults   → apply effects to GameWorld
+    EventSystem::advance        → FiredEvents       → apply actions to GameWorld
     AISystem::advance           → AIActions         → apply to MissionState, ManufacturingState
+    BlockadeSystem::advance     → BlockadeEvents   → destroy troops, update blockade set
+    UprisingSystem::advance     → UprisingEvents   → flip controlling_faction
+    DeathStarSystem::advance    → DSEvents         → construction, planet destruction, warnings
+    ResearchSystem::advance     → ResearchResults  → advance tech levels
+    JediSystem::advance         → JediEvents       → tier advancement, detection
+    VictorySystem::check        → VictoryOutcome?  → end game if terminal condition met
   draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays
   egui_macroquad::ui: panels + encyclopedia + system_info + message_log + status_bar
 ```
+
+### Fleet Arrival Lifecycle
+When `MovementSystem::advance` returns an `ArrivalEvent`:
+1. `fleet.location = arrival.system` — update the fleet's position
+2. `origin_system.fleets.retain(|k| k != fleet)` — remove from origin
+3. `dest_system.fleets.push(fleet)` — add to destination
+All systems that query `System.fleets` (combat, fog, blockade, victory) see correct positions.
 
 See `@agent_docs/simulation.md` for full API reference on the advance() pattern.
 

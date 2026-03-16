@@ -429,19 +429,7 @@ mod tests {
     use crate::tick::TickEvent;
 
     fn make_world() -> GameWorld {
-        GameWorld {
-            systems: slotmap::SlotMap::with_key(),
-            sectors: slotmap::SlotMap::with_key(),
-            capital_ship_classes: slotmap::SlotMap::with_key(),
-            fighter_classes: slotmap::SlotMap::with_key(),
-            characters: slotmap::SlotMap::with_key(),
-            fleets: slotmap::SlotMap::with_key(),
-            troops: slotmap::SlotMap::with_key(),
-            special_forces: slotmap::SlotMap::with_key(),
-            defense_facilities: slotmap::SlotMap::with_key(),
-            manufacturing_facilities: slotmap::SlotMap::with_key(),
-            production_facilities: slotmap::SlotMap::with_key(),
-        }
+        GameWorld::default()
     }
 
     fn tick(n: u64) -> Vec<TickEvent> {

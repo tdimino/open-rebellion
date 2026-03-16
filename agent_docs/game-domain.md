@@ -74,22 +74,46 @@ Starting unit/facility deployments for new games:
 
 ## Implemented Systems
 
-See `@agent_docs/simulation.md` for full API reference.
+See `@agent_docs/simulation.md` for full API reference on all 14 systems.
 
+### Core Loop (v0.2.0)
 - **Tick system** (`tick.rs`): Frame-independent GameClock, GameSpeed (Paused/Normal/Fast/Faster), TickEvent markers
-- **Manufacturing** (`manufacturing.rs`): Per-system production queues with overflow propagation
-- **Missions** (`missions.rs`): Diplomacy and recruitment — quadratic probability formula from rebellion2
+- **Manufacturing** (`manufacturing.rs`): Per-system production queues with overflow propagation; blockade-aware (`advance_with_blockade`)
 - **Events** (`events.rs`): Conditional triggers (TickReached, CharacterAtSystem, Random, EventFired), event chaining
-- **AI** (`ai.rs`): Rule-based opponent — officer assignment, production priority, fleet deployment. Re-evaluates every 7 ticks.
+- **AI** (`ai.rs`): Rule-based opponent — officer assignment, production priority, fleet deployment, espionage dispatch. Re-evaluates every 7 ticks.
 - **Movement** (`movement.rs`): Fleet hyperspace transit with speed from slowest hyperdrive rating
 - **Fog of war** (`fog.rs`): Per-faction monotonic visibility with advance intel at 50% transit
 - **Mod loader** (`rebellion-data/src/mods.rs`): TOML manifests, RFC 7396 merge patch, semver, hot reload
 
+### War Machine (v0.4.0)
+- **9 mission types** (`missions.rs`): Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction, InciteUprising, Autoscrap — MSTB probability tables with quadratic fallback
+- **Space combat** (`combat.rs`): 7-phase pipeline (weapon fire → shield absorb → hull damage → fighter engage → result), CombatPhaseFlags, per-system 5-tick cooldown
+- **Ground combat** (`combat.rs`): Troop-by-troop resolution with regiment_strength comparison
+- **Orbital bombardment** (`bombardment.rs`): `damage = sqrt(delta²) / GNPRTB[0x1400]`, minimum 1
+- **Blockade** (`blockade.rs`): Hostile fleet without defender halts manufacturing, destroys in-transit troops
+- **Uprising** (`uprising.rs`): UPRIS1TB (3 thresholds) start / UPRIS2TB (4 thresholds) subdue, 10-tick cooldown
+- **Death Star** (`death_star.rs`): Construction countdown, superlaser fire (precondition checks from RE), nearby-warning scan
+- **Research** (`research.rs`): 3 tech trees (Ship/Troop/Facility) per faction, `research_order` + `research_difficulty`
+- **Jedi training** (`jedi.rs`): 4-tier Force progression (None→Aware→Training→Experienced), XP accumulation, detection checks
+- **Victory conditions** (`victory.rs`): HQ capture, Death Star fire/destroyed, `resolved` flag prevents re-trigger
+- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, 10 slots, all 14 states serialized
+
+### Mission Effects (applied in main.rs)
+| Effect | World Mutation |
+|--------|---------------|
+| `PopularityShifted` | Clamp `sys.popularity_alliance` / `_empire` |
+| `CharacterRecruited` | No-op (covered by popularity) |
+| `FacilitySabotaged` | Remove facility from system + arena by index |
+| `CharacterKilled` | Remove from all fleets, remove from character arena |
+| `CharacterCaptured` | Flip faction flags, remove from fleets |
+| `CharacterRescued` | Restore to returned_to faction |
+| `SystemIntelligenceGathered` | Set exploration_status to Explored |
+| `UprisingStarted` | Shift popularity against controller |
+
 ## Unimplemented Mechanics
 
-- **Combat**: space (fleet engagement, 4-arc weapons, shields) and ground (troops + orbital bombardment). **RE COMPLETE** — 5,127 functions decompiled from REBEXE.EXE. Bombardment formula decoded (Euclidean distance / GNPRTB). Space combat 7-phase pipeline mapped. 111 GNPRTB parameters mapped (34 general + 77 combat). See `ghidra/notes/` for full docs.
-- **Espionage missions**: sabotage, assassination, abduction, rescue, incite uprising (diplomacy and recruitment ARE implemented)
-- **Research**: tech tree via `research_order` + `research_difficulty` per unit class
 - **Probe droids / sensor range**: fog of war currently uses fleet presence only, no sensor radius
-- **Special character abilities**: Jedi training, betrayal, decoys, Han Solo speed bonus
-- **Victory conditions**: capture enemy HQ, destroy Death Star / find Rebel base
+- **Special character abilities**: betrayal, decoys, Han Solo speed bonus (Jedi training IS implemented)
+- **Scripted story events**: Luke/Vader saga, Dagobah, Jabba's Palace, Bounty Hunters (event system exists, data not loaded)
+- **Video playback**: Smacker to WebM, victory cutscenes
+- **Sound effects / music**: engine exists (quad-snd), asset coverage incomplete

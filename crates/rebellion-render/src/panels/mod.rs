@@ -24,12 +24,14 @@ pub mod fleets;
 pub mod manufacturing;
 pub mod missions;
 pub mod officers;
+pub mod save_load;
 
 pub use faction_select::{draw_faction_select, FactionSelectState};
 pub use fleets::{draw_fleets, FleetsState};
 pub use manufacturing::{draw_manufacturing, ManufacturingPanelState};
 pub use missions::{draw_missions, MissionsPanelState};
 pub use officers::{draw_officers, OfficersState};
+pub use save_load::{draw_save_load, SaveLoadPanelState, SaveSlotInfo};
 
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
 use rebellion_core::manufacturing::BuildableKind;
@@ -74,4 +76,14 @@ pub enum PanelAction {
     },
     /// Cancel a mission that is currently in progress.
     CancelMission(u64),
+
+    // ── Save / Load ───────────────────────────────────────────────────────────
+    /// Player confirmed a save to the given slot with the given name.
+    SaveGame { slot: usize, name: String },
+    /// Player confirmed a load from the given slot.
+    LoadGame { slot: usize },
+    /// Player deleted the save in the given slot.
+    DeleteSave { slot: usize },
+    /// Player closed the save/load panel without taking an action.
+    CloseSaveLoadPanel,
 }

@@ -190,19 +190,7 @@ mod tests {
         fleet_locations: &[usize], // indices into systems vec
         is_alliance: bool,
     ) -> (GameWorld, Vec<SystemKey>, Vec<FleetKey>) {
-        let mut world = GameWorld {
-            systems: slotmap::SlotMap::with_key(),
-            sectors: slotmap::SlotMap::with_key(),
-            capital_ship_classes: slotmap::SlotMap::with_key(),
-            fighter_classes: slotmap::SlotMap::with_key(),
-            characters: slotmap::SlotMap::with_key(),
-            fleets: slotmap::SlotMap::with_key(),
-            troops: slotmap::SlotMap::with_key(),
-            special_forces: slotmap::SlotMap::with_key(),
-            defense_facilities: slotmap::SlotMap::with_key(),
-            manufacturing_facilities: slotmap::SlotMap::with_key(),
-            production_facilities: slotmap::SlotMap::with_key(),
-        };
+        let mut world = GameWorld::default();
 
         // Create a dummy sector key for systems.
         let sector = world.sectors.insert(crate::world::Sector {
@@ -231,6 +219,9 @@ mod tests {
                     defense_facilities: vec![],
                     manufacturing_facilities: vec![],
                     production_facilities: vec![],
+                    is_headquarters: false,
+                    is_destroyed: false,
+                    controlling_faction: None,
                 })
             })
             .collect();
@@ -244,6 +235,7 @@ mod tests {
                     fighters: vec![],
                     characters: vec![],
                     is_alliance,
+                    has_death_star: false,
                 })
             })
             .collect();

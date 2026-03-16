@@ -186,9 +186,13 @@ impl UprisingSystem {
             } as f64;
 
             if start_prob > 0.0 {
-                // Fire incident warning with 10-tick cooldown to prevent spam
-                let last_incident = state.incident_cooldowns.get(&sys_key).copied().unwrap_or(0);
-                if tick >= last_incident + 10 {
+                // Fire incident warning with 10-tick cooldown to prevent spam.
+                // First incident always fires (no cooldown entry yet).
+                let can_fire = match state.incident_cooldowns.get(&sys_key) {
+                    Some(&last) => tick >= last + 10,
+                    None => true,
+                };
+                if can_fire {
                     events.push(UprisingEvent::UprisingIncident { system: sys_key, tick });
                     state.incident_cooldowns.insert(sys_key, tick);
                 }

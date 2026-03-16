@@ -35,6 +35,7 @@ use crate::ids::{
 };
 use crate::manufacturing::{BuildableKind, ManufacturingState};
 use crate::missions::{MissionFaction, MissionKind, MissionState};
+use crate::dat::ExplorationStatus;
 use crate::tick::TickEvent;
 use crate::world::{Character, GameWorld};
 
@@ -55,6 +56,19 @@ pub const MAX_CONSTRUCTION_YARDS: usize = 5;
 /// Minimum popularity fraction below which the AI considers a system a
 /// diplomacy target (systems already at high popularity are deprioritized).
 pub const DIPLOMACY_TARGET_POPULARITY_CAP: f32 = 0.8;
+
+/// Espionage skill threshold above which a character is considered a viable
+/// covert operative. Characters below this threshold are not sent on
+/// Sabotage/Assassination/Espionage missions.
+pub const ESPIONAGE_SKILL_THRESHOLD: u32 = 50;
+
+/// Minimum expected success probability (0.0–1.0) the AI requires before
+/// dispatching a covert mission. Prevents wasting characters on impossible ops.
+pub const COVERT_MIN_SUCCESS_PROB: f64 = 0.30;
+
+/// Maximum number of new covert missions the AI will queue per evaluation pass.
+/// Prevents spamming every available operative on espionage each tick interval.
+pub const MAX_COVERT_OPS_PER_EVAL: usize = 3;
 
 // ---------------------------------------------------------------------------
 // AiFaction
@@ -230,6 +244,7 @@ impl AISystem {
 
         // Run each heuristic module.
         Self::evaluate_officers(state, world, faction, &mut actions);
+        Self::evaluate_espionage(state, world, faction, &mut actions);
         Self::evaluate_production(world, mfg_state, faction, &mut actions);
         Self::evaluate_fleet_deployment(world, faction, &mut actions);
 
@@ -331,6 +346,225 @@ impl AISystem {
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(k, _)| k)
+    }
+
+    // -----------------------------------------------------------------------
+    // Espionage heuristics
+    // -----------------------------------------------------------------------
+
+    /// Dispatch covert operatives on Sabotage, Assassination, and Espionage
+    /// missions against the enemy faction.
+    ///
+    /// Priority order (each pass picks the best available character for the
+    /// best available target):
+    /// 1. **Sabotage** — enemy systems with manufacturing facilities. High-value
+    ///    targets (more mfg facilities) first. Skill: espionage.
+    /// 2. **Assassination** — enemy major characters. Most dangerous first
+    ///    (highest combined skill). Skill: combat.
+    /// 3. **Espionage** (intelligence) — unexplored enemy systems. Skill: espionage.
+    ///
+    /// Only characters with skill ≥ `ESPIONAGE_SKILL_THRESHOLD` are considered.
+    /// A target is skipped if expected success probability < `COVERT_MIN_SUCCESS_PROB`.
+    /// At most `MAX_COVERT_OPS_PER_EVAL` covert missions are queued per pass.
+    fn evaluate_espionage(
+        state: &AIState,
+        world: &GameWorld,
+        faction: AiFaction,
+        actions: &mut Vec<AIAction>,
+    ) {
+        // Collect available covert operatives sorted by espionage skill (desc).
+        let mut operatives: Vec<(CharacterKey, u32)> = world
+            .characters
+            .iter()
+            .filter_map(|(key, c)| {
+                if !faction.owns_character(c) || state.is_busy(key) || !c.can_be_commander {
+                    return None;
+                }
+                let esp = c.espionage.base + c.espionage.variance / 2;
+                if esp >= ESPIONAGE_SKILL_THRESHOLD {
+                    Some((key, esp))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if operatives.is_empty() {
+            return;
+        }
+
+        // Sort descending by espionage score so best ops go to highest-value targets.
+        operatives.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let mut ops_queued = 0;
+        let mut op_idx = 0;
+
+        // ── Priority 1: Sabotage enemy manufacturing systems ─────────────────
+        // Score each enemy system by number of mfg facilities (proxy for value).
+        let mut sabotage_targets: Vec<(SystemKey, usize)> = world
+            .systems
+            .iter()
+            .filter_map(|(sys_key, system)| {
+                // Target systems where the enemy faction has manufacturing presence.
+                let enemy_mfg = system
+                    .manufacturing_facilities
+                    .iter()
+                    .filter(|mfk| {
+                        world
+                            .manufacturing_facilities
+                            .get(**mfk)
+                            .map(|f| match faction {
+                                AiFaction::Alliance => !f.is_alliance, // enemy = empire
+                                AiFaction::Empire   =>  f.is_alliance, // enemy = alliance
+                            })
+                            .unwrap_or(false)
+                    })
+                    .count();
+                if enemy_mfg > 0 {
+                    Some((sys_key, enemy_mfg))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Highest facility count first.
+        sabotage_targets.sort_by(|a, b| b.1.cmp(&a.1));
+
+        for (target_sys, _) in &sabotage_targets {
+            if ops_queued >= MAX_COVERT_OPS_PER_EVAL || op_idx >= operatives.len() {
+                break;
+            }
+            let (char_key, esp_score) = operatives[op_idx];
+            if !Self::expected_success(world, MissionKind::Sabotage, esp_score) {
+                op_idx += 1;
+                continue;
+            }
+            actions.push(AIAction::DispatchMission {
+                kind: MissionKind::Sabotage,
+                character: char_key,
+                target_system: *target_sys,
+                duration_roll: 0.5,
+            });
+            op_idx += 1;
+            ops_queued += 1;
+        }
+
+        // ── Priority 2: Assassination of dangerous enemy major characters ─────
+        // Score each enemy major character by total skill.
+        let enemy_major_chars: Vec<CharacterKey> = world
+            .characters
+            .iter()
+            .filter_map(|(key, c)| {
+                if !c.is_major || faction.owns_character(c) {
+                    return None;
+                }
+                Some(key)
+            })
+            .collect();
+
+        // For assassination we need a system to target — use any enemy system as the
+        // "location" proxy (the actual character is tracked by CharacterKey in effects).
+        // Pick the best-populated enemy system as target anchor.
+        let assassination_base = world
+            .systems
+            .iter()
+            .filter(|(_, s)| {
+                match faction {
+                    AiFaction::Alliance => s.popularity_empire   > 0.3,
+                    AiFaction::Empire   => s.popularity_alliance > 0.3,
+                }
+            })
+            .max_by(|(_, a), (_, b)| {
+                let pop_a = match faction {
+                    AiFaction::Alliance => a.popularity_empire,
+                    AiFaction::Empire   => a.popularity_alliance,
+                };
+                let pop_b = match faction {
+                    AiFaction::Alliance => b.popularity_empire,
+                    AiFaction::Empire   => b.popularity_alliance,
+                };
+                pop_a.partial_cmp(&pop_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(k, _)| k);
+
+        if let Some(target_sys) = assassination_base {
+            for _ in &enemy_major_chars {
+                if ops_queued >= MAX_COVERT_OPS_PER_EVAL || op_idx >= operatives.len() {
+                    break;
+                }
+                let (char_key, _) = operatives[op_idx];
+                let char = &world.characters[char_key];
+                let combat_score = char.combat.base + char.combat.variance / 2;
+                if !Self::expected_success(world, MissionKind::Assassination, combat_score) {
+                    op_idx += 1;
+                    continue;
+                }
+                actions.push(AIAction::DispatchMission {
+                    kind: MissionKind::Assassination,
+                    character: char_key,
+                    target_system: target_sys,
+                    duration_roll: 0.5,
+                });
+                op_idx += 1;
+                ops_queued += 1;
+            }
+        }
+
+        // ── Priority 3: Intelligence gathering on unexplored enemy systems ────
+        let unexplored_targets: Vec<SystemKey> = world
+            .systems
+            .iter()
+            .filter_map(|(sys_key, system)| {
+                if system.exploration_status == ExplorationStatus::Unexplored {
+                    Some(sys_key)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for target_sys in &unexplored_targets {
+            if ops_queued >= MAX_COVERT_OPS_PER_EVAL || op_idx >= operatives.len() {
+                break;
+            }
+            let (char_key, esp_score) = operatives[op_idx];
+            if !Self::expected_success(world, MissionKind::Espionage, esp_score) {
+                op_idx += 1;
+                continue;
+            }
+            actions.push(AIAction::DispatchMission {
+                kind: MissionKind::Espionage,
+                character: char_key,
+                target_system: *target_sys,
+                duration_roll: 0.5,
+            });
+            op_idx += 1;
+            ops_queued += 1;
+        }
+    }
+
+    /// Estimate whether a mission is worth dispatching given the operative's
+    /// skill score.
+    ///
+    /// Uses the MSTB table if loaded; falls back to the quadratic formula.
+    /// Returns true if expected success probability ≥ `COVERT_MIN_SUCCESS_PROB`.
+    fn expected_success(world: &GameWorld, kind: MissionKind, skill_score: u32) -> bool {
+        let prob_pct: f64 = if let Some(key) = kind.mstb_key() {
+            if let Some(table) = world.mission_tables.get(key) {
+                table.lookup(skill_score as i32) as f64
+            } else {
+                // MSTB not loaded — quadratic fallback.
+                let (a, b, c) = kind.coefficients();
+                let s = skill_score as f64;
+                (a * s * s + b * s + c).clamp(kind.min_success_prob(), kind.max_success_prob())
+            }
+        } else {
+            // Autoscrap and others without tables always succeed.
+            100.0
+        };
+
+        prob_pct / 100.0 >= COVERT_MIN_SUCCESS_PROB
     }
 
     // -----------------------------------------------------------------------
@@ -552,7 +786,7 @@ mod tests {
     use super::*;
     use crate::ids::{DatId, SectorKey};
     use crate::world::{
-        Character, FighterClass, Fleet, GameWorld, Sector, SkillPair, System,
+        Character, FighterClass, Fleet, ForceTier, GameWorld, Sector, SkillPair, System,
     };
     use crate::dat::SectorGroup;
     use crate::manufacturing::ManufacturingState;
@@ -564,19 +798,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn empty_world() -> GameWorld {
-        GameWorld {
-            systems: slotmap::SlotMap::with_key(),
-            sectors: slotmap::SlotMap::with_key(),
-            capital_ship_classes: slotmap::SlotMap::with_key(),
-            fighter_classes: slotmap::SlotMap::with_key(),
-            characters: slotmap::SlotMap::with_key(),
-            fleets: slotmap::SlotMap::with_key(),
-            troops: slotmap::SlotMap::with_key(),
-            special_forces: slotmap::SlotMap::with_key(),
-            defense_facilities: slotmap::SlotMap::with_key(),
-            manufacturing_facilities: slotmap::SlotMap::with_key(),
-            production_facilities: slotmap::SlotMap::with_key(),
-        }
+        GameWorld::default()
     }
 
     fn add_sector(world: &mut GameWorld) -> SectorKey {
@@ -606,6 +828,9 @@ mod tests {
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            controlling_faction: None,
         })
     }
 
@@ -638,6 +863,9 @@ mod tests {
             can_be_admiral: false,
             can_be_commander: true,
             can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
         })
     }
 
@@ -845,6 +1073,9 @@ mod tests {
             defense_facilities: vec![],
             manufacturing_facilities: vec![mfg_key],
             production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            controlling_faction: None,
         });
 
         // Add a TIE fighter class
@@ -857,6 +1088,8 @@ mod tests {
             maintenance_cost: 2,
             squadron_size: 6,
             torpedoes: 0,
+            overall_attack_strength: 10,
+            bombardment_defense: 0,
         });
 
         let mut state = AIState::new(AiFaction::Empire);
@@ -893,6 +1126,7 @@ mod tests {
             fighters: vec![],
             characters: vec![],
             is_alliance: false, // empire fleet
+            has_death_star: false,
         });
 
         let mut state = AIState::new(AiFaction::Empire);
@@ -907,6 +1141,260 @@ mod tests {
             if *fleet == fleet_key && *to_system == target_sys
         ));
         assert!(fleet_move.is_some(), "expected fleet to be directed at weak enemy system");
+    }
+
+    // -----------------------------------------------------------------------
+    // Espionage heuristics
+    // -----------------------------------------------------------------------
+
+    /// Helper: insert a character with custom espionage + combat scores.
+    fn add_spy(
+        world: &mut GameWorld,
+        is_alliance: bool,
+        is_major: bool,
+        espionage_base: u32,
+        combat_base: u32,
+    ) -> CharacterKey {
+        world.characters.insert(Character {
+            dat_id: DatId(0),
+            name: "TestSpy".into(),
+            is_alliance,
+            is_empire: !is_alliance,
+            is_major,
+            diplomacy: zero_skills(),
+            espionage: SkillPair { base: espionage_base, variance: 0 },
+            ship_design: zero_skills(),
+            troop_training: zero_skills(),
+            facility_design: zero_skills(),
+            combat: SkillPair { base: combat_base, variance: 0 },
+            leadership: SkillPair { base: 50, variance: 0 },
+            loyalty: zero_skills(),
+            jedi_probability: 0,
+            jedi_level: zero_skills(),
+            can_be_admiral: false,
+            can_be_commander: true,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+        })
+    }
+
+    #[test]
+    fn high_espionage_character_dispatched_on_sabotage() {
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+
+        // Enemy (alliance) system with a manufacturing facility — a sabotage target.
+        let mfg_key = world.manufacturing_facilities.insert(
+            crate::world::ManufacturingFacilityInstance {
+                class_dat_id: DatId(1),
+                is_alliance: true, // alliance-owned → enemy from Empire's perspective
+            },
+        );
+        let enemy_sys = world.systems.insert(System {
+            dat_id: DatId(0),
+            name: "Enemy Shipyard".into(),
+            sector,
+            x: 10,
+            y: 10,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.8,
+            popularity_empire: 0.1,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![mfg_key],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            controlling_faction: None,
+        });
+
+        // Empire spy with high espionage — above threshold.
+        let spy = add_spy(&mut world, false, false, 80, 50);
+
+        let mut state = AIState::new(AiFaction::Empire);
+        let mfg = ManufacturingState::new();
+        let missions = MissionState::new();
+
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+
+        let sabotage = actions.iter().find(|a| matches!(
+            a,
+            AIAction::DispatchMission {
+                kind: MissionKind::Sabotage,
+                character,
+                target_system,
+                ..
+            }
+            if *character == spy && *target_system == enemy_sys
+        ));
+        assert!(sabotage.is_some(), "expected sabotage mission against enemy shipyard");
+    }
+
+    #[test]
+    fn low_espionage_character_not_dispatched_on_covert_ops() {
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+
+        let mfg_key = world.manufacturing_facilities.insert(
+            crate::world::ManufacturingFacilityInstance {
+                class_dat_id: DatId(1),
+                is_alliance: true,
+            },
+        );
+        let _ = world.systems.insert(System {
+            dat_id: DatId(0),
+            name: "Enemy Shipyard".into(),
+            sector,
+            x: 10,
+            y: 10,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.8,
+            popularity_empire: 0.1,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![mfg_key],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            controlling_faction: None,
+        });
+
+        // Empire spy with low espionage — below threshold.
+        let _ = add_spy(&mut world, false, false, 20, 20);
+
+        let mut state = AIState::new(AiFaction::Empire);
+        let mfg = ManufacturingState::new();
+        let missions = MissionState::new();
+
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+
+        let covert = actions.iter().filter(|a| matches!(
+            a,
+            AIAction::DispatchMission {
+                kind: MissionKind::Sabotage
+                    | MissionKind::Assassination
+                    | MissionKind::Espionage,
+                ..
+            }
+        )).count();
+        assert_eq!(covert, 0, "low-espionage character should not be dispatched on covert ops");
+    }
+
+    #[test]
+    fn ai_dispatches_espionage_on_unexplored_system() {
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+
+        // Unexplored system — worth investigating.
+        let unexplored = world.systems.insert(System {
+            dat_id: DatId(0),
+            name: "Dark System".into(),
+            sector,
+            x: 50,
+            y: 50,
+            exploration_status: crate::dat::ExplorationStatus::Unexplored,
+            popularity_alliance: 0.0,
+            popularity_empire: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            controlling_faction: None,
+        });
+
+        // Alliance spy.
+        let spy = add_spy(&mut world, true, false, 75, 40);
+
+        let mut state = AIState::new(AiFaction::Alliance);
+        let mfg = ManufacturingState::new();
+        let missions = MissionState::new();
+
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+
+        let intel = actions.iter().find(|a| matches!(
+            a,
+            AIAction::DispatchMission {
+                kind: MissionKind::Espionage,
+                character,
+                target_system,
+                ..
+            }
+            if *character == spy && *target_system == unexplored
+        ));
+        assert!(intel.is_some(), "expected intelligence mission on unexplored system");
+    }
+
+    #[test]
+    fn covert_ops_capped_at_max_per_eval() {
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+
+        // Create 5 enemy manufacturing systems — more than MAX_COVERT_OPS_PER_EVAL.
+        for i in 0..5u32 {
+            let mfg_key = world.manufacturing_facilities.insert(
+                crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(i),
+                    is_alliance: true,
+                },
+            );
+            world.systems.insert(System {
+                dat_id: DatId(i),
+                name: format!("Enemy System {}", i),
+                sector,
+                x: (i * 10) as u16,
+                y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.7,
+                popularity_empire: 0.1,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![mfg_key],
+                production_facilities: vec![],
+                is_headquarters: false,
+                is_destroyed: false,
+                controlling_faction: None,
+            });
+        }
+
+        // 5 Empire spies — all highly skilled.
+        for _ in 0..5 {
+            add_spy(&mut world, false, false, 80, 60);
+        }
+
+        let mut state = AIState::new(AiFaction::Empire);
+        let mfg = ManufacturingState::new();
+        let missions = MissionState::new();
+
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+
+        let covert_count = actions.iter().filter(|a| matches!(
+            a,
+            AIAction::DispatchMission {
+                kind: MissionKind::Sabotage
+                    | MissionKind::Assassination
+                    | MissionKind::Espionage,
+                ..
+            }
+        )).count();
+
+        assert!(
+            covert_count <= MAX_COVERT_OPS_PER_EVAL,
+            "expected at most {} covert ops, got {}",
+            MAX_COVERT_OPS_PER_EVAL,
+            covert_count,
+        );
     }
 
     #[test]
