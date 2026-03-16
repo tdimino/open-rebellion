@@ -11,7 +11,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Phase-War%20Machine%20Complete-green.svg" alt="Phase">
+  <img src="https://img.shields.io/badge/Parity-92%25-brightgreen.svg" alt="Parity">
+  <img src="https://img.shields.io/badge/Tests-259%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
 </p>
 
@@ -37,15 +38,17 @@ Rebellion was a game about grand strategy in the Star Wars universe—not the li
 
 Open Rebellion reads the original game data files, converts them to clean JSON, and reimplements the simulation from the ground up in Rust. It runs natively on macOS and in the browser via WebAssembly.
 
-### Current State: War Machine (Next)
+### Current State: v0.6.0 — Mod Workshop (~92% parity)
 
-Three phases complete, combat implementation unblocked:
+Six phases complete. 15 simulation systems, 259 tests passing:
 
-- **Galaxy Viewer** — 200 star systems, pan/zoom/click, 51/51 DAT parsers with byte-level round-trip validation, 3.4MB WASM build
-- **Living Galaxy** — Game clock, manufacturing, missions (diplomacy, recruitment, espionage, sabotage, assassination, rescue, abduction, uprising), AI manager, event system, mod loader. ~8.7K LOC, 105+ tests.
-- **War Room** — Player faction selection, 5 UI panels, fleet movement with diamond icons and route lines, fog of war, encyclopedia viewer with BMP texture cache, audio system (quad-snd)
-- **Ghidra RE Complete** — 5,127 functions decompiled from REBEXE.EXE, combat call chain traced, bombardment formula decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
-- **Asset Pipeline** — 5 pipelines: HD upscaling (waifu2x), 3D models (4 providers), sprite sheet rendering (Blender), reference image generation (Gemini), audio (voice cloning, SFX, music, upscaling). See [CREDITS.md](CREDITS.md).
+- **Galaxy Viewer** — 200 star systems, pan/zoom/click, 51/51 DAT parsers with byte-level round-trip validation
+- **Living Galaxy** — Game clock, manufacturing, 9 mission types, AI manager, event system, mod loader
+- **War Room** — Player faction selection, 5 UI panels, fleet movement, fog of war, encyclopedia, audio
+- **War Machine** — Space combat (7-phase pipeline), ground combat, orbital bombardment, blockade, uprising, Death Star, research, Jedi training, victory conditions, save/load
+- **Full Parity** — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba's Palace), Han Solo speed bonus, betrayal mechanics, decoy system, character escape (ESCAPETB), mission state flags
+- **Mod Workshop** — Sensor-radius fog, captivity tracking, save format v4 with mod metadata + migration framework, ModRuntime (discover/enable/disable/reload), Mod Manager panel, pure research contract
+- **Ghidra RE Complete** — 5,127 functions decompiled from REBEXE.EXE, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
 
 ## You Will Need
 
@@ -94,13 +97,14 @@ The original game's binary data files (51 DAT files) and executable (REBEXE.EXE,
 | Milestone | Status | What You Get |
 |-----------|--------|-------------|
 | **Galaxy Viewer** | Complete | Interactive star map, 51/51 DAT parsers, WASM build |
-| **Living Galaxy** | Complete | Game clock, missions, manufacturing, AI, events, mod loader |
+| **Living Galaxy** | Complete | Game clock, 9 missions, manufacturing, AI, events, mod loader |
 | **War Room** | Complete | Player UI, fleet movement, fog of war, encyclopedia, audio |
-| **War Machine** | Complete | Space and ground combat, Death Star, victory conditions, save/load |
-| **Full Parity** | Planned | All missions, scripted events, Jedi training, save/load |
-| **Mod Workshop** | Planned | Mod manager, asset generation, community distribution |
+| **War Machine** | Complete | Combat (space/ground/bombardment), blockade, uprising, Death Star, victory, save/load |
+| **Full Parity** | Complete | Story events, betrayal, decoys, escape, Han speed bonus, mission flags |
+| **Mod Workshop** | In Progress | Sensor fog, captivity, save migration, mod manager panel, ModRuntime |
+| **Release** | Planned | HD assets, packaging, distribution (itch.io, Homebrew, GitHub) |
 
-**Ghidra RE complete.** We reverse-engineered 5,127 functions from `REBEXE.EXE` (the actual game executable—`STRATEGY.DLL` turned out to be sprites only). Combat formulas decoded, 97 GNPRTB parameters mapped, C++ class hierarchy reconstructed. War Machine implementation is unblocked. See `ghidra/notes/` for the full corpus.
+**Ghidra RE complete.** 5,127 functions decompiled from `REBEXE.EXE`, combat formulas decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for the full corpus (7 scholar documents, 4,179 lines).
 
 ## The Data Pipeline
 
@@ -123,9 +127,10 @@ The entire point of rebuilding from scratch is to make Rebellion *moddable*. The
 The mod system supports:
 - **Add anything**—new systems, characters, ships, fighters, missions, events
 - **Patch anything**—field-level JSON overlays using RFC 7396 Merge Patch
+- **In-game mod manager**—discover, enable/disable, reload from the Mod Manager panel (Tab key)
 - **Hot reload**—edit a mod, see changes instantly (native only)
-- **Dependency management**—`mod.toml` manifests with semver constraints
-- **Browser-compatible**—data-only mods load from file picker or URL
+- **Dependency management**—`mod.toml` manifests with semver constraints, topological load order
+- **Save compatibility**—save files track which mods were active (FNV-1a hash, warns on mismatch)
 
 If you've ever wanted to add the *Executor*-class as a buildable ship, give Mara Jade a recruitment mission, or create a Clone Wars total conversion—that's what this is for.
 
@@ -142,13 +147,14 @@ We stand on their shoulders.
 
 ## Contributing
 
-This is early—we're one developer and one AI collaborator, building in public. If you want to help:
+We're one developer and one AI collaborator, building in public. If you want to help:
 
-- **Combat implementation**: Ghidra RE is complete — combat formulas, GNPRTB parameters, and C++ class hierarchy are documented in `ghidra/notes/`. Help implement them in Rust.
-- **Game data expertise**: If you know what parameter #147 does, or how diplomatic mission success probability actually works, open an issue
-- **Modding infrastructure**: JSON schema design, mod loader architecture, hot reload
-- **Testing**: Run it with your GOG copy, report what looks wrong
+- **Play-testing**: Run it with your GOG copy, report what looks wrong—tick speed, AI behavior, combat balance, mission success rates
+- **Game data expertise**: If you know what GNPRTB parameter #147 does, or how the original handled sensor range, open an issue
+- **Modding**: Create mods, test the mod manager, report issues with the JSON overlay system
+- **Story events**: 15+ scripted story beats are documented in `ghidra/notes/` but only 4 major chains are implemented—help add the rest
 - **Art and audio**: AI-assisted asset generation for a fully open replacement set
+- **Distribution**: Homebrew formula, itch.io packaging, WASM optimization
 
 ## License
 
