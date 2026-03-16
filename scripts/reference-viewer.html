@@ -937,7 +937,7 @@ function encodeImgId(id) {
 function imgPath(catId, imgId, orig) {
   const encoded = encodeImgId(imgId);
   const suffix = orig ? '-orig' : '';
-  return `assets/references/${catId}/${encoded}${suffix}.png`;
+  return `../assets/references/${catId}/${encoded}${suffix}.png`;
 }
 
 // ── CATEGORY LIST ─────────────────────────────────────────────────────────────
@@ -1400,15 +1400,10 @@ document.addEventListener('keydown', e => {
 
 function boot() {
   buildCategoryList();
-  // Auto-select first category after boot flash
-  setTimeout(() => {
-    selectCategory(0);
-  }, 100);
-
-  // Remove boot class after animation
-  setTimeout(() => {
-    document.body.classList.remove('booting');
-  }, 700);
+  selectCategory(0);
+  document.body.classList.remove('booting');
+  console.log('ASSET ARCHAEOLOGY STATION booted.', MANIFEST.length, 'categories,',
+    MANIFEST.reduce((n, c) => n + c.images.length, 0), 'images');
 }
 
 boot();
