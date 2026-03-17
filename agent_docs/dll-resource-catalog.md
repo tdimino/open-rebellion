@@ -159,9 +159,10 @@ Encyclopedia bitmap mapping table — data-only, maps system IDs to EDATA file n
 
 Common and tactical text strings. String-only DLLs, no bitmap resources.
 
-## Smacker Videos (MDATA/)
+## Smacker Videos (MDATA/) — DECODED TO WebM
 
-15 Smacker (.SMK2) video files in `~/Desktop/Programming/star-wars-rebellion/MDATA/`:
+15 Smacker (.SMK2) video files decoded to VP9+Opus WebM in `assets/references/ref-videos/`.
+Originals in `~/Desktop/Programming/star-wars-rebellion/MDATA/`:
 
 | File | Size | Content | Resolution |
 |------|------|---------|-----------|

@@ -58,7 +58,8 @@ Locale `1033` = English (US). All extractions are English-locale.
 
 ### Smacker Video Files (MDATA/)
 
-15 Smacker (.SMK2) video files + 16 WAV soundtrack files in `MDATA/` directory.
+15 Smacker (.SMK2) video files decoded to WebM (VP9+Opus) in `assets/references/ref-videos/`.
+16 WAV soundtrack files in `MDATA/` directory.
 
 | File | Size | Content |
 |------|------|---------|
@@ -79,8 +80,9 @@ Locale `1033` = English (US). All extractions are English-locale.
 | MDATA.202 | 8MB | Defeat sequence |
 
 **Codec**: SMACKW32.DLL (Smacker 2 format, RAD Game Tools).
-**Resolution**: ~320x200 (original 1998 resolution).
-**Conversion**: `ffmpeg -i MDATA.001 output.webm` (requires Smacker support, or use RAD tools).
+**Resolution**: 640x324 (most), 640x480 (splash). Higher than expected for 1998.
+**Decoded**: All 15 videos converted to WebM (VP9+Opus) in `assets/references/ref-videos/`. Total: 271MB.
+**Command**: `ffmpeg -i MDATA.001 -c:v libvpx-vp9 -crf 30 -b:v 0 -c:a libopus output.webm`
 
 ### WAV Soundtrack (MDATA/300-315)
 
