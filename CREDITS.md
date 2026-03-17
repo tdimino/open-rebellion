@@ -14,7 +14,7 @@ Open Rebellion is built on the work of many open-source projects, AI services, a
 
 - **Star Wars: Rebellion** (1998) — Coolhand Interactive / LucasArts. The original game this project reimplements.
 - **swrebellion.net** — The fan community that kept the game alive for 25+ years with patches, mods, and documentation.
-- **MetasharpNet / StarWarsRebellionEditor.NET** — Metasharp's open-source C# editor ([GitHub](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET)). Source of DAT field semantics, asset organization knowledge, and DLL resource extraction (316+ UI elements from COMMON/STRATEGY/TACTICAL/GOKRES/ALSPRITE/EMSPRITE.DLL).
+- **MetasharpNet / StarWarsRebellionEditor.NET** — Metasharp's open-source C# editor ([GitHub](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET)). Source of DAT field semantics, asset organization knowledge, and DLL resource extraction (2,441+ BMPs + 3,223 data files from 11 game DLLs; see agent_docs/dll-resource-catalog.md).
 - **rebellion2** — C# Unity port reference. Source of mission probability formulas (Mission.cs).
 
 ## AI Image Generation & Upscaling

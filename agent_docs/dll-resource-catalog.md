@@ -1,6 +1,6 @@
 # DLL Resource Catalog
 
-Complete extraction of all 18 game DLLs. 5,917 total resources (2,705 BMPs + 3,212 data files).
+Complete extraction of all 18 game DLLs. 5,664 total resources (2,441 BMPs + 3,223 data files).
 Organized by DLL with resource ID ranges, image dimensions, and content descriptions.
 
 ## Extraction Location

@@ -48,7 +48,7 @@ multiplayer:       u32
 value = gnprtb.value(param_id, difficulty)
 ```
 
-Where `difficulty` maps to column index 0-7. The difficulty level is extracted from the C++ packed field: `*(uint*)(this + 0x24) >> 4 & 3`.
+Where `difficulty` maps to column index 0-7. The packed C++ field `*(uint*)(this + 0x24) >> 4 & 3` provides a 2-bit selector (0-3) per faction side; the full 8-level index is derived at the caller layer by combining side and faction (Development, Alliance Easy/Med/Hard, Empire Easy/Med/Hard, Multiplayer).
 
 ### Parameter ID Ranges
 

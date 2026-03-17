@@ -410,31 +410,26 @@ cd ~/tools/ace-step && bash start_api_server_macos.sh  # MLX backend, port 8001
 
 ## Pipeline 6: UI Element Upscaling
 
-316+ UI elements extracted from game DLLs, organized in `assets/references/ref-ui/` (10 categories).
-See `assets/references/ref-ui/INDEX.md` for full inventory with resource ID numbering scheme.
-
-### Unextracted DLLs (from `~/Desktop/Programming/star-wars-rebellion/`)
-
-| DLL | Contents | Frames |
-|-----|----------|--------|
-| **ALBRIEF.DLL** | Alliance briefing/cockpit screens | ~20-50 |
-| **EMBRIEF.DLL** | Empire briefing/cockpit screens | ~20-50 |
-| **ALSPRITE.DLL** | C-3PO + R2-D2 animated advisor (Alliance) | 251 |
-| **EMSPRITE.DLL** | Imperial droid animated advisor (Empire) | 250 |
-| **REBDLOG.DLL** | Dialog box UI chrome | ~20-30 |
-
-Extract via: `uv run scripts/extract-dll-resources.py ALBRIEF.DLL --output ref-ui/11-alliance-briefing/`
+2,441 BMPs extracted from all game DLLs. Curated subsets in `assets/references/ref-ui/` (13 categories).
+Full extraction in `assets/references/ref-ui-full/` with per-DLL INDEX.md files.
+See `agent_docs/dll-resource-catalog.md` for complete resource ID ranges, dimensions, and content descriptions.
 
 ### Upscaling Strategy
 
-| Category | Files | Method | Why |
-|----------|-------|--------|-----|
-| Briefing backgrounds | ~40-100 | Gemini edit | Large scenes, benefits from detail |
-| Droid advisor frames | 501 | Vertex AI Imagen | Must be consistent across all frames |
+| Category | BMPs | Method | Why |
+|----------|------|--------|-----|
+| Briefing sprites | 38 | Vertex AI Imagen | Advisor frames — must be consistent |
+| Droid advisor frames | 148 (74+74) | Vertex AI Imagen | Animation consistency critical |
 | Buttons/controls | 33 | Vertex AI Imagen | Pixel-perfect state alignment |
-| Status panels | 129 | Vertex AI Imagen | Entity recognition must be preserved |
+| Status panels | 580 | Vertex AI Imagen | Entity recognition must be preserved |
 | Event screens | 83 | Gemini edit | Narrative scenes, generative detail |
-| Everything else | ~30 | Vertex AI Imagen | Faithful enlargement |
+| Character panels | 134 (73+61) | Gemini edit | 400x200, benefits from detail |
+| Combat HUD | 154 | Vertex AI Imagen | Small elements, preserve exactly |
+| Tactical ship sprites | 130 | Vertex AI Imagen | 3D renders, faithful enlargement |
+| Core UI widgets | 321 | Vertex AI Imagen | Scrollbars, checkboxes, buttons |
+| Galaxy map chrome | 1,042 | Mixed | Background: Gemini edit. Icons: Vertex |
+
+Remaining unextracted: VOICEFXA/E.DLL voice lines (resource type 302).
 
 ---
 

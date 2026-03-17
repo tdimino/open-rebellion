@@ -12,29 +12,32 @@ All external references used for Open Rebellion game mechanics documentation, or
 
 ## Tier 1: Official Sources
 
-| Source | Type | Notes |
-|--------|------|-------|
-| Star Wars Rebellion Game Manual | Print/PDF | Shipped with 1998 retail release. Rules, unit stats, mission descriptions. |
-| Prima's Official Strategy Guide | Print | Detailed mechanics tables, character stats, mission probability breakdowns. |
-| GOG.com Store Page | Digital | DRM-free distribution; includes manual PDF. |
-| Steam Store Page | Digital | Current digital distribution channel. |
+| Source | URL | Notes |
+|--------|-----|-------|
+| Star Wars Rebellion Game Manual | [archive.org](https://archive.org/details/star-wars-rebellion-manual) / [swrebellion.net PDF](https://files.swrebellion.net/Star_Wars_Rebellion-Manual.pdf) | Shipped with 1998 retail release. Rules, unit stats, mission descriptions. |
+| Prima's Official Strategy Guide | [archive.org](https://archive.org/details/star-wars-rebellion-guide) / [swrebellion.net PDF](https://files.swrebellion.net/Star_Wars_Rebellion_Guide_PRIMA.pdf) | 276 pages. Detailed mechanics tables, character stats, mission probability breakdowns. |
+| GOG.com Store Page | [gog.com](https://www.gog.com/en/game/star_wars_rebellion) | DRM-free distribution; includes manual PDF. |
+| Steam Store Page | [store.steampowered.com](https://store.steampowered.com/app/441550/) | Current digital distribution channel. |
 
 ## Tier 2: Community Reverse Engineering
 
-| Source | Type | Notes |
-|--------|------|-------|
-| Mechanics Inside Rebellion | Web | Deep community analysis of hidden mechanics, probability tables, combat formulas. |
-| Metasharp Star Wars Rebellion Editor | Tool (C#) | DAT file editor with C# parsers. Source at `~/Desktop/Programming/StarWarsRebellionEditor.NET/`. |
-| rebellion2 | Code (C#) | C# game model reference with Mission.cs, combat logic. Source at `~/Desktop/Programming/rebellion2/`. |
-| GameFAQs Guides | Web | Multiple community-written walkthroughs and mechanics FAQs. |
+| Source | URL | Notes |
+|--------|-----|-------|
+| Mechanics Inside Rebellion (Part I) | [swrebellion.net](https://swrebellion.net/forums/topic/282-mechanics-inside-rebellion/) | Deep community analysis of hidden mechanics, probability tables, combat formulas. |
+| Mechanics Inside Rebellion (Part II) | [swrebellion.net](https://swrebellion.net/forums/topic/9639-mechanics-inside-rebellion-part-ii/) | Continuation thread with extended mechanics discussion. |
+| Metasharp Star Wars Rebellion Editor | [github.com](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET) | 686-commit .NET DAT file editor. Local: `~/Desktop/Programming/StarWarsRebellionEditor.NET/`. |
+| rebellion2 | Local only | C# game model reference with Mission.cs, combat logic. `~/Desktop/Programming/rebellion2/`. |
+| GameFAQs Strategy Guide (Rogue) | [gamefaqs.gamespot.com](https://gamefaqs.gamespot.com/pc/198776-star-wars-rebellion/faqs/19754) | Comprehensive walkthrough and strategy. |
+| GameFAQs Ship Guides (Sashanan) | [Rebel Ships](https://gamefaqs.gamespot.com/pc/198776-star-wars-rebellion/faqs/11040) / [Imperial Ships](https://gamefaqs.gamespot.com/pc/198776-star-wars-rebellion/faqs/10833) | Detailed per-faction ship analysis. |
+| GOG Reference Spreadsheet | [gog.com](https://www.gog.com/forum/star_wars_rebellion/rebellion_reference_spreadsheet) | Community data tables (unit stats, costs). |
 
 ## Tier 3: Reference
 
-| Source | Type | Notes |
-|--------|------|-------|
-| Wookieepedia | Wiki | Star Wars canon reference for ship classes, character backgrounds, unit lore. |
-| Wikipedia: Star Wars Rebellion | Wiki | General game overview, reception, platform history. |
-| StrategyWiki: Star Wars Rebellion | Wiki | Community strategy guides, building orders, faction analysis. |
+| Source | URL | Notes |
+|--------|-----|-------|
+| Wookieepedia | [starwars.fandom.com](https://starwars.fandom.com/wiki/Star_Wars:_Rebellion_(video_game)) | Star Wars canon reference for ship classes, character backgrounds, unit lore. |
+| Wikipedia | [en.wikipedia.org](https://en.wikipedia.org/wiki/Star_Wars:_Rebellion) | General game overview, reception, platform history. |
+| StrategyWiki | [strategywiki.org](https://strategywiki.org/wiki/Star_Wars:_Rebellion) | Community strategy guides, building orders, faction analysis. |
 
 ## Tier 4: In-Repo (Primary Authority)
 

@@ -23,7 +23,7 @@ Complete reference for all 18 game mechanics documents in Open Rebellion.
 | Document | System | Description |
 |----------|--------|-------------|
 | [manufacturing.md](manufacturing.md) | `manufacturing` | Production queues, resource costs, blockade-aware advancement |
-| [research.md](research.md) | `research` | 3 tech trees (Ship/Troop/Facility), MSTB difficulty lookup |
+| [research.md](research.md) | `research` | 3 tech trees (Ship/Troop/Facility), research_order unlocks, research_difficulty-based duration |
 | [economy.md](economy.md) | `economy` | Energy, raw materials, resource flow, production eligibility |
 | [gnprtb.md](gnprtb.md) | `gnprtb` | 213 game-balance parameters, 8 difficulty levels, combat formulas |
 

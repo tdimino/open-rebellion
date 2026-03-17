@@ -19,10 +19,10 @@ All media lives in the game installation at `~/Desktop/Programming/star-wars-reb
 
 | DLL | Size | BMP Resources | BIN/Data | Content |
 |-----|------|--------------|----------|---------|
-| COMMON.DLL | 2.8MB | 6 | — | Main menu background, restart button states |
-| STRATEGY.DLL | 29MB | ~200+ | — | Galaxy map chrome, facility indicators, event screens, character diplomacy |
-| TACTICAL.DLL | 7.5MB | ~100+ | — | Combat HUD, squadron buttons, weapon gauges, Death Star controls |
-| GOKRES.DLL | 2.9MB | ~630 | — | Entity status sprites (troops, ships, fighters, characters, facilities) |
+| COMMON.DLL | 2.8MB | 321 | 1 | Main menu backgrounds, core UI toolkit (scrollbars, checkboxes, sliders), 215 button sprites |
+| STRATEGY.DLL | 29MB | 1,042 | 96 | Galaxy map chrome, facility indicators, event screens, character diplomacy panels, UI chrome |
+| TACTICAL.DLL | 7.5MB | 288 | 1 | Combat HUD, squadron buttons, weapon gauges, Death Star controls, tactical ship sprites |
+| GOKRES.DLL | 2.9MB | 580 | — | Entity status sprites (troops, ships, fighters, characters, facilities, damage diagrams) |
 | ALSPRITE.DLL | 16MB | 74 | 716 | Alliance advisor: C-3PO animations (12+ sequences) + R2-D2 (2+ sequences) |
 | EMSPRITE.DLL | 19MB | 74 | 713 | Empire advisor: Imperial droid animations (22+ sequences) |
 | ALBRIEF.DLL | 7.9MB | 20 | 366 | Alliance briefing: C-3PO/R2-D2 sprites + animation control data |
@@ -119,14 +119,13 @@ Locale `1033` = English (US). All extractions are English-locale.
 | 13-dialogs | 24 | — | REBDLOG.DLL |
 | **Total** | **450** | **2342** | |
 
-### Not Extracted (remain in game DLLs)
+### Full DLL Extraction Complete
 
-- STRATEGY.DLL full resource dump (~1500+ remaining beyond what MetasharpNet organized)
-- GOKRES.DLL damage diagrams, reactor layouts, ship status panels (~600+ remaining)
-- TACTICAL.DLL 3D model sprites for capital ships (~50+)
-- VOICEFXA/E.DLL voice lines (~280 WAV files)
-- ENCYBMAP.DLL encyclopedia index mapping
-- ENCYTEXT.DLL encyclopedia text descriptions
+All visual DLLs fully extracted to `assets/references/ref-ui-full/` with per-DLL INDEX.md files.
+See `agent_docs/dll-resource-catalog.md` for complete per-DLL resource ID ranges and content descriptions.
+
+**Remaining unextracted:**
+- VOICEFXA/E.DLL voice lines (~282 WAV files, resource type 302 — requires separate extraction tool)
 
 ### Extraction Tool
 

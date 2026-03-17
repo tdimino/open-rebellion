@@ -70,9 +70,9 @@ Plus New Republic side updates: ~343 more. **Entity subtotal: ~686 visual assets
 | Facility indicators | 16 | Replace industrial → organic Vong | Medium |
 | Galaxy chrome | 5 | Keep as-is (neutral) | None |
 | Weapon gauges | 5 | Keep as-is (universal) | None |
-| **UI subtotal** | **~726-786** | | |
+| **UI subtotal** | **~395 BMP + ~1,900 BIN animation data** | | |
 
-**True TC grand total: ~1,412-1,472 visual assets** (686 entity + ~726-786 UI).
+**True TC grand total: ~1,081 visual BMPs** (686 entity + ~395 UI BMP). Plus ~1,900 BIN animation sequence files (droid advisors + briefings) that may need regeneration.
 
 See `assets/references/ref-ui/INDEX.md` for full categorized inventory with per-category TC notes.
 
