@@ -149,7 +149,7 @@ Entity name strings — RT_STRING resources. Already extracted via pelite in the
 
 ## VOICEFXA.DLL / VOICEFXE.DLL (4.7MB + 4.5MB)
 
-Voice lines stored as RT_WAVE resources (resource type 302, custom). Our extraction script only handles RT_BITMAP (2) and RT_RCDATA (10) — voice extraction needs a separate tool targeting resource type 302.
+Voice lines stored as RT_WAVE resources (resource type 302, custom). Extracted via custom pefile script — 285 WAV files (153 Alliance + 132 Empire) in `ref-ui-full/voice-alliance/` and `ref-ui-full/voice-empire/`.
 
 ## ENCYBMAP.DLL (34KB)
 
@@ -197,4 +197,4 @@ Common and tactical text strings. String-only DLLs, no bitmap resources.
 | TEXTSTRA.DLL | 0 | 511 | 511 |
 | **Total** | **2,441** | **3,223** | **5,664** |
 
-Plus: 15 Smacker videos (356MB), 16 WAV soundtrack (17MB), ~280 voice WAVs (in VOICEFX DLLs, not yet extracted).
+Plus: 15 Smacker videos (356MB, decoded to WebM), 16 WAV soundtrack (17MB), 285 voice WAVs (153 Alliance + 132 Empire, extracted).

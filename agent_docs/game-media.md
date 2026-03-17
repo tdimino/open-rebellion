@@ -28,8 +28,8 @@ All media lives in the game installation at `~/Desktop/Programming/star-wars-reb
 | ALBRIEF.DLL | 7.9MB | 20 | 366 | Alliance briefing: C-3PO/R2-D2 sprites + animation control data |
 | EMBRIEF.DLL | 8.2MB | 18 | 471 | Empire briefing: Imperial droid sprites + animation control data |
 | REBDLOG.DLL | 290KB | 24 | — | Dialog box UI chrome (in-game dialog frames) |
-| VOICEFXA.DLL | 4.7MB | — | ~140 | Alliance voice lines (WAV, IDs 14001-14xxx) |
-| VOICEFXE.DLL | 4.5MB | — | ~142 | Empire voice lines (WAV, IDs 15001-15144) |
+| VOICEFXA.DLL | 4.7MB | — | 153 | Alliance voice lines (WAV, extracted to ref-ui-full/voice-alliance/) |
+| VOICEFXE.DLL | 4.5MB | — | 132 | Empire voice lines (WAV, extracted to ref-ui-full/voice-empire/) |
 | TEXTSTRA.DLL | 147KB | — | — | Entity name strings (RT_STRING, extracted via pelite) |
 | ENCYBMAP.DLL | 34KB | — | — | Encyclopedia system→EDATA index mapping |
 | ENCYTEXT.DLL | 143KB | — | — | Encyclopedia text descriptions |

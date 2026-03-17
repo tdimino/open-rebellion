@@ -383,7 +383,7 @@ Original voice WAVs (8-11kHz, VOICEFX*.DLL)
   → Output: data/sounds/voices/{faction}/{line_id}.wav
 ```
 
-Source: 142 Empire lines (VOICEFXE.DLL, IDs 15001-15144) + ~140 Alliance lines (VOICEFXA.DLL).
+Source: 132 Empire lines (VOICEFXE.DLL) + 153 Alliance lines (VOICEFXA.DLL). All 285 WAV files extracted.
 
 ### SFX Generation
 
