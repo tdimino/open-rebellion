@@ -88,6 +88,7 @@ Five Rust crates in a Cargo workspace:
 | `rebellion-data` | Loads original `.DAT` binary files into the game world. |
 | `rebellion-render` | macroquad 0.4 galaxy map + egui-macroquad UI panels. |
 | `rebellion-app` | Entry point—runs the main loop on desktop and WASM. |
+| `rebellion-playtest` | Headless play-test binary—runs simulation without rendering, outputs JSONL for analysis. |
 | `dat-dumper` | CLI tool that exports all `.DAT` files to human-readable JSON. |
 
 The original game's binary data files (51 DAT files) and executable (REBEXE.EXE, 22,741 functions) have been fully reverse-engineered using [Metasharp's editor](https://github.com/MetasharpNet/StarWarsRebellionEditor.NET) and [Ghidra](https://ghidra-sre.org/). Every DAT parser passes round-trip byte validation. Combat formulas, AI decision trees, and game balance parameters are documented in `ghidra/notes/`.

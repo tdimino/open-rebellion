@@ -8,7 +8,7 @@ updated: 2026-03-16
 
 # Game Mechanics Index
 
-Complete reference for all 18 game mechanics documents in Open Rebellion.
+Complete reference for all 19 game mechanics documents in Open Rebellion.
 
 ## Combat
 
@@ -47,3 +47,9 @@ Complete reference for all 18 game mechanics documents in Open Rebellion.
 | [blockade.md](blockade.md) | `blockade` | Hostile fleet blockade, manufacturing halt, troop destruction |
 | [death-star.md](death-star.md) | `death-star` | Construction, fire preconditions, nearby warning, planet destruction |
 | [victory.md](victory.md) | `victory` | HQ capture, Death Star fire/destroyed -- three terminal game states |
+
+## Tools
+
+| Document | System | Description |
+|----------|--------|-------------|
+| [play-testing.md](play-testing.md) | `play-testing` | Command palette, headless binary, JSONL logging, dual-AI mode, deterministic RNG |

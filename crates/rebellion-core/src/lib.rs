@@ -7,6 +7,7 @@ pub mod dat;
 pub mod death_star;
 pub mod events;
 pub mod fog;
+pub mod game_events;
 pub mod ids;
 pub mod jedi;
 pub mod manufacturing;

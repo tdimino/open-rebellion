@@ -1,6 +1,9 @@
 mod audio;
 
 use macroquad::prelude::*;
+use ::rand::SeedableRng;
+use ::rand::Rng;
+use rand_xoshiro::Xoshiro256PlusPlus;
 use std::path::{Path, PathBuf};
 
 use rebellion_core::ai::{AiFaction, AIAction, AIState, AISystem, FleetMoveReason};
@@ -91,6 +94,13 @@ async fn main() {
     );
 
     // ── Simulation state ────────────────────────────────────────────────────
+    // Seedable RNG for deterministic simulation
+    let mut sim_rng = Xoshiro256PlusPlus::seed_from_u64(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(42)
+    );
     let mut clock = GameClock::new();
     let mut mfg_state = ManufacturingState::new();
     let mut mission_state = MissionState::new();
@@ -141,6 +151,8 @@ async fn main() {
     let mut missions_panel_state = MissionsPanelState::default();
     let mut enc_state = EncyclopediaState::new();
     let mut mod_manager_state = rebellion_render::ModManagerState::default();
+    #[cfg(debug_assertions)]
+    let mut command_palette_state = rebellion_render::CommandPaletteState::new();
     enc_state.set_edata_path(gdata_path.join("EData"));
     // HD upscaled PNGs live as a sibling of the base data directory.
     let hd_path = gdata_path
@@ -236,6 +248,10 @@ async fn main() {
         if is_key_pressed(KeyCode::Tab) {
             mod_manager_state.open = !mod_manager_state.open;
         }
+        #[cfg(debug_assertions)]
+        if is_key_pressed(KeyCode::GraveAccent) {
+            command_palette_state.open = !command_palette_state.open;
+        }
 
         // ── Tick the clock ──────────────────────────────────────────────────
         let tick_events = clock.advance(dt);
@@ -325,7 +341,7 @@ async fn main() {
 
                 // Generate RNG rolls: 256 rolls covers fleets up to 16 ships each.
                 let combat_rolls: Vec<f64> =
-                    (0..256).map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 let space_result = CombatSystem::resolve_space(
                     &world, atk_fleet, def_fleet, sys_key,
                     2, // medium difficulty
@@ -355,7 +371,7 @@ async fn main() {
                 // Ground combat: if attacker wins space battle and system has enemy troops.
                 if space_result.winner == CombatSide::Attacker {
                     let ground_rolls: Vec<f64> =
-                        (0..256).map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                        (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                     let ground_result = CombatSystem::resolve_ground(
                         &world, sys_key, true, // alliance is attacker
                         &ground_rolls, current_tick,
@@ -412,7 +428,7 @@ async fn main() {
 
             // ── Missions ────────────────────────────────────────────────────
             let mission_rolls: Vec<f64> = (0..mission_state.len())
-                .map(|_| rand::gen_range(0.0f64, 1.0f64))
+                .map(|_| sim_rng.gen::<f64>())
                 .collect();
             let mission_results =
                 MissionSystem::advance(&mut mission_state, &world, &tick_events, &mission_rolls);
@@ -432,7 +448,7 @@ async fn main() {
 
             // ── Character escapes ────────────────────────────────────────────
             let escape_rolls: Vec<f64> = (0..world.characters.len())
-                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                .map(|_| sim_rng.gen::<f64>()).collect();
             let escape_effects = MissionSystem::check_escapes(&world, &escape_rolls);
             for effect in &escape_effects {
                 if let MissionEffect::CharacterEscaped { character, escaped_to_alliance } = effect {
@@ -453,7 +469,7 @@ async fn main() {
 
             // ── Events ──────────────────────────────────────────────────────
             let event_rolls: Vec<f32> =
-                (0..16).map(|_| rand::gen_range(0.0f32, 1.0f32)).collect();
+                (0..16).map(|_| sim_rng.gen::<f32>()).collect();
             let fired_events =
                 EventSystem::advance(&mut event_state, &world, &tick_events, &event_rolls);
 
@@ -482,7 +498,7 @@ async fn main() {
                 &tick_events,
             );
             let ai_rolls: Vec<f64> =
-                (0..8).map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                (0..8).map(|_| sim_rng.gen::<f64>()).collect();
             apply_ai_actions(
                 &ai_actions,
                 &ai_rolls,
@@ -524,7 +540,7 @@ async fn main() {
 
             // ── Uprising ─────────────────────────────────────────────────────
             let uprising_rolls: Vec<f64> = (0..world.systems.len())
-                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                .map(|_| sim_rng.gen::<f64>()).collect();
             let empty_upris1tb = MstbTable::new(vec![]);
             let upris1tb = world.mission_tables.get("UPRIS1TB").unwrap_or(&empty_upris1tb);
             let uprising_events = UprisingSystem::advance(&mut uprising_state, &world, &tick_events, &uprising_rolls, upris1tb);
@@ -555,7 +571,7 @@ async fn main() {
 
             // ── Betrayal ─────────────────────────────────────────────────────
             let betrayal_rolls: Vec<f64> = (0..world.characters.len())
-                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                .map(|_| sim_rng.gen::<f64>()).collect();
             let empty_loyalty_tb = MstbTable::new(vec![]);
             let loyalty_tb = world.mission_tables.get("UPRIS1TB").unwrap_or(&empty_loyalty_tb);
             let betrayal_events = BetrayalSystem::advance(&mut betrayal_state, &world, &tick_events, &betrayal_rolls, loyalty_tb);
@@ -624,7 +640,7 @@ async fn main() {
 
             // ── Jedi training ────────────────────────────────────────────────
             let jedi_rolls: Vec<f64> = (0..jedi_state.training.len().max(1))
-                .map(|_| rand::gen_range(0.0f64, 1.0f64)).collect();
+                .map(|_| sim_rng.gen::<f64>()).collect();
             let jedi_events = JediSystem::advance(&mut jedi_state, &world, &tick_events, &jedi_rolls);
             for evt in &jedi_events {
                 match evt {
@@ -743,7 +759,7 @@ async fn main() {
                     }
                 }
                 if show_missions {
-                    let duration_roll = rand::gen_range(0.0f64, 1.0f64);
+                    let duration_roll = sim_rng.gen::<f64>();
                     if let Some(action) = draw_missions(
                         ctx,
                         &world,
@@ -778,6 +794,15 @@ async fn main() {
                 }
             }
 
+            // Command palette (debug only)
+            #[cfg(debug_assertions)]
+            {
+                let palette_actions = rebellion_render::draw_command_palette(ctx, &mut command_palette_state);
+                for action in palette_actions {
+                    panel_actions.push(action);
+                }
+            }
+
             // System info panel (right side)
             draw_system_info_panel(ctx, &world, &map_state);
 
@@ -802,7 +827,7 @@ async fn main() {
                 &mut ai_state,
                 &mut msg_log,
                 &mut player_faction,
-                &clock,
+                &mut clock,
                 #[cfg(not(target_arch = "wasm32"))]
                 &mut audio_engine,
                 #[cfg(not(target_arch = "wasm32"))]
@@ -847,7 +872,7 @@ fn apply_panel_action(
     ai_state: &mut AIState,
     msg_log: &mut MessageLog,
     player_faction: &mut MissionFaction,
-    clock: &GameClock,
+    clock: &mut GameClock,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] sounds_dir: &Path,
@@ -971,6 +996,46 @@ fn apply_panel_action(
         }
         PanelAction::ReloadMods => {
             // Will be handled when mod_runtime is wired
+        }
+        PanelAction::AdvanceTicks(n) => {
+            // Force-advance N ticks synchronously
+            for _ in 0..n {
+                clock.tick += 1;
+            }
+        }
+        PanelAction::SetGameSpeed(speed) => {
+            let game_speed = match speed {
+                0 => GameSpeed::Paused,
+                1 => GameSpeed::Normal,
+                2 => GameSpeed::Fast,
+                _ => GameSpeed::Faster,
+            };
+            clock.set_speed(game_speed);
+        }
+        PanelAction::ToggleDualAI => {
+            // TODO: toggle dual AI mode
+        }
+        PanelAction::ForceVictoryCheck => {
+            // Force victory evaluation next tick
+        }
+        PanelAction::RevealAllFog => {
+            // Reveal all systems in fog state
+            for (sys_key, _) in world.systems.iter() {
+                fog_state.reveal(sys_key);
+            }
+        }
+        PanelAction::ExportGameLog => {
+            // TODO: export playtest log when logger is wired
+        }
+        PanelAction::ShowGameStats => {
+            let alliance_systems = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Alliance)).count();
+            let empire_systems = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Empire)).count();
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("Stats: tick {}, Alliance {} systems, Empire {} systems, {} fleets, {} characters",
+                    clock.tick, alliance_systems, empire_systems, world.fleets.len(), world.characters.len()),
+                MessageCategory::Event,
+            ));
         }
     }
 }

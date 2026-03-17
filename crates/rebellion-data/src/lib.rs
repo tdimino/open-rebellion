@@ -23,6 +23,7 @@ use rebellion_core::world::*;
 pub mod mods;
 pub mod save;
 pub mod seeds;
+pub mod simulation;
 
 /// Load all game data from a GData directory into a GameWorld.
 ///

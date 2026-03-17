@@ -21,6 +21,29 @@ Each entry includes:
 
 ---
 
+## [v0.8.0] - 2026-03-17
+
+**Completion:** ~95% | **Category:** Play-Test Infrastructure | **Milestone:** Play-Test READY
+
+### Added
+- **Command palette**: VS Code-style overlay (backtick trigger) with fuzzy search via nucleo-matcher. 16 commands across 4 categories (Time, Speed, Inspect, Control). Debug-only (`#[cfg(debug_assertions)]`).
+- **7 new PanelAction variants**: `AdvanceTicks(u64)`, `SetGameSpeed(u32)`, `ToggleDualAI`, `ForceVictoryCheck`, `RevealAllFog`, `ExportGameLog`, `ShowGameStats` — all wired into `apply_panel_action()`
+- **Headless play-test binary** (`rebellion-playtest`): CLI with `--ticks`, `--data`, `--seed` flags, JSONL output for DuckDB analysis
+- **Deterministic RNG**: All `rand::gen_range` calls replaced with seedable `Xoshiro256++` (rand_xoshiro). Single `sim_rng` generator flows through entire simulation loop.
+- **Play-testing docs**: `docs/mechanics/play-testing.md` covering command palette, headless binary, JSONL schema, DuckDB examples, dual-AI mode
+
+### Changed
+- `rebellion-playtest` added to workspace members
+- `rand 0.8` + `rand_xoshiro 0.6` added to rebellion-app dependencies
+- `apply_panel_action()` now takes `&mut GameClock` (was `&GameClock`) to support speed/tick mutations
+
+### Technical
+- Knesset Mami swarm: Dikte-II integration daborit
+- 272 tests passing (216 core + 33 data + 23 render), 0 failures
+- 10 RNG call sites migrated from `rand::gen_range` to `sim_rng.gen()`
+
+---
+
 ## [v0.7.0] - 2026-03-16
 
 **Completion:** ~95% | **Category:** Story Events + Release Prep | **Milestone:** Release READY
@@ -296,7 +319,8 @@ Each entry includes:
 
 | Version | Date | Milestone | Completion | Summary |
 |---------|------|-----------|------------|---------|
-| **v0.7.0** | **2026-03-16** | **Release READY** | **~95%** | **8 story event chains, 7 new event variants, release packaging, CI, example mod** |
+| **v0.8.0** | **2026-03-17** | **Play-Test READY** | **~95%** | **Command palette, headless binary, seedable RNG, 7 new PanelAction variants** |
+| v0.7.0 | 2026-03-16 | Release READY | ~95% | 8 story event chains, 7 new event variants, release packaging, CI, example mod |
 | v0.6.0 | 2026-03-16 | Mod Workshop | ~92% | Mod manager panel, escape system, 3 reviewer bug fixes |
 | v0.5.0 | 2026-03-16 | Full Parity | ~90% | Story events, Han speed, betrayal, decoys, 10 Character fields |
 | v0.4.1 | 2026-03-15 | War Machine Fix | ~70% | Integration fixes, 14 systems wired, doc overhaul |

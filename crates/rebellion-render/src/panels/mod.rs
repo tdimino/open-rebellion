@@ -27,6 +27,9 @@ pub mod mod_manager;
 pub mod officers;
 pub mod save_load;
 
+#[cfg(debug_assertions)]
+pub mod command_palette;
+
 pub use faction_select::{draw_faction_select, FactionSelectState};
 pub use fleets::{draw_fleets, FleetsState};
 pub use manufacturing::{draw_manufacturing, ManufacturingPanelState};
@@ -96,4 +99,20 @@ pub enum PanelAction {
     ToggleMod { name: String },
     /// Reload all mods from disk.
     ReloadMods,
+
+    // ── Play-testing (command palette) ────────────────────────────────
+    /// Advance simulation by N ticks immediately.
+    AdvanceTicks(u64),
+    /// Set game speed (0=paused, 1=normal, 2=fast, 4=faster).
+    SetGameSpeed(u32),
+    /// Toggle AI control for both factions.
+    ToggleDualAI,
+    /// Immediately evaluate victory conditions.
+    ForceVictoryCheck,
+    /// Remove fog of war from all systems.
+    RevealAllFog,
+    /// Export message log to file.
+    ExportGameLog,
+    /// Display current game statistics overlay.
+    ShowGameStats,
 }

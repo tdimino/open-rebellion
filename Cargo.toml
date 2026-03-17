@@ -4,6 +4,7 @@ members = [
     "crates/rebellion-data",
     "crates/rebellion-render",
     "crates/rebellion-app",
+    "crates/rebellion-playtest",
     "tools/dat-dumper",
 ]
 resolver = "2"

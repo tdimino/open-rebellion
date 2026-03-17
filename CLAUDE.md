@@ -8,7 +8,7 @@ updated: 2026-03-16
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.7.0 (~95% complete). Living Galaxy + War Room + War Machine + Full Parity + Mod Workshop + Release READY. 15 simulation systems, 12 scripted story event chains, betrayal/decoy/escape mechanics, Han Solo speed bonus, mod manager panel, release packaging, CI.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.8.0 (~95% complete). Living Galaxy + War Room + War Machine + Full Parity + Mod Workshop + Release READY + Play-test infrastructure (command palette, headless binary, seedable RNG). 15 simulation systems, 12 scripted story event chains, betrayal/decoy/escape mechanics, Han Solo speed bonus, mod manager panel, release packaging, CI.
 
 ## Build
 
@@ -36,6 +36,7 @@ PATH="/usr/bin:$PATH" cargo check
 | `rebellion-data` | DAT to GameWorld loader. Uses dat-dumper as library | rebellion-core, dat-dumper |
 | `rebellion-render` | macroquad 0.4 + egui-macroquad 0.17 galaxy map | rebellion-core, macroquad |
 | `rebellion-app` | Entry point and main loop | all crates above |
+| `rebellion-playtest` | Headless play-test binary with JSONL logging | rebellion-core, rebellion-data, rand, rand_xoshiro, clap |
 | `dat-dumper` (tools/) | 51/51 DAT parsers with round-trip byte validation. CLI + library | clap, serde |
 
 ## Conventions

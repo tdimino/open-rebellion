@@ -31,6 +31,9 @@ pub use panels::{
     PanelAction,
 };
 
+#[cfg(debug_assertions)]
+pub use panels::command_palette::{CommandPaletteState, draw_command_palette};
+
 /// Computed camera parameters for overlay rendering.
 ///
 /// Returned by `draw_galaxy_map` so fog/fleet overlays can use matching
