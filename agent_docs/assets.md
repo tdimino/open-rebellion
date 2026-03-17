@@ -429,7 +429,7 @@ See `agent_docs/dll-resource-catalog.md` for complete resource ID ranges, dimens
 | Core UI widgets | 321 | Vertex AI Imagen | Scrollbars, checkboxes, buttons |
 | Galaxy map chrome | 1,042 | Mixed | Background: Gemini edit. Icons: Vertex |
 
-Remaining unextracted: VOICEFXA/E.DLL voice lines (resource type 302).
+**All game DLLs fully extracted.** Including 285 voice WAV files (153 Alliance + 132 Empire).
 
 ---
 

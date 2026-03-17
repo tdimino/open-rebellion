@@ -5,7 +5,9 @@ Organized by DLL with resource ID ranges, image dimensions, and content descript
 
 ## Extraction Location
 
-All extracted to `assets/references/ref-ui-full/{dll-name}/` and `assets/references/ref-ui/{category}/`.
+Extracted to two locations:
+- `assets/references/ref-ui-full/{dll-name}/` — STRATEGY, GOKRES, COMMON, TACTICAL, REBDLOG, ENCYTEXT, TEXTSTRA, voice DLLs
+- `assets/references/ref-ui/{category}/` — ALSPRITE, EMSPRITE (07-droid-advisors), ALBRIEF (11-alliance-briefing), EMBRIEF (12-empire-briefing), and curated subsets from all DLLs
 
 ## STRATEGY.DLL (29MB) — 1,042 BMPs + 96 BIN
 

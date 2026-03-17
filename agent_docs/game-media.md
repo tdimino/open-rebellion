@@ -124,8 +124,7 @@ Locale `1033` = English (US). All extractions are English-locale.
 All visual DLLs fully extracted to `assets/references/ref-ui-full/` with per-DLL INDEX.md files.
 See `agent_docs/dll-resource-catalog.md` for complete per-DLL resource ID ranges and content descriptions.
 
-**Remaining unextracted:**
-- VOICEFXA/E.DLL voice lines (~282 WAV files, resource type 302 — requires separate extraction tool)
+**All DLLs fully extracted.** Voice lines: 285 WAV files (153 Alliance + 132 Empire) in `ref-ui-full/voice-alliance/` and `ref-ui-full/voice-empire/`.
 
 ### Extraction Tool
 
