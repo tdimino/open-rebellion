@@ -1,3 +1,11 @@
+---
+title: "Victory System"
+description: "Game-ending condition detection for Alliance and Empire"
+category: "agent-docs"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Victory System
 
 `victory.rs` — Game-ending condition detection.

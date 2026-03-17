@@ -1,3 +1,11 @@
+---
+title: "REBEXE.EXE — C++ Class Hierarchy (Reconstructed)"
+description: "Reconstructed C++ class hierarchy from Ghidra decompilation"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # REBEXE.EXE — C++ Class Hierarchy (Reconstructed)
 
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).

@@ -1,3 +1,11 @@
+---
+title: "Orbital Bombardment"
+description: "Decompiled orbital bombardment entry point and resolution logic (FUN_00556430)"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # Orbital Bombardment
 
 ## Entry Point

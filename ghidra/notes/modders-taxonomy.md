@@ -1,3 +1,11 @@
+---
+title: "Modder's Function Taxonomy — Star Wars Rebellion (REBEXE.EXE)"
+description: "Categorized function taxonomy of 22,741 REBEXE.EXE functions for modders"
+category: "ghidra"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Modder's Function Taxonomy — Star Wars Rebellion (REBEXE.EXE)
 
 *Generated from Ghidra decompilation of REBEXE.EXE (2.8MB, 22,741 functions). Cross-referenced with annotated-functions.md, combat-formulas.md, space-combat.md, ground-combat.md, bombardment.md, and rebellion-all-functions.txt.*

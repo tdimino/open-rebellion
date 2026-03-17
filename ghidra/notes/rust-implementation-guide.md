@@ -1,3 +1,11 @@
+---
+title: "Rust Implementation Guide: Combat & Mission Systems"
+description: "Maps decompiled C++ from REBEXE.EXE to rebellion-core Rust implementation"
+category: "ghidra"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Rust Implementation Guide: Combat & Mission Systems
 
 *Maps decompiled C++ from REBEXE.EXE to `rebellion-core` Rust. Written for the Knesset Tiamat swarm.*

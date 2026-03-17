@@ -1,3 +1,11 @@
+---
+title: "REBEXE.EXE — Annotated Function Reference"
+description: "Cross-referenced annotated function catalog from Ghidra decompilation"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # REBEXE.EXE — Annotated Function Reference
 
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).

@@ -1,9 +1,11 @@
 ---
 title: "feat: War Machine — Combat + Victory + Save/Load (v0.4.0)"
-type: feat
-status: active
-date: 2026-03-15
-project: open-rebellion
+description: "Combat, victory conditions, and save/load implementation for v0.4.0"
+category: "plan"
+status: "complete"
+created: 2026-03-15
+updated: 2026-03-16
+tags: ["combat", "victory", "save-load", "v0.4.0"]
 ---
 
 # War Machine: Combat + Victory + Save/Load

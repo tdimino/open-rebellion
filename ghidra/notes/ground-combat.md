@@ -1,3 +1,11 @@
+---
+title: "Ground Combat Resolution"
+description: "Decompiled ground combat entry point and troop iteration logic (FUN_00560d50)"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # Ground Combat Resolution
 
 ## Entry Point

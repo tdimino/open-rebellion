@@ -1,3 +1,11 @@
+---
+title: "Mod Runtime"
+description: "Runtime mod management architecture: discovery, validation, enable/disable, hot reload"
+category: "agent-docs"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Mod Runtime
 
 `crates/rebellion-data/src/mods.rs` — Runtime mod management: discovery, validation, enable/disable, hot reload.

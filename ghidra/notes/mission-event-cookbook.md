@@ -1,3 +1,11 @@
+---
+title: "Mission & Event Cookbook — REBEXE.EXE Reverse Engineering"
+description: "Practical modder reference for adding missions, story events, and era-specific campaigns"
+category: "ghidra"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Mission & Event Cookbook — REBEXE.EXE Reverse Engineering
 
 *A practical reference for modders who want to add new missions, story events, or era-specific campaigns to Star Wars Rebellion. Built from Ghidra decompilation of REBEXE.EXE (2.8MB), cross-referenced with rebellion-strings.txt (205 strings), rebel-all-functions.txt (4,938 annotated functions), and the 50+ decompiled C files in ghidra/notes/.*

@@ -1,3 +1,11 @@
+---
+title: "Research System"
+description: "Three independent tech trees per faction (Ship/Troop/Facility)"
+category: "agent-docs"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Research System
 
 `research.rs` — Three independent tech trees per faction (Ship/Troop/Facility).

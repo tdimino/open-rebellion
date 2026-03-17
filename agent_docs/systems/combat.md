@@ -1,3 +1,11 @@
+---
+title: "Combat System"
+description: "Space and ground combat resolution via combat.rs and bombardment.rs"
+category: "agent-docs"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Combat System
 
 `combat.rs` + `bombardment.rs` — Space and ground combat resolution.

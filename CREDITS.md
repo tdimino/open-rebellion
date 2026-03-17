@@ -1,3 +1,11 @@
+---
+title: "Credits & Acknowledgments"
+description: "Attribution for open-source projects, AI services, and community efforts used in Open Rebellion"
+category: "reference"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Credits & Acknowledgments
 
 Open Rebellion is built on the work of many open-source projects, AI services, and community efforts.

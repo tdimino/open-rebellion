@@ -1,3 +1,11 @@
+---
+title: "Ghidra Project — Open Rebellion"
+description: "Top-level index for the Ghidra RE project structure and resources"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # Ghidra Project — Open Rebellion
 
 Exhaustive reverse engineering of Star Wars Rebellion (1998, LucasArts) for game reimplementation and total conversion modding.

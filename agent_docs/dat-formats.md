@@ -1,3 +1,11 @@
+---
+title: "DAT Binary Formats"
+description: "Binary format specifications for all .DAT files in Star Wars Rebellion"
+category: "agent-docs"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 # DAT Binary Formats
 
 All .DAT files are raw little-endian binary. No magic bytes, no alignment padding. Strings live in TEXTSTRA.DLL (Win32 PE string resources), not in DAT files. All fields are u32 or u16.

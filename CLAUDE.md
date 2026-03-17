@@ -70,7 +70,8 @@ agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, impl
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
 agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: 5,127 decompiled functions, combat formulas, 111 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
 agent_docs/assets.md -- Asset pipeline: 6 pipelines (HD upscaling, 3D models, encyclopedia, reference image generation, audio, UI upscaling). 11 reference collections, 4 3D providers, 6 audio tools, 450+ UI BMPs. Read when working on visual or audio assets.
-agent_docs/game-media.md -- Complete game media inventory: 18 DLLs, 450 UI BMPs, 2342 animation data files, 15 Smacker videos, 16 WAV soundtrack. Resource ID scheme, extraction status, upscaling strategy. Read when extracting or upscaling game assets.
+agent_docs/game-media.md -- Game media overview: 18 DLLs, Smacker videos, WAV soundtrack. Read for high-level media inventory.
+agent_docs/dll-resource-catalog.md -- Granular DLL resource catalog: 2,441 BMPs + 3,223 data files across 11 DLLs. Per-DLL resource ID ranges, image dimensions, content descriptions. Read when working with specific DLL resources.
 
 docs/mechanics/ -- Game mechanics wiki with 18 system docs. Read for player/modder-facing mechanics reference.
 

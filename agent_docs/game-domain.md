@@ -1,3 +1,11 @@
+---
+title: "Game Domain: Star Wars Rebellion"
+description: "Game mechanics overview covering galaxy structure, factions, units, missions, and combat"
+category: "agent-docs"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 # Game Domain: Star Wars Rebellion
 
 Star Wars Rebellion (1998, Coolhand/LucasArts) is a 4X galactic strategy game. Alliance vs Empire, controlling systems, building fleets, training characters, running missions.

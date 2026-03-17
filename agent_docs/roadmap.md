@@ -1,3 +1,11 @@
+---
+title: "Roadmap"
+description: "Development milestones from Galaxy Viewer through Release packaging"
+category: "agent-docs"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 # Roadmap
 
 ## Galaxy Viewer -- COMPLETE

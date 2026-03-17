@@ -1,3 +1,11 @@
+---
+title: "RE Accuracy Review: Combat Scholar Documents"
+description: "Spot-check of 63 claims across 3 combat documents against decompiled C source"
+category: "ghidra"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # RE Accuracy Review: Combat Scholar Documents
 
 *Reviewer: Claude Sonnet 4.6 | Date: 2026-03-15*

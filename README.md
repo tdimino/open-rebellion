@@ -1,3 +1,11 @@
+---
+title: "Open Rebellion"
+description: "Open-source Rust reimplementation of Star Wars Rebellion (1998)"
+category: "reference"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 <p align="center">
   <img src="assets/tanit.svg" alt="Symbol of Tanit" width="80"/>
 </p>

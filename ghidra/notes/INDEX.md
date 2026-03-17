@@ -1,3 +1,11 @@
+---
+title: "Ghidra RE Notes — Index"
+description: "Master index of 5,127 decompiled C files, 8 Jython scripts, and 14 scholar documents"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # Ghidra RE Notes — Index
 
 **5,127 decompiled C files, 8 Jython scripts, 14 markdown docs, 6,049 lines of scholar analysis**

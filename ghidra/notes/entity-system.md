@@ -1,3 +1,11 @@
+---
+title: "REBEXE.EXE — Entity System Reference"
+description: "Entity system architecture from Ghidra decompilation with cross-references"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # REBEXE.EXE — Entity System Reference
 
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).

@@ -1,3 +1,11 @@
+---
+title: "Betrayal System"
+description: "Loyalty-driven character faction defection mechanics"
+category: "agent-docs"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Betrayal System
 
 `betrayal.rs` — Loyalty-driven character faction defection.

@@ -1,3 +1,11 @@
+---
+title: "Game Media Reference"
+description: "Complete inventory of all visual and audio media in Star Wars Rebellion (1998)"
+category: "agent-docs"
+created: 2026-03-16
+updated: 2026-03-16
+---
+
 # Game Media Reference
 
 Complete inventory of all visual and audio media in Star Wars Rebellion (1998).

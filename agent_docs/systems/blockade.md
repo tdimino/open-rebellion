@@ -1,3 +1,11 @@
+---
+title: "Blockade System"
+description: "Fleet-presence blockade mechanics: manufacturing halt and in-transit troop destruction"
+category: "agent-docs"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Blockade System
 
 `blockade.rs` — Fleet-presence blockade halts manufacturing and destroys in-transit troops.

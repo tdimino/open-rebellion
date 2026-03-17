@@ -1,3 +1,11 @@
+---
+title: "REBEXE.EXE Reverse Engineering Notes"
+description: "Binary overview and combat formula extraction from REBEXE.EXE"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # REBEXE.EXE Reverse Engineering Notes
 
 ## Binary Overview

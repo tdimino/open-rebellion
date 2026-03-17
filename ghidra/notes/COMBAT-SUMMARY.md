@@ -1,3 +1,11 @@
+---
+title: "Combat System — Reverse Engineering Summary"
+description: "Complete combat call chain discovery from the system battle orchestrator"
+category: "ghidra"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # Combat System — Reverse Engineering Summary
 
 ## Discovery: Complete Combat Call Chain

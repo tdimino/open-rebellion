@@ -1,3 +1,11 @@
+---
+title: "Simulation Systems"
+description: "Fifteen stateless advance-pattern modules implementing the game simulation"
+category: "agent-docs"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Simulation Systems
 
 Fifteen modules in `rebellion-core/src/` implement the game simulation. All follow the same stateless advance pattern.

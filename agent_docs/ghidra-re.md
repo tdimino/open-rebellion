@@ -1,3 +1,11 @@
+---
+title: "Ghidra Reverse Engineering"
+description: "RE status and methodology for REBEXE.EXE decompilation (22,741 functions)"
+category: "agent-docs"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 # Ghidra Reverse Engineering
 
 REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,900 decompiled. STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT). RE is **complete** for implementation purposes. See `ghidra/notes/` for the full corpus: 4 scholar documents (4,179 lines), 11 markdown docs, ~4,900 decompiled C files, 8 Jython scripts.

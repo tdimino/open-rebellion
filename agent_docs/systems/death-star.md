@@ -1,3 +1,11 @@
+---
+title: "Death Star System"
+description: "Construction countdown, planet destruction, and nearby-warning scan mechanics"
+category: "agent-docs"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Death Star System
 
 `death_star.rs` — Construction countdown, planet destruction, and nearby-warning scan.

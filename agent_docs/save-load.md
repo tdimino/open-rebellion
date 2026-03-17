@@ -1,3 +1,11 @@
+---
+title: "Save/Load System"
+description: "Bincode serialization with versioned headers, mod metadata, and migration framework"
+category: "agent-docs"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Save/Load System
 
 `crates/rebellion-data/src/save.rs` — Bincode serialization with versioned headers, mod metadata, and migration framework.

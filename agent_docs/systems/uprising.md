@@ -1,3 +1,11 @@
+---
+title: "Uprising System"
+description: "Loyalty-driven control changes with UPRIS1TB/UPRIS2TB probability tables"
+category: "agent-docs"
+created: 2026-03-14
+updated: 2026-03-16
+---
+
 # Uprising System
 
 `uprising.rs` — Loyalty-driven control changes with UPRIS1TB/UPRIS2TB probability tables.

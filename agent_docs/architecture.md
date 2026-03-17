@@ -1,3 +1,11 @@
+---
+title: "Architecture"
+description: "Crate dependency graph and module structure for the Open Rebellion codebase"
+category: "agent-docs"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 # Architecture
 
 ## Crate Dependency Graph

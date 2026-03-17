@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><title>Sharpen Comparison</title>
+<style>
+body { background: #0a0c14; color: #f1f5f9; font-family: monospace; margin: 20px; }
+h1 { color: #2dd4bf; font-size: 18px; }
+.row { display: flex; gap: 10px; margin: 15px 0; }
+.col { flex: 1; }
+.label { color: #94a3b8; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+.label.winner { color: #2dd4bf; }
+img { width: 100%; border: 1px solid #222838; }
+</style></head><body>
+<h1>Mon Cal Cruiser — Sharpen Comparison</h1>
+<p style="color:#94a3b8;font-size:12px">All 1600x800 (4x from 400x200 original). Which looks best?</p>
+<div class="row">
+  <div class="col">
+    <div class="label">ORIGINAL (400x200)</div>
+    <img src="../assets/references/ref-capital-ships/042-edata-2010-ship-alliance-mon-calamari-cruiser_mc80-liberty-cruiser-orig.png" style="image-rendering:pixelated">
+  </div>
+</div>
+<div class="row">
+  <div class="col">
+    <div class="label">WAIFU2X DENOISE=1 (current)</div>
+    <img src="/sharpen-test/denoise1.png">
+  </div>
+  <div class="col">
+    <div class="label">WAIFU2X DENOISE=0 (sharper)</div>
+    <img src="/sharpen-test/denoise0.png">
+  </div>
+  <div class="col">
+    <div class="label">DENOISE=1 + UNSHARP MASK (sharpest)</div>
+    <img src="/sharpen-test/sharpened.png">
+  </div>
+</div>
+</body></html>

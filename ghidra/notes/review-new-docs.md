@@ -1,3 +1,11 @@
+---
+title: "Accuracy Review: Three New Scholar Documents"
+description: "Cross-reference audit of 46 claims across economy, entity, and mission/event documents"
+category: "ghidra"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Accuracy Review: Three New Scholar Documents
 
 **Reviewer**: RE accuracy audit against decompiled C source

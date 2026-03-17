@@ -1,3 +1,11 @@
+---
+title: "Mod System"
+description: "TOML manifest + JSON overlay mod system with directory layout and hot reload"
+category: "agent-docs"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Mod System
 
 Open Rebellion supports user mods via a TOML manifest + JSON overlay system. Implementation: `crates/rebellion-data/src/mods.rs` (637 LOC, 15 tests).

@@ -1,3 +1,11 @@
+---
+title: "Asset Pipeline"
+description: "HD upscaling, 3D model generation, and encyclopedia content pipelines"
+category: "agent-docs"
+created: 2026-03-13
+updated: 2026-03-16
+---
+
 # Asset Pipeline
 
 Three pipelines handle HD upscaling, 3D model generation, and encyclopedia content. Read when adding visual assets, generating models, or working on the encyclopedia viewer.

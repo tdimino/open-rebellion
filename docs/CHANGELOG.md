@@ -1,3 +1,11 @@
+---
+title: "Changelog"
+description: "All notable changes to Open Rebellion by version"
+category: "reference"
+created: 2026-03-11
+updated: 2026-03-16
+---
+
 # Changelog
 
 All notable changes to Open Rebellion are documented here.

@@ -1,3 +1,11 @@
+---
+title: "Yuuzhan Vong Total Conversion: Visual Reference Scope"
+description: "Asset replacement inventory and visual reference catalog for the NJO total conversion mod"
+category: "reference"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Yuuzhan Vong Total Conversion: Visual Reference Scope
 
 ## Context

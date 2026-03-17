@@ -1,3 +1,11 @@
+---
+title: "Accuracy Review: annotated-functions.md"
+description: "Cross-check of annotated-functions.md claims against decompiled C source files"
+category: "ghidra"
+created: 2026-03-15
+updated: 2026-03-16
+---
+
 # Accuracy Review: annotated-functions.md
 
 Reviewed against decompiled C source files in `ghidra/notes/`. Every function address mentioned in the document was cross-checked against its corresponding `.c` file.
