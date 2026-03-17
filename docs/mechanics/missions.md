@@ -39,7 +39,7 @@ Dispatched via a 13-case switch in `FUN_0050d5a0` (503 lines):
 | 5 | Incite Uprising | INCTMSTB.DAT | diplomacy | 13 |
 | 6 | Assassination | ASSNMSTB.DAT | combat | 12 |
 | 7 | Rescue | RESCMSTB.DAT | combat | 12 |
-| 8 | Subdue Uprising | SUBDMSTB.DAT | diplomacy | 13 |
+| 8 | Subdue Uprising | SUBDMSTB.DAT | diplomacy | 13 | *Handled by `UprisingSystem::try_subdue()`, not MissionSystem* |
 | 9 | Espionage | ESPIMSTB.DAT | espionage | 12 |
 
 ### Probability Tables (MSTB Format)
