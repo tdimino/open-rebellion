@@ -128,6 +128,32 @@ TEXTSTRA.DLL        →  pelite → Real entity names ("Coruscant", "Luke Skywal
 
 Run `cargo run -p dat-dumper -- --gdata data/base --output data/base/json` to export everything.
 
+## Asset Pipeline
+
+Every resource in the original game has been fully extracted to open formats—**nothing remains locked in the 1998 binaries**:
+
+| Resource | Count | Format | Source |
+|----------|-------|--------|--------|
+| Game data | 51 files | DAT → JSON | dat-dumper (round-trip validated) |
+| UI images | 2,441 BMPs | BMP → PNG | 11 DLLs via pefile extraction |
+| Animation data | 3,223 files | BIN | ALSPRITE/EMSPRITE/ALBRIEF/EMBRIEF.DLL |
+| Voice lines | 285 WAVs | WAV | VOICEFXA/VOICEFXE.DLL |
+| Cutscene videos | 15 files | SMK → WebM | MDATA/ via ffmpeg |
+| Soundtrack | 16 WAVs | WAV | MDATA/300-315 (John Williams excerpts) |
+| Entity names | 511+ strings | UTF-16 → text | TEXTSTRA.DLL via pelite |
+| Encyclopedia text | 348 entries | RT_RCDATA | ENCYTEXT.DLL |
+
+Six AI-powered pipelines handle upscaling and new asset generation:
+
+1. **HD Upscaling**—waifu2x (batch), Vertex AI Imagen 4.0 (faithful), Gemini edit (generative detail)
+2. **3D Models**—Hunyuan3D Pro, WaveSpeedAI ($0.02/model), Meshy, Trellis 2 → Blender sprite sheets
+3. **Reference Image Generation**—nano-banana-pro with 11 curated reference collections (91 images)
+4. **Audio**—Voicebox/Qwen3-TTS (voice cloning), LavaSR v2 (upscaling), ACE-Step 1.5 (music), ElevenLabs (SFX)
+5. **UI Upscaling**—per-category strategy: Vertex AI for buttons/sprites, Gemini edit for backgrounds
+6. **Encyclopedia Content**—TEXTSTRA.DLL names + Wookieepedia-sourced descriptions
+
+See [CREDITS.md](CREDITS.md) for full tool attribution.
+
 ## Modding
 
 The entire point of rebuilding from scratch is to make Rebellion *moddable*. The original game hardcoded everything. We won't.
@@ -161,7 +187,7 @@ We're one developer and one AI collaborator, building in public. If you want to 
 - **Game data expertise**: If you know what GNPRTB parameter #147 does, or how the original handled sensor range, open an issue
 - **Modding**: Create mods, test the mod manager, report issues with the JSON overlay system
 - **Story events**: 15+ scripted story beats are documented in `ghidra/notes/` but only 4 major chains are implemented—help add the rest
-- **Art and audio**: AI-assisted asset generation for a fully open replacement set
+- **Art and audio**: All 2,441 original BMPs + 285 voice WAVs + 15 videos are extracted. Help upscale, generate HD replacements, or create total conversion assets (see `agent_docs/assets.md`)
 - **Distribution**: Homebrew formula, itch.io packaging, WASM optimization
 
 ## License
