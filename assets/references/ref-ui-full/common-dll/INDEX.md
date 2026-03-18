@@ -1,3 +1,11 @@
+---
+title: "COMMON.DLL — Resource Index"
+description: "321 BMP images extracted from COMMON.DLL"
+category: "reference"
+created: 2026-03-17
+updated: 2026-03-18
+---
+
 # COMMON.DLL — Resource Index
 
 321 BMP images extracted. Organized by resource ID range and modding function.

@@ -1,3 +1,11 @@
+---
+title: "STRATEGY.DLL — Resource Index"
+description: "Extracted BMP resources from STRATEGY.DLL"
+category: "reference"
+created: 2026-03-17
+updated: 2026-03-18
+---
+
 # STRATEGY.DLL — Resource Index
 
 1042 BMP images extracted. Organized by resource ID range and modding function.

@@ -11,13 +11,17 @@ updated: 2026-03-16
 ## Crate Dependency Graph
 
 ```
-rebellion-app (quad-snd)
-├── rebellion-render (macroquad 0.4, egui-macroquad 0.17, image)
+rebellion-app (quad-snd, rand_xoshiro)
+├── rebellion-render (macroquad 0.4, egui-macroquad 0.17, image, nucleo-matcher)
 │   └── rebellion-core
 ├── rebellion-data (notify [native only])
 │   ├── rebellion-core
 │   └── dat-dumper (library mode)
 └── rebellion-core (slotmap 1.0, serde 1)
+
+rebellion-playtest (clap, rand_xoshiro, serde_json)  [headless play-test binary]
+├── rebellion-data
+└── rebellion-core
 
 dat-dumper (tools/) -- standalone CLI + library
 └── clap 4, serde, serde_json, anyhow, pelite
@@ -49,7 +53,8 @@ crates/rebellion-core/src/
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
 ├── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
 ├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
-└── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba)
+├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba)
+└── game_events.rs    — GameEventRecord struct + 24 event type constants for JSONL telemetry
 ```
 
 ## Render Modules (rebellion-render)
@@ -86,8 +91,9 @@ crates/rebellion-app/src/
 
 ```
 crates/rebellion-data/src/
-├── seeds.rs  — 9 seed table loader, fleet/unit/facility instantiation (545 LOC)
-└── mods.rs   — Mod loader: TOML manifest, RFC 7396 merge patch, semver, hot reload (637 LOC)
+├── seeds.rs      — 9 seed table loader, fleet/unit/facility instantiation (545 LOC)
+├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
+└── simulation.rs — Shared simulation tick: SimulationStates bundle + run_simulation_tick() → Vec<GameEventRecord>
 ```
 
 ## Type System: Two Layers

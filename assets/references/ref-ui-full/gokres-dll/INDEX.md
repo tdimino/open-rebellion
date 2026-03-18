@@ -1,3 +1,11 @@
+---
+title: "GOKRES.DLL — Resource Index"
+description: "Extracted BMP resources from GOKRES.DLL"
+category: "reference"
+created: 2026-03-17
+updated: 2026-03-18
+---
+
 # GOKRES.DLL — Resource Index
 
 580 BMP images extracted. Organized by resource ID range and modding function.

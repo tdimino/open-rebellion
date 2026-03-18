@@ -3,6 +3,23 @@ title: "Play-Testing Infrastructure"
 description: "Command palette, headless binary, JSONL logging, and dual-AI mode for automated play-testing"
 category: "mechanics"
 created: 2026-03-17
+updated: 2026-03-18
+game_system: "play-testing"
+sources:
+  - type: "code"
+    file: "crates/rebellion-core/src/game_events.rs"
+  - type: "code"
+    file: "crates/rebellion-data/src/simulation.rs"
+  - type: "code"
+    file: "crates/rebellion-playtest/src/main.rs"
+  - type: "code"
+    file: "crates/rebellion-render/src/panels/command_palette.rs"
+related:
+  - "space-combat"
+  - "missions"
+  - "victory"
+  - "story-events"
+tags: ["play-testing", "logging", "command-palette", "headless", "dual-ai", "deterministic-rng"]
 ---
 
 # Play-Testing Infrastructure
@@ -65,15 +82,15 @@ cargo run -p rebellion-playtest -- --ticks 10000 --data data/base > playtest.jso
 
 ### JSONL Schema
 
-Each line is a JSON object with a `type` field:
+Each line is a `GameEventRecord` (defined in `rebellion-core/src/game_events.rs`):
 
 ```json
-{"type":"tick","tick":1,"alliance_systems":85,"empire_systems":115}
-{"type":"combat","tick":47,"system":"Coruscant","winner":"empire","attacker_losses":2,"defender_losses":1}
-{"type":"mission","tick":102,"kind":"Diplomacy","faction":"alliance","outcome":"success","system":"Sullust"}
-{"type":"event","tick":200,"name":"Luke begins Dagobah training"}
-{"type":"summary","ticks":1000,"alliance_systems":92,"empire_systems":108,"fleets":24,"characters":42}
+{"tick":47,"wall_ms":1042,"system":"combat","event_type":"combat_space","details":{"system_name":"Coruscant","attacker":"Empire","defender":"Alliance","winner":"attacker_wins"}}
+{"tick":102,"wall_ms":2100,"system":"missions","event_type":"mission_resolved","details":{"kind":"Diplomacy","faction":"Alliance","outcome":"success","system":"Sullust"}}
+{"tick":200,"wall_ms":4200,"system":"story","event_type":"story_event","details":{"name":"Luke begins Dagobah training","event_id":"0x221"}}
 ```
+
+24 event types across 15 systems: `manufacturing_complete`, `fleet_arrived`, `fleet_departed`, `combat_space`, `combat_ground`, `bombardment`, `mission_dispatched`, `mission_resolved`, `event_fired`, `ai_action`, `blockade_started`, `blockade_ended`, `uprising_incident`, `uprising_began`, `death_star_construction`, `death_star_fired`, `research_unlocked`, `jedi_tier_advanced`, `jedi_discovered`, `victory_check`, `betrayal`, `character_escaped`, `story_event`, `character_captured`.
 
 ### DuckDB Analysis Examples
 

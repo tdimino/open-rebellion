@@ -92,9 +92,19 @@ Each frame:
 
 Order matters: manufacturing needs blockade set from prior tick; combat needs fleet positions from movement; AI reads mission and manufacturing state that earlier systems may have modified.
 
+## Shared Simulation Tick (v0.8.0)
+
+The effect-application logic is extracted into `rebellion-data/src/simulation.rs`:
+
+```rust
+pub fn run_simulation_tick(world, states, tick_events, rolls, wall_ms) -> Vec<GameEventRecord>
+```
+
+Both the interactive binary (`rebellion-app`) and the headless binary (`rebellion-playtest`) call this function. `SimulationStates` bundles all 15 state types + combat cooldowns. `GameEventRecord` (in `rebellion-core/src/game_events.rs`) is the structured telemetry type — pure data, no IO.
+
 ## State Ownership
 
-All simulation states are created in `main.rs` and included in `SaveState` (`rebellion-data/src/save.rs`, version 2) for serialization.
+All simulation states are created in `main.rs` and included in `SaveState` (`rebellion-data/src/save.rs`, version 4) for serialization.
 
 | State | Mutated By |
 |-------|------------|

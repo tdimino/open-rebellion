@@ -1,3 +1,11 @@
+---
+title: "DLL Resource Catalog"
+description: "Complete extraction inventory of all 18 game DLLs — 5,664 resources (BMPs + data)"
+category: "agent-docs"
+created: 2026-03-17
+updated: 2026-03-18
+---
+
 # DLL Resource Catalog
 
 Complete extraction of all 18 game DLLs. 5,664 total resources (2,441 BMPs + 3,223 data files).
