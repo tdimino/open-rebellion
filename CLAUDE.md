@@ -74,7 +74,7 @@ agent_docs/assets.md -- Asset pipeline: 6 pipelines (HD upscaling, 3D models, en
 agent_docs/game-media.md -- Game media overview: 18 DLLs, Smacker videos, WAV soundtrack. Read for high-level media inventory.
 agent_docs/dll-resource-catalog.md -- Granular DLL resource catalog: 2,441 BMPs + 3,223 data files across 11 DLLs. Per-DLL resource ID ranges, image dimensions, content descriptions. Read when working with specific DLL resources.
 
-docs/mechanics/ -- Game mechanics wiki with 18 system docs. Read for player/modder-facing mechanics reference.
+docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for player/modder-facing mechanics reference.
 
 ## Reports
 

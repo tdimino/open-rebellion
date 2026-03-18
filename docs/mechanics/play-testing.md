@@ -62,23 +62,26 @@ The command palette is gated behind `#[cfg(debug_assertions)]` and does not exis
 A standalone binary that runs the simulation without rendering. Produces JSONL output for post-hoc analysis.
 
 ```bash
-# Run 1000 ticks with default seed
-cargo run -p rebellion-playtest -- --ticks 1000 --data data/base
+# Run 5000 ticks with default seed (data_dir is positional)
+cargo run -p rebellion-playtest -- data/base
 
 # Run with a specific seed for reproducibility
-cargo run -p rebellion-playtest -- --ticks 5000 --data data/base --seed 12345
+cargo run -p rebellion-playtest -- data/base --ticks 5000 --seed 12345
 
-# Pipe to file
-cargo run -p rebellion-playtest -- --ticks 10000 --data data/base > playtest.jsonl
+# Export to file
+cargo run -p rebellion-playtest -- data/base --output playtest.jsonl --summary
 ```
 
 ### CLI Options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--data <path>` | `data/base` | Path to GData directory |
-| `--ticks <n>` | `1000` | Number of simulation ticks to run |
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `<data_dir>` (positional) | — | Path to GData directory (required) |
+| `--ticks <n>` | `5000` | Number of simulation ticks to run |
 | `--seed <u64>` | system time | RNG seed for deterministic replay |
+| `--output <path>` | — | JSONL output file path |
+| `--summary` | off | Print event count summary on exit |
+| `--dual-ai` | off | Both factions AI-controlled |
 
 ### JSONL Schema
 

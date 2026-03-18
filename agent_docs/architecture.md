@@ -76,7 +76,8 @@ crates/rebellion-render/src/
     ├── manufacturing.rs  — Production queue manager
     ├── missions.rs       — Mission dispatch with probability preview
     ├── save_load.rs      — Save/load UI: 10 slots, auto-save
-    └── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
+    ├── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
+    └── command_palette.rs — VS Code-style fuzzy command palette (nucleo-matcher, debug-only)
 ```
 
 ## App Modules (rebellion-app)

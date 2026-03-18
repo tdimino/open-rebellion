@@ -37,7 +37,7 @@ updated: 2026-03-16
 | [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | [bombardment.md](bombardment.md) | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
 
-## Decompiled Functions (~4,900 files)
+## Decompiled Functions (5,127 files)
 
 ### By Game System
 
@@ -67,7 +67,7 @@ updated: 2026-03-16
 | Function | Lines | Purpose |
 |----------|-------|---------|
 | FUN_0053e450 | 240 | General parameter binding (34 bindings: 28 base + 6 per-side, IDs 0x0a00-0x0a21) |
-| FUN_0055cb60 | 84 | Combat parameter binding (71 params: 0x1400-0x1445) |
+| FUN_0055cb60 | 84 | Combat parameter binding (77 params: 25 base + 52 per-side, IDs 0x1400-0x1445) |
 | FUN_00585640 | 27 | GNPRTB entry constructor (68-byte runtime struct, 8 i32 values) |
 | FUN_00569280 | 12 | DAT type registry (5 parser types by info string) |
 | FUN_0053e390 | — | Parameter → global address binder |
