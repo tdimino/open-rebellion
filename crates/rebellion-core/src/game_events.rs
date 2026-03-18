@@ -86,6 +86,7 @@ pub const EVT_BETRAYAL: &str = "betrayal";
 pub const EVT_ESCAPE: &str = "character_escaped";
 pub const EVT_STORY: &str = "story_event";
 pub const EVT_CAPTURE: &str = "character_captured";
+pub const EVT_FOG_REVEALED: &str = "fog_revealed";
 
 #[cfg(test)]
 mod tests {

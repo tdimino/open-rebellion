@@ -998,10 +998,13 @@ fn apply_panel_action(
             // Will be handled when mod_runtime is wired
         }
         PanelAction::AdvanceTicks(n) => {
-            // Force-advance N ticks synchronously
-            for _ in 0..n {
-                clock.tick += 1;
-            }
+            // Force-advance N ticks synchronously.
+            // NOTE: This only advances the clock counter. Full simulation tick
+            // execution requires run_simulation_tick() which needs &mut access to
+            // all states — not available inside apply_panel_action(). The actual
+            // simulation will catch up on the next frame when clock.advance(dt)
+            // emits the pending TickEvents. For instant effect, set speed to Faster.
+            clock.tick += n;
         }
         PanelAction::SetGameSpeed(speed) => {
             let game_speed = match speed {

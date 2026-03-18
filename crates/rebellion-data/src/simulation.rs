@@ -247,7 +247,7 @@ pub fn run_simulation_tick(
             current_tick,
             wall_ms,
             SYS_FOG,
-            EVT_EVENT_FIRED,
+            EVT_FOG_REVEALED,
             serde_json::json!({ "system": format!("{:?}", reveal.system) }),
         ));
     }
