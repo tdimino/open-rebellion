@@ -7,6 +7,7 @@ use anyhow::Context;
 use dat_dumper::codec::ByteReader;
 use dat_dumper::dat_record::DatRecord;
 use dat_dumper::types::capital_ships::CapitalShipsFile;
+use dat_dumper::types::defense_facilities::DefenseFacilitiesFile;
 use dat_dumper::types::fighters::FightersFile;
 use dat_dumper::types::general_params::GeneralParamsFile;
 use dat_dumper::types::int_table::IntTableFile;
@@ -75,6 +76,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         production_facilities: slotmap::SlotMap::with_key(),
         gnprtb: GnprtbParams::default(),
         mission_tables: std::collections::HashMap::new(),
+        defense_facility_classes: std::collections::HashMap::new(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────
@@ -266,6 +268,20 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             multiplayer: e.multiplayer,
         }).collect();
         world.gnprtb = GnprtbParams::new(entries);
+    }
+
+    // ── 8b. Defense facility classes ───────────────────────────────────────────
+    let deffac_path = gdata_path.join("DEFFACSD.DAT");
+    if deffac_path.exists() {
+        let deffac_file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
+        for dat in &deffac_file.facilities {
+            world.defense_facility_classes.insert(
+                DatId::new(dat.id),
+                DefenseFacilityClassDef {
+                    bombardment_defense: dat.bombardment_defense as i32,
+                },
+            );
+        }
     }
 
     // ── 9. Mission probability tables (*MSTB.DAT and *TB.DAT) ────────────────

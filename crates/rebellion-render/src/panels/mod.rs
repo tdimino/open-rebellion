@@ -115,4 +115,10 @@ pub enum PanelAction {
     ExportGameLog,
     /// Display current game statistics overlay.
     ShowGameStats,
+    /// List all currently active missions.
+    ListActiveMissions,
+    /// List all fleet positions and compositions.
+    ListActiveFleets,
+    /// Show count of triggered events.
+    ShowEventCount,
 }

@@ -21,6 +21,7 @@
 
 use egui_macroquad::egui::{self, Color32, RichText, ScrollArea};
 use rebellion_core::ids::SystemKey;
+use serde::Serialize;
 
 // ---------------------------------------------------------------------------
 // MessageCategory
@@ -29,7 +30,8 @@ use rebellion_core::ids::SystemKey;
 /// What kind of event produced this message.
 ///
 /// Determines the color used in the UI and which filter toggle controls it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MessageCategory {
     /// Ship, troop, or facility construction completed.
     Manufacturing,
@@ -76,7 +78,7 @@ impl MessageCategory {
 // ---------------------------------------------------------------------------
 
 /// One entry in the message log.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GameMessage {
     /// Game-day on which this message was generated.
     pub tick: u64,
@@ -86,6 +88,7 @@ pub struct GameMessage {
     pub category: MessageCategory,
     /// If this message is linked to a system, clicking it can zoom the map
     /// to that location. `None` for messages with no spatial context.
+    #[serde(skip)]
     pub system: Option<SystemKey>,
 }
 
@@ -170,6 +173,19 @@ impl MessageLog {
 
     pub fn is_empty(&self) -> bool {
         self.messages.is_empty()
+    }
+
+    /// Export all messages as JSONL (one JSON object per line).
+    pub fn export_jsonl(&self, path: &std::path::Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path)?;
+        for msg in &self.messages {
+            let json = serde_json::to_string(msg).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            })?;
+            writeln!(file, "{}", json)?;
+        }
+        Ok(())
     }
 }
 
@@ -376,5 +392,33 @@ fn category_toggle(
     };
     if ui.add(egui::Button::new(text).frame(false)).clicked() {
         *enabled = !*enabled;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_jsonl_round_trip() {
+        let mut log = MessageLog::new(10);
+        log.push(GameMessage::new(1, "Test event", MessageCategory::Event));
+        log.push(GameMessage::new(2, "Combat happened", MessageCategory::Combat));
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_export.jsonl");
+        log.export_jsonl(&path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+
+        // Verify valid JSON
+        for line in &lines {
+            let _: serde_json::Value = serde_json::from_str(line).unwrap();
+        }
+
+        // Clean up
+        let _ = std::fs::remove_file(&path);
     }
 }

@@ -106,6 +106,7 @@ async fn main() {
     let mut mission_state = MissionState::new();
     let mut event_state = EventState::new();
     let mut ai_state = AIState::new(AiFaction::Empire);
+    let mut dual_ai_mode = false;
     let mut movement_state = MovementState::new();
     let mut fog_state = FogState::new(Faction::Alliance);
     FogSystem::seed(&mut fog_state, &world);
@@ -515,6 +516,39 @@ async fn main() {
                 &audio_vol,
             );
 
+            // ── Dual AI (second faction) ────────────────────────────────────
+            if dual_ai_mode {
+                let second_faction = match ai_state.faction {
+                    Some(AiFaction::Empire) => AiFaction::Alliance,
+                    _ => AiFaction::Empire,
+                };
+                let mut second_ai = AIState::new(second_faction);
+                let second_actions = AISystem::advance(
+                    &mut second_ai,
+                    &world,
+                    &mfg_state,
+                    &mission_state,
+                    &tick_events,
+                );
+                let second_rolls: Vec<f64> =
+                    (0..8).map(|_| sim_rng.gen::<f64>()).collect();
+                apply_ai_actions(
+                    &second_actions,
+                    &second_rolls,
+                    &mut second_ai,
+                    &mut mission_state,
+                    &mut mfg_state,
+                    &mut movement_state,
+                    &world,
+                    &mut msg_log,
+                    tick_events.last().map(|e| e.tick).unwrap_or(0),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &mut audio_engine,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    &audio_vol,
+                );
+            }
+
             // ── Blockade ─────────────────────────────────────────────────────
             let blockade_events = BlockadeSystem::advance(&mut blockade_state, &world, &tick_events);
             for evt in &blockade_events {
@@ -828,6 +862,9 @@ async fn main() {
                 &mut msg_log,
                 &mut player_faction,
                 &mut clock,
+                &mut dual_ai_mode,
+                &victory_state,
+                &event_state,
                 #[cfg(not(target_arch = "wasm32"))]
                 &mut audio_engine,
                 #[cfg(not(target_arch = "wasm32"))]
@@ -873,6 +910,9 @@ fn apply_panel_action(
     msg_log: &mut MessageLog,
     player_faction: &mut MissionFaction,
     clock: &mut GameClock,
+    dual_ai_mode: &mut bool,
+    victory_state: &VictoryState,
+    event_state: &EventState,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] sounds_dir: &Path,
@@ -1016,10 +1056,30 @@ fn apply_panel_action(
             clock.set_speed(game_speed);
         }
         PanelAction::ToggleDualAI => {
-            // TODO: toggle dual AI mode
+            *dual_ai_mode = !*dual_ai_mode;
+            let state_str = if *dual_ai_mode { "ENABLED" } else { "DISABLED" };
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("Dual AI mode {}", state_str),
+                MessageCategory::Event,
+            ));
         }
         PanelAction::ForceVictoryCheck => {
-            // Force victory evaluation next tick
+            let tick_ev = rebellion_core::tick::TickEvent { tick: clock.tick };
+            let result = rebellion_core::victory::VictorySystem::check(victory_state, world, &[tick_ev]);
+            if let Some(outcome) = result {
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("Victory check: {:?}", outcome),
+                    MessageCategory::Event,
+                ));
+            } else {
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    "Victory check: no winner yet".to_string(),
+                    MessageCategory::Event,
+                ));
+            }
         }
         PanelAction::RevealAllFog => {
             // Reveal all systems in fog state
@@ -1028,7 +1088,19 @@ fn apply_panel_action(
             }
         }
         PanelAction::ExportGameLog => {
-            // TODO: export playtest log when logger is wired
+            let path = std::path::PathBuf::from("game_log.jsonl");
+            match msg_log.export_jsonl(&path) {
+                Ok(()) => {
+                    msg_log.push(GameMessage::new(
+                        clock.tick,
+                        format!("Exported game log to {}", path.display()),
+                        MessageCategory::Event,
+                    ));
+                }
+                Err(e) => {
+                    eprintln!("Failed to export game log: {}", e);
+                }
+            }
         }
         PanelAction::ShowGameStats => {
             let alliance_systems = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Alliance)).count();
@@ -1037,6 +1109,53 @@ fn apply_panel_action(
                 clock.tick,
                 format!("Stats: tick {}, Alliance {} systems, Empire {} systems, {} fleets, {} characters",
                     clock.tick, alliance_systems, empire_systems, world.fleets.len(), world.characters.len()),
+                MessageCategory::Event,
+            ));
+        }
+        PanelAction::ListActiveMissions => {
+            let missions = mission_state.missions();
+            if missions.is_empty() {
+                msg_log.push(GameMessage::new(clock.tick, "No active missions".to_string(), MessageCategory::Mission));
+            } else {
+                msg_log.push(GameMessage::new(clock.tick, format!("{} active missions:", missions.len()), MessageCategory::Mission));
+                for m in missions {
+                    let char_name = world.characters.get(m.character)
+                        .map(|c| c.name.clone())
+                        .unwrap_or_else(|| "Unknown".into());
+                    let sys_name = world.systems.get(m.target_system)
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| "unknown".into());
+                    msg_log.push(GameMessage::new(
+                        clock.tick,
+                        format!("  {:?} — {} at {}", m.kind, char_name, sys_name),
+                        MessageCategory::Mission,
+                    ));
+                }
+            }
+        }
+        PanelAction::ListActiveFleets => {
+            msg_log.push(GameMessage::new(clock.tick, format!("{} fleets:", world.fleets.len()), MessageCategory::Event));
+            for (_, fleet) in world.fleets.iter() {
+                let sys_name = world.systems.get(fleet.location)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "unknown".into());
+                let faction = if fleet.is_alliance { "Alliance" } else { "Empire" };
+                let ship_count = fleet.capital_ships.iter().map(|e| e.count as usize).sum::<usize>()
+                    + fleet.fighters.iter().map(|e| e.count as usize).sum::<usize>();
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("  {} fleet at {} — {} ships",
+                        faction, sys_name, ship_count),
+                    MessageCategory::Event,
+                ));
+            }
+        }
+        PanelAction::ShowEventCount => {
+            let total = event_state.events().len();
+            let fired = event_state.events().iter().filter(|e| event_state.has_fired(e.id)).count();
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("Events: {} defined, {} fired", total, fired),
                 MessageCategory::Event,
             ));
         }

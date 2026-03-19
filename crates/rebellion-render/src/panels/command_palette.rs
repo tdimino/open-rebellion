@@ -91,19 +91,19 @@ impl CommandPaletteState {
                 label: "List Active Missions".into(),
                 description: "Show all in-progress missions".into(),
                 category: "Inspect".into(),
-                action: super::PanelAction::ShowGameStats,
+                action: super::PanelAction::ListActiveMissions,
             },
             CommandItem {
                 label: "List Active Fleets".into(),
                 description: "Show all fleet positions and compositions".into(),
                 category: "Inspect".into(),
-                action: super::PanelAction::ShowGameStats,
+                action: super::PanelAction::ListActiveFleets,
             },
             CommandItem {
                 label: "Show Event Count".into(),
                 description: "Display number of triggered events".into(),
                 category: "Inspect".into(),
-                action: super::PanelAction::ShowGameStats,
+                action: super::PanelAction::ShowEventCount,
             },
             // ── Control ──────────────────────────────────────────────
             CommandItem {

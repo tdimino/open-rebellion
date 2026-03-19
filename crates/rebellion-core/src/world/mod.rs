@@ -540,6 +540,17 @@ pub struct ProductionFacilityInstance {
     pub is_alliance: bool,
 }
 
+/// Class definition for a defense facility — a template loaded from DEFFACSD.DAT.
+///
+/// Instances (`DefenseFacilityInstance`) reference this by `class_dat_id`.
+/// Used by the bombardment system to sum per-facility defense contributions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DefenseFacilityClassDef {
+    /// Bombardment defense contribution of this facility class.
+    /// Summed across all facility instances during orbital bombardment resolution.
+    pub bombardment_defense: i32,
+}
+
 /// The complete game world state — the root of all simulation data.
 ///
 /// All entity arenas live here. Cross-entity references use slotmap keys;
@@ -562,6 +573,9 @@ pub struct GameWorld {
     pub manufacturing_facilities: slotmap::SlotMap<ManufacturingFacilityKey, ManufacturingFacilityInstance>,
     /// Production facilities (mines, refineries).
     pub production_facilities: slotmap::SlotMap<ProductionFacilityKey, ProductionFacilityInstance>,
+    /// Defense facility class definitions keyed by DatId (from DEFFACSD.DAT).
+    /// Used by bombardment to look up per-class bombardment_defense values.
+    pub defense_facility_classes: HashMap<crate::ids::DatId, DefenseFacilityClassDef>,
     /// Game-balance parameters from GNPRTB.DAT (combat formulas, bombardment divisors, etc.).
     pub gnprtb: GnprtbParams,
     /// Mission probability tables keyed by DAT file stem (e.g. "DIPLMSTB", "ESPIMSTB").

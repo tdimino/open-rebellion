@@ -159,9 +159,16 @@ impl BombardmentSystem {
         let mut sec_stat: i32 = 0;
 
         // Defense facilities contribute primary bombardment defense.
-        // TODO: look up DefenseFacilityClass by class_dat_id and sum bombardment_defense.
-        // Placeholder: each facility instance contributes 10.
-        def_stat += sys.defense_facilities.len() as i32 * 10;
+        // Look up each facility's class definition for its bombardment_defense value.
+        for &key in &sys.defense_facilities {
+            if let Some(facility) = world.defense_facilities.get(key) {
+                if let Some(class) = world.defense_facility_classes.get(&facility.class_dat_id) {
+                    def_stat += class.bombardment_defense;
+                } else {
+                    def_stat += 10; // fallback if class definition not loaded
+                }
+            }
+        }
 
         // Troops contribute secondary defense via regiment_strength.
         for &key in &sys.ground_units {
@@ -199,6 +206,7 @@ mod tests {
             production_facilities: slotmap::SlotMap::with_key(),
             gnprtb: GnprtbParams::default(),
             mission_tables: HashMap::new(),
+            defense_facility_classes: HashMap::new(),
         }
     }
 

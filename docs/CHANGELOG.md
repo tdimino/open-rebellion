@@ -21,6 +21,32 @@ Each entry includes:
 
 ---
 
+## [v0.9.0] - 2026-03-19
+
+**Completion:** ~97% | **Category:** Completion | **Milestone:** Knesset Tinnit
+
+### Added
+- **Shared command registry** (`rebellion-core/src/commands.rs`): 16 `CommandDef` entries shared between GUI palette and CLI. Pure data, zero IO.
+- **3 new PanelAction variants**: `ListActiveMissions`, `ListActiveFleets`, `ShowEventCount` — each with distinct handlers showing real data
+- **Dual AI mode**: `ToggleDualAI` now spawns a second `AIState` for the opposite faction, both advance each tick. Command palette toggle + message log confirmation.
+- **Force victory check**: `ForceVictoryCheck` calls `VictorySystem::check()` immediately and reports result
+- **Game log export**: `ExportGameLog` writes message log as JSONL via `MessageLog::export_jsonl()`. Serialize derives on `GameMessage` + `MessageCategory`
+- **Defense facility class definitions**: `DefenseFacilityClassDef` struct + `defense_facility_classes` HashMap on `GameWorld`, loaded from DEFFACSD.DAT
+- **Bombardment defense class lookup**: Replaces hardcoded `10` per facility with real `bombardment_defense` from class definitions (fallback to 10 if class missing)
+
+### Fixed
+- **Inspection commands aliased to ShowGameStats**: List Active Missions, List Active Fleets, and Show Event Count all returned generic stats. Now each has its own handler showing missions, fleet positions, or event counts.
+
+### Technical
+- 275 tests passing (218 core + 33 data + 24 render)
+- `apply_panel_action()` extended with `dual_ai_mode`, `victory_state`, `event_state` parameters
+
+### Known Limitations
+- `AdvanceTicks(n)` advances clock counter only — simulation catches up on next frame via `clock.advance(dt)` TickEvents
+- CLI exec subcommand and ModRuntime wiring deferred to v0.10.0
+
+---
+
 ## [v0.8.0] - 2026-03-17
 
 **Completion:** ~95% | **Category:** Play-Test Infrastructure | **Milestone:** Play-Test READY

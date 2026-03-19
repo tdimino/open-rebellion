@@ -713,6 +713,7 @@ mod tests {
             production_facilities: slotmap::SlotMap::with_key(),
             gnprtb: GnprtbParams::default(),
             mission_tables: HashMap::new(),
+            defense_facility_classes: HashMap::new(),
         }
     }
 
