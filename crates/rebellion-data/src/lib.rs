@@ -237,7 +237,50 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     // DAT files.  Missing files are silently skipped (stripped installs).
     seeds::apply_seeds(gdata_path, &mut world, &system_key_map)?;
 
-    // ── 7b. Populate character location tracking ─────────────────────────────
+    // ── 7b. Derive controlling_faction from seeded assets ──────────────────────
+    // After seeding fleets, troops, and facilities, determine which faction controls
+    // each system based on what assets are present. Systems with only one faction's
+    // assets are controlled by that faction; mixed or empty systems stay None.
+    {
+        let fleet_factions: Vec<(SystemKey, bool)> = world.fleets.values()
+            .map(|f| (f.location, f.is_alliance))
+            .collect();
+        let facility_factions: Vec<(SystemKey, bool)> = world.systems.iter()
+            .flat_map(|(sys_key, sys)| {
+                let mut facs = Vec::new();
+                for &k in &sys.defense_facilities {
+                    if let Some(f) = world.defense_facilities.get(k) {
+                        facs.push((sys_key, f.is_alliance));
+                    }
+                }
+                for &k in &sys.manufacturing_facilities {
+                    if let Some(f) = world.manufacturing_facilities.get(k) {
+                        facs.push((sys_key, f.is_alliance));
+                    }
+                }
+                facs
+            })
+            .collect();
+
+        for (sys_key, sys) in world.systems.iter_mut() {
+            let mut has_alliance = false;
+            let mut has_empire = false;
+            for &(fk, is_a) in &fleet_factions {
+                if fk == sys_key { if is_a { has_alliance = true; } else { has_empire = true; } }
+            }
+            for &(fk, is_a) in &facility_factions {
+                if fk == sys_key { if is_a { has_alliance = true; } else { has_empire = true; } }
+            }
+            if has_alliance && !has_empire {
+                sys.controlling_faction = Some(rebellion_core::dat::Faction::Alliance);
+            } else if has_empire && !has_alliance {
+                sys.controlling_faction = Some(rebellion_core::dat::Faction::Empire);
+            }
+            // Mixed or empty → None (neutral/contested)
+        }
+    }
+
+    // ── 7c. Populate character location tracking ─────────────────────────────
     // Scan all fleets to back-fill each character's current_system and current_fleet.
     let fleet_keys: Vec<_> = world.fleets.keys().collect();
     for fleet_key in fleet_keys {

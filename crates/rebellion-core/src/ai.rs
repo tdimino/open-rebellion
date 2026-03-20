@@ -682,45 +682,33 @@ impl AISystem {
         faction: AiFaction,
         actions: &mut Vec<AIAction>,
     ) {
-        // Find the weakest enemy system (lowest enemy popularity = easiest conquest).
+        use crate::dat::Faction;
+
+        let enemy_faction = match faction {
+            AiFaction::Alliance => Faction::Empire,
+            AiFaction::Empire => Faction::Alliance,
+        };
+        let our_faction = match faction {
+            AiFaction::Alliance => Faction::Alliance,
+            AiFaction::Empire => Faction::Empire,
+        };
+
+        // Attack target: enemy-controlled system with fewest defenders.
         let attack_target = world
             .systems
             .iter()
-            .filter(|(_, s)| {
-                // Target systems where the enemy has some presence but we're weak.
-                let enemy_pop = match faction {
-                    AiFaction::Alliance => s.popularity_empire,
-                    AiFaction::Empire => s.popularity_alliance,
-                };
-                let our_pop = faction.system_popularity(s);
-                enemy_pop > 0.1 && our_pop < 0.4
-            })
-            .min_by(|(_, a), (_, b)| {
-                let pop_a = match faction {
-                    AiFaction::Alliance => a.popularity_empire,
-                    AiFaction::Empire => a.popularity_alliance,
-                };
-                let pop_b = match faction {
-                    AiFaction::Alliance => b.popularity_empire,
-                    AiFaction::Empire => b.popularity_alliance,
-                };
-                pop_a.partial_cmp(&pop_b).unwrap_or(std::cmp::Ordering::Equal)
-            })
+            .filter(|(_, s)| s.controlling_faction == Some(enemy_faction))
+            .min_by_key(|(_, s)| s.fleets.len())
             .map(|(k, _)| k);
 
-        // Find friendly systems with high popularity but no fleet (need reinforcement).
+        // Reinforce target: our system with no fleet present.
         let reinforce_target = world
             .systems
             .iter()
             .filter(|(_, s)| {
-                faction.system_popularity(s) > 0.6 && s.fleets.is_empty()
+                s.controlling_faction == Some(our_faction) && s.fleets.is_empty()
             })
-            .max_by(|(_, a), (_, b)| {
-                faction
-                    .system_popularity(a)
-                    .partial_cmp(&faction.system_popularity(b))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+            .next()
             .map(|(k, _)| k);
 
         for (fleet_key, fleet) in world.fleets.iter() {
@@ -733,25 +721,25 @@ impl AISystem {
                 continue;
             }
 
-            // Check if this fleet's current system needs reinforcement.
-            let current_needs_defense = world
+            // Check if this fleet's current system has an enemy fleet present
+            // (actual threat, not just popularity). If so, stay and defend.
+            let current_has_enemy = world
                 .systems
                 .get(fleet.location)
                 .map(|s| {
-                    let enemy_pop = match faction {
-                        AiFaction::Alliance => s.popularity_empire,
-                        AiFaction::Empire => s.popularity_alliance,
-                    };
-                    enemy_pop > 0.5
+                    s.fleets.iter().any(|&fk| {
+                        world.fleets.get(fk)
+                            .map(|f| f.is_alliance != fleet.is_alliance)
+                            .unwrap_or(false)
+                    })
                 })
                 .unwrap_or(false);
 
-            if current_needs_defense {
-                // Fleet stays in place — don't generate a move action.
-                continue;
+            if current_has_enemy {
+                continue; // Stay and fight
             }
 
-            // If there's a reinforce target that isn't the current location, prefer it.
+            // Prefer reinforcing our undefended systems over attacking.
             if let Some(target) = reinforce_target {
                 if target != fleet.location {
                     actions.push(AIAction::MoveFleet {
@@ -763,7 +751,7 @@ impl AISystem {
                 }
             }
 
-            // Otherwise attack the weakest enemy system.
+            // Attack the weakest enemy system.
             if let Some(target) = attack_target {
                 if target != fleet.location {
                     actions.push(AIAction::MoveFleet {
@@ -1128,10 +1116,12 @@ mod tests {
         let mut world = empty_world();
         let sector = add_sector(&mut world);
 
-        // Empire fleet at a safe friendly system
+        // Empire fleet at a safe friendly system (Empire-controlled)
         let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        // Weak enemy system (low empire presence, some alliance)
+        world.systems[home_sys].controlling_faction = Some(crate::dat::Faction::Empire);
+        // Enemy system controlled by Alliance (attack target)
         let target_sys = add_system(&mut world, sector, 0.6, 0.15);
+        world.systems[target_sys].controlling_faction = Some(crate::dat::Faction::Alliance);
 
         let fleet_key = world.fleets.insert(Fleet {
             location: home_sys,
