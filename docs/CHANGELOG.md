@@ -21,6 +21,30 @@ Each entry includes:
 
 ---
 
+## [v0.10.0] - 2026-03-20
+
+**Completion:** ~99% | **Category:** Full Wiring | **Milestone:** Knesset Tinnit Phase 2
+
+### Added
+- **Dual-AI in shared simulation**: `SimulationStates.ai2: Option<AIState>` + second AI pass in `run_simulation_tick()`. Both interactive app and headless binary now support dual-AI.
+- **CLI `--exec` subcommand**: `rebellion-playtest --exec "command_id"` dispatches commands from shared registry. `--exec list` shows all 16 available commands. Enables AI agent play-testing.
+- **ModRuntime wired at startup**: `ModRuntime::discover()` called after world load, mods applied via RFC 7396 merge patch, Mod Manager panel now shows real discovered mods.
+- **ToggleMod / ReloadMods handlers**: Mod Manager toggle and reload buttons now functional.
+- **JSONL system_name field**: `GameMessage.system_name: Option<String>` populated via `resolve_system_names()` before export. DuckDB queries can now filter by system.
+- **Command palette consumes shared registry**: `command_palette.rs` now builds CommandItems from `rebellion_core::commands::all_commands()` via `command_id_to_action()` mapper. Single source of truth.
+
+### Fixed
+- **Hardcoded `MissionFaction::Empire` in AI dispatch** (`simulation.rs:900`): Now derives faction from `ai_state.faction` via `as_mission_faction()`. Alliance AI dispatches Alliance missions.
+- **`--dual-ai` warning removed** from playtest binary. Flag now fully functional.
+- **5 dat-dumper warnings suppressed**: `#![allow(dead_code)]` on binary target (functions used by library, not CLI).
+- **Unused `Faction` import** removed from `missions.rs`.
+
+### Technical
+- 275 tests passing (218 core + 33 data + 24 render)
+- Zero compiler warnings across entire workspace
+
+---
+
 ## [v0.9.0] - 2026-03-19
 
 **Completion:** ~97% | **Category:** Completion | **Milestone:** Knesset Tinnit

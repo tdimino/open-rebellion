@@ -90,6 +90,10 @@ pub struct GameMessage {
     /// to that location. `None` for messages with no spatial context.
     #[serde(skip)]
     pub system: Option<SystemKey>,
+    /// Resolved system name for serialization. Populated by `resolve_system_names()`
+    /// before JSONL export. `None` if no system is linked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_name: Option<String>,
 }
 
 impl GameMessage {
@@ -100,6 +104,7 @@ impl GameMessage {
             text: text.into(),
             category,
             system: None,
+            system_name: None,
         }
     }
 
@@ -115,6 +120,7 @@ impl GameMessage {
             text: text.into(),
             category,
             system: Some(system),
+            system_name: None,
         }
     }
 }
@@ -173,6 +179,18 @@ impl MessageLog {
 
     pub fn is_empty(&self) -> bool {
         self.messages.is_empty()
+    }
+
+    /// Resolve SystemKey references to human-readable system names.
+    ///
+    /// Call before `export_jsonl()` to populate `system_name` fields.
+    /// Requires a closure that maps SystemKey to a name string.
+    pub fn resolve_system_names(&mut self, lookup: impl Fn(SystemKey) -> Option<String>) {
+        for msg in &mut self.messages {
+            if let Some(key) = msg.system {
+                msg.system_name = lookup(key);
+            }
+        }
     }
 
     /// Export all messages as JSONL (one JSON object per line).

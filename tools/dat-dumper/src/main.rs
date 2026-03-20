@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod codec;
 mod dat_record;
 mod validate;

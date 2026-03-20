@@ -93,6 +93,19 @@ async fn main() {
         world.characters.len(),
     );
 
+    // ── Mod Runtime ──────────────────────────────────────────────────────────
+    // mods/ lives alongside data/, not inside it: data/base → data → repo root → mods/
+    let mods_dir = gdata_path.parent().and_then(|p| p.parent()).unwrap_or(std::path::Path::new(".")).join("mods");
+    let mut mod_runtime = rebellion_data::mods::ModRuntime::discover(&mods_dir);
+    if !mod_runtime.discovered.is_empty() {
+        eprintln!("Discovered {} mods ({} enabled)", mod_runtime.discovered.len(),
+            mod_runtime.discovered.iter().filter(|m| m.enabled).count());
+        let mod_errors = mod_runtime.apply_enabled(&mut world);
+        for err in &mod_errors {
+            eprintln!("Mod error: {:?}", err);
+        }
+    }
+
     // ── Simulation state ────────────────────────────────────────────────────
     // Seedable RNG for deterministic simulation
     let mut sim_rng = Xoshiro256PlusPlus::seed_from_u64(
@@ -107,6 +120,7 @@ async fn main() {
     let mut event_state = EventState::new();
     let mut ai_state = AIState::new(AiFaction::Empire);
     let mut dual_ai_mode = false;
+    let mut ai2_state: Option<AIState> = None;
     let mut movement_state = MovementState::new();
     let mut fog_state = FogState::new(Faction::Alliance);
     FogSystem::seed(&mut fog_state, &world);
@@ -517,14 +531,9 @@ async fn main() {
             );
 
             // ── Dual AI (second faction) ────────────────────────────────────
-            if dual_ai_mode {
-                let second_faction = match ai_state.faction {
-                    Some(AiFaction::Empire) => AiFaction::Alliance,
-                    _ => AiFaction::Empire,
-                };
-                let mut second_ai = AIState::new(second_faction);
+            if let Some(ref mut second_ai) = ai2_state {
                 let second_actions = AISystem::advance(
-                    &mut second_ai,
+                    second_ai,
                     &world,
                     &mfg_state,
                     &mission_state,
@@ -535,7 +544,7 @@ async fn main() {
                 apply_ai_actions(
                     &second_actions,
                     &second_rolls,
-                    &mut second_ai,
+                    second_ai,
                     &mut mission_state,
                     &mut mfg_state,
                     &mut movement_state,
@@ -812,9 +821,19 @@ async fn main() {
                 }
 
                 // Mod Manager (floating window)
-                // TODO: init_mod_runtime() from rebellion-data needs to be called at startup
-                // and the result stored in main loop state to populate this list.
-                let mod_infos: Vec<rebellion_render::ModInfo> = Vec::new();
+                let mod_infos: Vec<rebellion_render::ModInfo> = mod_runtime.discovered.iter().map(|m| {
+                    let err = mod_runtime.errors.iter().find(|e| format!("{:?}", e).contains(&m.name));
+                    rebellion_render::ModInfo {
+                        name: m.name.clone(),
+                        version: m.version.clone(),
+                        author: m.author.clone(),
+                        description: m.description.clone(),
+                        enabled: m.enabled,
+                        dependencies: m.dependencies.keys().cloned().collect(),
+                        has_error: err.is_some(),
+                        error_message: err.map(|e| format!("{:?}", e)),
+                    }
+                }).collect();
                 let mod_actions = rebellion_render::draw_mod_manager(ctx, &mod_infos, &mut mod_manager_state);
                 for action in mod_actions {
                     match action {
@@ -863,8 +882,10 @@ async fn main() {
                 &mut player_faction,
                 &mut clock,
                 &mut dual_ai_mode,
+                &mut ai2_state,
                 &victory_state,
                 &event_state,
+                &mut mod_runtime,
                 #[cfg(not(target_arch = "wasm32"))]
                 &mut audio_engine,
                 #[cfg(not(target_arch = "wasm32"))]
@@ -911,8 +932,10 @@ fn apply_panel_action(
     player_faction: &mut MissionFaction,
     clock: &mut GameClock,
     dual_ai_mode: &mut bool,
+    ai2_state: &mut Option<AIState>,
     victory_state: &VictoryState,
     event_state: &EventState,
+    mod_runtime: &mut rebellion_data::mods::ModRuntime,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] sounds_dir: &Path,
@@ -1031,11 +1054,25 @@ fn apply_panel_action(
         PanelAction::OpenModManager => {
             // Handled by UI state toggle (not a world mutation)
         }
-        PanelAction::ToggleMod { name: _ } => {
-            // Will be handled when mod_runtime is wired
+        PanelAction::ToggleMod { ref name } => {
+            mod_runtime.toggle_mod(name);
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("Toggled mod: {}", name),
+                MessageCategory::Event,
+            ));
         }
         PanelAction::ReloadMods => {
-            // Will be handled when mod_runtime is wired
+            mod_runtime.refresh();
+            let mod_errors = mod_runtime.apply_enabled(world);
+            for err in &mod_errors {
+                eprintln!("Mod reload error: {:?}", err);
+            }
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("Reloaded {} mods", mod_runtime.discovered.len()),
+                MessageCategory::Event,
+            ));
         }
         PanelAction::AdvanceTicks(n) => {
             // Force-advance N ticks synchronously.
@@ -1057,6 +1094,16 @@ fn apply_panel_action(
         }
         PanelAction::ToggleDualAI => {
             *dual_ai_mode = !*dual_ai_mode;
+            if *dual_ai_mode {
+                // Create persistent second AI for the opposite faction
+                let second_faction = match ai_state.faction {
+                    Some(AiFaction::Empire) => AiFaction::Alliance,
+                    _ => AiFaction::Empire,
+                };
+                *ai2_state = Some(AIState::new(second_faction));
+            } else {
+                *ai2_state = None;
+            }
             let state_str = if *dual_ai_mode { "ENABLED" } else { "DISABLED" };
             msg_log.push(GameMessage::new(
                 clock.tick,
@@ -1088,6 +1135,8 @@ fn apply_panel_action(
             }
         }
         PanelAction::ExportGameLog => {
+            // Resolve system keys to names before export
+            msg_log.resolve_system_names(|key| world.systems.get(key).map(|s| s.name.clone()));
             let path = std::path::PathBuf::from("game_log.jsonl");
             match msg_log.export_jsonl(&path) {
                 Ok(()) => {

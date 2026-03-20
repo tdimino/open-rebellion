@@ -8,7 +8,7 @@ updated: 2026-03-16
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.8.0 (~95% complete). Living Galaxy + War Room + War Machine + Full Parity + Mod Workshop + Release READY + Play-test infrastructure (command palette, headless binary, seedable RNG). 15 simulation systems, 12 scripted story event chains, betrayal/decoy/escape mechanics, Han Solo speed bonus, mod manager panel, release packaging, CI.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.10.0 (~99% complete). 15 simulation systems fully wired, dual-AI mode, CLI `--exec` for agent play-testing, ModRuntime wired with toggle/reload, shared command registry, JSONL export with system names, 275 tests, zero warnings.
 
 ## Build
 
@@ -55,7 +55,7 @@ PATH="/usr/bin:$PATH" cargo check
 - MISSNSD.DAT flag_col6..flag_col21 semantics partially resolved via Ghidra RE -- see `ghidra/notes/annotated-functions.md`
 - CapitalShipClass/FighterClass world models carry only ~10 of 50+ DAT fields -- 15 more needed for combat (see `ghidra/notes/rust-implementation-guide.md`)
 - Save v3 files rejected (bincode layout incompatible) -- migration from v3 not possible without SaveStateV3 struct
-- Mod Manager panel shows empty list until ModRuntime is fully wired with mod data population
+- Mod Manager panel now shows discovered mods (wired in v0.10.0)
 - `web/gl.js` vendored in v0.7.0 -- WASM builds no longer fetch from network
 
 ## Agent Docs

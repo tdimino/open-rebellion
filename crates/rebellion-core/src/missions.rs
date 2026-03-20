@@ -42,7 +42,6 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use crate::dat::Faction;
 use crate::ids::{CharacterKey, SystemKey};
 use crate::tick::TickEvent;
 use crate::world::{Character, GameWorld, MstbTable};

@@ -35,6 +35,8 @@ pub struct SimulationStates {
     pub missions: MissionState,
     pub events: EventState,
     pub ai: AIState,
+    /// Optional second AI for dual-AI mode (controls the opposite faction).
+    pub ai2: Option<AIState>,
     pub movement: MovementState,
     pub fog: FogState,
     pub blockade: BlockadeState,
@@ -259,6 +261,9 @@ pub fn run_simulation_tick(
     for result in &mission_results {
         apply_mission_effects(&result.effects, world);
         states.ai.mark_available(result.character);
+        if let Some(ref mut ai2) = states.ai2 {
+            ai2.mark_available(result.character);
+        }
         events.push(GameEventRecord::new(
             result.tick,
             wall_ms,
@@ -358,6 +363,37 @@ pub fn run_simulation_tick(
             EVT_AI_ACTION,
             serde_json::json!({ "action": format!("{:?}", action) }),
         ));
+    }
+
+    // ── 7b. AI (second faction, dual-AI mode) ───────────────────────────
+    if let Some(ref mut ai2) = states.ai2 {
+        let ai2_actions = AISystem::advance(
+            ai2,
+            world,
+            &states.manufacturing,
+            &states.missions,
+            tick_events,
+        );
+        let ai2_rolls = take_rolls(8);
+        apply_ai_actions_to_world(
+            &ai2_actions,
+            &ai2_rolls,
+            ai2,
+            &mut states.missions,
+            &mut states.manufacturing,
+            &mut states.movement,
+            world,
+            current_tick,
+        );
+        for action in &ai2_actions {
+            events.push(GameEventRecord::new(
+                current_tick,
+                wall_ms,
+                SYS_AI,
+                EVT_AI_ACTION,
+                serde_json::json!({ "action": format!("{:?}", action), "dual_ai": true }),
+            ));
+        }
     }
 
     // ── 8. Blockade ──────────────────────────────────────────────────────
@@ -882,7 +918,11 @@ fn apply_ai_actions_to_world(
     world: &GameWorld,
     _tick: u64,
 ) {
-    use rebellion_core::missions::MissionFaction;
+    // Derive faction from the AIState rather than hardcoding Empire.
+    let mission_faction = ai_state
+        .faction
+        .map(|f| f.as_mission_faction())
+        .unwrap_or(rebellion_core::missions::MissionFaction::Empire);
 
     let mut roll_idx = 0;
     for action in actions {
@@ -897,7 +937,7 @@ fn apply_ai_actions_to_world(
                 roll_idx += 1;
                 mission_state.dispatch(
                     *kind,
-                    MissionFaction::Empire,
+                    mission_faction,
                     *character,
                     *target_system,
                     roll,
@@ -1071,6 +1111,7 @@ mod tests {
             missions: MissionState::new(),
             events: EventState::new(),
             ai: AIState::new(AiFaction::Empire),
+            ai2: None,
             movement: MovementState::new(),
             fog: FogState::new(Faction::Alliance),
             blockade: BlockadeState::new(),
@@ -1138,6 +1179,7 @@ mod tests {
             missions: MissionState::new(),
             events: EventState::new(),
             ai: AIState::new(AiFaction::Empire),
+            ai2: None,
             movement: MovementState::new(),
             fog: FogState::new(Faction::Alliance),
             blockade: BlockadeState::new(),

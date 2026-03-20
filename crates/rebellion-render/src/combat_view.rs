@@ -110,6 +110,7 @@ impl CombatResult {
             tick: self.tick,
             category: MessageCategory::Combat,
             system: Some(self.system),
+            system_name: None,
         });
 
         // Attacker losses
@@ -123,6 +124,7 @@ impl CombatResult {
                 tick: self.tick,
                 category: MessageCategory::Combat,
                 system: Some(self.system),
+                system_name: None,
             });
         }
 
@@ -137,6 +139,7 @@ impl CombatResult {
                 tick: self.tick,
                 category: MessageCategory::Combat,
                 system: Some(self.system),
+                system_name: None,
             });
         }
 
@@ -147,6 +150,7 @@ impl CombatResult {
                 tick: self.tick,
                 category: MessageCategory::Combat,
                 system: Some(self.system),
+                system_name: None,
             });
         }
 
@@ -157,6 +161,7 @@ impl CombatResult {
                 tick: self.tick,
                 category: MessageCategory::Combat,
                 system: Some(self.system),
+                system_name: None,
             });
         }
 

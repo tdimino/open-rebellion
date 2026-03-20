@@ -575,8 +575,8 @@ pub struct GameWorld {
     pub production_facilities: slotmap::SlotMap<ProductionFacilityKey, ProductionFacilityInstance>,
     /// Defense facility class definitions keyed by DatId (from DEFFACSD.DAT).
     /// Used by bombardment to look up per-class bombardment_defense values.
-    /// Skipped in serialization — always repopulated from DAT on load.
-    #[serde(skip)]
+    /// Repopulated from DAT on load; default to empty for save compatibility.
+    #[serde(default)]
     pub defense_facility_classes: HashMap<crate::ids::DatId, DefenseFacilityClassDef>,
     /// Game-balance parameters from GNPRTB.DAT (combat formulas, bombardment divisors, etc.).
     pub gnprtb: GnprtbParams,

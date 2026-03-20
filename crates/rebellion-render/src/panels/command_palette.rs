@@ -27,110 +27,43 @@ pub struct CommandPaletteState {
     filtered_indices: Vec<(usize, u32)>, // (command index, score)
 }
 
+/// Map a shared CommandDef ID to a PanelAction.
+fn command_id_to_action(id: &str) -> Option<super::PanelAction> {
+    match id {
+        "advance_1_tick" => Some(super::PanelAction::AdvanceTicks(1)),
+        "advance_10_ticks" => Some(super::PanelAction::AdvanceTicks(10)),
+        "advance_100_ticks" => Some(super::PanelAction::AdvanceTicks(100)),
+        "advance_1000_ticks" => Some(super::PanelAction::AdvanceTicks(1000)),
+        "speed_paused" => Some(super::PanelAction::SetGameSpeed(0)),
+        "speed_normal" => Some(super::PanelAction::SetGameSpeed(1)),
+        "speed_fast" => Some(super::PanelAction::SetGameSpeed(2)),
+        "speed_faster" => Some(super::PanelAction::SetGameSpeed(4)),
+        "show_game_stats" => Some(super::PanelAction::ShowGameStats),
+        "list_active_missions" => Some(super::PanelAction::ListActiveMissions),
+        "list_active_fleets" => Some(super::PanelAction::ListActiveFleets),
+        "show_event_count" => Some(super::PanelAction::ShowEventCount),
+        "toggle_dual_ai" => Some(super::PanelAction::ToggleDualAI),
+        "force_victory_check" => Some(super::PanelAction::ForceVictoryCheck),
+        "reveal_all_systems" => Some(super::PanelAction::RevealAllFog),
+        "export_game_log" => Some(super::PanelAction::ExportGameLog),
+        _ => None,
+    }
+}
+
 impl CommandPaletteState {
     pub fn new() -> Self {
-        let commands = vec![
-            // ── Time Control ─────────────────────────────────────────
-            CommandItem {
-                label: "Advance 1 tick".into(),
-                description: "Step simulation forward by 1 tick".into(),
-                category: "Time".into(),
-                action: super::PanelAction::AdvanceTicks(1),
-            },
-            CommandItem {
-                label: "Advance 10 ticks".into(),
-                description: "Step simulation forward by 10 ticks".into(),
-                category: "Time".into(),
-                action: super::PanelAction::AdvanceTicks(10),
-            },
-            CommandItem {
-                label: "Advance 100 ticks".into(),
-                description: "Step simulation forward by 100 ticks".into(),
-                category: "Time".into(),
-                action: super::PanelAction::AdvanceTicks(100),
-            },
-            CommandItem {
-                label: "Advance 1000 ticks".into(),
-                description: "Step simulation forward by 1000 ticks".into(),
-                category: "Time".into(),
-                action: super::PanelAction::AdvanceTicks(1000),
-            },
-            // ── Speed ────────────────────────────────────────────────
-            CommandItem {
-                label: "Set Speed: Paused".into(),
-                description: "Pause the simulation".into(),
-                category: "Speed".into(),
-                action: super::PanelAction::SetGameSpeed(0),
-            },
-            CommandItem {
-                label: "Set Speed: Normal".into(),
-                description: "Set simulation to 1x speed".into(),
-                category: "Speed".into(),
-                action: super::PanelAction::SetGameSpeed(1),
-            },
-            CommandItem {
-                label: "Set Speed: Fast".into(),
-                description: "Set simulation to 2x speed".into(),
-                category: "Speed".into(),
-                action: super::PanelAction::SetGameSpeed(2),
-            },
-            CommandItem {
-                label: "Set Speed: Faster".into(),
-                description: "Set simulation to 4x speed".into(),
-                category: "Speed".into(),
-                action: super::PanelAction::SetGameSpeed(4),
-            },
-            // ── Inspection ───────────────────────────────────────────
-            CommandItem {
-                label: "Show Game Stats".into(),
-                description: "Display current game statistics".into(),
-                category: "Inspect".into(),
-                action: super::PanelAction::ShowGameStats,
-            },
-            CommandItem {
-                label: "List Active Missions".into(),
-                description: "Show all in-progress missions".into(),
-                category: "Inspect".into(),
-                action: super::PanelAction::ListActiveMissions,
-            },
-            CommandItem {
-                label: "List Active Fleets".into(),
-                description: "Show all fleet positions and compositions".into(),
-                category: "Inspect".into(),
-                action: super::PanelAction::ListActiveFleets,
-            },
-            CommandItem {
-                label: "Show Event Count".into(),
-                description: "Display number of triggered events".into(),
-                category: "Inspect".into(),
-                action: super::PanelAction::ShowEventCount,
-            },
-            // ── Control ──────────────────────────────────────────────
-            CommandItem {
-                label: "Toggle Dual AI".into(),
-                description: "Enable/disable AI control for both factions".into(),
-                category: "Control".into(),
-                action: super::PanelAction::ToggleDualAI,
-            },
-            CommandItem {
-                label: "Force Victory Check".into(),
-                description: "Immediately evaluate victory conditions".into(),
-                category: "Control".into(),
-                action: super::PanelAction::ForceVictoryCheck,
-            },
-            CommandItem {
-                label: "Reveal All Systems".into(),
-                description: "Remove fog of war from all systems".into(),
-                category: "Control".into(),
-                action: super::PanelAction::RevealAllFog,
-            },
-            CommandItem {
-                label: "Export Game Log".into(),
-                description: "Write message log to file".into(),
-                category: "Control".into(),
-                action: super::PanelAction::ExportGameLog,
-            },
-        ];
+        // Build CommandItems from the shared registry in rebellion-core.
+        let commands: Vec<CommandItem> = rebellion_core::commands::all_commands()
+            .into_iter()
+            .filter_map(|def| {
+                command_id_to_action(def.id).map(|action| CommandItem {
+                    label: def.label.to_string(),
+                    description: def.description.to_string(),
+                    category: def.category.to_string(),
+                    action,
+                })
+            })
+            .collect();
 
         let filtered_indices = (0..commands.len()).map(|i| (i, 0u32)).collect();
 
