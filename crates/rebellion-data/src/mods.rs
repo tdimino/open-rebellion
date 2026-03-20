@@ -703,6 +703,16 @@ impl ModRuntime {
         }
     }
 
+    /// WASM stub: apply_enabled (no filesystem access).
+    #[cfg(target_arch = "wasm32")]
+    pub fn apply_enabled(&self, _world: &mut rebellion_core::world::GameWorld) -> Vec<ModError> {
+        Vec::new()
+    }
+
+    /// WASM stub: refresh (no filesystem access).
+    #[cfg(target_arch = "wasm32")]
+    pub fn refresh(&mut self) {}
+
     /// Return (name, version) pairs for all enabled mods (for save metadata).
     pub fn enabled_mod_list(&self) -> Vec<(String, String)> {
         self.enabled_sorted()
