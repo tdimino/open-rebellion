@@ -64,6 +64,106 @@ struct Args {
     /// Use --exec list to see available commands.
     #[arg(long)]
     exec: Option<String>,
+
+    /// Interactive REPL mode: read commands from stdin, execute against
+    /// persistent state, print JSON results. Enables LLM agent play.
+    #[arg(long)]
+    repl: bool,
+}
+
+/// Dispatch a single command against the current world/simulation state.
+/// Returns a human-readable result string.
+fn dispatch_command(
+    cmd: &str,
+    world: &mut rebellion_core::world::GameWorld,
+    states: &mut SimulationStates,
+    rng: &mut Xoshiro256PlusPlus,
+    logger: &mut EventLogger,
+    start: &std::time::Instant,
+    ai_faction: AiFaction,
+) -> String {
+    match cmd {
+        "show_game_stats" => {
+            let a = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Alliance)).count();
+            let e = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Empire)).count();
+            format!("Stats: {} systems ({} Alliance, {} Empire), {} fleets, {} characters",
+                world.systems.len(), a, e, world.fleets.len(), world.characters.len())
+        }
+        "list_active_missions" => {
+            let missions = states.missions.missions();
+            if missions.is_empty() {
+                "No active missions".to_string()
+            } else {
+                missions.iter().map(|m| format!("{:?} by {:?}", m.kind, m.faction)).collect::<Vec<_>>().join("\n")
+            }
+        }
+        "list_active_fleets" => {
+            world.fleets.iter().map(|(_, f)| {
+                let sys = world.systems.get(f.location).map(|s| s.name.as_str()).unwrap_or("?");
+                let side = if f.is_alliance { "Alliance" } else { "Empire" };
+                let ships = f.capital_ships.iter().map(|e| e.count as usize).sum::<usize>()
+                    + f.fighters.iter().map(|e| e.count as usize).sum::<usize>();
+                format!("{} fleet at {} — {} ships", side, sys, ships)
+            }).collect::<Vec<_>>().join("\n")
+        }
+        "show_event_count" => {
+            let total = states.events.events().len();
+            let fired = states.events.events().iter().filter(|e| states.events.has_fired(e.id)).count();
+            format!("Events: {} defined, {} fired", total, fired)
+        }
+        "toggle_dual_ai" => {
+            if states.ai2.is_some() {
+                states.ai2 = None;
+                "Dual AI disabled".to_string()
+            } else {
+                let second = match ai_faction {
+                    AiFaction::Empire => AiFaction::Alliance,
+                    AiFaction::Alliance => AiFaction::Empire,
+                };
+                states.ai2 = Some(AIState::new(second));
+                "Dual AI enabled".to_string()
+            }
+        }
+        "reveal_all_systems" => {
+            for (key, _) in world.systems.iter() {
+                states.fog.reveal(key);
+            }
+            "All systems revealed".to_string()
+        }
+        "force_victory_check" => {
+            let tick_ev = rebellion_core::tick::TickEvent { tick: 0 };
+            let result = rebellion_core::victory::VictorySystem::check(&states.victory, world, &[tick_ev]);
+            match result {
+                Some(outcome) => format!("Victory: {:?}", outcome),
+                None => "No winner yet".to_string(),
+            }
+        }
+        id if id.starts_with("advance_") => {
+            let n: u64 = id.trim_start_matches("advance_")
+                .trim_end_matches("_tick").trim_end_matches("_ticks").trim_end_matches("s")
+                .parse().unwrap_or(1);
+            for t in 1..=n {
+                let tick_events = vec![rebellion_core::tick::TickEvent { tick: t }];
+                let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
+                let wall_ms = start.elapsed().as_millis() as u64;
+                let evts = run_simulation_tick(world, states, &tick_events, &rolls, wall_ms);
+                logger.extend(evts);
+            }
+            format!("Advanced {} ticks ({} events)", n, logger.len())
+        }
+        id if id.starts_with("speed_") => {
+            let _ = id;
+            "Speed commands are not applicable in headless mode".to_string()
+        }
+        "export_game_log" => {
+            let path = std::path::PathBuf::from("playtest_exec.jsonl");
+            match logger.export_jsonl(&path) {
+                Ok(()) => format!("Exported to {}", path.display()),
+                Err(e) => format!("Export failed: {}", e),
+            }
+        }
+        _ => format!("Unknown command: '{}'. Use --exec list for available commands.", cmd),
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -183,89 +283,61 @@ fn main() -> anyhow::Result<()> {
     let mut logger = EventLogger::new();
     let mut victory_reached = false;
 
-    // Handle --exec: dispatch command against loaded world/states
+    // Handle --exec: dispatch single command and exit
     if let Some(ref cmd) = args.exec {
-        let output = match cmd.as_str() {
-            "show_game_stats" => {
-                let a = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Alliance)).count();
-                let e = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Empire)).count();
-                format!("Stats: {} systems ({} Alliance, {} Empire), {} fleets, {} characters",
-                    world.systems.len(), a, e, world.fleets.len(), world.characters.len())
-            }
-            "list_active_missions" => {
-                let missions = states.missions.missions();
-                if missions.is_empty() {
-                    "No active missions".to_string()
-                } else {
-                    missions.iter().map(|m| format!("{:?} by {:?}", m.kind, m.faction)).collect::<Vec<_>>().join("\n")
+        let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction);
+        println!("{}", output);
+        return Ok(());
+    }
+
+    // Handle --repl: interactive command loop with persistent state
+    if args.repl {
+        eprintln!("REPL mode. Type commands (one per line). 'quit' to exit, 'help' for commands.");
+        let stdin = std::io::stdin();
+        let mut tick_counter: u64 = 0;
+        loop {
+            let mut line = String::new();
+            match stdin.read_line(&mut line) {
+                Ok(0) => break, // EOF
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Read error: {}", e);
+                    break;
                 }
             }
-            "list_active_fleets" => {
-                world.fleets.iter().map(|(_, f)| {
-                    let sys = world.systems.get(f.location).map(|s| s.name.as_str()).unwrap_or("?");
-                    let side = if f.is_alliance { "Alliance" } else { "Empire" };
-                    let ships = f.capital_ships.iter().map(|e| e.count as usize).sum::<usize>()
-                        + f.fighters.iter().map(|e| e.count as usize).sum::<usize>();
-                    format!("{} fleet at {} — {} ships", side, sys, ships)
-                }).collect::<Vec<_>>().join("\n")
-            }
-            "show_event_count" => {
-                let total = states.events.events().len();
-                let fired = states.events.events().iter().filter(|e| states.events.has_fired(e.id)).count();
-                format!("Events: {} defined, {} fired", total, fired)
-            }
-            "toggle_dual_ai" => {
-                if states.ai2.is_some() {
-                    states.ai2 = None;
-                    "Dual AI disabled".to_string()
-                } else {
-                    let second = match ai_faction {
-                        AiFaction::Empire => AiFaction::Alliance,
-                        AiFaction::Alliance => AiFaction::Empire,
-                    };
-                    states.ai2 = Some(AIState::new(second));
-                    "Dual AI enabled".to_string()
+            let cmd = line.trim();
+            if cmd.is_empty() { continue; }
+            if cmd == "quit" || cmd == "exit" { break; }
+            if cmd == "help" {
+                let commands = all_commands();
+                for c in &commands {
+                    println!("  {:30} [{}] {}", c.id, c.category, c.description);
                 }
+                println!("  {:30} Advance simulation and print events", "tick [N]");
+                println!("  {:30} Exit REPL", "quit");
+                continue;
             }
-            "reveal_all_systems" => {
-                for (key, _) in world.systems.iter() {
-                    states.fog.reveal(key);
-                }
-                "All systems revealed".to_string()
-            }
-            "force_victory_check" => {
-                let tick_ev = rebellion_core::tick::TickEvent { tick: 0 };
-                let result = rebellion_core::victory::VictorySystem::check(&states.victory, &world, &[tick_ev]);
-                match result {
-                    Some(outcome) => format!("Victory: {:?}", outcome),
-                    None => "No winner yet".to_string(),
-                }
-            }
-            id if id.starts_with("advance_") => {
-                // Parse tick count: "advance_1_tick" -> 1, "advance_100_ticks" -> 100
-                let n: u64 = id.trim_start_matches("advance_")
-                    .trim_end_matches("_tick").trim_end_matches("_ticks").trim_end_matches("s")
-                    .parse().unwrap_or(1);
-                for t in 1..=n {
-                    let tick_events = vec![rebellion_core::tick::TickEvent { tick: t }];
+            // Special: "tick N" advances N ticks and prints new events
+            if cmd.starts_with("tick") {
+                let n: u64 = cmd.trim_start_matches("tick").trim().parse().unwrap_or(1);
+                let pre_count = logger.len();
+                for _ in 0..n {
+                    tick_counter += 1;
+                    let tick_events = vec![rebellion_core::tick::TickEvent { tick: tick_counter }];
                     let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
                     let wall_ms = start.elapsed().as_millis() as u64;
                     let evts = run_simulation_tick(&mut world, &mut states, &tick_events, &rolls, wall_ms);
                     logger.extend(evts);
                 }
-                format!("Advanced {} ticks ({} events)", n, logger.len())
+                let new_events = logger.len() - pre_count;
+                let victory = if states.victory.resolved { ", VICTORY" } else { "" };
+                println!("{{\"tick\":{},\"advanced\":{},\"new_events\":{}{}}}", tick_counter, n, new_events, victory);
+                continue;
             }
-            id if id.starts_with("speed_") => {
-                format!("Speed commands are not applicable in headless mode")
-            }
-            "export_game_log" => {
-                let path = std::path::PathBuf::from("playtest_exec.jsonl");
-                logger.export_jsonl(&path)?;
-                format!("Exported to {}", path.display())
-            }
-            _ => format!("Command '{}' not handled in headless mode", cmd),
-        };
-        println!("{}", output);
+            let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction);
+            println!("{{\"command\":\"{}\",\"tick\":{},\"result\":{}}}", cmd, tick_counter,
+                serde_json::to_string(&output).unwrap_or_else(|_| format!("\"{}\"", output)));
+        }
         return Ok(());
     }
 
