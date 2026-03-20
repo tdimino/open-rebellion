@@ -107,12 +107,24 @@ impl VictorySystem {
     /// detected; `None` otherwise. Skips zero-tick frames and already-resolved
     /// games. The caller must set `state.resolved = true` after acting on
     /// a result.
+    /// Minimum game tick before victory conditions are evaluated.
+    /// Gives both factions time to build forces and prevents instant wins
+    /// from aggressive early fleet deployment. In the original game, fleet
+    /// transit across the galaxy takes many turns; this serves the same purpose.
+    pub const MIN_VICTORY_TICK: u64 = 200;
+
     pub fn check(
         state: &VictoryState,
         world: &GameWorld,
         tick_events: &[TickEvent],
     ) -> Option<VictoryOutcome> {
         if tick_events.is_empty() || state.resolved {
+            return None;
+        }
+
+        // Grace period: don't check victory until the game has had time to develop
+        let current_tick = tick_events.last().map(|e| e.tick).unwrap_or(0);
+        if current_tick < Self::MIN_VICTORY_TICK {
             return None;
         }
 
@@ -318,14 +330,14 @@ mod tests {
         let (world, a, e) = make_world();
         let mut state = VictoryState::new(a, e);
         state.resolved = true;
-        assert!(VictorySystem::check(&state, &world, &[tick(1)]).is_none());
+        assert!(VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]).is_none());
     }
 
     #[test]
     fn no_outcome_no_fleets() {
         let (world, a, e) = make_world();
         let state = VictoryState::new(a, e);
-        assert!(VictorySystem::check(&state, &world, &[tick(1)]).is_none());
+        assert!(VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]).is_none());
     }
 
     #[test]
@@ -334,7 +346,7 @@ mod tests {
         add_fleet(&mut world, a, false, false);
 
         let state = VictoryState::new(a, e);
-        let out = VictorySystem::check(&state, &world, &[tick(1)]);
+        let out = VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]);
         assert!(matches!(
             out,
             Some(VictoryOutcome::HqCaptured { winner: Faction::Empire, loser: Faction::Alliance, .. })
@@ -347,7 +359,7 @@ mod tests {
         add_fleet(&mut world, e, true, false);
 
         let state = VictoryState::new(a, e);
-        let out = VictorySystem::check(&state, &world, &[tick(1)]);
+        let out = VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]);
         assert!(matches!(
             out,
             Some(VictoryOutcome::HqCaptured { winner: Faction::Alliance, loser: Faction::Empire, .. })
@@ -361,7 +373,7 @@ mod tests {
         add_fleet(&mut world, a, true, false);
 
         let state = VictoryState::new(a, e);
-        assert!(VictorySystem::check(&state, &world, &[tick(1)]).is_none());
+        assert!(VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]).is_none());
     }
 
     #[test]
@@ -374,7 +386,7 @@ mod tests {
         state.death_star_active = true;
         state.death_star_location = Some(a);
 
-        let out = VictorySystem::check(&state, &world, &[tick(1)]);
+        let out = VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]);
         assert!(matches!(out, Some(VictoryOutcome::DeathStarVictory { .. })));
     }
 
@@ -387,7 +399,7 @@ mod tests {
         state.death_star_active = true;
         state.death_star_location = Some(a);
 
-        let out = VictorySystem::check(&state, &world, &[tick(1)]);
+        let out = VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]);
         assert!(matches!(out, Some(VictoryOutcome::DeathStarDestroyed { .. })));
     }
 
@@ -396,6 +408,6 @@ mod tests {
         let (world, a, e) = make_world();
         let state = VictoryState::new(a, e);
         // death_star_active = false by default
-        assert!(VictorySystem::check(&state, &world, &[tick(1)]).is_none());
+        assert!(VictorySystem::check(&state, &world, &[tick(VictorySystem::MIN_VICTORY_TICK)]).is_none());
     }
 }

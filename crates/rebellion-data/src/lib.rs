@@ -242,25 +242,40 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     // each system based on what assets are present. Systems with only one faction's
     // assets are controlled by that faction; mixed or empty systems stay None.
     {
+        // Collect faction presence from ALL asset types at each system
         let fleet_factions: Vec<(SystemKey, bool)> = world.fleets.values()
             .map(|f| (f.location, f.is_alliance))
             .collect();
-        let facility_factions: Vec<(SystemKey, bool)> = world.systems.iter()
-            .flat_map(|(sys_key, sys)| {
-                let mut facs = Vec::new();
-                for &k in &sys.defense_facilities {
-                    if let Some(f) = world.defense_facilities.get(k) {
-                        facs.push((sys_key, f.is_alliance));
-                    }
+
+        // Collect from all facility and unit types
+        let mut asset_factions: Vec<(SystemKey, bool)> = Vec::new();
+        for (sys_key, sys) in world.systems.iter() {
+            for &k in &sys.defense_facilities {
+                if let Some(f) = world.defense_facilities.get(k) {
+                    asset_factions.push((sys_key, f.is_alliance));
                 }
-                for &k in &sys.manufacturing_facilities {
-                    if let Some(f) = world.manufacturing_facilities.get(k) {
-                        facs.push((sys_key, f.is_alliance));
-                    }
+            }
+            for &k in &sys.manufacturing_facilities {
+                if let Some(f) = world.manufacturing_facilities.get(k) {
+                    asset_factions.push((sys_key, f.is_alliance));
                 }
-                facs
-            })
-            .collect();
+            }
+            for &k in &sys.production_facilities {
+                if let Some(f) = world.production_facilities.get(k) {
+                    asset_factions.push((sys_key, f.is_alliance));
+                }
+            }
+            for &k in &sys.ground_units {
+                if let Some(t) = world.troops.get(k) {
+                    asset_factions.push((sys_key, t.is_alliance));
+                }
+            }
+            for &k in &sys.special_forces {
+                if let Some(sf) = world.special_forces.get(k) {
+                    asset_factions.push((sys_key, sf.is_alliance));
+                }
+            }
+        }
 
         for (sys_key, sys) in world.systems.iter_mut() {
             let mut has_alliance = false;
@@ -268,7 +283,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             for &(fk, is_a) in &fleet_factions {
                 if fk == sys_key { if is_a { has_alliance = true; } else { has_empire = true; } }
             }
-            for &(fk, is_a) in &facility_factions {
+            for &(fk, is_a) in &asset_factions {
                 if fk == sys_key { if is_a { has_alliance = true; } else { has_empire = true; } }
             }
             if has_alliance && !has_empire {
