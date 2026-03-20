@@ -330,13 +330,24 @@ fn main() -> anyhow::Result<()> {
                     logger.extend(evts);
                 }
                 let new_events = logger.len() - pre_count;
-                let victory = if states.victory.resolved { ", VICTORY" } else { "" };
-                println!("{{\"tick\":{},\"advanced\":{},\"new_events\":{}{}}}", tick_counter, n, new_events, victory);
+                let json = serde_json::json!({
+                    "tick": tick_counter,
+                    "advanced": n,
+                    "new_events": new_events,
+                    "victory": states.victory.resolved,
+                });
+                println!("{}", json);
                 continue;
             }
             let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction);
-            println!("{{\"command\":\"{}\",\"tick\":{},\"result\":{}}}", cmd, tick_counter,
-                serde_json::to_string(&output).unwrap_or_else(|_| format!("\"{}\"", output)));
+            let json = serde_json::json!({
+                "command": cmd,
+                "tick": tick_counter,
+                "result": output,
+                "victory": states.victory.resolved,
+                "events_total": logger.len(),
+            });
+            println!("{}", json);
         }
         return Ok(());
     }

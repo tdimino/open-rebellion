@@ -1407,14 +1407,23 @@ fn apply_mission_result(
                 log.push(GameMessage::new(result.tick, format!("{} has escaped captivity!", name), MessageCategory::Event));
             }
             MissionEffect::UprisingSubdued { system } => {
+                // Shift popularity toward controlling faction
                 if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
-                    sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
+                    match sys.controlling_faction {
+                        Some(Faction::Alliance) => {
+                            sys.popularity_alliance = (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
+                            sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
+                        }
+                        _ => {
+                            sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
+                            sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
+                        }
+                    }
                 }
+                // Clear uprising — uprising_state not accessible here, handled in simulation layer
             }
             MissionEffect::DeathStarSabotaged { ticks_delayed } => {
-                // Death Star construction delay is applied in the simulation layer.
-                // The effect here is a log notification.
+                // Death Star delay applied in simulation layer (death_star_state.add_sabotage_delay)
                 log.push(GameMessage::new(result.tick,
                     format!("Death Star construction sabotaged! {} ticks delayed.", ticks_delayed),
                     MessageCategory::Mission));

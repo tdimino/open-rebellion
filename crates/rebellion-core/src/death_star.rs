@@ -119,6 +119,15 @@ impl Default for DeathStarState {
     }
 }
 
+impl DeathStarState {
+    /// Add construction delay from sabotage (increases ticks_remaining).
+    pub fn add_sabotage_delay(&mut self, ticks: u32) {
+        if let Some(ref mut construction) = self.under_construction {
+            construction.ticks_remaining = construction.ticks_remaining.saturating_add(ticks);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // System
 // ---------------------------------------------------------------------------

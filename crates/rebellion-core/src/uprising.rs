@@ -122,6 +122,11 @@ impl UprisingState {
     pub fn is_uprising(&self, system: SystemKey) -> bool {
         self.active_uprisings.contains_key(&system)
     }
+
+    /// Remove an active uprising at a system (e.g., after a successful SubdueUprising mission).
+    pub fn clear_uprising(&mut self, system: SystemKey) {
+        self.active_uprisings.remove(&system);
+    }
 }
 
 // ---------------------------------------------------------------------------
