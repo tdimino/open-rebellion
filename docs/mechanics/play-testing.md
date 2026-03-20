@@ -82,6 +82,50 @@ cargo run -p rebellion-playtest -- data/base --output playtest.jsonl --summary
 | `--output <path>` | — | JSONL output file path |
 | `--summary` | off | Print event count summary on exit |
 | `--dual-ai` | off | Both factions AI-controlled |
+| `--exec <cmd>` | — | Execute a single command and exit (`--exec list` for options) |
+| `--repl` | off | Interactive REPL: persistent state, JSON output, LLM-playable |
+
+### REPL Mode (LLM Agent Play)
+
+The `--repl` flag starts an interactive session where the world state persists across commands. Each command produces JSON output suitable for LLM parsing.
+
+```bash
+# Pipe commands from an LLM agent
+echo -e "show_game_stats\ntick 10\nlist_active_fleets\nforce_victory_check" | \
+  cargo run -p rebellion-playtest -- data/base --repl --seed 42
+
+# Or run interactively
+cargo run -p rebellion-playtest -- data/base --repl --seed 42
+```
+
+**Output format:**
+```json
+{"command":"show_game_stats","tick":0,"result":"Stats: 200 systems (1 Alliance, 1 Empire), 3 fleets, 60 characters"}
+{"tick":10,"advanced":10,"new_events":142}
+{"command":"list_active_fleets","tick":10,"result":"Empire fleet at Coruscant — 7 ships\nAlliance fleet at Yavin — 1 ships"}
+```
+
+**Special commands in REPL mode:**
+- `tick N` — advance N simulation ticks, report new events + victory status
+- `help` — list all available commands
+- `quit` — exit the REPL
+
+**LLM integration pattern:** spawn `rebellion-playtest --repl` as a subprocess, send commands via stdin, parse JSON from stdout. The LLM reasons about galactic strategy; the simulation executes the mechanics.
+
+### CLI Exec Mode
+
+Execute a single command against freshly loaded game data and exit:
+
+```bash
+# List available commands
+cargo run -p rebellion-playtest -- data/base --exec list
+
+# Check initial state
+cargo run -p rebellion-playtest -- data/base --exec show_game_stats
+
+# Advance 100 ticks and see results
+cargo run -p rebellion-playtest -- data/base --exec advance_100_ticks --seed 42
+```
 
 ### JSONL Schema
 

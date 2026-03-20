@@ -8,7 +8,7 @@ updated: 2026-03-16
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.10.0 (~99% complete). 15 simulation systems fully wired, dual-AI mode, CLI `--exec` for agent play-testing, ModRuntime wired with toggle/reload, shared command registry, JSONL export with system names, 275 tests, zero warnings.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.12.0 (~99% complete). 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI, REPL mode for LLM agent play (`--repl`), CLI `--exec` (16 commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry, 275 tests, zero warnings.
 
 ## Build
 
