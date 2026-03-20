@@ -1,4 +1,4 @@
-//! Mission system: all 9 mission types with MSTB probability lookup.
+//! Mission system: all 11 mission types with MSTB probability lookup.
 //!
 //! Missions are assigned to characters and execute over multiple game-days.
 //! When a mission completes, success is determined either by a quadratic
@@ -96,6 +96,14 @@ pub enum MissionKind {
     /// Automatic scrapping of obsolete units (type code 21 / 0x15).
     /// No character required; always succeeds.
     Autoscrap,
+
+    /// Suppress an active uprising on a system.
+    /// SUBDMSTB.DAT. Skill: diplomacy.
+    SubdueUprising,
+
+    /// Sabotage the Death Star's construction (delay or destroy).
+    /// DSSBMSTB.DAT. Skill: espionage.
+    DeathStarSabotage,
 }
 
 impl MissionKind {
@@ -112,8 +120,10 @@ impl MissionKind {
             MissionKind::Espionage     => Some("ESPIMSTB"),
             MissionKind::Rescue        => Some("RESCMSTB"),
             MissionKind::Abduction     => Some("ABDCMSTB"),
-            MissionKind::InciteUprising=> Some("INCTMSTB"),
-            MissionKind::Autoscrap     => None,
+            MissionKind::InciteUprising  => Some("INCTMSTB"),
+            MissionKind::SubdueUprising  => Some("SUBDMSTB"),
+            MissionKind::DeathStarSabotage => Some("DSSBMSTB"),
+            MissionKind::Autoscrap       => None,
         }
     }
 
@@ -133,8 +143,10 @@ impl MissionKind {
             MissionKind::Espionage     => (-0.002,    0.78,   12.0),
             MissionKind::Rescue        => (-0.002,    0.72,   10.0),
             MissionKind::Abduction     => (-0.002,    0.70,    8.0),
-            MissionKind::InciteUprising=> (-0.003,    0.65,   18.0),
-            MissionKind::Autoscrap     => ( 0.0,      0.0,  100.0), // always succeeds
+            MissionKind::InciteUprising    => (-0.003,    0.65,   18.0),
+            MissionKind::SubdueUprising    => (-0.002,    0.70,   20.0),
+            MissionKind::DeathStarSabotage => (-0.003,    0.60,   10.0),
+            MissionKind::Autoscrap         => ( 0.0,      0.0,  100.0), // always succeeds
         }
     }
 
@@ -148,9 +160,11 @@ impl MissionKind {
             MissionKind::Espionage      => character.espionage,
             MissionKind::Rescue         => character.combat,
             MissionKind::Abduction      => character.espionage,
-            MissionKind::InciteUprising => character.diplomacy,
+            MissionKind::InciteUprising    => character.diplomacy,
+            MissionKind::SubdueUprising    => character.diplomacy,
+            MissionKind::DeathStarSabotage => character.espionage,
             // Autoscrap has no character; callers guard against passing None.
-            MissionKind::Autoscrap      => return 100,
+            MissionKind::Autoscrap         => return 100,
         };
         // Expected value: base + half variance (variance resolved at scenario start).
         pair.base + pair.variance / 2
@@ -179,6 +193,8 @@ impl MissionKind {
             MissionKind::Rescue                               => (20, 30),
             MissionKind::Abduction                            => (25, 35),
             MissionKind::InciteUprising                       => (20, 30),
+            MissionKind::SubdueUprising                       => (20, 30),
+            MissionKind::DeathStarSabotage                    => (30, 40),
             MissionKind::Autoscrap                            => (1,  1),
         }
     }
@@ -444,6 +460,17 @@ pub enum MissionEffect {
     CharacterEscaped {
         character: CharacterKey,
         escaped_to_alliance: bool,
+    },
+
+    /// An uprising was subdued — restore controlling faction's stability.
+    UprisingSubdued {
+        system: SystemKey,
+    },
+
+    /// Death Star construction was sabotaged — delay by `ticks_delayed`.
+    DeathStarSabotaged {
+        /// Number of construction ticks added to the countdown.
+        ticks_delayed: u32,
     },
 }
 
@@ -730,6 +757,17 @@ impl MissionSystem {
                     system: mission.target_system,
                     // +0.05 popularity delta: more impactful than diplomacy (+0.01).
                     popularity_delta: 0.05,
+                }]
+            }
+            MissionKind::SubdueUprising => {
+                vec![MissionEffect::UprisingSubdued {
+                    system: mission.target_system,
+                }]
+            }
+            MissionKind::DeathStarSabotage => {
+                vec![MissionEffect::DeathStarSabotaged {
+                    // Delay construction by ~50 ticks (significant setback).
+                    ticks_delayed: 50,
                 }]
             }
             MissionKind::Autoscrap => {

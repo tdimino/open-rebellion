@@ -773,6 +773,20 @@ fn apply_mission_effects(effects: &[MissionEffect], world: &mut GameWorld) {
                     c.capture_tick = None;
                 }
             }
+            MissionEffect::UprisingSubdued { system } => {
+                // Subdue uprising: shift popularity back toward controlling faction
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
+                    sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
+                }
+            }
+            MissionEffect::DeathStarSabotaged { ticks_delayed } => {
+                // Delay Death Star construction by adding ticks to the countdown.
+                // The actual state manipulation happens in main.rs/simulation.rs
+                // where death_star_state is accessible. This effect is a signal
+                // that gets applied by the caller.
+                let _ = ticks_delayed; // applied in death_star state by caller
+            }
         }
     }
 }

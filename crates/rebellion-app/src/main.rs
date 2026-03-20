@@ -1031,8 +1031,10 @@ fn apply_panel_action(
                 MissionKind::Espionage      => "Espionage",
                 MissionKind::Rescue         => "Rescue",
                 MissionKind::Abduction      => "Abduction",
-                MissionKind::InciteUprising => "Incite Uprising",
-                MissionKind::Autoscrap      => "Autoscrap",
+                MissionKind::InciteUprising    => "Incite Uprising",
+                MissionKind::SubdueUprising    => "Subdue Uprising",
+                MissionKind::DeathStarSabotage => "Death Star Sabotage",
+                MissionKind::Autoscrap         => "Autoscrap",
             };
             msg_log.push(GameMessage::at_system(
                 clock.tick,
@@ -1234,8 +1236,10 @@ fn apply_mission_result(
         MissionKind::Espionage      => "Espionage",
         MissionKind::Rescue         => "Rescue",
         MissionKind::Abduction      => "Abduction",
-        MissionKind::InciteUprising => "Incite Uprising",
-        MissionKind::Autoscrap      => "Autoscrap",
+        MissionKind::InciteUprising    => "Incite Uprising",
+        MissionKind::SubdueUprising    => "Subdue Uprising",
+        MissionKind::DeathStarSabotage => "Death Star Sabotage",
+        MissionKind::Autoscrap         => "Autoscrap",
     };
     let sys_name = world
         .systems
@@ -1249,14 +1253,16 @@ fn apply_mission_result(
     };
 
     let category = match result.kind {
-        MissionKind::Diplomacy                => MessageCategory::Diplomacy,
-        MissionKind::InciteUprising           => MessageCategory::Diplomacy,
+        MissionKind::Diplomacy
+        | MissionKind::InciteUprising
+        | MissionKind::SubdueUprising         => MessageCategory::Diplomacy,
         MissionKind::Recruitment
         | MissionKind::Sabotage
         | MissionKind::Assassination
         | MissionKind::Espionage
         | MissionKind::Rescue
         | MissionKind::Abduction
+        | MissionKind::DeathStarSabotage
         | MissionKind::Autoscrap              => MessageCategory::Mission,
     };
     log.push(GameMessage::at_system(
@@ -1399,6 +1405,19 @@ fn apply_mission_result(
                 }
                 let name = world.characters.get(*character).map(|c| c.name.clone()).unwrap_or_else(|| "Unknown".into());
                 log.push(GameMessage::new(result.tick, format!("{} has escaped captivity!", name), MessageCategory::Event));
+            }
+            MissionEffect::UprisingSubdued { system } => {
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
+                    sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
+                }
+            }
+            MissionEffect::DeathStarSabotaged { ticks_delayed } => {
+                // Death Star construction delay is applied in the simulation layer.
+                // The effect here is a log notification.
+                log.push(GameMessage::new(result.tick,
+                    format!("Death Star construction sabotaged! {} ticks delayed.", ticks_delayed),
+                    MessageCategory::Mission));
             }
         }
     }

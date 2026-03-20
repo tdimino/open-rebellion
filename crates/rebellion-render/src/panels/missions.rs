@@ -306,8 +306,10 @@ fn draw_dispatch_tab(
                 MissionKind::Espionage      => character.espionage,
                 MissionKind::Rescue         => character.combat,
                 MissionKind::Abduction      => character.espionage,
-                MissionKind::InciteUprising => character.diplomacy,
-                MissionKind::Autoscrap      => character.leadership, // no-op; Autoscrap never shown in UI
+                MissionKind::InciteUprising    => character.diplomacy,
+                MissionKind::SubdueUprising    => character.diplomacy,
+                MissionKind::DeathStarSabotage => character.espionage,
+                MissionKind::Autoscrap         => character.leadership, // no-op; Autoscrap never shown in UI
             };
             let score = skill.base as f64 + skill.variance as f64 * 0.5;
             let (a, b, c) = kind.coefficients();
@@ -394,7 +396,9 @@ fn mission_kind_display(kind: MissionKind) -> (&'static str, Color32) {
         MissionKind::Espionage      => ("[ESPI]",  Color32::from_rgb(160, 120, 220)),
         MissionKind::Rescue         => ("[RESC]",  Color32::from_rgb( 80, 180, 255)),
         MissionKind::Abduction      => ("[ABDC]",  Color32::from_rgb(220, 160,  60)),
-        MissionKind::InciteUprising => ("[INCT]",  Color32::from_rgb(255, 140,  40)),
-        MissionKind::Autoscrap      => ("[AUTO]",  Color32::from_rgb(120, 120, 120)),
+        MissionKind::InciteUprising    => ("[INCT]",  Color32::from_rgb(255, 140,  40)),
+        MissionKind::SubdueUprising    => ("[SUBD]",  Color32::from_rgb(100, 200, 100)),
+        MissionKind::DeathStarSabotage => ("[DSSB]",  Color32::from_rgb(255,  60,  60)),
+        MissionKind::Autoscrap         => ("[AUTO]",  Color32::from_rgb(120, 120, 120)),
     }
 }
