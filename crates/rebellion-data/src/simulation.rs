@@ -24,7 +24,9 @@ use rebellion_core::research::{ResearchResult, ResearchState, ResearchSystem};
 use rebellion_core::tick::{GameClock, TickEvent};
 use rebellion_core::uprising::{UprisingEvent, UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
-use rebellion_core::world::{GameWorld, MstbTable};
+use rebellion_core::world::{
+    DefenseFacilityInstance, GameWorld, ManufacturingFacilityInstance, MstbTable, TroopUnit,
+};
 
 // ---------------------------------------------------------------------------
 // Payload helpers — resolve slotmap keys to human-readable names
@@ -170,12 +172,17 @@ pub fn run_simulation_tick(
         states.blockade.blockaded_systems(),
     );
     for c in &completions {
+        // Apply the built item to the game world.
+        apply_build_completion(c, world);
         events.push(GameEventRecord::new(
             c.tick,
             wall_ms,
             SYS_MANUFACTURING,
             EVT_BUILD_COMPLETE,
-            serde_json::json!({ "system": sys_name(world, c.system) }),
+            serde_json::json!({
+                "system": sys_name(world, c.system),
+                "kind": format!("{:?}", c.kind),
+            }),
         ));
     }
 
@@ -1075,6 +1082,157 @@ fn apply_ai_actions_to_world(
                         movement_state.order(*fleet, f.location, *to_system, transit);
                     }
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Build completion application
+// ---------------------------------------------------------------------------
+
+/// Apply a manufacturing completion to the game world.
+/// Capital ships and fighters are added to the first friendly fleet at the system
+/// (or a new fleet is created). Facilities are added to the system's lists.
+fn apply_build_completion(
+    completion: &rebellion_core::manufacturing::CompletionEvent,
+    world: &mut GameWorld,
+) {
+    use rebellion_core::manufacturing::BuildableKind;
+    use rebellion_core::world::{Fleet, ShipEntry, FighterEntry};
+
+    let sys_key = completion.system;
+
+    match &completion.kind {
+        BuildableKind::CapitalShip(class_key) => {
+            // Determine faction from class
+            let is_alliance = world
+                .capital_ship_classes
+                .get(*class_key)
+                .map(|c| c.is_alliance)
+                .unwrap_or(false);
+
+            // Find existing friendly fleet at this system, or create one.
+            let fleet_key = {
+                let sys = match world.systems.get(sys_key) {
+                    Some(s) => s,
+                    None => return,
+                };
+                sys.fleets
+                    .iter()
+                    .copied()
+                    .find(|&fk| {
+                        world.fleets.get(fk).map(|f| f.is_alliance == is_alliance).unwrap_or(false)
+                    })
+            };
+
+            if let Some(fk) = fleet_key {
+                if let Some(fleet) = world.fleets.get_mut(fk) {
+                    if let Some(entry) = fleet.capital_ships.iter_mut().find(|e| e.class == *class_key) {
+                        entry.count += 1;
+                    } else {
+                        fleet.capital_ships.push(ShipEntry { class: *class_key, count: 1 });
+                    }
+                }
+            } else {
+                // Create a new fleet at this system.
+                let fleet = Fleet {
+                    location: sys_key,
+                    capital_ships: vec![ShipEntry { class: *class_key, count: 1 }],
+                    fighters: vec![],
+                    characters: vec![],
+                    is_alliance,
+                    has_death_star: false,
+                };
+                let fk = world.fleets.insert(fleet);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.fleets.push(fk);
+                }
+            }
+        }
+        BuildableKind::Fighter(class_key) => {
+            let is_alliance = world
+                .fighter_classes
+                .get(*class_key)
+                .map(|c| c.is_alliance)
+                .unwrap_or(false);
+
+            // Add to existing friendly fleet or create one.
+            let fleet_key = {
+                let sys = match world.systems.get(sys_key) {
+                    Some(s) => s,
+                    None => return,
+                };
+                sys.fleets
+                    .iter()
+                    .copied()
+                    .find(|&fk| {
+                        world.fleets.get(fk).map(|f| f.is_alliance == is_alliance).unwrap_or(false)
+                    })
+            };
+
+            if let Some(fk) = fleet_key {
+                if let Some(fleet) = world.fleets.get_mut(fk) {
+                    if let Some(entry) = fleet.fighters.iter_mut().find(|e| e.class == *class_key) {
+                        entry.count += 1;
+                    } else {
+                        fleet.fighters.push(FighterEntry { class: *class_key, count: 1 });
+                    }
+                }
+            } else {
+                let fleet = Fleet {
+                    location: sys_key,
+                    capital_ships: vec![],
+                    fighters: vec![FighterEntry { class: *class_key, count: 1 }],
+                    characters: vec![],
+                    is_alliance,
+                    has_death_star: false,
+                };
+                let fk = world.fleets.insert(fleet);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.fleets.push(fk);
+                }
+            }
+        }
+        BuildableKind::ManufacturingFacility(class_key) => {
+            // Clone the template facility's fields.
+            if let Some(template) = world.manufacturing_facilities.get(*class_key).cloned() {
+                let fac_key = world.manufacturing_facilities.insert(template);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.manufacturing_facilities.push(fac_key);
+                }
+            }
+        }
+        BuildableKind::DefenseFacility(class_key) => {
+            if let Some(template) = world.defense_facilities.get(*class_key).cloned() {
+                let fac_key = world.defense_facilities.insert(template);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.defense_facilities.push(fac_key);
+                }
+            }
+        }
+        BuildableKind::ProductionFacility(class_key) => {
+            if let Some(template) = world.production_facilities.get(*class_key).cloned() {
+                let fac_key = world.production_facilities.insert(template);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.production_facilities.push(fac_key);
+                }
+            }
+        }
+        BuildableKind::Troop(class_key) => {
+            let is_alliance = world
+                .troops
+                .get(*class_key)
+                .map(|t| t.is_alliance)
+                .unwrap_or(false);
+            let unit = TroopUnit {
+                class_dat_id: rebellion_core::ids::DatId::new(0),
+                is_alliance,
+                regiment_strength: 100,
+            };
+            let tk = world.troops.insert(unit);
+            if let Some(sys) = world.systems.get_mut(sys_key) {
+                sys.ground_units.push(tk);
             }
         }
     }

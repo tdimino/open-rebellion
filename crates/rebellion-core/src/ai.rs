@@ -31,7 +31,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    CharacterKey, FighterKey, FleetKey, ManufacturingFacilityKey, SystemKey,
+    CapitalShipKey, CharacterKey, FighterKey, FleetKey, ManufacturingFacilityKey, SystemKey,
 };
 use crate::manufacturing::{BuildableKind, ManufacturingState};
 use crate::missions::{MissionFaction, MissionKind, MissionState};
@@ -604,8 +604,25 @@ impl AISystem {
         faction: AiFaction,
         actions: &mut Vec<AIAction>,
     ) {
-        // Find the best fighter class for this faction (highest research_order = most advanced).
         let best_fighter = Self::best_fighter_class(world, faction);
+        let best_capship = Self::best_capital_ship_class(world, faction);
+
+        // Count existing fleet assets to decide what to build next.
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+        let our_capship_count: usize = world
+            .fleets
+            .values()
+            .filter(|f| f.is_alliance == is_alliance)
+            .flat_map(|f| &f.capital_ships)
+            .map(|e| e.count as usize)
+            .sum();
+        let our_fighter_count: usize = world
+            .fleets
+            .values()
+            .filter(|f| f.is_alliance == is_alliance)
+            .flat_map(|f| &f.fighters)
+            .map(|e| e.count as usize)
+            .sum();
 
         for (sys_key, system) in world.systems.iter() {
             // Only act on systems where this faction has manufacturing facilities.
@@ -628,33 +645,70 @@ impl AISystem {
             }
 
             let queue = mfg_state.queue(sys_key);
-            let queue_empty = queue.map(|q| q.is_empty()).unwrap_or(true);
+            let queue_len = queue.map(|q| q.len()).unwrap_or(0);
 
-            if queue_empty {
-                // Enqueue fighters if we have a class to build.
+            // Allow up to 3 items in queue (don't just wait for empty).
+            if queue_len >= 3 {
+                continue;
+            }
+
+            // Production priority: capital ships first (they create fleets),
+            // then fighters (fill carrier slots), then construction yards.
+            // Capital ships are the bottleneck — without them, no fleets.
+            if our_capship_count < 5 {
+                if let Some((capship_key, capship_class)) = best_capship {
+                    let ticks = capship_class.refined_material_cost.max(20);
+                    actions.push(AIAction::EnqueueProduction {
+                        system: sys_key,
+                        kind: BuildableKind::CapitalShip(capship_key),
+                        ticks,
+                    });
+                    continue;
+                }
+            }
+
+            // Build fighters: either to fill carrier capacity, or as primary
+            // combat units when no capital ship class is available.
+            let needs_fighters = if best_capship.is_some() {
+                our_fighter_count < our_capship_count * 3
+            } else {
+                true // no capships available, fighters are our only option
+            };
+            if needs_fighters {
                 if let Some((fighter_key, fighter_class)) = best_fighter {
-                    // Cost in ticks: scale from refined_material_cost (stub: 1 material = 1 tick).
                     let ticks = fighter_class.refined_material_cost.max(5);
                     actions.push(AIAction::EnqueueProduction {
                         system: sys_key,
                         kind: BuildableKind::Fighter(fighter_key),
                         ticks,
                     });
+                    continue;
                 }
+            }
 
-                // Also consider building more construction yards if below cap.
-                let yard_count = system.manufacturing_facilities.len();
-                if yard_count < MAX_CONSTRUCTION_YARDS {
-                    if let Some(mfg_key) =
-                        Self::find_manufacturing_facility_class(world, faction)
-                    {
-                        actions.push(AIAction::EnqueueProduction {
-                            system: sys_key,
-                            kind: BuildableKind::ManufacturingFacility(mfg_key),
-                            ticks: 30, // facilities take ~30 days
-                        });
-                    }
+            // Build more construction yards if below cap.
+            let yard_count = system.manufacturing_facilities.len();
+            if yard_count < MAX_CONSTRUCTION_YARDS {
+                if let Some(mfg_key) =
+                    Self::find_manufacturing_facility_class(world, faction)
+                {
+                    actions.push(AIAction::EnqueueProduction {
+                        system: sys_key,
+                        kind: BuildableKind::ManufacturingFacility(mfg_key),
+                        ticks: 30,
+                    });
+                    continue;
                 }
+            }
+
+            // Default: build more capital ships.
+            if let Some((capship_key, capship_class)) = best_capship {
+                let ticks = capship_class.refined_material_cost.max(20);
+                actions.push(AIAction::EnqueueProduction {
+                    system: sys_key,
+                    kind: BuildableKind::CapitalShip(capship_key),
+                    ticks,
+                });
             }
         }
     }
@@ -672,6 +726,22 @@ impl AISystem {
                 AiFaction::Empire => fc.is_empire,
             })
             .max_by_key(|(_, fc)| fc.refined_material_cost)
+    }
+
+    /// Select the most advanced capital ship class available for this faction.
+    /// Prefers higher hull (stronger ships) as the tiebreaker.
+    fn best_capital_ship_class(
+        world: &GameWorld,
+        faction: AiFaction,
+    ) -> Option<(CapitalShipKey, &crate::world::CapitalShipClass)> {
+        world
+            .capital_ship_classes
+            .iter()
+            .filter(|(_, cs)| match faction {
+                AiFaction::Alliance => cs.is_alliance,
+                AiFaction::Empire => cs.is_empire,
+            })
+            .max_by_key(|(_, cs)| cs.hull)
     }
 
     /// Find a manufacturing facility key to use as a class reference for facility construction.
@@ -819,6 +889,21 @@ impl AISystem {
         };
 
         let mut reinforcement_sent = false;
+        let mut hq_defended = false;
+
+        // Check if HQ already has a fleet stationed.
+        if let Some(hq) = galaxy.our_hq {
+            if let Some(sys) = world.systems.get(hq) {
+                hq_defended = sys.fleets.iter().any(|&fk| {
+                    world.fleets.get(fk)
+                        .map(|f| match faction {
+                            AiFaction::Alliance => f.is_alliance,
+                            AiFaction::Empire => !f.is_alliance,
+                        })
+                        .unwrap_or(false)
+                });
+            }
+        }
 
         for (fleet_key, fleet) in world.fleets.iter() {
             // Only command our own fleets.
@@ -830,8 +915,7 @@ impl AISystem {
                 continue;
             }
 
-            // Check if this fleet's current system has an enemy fleet present
-            // (actual threat, not just popularity). If so, stay and defend.
+            // Check if this fleet's current system has an enemy fleet present.
             let current_has_enemy = world
                 .systems
                 .get(fleet.location)
@@ -848,7 +932,23 @@ impl AISystem {
                 continue; // Stay and fight
             }
 
-            // First idle fleet reinforces an empty friendly system (if any).
+            // Keep one fleet at HQ as a garrison. Incoming attackers will meet it.
+            if !hq_defended {
+                if let Some(hq) = galaxy.our_hq {
+                    if fleet.location != hq {
+                        actions.push(AIAction::MoveFleet {
+                            fleet: fleet_key,
+                            to_system: hq,
+                            reason: FleetMoveReason::Reinforce,
+                        });
+                    }
+                    // Either way, this fleet is the HQ garrison.
+                    hq_defended = true;
+                    continue;
+                }
+            }
+
+            // One fleet reinforces our weakest undefended system.
             if !reinforcement_sent {
                 if let Some(target) = reinforce_target {
                     if target != fleet.location {
