@@ -26,7 +26,7 @@
 //! The AI only re-evaluates every `AI_TICK_INTERVAL` game-days. This prevents
 //! thrashing and is consistent with the original game's turn-based cadence.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -146,6 +146,10 @@ pub struct AIState {
     pub last_eval_tick: u64,
     /// Characters currently dispatched on missions (not available for re-dispatch).
     pub busy_characters: HashSet<CharacterKey>,
+    /// Systems where combat recently occurred — deprioritized for attack targeting.
+    /// Maps SystemKey → tick of last battle. Decays over ~100 ticks.
+    #[serde(default)]
+    pub battle_cooldowns: HashMap<SystemKey, u64>,
 }
 
 impl AIState {
@@ -154,6 +158,7 @@ impl AIState {
             faction: Some(faction),
             last_eval_tick: 0,
             busy_characters: HashSet::new(),
+            battle_cooldowns: HashMap::new(),
         }
     }
 
@@ -244,6 +249,7 @@ impl AISystem {
         world: &GameWorld,
         mfg_state: &ManufacturingState,
         _mission_state: &MissionState,
+        movement: &crate::movement::MovementState,
         tick_events: &[TickEvent],
     ) -> Vec<AIAction> {
         if tick_events.is_empty() {
@@ -269,7 +275,7 @@ impl AISystem {
         Self::evaluate_officers(state, world, faction, &mut actions);
         Self::evaluate_espionage(state, world, faction, &mut actions);
         Self::evaluate_production(world, mfg_state, faction, &mut actions);
-        Self::evaluate_fleet_deployment(world, faction, &mut actions);
+        Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, &mut actions);
 
         actions
     }
@@ -893,132 +899,224 @@ impl AISystem {
         state
     }
 
-    fn evaluate_fleet_deployment(
+    /// Score an enemy system as an attack target for a specific fleet.
+    /// Higher score = better target. Considers weakness, proximity,
+    /// deconfliction (avoid piling), and battle freshness (avoid stagnation).
+    fn score_attack_target(
         world: &GameWorld,
+        fleet_location: SystemKey,
+        target: SystemKey,
+        is_alliance: bool,
+        targeted_counts: &HashMap<SystemKey, usize>,
+        battle_cooldowns: &HashMap<SystemKey, u64>,
+        current_tick: u64,
+    ) -> f64 {
+        let target_sys = match world.systems.get(target) {
+            Some(s) => s,
+            None => return 0.0,
+        };
+        let fleet_sys = match world.systems.get(fleet_location) {
+            Some(s) => s,
+            None => return 0.0,
+        };
+
+        // Weakness: inverse of enemy garrison strength
+        let strength = Self::system_strength(world, target_sys, !is_alliance) as f64;
+        let weakness = 1.0 / (1.0 + strength);
+
+        // Proximity: inverse of Euclidean distance
+        let dx = target_sys.x as f64 - fleet_sys.x as f64;
+        let dy = target_sys.y as f64 - fleet_sys.y as f64;
+        let distance = (dx * dx + dy * dy).sqrt();
+        let proximity = 1.0 / (1.0 + distance / 100.0);
+
+        // AUGMENTATION: Deconfliction — avoid piling multiple fleets on same target
+        let pile_count = *targeted_counts.get(&target).unwrap_or(&0) as f64;
+        let deconfliction = 1.0 / (1.0 + pile_count);
+
+        // AUGMENTATION: Battle freshness — deprioritize recently-fought systems
+        let freshness = match battle_cooldowns.get(&target) {
+            Some(&last_tick) => {
+                let elapsed = current_tick.saturating_sub(last_tick) as f64;
+                (elapsed / 100.0).min(1.0) // Full recovery after 100 ticks
+            }
+            None => 1.0,
+        };
+
+        weakness * 0.30 + proximity * 0.30 + deconfliction * 0.25 + freshness * 0.15
+    }
+
+    /// Two-pass fleet deployment — ports the original game's distributed targeting.
+    ///
+    /// Pass 1: Assign each fleet its own target using scoring function.
+    ///   - HQ garrison first, then per-fleet attack targeting.
+    /// Pass 2: Redistribute any idle fleets (no valid target in pass 1).
+    fn evaluate_fleet_deployment(
+        state: &AIState,
+        world: &GameWorld,
+        movement: &crate::movement::MovementState,
         faction: AiFaction,
+        current_tick: u64,
         actions: &mut Vec<AIAction>,
     ) {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
         let galaxy = Self::evaluate_galaxy_state(world, faction);
 
-        // Faction-asymmetric attack targeting:
-        // Empire: attack the enemy HQ directly (overwhelming force doctrine).
-        //         Falls back to weakest system if HQ unknown.
-        // Alliance: hit weakest target (guerrilla doctrine — hit-and-run).
-        let attack_target = match faction {
-            AiFaction::Empire => {
-                // Empire prioritizes enemy HQ for a decisive blow.
-                galaxy.enemy_hq.or_else(|| galaxy.enemy_controlled.first().copied())
+        if galaxy.enemy_controlled.is_empty() {
+            return; // No enemy targets — nothing to attack
+        }
+
+        // Build transient deconfliction map from active movement orders.
+        let mut targeted_counts: HashMap<SystemKey, usize> = HashMap::new();
+        for (_, order) in movement.orders() {
+            if let Some(f) = world.fleets.get(order.fleet) {
+                if f.is_alliance == is_alliance {
+                    *targeted_counts.entry(order.destination).or_default() += 1;
+                }
             }
-            AiFaction::Alliance => {
-                // Alliance strikes weakest targets — guerrilla raids.
-                galaxy.enemy_controlled.first().copied()
-            }
-        };
-
-        // Count our available fleets (not pinned in combat).
-        let our_fleet_count = world.fleets.values()
-            .filter(|f| match faction {
-                AiFaction::Alliance => f.is_alliance,
-                AiFaction::Empire => !f.is_alliance,
-            })
-            .count();
-
-        // Only allow reinforcement if we have 2+ fleets AND there are enemy
-        // targets to attack with the remaining fleets. With just 1 fleet,
-        // always attack — reinforcing empty systems is a trap.
-        let allow_reinforce = our_fleet_count >= 2 && attack_target.is_some();
-        let reinforce_target = if allow_reinforce {
-            galaxy.our_undefended.first().copied()
-        } else {
-            None
-        };
-
-        let mut reinforcement_sent = false;
-        let mut hq_defended = false;
+        }
 
         // Check if HQ already has a fleet stationed.
+        let mut hq_defended = false;
         if let Some(hq) = galaxy.our_hq {
             if let Some(sys) = world.systems.get(hq) {
                 hq_defended = sys.fleets.iter().any(|&fk| {
                     world.fleets.get(fk)
-                        .map(|f| match faction {
-                            AiFaction::Alliance => f.is_alliance,
-                            AiFaction::Empire => !f.is_alliance,
-                        })
+                        .map(|f| f.is_alliance == is_alliance)
                         .unwrap_or(false)
                 });
             }
         }
 
+        // Collect our idle fleets (not in combat, not already assigned).
+        let mut idle_fleets: Vec<(FleetKey, SystemKey)> = Vec::new();
         for (fleet_key, fleet) in world.fleets.iter() {
-            // Only command our own fleets.
-            let is_ours = match faction {
-                AiFaction::Alliance => fleet.is_alliance,
-                AiFaction::Empire => !fleet.is_alliance,
-            };
-            if !is_ours {
+            let is_ours = if is_alliance { fleet.is_alliance } else { !fleet.is_alliance };
+            if !is_ours { continue; }
+
+            // Skip fleets currently in combat (enemy present at their location).
+            let in_combat = world.systems.get(fleet.location)
+                .map(|s| s.fleets.iter().any(|&fk| {
+                    world.fleets.get(fk)
+                        .map(|f| f.is_alliance != fleet.is_alliance)
+                        .unwrap_or(false)
+                }))
+                .unwrap_or(false);
+            if in_combat { continue; }
+
+            idle_fleets.push((fleet_key, fleet.location));
+        }
+
+        // ── Pass 1: Assign each fleet its best target ───────────────
+
+        let mut pass2_idle: Vec<(FleetKey, SystemKey)> = Vec::new();
+
+        for (fleet_key, fleet_location) in &idle_fleets {
+            let fleet = match world.fleets.get(*fleet_key) { Some(f) => f, None => continue };
+
+            // Death Star exemption: always target enemy HQ
+            if fleet.has_death_star {
+                if let Some(hq) = galaxy.enemy_hq {
+                    if *fleet_location != hq {
+                        actions.push(AIAction::MoveFleet {
+                            fleet: *fleet_key,
+                            to_system: hq,
+                            reason: FleetMoveReason::Attack,
+                        });
+                        *targeted_counts.entry(hq).or_default() += 1;
+                    }
+                }
                 continue;
             }
 
-            // Check if this fleet's current system has an enemy fleet present.
-            let current_has_enemy = world
-                .systems
-                .get(fleet.location)
-                .map(|s| {
-                    s.fleets.iter().any(|&fk| {
-                        world.fleets.get(fk)
-                            .map(|f| f.is_alliance != fleet.is_alliance)
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false);
-
-            if current_has_enemy {
-                continue; // Stay and fight
-            }
-
-            // Keep one fleet at HQ as a garrison. Incoming attackers will meet it.
+            // HQ garrison: first available fleet
             if !hq_defended {
                 if let Some(hq) = galaxy.our_hq {
-                    if fleet.location != hq {
+                    if *fleet_location != hq {
                         actions.push(AIAction::MoveFleet {
-                            fleet: fleet_key,
+                            fleet: *fleet_key,
                             to_system: hq,
                             reason: FleetMoveReason::Reinforce,
                         });
                     }
-                    // Either way, this fleet is the HQ garrison.
                     hq_defended = true;
                     continue;
                 }
             }
 
-            // One fleet reinforces our weakest undefended system.
-            if !reinforcement_sent {
-                if let Some(target) = reinforce_target {
-                    if target != fleet.location {
+            // Per-fleet attack targeting: score all enemy systems, pick best.
+            // Cap simultaneous attack fronts at min(fleet_count, 3).
+            let max_fronts = idle_fleets.len().min(3);
+            let distinct_targets = targeted_counts.values().filter(|&&v| v > 0).count();
+
+            // Faction asymmetry: Empire biases toward enemy HQ.
+            let candidates: Vec<SystemKey> = if matches!(faction, AiFaction::Empire) && galaxy.enemy_hq.is_some() {
+                // Empire: enemy HQ always in candidate list + weakest systems
+                let mut c = galaxy.enemy_controlled.clone();
+                if let Some(hq) = galaxy.enemy_hq {
+                    if !c.contains(&hq) { c.insert(0, hq); }
+                }
+                c
+            } else {
+                galaxy.enemy_controlled.clone()
+            };
+
+            if candidates.is_empty() {
+                pass2_idle.push((*fleet_key, *fleet_location));
+                continue;
+            }
+
+            // Score each candidate and pick the best
+            let best = candidates.iter()
+                .map(|&target| {
+                    let score = Self::score_attack_target(
+                        world, *fleet_location, target, is_alliance,
+                        &targeted_counts, &state.battle_cooldowns, current_tick,
+                    );
+                    (target, score)
+                })
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            if let Some((target, _score)) = best {
+                if target != *fleet_location {
+                    // Only open a new front if we haven't hit the cap,
+                    // or if this target is already being attacked.
+                    let is_new_front = targeted_counts.get(&target).copied().unwrap_or(0) == 0;
+                    if !is_new_front || distinct_targets < max_fronts {
                         actions.push(AIAction::MoveFleet {
-                            fleet: fleet_key,
+                            fleet: *fleet_key,
                             to_system: target,
-                            reason: FleetMoveReason::Reinforce,
+                            reason: FleetMoveReason::Attack,
                         });
-                        reinforcement_sent = true;
+                        *targeted_counts.entry(target).or_default() += 1;
                         continue;
                     }
                 }
             }
 
-            // Remaining fleets attack the weakest enemy system.
-            if let Some(target) = attack_target {
-                if target != fleet.location {
+            pass2_idle.push((*fleet_key, *fleet_location));
+        }
+
+        // ── Pass 2: Redistribute idle fleets ────────────────────────
+        // Fleets that couldn't find a valid target: reinforce weakest friendly system.
+        for (fleet_key, fleet_location) in pass2_idle {
+            let target = galaxy.our_undefended.first().copied()
+                .or_else(|| galaxy.our_controlled.first().copied());
+            if let Some(t) = target {
+                if t != fleet_location {
                     actions.push(AIAction::MoveFleet {
                         fleet: fleet_key,
-                        to_system: target,
-                        reason: FleetMoveReason::Attack,
+                        to_system: t,
+                        reason: FleetMoveReason::Reinforce,
                     });
                 }
             }
         }
+    }
+
+    /// Record that combat occurred at a system (called by simulation after combat).
+    pub fn record_battle(state: &mut AIState, system: SystemKey, tick: u64) {
+        state.battle_cooldowns.insert(system, tick);
     }
 }
 
@@ -1183,7 +1281,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &[]);
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[]);
         assert!(actions.is_empty());
     }
 
@@ -1199,7 +1297,7 @@ mod tests {
         // 3 ticks elapsed since last eval (5+3=8... wait, current_tick = 8 > 5+7=12? No)
         // last_eval=5, current=8, diff=3 < 7 → should not evaluate
         let actions =
-            AISystem::advance(&mut state, &world, &mfg, &missions, &[TickEvent { tick: 8 }]);
+            AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 8 }]);
         assert!(actions.is_empty());
     }
 
@@ -1222,7 +1320,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let recruitment = actions.iter().find(|a| matches!(
             a,
@@ -1246,7 +1344,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let diplomacy = actions.iter().find(|a| matches!(
             a,
@@ -1269,7 +1367,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -1291,7 +1389,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -1354,7 +1452,7 @@ mod tests {
         let mfg = ManufacturingState::new(); // empty queue
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let has_fighter_enqueue = actions.iter().any(|a| matches!(
             a,
@@ -1393,7 +1491,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let fleet_move = actions.iter().find(|a| matches!(
             a,
@@ -1492,7 +1590,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let sabotage = actions.iter().find(|a| matches!(
             a,
@@ -1545,7 +1643,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let covert = actions.iter().filter(|a| matches!(
             a,
@@ -1592,7 +1690,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let intel = actions.iter().find(|a| matches!(
             a,
@@ -1650,7 +1748,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
 
         let covert_count = actions.iter().filter(|a| matches!(
             a,
@@ -1681,16 +1779,16 @@ mod tests {
         let missions = MissionState::new();
 
         // First evaluation at tick 7
-        let _first = AISystem::advance(&mut state, &world, &mfg, &missions, &[TickEvent { tick: 7 }]);
+        let _first = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 7 }]);
         assert_eq!(state.last_eval_tick, 7);
 
         // Tick 10 — only 3 days elapsed, should skip
-        let second = AISystem::advance(&mut state, &world, &mfg, &missions, &[TickEvent { tick: 10 }]);
+        let second = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 10 }]);
         assert!(second.is_empty(), "expected no actions before interval elapses");
         assert_eq!(state.last_eval_tick, 7); // unchanged
 
         // Tick 14 — 7 days elapsed, should evaluate again
-        let third = AISystem::advance(&mut state, &world, &mfg, &missions, &[TickEvent { tick: 14 }]);
+        let third = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 14 }]);
         assert_eq!(state.last_eval_tick, 14);
         let _ = third; // just checking it ran
     }

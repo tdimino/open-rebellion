@@ -510,6 +510,7 @@ async fn main() {
                 &world,
                 &mfg_state,
                 &mission_state,
+                &movement_state,
                 &tick_events,
             );
             let ai_rolls: Vec<f64> =
@@ -537,6 +538,7 @@ async fn main() {
                     &world,
                     &mfg_state,
                     &mission_state,
+                    &movement_state,
                     &tick_events,
                 );
                 let second_rolls: Vec<f64> =

@@ -267,6 +267,11 @@ pub fn run_simulation_tick(
         // Apply ship damage
         apply_space_combat_result(&space_result, world);
         states.combat_cooldowns.insert(sys_key, current_tick);
+        // Record battle for AI target scoring (battle repeat penalty)
+        AISystem::record_battle(&mut states.ai, sys_key, current_tick);
+        if let Some(ref mut ai2) = states.ai2 {
+            AISystem::record_battle(ai2, sys_key, current_tick);
+        }
 
         let winner_str = match space_result.winner {
             CombatSide::Attacker => "alliance",
@@ -426,6 +431,7 @@ pub fn run_simulation_tick(
         world,
         &states.manufacturing,
         &states.missions,
+        &states.movement,
         tick_events,
     );
     let ai_rolls = take_rolls(8);
@@ -456,6 +462,7 @@ pub fn run_simulation_tick(
             world,
             &states.manufacturing,
             &states.missions,
+            &states.movement,
             tick_events,
         );
         let ai2_rolls = take_rolls(8);
