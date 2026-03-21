@@ -25,7 +25,8 @@ use rebellion_core::tick::{GameClock, TickEvent};
 use rebellion_core::uprising::{UprisingEvent, UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{
-    DefenseFacilityInstance, GameWorld, ManufacturingFacilityInstance, MstbTable, TroopUnit,
+    ControlKind, DefenseFacilityInstance, GameWorld, ManufacturingFacilityInstance, MstbTable,
+    TroopUnit,
 };
 
 // ---------------------------------------------------------------------------
@@ -546,12 +547,12 @@ pub fn run_simulation_tick(
             UprisingEvent::UprisingBegan { system, tick } => {
                 // Flip controlling faction
                 if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.controlling_faction = match sys.controlling_faction {
-                        Some(rebellion_core::dat::Faction::Alliance) => {
-                            Some(rebellion_core::dat::Faction::Empire)
+                    sys.control = match sys.control {
+                        ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
+                            ControlKind::Controlled(rebellion_core::dat::Faction::Empire)
                         }
-                        Some(rebellion_core::dat::Faction::Empire) => {
-                            Some(rebellion_core::dat::Faction::Alliance)
+                        ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => {
+                            ControlKind::Controlled(rebellion_core::dat::Faction::Alliance)
                         }
                         other => other,
                     };
@@ -870,8 +871,8 @@ fn apply_mission_effects(
                 // remove the uprising from active state.
                 if let Some(sys) = world.systems.get_mut(*system) {
                     // Shift toward whichever faction controls the system
-                    match sys.controlling_faction {
-                        Some(rebellion_core::dat::Faction::Alliance) => {
+                    match sys.control {
+                        ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
                             sys.popularity_alliance = (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
                             sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
                         }
@@ -1358,7 +1359,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
@@ -1377,7 +1378,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
         let states = SimulationStates {
             clock: GameClock::new(),
@@ -1426,7 +1427,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
@@ -1445,7 +1446,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
         let mut states = SimulationStates {
             clock: GameClock::new(),

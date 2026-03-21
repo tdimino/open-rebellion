@@ -37,7 +37,7 @@ use crate::manufacturing::{BuildableKind, ManufacturingState};
 use crate::missions::{MissionFaction, MissionKind, MissionState};
 use crate::dat::ExplorationStatus;
 use crate::tick::TickEvent;
-use crate::world::{Character, GameWorld};
+use crate::world::{Character, ControlKind, GameWorld};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -857,8 +857,8 @@ impl AISystem {
             let has_enemy_fleet = sys.fleets.iter().any(|&fk|
                 world.fleets.get(fk).map(|f| f.is_alliance != is_alliance).unwrap_or(false));
 
-            match sys.controlling_faction {
-                Some(f) if f == our_faction => {
+            match sys.control {
+                ControlKind::Controlled(f) if f == our_faction => {
                     if has_enemy_fleet {
                         state.contested.push(key);
                     } else if sys.is_headquarters {
@@ -871,7 +871,7 @@ impl AISystem {
                         }
                     }
                 }
-                Some(f) if f == enemy_faction => {
+                ControlKind::Controlled(f) if f == enemy_faction => {
                     if sys.is_headquarters {
                         state.enemy_hq = Some(key);
                     }
@@ -1075,7 +1075,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         })
     }
 
@@ -1333,7 +1333,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
 
         // Add a TIE fighter class
@@ -1375,10 +1375,10 @@ mod tests {
 
         // Empire fleet at a safe friendly system (Empire-controlled)
         let home_sys = add_system(&mut world, sector, 0.1, 0.9);
-        world.systems[home_sys].controlling_faction = Some(crate::dat::Faction::Empire);
+        world.systems[home_sys].control = ControlKind::Controlled(crate::dat::Faction::Empire);
         // Enemy system controlled by Alliance (attack target)
         let target_sys = add_system(&mut world, sector, 0.6, 0.15);
-        world.systems[target_sys].controlling_faction = Some(crate::dat::Faction::Alliance);
+        world.systems[target_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
 
         let fleet_key = world.fleets.insert(Fleet {
             location: home_sys,
@@ -1482,7 +1482,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
 
         // Empire spy with high espionage — above threshold.
@@ -1535,7 +1535,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
 
         // Empire spy with low espionage — below threshold.
@@ -1582,7 +1582,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
 
         // Alliance spy.
@@ -1637,7 +1637,7 @@ mod tests {
                 production_facilities: vec![],
                 is_headquarters: false,
                 is_destroyed: false,
-                controlling_faction: None,
+                control: ControlKind::Uncontrolled,
             });
         }
 

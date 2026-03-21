@@ -22,6 +22,7 @@ use rebellion_core::ai::{AiFaction, AIState};
 use rebellion_core::commands::all_commands;
 use rebellion_core::dat::Faction;
 use rebellion_core::fog::{FogState, FogSystem};
+use rebellion_core::world::ControlKind;
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_data::simulation::{run_simulation_tick, SimulationStates};
 
@@ -89,8 +90,8 @@ fn dispatch_command(
 ) -> String {
     match cmd {
         "show_game_stats" => {
-            let a = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Alliance)).count();
-            let e = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Empire)).count();
+            let a = world.systems.values().filter(|s| s.control.is_controlled_by(Faction::Alliance)).count();
+            let e = world.systems.values().filter(|s| s.control.is_controlled_by(Faction::Empire)).count();
             format!("Stats: {} systems ({} Alliance, {} Empire), {} fleets, {} characters",
                 world.systems.len(), a, e, world.fleets.len(), world.characters.len())
         }
@@ -228,12 +229,12 @@ fn main() -> anyhow::Result<()> {
     let a_hq = world
         .systems
         .iter()
-        .find(|(_, s)| s.is_headquarters && s.controlling_faction == Some(Faction::Alliance))
+        .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Alliance))
         .map(|(k, _)| k);
     let e_hq = world
         .systems
         .iter()
-        .find(|(_, s)| s.is_headquarters && s.controlling_faction == Some(Faction::Empire))
+        .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Empire))
         .map(|(k, _)| k);
     let (victory_a, victory_e) = match (a_hq, e_hq) {
         (Some(a), Some(e)) => (a, e),
@@ -350,9 +351,9 @@ fn main() -> anyhow::Result<()> {
                 let mut empire = Vec::new();
                 let mut neutral = 0usize;
                 for (_, sys) in world.systems.iter() {
-                    match sys.controlling_faction {
-                        Some(rebellion_core::dat::Faction::Alliance) => alliance.push(sys.name.as_str()),
-                        Some(rebellion_core::dat::Faction::Empire) => empire.push(sys.name.as_str()),
+                    match sys.control {
+                        ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => alliance.push(sys.name.as_str()),
+                        ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => empire.push(sys.name.as_str()),
                         _ => neutral += 1,
                     }
                 }

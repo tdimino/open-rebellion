@@ -324,6 +324,7 @@ impl MovementSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ControlKind;
     use crate::tick::TickEvent;
 
     fn mock_fleet_and_systems() -> (FleetKey, SystemKey, SystemKey) {
@@ -579,7 +580,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         }
     }
 

@@ -219,6 +219,7 @@ impl FogSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ControlKind;
     use crate::ids::{FleetKey, SystemKey};
     use crate::movement::MovementState;
     use crate::world::{Fleet, GameWorld};
@@ -260,7 +261,7 @@ mod tests {
                     production_facilities: vec![],
                     is_headquarters: false,
                     is_destroyed: false,
-                    controlling_faction: None,
+                    control: ControlKind::Uncontrolled,
                 })
             })
             .collect();
@@ -426,7 +427,7 @@ mod tests {
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, controlling_faction: None,
+            is_destroyed: false, control: ControlKind::Uncontrolled,
         });
         let sys_near = world.systems.insert(crate::world::System {
             dat_id: DatId(1), name: "Near".into(), sector,
@@ -436,7 +437,7 @@ mod tests {
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, controlling_faction: None,
+            is_destroyed: false, control: ControlKind::Uncontrolled,
         });
         let sys_far = world.systems.insert(crate::world::System {
             dat_id: DatId(2), name: "Far".into(), sector,
@@ -446,7 +447,7 @@ mod tests {
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, controlling_faction: None,
+            is_destroyed: false, control: ControlKind::Uncontrolled,
         });
 
         let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
@@ -506,7 +507,7 @@ mod tests {
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, controlling_faction: None,
+            is_destroyed: false, control: ControlKind::Uncontrolled,
         });
         let sys_near = world.systems.insert(crate::world::System {
             dat_id: DatId(1), name: "Near".into(), sector,
@@ -516,7 +517,7 @@ mod tests {
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, controlling_faction: None,
+            is_destroyed: false, control: ControlKind::Uncontrolled,
         });
 
         // Ship with detection=0

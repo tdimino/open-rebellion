@@ -306,7 +306,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: rebellion_core::world::ControlKind::Uncontrolled,
         })
     }
 

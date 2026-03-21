@@ -6,7 +6,7 @@ use std::path::Path;
 use rebellion_core::dat::Faction;
 use rebellion_core::game_events::GameEventRecord;
 use rebellion_core::movement::MovementState;
-use rebellion_core::world::GameWorld;
+use rebellion_core::world::{ControlKind, GameWorld};
 
 pub struct EventLogger {
     events: Vec<GameEventRecord>,
@@ -68,9 +68,9 @@ impl EventLogger {
         let mut empire_systems = Vec::new();
         let mut neutral_count = 0usize;
         for (_, sys) in world.systems.iter() {
-            match sys.controlling_faction {
-                Some(Faction::Alliance) => alliance_systems.push(sys.name.as_str()),
-                Some(Faction::Empire) => empire_systems.push(sys.name.as_str()),
+            match sys.control {
+                ControlKind::Controlled(Faction::Alliance) => alliance_systems.push(sys.name.as_str()),
+                ControlKind::Controlled(Faction::Empire) => empire_systems.push(sys.name.as_str()),
                 _ => neutral_count += 1,
             }
         }

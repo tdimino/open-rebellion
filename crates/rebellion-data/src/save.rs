@@ -51,7 +51,7 @@ use rebellion_core::research::ResearchState;
 use rebellion_core::tick::GameClock;
 use rebellion_core::uprising::UprisingState;
 use rebellion_core::victory::VictoryState;
-use rebellion_core::world::GameWorld;
+use rebellion_core::world::{ControlKind, GameWorld};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -484,7 +484,7 @@ mod tests {
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
-            is_destroyed: false, controlling_faction: Some(Faction::Alliance),
+            is_destroyed: false, control: ControlKind::Controlled(Faction::Alliance),
         });
         let sys_b = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
@@ -494,7 +494,7 @@ mod tests {
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
-            is_destroyed: false, controlling_faction: Some(Faction::Empire),
+            is_destroyed: false, control: ControlKind::Controlled(Faction::Empire),
         });
         SaveState {
             world,

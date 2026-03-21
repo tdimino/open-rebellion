@@ -540,7 +540,7 @@ fn evaluate_condition(
         EventCondition::FactionControlsSystem { faction, system } => world
             .systems
             .get(*system)
-            .map(|s| s.controlling_faction == Some(*faction))
+            .map(|s| s.control.is_controlled_by(*faction))
             .unwrap_or(false),
 
         EventCondition::CharacterIsForceUser { character } => world
@@ -566,7 +566,7 @@ fn evaluate_condition(
             let count = world
                 .systems
                 .values()
-                .filter(|s| s.controlling_faction == Some(*faction))
+                .filter(|s| s.control.is_controlled_by(*faction))
                 .count();
             count >= *min_count
         }
@@ -619,6 +619,7 @@ fn character_is_at_system(world: &GameWorld, character: CharacterKey, system: Sy
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ControlKind;
     use crate::tick::TickEvent;
     use crate::world::{Character, ForceTier, SkillPair};
 
@@ -1023,7 +1024,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: Some(Faction::Empire),
+            control: ControlKind::Controlled(Faction::Empire),
         });
 
         let mut state = EventState::new();
@@ -1093,7 +1094,7 @@ mod tests {
                 production_facilities: vec![],
                 is_headquarters: false,
                 is_destroyed: false,
-                controlling_faction: faction,
+                control: faction.map(ControlKind::Controlled).unwrap_or(ControlKind::Uncontrolled),
             })
         };
 

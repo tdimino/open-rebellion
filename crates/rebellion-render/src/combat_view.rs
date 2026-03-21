@@ -341,7 +341,7 @@ fn format_losses(losses: &[(String, u32)]) -> String {
 mod tests {
     use super::*;
     use rebellion_core::ids::SystemKey;
-    use rebellion_core::world::GameWorld;
+    use rebellion_core::world::{ControlKind, GameWorld};
 
     fn make_system_key() -> SystemKey {
         let mut world = GameWorld::default();
@@ -370,7 +370,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         })
     }
 

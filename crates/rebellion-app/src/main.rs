@@ -25,7 +25,7 @@ use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
-use rebellion_core::world::{GameWorld, MstbTable};
+use rebellion_core::world::{ControlKind, GameWorld, MstbTable};
 
 use rebellion_render::{
     draw_encyclopedia, draw_faction_select, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
@@ -133,10 +133,10 @@ async fn main() {
     let mut betrayal_state = BetrayalState::new();
     // Find HQ systems for victory detection
     let alliance_hq = world.systems.iter()
-        .find(|(_, s)| s.is_headquarters && s.controlling_faction == Some(Faction::Alliance))
+        .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Alliance))
         .map(|(k, _)| k);
     let empire_hq = world.systems.iter()
-        .find(|(_, s)| s.is_headquarters && s.controlling_faction == Some(Faction::Empire))
+        .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Empire))
         .map(|(k, _)| k);
     let mut victory_state = match (alliance_hq, empire_hq) {
         (Some(a), Some(e)) => VictoryState::new(a, e),
@@ -596,9 +596,9 @@ async fn main() {
                     rebellion_core::uprising::UprisingEvent::UprisingBegan { system, tick } => {
                         // Flip controlling faction
                         if let Some(sys) = world.systems.get_mut(*system) {
-                            sys.controlling_faction = match sys.controlling_faction {
-                                Some(Faction::Alliance) => Some(Faction::Empire),
-                                Some(Faction::Empire) => Some(Faction::Alliance),
+                            sys.control = match sys.control {
+                                ControlKind::Controlled(Faction::Alliance) => ControlKind::Controlled(Faction::Empire),
+                                ControlKind::Controlled(Faction::Empire) => ControlKind::Controlled(Faction::Alliance),
                                 other => other,
                             };
                         }
@@ -1154,8 +1154,8 @@ fn apply_panel_action(
             }
         }
         PanelAction::ShowGameStats => {
-            let alliance_systems = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Alliance)).count();
-            let empire_systems = world.systems.values().filter(|s| s.controlling_faction == Some(Faction::Empire)).count();
+            let alliance_systems = world.systems.values().filter(|s| s.control.is_controlled_by(Faction::Alliance)).count();
+            let empire_systems = world.systems.values().filter(|s| s.control.is_controlled_by(Faction::Empire)).count();
             msg_log.push(GameMessage::new(
                 clock.tick,
                 format!("Stats: tick {}, Alliance {} systems, Empire {} systems, {} fleets, {} characters",
@@ -1409,8 +1409,8 @@ fn apply_mission_result(
             MissionEffect::UprisingSubdued { system } => {
                 // Shift popularity toward controlling faction
                 if let Some(sys) = world.systems.get_mut(*system) {
-                    match sys.controlling_faction {
-                        Some(Faction::Alliance) => {
+                    match sys.control {
+                        ControlKind::Controlled(Faction::Alliance) => {
                             sys.popularity_alliance = (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
                             sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
                         }

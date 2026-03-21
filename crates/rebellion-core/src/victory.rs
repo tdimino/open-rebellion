@@ -239,6 +239,7 @@ impl VictorySystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ControlKind;
     use crate::dat::ExplorationStatus;
     use crate::ids::DatId;
     use crate::tick::TickEvent;
@@ -279,7 +280,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: true,
             is_destroyed: false,
-            controlling_faction: Some(Faction::Alliance),
+            control: ControlKind::Controlled(Faction::Alliance),
         });
 
         let e_hq = world.systems.insert(System {
@@ -299,7 +300,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: true,
             is_destroyed: false,
-            controlling_faction: Some(Faction::Empire),
+            control: ControlKind::Controlled(Faction::Empire),
         });
 
         (world, a_hq, e_hq)

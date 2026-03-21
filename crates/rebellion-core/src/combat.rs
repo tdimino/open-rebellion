@@ -693,6 +693,7 @@ pub fn extract_difficulty(packed: u32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ControlKind;
     use crate::world::*;
     use crate::ids::*;
     use crate::dat::{ExplorationStatus, SectorGroup};
@@ -744,7 +745,7 @@ mod tests {
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
             is_headquarters: false,
             is_destroyed: false,
         })

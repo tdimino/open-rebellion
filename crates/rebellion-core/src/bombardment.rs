@@ -20,7 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{FleetKey, SystemKey};
-use crate::world::GameWorld;
+use crate::world::{ControlKind, GameWorld};
 
 /// GNPRTB parameter_id for the bombardment damage divisor (DAT_006bb6e8).
 /// Confirmed from `data/base/json/GNPRTB.json`: param_id=0x1400 → value=5.
@@ -73,11 +73,11 @@ impl BombardmentSystem {
         // Guard: no self-bombardment (uVar1 == uVar2 in FUN_00556430).
         // Compare faction of attacking fleet vs controlling faction of the system.
         let fleet_is_alliance = fleet.is_alliance;
-        let system_controlled_by_alliance = match sys.controlling_faction {
-            Some(crate::dat::Faction::Alliance) => true,
-            Some(crate::dat::Faction::Empire)   => false,
-            Some(crate::dat::Faction::Neutral) | None => {
-                // Neutral/uncontrolled: allow bombardment.
+        let system_controlled_by_alliance = match sys.control {
+            ControlKind::Controlled(crate::dat::Faction::Alliance) => true,
+            ControlKind::Controlled(crate::dat::Faction::Empire) => false,
+            _ => {
+                // Neutral/uncontrolled/contested: allow bombardment.
                 !fleet_is_alliance // treat as opposite faction to avoid self-hit
             }
         };
@@ -255,7 +255,7 @@ mod tests {
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
-            controlling_faction: controlling,
+            control: controlling.map(ControlKind::Controlled).unwrap_or(ControlKind::Uncontrolled),
             is_headquarters: false,
             is_destroyed: false,
         })

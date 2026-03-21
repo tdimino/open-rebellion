@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{SystemKey, TroopKey};
 use crate::tick::TickEvent;
 use crate::world::GameWorld;
+use crate::world::ControlKind;
 
 // ---------------------------------------------------------------------------
 // Event IDs (from RE annotated-functions.md)
@@ -228,9 +229,9 @@ impl BlockadeSystem {
     fn system_is_blockaded(world: &GameWorld, sys: &crate::world::System) -> bool {
         use crate::dat::Faction;
 
-        let controlling = match sys.controlling_faction {
-            Some(Faction::Alliance) => true,
-            Some(Faction::Empire) => false,
+        let controlling = match sys.control {
+            ControlKind::Controlled(Faction::Alliance) => true,
+            ControlKind::Controlled(Faction::Empire) => false,
             _ => return false, // neutral or contested — no blockade logic
         };
 
@@ -257,9 +258,9 @@ impl BlockadeSystem {
         use crate::dat::Faction;
 
         // The blockader is the faction opposite the system controller.
-        match sys.controlling_faction {
-            Some(Faction::Alliance) => false, // Alliance-controlled → Empire blockades
-            Some(Faction::Empire) => true,    // Empire-controlled → Alliance blockades
+        match sys.control {
+            ControlKind::Controlled(Faction::Alliance) => false, // Alliance-controlled → Empire blockades
+            ControlKind::Controlled(Faction::Empire) => true,    // Empire-controlled → Alliance blockades
             _ => false,
         }
     }
@@ -308,7 +309,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: Some(Faction::Alliance),
+            control: ControlKind::Controlled(Faction::Alliance),
         });
         (world, sys)
     }

@@ -39,6 +39,45 @@ impl Default for ForceTier {
     }
 }
 
+/// Control state of a star system.
+///
+/// Maps to the 2-bit `faction_side` field at `entity+0x24 bits 6-7` in REBEXE.EXE:
+/// 0=Uncontrolled, 1=Alliance, 2=Empire, 3=Contested.
+/// Extended with `Uprising` for active uprising state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ControlKind {
+    /// No faction controls this system (neutral / unclaimed).
+    Uncontrolled,
+    /// A single faction holds this system.
+    Controlled(crate::dat::Faction),
+    /// Both factions have military presence — active engagement.
+    Contested,
+    /// An uprising is in progress — faction control is unstable.
+    Uprising(crate::dat::Faction),
+}
+
+impl Default for ControlKind {
+    fn default() -> Self {
+        ControlKind::Uncontrolled
+    }
+}
+
+impl ControlKind {
+    /// Returns the controlling faction, if any single faction controls.
+    pub fn faction(&self) -> Option<crate::dat::Faction> {
+        match self {
+            ControlKind::Controlled(f) => Some(*f),
+            ControlKind::Uprising(f) => Some(*f), // still nominally controlled
+            _ => None,
+        }
+    }
+
+    /// True if the given faction controls this system (including during uprising).
+    pub fn is_controlled_by(&self, faction: crate::dat::Faction) -> bool {
+        self.faction() == Some(faction)
+    }
+}
+
 /// A star system in the galaxy — the atomic unit of territory and production.
 ///
 /// Systems belong to a sector and hold all surface assets (facilities, ground units)
@@ -82,11 +121,11 @@ pub struct System {
     /// From RE: the Death Star fires when the target's alive_flag bit0 == 0 — inverted from
     /// normal combat units. A destroyed planet cannot produce resources or be colonized.
     pub is_destroyed: bool,
-    /// Which faction currently controls this system, or `None` for unclaimed/contested.
+    /// Control state of this system — who holds it and whether it's contested.
     ///
     /// Derived from the 2-bit faction_side field (`entity+0x24 bits 6-7`):
     /// 0 = neutral, 1 = Alliance, 2 = Empire, 3 = contested.
-    pub controlling_faction: Option<crate::dat::Faction>,
+    pub control: ControlKind,
 }
 
 /// A sector — a named galactic region containing multiple star systems.

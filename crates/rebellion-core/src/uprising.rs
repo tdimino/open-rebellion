@@ -46,6 +46,7 @@ use serde::{Deserialize, Serialize};
 use crate::ids::SystemKey;
 use crate::tick::TickEvent;
 use crate::world::{GameWorld, MstbTable};
+use crate::world::ControlKind;
 
 // ---------------------------------------------------------------------------
 // Event IDs
@@ -284,9 +285,9 @@ impl SystemUprisingExt for crate::world::System {
     fn loyalty_value(&self) -> i32 {
         use crate::dat::Faction;
 
-        let raw = match self.controlling_faction {
-            Some(Faction::Alliance) => self.popularity_alliance,
-            Some(Faction::Empire) => self.popularity_empire,
+        let raw = match self.control {
+            ControlKind::Controlled(Faction::Alliance) => self.popularity_alliance,
+            ControlKind::Controlled(Faction::Empire) => self.popularity_empire,
             _ => 0.5, // neutral: treat as average loyalty
         };
         // Scale [0.0, 1.0] → [0, 100], then shift to signed delta from neutral (50)
@@ -364,7 +365,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: Some(faction),
+            control: ControlKind::Controlled(faction),
         });
 
         (world, sys)
@@ -498,7 +499,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         });
 
         let mut state = UprisingState::new();

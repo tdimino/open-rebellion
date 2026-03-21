@@ -505,6 +505,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ControlKind;
     use crate::events::{EventState, EventSystem};
     use crate::tick::TickEvent;
     use crate::world::{Character, ForceTier, SkillPair};
@@ -907,7 +908,7 @@ mod tests {
                 production_facilities: vec![],
                 is_headquarters: false,
                 is_destroyed: false,
-                controlling_faction: Some(crate::dat::Faction::Empire),
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
         }
 
@@ -968,7 +969,7 @@ mod tests {
                 production_facilities: vec![],
                 is_headquarters: false,
                 is_destroyed: false,
-                controlling_faction: Some(crate::dat::Faction::Empire),
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
         }
 

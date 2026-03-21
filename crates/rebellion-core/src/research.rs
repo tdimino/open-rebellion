@@ -344,6 +344,7 @@ impl ResearchSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ControlKind;
     use crate::ids::{CharacterKey, DatId};
     use crate::world::{CapitalShipClass, Character, GameWorld, SkillPair};
     use crate::tick::TickEvent;

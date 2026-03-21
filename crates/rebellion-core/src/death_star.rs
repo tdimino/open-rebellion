@@ -33,6 +33,7 @@ use crate::dat::Faction;
 use crate::ids::{FleetKey, SystemKey};
 use crate::tick::TickEvent;
 use crate::world::GameWorld;
+use crate::world::ControlKind;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -183,7 +184,7 @@ impl DeathStarSystem {
 
                     for (sys_key, sys) in world.systems.iter() {
                         // Only warn about Alliance-controlled systems.
-                        if sys.controlling_faction != Some(Faction::Alliance) {
+                        if sys.control != ControlKind::Controlled(Faction::Alliance) {
                             continue;
                         }
                         if sys_key == ds_system {
@@ -230,7 +231,7 @@ impl DeathStarSystem {
         }
 
         // Guard: no self-destruction — Empire Death Star cannot fire on Empire systems.
-        if sys.controlling_faction == Some(Faction::Empire) {
+        if sys.control.is_controlled_by(Faction::Empire) {
             return None;
         }
 
@@ -318,7 +319,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: Some(Faction::Alliance),
+            control: ControlKind::Controlled(Faction::Alliance),
         });
         (world, sys)
     }
@@ -429,7 +430,7 @@ mod tests {
     #[test]
     fn test_fire_blocked_empire_controlled() {
         let (mut world, sys) = make_world();
-        world.systems.get_mut(sys).unwrap().controlling_faction = Some(Faction::Empire);
+        world.systems.get_mut(sys).unwrap().control = ControlKind::Controlled(Faction::Empire);
         add_ds_fleet(&mut world, sys);
 
         assert!(DeathStarSystem::fire(&world, sys, 1).is_none(),
@@ -460,7 +461,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: Some(Faction::Alliance),
+            control: ControlKind::Controlled(Faction::Alliance),
         });
         let _ = nearby_sys;
 
@@ -499,7 +500,7 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            controlling_faction: Some(Faction::Alliance),
+            control: ControlKind::Controlled(Faction::Alliance),
         });
 
         let fleet_key = add_ds_fleet(&mut world, ds_sys);

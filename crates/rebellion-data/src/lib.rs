@@ -148,7 +148,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             production_facilities: Vec::new(),
             is_headquarters,
             is_destroyed: false,
-            controlling_faction: None,
+            control: ControlKind::Uncontrolled,
         };
         let key = world.systems.insert(system);
         system_key_map.insert(dat.id, key);
@@ -287,9 +287,9 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
                 if fk == sys_key { if is_a { has_alliance = true; } else { has_empire = true; } }
             }
             if has_alliance && !has_empire {
-                sys.controlling_faction = Some(rebellion_core::dat::Faction::Alliance);
+                sys.control = ControlKind::Controlled(rebellion_core::dat::Faction::Alliance);
             } else if has_empire && !has_alliance {
-                sys.controlling_faction = Some(rebellion_core::dat::Faction::Empire);
+                sys.control = ControlKind::Controlled(rebellion_core::dat::Faction::Empire);
             }
             // Mixed or empty → None (neutral/contested)
         }
