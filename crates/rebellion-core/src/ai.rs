@@ -867,8 +867,20 @@ impl AISystem {
     ) {
         let galaxy = Self::evaluate_galaxy_state(world, faction);
 
-        // Attack target: weakest enemy system (already sorted by strength).
-        let attack_target = galaxy.enemy_controlled.first().copied();
+        // Faction-asymmetric attack targeting:
+        // Empire: attack the enemy HQ directly (overwhelming force doctrine).
+        //         Falls back to weakest system if HQ unknown.
+        // Alliance: hit weakest target (guerrilla doctrine — hit-and-run).
+        let attack_target = match faction {
+            AiFaction::Empire => {
+                // Empire prioritizes enemy HQ for a decisive blow.
+                galaxy.enemy_hq.or_else(|| galaxy.enemy_controlled.first().copied())
+            }
+            AiFaction::Alliance => {
+                // Alliance strikes weakest targets — guerrilla raids.
+                galaxy.enemy_controlled.first().copied()
+            }
+        };
 
         // Count our available fleets (not pinned in combat).
         let our_fleet_count = world.fleets.values()
