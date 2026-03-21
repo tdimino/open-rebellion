@@ -1,9 +1,9 @@
 ---
 title: "Play-Testing Infrastructure"
-description: "Command palette, headless binary, JSONL logging, and dual-AI mode for automated play-testing"
+description: "Headless playtest binary, JSONL telemetry, REPL for LLM agents, command palette, and balance diagnosis tools"
 category: "mechanics"
 created: 2026-03-17
-updated: 2026-03-18
+updated: 2026-03-20
 game_system: "play-testing"
 sources:
   - type: "code"
@@ -19,154 +19,197 @@ related:
   - "missions"
   - "victory"
   - "story-events"
-tags: ["play-testing", "logging", "command-palette", "headless", "dual-ai", "deterministic-rng"]
+tags: ["play-testing", "logging", "command-palette", "headless", "dual-ai", "deterministic-rng", "repl", "jsonl"]
 ---
 
 # Play-Testing Infrastructure
 
-Open Rebellion includes two complementary tools for play-testing the simulation: an in-game **command palette** for interactive exploration and a **headless binary** for automated batch runs.
+Open Rebellion ships a standalone **headless binary** (`rebellion-playtest`) for automated campaign testing, balance tuning, and LLM agent play. It runs the full 15-system simulation without rendering and produces structured JSONL telemetry.
 
-## Command Palette (debug builds only)
-
-Press **backtick** (`` ` ``) to open a VS Code-style command palette overlay. Type to fuzzy-search commands, use arrow keys to navigate, Enter to execute. Escape or click the backdrop to close.
-
-### Commands
-
-| Command | Category | Description |
-|---------|----------|-------------|
-| Advance 1/10/100/1000 ticks | Time | Step simulation forward immediately |
-| Set Speed: Paused/Normal/Fast/Faster | Speed | Change game clock speed |
-| Show Game Stats | Inspect | Print tick, system ownership, fleet/character counts to message log |
-| List Active Missions | Inspect | Display in-progress missions |
-| List Active Fleets | Inspect | Show fleet positions and compositions |
-| Show Event Count | Inspect | Number of triggered events |
-| Toggle Dual AI | Control | Enable/disable AI for both factions |
-| Force Victory Check | Control | Immediately evaluate victory conditions |
-| Reveal All Systems | Control | Remove fog of war from all systems |
-| Export Game Log | Control | Write message log to file |
-
-### Prefix Modes
-
-Commands support category-scoped filtering:
-- Type `time` to see only time control commands
-- Type `speed` to see speed commands
-- Type `inspect` to see inspection commands
-- Type `control` to see control commands
-
-The palette uses nucleo-matcher for fuzzy matching, so partial and out-of-order queries work (e.g., `adv 100` matches "Advance 100 ticks").
-
-The command palette is gated behind `#[cfg(debug_assertions)]` and does not exist in release builds.
-
-## Headless Binary (`rebellion-playtest`)
-
-A standalone binary that runs the simulation without rendering. Produces JSONL output for post-hoc analysis.
+## Quick Start
 
 ```bash
-# Run 5000 ticks with default seed (data_dir is positional)
-cargo run -p rebellion-playtest -- data/base
+# Build prerequisite: PATH prefix avoids ~/.local/bin/cc shadow
+PATH="/usr/bin:$PATH" cargo build -p rebellion-playtest
 
-# Run with a specific seed for reproducibility
-cargo run -p rebellion-playtest -- data/base --ticks 5000 --seed 12345
+# Run a 3000-tick dual-AI campaign and see the summary
+PATH="/usr/bin:$PATH" cargo run -p rebellion-playtest -- data/base \
+  --seed 42 --ticks 3000 --dual-ai --summary
 
-# Export to file
-cargo run -p rebellion-playtest -- data/base --output playtest.jsonl --summary
+# Stream raw JSONL to stdout (pipe to jq, DuckDB, analysis scripts)
+PATH="/usr/bin:$PATH" cargo run -p rebellion-playtest -- data/base \
+  --seed 42 --ticks 3000 --dual-ai --jsonl > campaign.jsonl
+
+# Export to file + print summary
+PATH="/usr/bin:$PATH" cargo run -p rebellion-playtest -- data/base \
+  --seed 42 --ticks 3000 --dual-ai --output campaign.jsonl --summary
+
+# Interactive REPL for LLM agent play
+PATH="/usr/bin:$PATH" cargo run -p rebellion-playtest -- data/base \
+  --seed 42 --repl --dual-ai
 ```
 
-### CLI Options
+## CLI Options
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `<data_dir>` (positional) | — | Path to GData directory (required) |
+| `<data_dir>` (positional) | — | Path to GData directory containing .DAT files (required) |
 | `--ticks <n>` | `5000` | Number of simulation ticks to run |
-| `--seed <u64>` | system time | RNG seed for deterministic replay |
-| `--output <path>` | — | JSONL output file path |
-| `--summary` | off | Print event count summary on exit |
+| `--seed <u64>` | `0` | RNG seed for deterministic replay |
 | `--dual-ai` | off | Both factions AI-controlled |
-| `--exec <cmd>` | — | Execute a single command and exit (`--exec list` for options) |
-| `--repl` | off | Interactive REPL: persistent state, JSON output, LLM-playable |
+| `--output <path>` | — | Export all events as JSONL to a file |
+| `--summary` | off | Print enhanced summary on exit |
+| `--jsonl` | off | Stream JSONL events to stdout (incompatible with --repl/--exec) |
+| `--exec <cmd>` | — | Execute a single command and exit (`--exec list` to see all) |
+| `--repl` | off | Interactive REPL with persistent state and JSON output |
+| `--ai-faction` | `empire` | Which faction the AI controls (`empire` or `alliance`) |
 
-### REPL Mode (LLM Agent Play)
+## Enhanced Summary (`--summary`)
 
-The `--repl` flag starts an interactive session where the world state persists across commands. Each command produces JSON output suitable for LLM parsing.
+The summary provides immediate balance diagnosis:
+
+```
+=== Playtest Summary ===
+Total events: 7384
+Final tick: 2999
+
+Events by type:
+  ai_action                        3863
+  mission_resolved                 2992
+  fleet_arrived                     427
+  ...
+
+Galaxy control:
+  Alliance: 3 systems
+    - Boordii
+    - Geedon V
+    - Yavin
+  Empire:   9 systems
+    - Averam
+    - Coruscant
+    - ...
+  Neutral:  188 systems
+
+Fleets in transit: 1
+  Empire fleet: Balmorra → Averam (40%, 6 ticks left)
+
+Combat diagnostics:
+  Fleet attack orders:     2
+  Fleet reinforce orders:  853
+  Space battles:           5
+  Ground battles:          0
+  Bombardments:            0
+```
+
+## JSONL Telemetry
+
+Every game event is a structured JSON object with human-readable names:
+
+```json
+{"tick":7,"wall_ms":4,"system":"ai","event_type":"ai_action","details":{"type":"MoveFleet","faction":"Empire","from":"Coruscant","to":"Averam","reason":"Reinforce"}}
+{"tick":17,"wall_ms":5,"system":"combat","event_type":"combat_space","details":{"system":"Averam","winner":"draw"}}
+{"tick":47,"wall_ms":8,"system":"missions","event_type":"mission_resolved","details":{"kind":"Diplomacy","outcome":"Success","target_system":"Sullust"}}
+{"tick":17,"wall_ms":5,"system":"movement","event_type":"fleet_arrived","details":{"system":"Averam","origin":"Coruscant","fleet_faction":"Empire"}}
+```
+
+All system keys are resolved to names. AI actions show faction, origin, destination, and reason.
+
+### Analysis with jq
+
+```bash
+# Count events by type
+cat campaign.jsonl | jq -s 'group_by(.event_type) | map({type: .[0].event_type, count: length}) | sort_by(-.count)'
+
+# Show all combat events
+cat campaign.jsonl | jq 'select(.event_type == "combat_space")'
+
+# Show all fleet movements with attack reason
+cat campaign.jsonl | jq 'select(.event_type == "ai_action" and .details.type == "MoveFleet" and .details.reason == "Attack")'
+
+# Fleet arrival destinations
+cat campaign.jsonl | jq 'select(.event_type == "fleet_arrived") | .details.system' | sort | uniq -c | sort -rn
+```
+
+### Analysis with DuckDB
+
+```sql
+CREATE TABLE log AS SELECT * FROM read_json_auto('campaign.jsonl');
+
+-- Combat frequency by system
+SELECT details->>'system' as system, COUNT(*) as battles
+FROM log WHERE event_type = 'combat_space'
+GROUP BY 1 ORDER BY 2 DESC;
+
+-- Fleet movement patterns
+SELECT details->>'to' as target, details->>'reason' as reason, COUNT(*) as n
+FROM log WHERE event_type = 'ai_action' AND details->>'type' = 'MoveFleet'
+GROUP BY 1, 2 ORDER BY 3 DESC;
+
+-- Mission success rates
+SELECT details->>'kind' as kind, details->>'outcome' as outcome, COUNT(*) as n
+FROM log WHERE event_type = 'mission_resolved'
+GROUP BY 1, 2 ORDER BY 1, 2;
+```
+
+## REPL Mode (LLM Agent Play)
+
+The `--repl` flag starts an interactive session where world state persists across commands. Each response is JSON.
 
 ```bash
 # Pipe commands from an LLM agent
-echo -e "show_game_stats\ntick 10\nlist_active_fleets\nforce_victory_check" | \
-  cargo run -p rebellion-playtest -- data/base --repl --seed 42
-
-# Or run interactively
-cargo run -p rebellion-playtest -- data/base --repl --seed 42
+echo -e "systems\ntick 50\ntransit\nlist_active_fleets\nevents 3\nquit" | \
+  PATH="/usr/bin:$PATH" cargo run -p rebellion-playtest -- data/base --repl --seed 42 --dual-ai
 ```
 
-**Output format:**
-```json
-{"command":"show_game_stats","tick":0,"result":"Stats: 200 systems (1 Alliance, 1 Empire), 3 fleets, 60 characters"}
-{"tick":10,"advanced":10,"new_events":142}
-{"command":"list_active_fleets","tick":10,"result":"Empire fleet at Coruscant — 7 ships\nAlliance fleet at Yavin — 1 ships"}
+### REPL Commands
+
+| Command | Description |
+|---------|-------------|
+| `tick N` | Advance N simulation ticks, report new events + victory status |
+| `systems` | Show controlled systems by faction (Alliance, Empire, neutral counts + names) |
+| `transit` | Show all active fleet movement orders with origin, destination, progress, ETA |
+| `events N` | Show last N events from the log with full payloads |
+| `show_game_stats` | System/fleet/character counts |
+| `list_active_fleets` | Fleet positions and compositions |
+| `list_active_missions` | In-progress missions |
+| `force_victory_check` | Evaluate victory conditions immediately |
+| `reveal_all_systems` | Remove fog of war |
+| `export_game_log` | Write message log to file |
+| `quit` | Exit the REPL |
+
+### LLM Integration Pattern
+
+Spawn `rebellion-playtest --repl` as a subprocess, send commands via stdin, parse JSON from stdout. The LLM reasons about galactic strategy; the simulation executes the mechanics.
+
+```python
+import subprocess, json
+
+proc = subprocess.Popen(
+    ["cargo", "run", "-p", "rebellion-playtest", "--", "data/base", "--repl", "--seed", "42"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+)
+proc.stdin.write("tick 100\n")
+proc.stdin.flush()
+response = json.loads(proc.stdout.readline())
 ```
 
-**Special commands in REPL mode:**
-- `tick N` — advance N simulation ticks, report new events + victory status
-- `help` — list all available commands
-- `quit` — exit the REPL
+## Command Palette (debug builds only)
 
-**LLM integration pattern:** spawn `rebellion-playtest --repl` as a subprocess, send commands via stdin, parse JSON from stdout. The LLM reasons about galactic strategy; the simulation executes the mechanics.
+Press **backtick** (`` ` ``) in the interactive game to open a VS Code-style fuzzy command palette. Uses nucleo-matcher. Gated behind `#[cfg(debug_assertions)]`.
 
-### CLI Exec Mode
-
-Execute a single command against freshly loaded game data and exit:
-
-```bash
-# List available commands
-cargo run -p rebellion-playtest -- data/base --exec list
-
-# Check initial state
-cargo run -p rebellion-playtest -- data/base --exec show_game_stats
-
-# Advance 100 ticks and see results
-cargo run -p rebellion-playtest -- data/base --exec advance_100_ticks --seed 42
-```
-
-### JSONL Schema
-
-Each line is a `GameEventRecord` (defined in `rebellion-core/src/game_events.rs`):
-
-```json
-{"tick":47,"wall_ms":1042,"system":"combat","event_type":"combat_space","details":{"system_name":"Coruscant","attacker":"Empire","defender":"Alliance","winner":"attacker_wins"}}
-{"tick":102,"wall_ms":2100,"system":"missions","event_type":"mission_resolved","details":{"kind":"Diplomacy","faction":"Alliance","outcome":"success","system":"Sullust"}}
-{"tick":200,"wall_ms":4200,"system":"story","event_type":"story_event","details":{"name":"Luke begins Dagobah training","event_id":"0x221"}}
-```
-
-24 event types across 15 systems: `manufacturing_complete`, `fleet_arrived`, `fleet_departed`, `combat_space`, `combat_ground`, `bombardment`, `mission_dispatched`, `mission_resolved`, `event_fired`, `ai_action`, `blockade_started`, `blockade_ended`, `uprising_incident`, `uprising_began`, `death_star_construction`, `death_star_fired`, `research_unlocked`, `jedi_tier_advanced`, `jedi_discovered`, `victory_check`, `betrayal`, `character_escaped`, `story_event`, `character_captured`.
-
-### DuckDB Analysis Examples
-
-```sql
--- Load the playtest log
-CREATE TABLE log AS SELECT * FROM read_json_auto('playtest.jsonl');
-
--- System ownership over time
-SELECT tick, alliance_systems, empire_systems
-FROM log WHERE type = 'tick'
-ORDER BY tick;
-
--- Combat frequency by system
-SELECT system, COUNT(*) as battles
-FROM log WHERE type = 'combat'
-GROUP BY system ORDER BY battles DESC LIMIT 10;
-
--- Mission success rates by type
-SELECT kind, outcome, COUNT(*) as n
-FROM log WHERE type = 'mission'
-GROUP BY kind, outcome ORDER BY kind, outcome;
-```
-
-## Dual-AI Mode
-
-When dual-AI is enabled (via the command palette "Toggle Dual AI" command), both Alliance and Empire are controlled by the AI system. This allows fully automated games for balance testing.
-
-Combined with the headless binary and a fixed seed, dual-AI mode enables deterministic batch comparison of balance changes across mod configurations.
+Shares the same command registry as `--exec` mode (16 commands across Time, Speed, Inspect, and Control categories).
 
 ## Deterministic RNG
 
-Both the interactive game and the headless binary use `Xoshiro256++` (rand_xoshiro crate) seeded from either system time or a user-provided seed. All RNG calls in the simulation loop flow through this single generator, making runs reproducible when given the same seed.
+Both interactive and headless modes use `Xoshiro256++` (rand_xoshiro). All RNG calls flow through a single generator seeded from the `--seed` flag, making runs fully reproducible.
+
+## Balance Tuning Workflow
+
+1. **Run a campaign**: `--seed 42 --ticks 5000 --dual-ai --summary`
+2. **Diagnose**: Check combat diagnostics, galaxy control, fleet transit patterns
+3. **Drill down**: Use `--jsonl` and pipe to jq/DuckDB for specific event analysis
+4. **Modify**: Adjust AI parameters, game constants, or mod JSON patches
+5. **Compare**: Re-run with the same seed to see the effect of changes
+6. **Iterate**: Use the REPL for interactive exploration of specific game states
+
+For automated balance tuning, see the autoresearch scripts (planned) that apply the Karpathy self-improvement loop: edit config, run headless, measure scalar quality metric, keep/discard.

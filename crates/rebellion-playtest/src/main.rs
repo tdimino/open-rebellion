@@ -69,6 +69,11 @@ struct Args {
     /// persistent state, print JSON results. Enables LLM agent play.
     #[arg(long)]
     repl: bool,
+
+    /// Stream raw JSONL events to stdout as they are generated.
+    /// Incompatible with --repl and --exec. Progress/summary goes to stderr.
+    #[arg(long, conflicts_with_all = ["repl", "exec"])]
+    jsonl: bool,
 }
 
 /// Dispatch a single command against the current world/simulation state.
@@ -339,6 +344,66 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", json);
                 continue;
             }
+            // REPL-only inspection commands (not in shared command registry)
+            if cmd == "systems" {
+                let mut alliance = Vec::new();
+                let mut empire = Vec::new();
+                let mut neutral = 0usize;
+                for (_, sys) in world.systems.iter() {
+                    match sys.controlling_faction {
+                        Some(rebellion_core::dat::Faction::Alliance) => alliance.push(sys.name.as_str()),
+                        Some(rebellion_core::dat::Faction::Empire) => empire.push(sys.name.as_str()),
+                        _ => neutral += 1,
+                    }
+                }
+                let json = serde_json::json!({
+                    "command": "systems",
+                    "alliance": { "count": alliance.len(), "systems": alliance },
+                    "empire": { "count": empire.len(), "systems": empire },
+                    "neutral": neutral,
+                    "tick": tick_counter,
+                });
+                println!("{}", json);
+                continue;
+            }
+            if cmd == "transit" {
+                let orders: Vec<_> = states.movement.orders().iter().map(|(_, order)| {
+                    let origin = world.systems.get(order.origin).map(|s| s.name.as_str()).unwrap_or("?");
+                    let dest = world.systems.get(order.destination).map(|s| s.name.as_str()).unwrap_or("?");
+                    let faction = world.fleets.get(order.fleet)
+                        .map(|f| if f.is_alliance { "Alliance" } else { "Empire" })
+                        .unwrap_or("?");
+                    serde_json::json!({
+                        "faction": faction,
+                        "origin": origin,
+                        "destination": dest,
+                        "progress": format!("{:.0}%", order.progress() * 100.0),
+                        "ticks_remaining": order.ticks_remaining(),
+                    })
+                }).collect();
+                let json = serde_json::json!({
+                    "command": "transit",
+                    "count": orders.len(),
+                    "orders": orders,
+                    "tick": tick_counter,
+                });
+                println!("{}", json);
+                continue;
+            }
+            if cmd.starts_with("events") {
+                let n: usize = cmd.trim_start_matches("events").trim().parse().unwrap_or(10);
+                let all = logger.events();
+                let start_idx = all.len().saturating_sub(n);
+                let recent: Vec<_> = all[start_idx..].iter().collect();
+                let json = serde_json::json!({
+                    "command": "events",
+                    "count": recent.len(),
+                    "events": recent,
+                    "tick": tick_counter,
+                });
+                println!("{}", json);
+                continue;
+            }
             let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction);
             let json = serde_json::json!({
                 "command": cmd,
@@ -364,6 +429,11 @@ fn main() -> anyhow::Result<()> {
 
         // Run shared simulation tick
         let events = run_simulation_tick(&mut world, &mut states, &tick_events, &rolls, wall_ms);
+        if args.jsonl {
+            for event in &events {
+                println!("{}", serde_json::to_string(event).unwrap_or_default());
+            }
+        }
         logger.extend(events);
 
         // Check victory
@@ -395,7 +465,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     if args.summary || args.output.is_none() {
-        logger.print_summary();
+        logger.print_summary(&world, &states.movement);
     }
 
     let elapsed = start.elapsed();

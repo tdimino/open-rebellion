@@ -26,6 +26,81 @@ use rebellion_core::uprising::{UprisingEvent, UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{GameWorld, MstbTable};
 
+// ---------------------------------------------------------------------------
+// Payload helpers — resolve slotmap keys to human-readable names
+// ---------------------------------------------------------------------------
+
+/// Resolve a SystemKey to the system's name, or a fallback string.
+fn sys_name(world: &GameWorld, key: SystemKey) -> String {
+    world
+        .systems
+        .get(key)
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| format!("{:?}", key))
+}
+
+/// Build a JSON-friendly system reference with both name and key.
+#[allow(dead_code)]
+pub fn sys_json(world: &GameWorld, key: SystemKey) -> serde_json::Value {
+    serde_json::json!({
+        "key": format!("{:?}", key),
+        "name": sys_name(world, key),
+    })
+}
+
+/// Resolve a CharacterKey to the character's name.
+fn char_name(world: &GameWorld, key: rebellion_core::ids::CharacterKey) -> String {
+    world
+        .characters
+        .get(key)
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| format!("{:?}", key))
+}
+
+/// Format an AIAction as a structured JSON payload with readable names.
+fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value {
+    match action {
+        AIAction::MoveFleet {
+            fleet,
+            to_system,
+            reason,
+        } => {
+            let faction = world
+                .fleets
+                .get(*fleet)
+                .map(|f| if f.is_alliance { "Alliance" } else { "Empire" })
+                .unwrap_or("unknown");
+            let from = world
+                .fleets
+                .get(*fleet)
+                .map(|f| sys_name(world, f.location))
+                .unwrap_or_else(|| "unknown".into());
+            serde_json::json!({
+                "type": "MoveFleet",
+                "faction": faction,
+                "from": from,
+                "to": sys_name(world, *to_system),
+                "reason": format!("{:?}", reason),
+            })
+        }
+        AIAction::DispatchMission { kind, target_system, .. } => {
+            serde_json::json!({
+                "type": "DispatchMission",
+                "kind": format!("{:?}", kind),
+                "target": sys_name(world, *target_system),
+            })
+        }
+        AIAction::EnqueueProduction { system, kind, ticks } => {
+            serde_json::json!({
+                "type": "EnqueueProduction",
+                "system": sys_name(world, *system),
+                "kind": format!("{:?}", kind),
+                "ticks": ticks,
+            })
+        }
+    }
+}
+
 /// Bundles all mutable simulation state needed for a tick.
 ///
 /// Mirrors the set of `*State` locals in `rebellion-app/src/main.rs`.
@@ -100,7 +175,7 @@ pub fn run_simulation_tick(
             wall_ms,
             SYS_MANUFACTURING,
             EVT_BUILD_COMPLETE,
-            serde_json::json!({ "system": format!("{:?}", c.system) }),
+            serde_json::json!({ "system": sys_name(world, c.system) }),
         ));
     }
 
@@ -125,8 +200,9 @@ pub fn run_simulation_tick(
             SYS_MOVEMENT,
             EVT_FLEET_ARRIVED,
             serde_json::json!({
-                "system": format!("{:?}", arrival.system),
-                "origin": format!("{:?}", arrival.origin),
+                "system": sys_name(world, arrival.system),
+                "origin": sys_name(world, arrival.origin),
+                "fleet_faction": if world.fleets.get(arrival.fleet).map(|f| f.is_alliance).unwrap_or(false) { "Alliance" } else { "Empire" },
             }),
         ));
     }
@@ -195,7 +271,7 @@ pub fn run_simulation_tick(
             SYS_COMBAT,
             EVT_COMBAT_SPACE,
             serde_json::json!({
-                "system": format!("{:?}", sys_key),
+                "system": sys_name(world, sys_key),
                 "winner": winner_str,
             }),
         ));
@@ -219,7 +295,7 @@ pub fn run_simulation_tick(
                     SYS_COMBAT,
                     EVT_COMBAT_GROUND,
                     serde_json::json!({
-                        "system": format!("{:?}", sys_key),
+                        "system": sys_name(world, sys_key),
                         "winner": ground_winner,
                     }),
                 ));
@@ -234,7 +310,7 @@ pub fn run_simulation_tick(
                     SYS_COMBAT,
                     EVT_BOMBARDMENT,
                     serde_json::json!({
-                        "system": format!("{:?}", sys_key),
+                        "system": sys_name(world, sys_key),
                         "damage": brd_result.damage,
                     }),
                 ));
@@ -250,7 +326,7 @@ pub fn run_simulation_tick(
             wall_ms,
             SYS_FOG,
             EVT_FOG_REVEALED,
-            serde_json::json!({ "system": format!("{:?}", reveal.system) }),
+            serde_json::json!({ "system": sys_name(world, reveal.system) }),
         ));
     }
 
@@ -272,7 +348,7 @@ pub fn run_simulation_tick(
             serde_json::json!({
                 "kind": format!("{:?}", result.kind),
                 "outcome": format!("{:?}", result.outcome),
-                "target_system": format!("{:?}", result.target_system),
+                "target_system": sys_name(world, result.target_system),
             }),
         ));
     }
@@ -302,7 +378,7 @@ pub fn run_simulation_tick(
                 SYS_MISSIONS,
                 EVT_ESCAPE,
                 serde_json::json!({
-                    "character": format!("{:?}", character),
+                    "character": char_name(world, *character),
                     "escaped_to_alliance": escaped_to_alliance,
                 }),
             ));
@@ -361,7 +437,7 @@ pub fn run_simulation_tick(
             wall_ms,
             SYS_AI,
             EVT_AI_ACTION,
-            serde_json::json!({ "action": format!("{:?}", action) }),
+            ai_action_json(action, world),
         ));
     }
 
@@ -386,12 +462,16 @@ pub fn run_simulation_tick(
             current_tick,
         );
         for action in &ai2_actions {
+            let mut payload = ai_action_json(action, world);
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("dual_ai".into(), serde_json::json!(true));
+            }
             events.push(GameEventRecord::new(
                 current_tick,
                 wall_ms,
                 SYS_AI,
                 EVT_AI_ACTION,
-                serde_json::json!({ "action": format!("{:?}", action), "dual_ai": true }),
+                payload,
             ));
         }
     }
@@ -406,7 +486,7 @@ pub fn run_simulation_tick(
                     wall_ms,
                     SYS_BLOCKADE,
                     EVT_BLOCKADE_STARTED,
-                    serde_json::json!({ "system": format!("{:?}", system) }),
+                    serde_json::json!({ "system": sys_name(world, *system) }),
                 ));
             }
             BlockadeEvent::BlockadeEnded { system, tick } => {
@@ -415,7 +495,7 @@ pub fn run_simulation_tick(
                     wall_ms,
                     SYS_BLOCKADE,
                     EVT_BLOCKADE_ENDED,
-                    serde_json::json!({ "system": format!("{:?}", system) }),
+                    serde_json::json!({ "system": sys_name(world, *system) }),
                 ));
             }
             BlockadeEvent::TroopDestroyed {
@@ -453,7 +533,7 @@ pub fn run_simulation_tick(
                     wall_ms,
                     SYS_UPRISING,
                     EVT_UPRISING_INCIDENT,
-                    serde_json::json!({ "system": format!("{:?}", system) }),
+                    serde_json::json!({ "system": sys_name(world, *system) }),
                 ));
             }
             UprisingEvent::UprisingBegan { system, tick } => {
@@ -474,7 +554,7 @@ pub fn run_simulation_tick(
                     wall_ms,
                     SYS_UPRISING,
                     EVT_UPRISING_BEGAN,
-                    serde_json::json!({ "system": format!("{:?}", system) }),
+                    serde_json::json!({ "system": sys_name(world, *system) }),
                 ));
             }
             UprisingEvent::UprisingSubdued { .. } => {
@@ -514,7 +594,7 @@ pub fn run_simulation_tick(
             SYS_BETRAYAL,
             EVT_BETRAYAL,
             serde_json::json!({
-                "character": format!("{:?}", character),
+                "character": char_name(world, *character),
                 "defected_to_alliance": defected_to_alliance,
             }),
         ));
@@ -530,7 +610,7 @@ pub fn run_simulation_tick(
                     wall_ms,
                     SYS_DEATH_STAR,
                     EVT_DS_CONSTRUCTION,
-                    serde_json::json!({ "system": format!("{:?}", system) }),
+                    serde_json::json!({ "system": sys_name(world, *system) }),
                 ));
             }
             DeathStarEvent::PlanetDestroyed { system, tick } => {
@@ -542,7 +622,7 @@ pub fn run_simulation_tick(
                     wall_ms,
                     SYS_DEATH_STAR,
                     EVT_DS_FIRED,
-                    serde_json::json!({ "system": format!("{:?}", system) }),
+                    serde_json::json!({ "system": sys_name(world, *system) }),
                 ));
             }
             DeathStarEvent::NearbyWarning { .. } => {
@@ -606,7 +686,7 @@ pub fn run_simulation_tick(
                     SYS_JEDI,
                     EVT_JEDI_TIER,
                     serde_json::json!({
-                        "character": format!("{:?}", character),
+                        "character": char_name(world, *character),
                         "new_tier": format!("{:?}", new_tier),
                     }),
                 ));
@@ -623,7 +703,7 @@ pub fn run_simulation_tick(
                     wall_ms,
                     SYS_JEDI,
                     EVT_JEDI_DISCOVERED,
-                    serde_json::json!({ "character": format!("{:?}", character) }),
+                    serde_json::json!({ "character": char_name(world, *character) }),
                 ));
             }
         }
@@ -982,10 +1062,18 @@ fn apply_ai_actions_to_world(
             AIAction::MoveFleet {
                 fleet, to_system, ..
             } => {
-                if let Some(f) = world.fleets.get(*fleet) {
-                    let ticks_per_hop =
-                        rebellion_core::movement::fleet_ticks_per_hop(f, world);
-                    movement_state.order(*fleet, f.location, *to_system, ticks_per_hop);
+                // Only issue a new order if the fleet isn't already in transit
+                // to the same destination. Re-issuing would reset ticks_elapsed to 0.
+                let already_moving = movement_state
+                    .get(*fleet)
+                    .map(|o| o.destination == *to_system)
+                    .unwrap_or(false);
+                if !already_moving {
+                    if let Some(f) = world.fleets.get(*fleet) {
+                        let transit =
+                            rebellion_core::movement::fleet_transit_ticks(f, world, f.location, *to_system);
+                        movement_state.order(*fleet, f.location, *to_system, transit);
+                    }
                 }
             }
         }

@@ -1726,13 +1726,20 @@ fn apply_ai_actions(
                     FleetMoveReason::Attack => "attack",
                     FleetMoveReason::Reinforce => "reinforce",
                 };
-                // Issue actual movement order if fleet has a valid location
-                if let Some(f) = world.fleets.get(*fleet) {
-                    let ticks_per_hop =
-                        rebellion_core::movement::fleet_ticks_per_hop(f, world);
-                    movement_state.order(*fleet, f.location, *to_system, ticks_per_hop);
-                    #[cfg(not(target_arch = "wasm32"))]
-                    audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
+                // Only issue a new order if the fleet isn't already in transit
+                // to the same destination. Re-issuing would reset ticks_elapsed to 0.
+                let already_moving = movement_state
+                    .get(*fleet)
+                    .map(|o| o.destination == *to_system)
+                    .unwrap_or(false);
+                if !already_moving {
+                    if let Some(f) = world.fleets.get(*fleet) {
+                        let transit =
+                            rebellion_core::movement::fleet_transit_ticks(f, world, f.location, *to_system);
+                        movement_state.order(*fleet, f.location, *to_system, transit);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
+                    }
                 }
                 log.push(GameMessage::at_system(
                     tick,

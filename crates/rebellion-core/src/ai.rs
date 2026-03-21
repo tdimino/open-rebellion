@@ -711,6 +711,11 @@ impl AISystem {
             .next()
             .map(|(k, _)| k);
 
+        // At most one fleet reinforces; the rest attack. This prevents the
+        // "eternal reinforce" loop where all fleets chase empty friendly systems
+        // and never engage the enemy.
+        let mut reinforcement_sent = false;
+
         for (fleet_key, fleet) in world.fleets.iter() {
             // Only command our own fleets.
             let is_ours = match faction {
@@ -739,19 +744,22 @@ impl AISystem {
                 continue; // Stay and fight
             }
 
-            // Prefer reinforcing our undefended systems over attacking.
-            if let Some(target) = reinforce_target {
-                if target != fleet.location {
-                    actions.push(AIAction::MoveFleet {
-                        fleet: fleet_key,
-                        to_system: target,
-                        reason: FleetMoveReason::Reinforce,
-                    });
-                    continue;
+            // First idle fleet reinforces an empty friendly system (if any).
+            if !reinforcement_sent {
+                if let Some(target) = reinforce_target {
+                    if target != fleet.location {
+                        actions.push(AIAction::MoveFleet {
+                            fleet: fleet_key,
+                            to_system: target,
+                            reason: FleetMoveReason::Reinforce,
+                        });
+                        reinforcement_sent = true;
+                        continue;
+                    }
                 }
             }
 
-            // Attack the weakest enemy system.
+            // Remaining fleets attack the weakest enemy system.
             if let Some(target) = attack_target {
                 if target != fleet.location {
                     actions.push(AIAction::MoveFleet {

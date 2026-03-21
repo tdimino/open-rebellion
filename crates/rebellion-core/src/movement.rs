@@ -1,18 +1,24 @@
 //! Fleet movement system: hyperspace transit between star systems.
 //!
 //! Fleets travel by issuing a `MovementOrder` which specifies a destination
-//! and the speed of transit. Each tick the fleet advances toward the
+//! and the total transit duration. Each tick the fleet advances toward the
 //! destination; on arrival an `ArrivalEvent` is emitted and the caller
 //! updates `Fleet.location` in `GameWorld`.
 //!
 //! # Speed model
 //!
-//! Each `CapitalShipClass` has a `hyperdrive` rating (u32, higher = faster).
-//! A fleet's transit speed is determined by its *slowest* ship:
+//! Transit time is based on Euclidean distance between systems:
 //! ```text
-//! ticks_per_hop = BASE_TICKS_PER_HOP / slowest_hyperdrive_rating
+//! transit_ticks = (distance * DISTANCE_SCALE) / slowest_hyperdrive_rating
 //! ```
-//! Fleets with no capital ships use `DEFAULT_TICKS_PER_HOP`.
+//! This ensures cross-galaxy trips take ~20+ ticks while intra-sector hops
+//! take ~10. Fleets with no capital ships use `DEFAULT_FIGHTER_HYPERDRIVE`.
+//! Han Solo's `hyperdrive_modifier` subtracts from the total.
+//!
+//! # Source
+//!
+//! Ghidra RE: fleet transit in the original game used direct point-to-point
+//! travel (no hyperspace lanes or waypoints). This implementation is faithful.
 //!
 //! # Usage
 //!
@@ -22,7 +28,7 @@
 //!
 //! let mut state = MovementState::new();
 //! // Dispatch a fleet to move somewhere:
-//! // state.order(fleet_key, origin_key, dest_key, ticks_per_hop);
+//! // state.order(fleet_key, origin_key, dest_key, transit_ticks);
 //!
 //! let tick_events = vec![TickEvent { tick: 1 }];
 //! let arrivals = MovementSystem::advance(&mut state, &tick_events);
@@ -41,40 +47,65 @@ use crate::world::{Fleet, GameWorld};
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Baseline ticks a fleet with hyperdrive rating 1 takes to cross one hop.
-pub const BASE_TICKS_PER_HOP: u32 = 30;
+/// Multiplier applied to Euclidean distance before dividing by hyperdrive rating.
+/// Higher = slower transit. At DISTANCE_SCALE=2, a ~440-unit trip with hyperdrive
+/// 80 takes ~11 ticks; a ~900-unit cross-galaxy trip takes ~22 ticks.
+pub const DISTANCE_SCALE: u32 = 2;
 
-/// Ticks per hop for fleets with no capital ships (e.g., pure fighter escorts).
-pub const DEFAULT_TICKS_PER_HOP: u32 = 20;
+/// Minimum transit ticks regardless of distance or hyperdrive rating.
+pub const MIN_TRANSIT_TICKS: u32 = 10;
 
-/// Minimum ticks per hop regardless of hyperdrive rating (prevents instant travel).
-pub const MIN_TICKS_PER_HOP: u32 = 5;
+/// Effective hyperdrive rating for pure-fighter fleets (no capital ships).
+pub const DEFAULT_FIGHTER_HYPERDRIVE: u32 = 60;
 
 // ---------------------------------------------------------------------------
 // Speed calculation
 // ---------------------------------------------------------------------------
 
-/// Compute the ticks-per-hop for a fleet based on its slowest ship's hyperdrive.
+/// Compute transit ticks for a fleet traveling between two systems.
 ///
-/// Higher hyperdrive rating → fewer ticks per hop → faster transit.
-/// Uses the slowest ship in the fleet so a single slow hulk limits the group.
-pub fn fleet_ticks_per_hop(fleet: &Fleet, world: &GameWorld) -> u32 {
-    if fleet.capital_ships.is_empty() {
-        return DEFAULT_TICKS_PER_HOP;
-    }
+/// Uses Euclidean distance between system coordinates:
+/// ```text
+/// transit_ticks = ceil(distance * DISTANCE_SCALE / slowest_hyperdrive)
+/// ```
+/// The slowest capital ship in the fleet determines the speed.
+/// Han Solo's `hyperdrive_modifier` subtracts from the total.
+/// Result is clamped to `MIN_TRANSIT_TICKS`.
+pub fn fleet_transit_ticks(
+    fleet: &Fleet,
+    world: &GameWorld,
+    origin: SystemKey,
+    dest: SystemKey,
+) -> u32 {
+    // Euclidean distance between system coordinates.
+    let (ox, oy) = world
+        .systems
+        .get(origin)
+        .map(|s| (s.x as f64, s.y as f64))
+        .unwrap_or((0.0, 0.0));
+    let (dx, dy) = world
+        .systems
+        .get(dest)
+        .map(|s| (s.x as f64, s.y as f64))
+        .unwrap_or((0.0, 0.0));
+    let distance = ((dx - ox).powi(2) + (dy - oy).powi(2)).sqrt();
 
-    // Find the minimum hyperdrive rating in the fleet (slowest ship).
-    let slowest = fleet
-        .capital_ships
-        .iter()
-        .filter_map(|entry| world.capital_ship_classes.get(entry.class))
-        .map(|class| class.hyperdrive)
-        .min()
-        .unwrap_or(1)
-        .max(1); // guard against 0 in DAT data
+    // Slowest ship's hyperdrive rating determines fleet speed.
+    let slowest_hyperdrive = if fleet.capital_ships.is_empty() {
+        DEFAULT_FIGHTER_HYPERDRIVE
+    } else {
+        fleet
+            .capital_ships
+            .iter()
+            .filter_map(|entry| world.capital_ship_classes.get(entry.class))
+            .map(|class| class.hyperdrive)
+            .min()
+            .unwrap_or(1)
+            .max(1) // guard against 0 in DAT data
+    };
 
-    // Invert: higher rating = fewer ticks.
-    let base_ticks = BASE_TICKS_PER_HOP / slowest;
+    let base_ticks =
+        ((distance * DISTANCE_SCALE as f64) / slowest_hyperdrive as f64).ceil() as u32;
 
     // Han Solo speed bonus: best hyperdrive_modifier among fleet characters.
     let han_bonus = fleet
@@ -86,7 +117,7 @@ pub fn fleet_ticks_per_hop(fleet: &Fleet, world: &GameWorld) -> u32 {
         .unwrap_or(0);
 
     let ticks = base_ticks.saturating_sub(han_bonus);
-    ticks.max(MIN_TICKS_PER_HOP)
+    ticks.max(MIN_TRANSIT_TICKS)
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +134,7 @@ pub struct MovementOrder {
     /// System the fleet is heading to.
     pub destination: SystemKey,
     /// Ticks needed to complete the transit.
-    pub ticks_per_hop: u32,
+    pub transit_ticks: u32,
     /// Ticks elapsed since departure.
     pub ticks_elapsed: u32,
 }
@@ -114,33 +145,33 @@ impl MovementOrder {
         fleet: FleetKey,
         origin: SystemKey,
         destination: SystemKey,
-        ticks_per_hop: u32,
+        transit_ticks: u32,
     ) -> Self {
         MovementOrder {
             fleet,
             origin,
             destination,
-            ticks_per_hop,
+            transit_ticks,
             ticks_elapsed: 0,
         }
     }
 
     /// Progress fraction in [0.0, 1.0] — 0.0 = just departed, 1.0 = arrived.
     pub fn progress(&self) -> f32 {
-        if self.ticks_per_hop == 0 {
+        if self.transit_ticks == 0 {
             return 1.0;
         }
-        (self.ticks_elapsed as f32 / self.ticks_per_hop as f32).min(1.0)
+        (self.ticks_elapsed as f32 / self.transit_ticks as f32).min(1.0)
     }
 
     /// True if the fleet has completed transit.
     pub fn is_complete(&self) -> bool {
-        self.ticks_elapsed >= self.ticks_per_hop
+        self.ticks_elapsed >= self.transit_ticks
     }
 
     /// Remaining ticks until arrival.
     pub fn ticks_remaining(&self) -> u32 {
-        self.ticks_per_hop.saturating_sub(self.ticks_elapsed)
+        self.transit_ticks.saturating_sub(self.ticks_elapsed)
     }
 }
 
@@ -165,17 +196,17 @@ impl MovementState {
 
     /// Issue a movement order. Replaces any existing order for this fleet.
     ///
-    /// `ticks_per_hop` should be computed via `fleet_ticks_per_hop`.
+    /// `transit_ticks` should be computed via `fleet_transit_ticks`.
     pub fn order(
         &mut self,
         fleet: FleetKey,
         origin: SystemKey,
         destination: SystemKey,
-        ticks_per_hop: u32,
+        transit_ticks: u32,
     ) {
         self.orders.insert(
             fleet,
-            MovementOrder::new(fleet, origin, destination, ticks_per_hop),
+            MovementOrder::new(fleet, origin, destination, transit_ticks),
         );
     }
 
@@ -264,7 +295,7 @@ impl MovementSystem {
             order.ticks_elapsed = order
                 .ticks_elapsed
                 .saturating_add(tick_count)
-                .min(order.ticks_per_hop);
+                .min(order.transit_ticks);
 
             if order.is_complete() {
                 arrivals.push(ArrivalEvent {
@@ -369,7 +400,7 @@ mod tests {
         state.order(fleet, origin, dest2, 20);
         assert_eq!(state.len(), 1);
         assert_eq!(state.get(fleet).unwrap().destination, dest2);
-        assert_eq!(state.get(fleet).unwrap().ticks_per_hop, 20);
+        assert_eq!(state.get(fleet).unwrap().transit_ticks, 20);
     }
 
     // --- MovementSystem ---
@@ -442,30 +473,13 @@ mod tests {
         assert_eq!(state.get(fleet_b).unwrap().ticks_elapsed, 5);
     }
 
-    #[test]
-    fn ticks_per_hop_no_ships_uses_default() {
-        // We can't construct a full GameWorld cheaply here, so just test the constant.
-        assert_eq!(DEFAULT_TICKS_PER_HOP, 20);
-    }
+    // --- Distance-based transit tests ---
 
-    #[test]
-    fn base_ticks_divided_by_hyperdrive() {
-        // hyperdrive=3 → 30/3 = 10
-        let ticks = (BASE_TICKS_PER_HOP / 3).max(MIN_TICKS_PER_HOP);
-        assert_eq!(ticks, 10);
-    }
-
-    #[test]
-    fn high_hyperdrive_clamped_to_min() {
-        // hyperdrive=100 → 30/100 = 0 → clamped to MIN_TICKS_PER_HOP
-        let ticks = (BASE_TICKS_PER_HOP / 100).max(MIN_TICKS_PER_HOP);
-        assert_eq!(ticks, MIN_TICKS_PER_HOP);
-    }
-
-    // --- Han Solo speed bonus tests ---
-
+    use crate::dat::{ExplorationStatus, SectorGroup};
+    use crate::ids::DatId;
     use crate::world::{
-        CapitalShipClass, Character, Fleet, ForceTier, GameWorld, ShipEntry, SkillPair,
+        CapitalShipClass, Character, Fleet, ForceTier, GameWorld, Sector, ShipEntry,
+        SkillPair, System,
     };
 
     fn zero_skill() -> SkillPair {
@@ -474,7 +488,7 @@ mod tests {
 
     fn test_character(name: &str, hyperdrive_modifier: i16) -> Character {
         Character {
-            dat_id: crate::ids::DatId::new(0),
+            dat_id: DatId::new(0),
             name: name.into(),
             is_alliance: true,
             is_empire: false,
@@ -513,7 +527,7 @@ mod tests {
 
     fn test_ship_class(hyperdrive: u32) -> CapitalShipClass {
         CapitalShipClass {
-            dat_id: crate::ids::DatId::new(0),
+            dat_id: DatId::new(0),
             name: "TestShip".into(),
             is_alliance: true,
             is_empire: false,
@@ -547,78 +561,180 @@ mod tests {
         }
     }
 
+    fn make_system(sector: crate::ids::SectorKey, x: u16, y: u16) -> System {
+        System {
+            dat_id: DatId::new(0x9000_0000),
+            name: format!("Sys@{},{}", x, y),
+            sector,
+            x,
+            y,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            controlling_faction: None,
+        }
+    }
+
+    fn make_transit_world(x1: u16, y1: u16, x2: u16, y2: u16) -> (GameWorld, SystemKey, SystemKey) {
+        let mut world = GameWorld::default();
+        let sk = world.sectors.insert(Sector {
+            dat_id: DatId::new(0x9200_0000),
+            name: "Test".into(),
+            group: SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let s1 = world.systems.insert(make_system(sk, x1, y1));
+        let s2 = world.systems.insert(make_system(sk, x2, y2));
+        (world, s1, s2)
+    }
+
+    #[test]
+    fn short_distance_clamps_to_min() {
+        // 50 units apart, hyperdrive=80 → ceil(50*2/80)=ceil(1.25)=2 → clamped to MIN=10
+        let (mut world, origin, dest) = make_transit_world(0, 0, 30, 40); // distance=50
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
+        let fleet = Fleet {
+            location: origin,
+            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        };
+        assert_eq!(fleet_transit_ticks(&fleet, &world, origin, dest), MIN_TRANSIT_TICKS);
+    }
+
+    #[test]
+    fn medium_distance_proportional() {
+        // ~440 units apart, hyperdrive=80 → ceil(440*2/80)=ceil(11.0)=11
+        let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320); // ~438.6
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
+        let fleet = Fleet {
+            location: origin,
+            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        };
+        let t = fleet_transit_ticks(&fleet, &world, origin, dest);
+        assert!(t >= 10 && t <= 12, "expected ~11, got {}", t);
+    }
+
+    #[test]
+    fn cross_galaxy_takes_many_ticks() {
+        // ~900 units apart, hyperdrive=80 → ceil(900*2/80)=ceil(22.5)=23
+        let (mut world, origin, dest) = make_transit_world(0, 0, 636, 636); // ~899
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
+        let fleet = Fleet {
+            location: origin,
+            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        };
+        let t = fleet_transit_ticks(&fleet, &world, origin, dest);
+        assert!(t >= 20, "cross-galaxy should take 20+ ticks, got {}", t);
+    }
+
+    #[test]
+    fn fighter_only_fleet_uses_default_hyperdrive() {
+        // 300 units, no capital ships → DEFAULT_FIGHTER_HYPERDRIVE=60 → ceil(300*2/60)=10
+        let (world, origin, dest) = make_transit_world(0, 0, 180, 240); // distance=300
+        let fleet = Fleet {
+            location: origin,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        };
+        assert_eq!(fleet_transit_ticks(&fleet, &world, origin, dest), MIN_TRANSIT_TICKS);
+    }
+
+    #[test]
+    fn slow_ship_limits_fleet() {
+        // ~440 units, slow ship hyperdrive=20 → ceil(440*2/20)=ceil(44)=44
+        let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320); // ~438.6
+        let fast_key = world.capital_ship_classes.insert(test_ship_class(80));
+        let slow_key = world.capital_ship_classes.insert(test_ship_class(20));
+        let fleet = Fleet {
+            location: origin,
+            capital_ships: vec![
+                ShipEntry { class: fast_key, count: 1 },
+                ShipEntry { class: slow_key, count: 1 },
+            ],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        };
+        let t = fleet_transit_ticks(&fleet, &world, origin, dest);
+        assert!(t >= 40, "slow ship should dominate, got {}", t);
+    }
+
     #[test]
     fn han_solo_bonus_reduces_ticks() {
-        let mut world = GameWorld::default();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let location = sys_sm.insert(());
-
-        // Ship with hyperdrive=3 → base ticks = 30/3 = 10
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(3));
-        // Han Solo with hyperdrive_modifier=5
+        // ~440 units, hyperdrive=80 → base=11, han_bonus=5 → 11-5=6 → clamped to 10
+        let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320);
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
         let han_key = world.characters.insert(test_character("Han Solo", 5));
-
         let fleet = Fleet {
-            location,
+            location: origin,
             capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
             fighters: vec![],
             characters: vec![han_key],
             is_alliance: true,
             has_death_star: false,
         };
-
-        let ticks = fleet_ticks_per_hop(&fleet, &world);
-        // base=10, han_bonus=5 → 10-5=5 → clamped to max(5, MIN_TICKS_PER_HOP=5) = 5
-        assert_eq!(ticks, 5);
+        let t = fleet_transit_ticks(&fleet, &world, origin, dest);
+        // base ~11, minus 5 = ~6, clamped to MIN=10
+        assert_eq!(t, MIN_TRANSIT_TICKS);
     }
 
     #[test]
     fn zero_hyperdrive_modifier_no_change() {
-        let mut world = GameWorld::default();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let location = sys_sm.insert(());
-
-        // Ship with hyperdrive=3 → base ticks = 30/3 = 10
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(3));
-        // Regular character with hyperdrive_modifier=0
+        let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320);
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
         let char_key = world.characters.insert(test_character("Regular", 0));
-
         let fleet = Fleet {
-            location,
+            location: origin,
             capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
             fighters: vec![],
             characters: vec![char_key],
             is_alliance: true,
             has_death_star: false,
         };
-
-        let ticks = fleet_ticks_per_hop(&fleet, &world);
-        // base=10, bonus=0 → 10
-        assert_eq!(ticks, 10);
+        let t = fleet_transit_ticks(&fleet, &world, origin, dest);
+        // No bonus, base ~11
+        assert!(t >= 10 && t <= 12, "expected ~11 with no bonus, got {}", t);
     }
 
     #[test]
     fn han_bonus_clamped_to_min_ticks() {
-        let mut world = GameWorld::default();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let location = sys_sm.insert(());
-
-        // Ship with hyperdrive=3 → base ticks = 30/3 = 10
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(3));
-        // Extreme modifier that would reduce below MIN
+        // Long trip (~900 units), hyperdrive=80 → base ~23, han_bonus=100 → 0 → clamped to MIN
+        let (mut world, origin, dest) = make_transit_world(0, 0, 636, 636);
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
         let han_key = world.characters.insert(test_character("Han Solo", 100));
-
         let fleet = Fleet {
-            location,
+            location: origin,
             capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
             fighters: vec![],
             characters: vec![han_key],
             is_alliance: true,
             has_death_star: false,
         };
-
-        let ticks = fleet_ticks_per_hop(&fleet, &world);
-        // base=10, han_bonus=100 → saturating_sub → 0 → clamped to MIN_TICKS_PER_HOP=5
-        assert_eq!(ticks, MIN_TICKS_PER_HOP);
+        assert_eq!(fleet_transit_ticks(&fleet, &world, origin, dest), MIN_TRANSIT_TICKS);
     }
 }

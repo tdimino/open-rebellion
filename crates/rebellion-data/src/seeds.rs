@@ -68,6 +68,11 @@ const CORUSCANT_SEQ_ID: u32 = 0x109;
 /// Alliance Yavin sequential system id.
 const YAVIN_SEQ_ID: u32 = 0x121;
 
+/// Number of starting systems for Empire (HQ + 9 nearest).
+const EMPIRE_STARTING_SYSTEMS: usize = 10;
+/// Number of starting systems for Alliance (HQ + 2 nearest).
+const ALLIANCE_STARTING_SYSTEMS: usize = 3;
+
 // ── Family byte constants ─────────────────────────────────────────────────────
 
 const FAM_CAPITAL_SHIP: u8 = 0x14;
@@ -93,6 +98,74 @@ type CapShipIndex  = HashMap<u32, CapitalShipKey>;
 /// Index built from the fighter arena: `dat_id.raw() → FighterKey`.
 type FighterIndex  = HashMap<u32, FighterKey>;
 
+/// Select starting systems for each faction based on proximity to their HQ.
+///
+/// Empire: Coruscant + N nearest systems (EMPIRE_STARTING_SYSTEMS total).
+/// Alliance: Yavin + N nearest systems (ALLIANCE_STARTING_SYSTEMS total),
+/// excluding systems already claimed by the Empire.
+///
+/// Returns `(empire_systems, alliance_systems)` as sequential DatId arrays
+/// suitable for passing as `system_rotation` to the seed functions.
+pub fn select_starting_systems(
+    world: &GameWorld,
+    system_key_map: &HashMap<u32, SystemKey>,
+) -> (Vec<u32>, Vec<u32>) {
+    // Get HQ coordinates
+    let coruscant_key = system_key_map.get(&CORUSCANT_SEQ_ID).copied();
+    let yavin_key = system_key_map.get(&YAVIN_SEQ_ID).copied();
+
+    let coruscant_pos = coruscant_key
+        .and_then(|k| world.systems.get(k))
+        .map(|s| (s.x as f64, s.y as f64))
+        .unwrap_or((500.0, 500.0));
+    let yavin_pos = yavin_key
+        .and_then(|k| world.systems.get(k))
+        .map(|s| (s.x as f64, s.y as f64))
+        .unwrap_or((100.0, 200.0));
+
+    // Sort all systems by distance to Coruscant
+    let mut empire_candidates: Vec<(u32, f64)> = system_key_map
+        .iter()
+        .filter_map(|(&seq, &key)| {
+            let sys = world.systems.get(key)?;
+            let dx = sys.x as f64 - coruscant_pos.0;
+            let dy = sys.y as f64 - coruscant_pos.1;
+            Some((seq, (dx * dx + dy * dy).sqrt()))
+        })
+        .collect();
+    empire_candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+    let empire_systems: Vec<u32> = empire_candidates
+        .iter()
+        .take(EMPIRE_STARTING_SYSTEMS)
+        .map(|(seq, _)| *seq)
+        .collect();
+
+    // Alliance: nearest to Yavin, excluding Empire starting systems
+    let empire_set: std::collections::HashSet<u32> = empire_systems.iter().copied().collect();
+    let mut alliance_candidates: Vec<(u32, f64)> = system_key_map
+        .iter()
+        .filter_map(|(&seq, &key)| {
+            if empire_set.contains(&seq) {
+                return None;
+            }
+            let sys = world.systems.get(key)?;
+            let dx = sys.x as f64 - yavin_pos.0;
+            let dy = sys.y as f64 - yavin_pos.1;
+            Some((seq, (dx * dx + dy * dy).sqrt()))
+        })
+        .collect();
+    alliance_candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+    let alliance_systems: Vec<u32> = alliance_candidates
+        .iter()
+        .take(ALLIANCE_STARTING_SYSTEMS)
+        .map(|(seq, _)| *seq)
+        .collect();
+
+    (empire_systems, alliance_systems)
+}
+
 /// Apply all 9 seed tables to the already-populated `world`.
 ///
 /// Missing files are silently ignored (stripped installs, test environments).
@@ -115,37 +188,39 @@ pub fn apply_seeds(
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
 
+    // Select starting systems: Empire gets 10, Alliance gets 3.
+    let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
+
     // ── Empire fleet (CMUNEFTB) ───────────────────────────────────────────────
-    // Single group — all ships orbit Coruscant.
+    // Fleet groups distributed across Empire starting systems.
     apply_fleet_seed(
         &load_seed(gdata_path, "CMUNEFTB.DAT")?,
         system_key_map,
         &capship_index,
         &fighter_index,
-        &[CORUSCANT_SEQ_ID],
+        &empire_systems,
         false, // is_alliance
         world,
     );
 
     // ── Alliance fleet (CMUNAFTB) ─────────────────────────────────────────────
-    // Two groups — group 1 at Yavin, group 2 at Yavin (Alliance starts small).
+    // Fleet groups distributed across Alliance starting systems.
     apply_fleet_seed(
         &load_seed(gdata_path, "CMUNAFTB.DAT")?,
         system_key_map,
         &capship_index,
         &fighter_index,
-        &[YAVIN_SEQ_ID, YAVIN_SEQ_ID],
+        &alliance_systems,
         true, // is_alliance
         world,
     );
 
     // ── Empire army (CMUNEMTB) ────────────────────────────────────────────────
-    // Multi-group.  Groups are placed at Coruscant (the only known Empire
-    // starting system at load time; real game spreads them via GNPRTB).
+    // Army groups distributed across Empire starting systems.
     apply_army_seed(
         &load_seed(gdata_path, "CMUNEMTB.DAT")?,
         system_key_map,
-        &[CORUSCANT_SEQ_ID],
+        &empire_systems,
         false,
         world,
     );
@@ -154,7 +229,7 @@ pub fn apply_seeds(
     apply_army_seed(
         &load_seed(gdata_path, "CMUNALTB.DAT")?,
         system_key_map,
-        &[YAVIN_SEQ_ID],
+        &alliance_systems,
         true,
         world,
     );
