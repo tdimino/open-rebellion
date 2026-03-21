@@ -71,6 +71,29 @@ pub const COVERT_MIN_SUCCESS_PROB: f64 = 0.30;
 pub const MAX_COVERT_OPS_PER_EVAL: usize = 3;
 
 // ---------------------------------------------------------------------------
+// GalaxyState — strategic categorization of all systems
+// ---------------------------------------------------------------------------
+
+/// Snapshot of the galaxy's strategic state from one faction's perspective.
+#[derive(Debug, Default)]
+struct GalaxyState {
+    /// Systems we control (not contested).
+    our_controlled: Vec<SystemKey>,
+    /// Our controlled systems with no friendly fleet present.
+    our_undefended: Vec<SystemKey>,
+    /// Our HQ system.
+    our_hq: Option<SystemKey>,
+    /// Systems controlled by the enemy (sorted by weakness for targeting).
+    enemy_controlled: Vec<SystemKey>,
+    /// Enemy HQ system.
+    enemy_hq: Option<SystemKey>,
+    /// Our systems with enemy fleets present.
+    contested: Vec<SystemKey>,
+    /// Neutral/unclaimed systems.
+    unoccupied: Vec<SystemKey>,
+}
+
+// ---------------------------------------------------------------------------
 // AiFaction
 // ---------------------------------------------------------------------------
 
@@ -677,43 +700,124 @@ impl AISystem {
     ///
     /// - Fleets not already in a contested system → attack the enemy's weakest system
     /// - Friendly systems with no fleet and high popularity → reinforce
+    /// Compute a garrison strength score for a system.
+    /// Counts ships (hull total), troop regiments, and defense facilities.
+    /// Higher = more heavily defended.
+    fn system_strength(world: &GameWorld, sys: &crate::world::System, is_alliance: bool) -> u32 {
+        // Ship hull total from friendly fleets at this system
+        let ship_strength: u32 = sys
+            .fleets
+            .iter()
+            .filter_map(|&fk| world.fleets.get(fk))
+            .filter(|f| f.is_alliance == is_alliance)
+            .flat_map(|f| &f.capital_ships)
+            .filter_map(|entry| world.capital_ship_classes.get(entry.class))
+            .map(|c| c.hull * 1) // each ship hull contributes
+            .sum();
+
+        // Troop strength from friendly ground units
+        let troop_strength: u32 = sys
+            .ground_units
+            .iter()
+            .filter_map(|&tk| world.troops.get(tk))
+            .filter(|t| t.is_alliance == is_alliance)
+            .map(|t| t.regiment_strength as u32)
+            .sum();
+
+        // Facility count (defense + manufacturing)
+        let facility_count = sys.defense_facilities.len() as u32
+            + sys.manufacturing_facilities.len() as u32;
+
+        ship_strength + troop_strength + facility_count * 10
+    }
+
+    /// Categorize all systems into strategic buckets for fleet deployment.
+    fn evaluate_galaxy_state(
+        world: &GameWorld,
+        faction: AiFaction,
+    ) -> GalaxyState {
+        use crate::dat::Faction;
+        let our_faction = match faction {
+            AiFaction::Alliance => Faction::Alliance,
+            AiFaction::Empire => Faction::Empire,
+        };
+        let enemy_faction = match faction {
+            AiFaction::Alliance => Faction::Empire,
+            AiFaction::Empire => Faction::Alliance,
+        };
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+
+        let mut state = GalaxyState::default();
+        for (key, sys) in world.systems.iter() {
+            let has_our_fleet = sys.fleets.iter().any(|&fk|
+                world.fleets.get(fk).map(|f| f.is_alliance == is_alliance).unwrap_or(false));
+            let has_enemy_fleet = sys.fleets.iter().any(|&fk|
+                world.fleets.get(fk).map(|f| f.is_alliance != is_alliance).unwrap_or(false));
+
+            match sys.controlling_faction {
+                Some(f) if f == our_faction => {
+                    if has_enemy_fleet {
+                        state.contested.push(key);
+                    } else if sys.is_headquarters {
+                        state.our_hq = Some(key);
+                        state.our_controlled.push(key);
+                    } else {
+                        state.our_controlled.push(key);
+                        if !has_our_fleet {
+                            state.our_undefended.push(key);
+                        }
+                    }
+                }
+                Some(f) if f == enemy_faction => {
+                    if sys.is_headquarters {
+                        state.enemy_hq = Some(key);
+                    }
+                    state.enemy_controlled.push(key);
+                }
+                _ => {
+                    state.unoccupied.push(key);
+                }
+            }
+        }
+
+        // Sort attack targets by weakness (lowest enemy garrison first)
+        state.enemy_controlled.sort_by_key(|&k| {
+            world.systems.get(k)
+                .map(|s| Self::system_strength(world, s, !is_alliance))
+                .unwrap_or(u32::MAX)
+        });
+
+        state
+    }
+
     fn evaluate_fleet_deployment(
         world: &GameWorld,
         faction: AiFaction,
         actions: &mut Vec<AIAction>,
     ) {
-        use crate::dat::Faction;
+        let galaxy = Self::evaluate_galaxy_state(world, faction);
 
-        let enemy_faction = match faction {
-            AiFaction::Alliance => Faction::Empire,
-            AiFaction::Empire => Faction::Alliance,
-        };
-        let our_faction = match faction {
-            AiFaction::Alliance => Faction::Alliance,
-            AiFaction::Empire => Faction::Empire,
-        };
+        // Attack target: weakest enemy system (already sorted by strength).
+        let attack_target = galaxy.enemy_controlled.first().copied();
 
-        // Attack target: enemy-controlled system with fewest defenders.
-        let attack_target = world
-            .systems
-            .iter()
-            .filter(|(_, s)| s.controlling_faction == Some(enemy_faction))
-            .min_by_key(|(_, s)| s.fleets.len())
-            .map(|(k, _)| k);
-
-        // Reinforce target: our system with no fleet present.
-        let reinforce_target = world
-            .systems
-            .iter()
-            .filter(|(_, s)| {
-                s.controlling_faction == Some(our_faction) && s.fleets.is_empty()
+        // Count our available fleets (not pinned in combat).
+        let our_fleet_count = world.fleets.values()
+            .filter(|f| match faction {
+                AiFaction::Alliance => f.is_alliance,
+                AiFaction::Empire => !f.is_alliance,
             })
-            .next()
-            .map(|(k, _)| k);
+            .count();
 
-        // At most one fleet reinforces; the rest attack. This prevents the
-        // "eternal reinforce" loop where all fleets chase empty friendly systems
-        // and never engage the enemy.
+        // Only allow reinforcement if we have 2+ fleets AND there are enemy
+        // targets to attack with the remaining fleets. With just 1 fleet,
+        // always attack — reinforcing empty systems is a trap.
+        let allow_reinforce = our_fleet_count >= 2 && attack_target.is_some();
+        let reinforce_target = if allow_reinforce {
+            galaxy.our_undefended.first().copied()
+        } else {
+            None
+        };
+
         let mut reinforcement_sent = false;
 
         for (fleet_key, fleet) in world.fleets.iter() {
