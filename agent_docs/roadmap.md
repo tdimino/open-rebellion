@@ -102,13 +102,40 @@ Remaining:
 - Video playback (Smacker → WebM)
 - Distribution: itch.io (web), Homebrew (macOS), GitHub Releases
 
+## AI Overhaul -- COMPLETE
+*v0.13.0 — AI balance, observability, autoresearch*
+
+Delivered:
+- Distance-based fleet transit (Euclidean, DISTANCE_SCALE=2, MIN_TRANSIT_TICKS=10)
+- Starting force distribution (Empire 10 systems, Alliance 3)
+- Garrison strength scoring (ships + troops + facilities)
+- Galaxy-wide strategic bucketing (7 categories)
+- Per-fleet attack targeting with deconfliction + battle repeat penalty
+- Two-pass deployment (original parity: primary assign + secondary redistribute)
+- Faction-asymmetric doctrine (Empire→HQ strike, Alliance→guerrilla)
+- Role-based character AI (Jedi reserved, diplomats prioritized)
+- Production doctrine (capital ships > fighters > yards)
+- Build completion wiring (manufactured items added to GameWorld)
+- HQ garrison defense (first fleet defends HQ)
+- ControlKind state machine (Uncontrolled, Controlled, Contested, Uprising)
+- Human-readable JSONL event payloads (system/character names)
+- Enhanced --summary (galaxy control, transit state, combat diagnostics)
+- --jsonl streaming flag for stdout
+- REPL commands: systems, transit, events N
+- eval_game_quality.py (8 sub-metrics, degenerate detection)
+- autoresearch_loop.py (Karpathy self-improvement loop)
+- AI parity tracker (maps 6 original functions to our implementation)
+- Death Star fleet exemption (always targets enemy HQ)
+
+Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
+
 ## Immediate Next Steps
 
-1. **Play-test session** -- tick speed feel, AI behavior, mission success rates, panel usability
-2. **Modder docs + example mod** -- mods/examples/sample-mod/ with mod.toml + JSON patch
-3. **Vendor web/gl.js** -- stop network fetch in build-wasm.sh
-4. **Release packaging** -- scripts/package-macos.sh + scripts/package-web.sh
-5. **WASM build verification** -- confirmed 3.4MB artifact at v0.3.0, needs update
+1. **Telemetry enrichment** -- control_changed events, 250-tick snapshots, research progress
+2. **Config-driven AI** -- externalize constants to JSON, parity/augmentation split
+3. **Combat spread** -- expand territory via diplomacy for diverse battle locations
+4. **Run autoresearch** -- 10+ iterations with 3 seeds, analyze optimal config
+5. **Custom character addon** -- Demiurgos: academy archetypes, homeworld, Force roll
 
 ## Known Technical Debt
 

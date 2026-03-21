@@ -3,12 +3,12 @@ title: "Open Rebellion"
 description: "Project instructions and build configuration for the Open Rebellion Rust reimplementation"
 category: "reference"
 created: 2026-03-11
-updated: 2026-03-16
+updated: 2026-03-21
 ---
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.12.0 (~99% complete). 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI, REPL mode for LLM agent play (`--repl`), CLI `--exec` (16 commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry, 275 tests, zero warnings.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.13.0 (~99% complete). 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI with per-fleet targeting + deconfliction + battle penalty, REPL mode for LLM agent play (`--repl`, `--jsonl`), CLI `--exec` (16 + 3 REPL commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry with human-readable payloads, `ControlKind` state machine, distance-based fleet transit, force distribution (10 Empire / 3 Alliance), eval_game_quality.py + autoresearch_loop.py, 280 tests, zero warnings.
 
 ## Build
 
@@ -70,6 +70,7 @@ agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patte
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
 agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: 5,127 decompiled functions, combat formulas, 111 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
+agent_docs/systems/ai-parity-tracker.md -- Maps every original AI function to our implementation. Status: DONE/FAITHFUL/AUGMENTED/PARTIAL/MISSING. Read when modifying AI code.
 agent_docs/assets.md -- Asset pipeline: 6 pipelines (HD upscaling, 3D models, encyclopedia, reference image generation, audio, UI upscaling). 11 reference collections, 4 3D providers, 6 audio tools, 450+ UI BMPs. Read when working on visual or audio assets.
 agent_docs/game-media.md -- Game media overview: 18 DLLs, Smacker videos, WAV soundtrack. Read for high-level media inventory.
 agent_docs/dll-resource-catalog.md -- Granular DLL resource catalog: 2,441 BMPs + 3,223 data files across 11 DLLs. Per-DLL resource ID ranges, image dimensions, content descriptions. Read when working with specific DLL resources.
