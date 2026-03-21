@@ -312,11 +312,40 @@ impl AISystem {
                 continue;
             }
 
+            // Role-based character assignment:
+            // 1. Jedi-capable characters → Jedi training priority (if not yet trained)
+            // 2. High diplomacy → diplomacy missions
+            // 3. High espionage → espionage handled by evaluate_espionage
+            // 4. Major characters with unrecruited allies → recruitment
+            // 5. Fleet admirals (can_be_admiral + high combat) → assigned to fleets in fleet_deployment
+
             let diplomacy_score =
                 character.diplomacy.base + character.diplomacy.variance / 2;
+            let combat_score =
+                character.combat.base + character.combat.variance / 2;
 
+            // Jedi-potential characters should not be wasted on diplomacy
+            // (they'll train via the Jedi system automatically).
+            if character.jedi_probability > 50 && character.force_tier == crate::world::ForceTier::None {
+                // Skip — let them be available for Jedi training events.
+                continue;
+            }
+
+            // High-diplomacy characters: send on diplomacy missions.
+            if diplomacy_score > DIPLOMACY_SKILL_THRESHOLD {
+                if let Some(target) = diplomacy_target {
+                    actions.push(AIAction::DispatchMission {
+                        kind: MissionKind::Diplomacy,
+                        character: char_key,
+                        target_system: target,
+                        duration_roll: 0.5,
+                    });
+                    continue;
+                }
+            }
+
+            // Major characters with unrecruited allies → recruitment.
             if character.is_major && unrecruited_count > 0 {
-                // Find a friendly system to use as recruitment base.
                 if let Some(base_system) = Self::find_friendly_system(world, faction) {
                     actions.push(AIAction::DispatchMission {
                         kind: MissionKind::Recruitment,
@@ -324,8 +353,12 @@ impl AISystem {
                         target_system: base_system,
                         duration_roll: 0.5,
                     });
+                    continue;
                 }
-            } else if character.is_major || diplomacy_score > DIPLOMACY_SKILL_THRESHOLD {
+            }
+
+            // Remaining major characters with decent diplomacy → diplomacy fallback.
+            if character.is_major && diplomacy_score > 30 {
                 if let Some(target) = diplomacy_target {
                     actions.push(AIAction::DispatchMission {
                         kind: MissionKind::Diplomacy,
