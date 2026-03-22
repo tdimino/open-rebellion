@@ -51,9 +51,7 @@ Four thousand years before the Battle of Yavin. The Jedi Civil War between the S
 ## Expanded Universe Elements
 
 <div style="text-align:center; margin: 1em 0;">
-  <img src="/open-rebellion/assets/expanded-universe.png" alt="Expanded Universe" width="50" style="margin: 0 8px;">
-  <img src="/open-rebellion/assets/legends-badge.png" alt="Legends" width="50" style="margin: 0 8px;">
-  <img src="/open-rebellion/assets/lucasarts-logo.png" alt="LucasArts" width="50" style="margin: 0 8px;">
+  <img src="/open-rebellion/assets/expanded-universe.png" alt="Heir to the Empire" width="50">
 </div>
 
 Not full conversions—these are expansions that enrich the base Galactic Civil War era with content from the broader Expanded Universe.
