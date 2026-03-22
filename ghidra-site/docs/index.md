@@ -8,7 +8,7 @@ tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
 ---
 
 <div class="tanit-logo" style="text-align:center; margin-bottom:1em;">
-  <img class="dark-only" src="/open-rebellion/assets/tanit-dark.png" alt="Symbol of Tanit" width="80">
+  <img class="dark-only" src="/open-rebellion/assets/tanit-dark.png" alt="Symbol of Tanit" style="height:80px; width:auto;">
   <img class="light-only" src="/open-rebellion/assets/tanit-light.png" alt="Symbol of Tanit" width="80">
 </div>
 
