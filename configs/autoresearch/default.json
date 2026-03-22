@@ -1,0 +1,33 @@
+{
+  "ai": {
+    "tick_interval": 7,
+    "diplomacy_skill_threshold": 60,
+    "diplomacy_target_popularity_cap": 0.8,
+    "espionage_skill_threshold": 50,
+    "covert_min_success_prob": 0.30,
+    "max_covert_ops_per_eval": 3,
+    "max_construction_yards": 5,
+    "max_attack_fronts": 3,
+    "battle_cooldown_ticks": 100.0,
+    "proximity_divisor": 100.0,
+    "weight_weakness": 0.30,
+    "weight_proximity": 0.30,
+    "weight_deconfliction": 0.25,
+    "weight_freshness": 0.15,
+    "covert_target_popularity_threshold": 0.3
+  },
+  "movement": {
+    "distance_scale": 2,
+    "min_transit_ticks": 10,
+    "default_fighter_hyperdrive": 60
+  },
+  "production": {
+    "capship_threshold": 5,
+    "fighter_ratio": 3
+  },
+  "scoring": {
+    "victory_center": 3000,
+    "combat_pct_center": 10.0,
+    "mfg_target": 50
+  }
+}

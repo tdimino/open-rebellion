@@ -119,6 +119,7 @@ async fn main() {
     let mut mission_state = MissionState::new();
     let mut event_state = EventState::new();
     let mut ai_state = AIState::new(AiFaction::Empire);
+    let game_config = rebellion_core::tuning::GameConfig::default();
     let mut dual_ai_mode = false;
     let mut ai2_state: Option<AIState> = None;
     let mut movement_state = MovementState::new();
@@ -512,6 +513,7 @@ async fn main() {
                 &mission_state,
                 &movement_state,
                 &tick_events,
+                &game_config,
             );
             let ai_rolls: Vec<f64> =
                 (0..8).map(|_| sim_rng.gen::<f64>()).collect();
@@ -540,6 +542,7 @@ async fn main() {
                     &mission_state,
                     &movement_state,
                     &tick_events,
+                    &game_config,
                 );
                 let second_rolls: Vec<f64> =
                     (0..8).map(|_| sim_rng.gen::<f64>()).collect();

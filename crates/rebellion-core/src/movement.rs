@@ -71,11 +71,29 @@ pub const DEFAULT_FIGHTER_HYPERDRIVE: u32 = 60;
 /// The slowest capital ship in the fleet determines the speed.
 /// Han Solo's `hyperdrive_modifier` subtracts from the total.
 /// Result is clamped to `MIN_TRANSIT_TICKS`.
+///
+/// Accepts optional `MovementConfig` for tuning. Uses module constants as defaults.
 pub fn fleet_transit_ticks(
     fleet: &Fleet,
     world: &GameWorld,
     origin: SystemKey,
     dest: SystemKey,
+) -> u32 {
+    fleet_transit_ticks_with_config(
+        fleet, world, origin, dest,
+        DISTANCE_SCALE, MIN_TRANSIT_TICKS, DEFAULT_FIGHTER_HYPERDRIVE,
+    )
+}
+
+/// Config-aware variant of `fleet_transit_ticks`.
+pub fn fleet_transit_ticks_with_config(
+    fleet: &Fleet,
+    world: &GameWorld,
+    origin: SystemKey,
+    dest: SystemKey,
+    distance_scale: u32,
+    min_transit_ticks: u32,
+    default_fighter_hyperdrive: u32,
 ) -> u32 {
     // Euclidean distance between system coordinates.
     let (ox, oy) = world
@@ -92,7 +110,7 @@ pub fn fleet_transit_ticks(
 
     // Slowest ship's hyperdrive rating determines fleet speed.
     let slowest_hyperdrive = if fleet.capital_ships.is_empty() {
-        DEFAULT_FIGHTER_HYPERDRIVE
+        default_fighter_hyperdrive
     } else {
         fleet
             .capital_ships
@@ -105,7 +123,7 @@ pub fn fleet_transit_ticks(
     };
 
     let base_ticks =
-        ((distance * DISTANCE_SCALE as f64) / slowest_hyperdrive as f64).ceil() as u32;
+        ((distance * distance_scale as f64) / slowest_hyperdrive as f64).ceil() as u32;
 
     // Han Solo speed bonus: best hyperdrive_modifier among fleet characters.
     let han_bonus = fleet
@@ -117,7 +135,7 @@ pub fn fleet_transit_ticks(
         .unwrap_or(0);
 
     let ticks = base_ticks.saturating_sub(han_bonus);
-    ticks.max(MIN_TRANSIT_TICKS)
+    ticks.max(min_transit_ticks)
 }
 
 // ---------------------------------------------------------------------------

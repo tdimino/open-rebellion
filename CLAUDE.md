@@ -8,7 +8,7 @@ updated: 2026-03-21
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.13.0 (~99% complete). 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI with per-fleet targeting + deconfliction + battle penalty, REPL mode for LLM agent play (`--repl`, `--jsonl`), CLI `--exec` (16 + 3 REPL commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry with human-readable payloads, `ControlKind` state machine, distance-based fleet transit, force distribution (10 Empire / 3 Alliance), eval_game_quality.py + autoresearch_loop.py, 280 tests, zero warnings.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.14.0 (~99% complete). 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI with per-fleet targeting + deconfliction + battle penalty, config-driven AI (`tuning.rs` + `--config` flag, 16 tunable parameters), REPL mode for LLM agent play (`--repl`, `--jsonl`), CLI `--exec` (16 + 3 REPL commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry with human-readable payloads, `ControlKind` state machine, distance-based fleet transit, force distribution (10 Empire / 3 Alliance), eval_game_quality.py + autoresearch_loop.py, 283 tests, zero warnings.
 
 ## Build
 

@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{
     CapitalShipKey, CharacterKey, FighterKey, FleetKey, ManufacturingFacilityKey, SystemKey,
 };
+use crate::tuning::GameConfig;
 use crate::manufacturing::{BuildableKind, ManufacturingState};
 use crate::missions::{MissionFaction, MissionKind, MissionState};
 use crate::dat::ExplorationStatus;
@@ -163,8 +164,8 @@ impl AIState {
     }
 
     /// Returns true if enough ticks have elapsed since the last evaluation.
-    pub fn should_evaluate(&self, current_tick: u64) -> bool {
-        current_tick == 0 || current_tick.saturating_sub(self.last_eval_tick) >= AI_TICK_INTERVAL
+    pub fn should_evaluate(&self, current_tick: u64, tick_interval: u64) -> bool {
+        current_tick == 0 || current_tick.saturating_sub(self.last_eval_tick) >= tick_interval
     }
 
     /// Mark a character as busy (on a mission).
@@ -251,6 +252,7 @@ impl AISystem {
         _mission_state: &MissionState,
         movement: &crate::movement::MovementState,
         tick_events: &[TickEvent],
+        config: &GameConfig,
     ) -> Vec<AIAction> {
         if tick_events.is_empty() {
             return Vec::new();
@@ -258,7 +260,7 @@ impl AISystem {
 
         let current_tick = tick_events.last().unwrap().tick;
 
-        if !state.should_evaluate(current_tick) {
+        if !state.should_evaluate(current_tick, config.ai.tick_interval) {
             return Vec::new();
         }
 
@@ -272,10 +274,10 @@ impl AISystem {
         let mut actions = Vec::new();
 
         // Run each heuristic module.
-        Self::evaluate_officers(state, world, faction, &mut actions);
-        Self::evaluate_espionage(state, world, faction, &mut actions);
-        Self::evaluate_production(world, mfg_state, faction, &mut actions);
-        Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, &mut actions);
+        Self::evaluate_officers(state, world, faction, config, &mut actions);
+        Self::evaluate_espionage(state, world, faction, config, &mut actions);
+        Self::evaluate_production(world, mfg_state, faction, config, &mut actions);
+        Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, config, &mut actions);
 
         actions
     }
@@ -293,6 +295,7 @@ impl AISystem {
         state: &AIState,
         world: &GameWorld,
         faction: AiFaction,
+        config: &GameConfig,
         actions: &mut Vec<AIAction>,
     ) {
         // Count unrecruited characters for this faction (can_be_commander but
@@ -305,7 +308,7 @@ impl AISystem {
 
         // Find the best diplomacy target: lowest-popularity system for this faction,
         // below the popularity cap.
-        let diplomacy_target = Self::find_diplomacy_target(world, faction);
+        let diplomacy_target = Self::find_diplomacy_target(world, faction, config.ai.diplomacy_target_popularity_cap);
 
         for (char_key, character) in world.characters.iter() {
             if !faction.owns_character(character) {
@@ -338,7 +341,7 @@ impl AISystem {
             }
 
             // High-diplomacy characters: send on diplomacy missions.
-            if diplomacy_score > DIPLOMACY_SKILL_THRESHOLD {
+            if diplomacy_score > config.ai.diplomacy_skill_threshold {
                 if let Some(target) = diplomacy_target {
                     actions.push(AIAction::DispatchMission {
                         kind: MissionKind::Diplomacy,
@@ -379,13 +382,13 @@ impl AISystem {
 
     /// Find the system with the lowest AI faction popularity (a good diplomacy target).
     ///
-    /// Only returns systems below `DIPLOMACY_TARGET_POPULARITY_CAP` — systems
+    /// Only returns systems below the popularity cap — systems
     /// already firmly ours are not worth spending characters on.
-    fn find_diplomacy_target(world: &GameWorld, faction: AiFaction) -> Option<SystemKey> {
+    fn find_diplomacy_target(world: &GameWorld, faction: AiFaction, cap: f32) -> Option<SystemKey> {
         world
             .systems
             .iter()
-            .filter(|(_, s)| faction.system_popularity(s) < DIPLOMACY_TARGET_POPULARITY_CAP)
+            .filter(|(_, s)| faction.system_popularity(s) < cap)
             .min_by(|(_, a), (_, b)| {
                 faction
                     .system_popularity(a)
@@ -432,6 +435,7 @@ impl AISystem {
         state: &AIState,
         world: &GameWorld,
         faction: AiFaction,
+        config: &GameConfig,
         actions: &mut Vec<AIAction>,
     ) {
         // Collect available covert operatives sorted by espionage skill (desc).
@@ -443,7 +447,7 @@ impl AISystem {
                     return None;
                 }
                 let esp = c.espionage.base + c.espionage.variance / 2;
-                if esp >= ESPIONAGE_SKILL_THRESHOLD {
+                if esp >= config.ai.espionage_skill_threshold {
                     Some((key, esp))
                 } else {
                     None
@@ -494,11 +498,11 @@ impl AISystem {
         sabotage_targets.sort_by(|a, b| b.1.cmp(&a.1));
 
         for (target_sys, _) in &sabotage_targets {
-            if ops_queued >= MAX_COVERT_OPS_PER_EVAL || op_idx >= operatives.len() {
+            if ops_queued >= config.ai.max_covert_ops_per_eval || op_idx >= operatives.len() {
                 break;
             }
             let (char_key, esp_score) = operatives[op_idx];
-            if !Self::expected_success(world, MissionKind::Sabotage, esp_score) {
+            if !Self::expected_success(world, MissionKind::Sabotage, esp_score, config.ai.covert_min_success_prob) {
                 op_idx += 1;
                 continue;
             }
@@ -533,8 +537,8 @@ impl AISystem {
             .iter()
             .filter(|(_, s)| {
                 match faction {
-                    AiFaction::Alliance => s.popularity_empire   > 0.3,
-                    AiFaction::Empire   => s.popularity_alliance > 0.3,
+                    AiFaction::Alliance => s.popularity_empire   > config.ai.covert_target_popularity_threshold,
+                    AiFaction::Empire   => s.popularity_alliance > config.ai.covert_target_popularity_threshold,
                 }
             })
             .max_by(|(_, a), (_, b)| {
@@ -552,13 +556,13 @@ impl AISystem {
 
         if let Some(target_sys) = assassination_base {
             for _ in &enemy_major_chars {
-                if ops_queued >= MAX_COVERT_OPS_PER_EVAL || op_idx >= operatives.len() {
+                if ops_queued >= config.ai.max_covert_ops_per_eval || op_idx >= operatives.len() {
                     break;
                 }
                 let (char_key, _) = operatives[op_idx];
                 let char = &world.characters[char_key];
                 let combat_score = char.combat.base + char.combat.variance / 2;
-                if !Self::expected_success(world, MissionKind::Assassination, combat_score) {
+                if !Self::expected_success(world, MissionKind::Assassination, combat_score, config.ai.covert_min_success_prob) {
                     op_idx += 1;
                     continue;
                 }
@@ -587,11 +591,11 @@ impl AISystem {
             .collect();
 
         for target_sys in &unexplored_targets {
-            if ops_queued >= MAX_COVERT_OPS_PER_EVAL || op_idx >= operatives.len() {
+            if ops_queued >= config.ai.max_covert_ops_per_eval || op_idx >= operatives.len() {
                 break;
             }
             let (char_key, esp_score) = operatives[op_idx];
-            if !Self::expected_success(world, MissionKind::Espionage, esp_score) {
+            if !Self::expected_success(world, MissionKind::Espionage, esp_score, config.ai.covert_min_success_prob) {
                 op_idx += 1;
                 continue;
             }
@@ -610,8 +614,8 @@ impl AISystem {
     /// skill score.
     ///
     /// Uses the MSTB table if loaded; falls back to the quadratic formula.
-    /// Returns true if expected success probability ≥ `COVERT_MIN_SUCCESS_PROB`.
-    fn expected_success(world: &GameWorld, kind: MissionKind, skill_score: u32) -> bool {
+    /// Returns true if expected success probability ≥ the configured minimum.
+    fn expected_success(world: &GameWorld, kind: MissionKind, skill_score: u32, min_prob: f64) -> bool {
         let prob_pct: f64 = if let Some(key) = kind.mstb_key() {
             if let Some(table) = world.mission_tables.get(key) {
                 table.lookup(skill_score as i32) as f64
@@ -626,7 +630,7 @@ impl AISystem {
             100.0
         };
 
-        prob_pct / 100.0 >= COVERT_MIN_SUCCESS_PROB
+        prob_pct / 100.0 >= min_prob
     }
 
     // -----------------------------------------------------------------------
@@ -641,6 +645,7 @@ impl AISystem {
         world: &GameWorld,
         mfg_state: &ManufacturingState,
         faction: AiFaction,
+        config: &GameConfig,
         actions: &mut Vec<AIAction>,
     ) {
         let best_fighter = Self::best_fighter_class(world, faction);
@@ -694,7 +699,7 @@ impl AISystem {
             // Production priority: capital ships first (they create fleets),
             // then fighters (fill carrier slots), then construction yards.
             // Capital ships are the bottleneck — without them, no fleets.
-            if our_capship_count < 5 {
+            if our_capship_count < config.production.capship_threshold {
                 if let Some((capship_key, capship_class)) = best_capship {
                     let ticks = capship_class.refined_material_cost.max(20);
                     actions.push(AIAction::EnqueueProduction {
@@ -709,7 +714,7 @@ impl AISystem {
             // Build fighters: either to fill carrier capacity, or as primary
             // combat units when no capital ship class is available.
             let needs_fighters = if best_capship.is_some() {
-                our_fighter_count < our_capship_count * 3
+                our_fighter_count < our_capship_count * config.production.fighter_ratio
             } else {
                 true // no capships available, fighters are our only option
             };
@@ -727,7 +732,7 @@ impl AISystem {
 
             // Build more construction yards if below cap.
             let yard_count = system.manufacturing_facilities.len();
-            if yard_count < MAX_CONSTRUCTION_YARDS {
+            if yard_count < config.ai.max_construction_yards {
                 if let Some(mfg_key) =
                     Self::find_manufacturing_facility_class(world, faction)
                 {
@@ -910,6 +915,7 @@ impl AISystem {
         targeted_counts: &HashMap<SystemKey, usize>,
         battle_cooldowns: &HashMap<SystemKey, u64>,
         current_tick: u64,
+        config: &GameConfig,
     ) -> f64 {
         let target_sys = match world.systems.get(target) {
             Some(s) => s,
@@ -928,7 +934,7 @@ impl AISystem {
         let dx = target_sys.x as f64 - fleet_sys.x as f64;
         let dy = target_sys.y as f64 - fleet_sys.y as f64;
         let distance = (dx * dx + dy * dy).sqrt();
-        let proximity = 1.0 / (1.0 + distance / 100.0);
+        let proximity = 1.0 / (1.0 + distance / config.ai.proximity_divisor);
 
         // AUGMENTATION: Deconfliction — avoid piling multiple fleets on same target
         let pile_count = *targeted_counts.get(&target).unwrap_or(&0) as f64;
@@ -938,12 +944,15 @@ impl AISystem {
         let freshness = match battle_cooldowns.get(&target) {
             Some(&last_tick) => {
                 let elapsed = current_tick.saturating_sub(last_tick) as f64;
-                (elapsed / 100.0).min(1.0) // Full recovery after 100 ticks
+                (elapsed / config.ai.battle_cooldown_ticks).min(1.0)
             }
             None => 1.0,
         };
 
-        weakness * 0.30 + proximity * 0.30 + deconfliction * 0.25 + freshness * 0.15
+        weakness * config.ai.weight_weakness
+            + proximity * config.ai.weight_proximity
+            + deconfliction * config.ai.weight_deconfliction
+            + freshness * config.ai.weight_freshness
     }
 
     /// Two-pass fleet deployment — ports the original game's distributed targeting.
@@ -957,6 +966,7 @@ impl AISystem {
         movement: &crate::movement::MovementState,
         faction: AiFaction,
         current_tick: u64,
+        config: &GameConfig,
         actions: &mut Vec<AIAction>,
     ) {
         let is_alliance = matches!(faction, AiFaction::Alliance);
@@ -1046,7 +1056,7 @@ impl AISystem {
 
             // Per-fleet attack targeting: score all enemy systems, pick best.
             // Cap simultaneous attack fronts at min(fleet_count, 3).
-            let max_fronts = idle_fleets.len().min(3);
+            let max_fronts = idle_fleets.len().min(config.ai.max_attack_fronts);
             let distinct_targets = targeted_counts.values().filter(|&&v| v > 0).count();
 
             // Faction asymmetry: Empire biases toward enemy HQ.
@@ -1071,7 +1081,7 @@ impl AISystem {
                 .map(|&target| {
                     let score = Self::score_attack_target(
                         world, *fleet_location, target, is_alliance,
-                        &targeted_counts, &state.battle_cooldowns, current_tick,
+                        &targeted_counts, &state.battle_cooldowns, current_tick, config,
                     );
                     (target, score)
                 })
@@ -1128,6 +1138,7 @@ impl AISystem {
 mod tests {
     use super::*;
     use crate::ids::{DatId, SectorKey};
+    use crate::tuning::GameConfig;
     use crate::world::{
         Character, FighterClass, Fleet, ForceTier, GameWorld, Sector, SkillPair, System,
     };
@@ -1236,7 +1247,7 @@ mod tests {
     #[test]
     fn should_evaluate_at_tick_zero() {
         let state = AIState::new(AiFaction::Empire);
-        assert!(state.should_evaluate(0));
+        assert!(state.should_evaluate(0, AI_TICK_INTERVAL));
     }
 
     #[test]
@@ -1244,15 +1255,15 @@ mod tests {
         let mut state = AIState::new(AiFaction::Empire);
         state.last_eval_tick = 0;
         // 3 days elapsed — interval is 7
-        assert!(!state.should_evaluate(3));
+        assert!(!state.should_evaluate(3, AI_TICK_INTERVAL));
     }
 
     #[test]
     fn should_evaluate_after_interval() {
         let mut state = AIState::new(AiFaction::Empire);
         state.last_eval_tick = 0;
-        assert!(state.should_evaluate(7));
-        assert!(state.should_evaluate(14));
+        assert!(state.should_evaluate(7, AI_TICK_INTERVAL));
+        assert!(state.should_evaluate(14, AI_TICK_INTERVAL));
     }
 
     #[test]
@@ -1281,7 +1292,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[]);
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[], &GameConfig::default());
         assert!(actions.is_empty());
     }
 
@@ -1297,7 +1308,7 @@ mod tests {
         // 3 ticks elapsed since last eval (5+3=8... wait, current_tick = 8 > 5+7=12? No)
         // last_eval=5, current=8, diff=3 < 7 → should not evaluate
         let actions =
-            AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 8 }]);
+            AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 8 }], &GameConfig::default());
         assert!(actions.is_empty());
     }
 
@@ -1320,7 +1331,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let recruitment = actions.iter().find(|a| matches!(
             a,
@@ -1344,7 +1355,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let diplomacy = actions.iter().find(|a| matches!(
             a,
@@ -1367,7 +1378,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -1389,7 +1400,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -1452,7 +1463,7 @@ mod tests {
         let mfg = ManufacturingState::new(); // empty queue
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let has_fighter_enqueue = actions.iter().any(|a| matches!(
             a,
@@ -1491,7 +1502,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let fleet_move = actions.iter().find(|a| matches!(
             a,
@@ -1590,7 +1601,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let sabotage = actions.iter().find(|a| matches!(
             a,
@@ -1643,7 +1654,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let covert = actions.iter().filter(|a| matches!(
             a,
@@ -1690,7 +1701,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let intel = actions.iter().find(|a| matches!(
             a,
@@ -1748,7 +1759,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &ticks(7));
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
 
         let covert_count = actions.iter().filter(|a| matches!(
             a,
@@ -1779,16 +1790,16 @@ mod tests {
         let missions = MissionState::new();
 
         // First evaluation at tick 7
-        let _first = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 7 }]);
+        let _first = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 7 }], &GameConfig::default());
         assert_eq!(state.last_eval_tick, 7);
 
         // Tick 10 — only 3 days elapsed, should skip
-        let second = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 10 }]);
+        let second = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 10 }], &GameConfig::default());
         assert!(second.is_empty(), "expected no actions before interval elapses");
         assert_eq!(state.last_eval_tick, 7); // unchanged
 
         // Tick 14 — 7 days elapsed, should evaluate again
-        let third = AISystem::advance(&mut state, &world, &mfg, &missions, &rebellion_core::movement::MovementState::new(), &[TickEvent { tick: 14 }]);
+        let third = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 14 }], &GameConfig::default());
         assert_eq!(state.last_eval_tick, 14);
         let _ = third; // just checking it ran
     }

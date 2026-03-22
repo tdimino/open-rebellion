@@ -123,7 +123,7 @@ def mutate_config(config: dict) -> tuple[dict, str]:
     return new_config, desc
 
 
-def run_campaign(binary: Path, data_dir: Path, seed: int, ticks: int, output_path: Path) -> float:
+def run_campaign(binary: Path, data_dir: Path, seed: int, ticks: int, output_path: Path, config_path: Path | None = None) -> float:
     """Run a single headless campaign and return wall time in seconds."""
     cmd = [
         str(binary),
@@ -133,6 +133,8 @@ def run_campaign(binary: Path, data_dir: Path, seed: int, ticks: int, output_pat
         "--dual-ai",
         "--output", str(output_path),
     ]
+    if config_path:
+        cmd.extend(["--config", str(config_path)])
     env = dict(os.environ)
     env["PATH"] = f"/usr/bin:{env.get('PATH', '')}"
 
@@ -223,10 +225,19 @@ def main():
     print(f"BASELINE: {len(args.seeds)} seeds × {args.ticks} ticks")
     print(f"{'='*60}")
 
+    # Write the flattened config for the binary to consume
+    def write_config(cfg: dict, path: Path):
+        """Write flattened config (values only) to JSON for rebellion-playtest --config."""
+        with open(path, "w") as f:
+            json.dump(flatten_config(cfg), f, indent=2)
+
+    baseline_config_path = output_dir / "baseline_config.json"
+    write_config(config, baseline_config_path)
+
     baseline_results = []
     for seed in args.seeds:
         jsonl_path = output_dir / f"baseline-seed{seed}.jsonl"
-        elapsed = run_campaign(binary, DATA_DIR, seed, args.ticks, jsonl_path)
+        elapsed = run_campaign(binary, DATA_DIR, seed, args.ticks, jsonl_path, baseline_config_path)
         result = evaluate_campaign(jsonl_path)
         result["seed"] = seed
         result["elapsed"] = round(elapsed, 2)
@@ -258,11 +269,15 @@ def main():
         iter_dir = output_dir / f"iter-{iteration:03d}"
         iter_dir.mkdir(exist_ok=True)
 
+        # Write candidate config for the binary
+        candidate_config_path = iter_dir / "config.json"
+        write_config(candidate_config, candidate_config_path)
+
         candidate_results = []
         total_elapsed = 0.0
         for seed in args.seeds:
             jsonl_path = iter_dir / f"seed{seed}.jsonl"
-            elapsed = run_campaign(binary, DATA_DIR, seed, args.ticks, jsonl_path)
+            elapsed = run_campaign(binary, DATA_DIR, seed, args.ticks, jsonl_path, candidate_config_path)
             total_elapsed += elapsed
             result = evaluate_campaign(jsonl_path)
             result["seed"] = seed
@@ -331,10 +346,17 @@ def main():
         json.dump(incumbent_config, f, indent=2)
     print(f"Best config:  {final_path}")
 
+    # Save flattened config (values only) for rebellion-playtest --config
+    flat_path = output_dir / "final_game_config.json"
+    write_config(incumbent_config, flat_path)
+    print(f"Game config:  {flat_path}")
+
     # Also copy to project configs dir
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     shutil.copy(final_path, CONFIG_DIR / "best.json")
+    shutil.copy(flat_path, CONFIG_DIR / "best_game_config.json")
     print(f"Copied to:    {CONFIG_DIR / 'best.json'}")
+    print(f"              {CONFIG_DIR / 'best_game_config.json'}")
 
 
 if __name__ == "__main__":

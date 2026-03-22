@@ -97,10 +97,10 @@ Order matters: manufacturing needs blockade set from prior tick; combat needs fl
 The effect-application logic is extracted into `rebellion-data/src/simulation.rs`:
 
 ```rust
-pub fn run_simulation_tick(world, states, tick_events, rolls, wall_ms) -> Vec<GameEventRecord>
+pub fn run_simulation_tick(world, states, tick_events, rolls, wall_ms, config) -> Vec<GameEventRecord>
 ```
 
-Both the interactive binary (`rebellion-app`) and the headless binary (`rebellion-playtest`) call this function. `SimulationStates` bundles all 15 state types + combat cooldowns. `GameEventRecord` (in `rebellion-core/src/game_events.rs`) is the structured telemetry type — pure data, no IO.
+Both the interactive binary (`rebellion-app`) and the headless binary (`rebellion-playtest`) call this function. `SimulationStates` bundles all 15 state types + combat cooldowns. `GameEventRecord` (in `rebellion-core/src/game_events.rs`) is the structured telemetry type — pure data, no IO. The `config` parameter (`&GameConfig` from `tuning.rs`) controls all tunable AI, movement, and production parameters — the interactive app uses defaults, the playtest binary accepts `--config <path>` for autoresearch.
 
 ## State Ownership
 

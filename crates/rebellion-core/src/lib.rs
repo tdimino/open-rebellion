@@ -17,6 +17,7 @@ pub mod movement;
 pub mod research;
 pub mod story_events;
 pub mod tick;
+pub mod tuning;
 pub mod uprising;
 pub mod victory;
 pub mod world;

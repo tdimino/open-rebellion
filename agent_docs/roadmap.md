@@ -174,14 +174,15 @@ Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems
 
 ## Roadmap: AI Parity Completion (v0.14.0)
 
-### Phase A: Config Externalization
-*Unblocks autoresearch. ~150 LOC.*
+### Phase A: Config Externalization — COMPLETE
+*Unblocks autoresearch. ~160 LOC.*
 
-- [ ] Create `crates/rebellion-core/src/tuning.rs` with `AiConfig` struct
-- [ ] Externalize: AI_TICK_INTERVAL, DISTANCE_SCALE, MIN_TRANSIT_TICKS, all skill thresholds
-- [ ] Add `--config <path>` to playtest binary
-- [ ] Default config at `configs/autoresearch/default.json`
-- [ ] Parity/augmentation split flags
+- [x] Created `crates/rebellion-core/src/tuning.rs` — `GameConfig` with 4 sub-configs (`AiConfig`, `MovementConfig`, `ProductionConfig`, `ScoringConfig`), 16 tunable parameters
+- [x] Externalized all AI/movement/production constants — threaded `&GameConfig` through `AISystem::advance()`, `score_attack_target()`, `fleet_transit_ticks_with_config()`
+- [x] Added `--config <path>` to playtest binary (JSON with `#[serde(default)]`)
+- [x] Default config at `configs/autoresearch/default.json`
+- [x] Parity/augmentation split documented per-field in tuning.rs
+- [x] Updated `autoresearch_loop.py` to write and pass config files
 
 ### Phase B: Research Dispatch (P0 Gap #1)
 *AI tech tree progression. ~80 LOC.*

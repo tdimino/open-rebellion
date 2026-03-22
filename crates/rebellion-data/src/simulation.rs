@@ -146,6 +146,7 @@ pub fn run_simulation_tick(
     tick_events: &[TickEvent],
     rolls: &[f64],
     wall_ms: u64,
+    config: &rebellion_core::tuning::GameConfig,
 ) -> Vec<GameEventRecord> {
     if tick_events.is_empty() {
         return Vec::new();
@@ -433,6 +434,7 @@ pub fn run_simulation_tick(
         &states.missions,
         &states.movement,
         tick_events,
+        config,
     );
     let ai_rolls = take_rolls(8);
     apply_ai_actions_to_world(
@@ -444,6 +446,7 @@ pub fn run_simulation_tick(
         &mut states.movement,
         world,
         current_tick,
+        config,
     );
     for action in &ai_actions {
         events.push(GameEventRecord::new(
@@ -464,6 +467,7 @@ pub fn run_simulation_tick(
             &states.missions,
             &states.movement,
             tick_events,
+            config,
         );
         let ai2_rolls = take_rolls(8);
         apply_ai_actions_to_world(
@@ -475,6 +479,7 @@ pub fn run_simulation_tick(
             &mut states.movement,
             world,
             current_tick,
+            config,
         );
         for action in &ai2_actions {
             let mut payload = ai_action_json(action, world);
@@ -1088,6 +1093,7 @@ fn apply_ai_actions_to_world(
     movement_state: &mut MovementState,
     world: &GameWorld,
     _tick: u64,
+    config: &rebellion_core::tuning::GameConfig,
 ) {
     // Derive faction from the AIState rather than hardcoding Empire.
     let mission_faction = ai_state
@@ -1134,7 +1140,12 @@ fn apply_ai_actions_to_world(
                 if !already_moving {
                     if let Some(f) = world.fleets.get(*fleet) {
                         let transit =
-                            rebellion_core::movement::fleet_transit_ticks(f, world, f.location, *to_system);
+                            rebellion_core::movement::fleet_transit_ticks_with_config(
+                                f, world, f.location, *to_system,
+                                config.movement.distance_scale,
+                                config.movement.min_transit_ticks,
+                                config.movement.default_fighter_hyperdrive,
+                            );
                         movement_state.order(*fleet, f.location, *to_system, transit);
                     }
                 }
@@ -1522,7 +1533,7 @@ mod tests {
             combat_cooldowns: HashMap::new(),
         };
 
-        let result = run_simulation_tick(&mut world, &mut states, &[], &[], 0);
+        let result = run_simulation_tick(&mut world, &mut states, &[], &[], 0, &rebellion_core::tuning::GameConfig::default());
         assert!(result.is_empty());
     }
 }

@@ -75,6 +75,11 @@ struct Args {
     /// Incompatible with --repl and --exec. Progress/summary goes to stderr.
     #[arg(long, conflicts_with_all = ["repl", "exec"])]
     jsonl: bool,
+
+    /// Path to a JSON game config file (tuning parameters for AI, movement, production).
+    /// If omitted, uses built-in defaults.
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 /// Dispatch a single command against the current world/simulation state.
@@ -87,6 +92,7 @@ fn dispatch_command(
     logger: &mut EventLogger,
     start: &std::time::Instant,
     ai_faction: AiFaction,
+    game_config: &rebellion_core::tuning::GameConfig,
 ) -> String {
     match cmd {
         "show_game_stats" => {
@@ -152,7 +158,7 @@ fn dispatch_command(
                 let tick_events = vec![rebellion_core::tick::TickEvent { tick: t }];
                 let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
                 let wall_ms = start.elapsed().as_millis() as u64;
-                let evts = run_simulation_tick(world, states, &tick_events, &rolls, wall_ms);
+                let evts = run_simulation_tick(world, states, &tick_events, &rolls, wall_ms, &game_config);
                 logger.extend(evts);
             }
             format!("Advanced {} ticks ({} events)", n, logger.len())
@@ -211,6 +217,19 @@ fn main() -> anyhow::Result<()> {
     // Initialize RNG
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(args.seed);
     eprintln!("Seed: {}", args.seed);
+
+    // Load game config (tuning parameters for AI, movement, production)
+    let game_config: rebellion_core::tuning::GameConfig = if let Some(ref path) = args.config {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read config {}: {}", path.display(), e))?;
+        serde_json::from_str(&text)
+            .map_err(|e| anyhow::anyhow!("Failed to parse config {}: {}", path.display(), e))?
+    } else {
+        rebellion_core::tuning::GameConfig::default()
+    };
+    if args.config.is_some() {
+        eprintln!("Config: {}", args.config.as_ref().unwrap().display());
+    }
 
     // Determine AI faction
     let ai_faction = if args.ai_faction.to_lowercase() == "alliance" {
@@ -291,7 +310,7 @@ fn main() -> anyhow::Result<()> {
 
     // Handle --exec: dispatch single command and exit
     if let Some(ref cmd) = args.exec {
-        let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction);
+        let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction, &game_config);
         println!("{}", output);
         return Ok(());
     }
@@ -332,7 +351,7 @@ fn main() -> anyhow::Result<()> {
                     let tick_events = vec![rebellion_core::tick::TickEvent { tick: tick_counter }];
                     let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
                     let wall_ms = start.elapsed().as_millis() as u64;
-                    let evts = run_simulation_tick(&mut world, &mut states, &tick_events, &rolls, wall_ms);
+                    let evts = run_simulation_tick(&mut world, &mut states, &tick_events, &rolls, wall_ms, &game_config);
                     logger.extend(evts);
                 }
                 let new_events = logger.len() - pre_count;
@@ -405,7 +424,7 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", json);
                 continue;
             }
-            let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction);
+            let output = dispatch_command(cmd, &mut world, &mut states, &mut rng, &mut logger, &start, ai_faction, &game_config);
             let json = serde_json::json!({
                 "command": cmd,
                 "tick": tick_counter,
@@ -429,7 +448,7 @@ fn main() -> anyhow::Result<()> {
         let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
 
         // Run shared simulation tick
-        let events = run_simulation_tick(&mut world, &mut states, &tick_events, &rolls, wall_ms);
+        let events = run_simulation_tick(&mut world, &mut states, &tick_events, &rolls, wall_ms, &game_config);
         if args.jsonl {
             for event in &events {
                 println!("{}", serde_json::to_string(event).unwrap_or_default());

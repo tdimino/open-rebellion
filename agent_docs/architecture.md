@@ -41,8 +41,9 @@ crates/rebellion-core/src/
 ├── manufacturing.rs  — ProductionQueue, ManufacturingState, blockade-aware advance (520 LOC, 13 tests)
 ├── missions.rs       — 9 mission types, MSTB probability tables, 6 MissionEffect variants (880 LOC, 14 tests)
 ├── events.rs         — EventCondition/Action, chaining, deterministic rng (728 LOC, 17 tests)
-├── ai.rs             — AISystem, per-fleet targeting, deconfliction, two-pass deployment, battle penalty (1121 LOC, 13 tests)
-├── movement.rs       — MovementOrder, Euclidean distance-based transit (625 LOC, 19 tests)
+├── ai.rs             — AISystem, per-fleet targeting, deconfliction, two-pass deployment, battle penalty, config-driven (1121 LOC, 13 tests)
+├── tuning.rs         — GameConfig: 16 externalized AI/movement/production parameters, parity/augmentation tagged (~160 LOC)
+├── movement.rs       — MovementOrder, Euclidean distance-based transit, config-aware variant (625 LOC, 19 tests)
 ├── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
 ├── combat.rs         — Space combat 7-phase pipeline, ground combat, CombatPhaseFlags
 ├── bombardment.rs    — Orbital bombardment: Euclidean distance / GNPRTB[0x1400]
