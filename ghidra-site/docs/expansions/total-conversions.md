@@ -1,0 +1,122 @@
+# Total Conversions & Era Expansions
+
+Open Rebellion's mod system supports total conversions — complete replacements of factions, units, characters, and star systems. The Ghidra RE work mapped every moddable parameter in the original engine, and our mod loader uses RFC 7396 JSON Merge Patch for clean, composable overrides.
+
+These are the eras and expansions we're designing toward.
+
+---
+
+## New Jedi Order (1998–2003)
+
+<div style="text-align:center; margin: 1em 0;">
+  <img src="../assets/new-jedi-order.png" alt="Jedi Order" width="60">
+</div>
+
+The Yuuzhan Vong invasion — the defining crisis of the post-Endor Expanded Universe. 19 novels, from *Vector Prime* (1999) to *The Unifying Force* (2003).
+
+**Concept**: Replace the Empire with the Yuuzhan Vong Warmaster's forces. The Alliance becomes the New Republic / Galactic Alliance. Entirely new unit rosters — coralskippers replace TIE Fighters, worldships replace Star Destroyers, shapers replace engineers.
+
+**What changes**:
+
+- **Factions**: New Republic vs. Yuuzhan Vong (replacing Alliance vs. Empire)
+- **Units**: Organic biotech fleet (coralskippers, yorik-et, Kor Chokk grand cruisers) vs. New Republic ships (E-wings, Viscount-class Star Defenders)
+- **Characters**: Jacen Solo, Jaina Solo, Anakin Solo, Tsavong Lah, Nom Anor, Vergere, Warmaster Nas Choka
+- **Systems**: Helska IV, Myrkr, Zonama Sekot, Coruscant (occupied → Yuuzhan'tar)
+- **Mechanics**: Vong immune to Force detection, dovin basals instead of shields, villip communication instead of HoloNet
+
+**Reference material**: See [Vong Total Conversion scope](https://github.com/tdimino/open-rebellion/blob/main/docs/vong-total-conversion.md) and the [NJO asset references](https://github.com/tdimino/open-rebellion/tree/main/assets/references/njo-total-conversion).
+
+---
+
+## Knights of the Old Republic (3,956 BBY)
+
+<div style="text-align:center; margin: 1em 0;">
+  <img src="../assets/kotor-era.png" alt="Old Republic" width="60">
+</div>
+
+Four thousand years before the Battle of Yavin. The Jedi Civil War between the Sith Empire under Darth Malak and the Galactic Republic. Based on BioWare's KOTOR (2003) and Obsidian's KOTOR II (2004).
+
+**Concept**: Replace both factions with Old Republic era equivalents. The galaxy map shifts to focus on Sith-controlled space (Korriban, Lehon, Malachor V) vs. Republic strongholds (Coruscant, Dantooine, Telos).
+
+**What changes**:
+
+- **Factions**: Galactic Republic vs. Sith Empire
+- **Units**: Hammerhead cruisers, Foray-class blockade runners vs. Interdictor-class cruisers, Sith fighters
+- **Characters**: Revan, Bastila Shan, Carth Onasi, Darth Malak, Canderous Ordo, Jolee Bindo
+- **Systems**: Dantooine, Kashyyyk, Manaan, Korriban, Lehon (Rakata Prime)
+- **Mechanics**: Star Forge as Death Star equivalent (infinite production while active), Force bonds, Mandalorian mercenary fleets
+
+---
+
+## Expanded Universe Elements
+
+<div style="text-align:center; margin: 1em 0;">
+  <img src="../assets/expanded-universe.png" alt="Expanded Universe" width="50" style="margin: 0 8px;">
+  <img src="../assets/legends-badge.png" alt="Legends" width="50" style="margin: 0 8px;">
+  <img src="../assets/lucasarts-logo.png" alt="LucasArts" width="50" style="margin: 0 8px;">
+</div>
+
+Not full conversions — these are expansions that enrich the base Galactic Civil War era with content from the broader Expanded Universe.
+
+### Thrawn's Revenge
+
+Grand Admiral Thrawn's campaign from Timothy Zahn's Heir to the Empire trilogy (1991–1993). Adds the post-Endor timeline: Thrawn's return, the clone facilities on Wayland, Mara Jade's journey, the Noghri, and the Katana fleet.
+
+- New characters: Mara Jade, Talon Karrde, Gilad Pellaeon, Joruus C'baoth
+- New units: Dreadnaught-class (Katana fleet), Missile Boats, Lancer-class frigates
+- New systems: Wayland, Myrkr, Nirauan
+- New mechanics: Ysalamiri (Force-nullification zones), cloaking devices
+
+### Shadows of the Empire
+
+The multimedia project bridging Empire Strikes Back and Return of the Jedi. Prince Xizor's Black Sun criminal empire as a third faction.
+
+- New faction: Black Sun (neutral/hostile to both)
+- New characters: Prince Xizor, Guri, Dash Rendar
+- New units: Virago (StarViper assault platform), Outrider
+- New systems: Ord Mantell (criminal hub)
+
+### Dark Empire
+
+Luke Skywalker's fall to the dark side and the Emperor reborn. The Galaxy Gun and World Devastators as superweapons.
+
+- New superweapons: Galaxy Gun, World Devastators
+- New units: E-wings, V-wings, Shadow Droids
+- Cloned Emperor mechanics: Emperor returns after death (limited uses)
+
+---
+
+## Modding Architecture
+
+Total conversions use the same mod system as balance patches — TOML manifests with JSON Merge Patch overrides. The key difference is scale: a TC replaces most entity definitions rather than tweaking a few values.
+
+```toml
+# mod.toml for a total conversion
+[mod]
+name = "New Jedi Order"
+version = "1.0.0"
+description = "Yuuzhan Vong invasion — replaces Empire with extragalactic invaders"
+author = "Open Rebellion Community"
+min_game_version = "0.15.0"
+
+[patches]
+characters = "patches/characters.json"
+capital_ships = "patches/capital_ships.json"
+fighters = "patches/fighters.json"
+systems = "patches/systems.json"
+```
+
+See the [modding guide](https://github.com/tdimino/open-rebellion/blob/main/agent_docs/modding.md) for the full mod loader specification.
+
+---
+
+## Status
+
+| Expansion | Status | Blocking On |
+|-----------|--------|-------------|
+| Homeworld Expansion | **Planned** (v0.15.0) | Character creation UI |
+| NJO Total Conversion | Design phase | Entity addition in mods, asset pipeline |
+| KOTOR Total Conversion | Concept | NJO TC completion (proves the pipeline) |
+| Thrawn's Revenge | Concept | Expanded Galaxy addon |
+| Shadows of the Empire | Concept | Third-faction support |
+| Dark Empire | Concept | Superweapon system generalization |

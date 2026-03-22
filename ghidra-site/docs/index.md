@@ -123,7 +123,7 @@ ghidra/
 2. Open project: `Open Rebellion Ghidra.gpr`
 3. Double-click REBEXE.EXE in Program Trees
 4. Navigate to function: Go → Address → `0x00519d00`
-5. GhidraMCP plugin: `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"`
+5. [GhidraMCP](https://github.com/LaurieWired/GhidraMCP) plugin (LaurieWired v11.3.2): `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"`
 6. Jython scripts: Window → Jython → `exec(open("path/to/script.py").read())`
 
 ## Relationship to Open Rebellion

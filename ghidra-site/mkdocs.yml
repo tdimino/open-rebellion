@@ -68,6 +68,10 @@ nav:
     - Bombardment Formula: combat/bombardment.md
     - Combat Formulas: combat/combat-formulas.md
     - Combat Summary: combat/COMBAT-SUMMARY.md
+  - Setup & Workflow: setup.md
+  - Expansions:
+    - Homeworld Expansion: expansions/homeworld.md
+    - Total Conversions & Eras: expansions/total-conversions.md
   - Indexes:
     - Function Index (5,127): indexes/function-index.md
     - Notes Index: indexes/notes-index.md
