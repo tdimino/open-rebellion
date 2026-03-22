@@ -552,6 +552,8 @@ pub fn run_simulation_tick(
                 ));
             }
             UprisingEvent::UprisingBegan { system, tick } => {
+                // Capture before state for control_changed event
+                let before = world.systems.get(*system).map(|s| s.control);
                 // Flip controlling faction
                 if let Some(sys) = world.systems.get_mut(*system) {
                     sys.control = match sys.control {
@@ -563,6 +565,22 @@ pub fn run_simulation_tick(
                         }
                         other => other,
                     };
+                }
+                // Emit control_changed event
+                let after = world.systems.get(*system).map(|s| s.control);
+                if before != after {
+                    events.push(GameEventRecord::new(
+                        *tick,
+                        wall_ms,
+                        SYS_UPRISING,
+                        EVT_CONTROL_CHANGED,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "from": format!("{:?}", before),
+                            "to": format!("{:?}", after),
+                            "cause": "uprising",
+                        }),
+                    ));
                 }
                 events.push(GameEventRecord::new(
                     *tick,
@@ -733,6 +751,36 @@ pub fn run_simulation_tick(
             SYS_VICTORY,
             EVT_VICTORY,
             serde_json::json!({ "outcome": format!("{:?}", outcome) }),
+        ));
+    }
+
+    // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────
+    if current_tick % 250 == 0 && current_tick > 0 {
+        let mut alliance_systems = 0u32;
+        let mut empire_systems = 0u32;
+        let mut neutral_systems = 0u32;
+        for (_, sys) in world.systems.iter() {
+            match sys.control {
+                ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => alliance_systems += 1,
+                ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => empire_systems += 1,
+                _ => neutral_systems += 1,
+            }
+        }
+        let fleet_count = world.fleets.len() as u32;
+        let in_transit = states.movement.len() as u32;
+        events.push(GameEventRecord::new(
+            current_tick,
+            wall_ms,
+            "snapshot",
+            EVT_CAMPAIGN_SNAPSHOT,
+            serde_json::json!({
+                "tick": current_tick,
+                "alliance_systems": alliance_systems,
+                "empire_systems": empire_systems,
+                "neutral_systems": neutral_systems,
+                "fleets": fleet_count,
+                "in_transit": in_transit,
+            }),
         ));
     }
 
