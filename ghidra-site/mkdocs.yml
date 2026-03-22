@@ -1,0 +1,73 @@
+site_name: "Open Rebellion — Ghidra RE"
+site_description: "Reverse engineering documentation for Star Wars Rebellion (1998, LucasArts)"
+site_url: "https://tdimino.github.io/open-rebellion/"
+repo_url: "https://github.com/tdimino/open-rebellion"
+repo_name: "tdimino/open-rebellion"
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: amber
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+    - scheme: default
+      primary: amber
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - admonition
+  - toc:
+      permalink: true
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Scholar Documents:
+    - Annotated Functions: scholar/annotated-functions.md
+    - C++ Class Hierarchy: scholar/cpp-class-hierarchy.md
+    - Entity System: scholar/entity-system.md
+    - Economy Systems: scholar/economy-systems.md
+    - Mission & Event Cookbook: scholar/mission-event-cookbook.md
+    - Modders Taxonomy: scholar/modders-taxonomy.md
+    - Rust Implementation Guide: scholar/rust-implementation-guide.md
+    - AI Behavior Analysis: scholar/ai-behavior-analysis.md
+  - Combat:
+    - Space Combat Pipeline: combat/space-combat.md
+    - Ground Combat: combat/ground-combat.md
+    - Bombardment Formula: combat/bombardment.md
+    - Combat Formulas: combat/combat-formulas.md
+    - Combat Summary: combat/COMBAT-SUMMARY.md
+  - Indexes:
+    - Function Index (5,127): indexes/function-index.md
+    - Notes Index: indexes/notes-index.md

@@ -1,0 +1,8 @@
+/* Theme-aware Tanit logo */
+.tanit-logo .light-only { display: none; }
+.tanit-logo .dark-only { display: inline; }
+
+[data-md-color-scheme="default"] .tanit-logo .light-only { display: inline; }
+[data-md-color-scheme="default"] .tanit-logo .dark-only { display: none; }
+[data-md-color-scheme="slate"] .tanit-logo .light-only { display: none; }
+[data-md-color-scheme="slate"] .tanit-logo .dark-only { display: inline; }
