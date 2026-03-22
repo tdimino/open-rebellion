@@ -1,12 +1,12 @@
 ---
-title: "REBEXE.EXE — Entity System Reference"
+title: "REBEXE.EXE—Entity System Reference"
 description: "Entity system architecture from Ghidra decompilation with cross-references"
 category: "ghidra"
 created: 2026-03-13
 updated: 2026-03-16
 ---
 
-# REBEXE.EXE — Entity System Reference
+# REBEXE.EXE—Entity System Reference
 
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).
 Cross-referenced with: cpp-class-hierarchy.md, annotated-functions.md, modders-taxonomy.md, combat-formulas.md.
@@ -29,7 +29,7 @@ These functions validate, write the field, dispatch bilateral observer notificat
 vtable change-event. They use `FUN_0053a000` (strict validity guard) followed by `FUN_0053fc90`
 (range check) before touching any field.
 
-#### EnhancedLoyalty — `FUN_004ee030`
+#### EnhancedLoyalty—`FUN_004ee030`
 
 | Property | Value |
 |----------|-------|
@@ -44,7 +44,7 @@ vtable change-event. They use `FUN_0053a000` (strict validity guard) followed by
 
 This is the **mission-bonus loyalty** field, distinct from the base loyalty at `+0x66`. The
 secondary `0x7fff` clamp guards against short overflow. Vtable slot `+0x318` differs from base
-loyalty's `+0x238` — they are separate event channels.
+loyalty's `+0x238`—they are separate event channels.
 
 ```c
 int set_enhanced_loyalty(void* character, int new_loyalty, void* context) {
@@ -62,7 +62,7 @@ int set_enhanced_loyalty(void* character, int new_loyalty, void* context) {
 }
 ```
 
-#### RegimentStrength — `FUN_004ee350`
+#### RegimentStrength—`FUN_004ee350`
 
 | Property | Value |
 |----------|-------|
@@ -73,13 +73,13 @@ int set_enhanced_loyalty(void* character, int new_loyalty, void* context) {
 | Vtable event | `+0x330` `NotifyCombatStrengthChanged(old, new, ctx)` |
 | Observer dispatch | `FUN_004f04f0` (bilateral) |
 | Validity guard | `FUN_0053a000` |
-| Range check | `FUN_0053fc90(value, 0, value)` — non-negative only, no upper bound |
+| Range check | `FUN_0053fc90(value, 0, value)`—non-negative only, no upper bound |
 
 Ground combat damage primitive. Every troop hit passes through here. Setting strength to 0
 destroys the unit. The range check `FUN_0053fc90(param_1, 0, param_1)` is a non-negative gate
-only — the upper bound is the caller's responsibility.
+only—the upper bound is the caller's responsibility.
 
-#### HyperdriveModifier — `FUN_004ee470`
+#### HyperdriveModifier—`FUN_004ee470`
 
 | Property | Value |
 |----------|-------|
@@ -90,17 +90,17 @@ only — the upper bound is the caller's responsibility.
 | Vtable event | `+0x338` `NotifyHyperdriveChanged(old, new, ctx)` |
 | Observer dispatch | `FUN_004f0610` (bilateral) |
 | Validity guard | `FUN_0053a000` |
-| Range check | `FUN_0053fc90(value, 0, value)` — non-negative only |
+| Range check | `FUN_0053fc90(value, 0, value)`—non-negative only |
 
 The Han Solo speed bonus. Applied when calculating `ticks_per_hop` in the movement system. Short
-storage at `+0x9a` gives a max of 32767 — effectively unbounded for gameplay purposes. The
+storage at `+0x9a` gives a max of 32767—effectively unbounded for gameplay purposes. The
 `MissionHyperdriveModifierNotif` notification string is the game's canonical name for this effect.
 
 **Cross-reference (`rebellion-core/src/movement.rs`)**: When building `ticks_per_hop`, check
 `character.hyperdrive_modifier` (field `+0x9a`) for any character assigned as admiral. Subtract
 from the base hop duration.
 
-#### BaseLoyalty — `FUN_005341a0`
+#### BaseLoyalty—`FUN_005341a0`
 
 | Property | Value |
 |----------|-------|
@@ -116,14 +116,14 @@ Base loyalty drives diplomacy missions, betrayal mechanics, and system control s
 distinct loyalty fields exist:
 
 ```
-+0x66  base_loyalty       — FUN_005341a0, vtable +0x238
-+0x8a  enhanced_loyalty   — FUN_004ee030, vtable +0x318
++0x66  base_loyalty      —FUN_005341a0, vtable +0x238
++0x8a  enhanced_loyalty  —FUN_004ee030, vtable +0x318
 ```
 
 **Betrayal mechanic**: The `not betray` string at `0x006ab3dc` confirms a betrayal check function.
 The `is_unable_to_betray` flag in MJCHARSD.DAT / MNCHARSD.DAT is the DAT-layer gate for major
 characters (Luke, Vader cannot switch sides). `FUN_005341a0` is the code-layer entry point for
-loyalty changes that could trigger betrayal — any loyalty drop below a threshold (presumably
+loyalty changes that could trigger betrayal—any loyalty drop below a threshold (presumably
 from the UPRIS1TB.DAT / UPRIS2TB.DAT tables) invokes the betrayal check path.
 
 ---
@@ -149,7 +149,7 @@ int skill_notif(void* character, undefined4 new_val, undefined4 old_val, int ctx
 | `FUN_004f1c00` | `CharacterEnhancedDiplomacyNotif` | `EnhancedDiplomacy` | `0x006a88e0` |
 | `FUN_004f1c40` | `CharacterEnhancedEspionageNotif` | `EnhancedEspionage` | `0x006a8918` |
 | `FUN_004f1d40` | `CharacterEnhancedCombatNotif` | `EnhancedCombat` | `0x006a8a10` |
-| `FUN_004ee030` | `CharacterEnhancedLoyaltyNotif` | `EnhancedLoyalty` | (field writer — §1.1) |
+| `FUN_004ee030` | `CharacterEnhancedLoyaltyNotif` | `EnhancedLoyalty` | (field writer—§1.1) |
 | `FUN_004f2000` | `MissionHyperdriveModifierNotif` | `MissionHyperdriveModifier` | `0x006a8ba8` |
 
 **Note**: EnhancedShipDesign, EnhancedTroopTraining, EnhancedFacilityDesign, and
@@ -162,18 +162,18 @@ range) but have not been individually decompiled. They follow the same `FUN_004f
 ### 1.3 Force / Jedi System
 
 All Force-related dispatchers use `FUN_0053a010` (notification path). None of them write fields
-directly — the actual Force value modification happens upstream (in the Jedi training mission
+directly—the actual Force value modification happens upstream (in the Jedi training mission
 manager). The dispatchers are the observer-broadcast step.
 
 | Address | Size | Notif String | Event Name | Event ID |
 |---------|------|-------------|------------|----------|
 | `FUN_004f1e00` | 73 | `CharacterForceNotif` | `Force` | `0x1e1` (481) |
-| `FUN_004f1e50` | 73 | `CharacterForceExperienceNotif` | `ForceExperience` | — |
+| `FUN_004f1e50` | 73 | `CharacterForceExperienceNotif` | `ForceExperience` |—|
 | `FUN_004f1ea0` | 73 | `CharacterForceTrainingNotif` | `ForceTraining` | `0x1e5` (485) |
 | `FUN_004f20e0` | 73 | `CharacterForceUserDiscoveredKeyNotif` | `ForceUserDiscovered` | `0x362` (866) |
-| `FUN_004f2240` | 51 | `CharacterForceAwareNotif` | `ForceAware` | — |
-| `FUN_004f2280` | 51 | `CharacterForcePotentialNotif` | `ForcePotential` | — |
-| `FUN_004f2300` | 51 | `CharacterDiscoveringForceUserNotif` | (see binary) | — |
+| `FUN_004f2240` | 51 | `CharacterForceAwareNotif` | `ForceAware` |—|
+| `FUN_004f2280` | 51 | `CharacterForcePotentialNotif` | `ForcePotential` |—|
+| `FUN_004f2300` | 51 | `CharacterDiscoveringForceUserNotif` | (see binary) |—|
 
 **ForceUserDiscovered** (`FUN_004f20e0`) is special: it dispatches via `FUN_004f8aa0` (two
 entity-ref params) and registers event `0x362`. This is the entry point for the "Jedi discovered
@@ -219,10 +219,10 @@ status is. All use `FUN_0053a010` and `FUN_004f8880` (single entity-param patter
 | `FUN_00536880` | `RoleMissionSeedKeyNotif` | `MissionSeed` | Starting mission (game initialization) |
 
 `OnHiddenMission` marks missions invisible to the opposing side's intelligence. The `OnMandatory`
-flag is set by story events and prevents player reassignment — Luke's training on Dagobah is
+flag is set by story events and prevents player reassignment—Luke's training on Dagobah is
 the canonical example.
 
-**Base skill role notifications** (from the `0x005366xx` range — confirmed in binary):
+**Base skill role notifications** (from the `0x005366xx` range—confirmed in binary):
 
 | Address | Notif String | Event Name |
 |---------|-------------|------------|
@@ -253,21 +253,21 @@ CRebObject (base)
   Virtual: GetFamilyId(), GetSideKey(), IsActive(), CanBombard()
 
 └── CNotifyObject
-      +0x2c  void*  combat_data_ptr    — associated combat data block
-      +0x24  uint   difficulty_packed  — bits 4-5 = difficulty level 0-3
-      +0x4c  uint   detection_pending  — Jedi detection flag
-      +0x50  uint   status_flags       — bit0=active, bit3=fighter_eligible, bit12=special_disabled
-      +0x58  uint   combat_phase_flags — space combat phase state machine
+      +0x2c  void*  combat_data_ptr   —associated combat data block
+      +0x24  uint   difficulty_packed —bits 4-5 = difficulty level 0-3
+      +0x4c  uint   detection_pending —Jedi detection flag
+      +0x50  uint   status_flags      —bit0=active, bit3=fighter_eligible, bit12=special_disabled
+      +0x58  uint   combat_phase_flags—space combat phase state machine
       +0x60  int    hull_current / squad_size_current  (polymorphic by type)
       +0x64  uint   shield_weapon_packed
       +0x66  short  loyalty_base        (CCharacter only)
-      +0x78  byte   capability_flags   — bit4=special_victory, bit6=disabled_a, bit7=alt_shield
+      +0x78  byte   capability_flags  —bit4=special_victory, bit6=disabled_a, bit7=alt_shield
       +0x8a  short  enhanced_loyalty    (CCharacter only)
       +0x8c  short  force_potential_raw (CCharacter only)
       +0x96  short  regiment_strength   (CTroopRegiment / CCombatUnit)
       +0x9a  short  hyperdrive_mod      (CCharacter only)
-      +0xac  byte   alive_flag          — bit0=alive/combat-eligible
-      +0xb0  byte   combat_ready_flags  — bit1=combat_ready_for_fleet_eval
+      +0xac  byte   alive_flag         —bit0=alive/combat-eligible
+      +0xb0  byte   combat_ready_flags —bit1=combat_ready_for_fleet_eval
 ```
 
 ### 2.2 Common Notification Pattern
@@ -275,12 +275,12 @@ CRebObject (base)
 Every field mutation follows this exact chain. The pattern is consistent across all 4,900
 decompiled functions with no documented exceptions.
 
-**Step 1**: `FUN_0053a000(this)` — strict entity validity check. Returns 0 if dead/invalid.
+**Step 1**: `FUN_0053a000(this)`—strict entity validity check. Returns 0 if dead/invalid.
 Used by setter functions that write fields.
 
-**Step 2**: `FUN_0053fc90(value, min, max)` — range validate. Returns 0 if out of [min, max].
+**Step 2**: `FUN_0053fc90(value, min, max)`—range validate. Returns 0 if out of [min, max].
 
-**Step 3**: `FUN_0053e0f0(value, min, 0x7fff)` — secondary short-storage clamp (loyalty fields
+**Step 3**: `FUN_0053e0f0(value, min, 0x7fff)`—secondary short-storage clamp (loyalty fields
 only). Belt-and-suspenders guard against short overflow.
 
 **Step 4**: Read old value, write new value to field. Early-exit if `old == new`.
@@ -289,17 +289,17 @@ only). Belt-and-suspenders guard against short overflow.
 
 **Step 6**: `FUN_00539fd0(this, 2)` → observer dispatch → side 2 (defender).
 
-**Step 7**: `(**(code**)(*this + vtable_slot))(old, new, context)` — fire vtable change-event.
+**Step 7**: `(**(code**)(*this + vtable_slot))(old, new, context)`—fire vtable change-event.
 
 **Notification-path variant** (`FUN_0053a010` instead of `FUN_0053a000`): Used by pure dispatchers
-(no write step). Checks a different validity condition — likely a less strict live-check that
+(no write step). Checks a different validity condition—likely a less strict live-check that
 allows notifications on objects in transition states.
 
 ### 2.3 Object Lifecycle
 
 **Creation**: Objects are heap-allocated via `FUN_00618b70` (wrapper over `new`). Constructors
 set the vtable pointer and initialize all fields. The tactical battle manager (`FUN_005a7500`)
-is the largest constructor observed — 4,856 bytes, allocates 0x3a8 words.
+is the largest constructor observed—4,856 bytes, allocates 0x3a8 words.
 
 **Destruction variants** (from `FUN_004fc080`):
 
@@ -308,11 +308,11 @@ is the largest constructor observed — 4,856 bytes, allocates 0x3a8 words.
 | 0x15 (21) | `Autoscrap` | `GameObjDestroyedAutoscrapNotif` / `DestroyedAutoscrap` | `0x304` (772) |
 | 6 | `Sabotage` | `GameObjDestroyedSabotageNotif` / `DestroyedSabotage` | `0x305` (773) |
 | 7 | `Assassination` | `GameObjDestroyedAssassinationNotif` / `DestroyedAssassination` | `0x306` (774) |
-| — | `OnArrival` | `GameObjDestroyedOnArrivalNotif` / `DestroyedOnArrival` | `0x303` (771) |
-| — | `(generic)` | `GameObjDestroyedNotif` / `Destroyed` | `0x302` (770) |
+|—| `OnArrival` | `GameObjDestroyedOnArrivalNotif` / `DestroyedOnArrival` | `0x303` (771) |
+|—| `(generic)` | `GameObjDestroyedNotif` / `Destroyed` | `0x302` (770) |
 
 The `OnArrival` variant is triggered when the object's `status_flags` bit5 is set and
-`+0x40 & 0xff0000 != 0` — confirming the object was destroyed en route to a destination.
+`+0x40 & 0xff0000 != 0`—confirming the object was destroyed en route to a destination.
 
 The mission type code is read from `+0x40 & 0xff` of the entity. The destroy function
 (`FUN_004fc080`) fires the generic `Destroyed` event first, then conditionally fires the
@@ -320,7 +320,7 @@ specialized variant based on that byte. All destruction events use `FUN_0053fe40
 the event ID.
 
 **Reference counting**: `FUN_004ece30` is the reference-counting helper called in destruction
-paths — it manages object lifetime for objects referenced by multiple mission contexts.
+paths—it manages object lifetime for objects referenced by multiple mission contexts.
 
 ### 2.4 Key Field Offsets (consolidated)
 
@@ -374,15 +374,15 @@ param_2 = secondary context). The event IDs form a contiguous block `0x180–0x1
 
 **Troop withdrawal** (`FUN_00504af0`, 56 bytes):
 - Notif string: `TroopRegWithdrawPercentNotif`
-- Related: `FUN_00511e70` — `SystemTroopRegWithdrawPercentNotif`
+- Related: `FUN_00511e70`—`SystemTroopRegWithdrawPercentNotif`
 
 ### 3.2 Fleet Composition
 
 | Address | Size | Purpose |
 |---------|------|---------|
-| `FUN_00502020` | 897 | Garrison/fleet strength aggregator — iterates entities by DatId family byte. Family ranges: `0x10–0x14` = troops, `0x1c–0x20` = facilities, `0x30–0x40` = ships. |
-| `FUN_00555540` | — | Fleet strength getter for bombardment side |
-| `FUN_004f2640` | — | Fleet unit iterator (used in FUN_004ff7a0 callers) — params: `side=1, type=2` |
+| `FUN_00502020` | 897 | Garrison/fleet strength aggregator—iterates entities by DatId family byte. Family ranges: `0x10–0x14` = troops, `0x1c–0x20` = facilities, `0x30–0x40` = ships. |
+| `FUN_00555540` |—| Fleet strength getter for bombardment side |
+| `FUN_004f2640` |—| Fleet unit iterator (used in FUN_004ff7a0 callers)—params: `side=1, type=2` |
 
 **CFleet contains**:
 - Capital ship list (families `0x30–0x3b`)
@@ -397,7 +397,7 @@ The fleet battle notification chain leads into the space combat pipeline documen
 strategy-layer battle manager, which then instantiates the combat context and invokes the
 7-phase combat pipeline.
 
-`FUN_004ff8e0` (84 bytes) is a fleet system initialization function — it registers 10 message
+`FUN_004ff8e0` (84 bytes) is a fleet system initialization function—it registers 10 message
 handlers (event IDs `0x200–0x223` range + `0x234`) via `FUN_00520690`. This is the fleet
 manager setup, run once at game load. All return 0 on failure.
 
@@ -405,18 +405,18 @@ manager setup, run once at game load. All return 0 on failure.
 
 ## 4. Faction System
 
-### 4.1 Side Resolution — `FUN_004f8c60`
+### 4.1 Side Resolution—`FUN_004f8c60`
 
 **Address**: `0x004f8c60`
 **Size**: 208 bytes
-**Purpose**: Faction notification handler — resolves faction name, sets difficulty, builds
+**Purpose**: Faction notification handler—resolves faction name, sets difficulty, builds
 notification payload, fires via the notification log system.
 
 The faction bits live at `*(uint*)(this + 0x24)`:
 
 ```
-Bits 6-7 (>> 6 & 3):  own_faction_id   — 1=Alliance, 2=Empire, 3=Neutral, else UNKNOWN
-Bits 4-5 (>> 4 & 3):  display_faction  — 1=Alliance, 2=Empire, else UNKNOWN
+Bits 6-7 (>> 6 & 3):  own_faction_id  —1=Alliance, 2=Empire, 3=Neutral, else UNKNOWN
+Bits 4-5 (>> 4 & 3):  display_faction —1=Alliance, 2=Empire, else UNKNOWN
 ```
 
 Faction string selection:
@@ -451,28 +451,28 @@ name string. The notification payload is assembled via `FUN_00616110` (string ap
 | Address | Purpose | Notif String | Event ID |
 |---------|---------|-------------|----------|
 | `FUN_00532f40` | Recruitment done | `SideRecruitmentDoneNotif` / `RecruitmentDone` | `0x12c` (300) |
-| `FUN_0054ba00` | Final battle trigger | `MissionMgrFinalBattleNotif` / `FinalBattle` | — |
-| `FUN_0054b9c0` | Final battle ready | `FinalBattleReadyNotif` | — |
-| (string at `0x006aa764`) | Victory condition check | `SideVictoryConditionsNotif` / `VictoryConditions` | — |
+| `FUN_0054ba00` | Final battle trigger | `MissionMgrFinalBattleNotif` / `FinalBattle` |—|
+| `FUN_0054b9c0` | Final battle ready | `FinalBattleReadyNotif` |—|
+| (string at `0x006aa764`) | Victory condition check | `SideVictoryConditionsNotif` / `VictoryConditions` |—|
 
 **RecruitmentDone** fires when a side has completed all available character recruitment. It uses
-`FUN_0053fdd0(300, this, param_2, param_3)` — this is event `0x12c`, the canonical
+`FUN_0053fdd0(300, this, param_2, param_3)`—this is event `0x12c`, the canonical
 "recruitment phase complete" trigger.
 
 The `SideVictoryConditionsNotif` string confirms a dedicated victory-check function exists.
-Its exact address has not been isolated in the annotated corpus — it is called from the turn
+Its exact address has not been isolated in the annotated corpus—it is called from the turn
 end cycle and evaluates: HQ capture, Death Star status, and Rebel base detection.
 
-**Victory audio**: `VICTORY` at `0x006ab5f8`, `VICTORY_II` at `0x006ab5b0` — two fanfares,
+**Victory audio**: `VICTORY` at `0x006ab5f8`, `VICTORY_II` at `0x006ab5b0`—two fanfares,
 likely Alliance vs Empire.
 
 ### 4.3 System Control and Uprising
 
 | Address | Notif String | Event ID |
 |---------|-------------|----------|
-| `FUN_00511ec0` | `ControlKindBattleWonNotif` | — |
-| `FUN_00511f40` | `SystemControlKindUprisingNotif` / `ControlKindUprising` | — |
-| `FUN_005121e0` | `SystemUprisingNotif` / `Uprising` | — |
+| `FUN_00511ec0` | `ControlKindBattleWonNotif` |—|
+| `FUN_00511f40` | `SystemControlKindUprisingNotif` / `ControlKindUprising` |—|
+| `FUN_005121e0` | `SystemUprisingNotif` / `Uprising` |—|
 | `FUN_005122d0` | `SystemBlockadeNotif` / `Blockade` | `0x14e` (334) |
 | `FUN_00512280` | `SystemBattleNotif` / `Battle` | `0x14d` (333) |
 | `FUN_00512580` | `SystemUprisingIncidentNotif` / `UprisingIncident` | `0x152` (338) |
@@ -487,7 +487,7 @@ faction control changes. Thresholds are stored in UPRIS1TB.DAT (3 entries) and U
 
 Three distinct notification dispatch helper functions serve different entity parameter counts:
 
-### `FUN_004f8880` — Single Entity Parameter
+### `FUN_004f8880`—Single Entity Parameter
 ```c
 // Signature (approximate):
 void notify_1(void* this,
@@ -498,19 +498,19 @@ Used by: FleetBattleNotif, FleetBlockadeNotif, FleetBombardNotif, FleetAssaultNo
 OnMissionNotif, OnMandatoryMissionNotif, CanResignFromMissionNotif, ForceAwareNotif,
 ForcePotentialNotif.
 
-### `FUN_004f8980` — Two Entity Parameters (reversed order)
+### `FUN_004f8980`—Two Entity Parameters (reversed order)
 ```c
 // Signature (approximate):
 void notify_2(void* this,
               char* notif_type_str, char* event_name_str,
               int param2, int param1, char* null_arg, int context);
 ```
-**Note**: param order is reversed — the notification string lists new value first, then old
+**Note**: param order is reversed—the notification string lists new value first, then old
 value. Confirmed in FUN_004f1e00 and FUN_004ee030 decompilations.
 
 Used by: Force notifs, enhanced skill notifs, BaseDiplomacy/Espionage/Combat notifs.
 
-### `FUN_004f8aa0` — Two Entity Reference Parameters
+### `FUN_004f8aa0`—Two Entity Reference Parameters
 ```c
 // Signature (approximate):
 void notify_2ref(void* this,
@@ -519,7 +519,7 @@ void notify_2ref(void* this,
 ```
 Used by: TroopRegDestroyedRunningBlockade, ForceUserDiscovered, Encounter, Commanding.
 
-### `FUN_004f8b80` — Mission Seed Key Variant
+### `FUN_004f8b80`—Mission Seed Key Variant
 Used exclusively by `FUN_00536880` (RoleMissionSeedKeyNotif). Likely a specialized variant for
 the initial mission seeding path.
 
@@ -566,7 +566,7 @@ Character and troop vtable slots for all confirmed setters in the entity range.
 | `+0x330` | 816 | NotifyCombatStrengthChanged(old, new, ctx) | FUN_004ee350 |
 | `+0x338` | 824 | NotifyHyperdriveChanged(old, new, ctx) | FUN_004ee470 |
 
-Ship vtable slots (for completeness — defined in CCombatUnit / CCapitalShip):
+Ship vtable slots (for completeness—defined in CCombatUnit / CCapitalShip):
 
 | Vtable Offset | Decimal | Event | Source Function |
 |--------------|---------|-------|-----------------|
@@ -581,13 +581,13 @@ Ship vtable slots (for completeness — defined in CCombatUnit / CCapitalShip):
 
 | Address | Signature | Purpose |
 |---------|-----------|---------|
-| `FUN_0053a000` | `bool(int this)` | Strict entity validity guard — write-path setters |
-| `FUN_0053a010` | `bool(int this)` | Notification-path validity guard — dispatchers |
+| `FUN_0053a000` | `bool(int this)` | Strict entity validity guard—write-path setters |
+| `FUN_0053a010` | `bool(int this)` | Notification-path validity guard—dispatchers |
 | `FUN_0053fc90` | `int(value, min, max)` | Range validator: 0 if outside [min, max] |
 | `FUN_0053e0f0` | `int(value, min, 0x7fff)` | Secondary clamp for short storage |
 | `FUN_00539fd0` | `void*(this, side)` | Side observer getter: side=1 (attacker), 2 (defender) |
 | `FUN_0053fcf0` | `void(type, this, p1, p2, ctx)` | Register event (notification path A) |
-| `FUN_0053fe40` | `int(type, this, p1, p2, ctx)` | Register event (notification path B — returns result) |
+| `FUN_0053fe40` | `int(type, this, p1, p2, ctx)` | Register event (notification path B—returns result) |
 | `FUN_0053fdd0` | `void(type, this, p1, p2)` | Register event (fleet notification path) |
 | `FUN_004fd340` | `int()` | Get bombardment base value (GNPRTB `0x1400`) |
 | `FUN_004fd600` | `int(ctx, bits)` | Apply difficulty modifier (extracts bits 4-5 of `+0x24`) |
@@ -621,7 +621,7 @@ pub struct Character {
     pub can_be_general: bool,
     pub loyalty: SkillPair,
 
-    // Required for entity system parity — not yet in world model:
+    // Required for entity system parity—not yet in world model:
     pub enhanced_loyalty: i16,       // +0x8a, mission bonus, 0-100 clamped
     pub hyperdrive_modifier: i16,    // +0x9a, Han Solo bonus, non-negative
     pub force_potential_tier: u8,    // entity[9] >> 6 & 3, 2-bit 0-3

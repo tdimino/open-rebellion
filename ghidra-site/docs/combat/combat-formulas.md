@@ -12,9 +12,9 @@ updated: 2026-03-16
 
 | File | Size | .text | Functions | Content |
 |------|------|-------|-----------|---------|
-| **REBEXE.EXE** | 2.8MB | 2.4MB (0x401000-0x6573ff) | **22,741** | Main game executable — ALL game logic |
+| **REBEXE.EXE** | 2.8MB | 2.4MB (0x401000-0x6573ff) | **22,741** | Main game executable—ALL game logic |
 | COMMON.DLL | 2.9MB | TBD | TBD | Shared library (MFC/Win32 wrappers) |
-| STRATEGY.DLL | 29MB | 9KB only | 43 (CRT) | **Resource-only** — strategy view sprites/art |
+| STRATEGY.DLL | 29MB | 9KB only | 43 (CRT) | **Resource-only**—strategy view sprites/art |
 | TACTICAL.DLL | 7.8MB | TBD | TBD | Likely resource-only (tactical view sprites/art) |
 
 **Key finding**: STRATEGY.DLL has almost zero code (9KB of CRT boilerplate, 29MB of .rsrc). All combat formulas, GNPRTB lookups, and game logic live in REBEXE.EXE.
@@ -23,7 +23,7 @@ updated: 2026-03-16
 
 - **Project**: Open Rebellion Ghidra
 - **Location**: `/Users/tomdimino/Desktop/Programming/open-rebellion/ghidra/`
-- **Plugin**: GhidraMCP (LaurieWired v11.3.2) — REST API on `:8080`
+- **Plugin**: GhidraMCP (LaurieWired v11.3.2)—REST API on `:8080`
 - **Note**: Old plugin caps `/methods` and `/strings` at **99 results**. Use Jython scripts for full access.
 - **Bethington fork** (v4.3.0, 176 endpoints) downloaded but requires Ghidra 12.0.3 (we have 11.3.2)
 - **pyghidra-mcp**: Config fixed (`--project-path` instead of positional arg, `--force-analysis`, `--wait-for-analysis`)
@@ -56,7 +56,7 @@ Two combat paths: `CONVERT_TO_TACT` (tactical 2D view) and `CONVERT_TO_TACT_ABST
 | FUN_005029f0 | ShieldRechargeRateCHAllocated | Shield recharge rate setter | 16 |
 | FUN_00502a40 | WeaponRechargeRateCHAllocated | Weapon recharge rate setter | 16 |
 | FUN_005038e0 | SquadSizeDamage | Fighter squadron damage | 16 |
-| FUN_00502020 | (near setters) | **Garrison/fleet strength aggregator** — iterates entities by DatId family_id | 897 |
+| FUN_00502020 | (near setters) | **Garrison/fleet strength aggregator**—iterates entities by DatId family_id | 897 |
 
 ### Fleet Events
 
@@ -70,10 +70,10 @@ Two combat paths: `CONVERT_TO_TACT` (tactical 2D view) and `CONVERT_TO_TACT_ABST
 
 | Address | Notif String | Purpose | Size |
 |---------|-------------|---------|------|
-| FUN_00511ec0 | ControlKindBattleWon | System control change — battle won | 15 |
-| FUN_00511f40 | ControlKindUprising | System control change — uprising | 16 |
+| FUN_00511ec0 | ControlKindBattleWon | System control change—battle won | 15 |
+| FUN_00511f40 | ControlKindUprising | System control change—uprising | 16 |
 | FUN_005121e0 | Uprising | Uprising handler | 16 |
-| FUN_005122d0 | Blockade | Blockade system handler | — |
+| FUN_005122d0 | Blockade | Blockade system handler |—|
 | FUN_00512440 | CombatUnitFastRepair | Unit repair system | 15 |
 
 ### Mission Destruction
@@ -93,13 +93,13 @@ Two combat paths: `CONVERT_TO_TACT` (tactical 2D view) and `CONVERT_TO_TACT_ABST
 | Address | String | Purpose | Size |
 |---------|--------|---------|------|
 | FUN_0040a700 | STRAT_BATTLE_START | Battle state machine entry (switch on 18 states) | 182 |
-| FUN_00532e00 | (near VictoryConditions at 0x533019) | Victory condition check | — |
+| FUN_00532e00 | (near VictoryConditions at 0x533019) | Victory condition check |—|
 | FUN_0054ba00 | FinalBattle | Luke vs Vader final battle | 16 |
 | FUN_00536740 | BaseCombat | Base combat skill reference | 15 |
 
 ### Tactical Combat (FUN_005a7500, 572 lines)
 
-This is the **tactical ship object constructor** — registers message handlers for the 2D tactical battle view:
+This is the **tactical ship object constructor**—registers message handlers for the 2D tactical battle view:
 - SHIP_ADD, SHIP_REMOVE, SHIP_ABSTRACT_DESTROY
 - SHIP_FIRELASERCANNON, SHIP_FIRETURBOLASER, SHIP_FIREIONCANNON, SHIP_FIRETORPEDO
 - SHIP_TAKE_LASER_HIT, SHIP_TAKE_TURBO_HIT, SHIP_TAKE_TORPEDO_HIT, SHIP_ION_DAMAGE
@@ -114,7 +114,7 @@ This is the **tactical ship object constructor** — registers message handlers 
 |---------|------|---------------|
 | FUN_0050d5a0 | 3050B | Mission dispatch (switch on 8+ mission types) |
 | FUN_0052d920 | 2894B | Unit description/display (TEXTSTRA string IDs) |
-| FUN_00537180 | 2591B | TBD — high priority to decompile |
+| FUN_00537180 | 2591B | TBD—high priority to decompile |
 | FUN_004f4b60 | 1689B | TBD |
 | FUN_0050e820 | 1658B | TBD |
 | FUN_005385f0 | 1654B | TBD |
@@ -174,13 +174,13 @@ Run via Jython: `exec(open("...path...").read())`
 
 ## Next RE Steps
 
-1. **Find auto-resolve function** — the `CONVERT_TO_TACT_ABSTRACT` path resolves combat without tactical view. Search for functions that aggregate fleet firepower and compare attacker vs defender
-2. **Decompile FUN_00537180** (2591 bytes) — third-largest, purpose unknown
-3. **Decompile FUN_00502020** further — appears to iterate entities by DatId family_id byte (0x10-0x14=troops, 0x1c-0x20=facilities, 0x30-0x40=ships)
-4. **Find GNPRTB table access** — search for constants 213, 0xD5, or stride-32 array indexing patterns
-5. **Decompile FUN_00532e00** — near VictoryConditions reference, likely victory logic
-6. **Trace the bombardment path** — FUN_004ff840 → what function calculates bombardment damage?
-7. **Import COMMON.DLL** analysis — may contain shared combat utilities
+1. **Find auto-resolve function**—the `CONVERT_TO_TACT_ABSTRACT` path resolves combat without tactical view. Search for functions that aggregate fleet firepower and compare attacker vs defender
+2. **Decompile FUN_00537180** (2591 bytes)—third-largest, purpose unknown
+3. **Decompile FUN_00502020** further—appears to iterate entities by DatId family_id byte (0x10-0x14=troops, 0x1c-0x20=facilities, 0x30-0x40=ships)
+4. **Find GNPRTB table access**—search for constants 213, 0xD5, or stride-32 array indexing patterns
+5. **Decompile FUN_00532e00**—near VictoryConditions reference, likely victory logic
+6. **Trace the bombardment path**—FUN_004ff840 → what function calculates bombardment damage?
+7. **Import COMMON.DLL** analysis—may contain shared combat utilities
 
 ## Data Addresses
 
@@ -194,6 +194,6 @@ Run via Jython: `exec(open("...path...").read())`
 ## Community References
 
 - **Metasharp** (`~/Desktop/Programming/StarWarsRebellionEditor.NET/`): GNPRTB.cs has 61/213 parameter names
-- **rebellion2** (`~/Desktop/Programming/rebellion2/`): C# Unity remake — strategy layer only, NO combat code
+- **rebellion2** (`~/Desktop/Programming/rebellion2/`): C# Unity remake—strategy layer only, NO combat code
 - **swrebellion.net**: Community forum with RebEd editor
 - **Prima Strategy Guide**: Game mechanics documentation (approximate)

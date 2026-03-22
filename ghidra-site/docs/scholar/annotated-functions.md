@@ -1,24 +1,24 @@
 ---
-title: "REBEXE.EXE — Annotated Function Reference"
+title: "REBEXE.EXE—Annotated Function Reference"
 description: "Cross-referenced annotated function catalog from Ghidra decompilation"
 category: "ghidra"
 created: 2026-03-13
 updated: 2026-03-16
 ---
 
-# REBEXE.EXE — Annotated Function Reference
+# REBEXE.EXE—Annotated Function Reference
 
 Generated from Ghidra decompilation of REBEXE.EXE (Star Wars Rebellion 1998, LucasArts).
 Cross-referenced with: combat-formulas.md, space-combat.md, ground-combat.md, bombardment.md.
 
 Entity family byte quick reference (from `id >> 0x18`):
-- `0x08-0x0f` — Characters (major + minor)
-- `0x14-0x1b` — Troops / Special Forces
-- `0x30-0x3b` — Capital Ships + Fighters
-- `0x34` — Death Star (special ship)
-- `0x71` — Fighter squadron type (shield absorb alt-path, exact match only — NOT a range)
-- `0x73-0x74` — Special combat entity (combat result special path, see FUN_005445d0)
-- `0x90-0x98` — Star Systems
+- `0x08-0x0f`—Characters (major + minor)
+- `0x14-0x1b`—Troops / Special Forces
+- `0x30-0x3b`—Capital Ships + Fighters
+- `0x34`—Death Star (special ship)
+- `0x71`—Fighter squadron type (shield absorb alt-path, exact match only—NOT a range)
+- `0x73-0x74`—Special combat entity (combat result special path, see FUN_005445d0)
+- `0x90-0x98`—Star Systems
 
 ---
 
@@ -75,7 +75,7 @@ Note: offset `+0x64` decimal is `0x40` hex = 64 decimal. The code uses `*(uint*)
 
 ---
 
-## FUN_0053a000 — Entity Validity Check
+## FUN_0053a000—Entity Validity Check
 
 **Purpose**: Validates that `this` is a live, valid entity object. Returns 0 if the entity is in an invalid/dead state. Used as the entry guard in virtually every setter function.
 
@@ -87,7 +87,7 @@ The `CONCAT31` + `extraout_var` pattern is Ghidra's way of expressing x86 `movsx
 
 ---
 
-## FUN_0053a010 — Entity Validity Check (Notification Path)
+## FUN_0053a010—Entity Validity Check (Notification Path)
 
 **Purpose**: Same as FUN_0053a000 but used by notification-dispatch functions (the ones that fire events without a range-check step). Slightly different signature (likely checks a different validity bit).
 
@@ -95,22 +95,22 @@ The `CONCAT31` + `extraout_var` pattern is Ghidra's way of expressing x86 `movsx
 
 ---
 
-## FUN_0053fc90 — Range Validator
+## FUN_0053fc90—Range Validator
 
-**Purpose**: `validate_range(value, min, max)` — checks that a value falls within [min, max]. Returns 0 if out of range.
+**Purpose**: `validate_range(value, min, max)`—checks that a value falls within [min, max]. Returns 0 if out of range.
 
 **Signature**: `int FUN_0053fc90(int value, int min, int max)`
 
 **Used by**: All validate functions for their range check step.
 
 **Key calls**:
-- `FUN_0053fc90(param_1, 0, 100)` — validates 0-100 range (loyalty, force percentages)
-- `FUN_0053fc90(param_1, 0, iVar3)` — validates 0 to entity-defined max (hull, squad size)
-- `FUN_0053fc90(param_1, 0, param_1)` — validates non-negative (troop strength, hyperdrive)
+- `FUN_0053fc90(param_1, 0, 100)`—validates 0-100 range (loyalty, force percentages)
+- `FUN_0053fc90(param_1, 0, iVar3)`—validates 0 to entity-defined max (hull, squad size)
+- `FUN_0053fc90(param_1, 0, param_1)`—validates non-negative (troop strength, hyperdrive)
 
 ---
 
-## FUN_0053e0f0 — Secondary Clamp
+## FUN_0053e0f0—Secondary Clamp
 
 **Purpose**: Secondary clamp `clamp(value, min, 0x7fff)`. Applied after `FUN_0053fc90` in loyalty and enhanced loyalty functions to ensure the raw value never exceeds `0x7fff` (32767), likely for the underlying `short` storage.
 
@@ -118,9 +118,9 @@ The `CONCAT31` + `extraout_var` pattern is Ghidra's way of expressing x86 `movsx
 
 ---
 
-## FUN_00539fd0 — Side Observer Getter
+## FUN_00539fd0—Side Observer Getter
 
-**Purpose**: `get_side_observer(this, side)` — returns the notification observer object for a given combat side (1 = attacker, 2 = defender). Used before every notification dispatch.
+**Purpose**: `get_side_observer(this, side)`—returns the notification observer object for a given combat side (1 = attacker, 2 = defender). Used before every notification dispatch.
 
 **Signature**: `void* FUN_00539fd0(void* this, int side)`
 
@@ -134,13 +134,13 @@ FUN_005023b0(pvVar4, context);   // dispatch notification to defender
 
 ---
 
-## FUN_00501490 — Hull Damage Validator / Setter
+## FUN_00501490—Hull Damage Validator / Setter
 
 **File**: Likely `capship.cpp` or `combat.cpp`
 **Called by**: Hull damage phase (FUN_005443f0 → FUN_00543cb0 → vtable chain)
 **Calls**:
 - FUN_0053a000 (validity check)
-- vtable `*this+0x248` (get max hull — returns string for "Invalid_HullValueDamage_value_")
+- vtable `*this+0x248` (get max hull—returns string for "Invalid_HullValueDamage_value_")
 - FUN_0053fc90 (range check: 0 to max_hull)
 - FUN_00539fd0 (get side observers)
 - FUN_005023b0 (dispatch hull damage notification to each side)
@@ -183,13 +183,13 @@ int set_hull_damage(void* ship, int new_hull, void* context) {
 
 ---
 
-## FUN_00501510 — Shield Recharge Rate Validator / Setter
+## FUN_00501510—Shield Recharge Rate Validator / Setter
 
 **File**: Likely `capship.cpp`
 **Called by**: Combat init, shield phase setup
 **Calls**:
 - FUN_0053a000 (validity check)
-- FUN_00500670 (get max shield recharge — returns the 4-bit max, likely 15)
+- FUN_00500670 (get max shield recharge—returns the 4-bit max, likely 15)
 - FUN_0053fc90 (range check: 0 to max)
 - FUN_00539fd0 (get side observers)
 - FUN_00502430 (dispatch shield recharge notification)
@@ -232,7 +232,7 @@ int set_shield_recharge(void* ship, uint new_rate, void* context) {
 
 ---
 
-## FUN_005015a0 — Weapon Recharge Rate Validator / Setter
+## FUN_005015a0—Weapon Recharge Rate Validator / Setter
 
 **File**: Likely `capship.cpp`
 **Called by**: Combat init, weapon phase setup
@@ -289,13 +289,13 @@ Bit layout of *(uint*)((int)ship + 100):
 
 ---
 
-## FUN_005032c0 — Squad Size Damage Validator / Setter
+## FUN_005032c0—Squad Size Damage Validator / Setter
 
 **File**: Likely `fighter.cpp` or `squadron.cpp`
 **Called by**: Fighter combat phase (FUN_005444e0 → FUN_00543d20 chain)
 **Calls**:
 - FUN_0053a000 (validity)
-- vtable `*this+0x244` (get max squad size — same pattern as hull, returns string "Invalid_SquadSizeDamage_value_")
+- vtable `*this+0x244` (get max squad size—same pattern as hull, returns string "Invalid_SquadSizeDamage_value_")
 - FUN_0053fc90 (range check)
 - FUN_00539fd0 (observers)
 - FUN_005037f0 (dispatch squad size damage notification)
@@ -304,7 +304,7 @@ Bit layout of *(uint*)((int)ship + 100):
 ### Key Offsets
 | Offset | Type | Field Name | Notes |
 |--------|------|-----------|-------|
-| `+0x60` | `int` | squad_size_current | Shares offset with hull_current — different object type |
+| `+0x60` | `int` | squad_size_current | Shares offset with hull_current—different object type |
 | vtable `+0x244` | `code*` | get_max_squad_size | Returns max size for range check |
 | vtable `+0x260` | `code*` | on_squad_changed | Event: (old_size, new_size, context) |
 
@@ -337,11 +337,11 @@ int set_squad_damage(void* squadron, int new_size, void* context) {
 - The error string `"Invalid_SquadSizeDamage_value_"` is at `0x006a97e0`
 
 ### Cross-Reference with FUN_00501490 (Hull)
-Both hull and squad use `+0x60` for current value — this confirms hull (ships) and size (squadrons) are the same field, polymorphically interpreted by object type.
+Both hull and squad use `+0x60` for current value—this confirms hull (ships) and size (squadrons) are the same field, polymorphically interpreted by object type.
 
 ---
 
-## FUN_004ee030 — Enhanced Loyalty Validator / Setter
+## FUN_004ee030—Enhanced Loyalty Validator / Setter
 
 **File**: Likely `character.cpp`
 **Called by**: EnhancedLoyalty mission outcome handler
@@ -384,12 +384,12 @@ int set_enhanced_loyalty(void* character, int new_loyalty, void* context) {
 - EnhancedLoyalty is stored as a `short` (16-bit) at offset `+0x8a`
 - Valid range: 0-100 (percentage)
 - Secondary 0x7fff clamp guards against short overflow (belt-and-suspenders)
-- This is the **mission bonus loyalty** field, not the base loyalty — distinct from FUN_005341a0
+- This is the **mission bonus loyalty** field, not the base loyalty—distinct from FUN_005341a0
 - vtable slot +0x318 distinguishes this from the base loyalty notifier at +0x238
 
 ---
 
-## FUN_005341a0 — Base Loyalty Validator / Setter
+## FUN_005341a0—Base Loyalty Validator / Setter
 
 **File**: Likely `character.cpp`
 **Called by**: Loyalty change events (diplomacy missions, betrayal)
@@ -408,26 +408,26 @@ int set_enhanced_loyalty(void* character, int new_loyalty, void* context) {
 | vtable `+0x238` | `code*` | on_loyalty_changed | Event: (old_value, new_value, context) |
 
 ### Game Rules Extracted
-- Base loyalty at `+0x66` vs enhanced loyalty at `+0x8a` — two separate fields
+- Base loyalty at `+0x66` vs enhanced loyalty at `+0x8a`—two separate fields
 - Both range-validated 0-100 with the same `0x7fff` secondary clamp
 - vtable `+0x238` vs `+0x318`: base vs enhanced use different event slots
 
 ### Cross-Reference: Loyalty System Offsets
 ```
-+0x66 — base loyalty         (FUN_005341a0, vtable +0x238)
-+0x8a — enhanced loyalty     (FUN_004ee030, vtable +0x318)
++0x66—base loyalty         (FUN_005341a0, vtable +0x238)
++0x8a—enhanced loyalty     (FUN_004ee030, vtable +0x318)
 ```
 
 ---
 
-## FUN_004ee470 — Hyperdrive Modifier Setter (Han Solo Speed Bonus)
+## FUN_004ee470—Hyperdrive Modifier Setter (Han Solo Speed Bonus)
 
 **File**: Likely `character.cpp`
 **Notif string**: `MissionHyperdriveModifier`
 **Called by**: Mission outcome when Han Solo completes a mission with hyperdrive bonus
 **Calls**:
 - FUN_0053a000 (validity)
-- FUN_0053fc90 (range check: 0 to param_1 — self-bounded, non-negative check only)
+- FUN_0053fc90 (range check: 0 to param_1—self-bounded, non-negative check only)
 - FUN_00539fd0 (observers)
 - FUN_004f0610 (dispatch HyperdriveModifier notification)
 - vtable `*this+0x338` (fire hyperdrive modifier change event)
@@ -459,24 +459,24 @@ int set_hyperdrive_modifier(void* character, int new_mod, void* context) {
 ```
 
 ### Game Rules Extracted
-- `FUN_0053fc90(param_1, 0, param_1)`: passing value as both value and max — this is a **non-negative check only**, not a 0-100 clamp. The modifier has no upper bound other than short max.
-- Stored as `short` at `+0x9a` — max 32767
+- `FUN_0053fc90(param_1, 0, param_1)`: passing value as both value and max—this is a **non-negative check only**, not a 0-100 clamp. The modifier has no upper bound other than short max.
+- Stored as `short` at `+0x9a`—max 32767
 - This is the `MissionHyperdriveModifier` bonus, applied to Han Solo's fleet movement speed
 - vtable `+0x338` is specific to hyperdrive changes
 - In `rebellion-core/movement.rs`: this value should be consulted when calculating `ticks_per_hop` for fleets containing Han Solo
 
 ---
 
-## FUN_004ee350 — Regiment / Unit Strength Setter (Ground Combat Core)
+## FUN_004ee350—Regiment / Unit Strength Setter (Ground Combat Core)
 
 **File**: Likely `troop.cpp` or `unit.cpp`
 **Called by**: FUN_00560d50 (ground combat), direct during troop damage application
 **Calls**:
 - FUN_0053a000 (validity)
-- FUN_0053fc90 (range check: 0 to param_1 — non-negative)
+- FUN_0053fc90 (range check: 0 to param_1—non-negative)
 - FUN_00539fd0 (observers)
 - FUN_004f04f0 (dispatch strength change notification)
-- vtable `*this+0x330` (fire strength change — fires HullValueDamage/SquadSizeDamage per unit type)
+- vtable `*this+0x330` (fire strength change—fires HullValueDamage/SquadSizeDamage per unit type)
 
 ### Key Offsets
 | Offset | Type | Field Name | Notes |
@@ -506,19 +506,19 @@ int set_regiment_strength(void* unit, int new_strength, void* context) {
 
 ### Game Rules Extracted
 - Regiment strength is a `short` at `+0x96`, 0 = destroyed
-- No upper bound enforced here — the caller is responsible for providing valid max values
+- No upper bound enforced here—the caller is responsible for providing valid max values
 - vtable `+0x330` fires the unit-type-appropriate notification (troops get different notification than ships)
-- This function is the ground combat damage application primitive — every troop hit passes through here
+- This function is the ground combat damage application primitive—every troop hit passes through here
 
 ---
 
-## FUN_004f1e00 — Force Experience Notification Dispatcher
+## FUN_004f1e00—Force Experience Notification Dispatcher
 
 **File**: Likely `character.cpp` or `force.cpp`
 **Notif string**: `CharacterForceNotif` / `Force`
 **Called by**: Force-related events (Jedi training, Force use)
 **Calls**:
-- FUN_0053a010 (validity — notification path)
+- FUN_0053a010 (validity—notification path)
 - FUN_004f8980 (dispatch notification: CharacterForceNotif, "Force", param_2, param_1, null, param_3)
 - FUN_0053fcf0 (register event 0x1e1 = 481 decimal)
 
@@ -539,11 +539,11 @@ void fire_force_notification(void* character, uint4 new_value, uint4 old_value, 
 ### Game Rules Extracted
 - Event ID `0x1e1` (481) = Force experience change event
 - Uses FUN_004f8980 (the two-entity notification pattern: char + param)
-- This is a pure notification dispatcher — the actual Force value modification happens upstream
+- This is a pure notification dispatcher—the actual Force value modification happens upstream
 
 ---
 
-## FUN_004f1ea0 — Force Training Notification Dispatcher
+## FUN_004f1ea0—Force Training Notification Dispatcher
 
 **File**: Likely `character.cpp` or `force.cpp`
 **Notif string**: `CharacterForceTrainingNotif` / `ForceTraining`
@@ -555,7 +555,7 @@ void fire_force_notification(void* character, uint4 new_value, uint4 old_value, 
 
 ### Game Rules Extracted
 - Event ID `0x1e5` (485) = Force training event (distinct from 0x1e1 Force experience)
-- Training and experience are separate event channels — the game tracks them independently
+- Training and experience are separate event channels—the game tracks them independently
 - Both use FUN_004f8980 but with different notification strings
 
 ### Event ID Map (Force System)
@@ -566,7 +566,7 @@ void fire_force_notification(void* character, uint4 new_value, uint4 old_value, 
 
 ---
 
-## FUN_0058a3f0 — Force User Detection
+## FUN_0058a3f0—Force User Detection
 
 **File**: Likely `force.cpp` or `mission.cpp`
 **Called by**: Mission system when checking for Force-sensitive characters
@@ -607,7 +607,7 @@ int detect_force_user(void* detection_context,
 
     if (out1 != 0 && detector && target) {
         if (!(target[0x1e] & 1)) {
-            // Target is Jedi but unknown — flag for discovery
+            // Target is Jedi but unknown—flag for discovery
             detection_context->detection_pending = 1;
         }
 
@@ -623,14 +623,14 @@ int detect_force_user(void* detection_context,
 ```
 
 ### Game Rules Extracted
-- Force detection uses a **2-bit tier** extracted from `target[9] >> 6 & 3` — four Force potential levels (0-3), matching the game's "Low/Medium/High/Very High" Force sensitivity tiers
-- Force experience (`target[0x23]` as `short`) influences detectability — higher-experience Jedi are easier to detect
+- Force detection uses a **2-bit tier** extracted from `target[9] >> 6 & 3`—four Force potential levels (0-3), matching the game's "Low/Medium/High/Very High" Force sensitivity tiers
+- Force experience (`target[0x23]` as `short`) influences detectability—higher-experience Jedi are easier to detect
 - An undiscovered Jedi (`!(target[0x1e] & 1)`) triggers a `detection_pending` flag on the context, initiating the discovery event chain
 - Detection requires three conditions: `FUN_0055e4d0` (stat check), `FUN_0055ff60` (secondary check), and `FUN_0058a530` (finalization)
 
 ---
 
-## FUN_00504a00 — Troop Destruction During Blockade
+## FUN_00504a00—Troop Destruction During Blockade
 
 **File**: Likely `fleet.cpp` or `blockade.cpp`
 **Notif string**: `TroopRegDestroyedRunningBlockade` / `TroopRegDestroyedRunningBlockad`
@@ -663,14 +663,14 @@ int destroy_troop_in_blockade(void* context, int troop_entity, int battle_ctx) {
 ```
 
 ### Game Rules Extracted
-- Event ID `0x340` (832) = Troop regiment destroyed during blockade — specific event, not generic damage
-- The notification string confirms this is **troop destruction during blockade transit** — troops being transported through a blockaded system are destroyed
+- Event ID `0x340` (832) = Troop regiment destroyed during blockade—specific event, not generic damage
+- The notification string confirms this is **troop destruction during blockade transit**—troops being transported through a blockaded system are destroyed
 - Uses FUN_004f8aa0 (the 2-entity `this` + two-object notification, vs FUN_004f8980's single-object)
 - Two distinct notification strings (one slightly truncated) suggests the full name was trimmed in the binary resource
 
 ---
 
-## FUN_0049eea0 — "Battle in Progress" UI Handler
+## FUN_0049eea0—"Battle in Progress" UI Handler
 
 **File**: Likely `ui.cpp` or `strategy_view.cpp`
 **Called by**: Strategy view update loop when a battle is occurring
@@ -704,7 +704,7 @@ void draw_battle_in_progress(void* strategy_view) {
         return;
     }
 
-    // Battle in progress — set up GDI rendering
+    // Battle in progress—set up GDI rendering
     init_display_struct(display, "Battle in Progress...");
 
     HDC window_dc = GetDC(strategy_view->window_handle);
@@ -737,14 +737,14 @@ void draw_battle_in_progress(void* strategy_view) {
 ```
 
 ### Game Rules Extracted
-- `0xff` vs `0xff00` color selection based on `battle_info_ptr+0x9c == 1` — player side 1 = one color, side 2 = another (likely blue for Alliance, red for Empire)
-- This is purely a UI/rendering function — no game logic. Does not affect combat outcomes.
+- `0xff` vs `0xff00` color selection based on `battle_info_ptr+0x9c == 1`—player side 1 = one color, side 2 = another (likely blue for Alliance, red for Empire)
+- This is purely a UI/rendering function—no game logic. Does not affect combat outcomes.
 - The `0x1a00` suffix in `CONCAT22(DAT_0065d424, 0x1a00)` is a resource ID component
 - The "Battle in Progress" string at `0x006a879c` confirms this is the strategy view notification
 
 ---
 
-## FUN_005617b0 — Death Star Planet Destruction Handler
+## FUN_005617b0—Death Star Planet Destruction Handler
 
 **File**: Likely `deathstar.cpp` or `system.cpp`
 **Called by**: FUN_00560d50 (ground/space combat) when family_id == 0x34
@@ -783,7 +783,7 @@ bool death_star_fire(void* death_star, void* context) {
 
         if (*faction_id == target_id &&
             (controlling_faction->faction_control & 0xc0) == 0x80) {
-            // Empire controls this system — Death Star can fire
+            // Empire controls this system—Death Star can fire
             fire_superlaser = true;
         }
     }
@@ -796,13 +796,13 @@ bool death_star_fire(void* death_star, void* context) {
 ### Game Rules Extracted
 - The Death Star can only fire when: (a) target system is **not** already destroyed (`!(alive_flag & 1)`), AND (b) Death Star is active (`status_flags & 1`)
 - `0x90000109` = a specific system DatId (family 0x90 = explored system, sequential index 0x109 = 265). This is likely **Alderaan** hardcoded as the canonical target, or the system currently targeted.
-- Faction control check: `(faction_control & 0xc0) == 0x80` — the 0x80 bit in the high nibble of `+0x24` indicates Empire control
-- The check `(alive_flag & 1) == 0` means target system's bit0 is clear (eligible for destruction). Note: bit0 semantics may differ between entity types — for combat units bit0=alive, but for Death Star targets bit0=0 may mean "not yet destroyed" (inverted encoding). The pseudocode `!(alive_flag & 1)` is what the C code does.
+- Faction control check: `(faction_control & 0xc0) == 0x80`—the 0x80 bit in the high nibble of `+0x24` indicates Empire control
+- The check `(alive_flag & 1) == 0` means target system's bit0 is clear (eligible for destruction). Note: bit0 semantics may differ between entity types—for combat units bit0=alive, but for Death Star targets bit0=0 may mean "not yet destroyed" (inverted encoding). The pseudocode `!(alive_flag & 1)` is what the C code does.
 - `FUN_0055f650` is the actual superlaser effect applicator
 
 ---
 
-## FUN_005029a0 — Hull Damage Notification Dispatcher
+## FUN_005029a0—Hull Damage Notification Dispatcher
 
 **File**: `capship.cpp`
 **Notif string**: `CapShipHullValueDamageNotif` / `HullValueDamage`
@@ -819,21 +819,21 @@ bool death_star_fire(void* death_star, void* context) {
 
 ---
 
-## FUN_005029f0 — Shield Recharge Rate Notification Dispatcher
+## FUN_005029f0—Shield Recharge Rate Notification Dispatcher
 
 **Notif string**: `CapShipShieldRechargeRateCHAllocatedNotif` / `ShieldRechargeRateCHAllocated`
 **Event ID**: `0x1c1` (449)
 
 ---
 
-## FUN_00502a40 — Weapon Recharge Rate Notification Dispatcher
+## FUN_00502a40—Weapon Recharge Rate Notification Dispatcher
 
 **Notif string**: `CapShipWeaponRechargeRateCHAllocatedNotif` / `WeaponRechargeRateCHAllocated`
 **Event ID**: `0x1c2` (450)
 
 ---
 
-## FUN_005038e0 — Squad Size Damage Notification Dispatcher
+## FUN_005038e0—Squad Size Damage Notification Dispatcher
 
 **Notif string**: `FightSquadSquadSizeDamageNotif` / `SquadSizeDamage`
 **Event ID**: `0x1a0` (416)
@@ -848,7 +848,7 @@ bool death_star_fire(void* death_star, void* context) {
 
 ---
 
-## FUN_00509620 — Combat Stat Extractor
+## FUN_00509620—Combat Stat Extractor
 
 **File**: Likely `unit.cpp` or `combatobj.cpp`
 **Called by**: FUN_00555b30 (bombardment calculation) via FUN_00509620
@@ -878,7 +878,7 @@ void get_combat_stat(void* entity, uint4* out_stat) {
 
 ---
 
-## FUN_005457f0 — Space Combat Entry Point
+## FUN_005457f0—Space Combat Entry Point
 
 **File**: Likely `fleet.cpp` or `spacebattle.cpp`
 **Called by**: System battle orchestrator (FUN_00514a60) for space combat
@@ -899,11 +899,11 @@ uint4 space_combat(void* battle_state, int* attacker, uint4 atk_id, uint4 def_id
 
 ### Game Rules Extracted
 - Space combat is gated on `FUN_005438a0` which validates entity type codes
-- If validation fails, returns 1 (success, no-op) — non-space entities gracefully skip
+- If validation fails, returns 1 (success, no-op)—non-space entities gracefully skip
 
 ---
 
-## FUN_005438a0 — Space Combat Entity Validator
+## FUN_005438a0—Space Combat Entity Validator
 
 **File**: Likely `spacebattle.cpp`
 **Called by**: FUN_005457f0 (space combat entry)
@@ -912,12 +912,12 @@ uint4 space_combat(void* battle_state, int* attacker, uint4 atk_id, uint4 def_id
 ### Validated Entity Type Codes
 | Constant | Hex | Meaning |
 |----------|-----|---------|
-| `0x31000241` | — | Ship type 1 (likely Star Destroyer class) |
-| `0x32000242` | — | Ship type 2 |
-| `0x33000243` | — | Ship type 3 |
-| `0x35000281` | — | Ship type 5 |
-| `0x34000280` | — | Ship type 4 |
-| `0x38000343` | — | Ship type 8 (likely Mon Calamari Star Cruiser) |
+| `0x31000241` |—| Ship type 1 (likely Star Destroyer class) |
+| `0x32000242` |—| Ship type 2 |
+| `0x33000243` |—| Ship type 3 |
+| `0x35000281` |—| Ship type 5 |
+| `0x34000280` |—| Ship type 4 |
+| `0x38000343` |—| Ship type 8 (likely Mon Calamari Star Cruiser) |
 
 ### Pseudocode (annotated)
 ```c
@@ -930,19 +930,19 @@ bool is_space_combat_eligible(int* entity_id) {
 
 ### Game Rules Extracted
 - Exactly 6 entity type codes are space-combat eligible
-- These appear to be specific DatId values, not family ranges — each is a specific unit type
+- These appear to be specific DatId values, not family ranges—each is a specific unit type
 - High bytes `0x31-0x38` align with the `0x30-0x3b` capital ship family range from ground-combat.md
 - The `0x34` in `0x34000280` confirms the Death Star (family 0x34) is included in the space combat eligible set
 
 ---
 
-## FUN_005442f0 — Combat Initialization
+## FUN_005442f0—Combat Initialization
 
 **File**: Likely `spacebattle.cpp`
 **Phase**: Phase 1 of the 7-phase space combat pipeline
 **Called by**: FUN_005457f0 → FUN_00549910
 **Calls**:
-- FUN_005435f0 (get 3rd stat type — specials/bombers)
+- FUN_005435f0 (get 3rd stat type—specials/bombers)
 - FUN_004ece30/40 (reference counting)
 - FUN_00543c40 (apply init result)
 
@@ -980,21 +980,21 @@ bool combat_init(void* battle_state, void* context) {
 ```
 
 ### Game Rules Extracted
-- `0x98000481` is a specific DatId checked during init — likely the battle context object itself
+- `0x98000481` is a specific DatId checked during init—likely the battle context object itself
 - Four simultaneous conditions for combat eligibility: alive + active + not_disabled + not_special_disabled
 - `capability_flags & 0xc0 == 0` means neither bit6 nor bit7 can be set (both represent disabled states)
 
 ---
 
-## FUN_00544030 — Weapon Fire Phase (Space Combat Phase 3)
+## FUN_00544030—Weapon Fire Phase (Space Combat Phase 3)
 
 **File**: Likely `spacebattle.cpp`
-**Phase**: Phase 3 — Weapon Fire
+**Phase**: Phase 3—Weapon Fire
 **Called by**: FUN_00549910 (space combat pipeline)
 **Calls**:
 - FUN_005434b0 (get weapon stats for both sides)
 - FUN_005439e0 (validate combat can proceed)
-- FUN_00543b60 (resolve weapon fire — side 1, then side 0)
+- FUN_00543b60 (resolve weapon fire—side 1, then side 0)
 
 ### Pseudocode (annotated)
 ```c
@@ -1019,20 +1019,20 @@ bool weapon_fire_phase(void* battle_state, void* context) {
 
 ### Game Rules Extracted
 - Phase only runs when `combat_phase_flags & 0x01 != 0` AND `combat_phase_flags & 0x40 == 0`
-- Attacker (side=1) fires before defender (side=0) — initiative advantage
+- Attacker (side=1) fires before defender (side=0)—initiative advantage
 - If `FUN_005439e0` returns 0 (combat cannot proceed), weapon fire is skipped entirely
 
 ---
 
-## FUN_00544130 — Shield Absorption Phase (Space Combat Phase 4)
+## FUN_00544130—Shield Absorption Phase (Space Combat Phase 4)
 
 **File**: Likely `spacebattle.cpp`
-**Phase**: Phase 4 — Shield Absorption
+**Phase**: Phase 4—Shield Absorption
 **Called by**: FUN_00549910
 **Calls**:
 - FUN_005434b0 (get weapon stats)
 - FUN_005439b0 (validate shields exist)
-- FUN_00543bd0 (apply shield absorption — both sides)
+- FUN_00543bd0 (apply shield absorption—both sides)
 - FUN_0042d170 (get entity ID via temp buffer)
 - FUN_00505970 (resolve entity pointer)
 - vtable `piVar5+0x1d8` (special shield handler for non-standard units)
@@ -1045,24 +1045,24 @@ bool weapon_fire_phase(void* battle_state, void* context) {
 | `piVar5[0x1a]` | int | unit_type_check | Must equal 8 for alt shield path |
 
 ### Game Rules Extracted
-- Standard path: `entity->capability_flags & 0x80 == 0` — most ships
-- Alternative path: `entity->capability_flags & 0x80 != 0` — triggers special handling
+- Standard path: `entity->capability_flags & 0x80 == 0`—most ships
+- Alternative path: `entity->capability_flags & 0x80 != 0`—triggers special handling
 - Alternative path checks family 0x71 (fighter type) and calls vtable `+0x1d8`
-- `piVar5[0x1a] == 8` — a specific unit type code for the alt shield path
+- `piVar5[0x1a] == 8`—a specific unit type code for the alt shield path
 - Phase gate: `battle_state->combat_phase_flags & 0x40 == 0` means "shields not yet processed"
 - Returns `true` immediately if bit6 is NOT set in combat_phase_flags (shields not initialized)
 
 ---
 
-## FUN_005443f0 — Hull Damage Application Phase (Space Combat Phase 5)
+## FUN_005443f0—Hull Damage Application Phase (Space Combat Phase 5)
 
 **File**: Likely `spacebattle.cpp`
-**Phase**: Phase 5 — Hull Damage
+**Phase**: Phase 5—Hull Damage
 **Called by**: FUN_00549910
 **Calls**:
 - FUN_00543550 (get hull stats for both sides)
 - FUN_005439e0 (validate)
-- FUN_00543cb0 (apply hull damage — both sides)
+- FUN_00543cb0 (apply hull damage—both sides)
 
 ### Pseudocode (annotated)
 ```c
@@ -1086,10 +1086,10 @@ bool hull_damage_phase(void* battle_state, void* context) {
 
 ---
 
-## FUN_005444e0 — Fighter Engagement Phase (Space Combat Phase 6)
+## FUN_005444e0—Fighter Engagement Phase (Space Combat Phase 6)
 
 **File**: Likely `spacebattle.cpp`
-**Phase**: Phase 6 — Fighter Engagement
+**Phase**: Phase 6—Fighter Engagement
 **Called by**: FUN_00549910
 **Calls**:
 - FUN_00543690 (get fighter stats)
@@ -1102,21 +1102,21 @@ bool hull_damage_phase(void* battle_state, void* context) {
 
 ---
 
-## FUN_005445d0 — Combat Result Determination
+## FUN_005445d0—Combat Result Determination
 
 **File**: Likely `spacebattle.cpp`
-**Phase**: Phase 7 — Result
+**Phase**: Phase 7—Result
 **Called by**: FUN_00549910
 **Calls**:
 - FUN_005434b0 (weapon stats)
 - FUN_00543550 (hull stats)
 - FUN_005435f0 (special/init stats)
 - FUN_00543690 (fighter stats)
-- FUN_00543760 (5th stat type — unknown)
-- FUN_00543800 (6th stat getter — post-combat)
+- FUN_00543760 (5th stat type—unknown)
+- FUN_00543800 (6th stat getter—post-combat)
 - FUN_004f2640 (iterate fleet units)
 - FUN_0052bed0 / FUN_005130d0 (iterator advance)
-- FUN_00543d90 (determine winner — side 1 then 0)
+- FUN_00543d90 (determine winner—side 1 then 0)
 - FUN_00534640 (special entity victory path)
 
 ### Key Offsets
@@ -1160,7 +1160,7 @@ int determine_combat_result(void* battle_state, void* context) {
             determine_winner(battle_state, side=1, context);
             determine_winner(battle_state, side=0, context);
         } else {
-            // Special entity path — check family 0x73
+            // Special entity path—check family 0x73
             uint family = entity_id >> 24;
             if (family == 0x73) {
                 special_entity_victory(entity, side=1, context);  // FUN_00534640
@@ -1176,28 +1176,28 @@ int determine_combat_result(void* battle_state, void* context) {
 ### Game Rules Extracted
 - Five stat types are gathered before determining the winner (weapon, hull, special, fighter, unknown 5th)
 - Fighter exception: dead fighters (`alive_flag & 1 == 0`) can still count as combat-eligible via `status_flags & 8`
-- Family `0x73` triggers `FUN_00534640` — this is the **special entity victory** path (likely Death Star win condition or unique win state)
+- Family `0x73` triggers `FUN_00534640`—this is the **special entity victory** path (likely Death Star win condition or unique win state)
 - Family `0x73` is distinct from `0x74` (also checked in alternate path at `local_30 = 0x74`)
 - Fleet iteration uses `FUN_004f2640` with `side=1, type=2`
 - The check `*(uint*)(iter + 0xac)` in the fleet loop reads the `alive_flag` field during iteration
 
 ---
 
-## FUN_00544a20 — Post-Combat Cleanup
+## FUN_00544a20—Post-Combat Cleanup
 
 **File**: Likely `spacebattle.cpp`
-**Phase**: Phase 8 — Post-Combat
+**Phase**: Phase 8—Post-Combat
 **Called by**: FUN_00549910 (final phase)
 **Calls**:
 - FUN_005434b0 (weapon stats)
 - FUN_00543760 (5th stat type)
 - FUN_00543800 (6th/cleanup stat type)
-- FUN_00543e00 (apply post-combat — both sides)
+- FUN_00543e00 (apply post-combat—both sides)
 
 ### Key Offsets
 | Offset | Type | Field Name | Notes |
 |--------|------|-----------|-------|
-| `battle_state+0x58` bit12 | bit | post_combat_flag | `0x1000` — triggers post-combat |
+| `battle_state+0x58` bit12 | bit | post_combat_flag | `0x1000`—triggers post-combat |
 
 ### Game Rules Extracted
 - Post-combat requires `combat_phase_flags & 0x1000 != 0` to run
@@ -1207,10 +1207,10 @@ int determine_combat_result(void* battle_state, void* context) {
 
 ---
 
-## FUN_00544da0 — Fleet Evaluation (Pre-Combat)
+## FUN_00544da0—Fleet Evaluation (Pre-Combat)
 
 **File**: Likely `spacebattle.cpp`
-**Phase**: Phase 2 — Fleet Evaluation
+**Phase**: Phase 2—Fleet Evaluation
 **Called by**: FUN_00549910
 **Calls**:
 - FUN_005434b0 (weapon stats)
@@ -1227,19 +1227,19 @@ int determine_combat_result(void* battle_state, void* context) {
 | `entity+0x78` bits 6-7 | bits | capability_flags | Must be 00 |
 | `entity+0x50` bit12 | bit | special_disable | Must be 0 |
 | `entity+0xb0` bit1 | bit | combat_ready | Must be 1 |
-| `entity+0x58` bit13 | bit | fleet_eval_skip | `0x2000` — skip eval if set |
+| `entity+0x58` bit13 | bit | fleet_eval_skip | `0x2000`—skip eval if set |
 | `0x98000481` | DatId | battle_context_id | Fleet eval only runs for this battle type |
 
 ### Game Rules Extracted
 - Fleet evaluation is skipped if `combat_phase_flags & 0x2000` is set
 - Full eligibility: alive + active + capability_flags_clear + not_special_disabled + **combat_ready (bit1 of +0xb0)**
-- The `combat_ready` bit (`+0xb0 & 2`) is the key differentiator — units must be explicitly combat-ready
-- `0x98000481` is checked again (same as in combat_init) — confirms this is the space battle context DatId
-- The fleet eval only calls `FUN_00543ee0` once (not bilateral) — this is asymmetric
+- The `combat_ready` bit (`+0xb0 & 2`) is the key differentiator—units must be explicitly combat-ready
+- `0x98000481` is checked again (same as in combat_init)—confirms this is the space battle context DatId
+- The fleet eval only calls `FUN_00543ee0` once (not bilateral)—this is asymmetric
 
 ---
 
-## FUN_00543b60 — Weapon Fire Resolver (Per Side)
+## FUN_00543b60—Weapon Fire Resolver (Per Side)
 
 **File**: Likely `spacebattle.cpp`
 **Called by**: FUN_00544030 (weapon fire phase) for side=1 and side=0
@@ -1267,12 +1267,12 @@ int resolve_weapon_fire(void* battle_state, int side, void* context) {
 
 ### Game Rules Extracted
 - `FUN_0053a640(4, side, flags_ptr)` sets the weapon fire flag (`0x04`) in the combat phase bitfield
-- vtable slot `+0x1c4` is the weapon fire handler — dispatches to the actual damage calculation
+- vtable slot `+0x1c4` is the weapon fire handler—dispatches to the actual damage calculation
 - Both observers are notified even when only one side fires in a given call
 
 ---
 
-## FUN_00543d90 — Victory Determinator (Who Won)
+## FUN_00543d90—Victory Determinator (Who Won)
 
 **File**: Likely `spacebattle.cpp`
 **Called by**: FUN_005445d0 (combat result) for side=1 and side=0
@@ -1284,13 +1284,13 @@ int resolve_weapon_fire(void* battle_state, int side, void* context) {
 - vtable `*this+0x1d8` (dispatch victory)
 
 ### Game Rules Extracted
-- `0x200` (512) is the **victory flag** in combat_phase_flags — set when a side wins
+- `0x200` (512) is the **victory flag** in combat_phase_flags—set when a side wins
 - vtable slot `+0x1d8` handles victory processing
 - Both sides receive victory notifications (one will be the winner, one the loser)
 
 ---
 
-## FUN_00534640 — Special Entity Victory Handler
+## FUN_00534640—Special Entity Victory Handler
 
 **File**: Likely `spacebattle.cpp` or `deathstar.cpp`
 **Called by**: FUN_005445d0 (combat result, family 0x73 path)
@@ -1308,13 +1308,13 @@ int resolve_weapon_fire(void* battle_state, int side, void* context) {
 | vtable `+0x258` | `code*` | on_special_victory | Special victory event handler |
 
 ### Game Rules Extracted
-- `FUN_0053a640(8, side, &this->capability_flags)` — writes flag value 8 into the capability_flags bitfield
-- vtable offset 600 decimal = 0x258 — specific to special entity victory
-- This path handles family 0x73 entities winning combat — likely the Death Star or a unique scenario win
+- `FUN_0053a640(8, side, &this->capability_flags)`—writes flag value 8 into the capability_flags bitfield
+- vtable offset 600 decimal = 0x258—specific to special entity victory
+- This path handles family 0x73 entities winning combat—likely the Death Star or a unique scenario win
 
 ---
 
-## FUN_00560d50 — Ground Combat Resolution
+## FUN_00560d50—Ground Combat Resolution
 
 **File**: Likely `groundcombat.cpp`
 **Called by**: System battle orchestrator (FUN_00514a60)
@@ -1339,7 +1339,7 @@ bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
                    uint* context_id, void* combat_ctx) {
     uint family = *attacker_id >> 24;
 
-    // Path 1: Ship — delegate to space combat
+    // Path 1: Ship—delegate to space combat
     if (family >= 0x30 && family <= 0x3b) {
         // Validate parent is also a ship
         int* parent = get_ship_entity(attacker_id);
@@ -1359,7 +1359,7 @@ bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
 
         // Validate both sides are troops (0x14-0x1b)
         if (defender_family in [0x14..0x1b] && context_family in [0x14..0x1b]) {
-            // Get faction sides — skip if same faction (no friendly fire)
+            // Get faction sides—skip if same faction (no friendly fire)
             void* atk_side = get_faction(defender_id);
             void* def_side = get_faction(context_id);
             if (same_faction(atk_side, def_side)) skip_combat;
@@ -1368,7 +1368,7 @@ bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
         return success;
     }
 
-    // Path 2: Troop — ground combat
+    // Path 2: Troop—ground combat
     if (family >= 0x14 && family <= 0x1b) {
         int* parent = get_parent_entity(attacker_id);
         if (!parent) return false;
@@ -1385,20 +1385,20 @@ bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
         return success;
     }
 
-    return true;  // unrecognized family — pass through
+    return true;  // unrecognized family—pass through
 }
 ```
 
 ### Game Rules Extracted
 - **No friendly fire**: `param_2 == param_1` (same faction ID) causes the combat call to be skipped
 - **Regiment strength 0 = skip**: units with zero strength are non-combatants even during ground combat
-- **Death Star triggers at family 0x34** — the family check is exact, not ranged
-- Ground combat calls `FUN_004ee350(unit, 0, context)` — applying strength 0 (destroy) to each unit. The actual damage calculation must happen upstream, as this appears to be the kill step.
-- Both parent validation checks confirm entity family before operating — strong type safety at runtime
+- **Death Star triggers at family 0x34**—the family check is exact, not ranged
+- Ground combat calls `FUN_004ee350(unit, 0, context)`—applying strength 0 (destroy) to each unit. The actual damage calculation must happen upstream, as this appears to be the kill step.
+- Both parent validation checks confirm entity family before operating—strong type safety at runtime
 
 ---
 
-## FUN_0050d5a0 — Mission Dispatch (13-Case Switch)
+## FUN_0050d5a0—Mission Dispatch (13-Case Switch)
 
 **File**: Likely `mission.cpp`
 **Called by**: Mission execution system
@@ -1407,7 +1407,7 @@ bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
 ### Mission Type Codes (switch cases)
 | Case | Mission Type | Notes |
 |------|-------------|-------|
-| 0 | (no-op) | — |
+| 0 | (no-op) |—|
 | 1 | Diplomacy / Recruitment | Sets fleet filter |
 | 2 | Special Forces Deployment | Sets unit filter |
 | 3 | Mission type 3 | Ranges 0x10-0x28, two filters |
@@ -1428,20 +1428,20 @@ bool ground_combat(void* battle, uint* attacker_id, uint* defender_id,
 - Cases with `bVar2=true` use the standard `FUN_0050fc80/FUN_0050fbf0/FUN_004f9ca0` validation chain
 - The range values (0x10, 0x20, 0x28, 0x30, 0xa0, 0xb0) are **entity type family ranges** used to filter eligible targets
 - Post-switch: iterates over fleet units and sub-units to find matching targets in the filtered ranges
-- `local_134=1, local_130=3` are constants set before the switch — likely min/max entity type specifiers
+- `local_134=1, local_130=3` are constants set before the switch—likely min/max entity type specifiers
 
 ---
 
-## FUN_00532e00 — Construction Yard Research Order Notification
+## FUN_00532e00—Construction Yard Research Order Notification
 
 **Notif string**: `SideConstructionYardRdOrderNotif` / `ConstructionYardRdOrder`
 **Event ID**: `0x127` (295)
 
-Note: The original `_victory.c` filename is misleading — this function fires a **construction yard research order** notification, not a victory condition. The victory condition function is elsewhere.
+Note: The original `_victory.c` filename is misleading—this function fires a **construction yard research order** notification, not a victory condition. The victory condition function is elsewhere.
 
 ---
 
-## FUN_00532f40 — Recruitment Done Notification
+## FUN_00532f40—Recruitment Done Notification
 
 **Notif string**: `SideRecruitmentDoneNotif` / `RecruitmentDone`
 **Event ID**: `300` (0x12c)
@@ -1449,7 +1449,7 @@ Note: The original `_victory.c` filename is misleading — this function fires a
 
 ---
 
-## FUN_00512280 — System Battle Notification
+## FUN_00512280—System Battle Notification
 
 **Notif string**: `SystemBattleNotif` / `Battle`
 **Event ID**: `0x14d` (333)
@@ -1457,21 +1457,21 @@ Note: The original `_victory.c` filename is misleading — this function fires a
 
 ---
 
-## FUN_005122d0 — System Blockade Notification
+## FUN_005122d0—System Blockade Notification
 
 **Notif string**: `SystemBlockadeNotif` / `Blockade`
 **Event ID**: `0x14e` (334)
 
 ---
 
-## FUN_00512580 — System Uprising Incident Notification
+## FUN_00512580—System Uprising Incident Notification
 
 **Notif string**: `SystemUprisingIncidentNotif` / `UprisingIncident`
 **Event ID**: `0x152` (338)
 
 ---
 
-## FUN_0054b7b0 — Luke Dagobah Mission Notification
+## FUN_0054b7b0—Luke Dagobah Mission Notification
 
 **Notif string**: `MissionMgrLukeDagobahNotif` / `LukeDagobah`
 **Event ID**: `0x221` (545)
@@ -1479,18 +1479,18 @@ Note: The original `_victory.c` filename is misleading — this function fires a
 
 ---
 
-## FUN_0056fc70 — Dagobah Training Completed Notification
+## FUN_0056fc70—Dagobah Training Completed Notification
 
 **Notif string**: `LukeDagobahCompletedNotif` / `DagobahCompleted`
 **Event ID**: `0x210` (528)
 **Called by**: Dagobah mission completion handler
 
 ### Game Rules Extracted
-- Dagobah completed (0x210 = 528) has a lower event ID than Luke Dagobah required (0x221 = 545) — completion is a sub-event of the prerequisite chain
+- Dagobah completed (0x210 = 528) has a lower event ID than Luke Dagobah required (0x221 = 545)—completion is a sub-event of the prerequisite chain
 
 ---
 
-## FUN_00572b40 — Han Solo Bounty Attack Notification
+## FUN_00572b40—Han Solo Bounty Attack Notification
 
 **Notif string**: `HanBountyAttackNotif` / `BountyAttack`
 **Event ID**: `0x212` (530)
@@ -1498,7 +1498,7 @@ Note: The original `_victory.c` filename is misleading — this function fires a
 
 ---
 
-## FUN_005738f0 — Mission Espionage Extra System Notification
+## FUN_005738f0—Mission Espionage Extra System Notification
 
 **Notif string**: `MissionEspionageExtraSystemKeyNotif` / `ExtraSystem`
 **Event ID**: `0x370` (880)
@@ -1506,7 +1506,7 @@ Note: The original `_victory.c` filename is misleading — this function fires a
 
 ---
 
-## FUN_005434b0 — Weapon/Firepower Stat Getter
+## FUN_005434b0—Weapon/Firepower Stat Getter
 
 **File**: Likely `spacebattle.cpp`
 **Called by**: Weapon fire phase (FUN_00544030), shield absorb, fleet eval, post-combat
@@ -1557,20 +1557,20 @@ FUN_0053a000 (validity check)
 
 **Pattern B: Notify Only** (event dispatchers)
 ```
-FUN_0053a010 (validity check — notification path)
+FUN_0053a010 (validity check—notification path)
 → FUN_004f8980/FUN_004f8880/FUN_004f8aa0 (dispatch notification)
 → FUN_0053fcf0/FUN_0053fdd0/FUN_0053fe40 (register event with numeric ID)
 ```
 
 The three notification dispatchers differ in parameter count:
-- `FUN_004f8880`: `(this, notif_str, event_str, param1, null, context)` — 1 entity param
-- `FUN_004f8980`: `(this, notif_str, event_str, param2, param1, null, context)` — 2 entity params (reversed order)
-- `FUN_004f8aa0`: `(this, notif_str, event_str, param2_ref, param1_ref, null, context)` — 2 entity ref params
+- `FUN_004f8880`: `(this, notif_str, event_str, param1, null, context)`—1 entity param
+- `FUN_004f8980`: `(this, notif_str, event_str, param2, param1, null, context)`—2 entity params (reversed order)
+- `FUN_004f8aa0`: `(this, notif_str, event_str, param2_ref, param1_ref, null, context)`—2 entity ref params
 
 The three event registrars differ in parameter count:
-- `FUN_0053fcf0`: `(event_id, this, p1, p2, ctx)` — 2 extra params
-- `FUN_0053fdd0`: `(event_id, this, p1, ctx)` — 1 extra param
-- `FUN_0053fe40`: `(event_id, this, p1_ref, p2_ref, ctx)` — 2 ref params
+- `FUN_0053fcf0`: `(event_id, this, p1, p2, ctx)`—2 extra params
+- `FUN_0053fdd0`: `(event_id, this, p1, ctx)`—1 extra param
+- `FUN_0053fe40`: `(event_id, this, p1_ref, p2_ref, ctx)`—2 ref params
 
 ---
 
@@ -1647,24 +1647,24 @@ The three event registrars differ in parameter count:
 1. **Phase order is strict**: Init → Fleet Eval → Weapon Fire → Shield Absorb → Hull Damage → Fighter Engage → Result → Post-Combat
 2. **Attacker fires first**: `FUN_00543b60(battle, side=1, ctx)` always before `side=0`
 3. **Phase gates**: `combat_phase_flags & 0x01` for weapon fire; `combat_phase_flags & 0x40` for shields/hull/fighters; `combat_phase_flags & 0x1000` for post-combat
-4. **Difficulty modifier**: extracted from `+0x24 bits 4-5` — 2-bit value (0-3) feeding into `FUN_004fd600`
+4. **Difficulty modifier**: extracted from `+0x24 bits 4-5`—2-bit value (0-3) feeding into `FUN_004fd600`
 5. **Victory detection**: iterates fleet survivors checking `alive_flag & 1` at `+0xac`, with fighter exception via `+0x50 & 8`
 
 **Key findings for ground combat:**
 
 1. No friendly fire: same-faction units do not fight
-2. Regiment strength `+0x96` (short) — zero means destroyed
-3. Troop damage = calling `FUN_004ee350(unit, 0, ctx)` — setting strength to 0
+2. Regiment strength `+0x96` (short)—zero means destroyed
+3. Troop damage = calling `FUN_004ee350(unit, 0, ctx)`—setting strength to 0
 4. Death Star (family 0x34) gets its own handler called before normal ground combat
 
 **Key findings for character system:**
 
-1. Loyalty: base at `+0x66`, enhanced bonus at `+0x8a` — both 0-100, stored as `short`
-2. Hyperdrive modifier: `+0x9a` (short), non-negative, no upper bound — affects Han Solo fleet speed
+1. Loyalty: base at `+0x66`, enhanced bonus at `+0x8a`—both 0-100, stored as `short`
+2. Hyperdrive modifier: `+0x9a` (short), non-negative, no upper bound—affects Han Solo fleet speed
 3. Force fields: `piVar4[0x23]` as `short` = Force experience; `[9] >> 6 & 3` = 2-bit Force tier
 4. Two distinct Jedi states: `+0x1e & 1` = is_jedi_but_not_discovered (triggers discovery event)
 
 **Object identity:**
-- `0x90000109` — a specific explored system DatId (the Death Star target)
-- `0x98000481` — the space battle context DatId (used as battle type identifier)
+- `0x90000109`—a specific explored system DatId (the Death Star target)
+- `0x98000481`—the space battle context DatId (used as battle type identifier)
 - `0x98` family prefix is consistent with system-related objects (0x90-0x98 range)

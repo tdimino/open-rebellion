@@ -53,6 +53,12 @@ plugins:
 
 nav:
   - Home: index.md
+  - Game Guide:
+    - The Galactic Civil War: guide/scenario.md
+    - Factions: guide/factions.md
+    - Characters & Officers: guide/characters.md
+    - Research & Tech Trees: guide/tech-trees.md
+    - Missions: guide/missions.md
   - Scholar Documents:
     - Annotated Functions: scholar/annotated-functions.md
     - C++ Class Hierarchy: scholar/cpp-class-hierarchy.md

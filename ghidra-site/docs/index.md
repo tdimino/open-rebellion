@@ -1,6 +1,6 @@
 ---
-title: "Ghidra Reverse Engineering — REBEXE.EXE"
-description: "Exhaustive decompilation of Star Wars Rebellion (1998) — 5,127 functions, 7 scholar docs, 8 scripts"
+title: "Ghidra Reverse Engineering—REBEXE.EXE"
+description: "Exhaustive decompilation of Star Wars Rebellion (1998)—5,127 functions, 7 scholar docs, 8 scripts"
 category: ghidra
 created: 2026-03-13
 updated: 2026-03-22
@@ -8,11 +8,11 @@ tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
 ---
 
 <div class="tanit-logo" style="text-align:center; margin-bottom:1em;">
-  <img class="dark-only" src="assets/tanit-dark.png" alt="Symbol of Tanit" width="80">
-  <img class="light-only" src="assets/tanit-light.png" alt="Symbol of Tanit" width="80">
+  <img class="dark-only" src="/open-rebellion/assets/tanit-dark.png" alt="Symbol of Tanit" width="80">
+  <img class="light-only" src="/open-rebellion/assets/tanit-light.png" alt="Symbol of Tanit" width="80">
 </div>
 
-# Ghidra Reverse Engineering — REBEXE.EXE
+# Ghidra Reverse Engineering—REBEXE.EXE
 
 Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open Rebellion reimplementation.
 
@@ -21,8 +21,8 @@ Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open R
 | Target | Size | Total Functions | Decompiled | Coverage |
 |--------|------|-----------------|------------|----------|
 | **REBEXE.EXE** | 2.8 MB | 22,741 | **5,127** | Every function >100 bytes |
-| COMMON.DLL | 2.9 MB | — | 0 | Imported, not analyzed |
-| STRATEGY.DLL | 29 MB | 43 (CRT only) | N/A | Resource-only — no game logic |
+| COMMON.DLL | 2.9 MB |—| 0 | Imported, not analyzed |
+| STRATEGY.DLL | 29 MB | 43 (CRT only) | N/A | Resource-only—no game logic |
 
 **Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL is a resource container (BMPs, strings, data tables). COMMON.DLL handles DirectPlay networking.
 
@@ -42,36 +42,36 @@ Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open R
 
 | Document | Subsystem | Key Functions |
 |----------|-----------|---------------|
-| `notes/space-combat.md` | Space combat — 7-phase auto-resolve pipeline | FUN_00549910, FUN_00544030, FUN_005443f0 |
-| `notes/ground-combat.md` | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
-| `notes/bombardment.md` | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
+| `notes/space-combat.md` | Space combat—7-phase auto-resolve pipeline | FUN_00549910, FUN_00544030, FUN_005443f0 |
+| `notes/ground-combat.md` | Ground combat—troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
+| `notes/bombardment.md` | Orbital bombardment—Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
 
 ## AI Pipeline (6 core functions fully traced)
 
 | # | Function | Purpose | Lines | Status in Open Rebellion |
 |---|----------|---------|-------|--------------------------|
-| 1 | FUN_00519d00 | Galaxy-wide system bucketing (7 categories) | 252 | DONE — evaluate_galaxy_state() + ratio scoring |
-| 2 | FUN_00537180 | Primary fleet deployment (per-system iteration) | 381 | AUGMENTED — per-fleet scoring with 4 factors |
-| 3 | FUN_005385f0 | Secondary deployment (redistribution) | 252 | DONE — aggression-scaled redistribution |
-| 4 | FUN_00502020 | Garrison strength assessment | 897 | DONE — ships + troops + facilities |
-| 5 | FUN_00508250 | Pre-dispatch validation (18 boolean checks) | ~200 | DONE — can_dispatch() with 6 checks |
-| 6 | FUN_00520580 | Movement order issuance | ~300 | DONE — with already_moving dedup |
+| 1 | FUN_00519d00 | Galaxy-wide system bucketing (7 categories) | 252 | DONE—evaluate_galaxy_state() + ratio scoring |
+| 2 | FUN_00537180 | Primary fleet deployment (per-system iteration) | 381 | AUGMENTED—per-fleet scoring with 4 factors |
+| 3 | FUN_005385f0 | Secondary deployment (redistribution) | 252 | DONE—aggression-scaled redistribution |
+| 4 | FUN_00502020 | Garrison strength assessment | 897 | DONE—ships + troops + facilities |
+| 5 | FUN_00508250 | Pre-dispatch validation (18 boolean checks) | ~200 | DONE—can_dispatch() with 6 checks |
+| 6 | FUN_00520580 | Movement order issuance | ~300 | DONE—with already_moving dedup |
 
 ## Key Discoveries
 
 - **111 GNPRTB parameters mapped**: 34 general (28 base + 6 per-side) + 77 combat (25 base + 52 per-side). These are the "knobs" that control game difficulty and balance.
 - **Bombardment formula**: `damage = sqrt((atk[0]-def[0])^2 + (atk[1]-def[1])^2) / GNPRTB[0x1400]`
-- **Hull and squad_size share offset +0x60** — polymorphism by vtable, not separate structs
+- **Hull and squad_size share offset +0x60**—polymorphism by vtable, not separate structs
 - **Shield/weapon recharge packed into 4-bit nibbles** at offset +0x64
-- **C++ class hierarchy**: CRebObject → CNotifyObject → CCombatUnit/CCharacter/CStarSystem — all combat dispatched via vtable
-- **AI is omniscient** — no fog-of-war check in FUN_00519d00 (galaxy evaluation)
-- **Turn processing**: FUN_004927c0 (9K lines) is the master tick function — research dispatch, fleet orders, manufacturing, event processing
+- **C++ class hierarchy**: CRebObject → CNotifyObject → CCombatUnit/CCharacter/CStarSystem—all combat dispatched via vtable
+- **AI is omniscient**—no fog-of-war check in FUN_00519d00 (galaxy evaluation)
+- **Turn processing**: FUN_004927c0 (9K lines) is the master tick function—research dispatch, fleet orders, manufacturing, event processing
 
 ## Ghidra Scripts (8 Jython scripts)
 
 | Script | Purpose |
 |--------|---------|
-| `FindAllFunctions.py` | x86 prologue scanner — finds all function entry points |
+| `FindAllFunctions.py` | x86 prologue scanner—finds all function entry points |
 | `DumpAllGameFunctions.py` | Exhaustive catalog of 4,938 functions with referenced strings |
 | `DumpStrings.py` | Keyword string search → file output |
 | `DumpCombatXrefs.py` | String → function cross-reference tracer |

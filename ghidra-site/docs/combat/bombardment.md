@@ -10,7 +10,7 @@ updated: 2026-03-16
 
 ## Entry Point
 
-`FUN_00556430` (78 lines) — called from system battle orchestrator (`FUN_00514a60`).
+`FUN_00556430` (78 lines)—called from system battle orchestrator (`FUN_00514a60`).
 
 ## Flow
 
@@ -19,7 +19,7 @@ updated: 2026-03-16
 3. Get defender side via `FUN_00504dc0(param_3)` → `puVar6`
 4. Get fleet strength for each side via `FUN_00555540`
 5. Extract IDs: `FUN_004025b0` for attacker (`uVar1`) and defender (`uVar2`)
-6. If same faction (`uVar1 == uVar2`): skip — no self-bombardment
+6. If same faction (`uVar1 == uVar2`): skip—no self-bombardment
 7. Call `FUN_00555d30` → `FUN_00555b30` for bombardment calculation
 8. Apply result: `FUN_004f7390(system, base + damage, context)`
 
@@ -37,7 +37,7 @@ FUN_00556430 (bombardment handler)
         → FUN_0053e190 (difficulty modifier)
 ```
 
-### FUN_0055d8c0 — Damage Formula
+### FUN_0055d8c0—Damage Formula
 ```c
 int bombardment_damage(short* defender, short* attacker, int difficulty_param) {
     int raw_power = power_ratio(defender, attacker);  // FUN_0055d860
@@ -47,7 +47,7 @@ int bombardment_damage(short* defender, short* attacker, int difficulty_param) {
 }
 ```
 
-### FUN_0055d860 — Power Ratio (Euclidean Distance)
+### FUN_0055d860—Power Ratio (Euclidean Distance)
 ```c
 float power_ratio(short* defender, short* attacker) {
     int dx = attacker[0] - defender[0];
@@ -69,17 +69,17 @@ The `short[2]` stats from `FUN_00509620` are likely:
 
 ## Bombardment Disabled Flag
 
-`this[0x14] & 0x800` — when set, bombardment is blocked (system already under bombardment or protected).
+`this[0x14] & 0x800`—when set, bombardment is blocked (system already under bombardment or protected).
 
 ## Decompiled Files
 
-- `FUN_00556430_bombardment.c` — main bombardment handler (78 lines)
-- `FUN_00555d30.c` — bombardment setup (calls FUN_00555b30)
-- `FUN_00555b30.c` — bombardment calculation orchestrator
-- `FUN_0055d8c0.c` — damage formula (Euclidean distance / GNPRTB)
-- `FUN_0055d860.c` — power ratio (sqrt of stat deltas)
-- `FUN_0053e190.c` — difficulty modifier application
-- `FUN_0053e1d0.c` — sqrt function
-- `FUN_0053e170.c` — modifier helper
-- `FUN_00509620_combat_stats.c` — combat stat extractor
-- `FUN_00555540.c` — fleet strength getter
+- `FUN_00556430_bombardment.c`—main bombardment handler (78 lines)
+- `FUN_00555d30.c`—bombardment setup (calls FUN_00555b30)
+- `FUN_00555b30.c`—bombardment calculation orchestrator
+- `FUN_0055d8c0.c`—damage formula (Euclidean distance / GNPRTB)
+- `FUN_0055d860.c`—power ratio (sqrt of stat deltas)
+- `FUN_0053e190.c`—difficulty modifier application
+- `FUN_0053e1d0.c`—sqrt function
+- `FUN_0053e170.c`—modifier helper
+- `FUN_00509620_combat_stats.c`—combat stat extractor
+- `FUN_00555540.c`—fleet strength getter

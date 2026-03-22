@@ -1,12 +1,12 @@
 ---
-title: "Ghidra RE Notes — Index"
+title: "Ghidra RE Notes—Index"
 description: "Master index of 5,127 decompiled C files, 8 Jython scripts, and 14 scholar documents"
 category: "ghidra"
 created: 2026-03-13
 updated: 2026-03-16
 ---
 
-# Ghidra RE Notes — Index
+# Ghidra RE Notes—Index
 
 **5,127 decompiled C files, 8 Jython scripts, 14 markdown docs, 6,049 lines of scholar analysis**
 
@@ -26,16 +26,16 @@ updated: 2026-03-16
 
 | File | Lines | Content |
 |------|-------|---------|
-| [combat-formulas.md](combat-formulas.md) | ~200 | **Master reference** — binary overview, 111 GNPRTB mappings, confirmed functions, scripted events, Ghidra scripts |
+| [combat-formulas.md](combat-formulas.md) | ~200 | **Master reference**—binary overview, 111 GNPRTB mappings, confirmed functions, scripted events, Ghidra scripts |
 | [COMBAT-SUMMARY.md](COMBAT-SUMMARY.md) | ~115 | Combat call chain diagram, confirmed formulas, entity type codes, implementation readiness |
 
 ## Combat Subsystem Docs
 
 | File | Subsystem | Key Functions |
 |------|-----------|---------------|
-| [space-combat.md](space-combat.md) | Space combat auto-resolve — 7-phase pipeline | FUN_00549910, FUN_00544030, FUN_00544130, FUN_005443f0, FUN_005444e0, FUN_005445d0 |
-| [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
-| [bombardment.md](bombardment.md) | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
+| [space-combat.md](space-combat.md) | Space combat auto-resolve—7-phase pipeline | FUN_00549910, FUN_00544030, FUN_00544130, FUN_005443f0, FUN_005444e0, FUN_005445d0 |
+| [ground-combat.md](ground-combat.md) | Ground combat—troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
+| [bombardment.md](bombardment.md) | Orbital bombardment—Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
 
 ## Decompiled Functions (5,127 files)
 
@@ -70,8 +70,8 @@ updated: 2026-03-16
 | FUN_0055cb60 | 84 | Combat parameter binding (77 params: 25 base + 52 per-side, IDs 0x1400-0x1445) |
 | FUN_00585640 | 27 | GNPRTB entry constructor (68-byte runtime struct, 8 i32 values) |
 | FUN_00569280 | 12 | DAT type registry (5 parser types by info string) |
-| FUN_0053e390 | — | Parameter → global address binder |
-| FUN_0053e3e0 | — | Per-side parameter → global address binder |
+| FUN_0053e390 |—| Parameter → global address binder |
+| FUN_0053e3e0 |—| Per-side parameter → global address binder |
 
 ### Validation Functions ("Invalid X value!")
 
@@ -84,10 +84,10 @@ updated: 2026-03-16
 | FUN_004ee030 | EnhancedLoyalty | +0x8a | 0 to 0x7fff |
 | FUN_004ee470 | MissionHyperdriveModifier | +0x9a | 0 to unbounded |
 | FUN_005341a0 | BaseLoyalty | +0x66 | 0-100 |
-| FUN_00509cc0 | SystemEnergy | — | — |
-| FUN_00509d40 | SystemEnergyAllocated | — | — |
-| FUN_00509dc0 | SystemRawMaterial | — | — |
-| FUN_00509e40 | SystemRawMaterialAllocated | — | — |
+| FUN_00509cc0 | SystemEnergy |—|—|
+| FUN_00509d40 | SystemEnergyAllocated |—|—|
+| FUN_00509dc0 | SystemRawMaterial |—|—|
+| FUN_00509e40 | SystemRawMaterialAllocated |—|—|
 
 ## Ghidra Scripts
 

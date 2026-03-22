@@ -1,6 +1,6 @@
 # Total Conversions & Era Expansions
 
-Open Rebellion's mod system supports total conversions — complete replacements of factions, units, characters, and star systems. The Ghidra RE work mapped every moddable parameter in the original engine, and our mod loader uses RFC 7396 JSON Merge Patch for clean, composable overrides.
+Open Rebellion's mod system supports total conversions—complete replacements of factions, units, characters, and star systems. The Ghidra RE work mapped every moddable parameter in the original engine, and our mod loader uses RFC 7396 JSON Merge Patch for clean, composable overrides.
 
 These are the eras and expansions we're designing toward.
 
@@ -9,12 +9,12 @@ These are the eras and expansions we're designing toward.
 ## New Jedi Order (1998–2003)
 
 <div style="text-align:center; margin: 1em 0;">
-  <img src="../assets/new-jedi-order.png" alt="Jedi Order" width="60">
+  <img src="/open-rebellion/assets/new-jedi-order.png" alt="Jedi Order" width="60">
 </div>
 
-The Yuuzhan Vong invasion — the defining crisis of the post-Endor Expanded Universe. 19 novels, from *Vector Prime* (1999) to *The Unifying Force* (2003).
+The Yuuzhan Vong invasion—the defining crisis of the post-Endor Expanded Universe. 19 novels, from *Vector Prime* (1999) to *The Unifying Force* (2003).
 
-**Concept**: Replace the Empire with the Yuuzhan Vong Warmaster's forces. The Alliance becomes the New Republic / Galactic Alliance. Entirely new unit rosters — coralskippers replace TIE Fighters, worldships replace Star Destroyers, shapers replace engineers.
+**Concept**: Replace the Empire with the Yuuzhan Vong Warmaster's forces. The Alliance becomes the New Republic / Galactic Alliance. Entirely new unit rosters—coralskippers replace TIE Fighters, worldships replace Star Destroyers, shapers replace engineers.
 
 **What changes**:
 
@@ -31,7 +31,7 @@ The Yuuzhan Vong invasion — the defining crisis of the post-Endor Expanded Uni
 ## Knights of the Old Republic (3,956 BBY)
 
 <div style="text-align:center; margin: 1em 0;">
-  <img src="../assets/kotor-era.png" alt="Old Republic" width="60">
+  <img src="/open-rebellion/assets/kotor-era.png" alt="Old Republic" width="60">
 </div>
 
 Four thousand years before the Battle of Yavin. The Jedi Civil War between the Sith Empire under Darth Malak and the Galactic Republic. Based on BioWare's KOTOR (2003) and Obsidian's KOTOR II (2004).
@@ -51,12 +51,12 @@ Four thousand years before the Battle of Yavin. The Jedi Civil War between the S
 ## Expanded Universe Elements
 
 <div style="text-align:center; margin: 1em 0;">
-  <img src="../assets/expanded-universe.png" alt="Expanded Universe" width="50" style="margin: 0 8px;">
-  <img src="../assets/legends-badge.png" alt="Legends" width="50" style="margin: 0 8px;">
-  <img src="../assets/lucasarts-logo.png" alt="LucasArts" width="50" style="margin: 0 8px;">
+  <img src="/open-rebellion/assets/expanded-universe.png" alt="Expanded Universe" width="50" style="margin: 0 8px;">
+  <img src="/open-rebellion/assets/legends-badge.png" alt="Legends" width="50" style="margin: 0 8px;">
+  <img src="/open-rebellion/assets/lucasarts-logo.png" alt="LucasArts" width="50" style="margin: 0 8px;">
 </div>
 
-Not full conversions — these are expansions that enrich the base Galactic Civil War era with content from the broader Expanded Universe.
+Not full conversions—these are expansions that enrich the base Galactic Civil War era with content from the broader Expanded Universe.
 
 ### Thrawn's Revenge
 
@@ -88,14 +88,14 @@ Luke Skywalker's fall to the dark side and the Emperor reborn. The Galaxy Gun an
 
 ## Modding Architecture
 
-Total conversions use the same mod system as balance patches — TOML manifests with JSON Merge Patch overrides. The key difference is scale: a TC replaces most entity definitions rather than tweaking a few values.
+Total conversions use the same mod system as balance patches—TOML manifests with JSON Merge Patch overrides. The key difference is scale: a TC replaces most entity definitions rather than tweaking a few values.
 
 ```toml
 # mod.toml for a total conversion
 [mod]
 name = "New Jedi Order"
 version = "1.0.0"
-description = "Yuuzhan Vong invasion — replaces Empire with extragalactic invaders"
+description = "Yuuzhan Vong invasion—replaces Empire with extragalactic invaders"
 author = "Open Rebellion Community"
 min_game_version = "0.15.0"
 

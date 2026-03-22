@@ -11,7 +11,7 @@ updated: 2026-03-16
 *Maps decompiled C++ from REBEXE.EXE to `rebellion-core` Rust. Written for the Knesset Tiamat swarm.*
 
 **Source notes**: `ghidra/notes/space-combat.md`, `ground-combat.md`, `bombardment.md`, `annotated-functions.md`, `COMBAT-SUMMARY.md`
-**Target crate**: `crates/rebellion-core/src/` — zero IO, no rendering deps, all advance() pattern
+**Target crate**: `crates/rebellion-core/src/`—zero IO, no rendering deps, all advance() pattern
 
 ---
 
@@ -62,7 +62,7 @@ The space combat state object (`this` in `FUN_00549910` and its callees) adds:
 
 The current `CapitalShipClass` in `world/mod.rs` carries only ~10 of ~50 DAT fields. Combat needs these additions promoted to the world model:
 
-**Add to `CapitalShipClass`** (class template — from CAPSHPSD.DAT):
+**Add to `CapitalShipClass`** (class template—from CAPSHPSD.DAT):
 ```rust
 // Weapons (4 arcs × 3 types = 12 values; DAT fields already parsed by dat-dumper)
 pub weapons_fore_turbolaser: u32,
@@ -84,9 +84,9 @@ pub damage_control: u32,        // hull repair rate
 pub bombardment: u32,           // bombardment attack stat (used in §4)
 ```
 
-**Add a new `ShipInstance` world type** (runtime per-hull state — replaces the count-only `ShipEntry`):
+**Add a new `ShipInstance` world type** (runtime per-hull state—replaces the count-only `ShipEntry`):
 ```rust
-/// A single hull of a capital ship class — the runtime instance.
+/// A single hull of a capital ship class—the runtime instance.
 /// Distinct from ShipEntry which is a (class, count) summary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShipInstance {
@@ -95,7 +95,7 @@ pub struct ShipInstance {
     pub hull_current: i32,
     /// Packed nibbles: bits 0-3 = shield_recharge_allocated, bits 4-7 = weapon_recharge_allocated.
     /// Mirrors C++ offset +0x64. Read via helpers shield_nibble() / weapon_nibble().
-    /// Note: C++ writes via XOR-mask pattern `(new ^ old) & 0xf ^ old` — functionally equivalent
+    /// Note: C++ writes via XOR-mask pattern `(new ^ old) & 0xf ^ old`—functionally equivalent
     /// to simple mask-OR for in-range values, but the XOR is what the original binary does.
     pub shield_weapon_packed: u8,
     /// bit0 = alive; cleared when hull_current reaches 0.
@@ -115,7 +115,7 @@ impl ShipInstance {
 pub regiment_strength: i16,
 ```
 
-**Add to `FighterClass`** (template — from FIGHTSD.DAT):
+**Add to `FighterClass`** (template—from FIGHTSD.DAT):
 ```rust
 pub attack: u32,
 pub defense: u32,
@@ -130,10 +130,10 @@ Rather than hardcoding constants, these GNPRTB parameter values should be loaded
 /// Game-balance parameters from GNPRTB.DAT, indexed by difficulty (0-3).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GnprtbParams {
-    /// DAT_006bb6e8 — bombardment damage divisor.
+    /// DAT_006bb6e8—bombardment damage divisor.
     /// Scales Euclidean-distance raw power to final damage.
     pub bombardment_divisor: [i32; 4],
-    /// DAT_00661a88 — difficulty modifier table (4 entries, one per difficulty).
+    /// DAT_00661a88—difficulty modifier table (4 entries, one per difficulty).
     pub difficulty_modifier: [i32; 4],
 }
 ```
@@ -190,7 +190,7 @@ Gate logic (straight from the phase table in space-combat.md):
 - Weapon fire runs when: `flags.contains(ACTIVE) && !flags.contains(PHASES_ENABLED)` → i.e., `0x58 & 0x01` is set AND `0x58 & 0x40` is clear
 - Shield absorb, hull damage, fighter engagement all run when: `flags.contains(PHASES_ENABLED)`
 
-### 2.3 `CombatSystem::resolve_space()` — Full Signature and Skeleton
+### 2.3 `CombatSystem::resolve_space()`—Full Signature and Skeleton
 
 ```rust
 // crates/rebellion-core/src/combat.rs
@@ -220,7 +220,7 @@ pub enum CombatSide { Attacker, Defender, Draw }
 #[derive(Debug, Clone)]
 pub struct ShipDamageEvent {
     pub fleet: FleetKey,
-    /// Index into fleet.capital_ships (not a slotmap key — instances are transient).
+    /// Index into fleet.capital_ships (not a slotmap key—instances are transient).
     pub ship_index: usize,
     pub hull_before: i32,
     pub hull_after: i32,
@@ -238,7 +238,7 @@ pub struct FighterLossEvent {
 // State
 // ---------------------------------------------------------------------------
 
-/// Transient per-battle combat state — alive for one resolve_space() call.
+/// Transient per-battle combat state—alive for one resolve_space() call.
 /// Never stored in GameWorld; emitted as result events.
 struct SpaceCombatState {
     /// Mutable copies of the attacker's ship hulls for this resolution.
@@ -295,7 +295,7 @@ impl CombatSystem {
         // Sets PHASES_ENABLED flag if either side has active weapons.
         Self::phase_fleet_eval(world, &mut state);
 
-        // Phase 3: Weapon fire — gate: ACTIVE && !PHASES_ENABLED
+        // Phase 3: Weapon fire—gate: ACTIVE && !PHASES_ENABLED
         // Calls FUN_00543b60 for each side (attacker fires first).
         if state.flags.contains(CombatPhaseFlags::ACTIVE)
             && !state.flags.contains(CombatPhaseFlags::PHASES_ENABLED)
@@ -321,7 +321,7 @@ impl CombatSystem {
         // Family 0x73/0x74 take a special path (FUN_00534640).
         let winner = Self::phase_determine_result(world, &state);
 
-        // Phase 8: Post-combat cleanup (FUN_00544a20, 86 lines) — handled by caller
+        // Phase 8: Post-combat cleanup (FUN_00544a20, 86 lines)—handled by caller
         // (apply damage events to GameWorld).
 
         Self::build_result(attacker, defender, system, &state, winner, tick)
@@ -383,7 +383,7 @@ impl CombatSystem {
     fn phase_fleet_eval(world: &GameWorld, state: &mut SpaceCombatState) {
         // FUN_00544da0 (96 lines): checks fleet composition.
         // Sets PHASES_ENABLED if either side has active weapons (weapon_nibble > 0).
-        // In practice this is almost always true — guard kept for correctness.
+        // In practice this is almost always true—guard kept for correctness.
         let any_attacker_armed = state.attacker_ships.iter()
             .any(|s| s.alive && s.weapon_nibble > 0);
         let any_defender_armed = state.defender_ships.iter()
@@ -399,7 +399,7 @@ impl CombatSystem {
         state: &mut SpaceCombatState,
         rng: &mut impl Iterator<Item = f64>,
     ) {
-        // FUN_00543b60 — per-side weapon fire, vtable +0x1c4 dispatch.
+        // FUN_00543b60—per-side weapon fire, vtable +0x1c4 dispatch.
         // Attacker fires first (side=1), then defender (side=0).
         // Weapon damage is aggregated per side, then distributed.
         //
@@ -470,7 +470,7 @@ impl CombatSystem {
         state: &mut SpaceCombatState,
         rng: &mut impl Iterator<Item = f64>,
     ) {
-        // FUN_00544130 (83 lines) — vtable +0x1c8 dispatch.
+        // FUN_00544130 (83 lines)—vtable +0x1c8 dispatch.
         // Shields absorb a portion of incoming weapon damage before hull is hit.
         //
         // Known: shield_nibble (bits 0-3 of +0x64) = allocated shield recharge.
@@ -488,7 +488,7 @@ impl CombatSystem {
         state: &mut SpaceCombatState,
         rng: &mut impl Iterator<Item = f64>,
     ) {
-        // FUN_005443f0 (54 lines) — vtable +0x1d0 dispatch.
+        // FUN_005443f0 (54 lines)—vtable +0x1d0 dispatch.
         // Remaining damage after shield absorption is applied to hull_current.
         // Hull setter (FUN_00501490): range-checked [0, max_hull], notifies both sides.
         //
@@ -503,7 +503,7 @@ impl CombatSystem {
         state: &mut SpaceCombatState,
         rng: &mut impl Iterator<Item = f64>,
     ) {
-        // FUN_005444e0 (53 lines) — vtable +0x1d4 dispatch.
+        // FUN_005444e0 (53 lines)—vtable +0x1d4 dispatch.
         // Fighter engagement: squadrons attack each other and enemy capital ships.
         //
         // Entity path: family 0x71-0x72 triggers the alt_shield_path (+0x78 bit7).
@@ -654,7 +654,7 @@ impl CombatSystem {
     ///
     /// # Advance contract
     /// - Does NOT mutate world. Returns TroopDamageEvents.
-    /// - Death Star (family 0x34) takes a separate path — see resolve_death_star().
+    /// - Death Star (family 0x34) takes a separate path—see resolve_death_star().
     /// - `rng_rolls`: one roll per troop pair engagement. Budget: troop_count² rolls.
     pub fn resolve_ground(
         world: &GameWorld,
@@ -676,7 +676,7 @@ impl CombatSystem {
                 .partition(|&key| world.troops[key].is_alliance == attacker_is_alliance);
 
         // Regiment strength check (C++ offset +0x96, short):
-        // skip units with strength <= 0 — they are destroyed / non-combat.
+        // skip units with strength <= 0—they are destroyed / non-combat.
         let active_attackers: Vec<TroopKey> = attacker_troops.iter()
             .copied()
             .filter(|&key| world.troops[key].regiment_strength > 0)
@@ -696,7 +696,7 @@ impl CombatSystem {
                 let def = &world.troops[def_key];
 
                 // Same-side guard (C++: `if (param_2 == param_1) continue`).
-                // In Rust both are already in opposite partitions — guard is implicit.
+                // In Rust both are already in opposite partitions—guard is implicit.
 
                 let roll = rng.next().unwrap_or(0.5);
 
@@ -796,7 +796,7 @@ impl CombatSystem {
     /// Death Star superlaser resolution.
     ///
     /// Called when a Death Star (family 0x34) is present at the system.
-    /// FUN_005617b0 (68 lines) — pending full decompile.
+    /// FUN_005617b0 (68 lines)—pending full decompile.
     ///
     /// Stub: marks the system as destroyed and returns attacker victory.
     pub fn resolve_death_star(
@@ -835,7 +835,7 @@ FUN_00556430 → FUN_00555d30 → FUN_00555b30
 
 The `short[2]` stats from `FUN_00509620`:
 - `[0]` = bombardment attack strength (attacker) / bombardment defense rating (defender)
-- `[1]` = secondary stat (likely detection or maneuverability modifier — confirm via Ghidra)
+- `[1]` = secondary stat (likely detection or maneuverability modifier—confirm via Ghidra)
 
 ```rust
 // crates/rebellion-core/src/combat.rs (continued)
@@ -872,7 +872,7 @@ impl CombatSystem {
     ) -> BombardmentResult {
         // Guard: bombardment disabled if system flag this[0x14] & 0x800 is set.
         // In Rust: check a future system.bombardment_blocked flag.
-        // (Not yet in world model — add when implementing blockade mechanics.)
+        // (Not yet in world model—add when implementing blockade mechanics.)
 
         // Guard: no self-bombardment (uVar1 == uVar2 check in FUN_00556430).
         let attacker_fleet_data = &world.fleets[attacker_fleet];
@@ -944,7 +944,7 @@ impl CombatSystem {
         let mut sec: i32 = 0;
 
         // Defense facilities contribute bombardment_defense.
-        // (DefenseFacilityClass needs bombardment_defense field — add to world model.)
+        // (DefenseFacilityClass needs bombardment_defense field—add to world model.)
         for &key in &system_data.defense_facilities {
             // TODO: look up DefenseFacilityClass by class_dat_id and sum bombardment_defense.
             // Placeholder: each facility contributes 10 defense.
@@ -968,7 +968,7 @@ impl CombatSystem {
 At every combat call site in `main.rs`, the difficulty-indexed lookup looks like:
 
 ```rust
-// main.rs — before calling resolve_bombardment:
+// main.rs—before calling resolve_bombardment:
 let difficulty = game_state.difficulty as u8; // 0=easy, 1=medium, 2=hard, 3=impossible
 let result = CombatSystem::resolve_bombardment(&world, attacker, system, difficulty, tick);
 ```
@@ -992,15 +992,15 @@ The current `MissionKind` in `missions.rs` only covers `Diplomacy` and `Recruitm
 
 | Code | Mission | *MSTB File | Skill Used |
 |------|---------|------------|------------|
-| — | Diplomacy | DIPLMSTB.DAT | `diplomacy` |
-| — | Recruitment | RCRTMSTB.DAT | `leadership` |
+|—| Diplomacy | DIPLMSTB.DAT | `diplomacy` |
+|—| Recruitment | RCRTMSTB.DAT | `leadership` |
 | 6 | Sabotage | SBTGMSTB.DAT | `espionage` |
 | 7 | Assassination | ASSNMSTB.DAT | `combat` |
-| — | Espionage | ESPIMSTB.DAT | `espionage` |
-| — | Rescue | RESCMSTB.DAT | `combat` |
-| — | Abduction | ABDCMSTB.DAT | `espionage` |
-| — | Incite Uprising | INCTMSTB.DAT | `diplomacy` |
-| 21 | Autoscrap | — | — (auto, no character) |
+|—| Espionage | ESPIMSTB.DAT | `espionage` |
+|—| Rescue | RESCMSTB.DAT | `combat` |
+|—| Abduction | ABDCMSTB.DAT | `espionage` |
+|—| Incite Uprising | INCTMSTB.DAT | `diplomacy` |
+| 21 | Autoscrap |—|—(auto, no character) |
 
 ```rust
 // Extend MissionKind in crates/rebellion-core/src/missions.rs
@@ -1031,7 +1031,7 @@ pub enum MissionKind {
 
 ### 5.2 Extending `coefficients()` for New Mission Types
 
-Each `*MSTB.DAT` file is an `IntTableEntry` table (16B per entry): `id`, `field2`, `threshold` (i32 skill delta), `value` (probability 0-100). The quadratic formula from rebellion2 still applies — the coefficients are fit from these tables.
+Each `*MSTB.DAT` file is an `IntTableEntry` table (16B per entry): `id`, `field2`, `threshold` (i32 skill delta), `value` (probability 0-100). The quadratic formula from rebellion2 still applies—the coefficients are fit from these tables.
 
 Until the *MSTB tables are fit, use placeholders that match the structural pattern:
 
@@ -1043,7 +1043,7 @@ impl MissionKind {
             MissionKind::Diplomacy    => (0.005558,  0.7656,  20.15),
             MissionKind::Recruitment  => (-0.001748, 0.8657,  11.923),
 
-            // Placeholders — fit from *MSTB.DAT IntTableEntry tables:
+            // Placeholders—fit from *MSTB.DAT IntTableEntry tables:
             MissionKind::Sabotage     => (-0.002,    0.75,    15.0),  // SBTGMSTB.DAT
             MissionKind::Assassination=> (-0.003,    0.80,    10.0),  // ASSNMSTB.DAT
             MissionKind::Espionage    => (-0.002,    0.78,    12.0),  // ESPIMSTB.DAT
@@ -1140,7 +1140,7 @@ Current `MissionEffect` only covers `PopularityShifted` and `CharacterRecruited`
 ```rust
 // In missions.rs MissionEffect enum:
 
-/// A facility was sabotaged — reduce its remaining production ticks.
+/// A facility was sabotaged—reduce its remaining production ticks.
 FacilitySabotaged {
     system: SystemKey,
     /// Index of the facility in system.manufacturing_facilities (or defense_facilities).
@@ -1149,7 +1149,7 @@ FacilitySabotaged {
     ticks_lost: u32,
 },
 
-/// A character was assassinated — remove from game.
+/// A character was assassinated—remove from game.
 CharacterKilled {
     character: CharacterKey,
     faction: MissionFaction,
@@ -1162,13 +1162,13 @@ CharacterCaptured {
     at_system: SystemKey,
 },
 
-/// Intelligence gathered on a system — reveal fog of war.
+/// Intelligence gathered on a system—reveal fog of war.
 SystemIntelligenceGathered {
     system: SystemKey,
     faction: MissionFaction,
 },
 
-/// Uprising started on a system — shift popularity.
+/// Uprising started on a system—shift popularity.
 UprisingStarted {
     system: SystemKey,
     /// Popularity shift applied immediately.
@@ -1193,7 +1193,7 @@ UprisingStarted {
 
 ### 6.2 Wire into `main.rs`
 
-Combat fires on `ArrivalEvent` — when a fleet arrives at a system occupied by an enemy fleet. Ground combat fires after space combat resolves. Bombardment fires each tick if a blocking fleet has orbital bombardment capability:
+Combat fires on `ArrivalEvent`—when a fleet arrives at a system occupied by an enemy fleet. Ground combat fires after space combat resolves. Bombardment fires each tick if a blocking fleet has orbital bombardment capability:
 
 ```rust
 // In main.rs, add after movement step:
@@ -1270,9 +1270,9 @@ For `CombatEntityKind::from_family_byte()` and routing in `resolve_ground()`:
 | Family Range | Entity Type | Combat Path |
 |---|---|---|
 | `0x08-0x0f` | Characters | Side validation only (no direct combat) |
-| `0x14-0x1b` | Troops / Special Forces | Ground combat — `FUN_00560d50` |
-| `0x30-0x33`, `0x35-0x3b` | Capital Ships | Space combat — vtable +0x1c4 path |
+| `0x14-0x1b` | Troops / Special Forces | Ground combat—`FUN_00560d50` |
+| `0x30-0x33`, `0x35-0x3b` | Capital Ships | Space combat—vtable +0x1c4 path |
 | `0x34` | Death Star | `FUN_005617b0` special path |
-| `0x71-0x72` | Fighter squadrons | Space combat — alt_shield_path (+0x78 bit7) |
-| `0x73-0x74` | Special combat entity | Space result — `FUN_00534640` path |
+| `0x71-0x72` | Fighter squadrons | Space combat—alt_shield_path (+0x78 bit7) |
+| `0x73-0x74` | Special combat entity | Space result—`FUN_00534640` path |
 | `0x90-0x98` | Star Systems | Not combat entities |

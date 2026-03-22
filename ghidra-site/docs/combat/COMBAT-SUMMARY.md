@@ -1,12 +1,12 @@
 ---
-title: "Combat System — Reverse Engineering Summary"
+title: "Combat System—Reverse Engineering Summary"
 description: "Complete combat call chain discovery from the system battle orchestrator"
 category: "ghidra"
 created: 2026-03-13
 updated: 2026-03-16
 ---
 
-# Combat System — Reverse Engineering Summary
+# Combat System—Reverse Engineering Summary
 
 ## Discovery: Complete Combat Call Chain
 
@@ -18,15 +18,15 @@ FUN_00514a60(system, attacker_side, defender_side, battle_context)
   ├── FUN_005457f0 → FUN_00549910  (SPACE COMBAT)
   │     ├── FUN_005442f0  (initialize combat state)
   │     ├── FUN_00544da0  (fleet composition evaluation)
-  │     ├── FUN_00544030  (WEAPON DAMAGE — calls FUN_00543b60 for each side)
+  │     ├── FUN_00544030  (WEAPON DAMAGE—calls FUN_00543b60 for each side)
   │     │     └── FUN_00543b60  (per-side weapon fire, vtable +0x1c4 dispatch)
-  │     ├── FUN_00544130  (SHIELD ABSORPTION — 83 lines)
-  │     ├── FUN_005443f0  (HULL DAMAGE APPLICATION — 54 lines)
-  │     ├── FUN_005444e0  (FIGHTER ENGAGEMENT — 53 lines)
+  │     ├── FUN_00544130  (SHIELD ABSORPTION—83 lines)
+  │     ├── FUN_005443f0  (HULL DAMAGE APPLICATION—54 lines)
+  │     ├── FUN_005444e0  (FIGHTER ENGAGEMENT—53 lines)
   │     ├── FUN_005445d0  (combat result determination)
   │     └── FUN_00544a20  (post-combat cleanup)
   │
-  ├── FUN_00560d50  (GROUND COMBAT — 232 lines)
+  ├── FUN_00560d50  (GROUND COMBAT—232 lines)
   │     ├── Iterates troops (family_id 0x14-0x1b)
   │     ├── Checks regiment strength at offset +0x96
   │     ├── FUN_005617b0  (Death Star handler, family_id 0x34)
@@ -35,7 +35,7 @@ FUN_00514a60(system, attacker_side, defender_side, battle_context)
   │
   ├── FUN_00529d20  (fleet combat at object +0xe)
   │
-  └── FUN_00556430  (BOMBARDMENT — 78 lines)
+  └── FUN_00556430  (BOMBARDMENT—78 lines)
         ├── FUN_00555540  (get fleet strength for a side)
         ├── FUN_00509620  (get combat stats as short[2])
         └── FUN_00555d30 → FUN_00555b30 → FUN_0055d8c0  (BOMBARDMENT FORMULA)
@@ -104,9 +104,9 @@ Weapon damage calls FUN_00543b60 twice (once per side) with vtable dispatch at +
 - Notification/Observer dispatch architecture understood
 
 ### Need (next session)
-- Decompile FUN_00544130 (shield absorption — 83 lines, should contain shield formula)
-- Decompile FUN_005443f0 (hull damage application — should contain hull damage formula)
-- Decompile FUN_005444e0 (fighter engagement — squadron combat)
+- Decompile FUN_00544130 (shield absorption—83 lines, should contain shield formula)
+- Decompile FUN_005443f0 (hull damage application—should contain hull damage formula)
+- Decompile FUN_005444e0 (fighter engagement—squadron combat)
 - Find the specific vtable handler for weapon damage calculation (vtable +0x1c4)
 - Read DAT_006bb6e8 value to identify which GNPRTB parameter it is
 - Trace FUN_00509620 to understand the combat stat pair format (short[2])

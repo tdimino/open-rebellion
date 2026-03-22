@@ -1,5 +1,5 @@
 ---
-title: "AI Behavior Analysis — Original REBEXE.EXE"
+title: "AI Behavior Analysis—Original REBEXE.EXE"
 description: "Complete reverse engineering of the original Star Wars Rebellion AI: fleet deployment, character assignment, production, threat evaluation, and galaxy-wide strategic planning"
 category: "ghidra"
 created: 2026-03-20
@@ -24,11 +24,11 @@ sources:
       - "cpp-class-hierarchy.md"
 ---
 
-# AI Behavior Analysis — Original REBEXE.EXE
+# AI Behavior Analysis—Original REBEXE.EXE
 
 ## Architecture: No Single AI Function
 
-The original Rebellion AI is **event-driven and distributed** across a 6-function pipeline, not a monolithic decision function. It uses the CRebObject → CNotifyObject → CCombatUnit hierarchy with a setter-notify-event pattern. The AI never runs as a single top-level call — it's triggered through the notification/observer system and evaluated per-system.
+The original Rebellion AI is **event-driven and distributed** across a 6-function pipeline, not a monolithic decision function. It uses the CRebObject → CNotifyObject → CCombatUnit hierarchy with a setter-notify-event pattern. The AI never runs as a single top-level call—it's triggered through the notification/observer system and evaluated per-system.
 
 ## The AI Pipeline (6 Functions)
 
@@ -49,27 +49,27 @@ The original Rebellion AI is **event-driven and distributed** across a 6-functio
 
 ## Function Details
 
-### 1. Galaxy-Wide System Distribution — `FUN_00519d00` (252 lines)
+### 1. Galaxy-Wide System Distribution—`FUN_00519d00` (252 lines)
 
 **Address**: 0x00519d00 | **Purpose**: Strategic evaluation of all 200 systems
 
 - Iterates ALL systems via `FUN_0051cad0(0x90)` (family byte 0x90 = explored systems)
 - Checks specific DatIds: `0x92000121` (unexplored), `0x90000109` (Coruscant)
 - Calls `FUN_005597e0(faction, type)` with 4 combinations:
-  - `(1, 0)` — Alliance systems, type 0
-  - `(2, 0)` — Empire systems, type 0
-  - `(1, 1)` — Alliance systems, type 1
-  - `(2, 1)` — Empire systems, type 1
+  - `(1, 0)`—Alliance systems, type 0
+  - `(2, 0)`—Empire systems, type 0
+  - `(1, 1)`—Alliance systems, type 1
+  - `(2, 1)`—Empire systems, type 1
 - Distributes systems into **7 strategic buckets** at offsets:
-  - `+0x100`, `+0x110` — primary faction buckets
-  - `+0xe0`, `+0xf0` — secondary buckets
-  - `+0x120`, `+0x130`, `+0x140` — tertiary buckets
+  - `+0x100`, `+0x110`—primary faction buckets
+  - `+0xe0`, `+0xf0`—secondary buckets
+  - `+0x120`, `+0x130`, `+0x140`—tertiary buckets
 - Validates: total across all buckets == total system count
-- Calls `FUN_0053e190` — ratio/percentage scoring function
+- Calls `FUN_0053e190`—ratio/percentage scoring function
 
-**Implication**: The original AI has a global strategic awareness layer that our Rust implementation lacks. It doesn't just evaluate systems one-at-a-time — it categorizes the entire galaxy first, then makes decisions based on the distribution.
+**Implication**: The original AI has a global strategic awareness layer that our Rust implementation lacks. It doesn't just evaluate systems one-at-a-time—it categorizes the entire galaxy first, then makes decisions based on the distribution.
 
-### 2. System-Level Entity Deployment — `FUN_00537180` (381 lines)
+### 2. System-Level Entity Deployment—`FUN_00537180` (381 lines)
 
 **Address**: 0x00537180 | **Purpose**: Per-system fleet movement decisions
 
@@ -84,30 +84,30 @@ The original Rebellion AI is **event-driven and distributed** across a 6-functio
 
 **This is the fleet movement decision point.** When this function determines a system needs reinforcement or an enemy system is vulnerable, it calls FUN_00520580 to issue the movement order.
 
-### 3. Garrison/Fleet Strength Aggregator — `FUN_00502020` (897 lines)
+### 3. Garrison/Fleet Strength Aggregator—`FUN_00502020` (897 lines)
 
 **Address**: 0x00502020 | **Purpose**: Evaluate whether a system/fleet is strong enough
 
 - Checks entity family ranges:
-  - `0x30-0x3f` — capital ships
-  - `0x1c-0x1f` — facilities
-  - `0x10-0x13` — troops
+  - `0x30-0x3f`—capital ships
+  - `0x1c-0x1f`—facilities
+  - `0x10-0x13`—troops
 - **Faction alignment**: `((byte)*(uint*)(entity + 0x24) ^ (byte)param_1[9]) & 0xc0) == 0`
   - XOR of ownership bytes, masked to bits 6-7
   - Returns true only if same faction
 - Calls sub-functions:
-  - `FUN_005007a0` — fleet unit counter (iterates type=3 entities)
-  - `FUN_004f6b50` — entity resolver
-  - `FUN_005039d0` — facility iterator (family 0x1c-0x20)
-  - `FUN_00504c40` — troop iterator (family 0x10-0x14)
+  - `FUN_005007a0`—fleet unit counter (iterates type=3 entities)
+  - `FUN_004f6b50`—entity resolver
+  - `FUN_005039d0`—facility iterator (family 0x1c-0x20)
+  - `FUN_00504c40`—troop iterator (family 0x10-0x14)
 - Compares entity counts against capacity:
-  - `vtable+0x248` — `GetMaxHullValue()` (ship capacity)
-  - `vtable+0x26c` / `+0x270` — additional capacity checks
+  - `vtable+0x248`—`GetMaxHullValue()` (ship capacity)
+  - `vtable+0x26c` / `+0x270`—additional capacity checks
 - **Returns boolean**: is this system/fleet adequate?
 
-**Implication**: The original AI evaluates garrison strength by counting EVERY entity type at a system — ships, troops, and facilities. Our AI only checks fleet presence (is_empty/is_not_empty). The original is much more nuanced.
+**Implication**: The original AI evaluates garrison strength by counting EVERY entity type at a system—ships, troops, and facilities. Our AI only checks fleet presence (is_empty/is_not_empty). The original is much more nuanced.
 
-### 4. Entity Placement Dispatcher — `FUN_00508660` (304 lines)
+### 4. Entity Placement Dispatcher—`FUN_00508660` (304 lines)
 
 **Address**: 0x00508660 | **Purpose**: Route entities to type-specific placement handlers
 
@@ -125,22 +125,22 @@ Uses `vtable+0x04` (`GetFamilyId`) to dispatch by entity family:
 | 0x2a | FUN_0050c1e0 | Ships (type E) |
 | 0x2c-0x2f | FUN_0050c560 | Ships (type F) |
 
-**Character assignment** happens through `FUN_0050ac80` (character placement) + `FUN_0050a1b0` (faction-conditioned placement). The faction check uses `param_1[9] >> 6 & 3` — the same ownership bit pattern.
+**Character assignment** happens through `FUN_0050ac80` (character placement) + `FUN_0050a1b0` (faction-conditioned placement). The faction check uses `param_1[9] >> 6 & 3`—the same ownership bit pattern.
 
-### 5. System-Level Deployment Companion — `FUN_005385f0` (252 lines)
+### 5. System-Level Deployment Companion—`FUN_005385f0` (252 lines)
 
 **Address**: 0x005385f0 | **Purpose**: Second pass of system evaluation
 
 - Same linked-list iteration as FUN_00537180
 - Same faction check: `(*(uint*)(local_94 + 0x24) >> 6 & 3) != local_7c`
 - Calls `FUN_00520580` for deployment parameters
-- Calls `FUN_00551190` — collection setup for deployment
-- Calls `FUN_00506ea0` — faction-specific evaluator
-- Calls `FUN_0052e970` — scoring/evaluation function
+- Calls `FUN_00551190`—collection setup for deployment
+- Calls `FUN_00506ea0`—faction-specific evaluator
+- Calls `FUN_0052e970`—scoring/evaluation function
 
 This appears to be a **second evaluation pass** that handles edge cases or secondary deployments after FUN_00537180's primary pass.
 
-### 6. System Validation — `FUN_00508250` (137 lines)
+### 6. System Validation—`FUN_00508250` (137 lines)
 
 **Address**: 0x00508250 | **Purpose**: Pre-check for whether an operation is valid
 
@@ -150,21 +150,21 @@ Calls approximately 18 validator functions before allowing entity deployment. Th
 
 | Address | Lines | Purpose |
 |---------|-------|---------|
-| FUN_005039d0 | — | Facility iterator (family 0x1c-0x20) |
-| FUN_00504c40 | — | Troop iterator (family 0x10-0x14) |
-| FUN_005007a0 | — | Fleet unit counter |
-| FUN_004f6b50 | — | Entity resolver by DatId |
-| FUN_00520580 | — | **Set movement/deployment orders** |
-| FUN_00553b80 | — | Faction resolver from system |
-| FUN_005597e0 | — | Faction-specific system count getter |
-| FUN_0053e190 | — | Math/scoring function (ratio or percentage) |
-| FUN_005202d0 | — | System pre-validation |
-| FUN_00551190 | — | Collection setup for deployment |
-| FUN_00504e60 | — | Entity lookup with family filter |
-| FUN_0050a1b0 | — | Faction-conditioned entity placement |
-| FUN_0050ac80 | — | Character placement |
-| FUN_00506ea0 | — | Faction-specific evaluator |
-| FUN_0052e970 | — | Scoring/evaluation function |
+| FUN_005039d0 |—| Facility iterator (family 0x1c-0x20) |
+| FUN_00504c40 |—| Troop iterator (family 0x10-0x14) |
+| FUN_005007a0 |—| Fleet unit counter |
+| FUN_004f6b50 |—| Entity resolver by DatId |
+| FUN_00520580 |—| **Set movement/deployment orders** |
+| FUN_00553b80 |—| Faction resolver from system |
+| FUN_005597e0 |—| Faction-specific system count getter |
+| FUN_0053e190 |—| Math/scoring function (ratio or percentage) |
+| FUN_005202d0 |—| System pre-validation |
+| FUN_00551190 |—| Collection setup for deployment |
+| FUN_00504e60 |—| Entity lookup with family filter |
+| FUN_0050a1b0 |—| Faction-conditioned entity placement |
+| FUN_0050ac80 |—| Character placement |
+| FUN_00506ea0 |—| Faction-specific evaluator |
+| FUN_0052e970 |—| Scoring/evaluation function |
 
 ## Key Patterns
 
@@ -199,7 +199,7 @@ same_faction = (((byte)*(uint*)(entity + 0x24) ^ (byte)param_1[9]) & 0xc0) == 0;
 
 | Feature | Original (REBEXE.EXE) | Current (ai.rs) |
 |---------|----------------------|-----------------|
-| Galaxy-wide evaluation | FUN_00519d00: 7-bucket system categorization | None — evaluates systems individually |
+| Galaxy-wide evaluation | FUN_00519d00: 7-bucket system categorization | None—evaluates systems individually |
 | Strength assessment | FUN_00502020: counts ships + troops + facilities | Only checks `s.fleets.is_empty()` |
 | Entity-type routing | FUN_00508660: 10+ family-specific handlers | Only places characters on missions |
 | Two-pass evaluation | FUN_00537180 + FUN_005385f0 | Single pass |
@@ -215,4 +215,4 @@ same_faction = (((byte)*(uint*)(entity + 0x24) ^ (byte)param_1[9]) & 0xc0) == 0;
 
 ## Connection to AutoResearch
 
-The original AI has ~20 tunable thresholds across these functions (strength adequacy, bucket boundaries, scoring ratios). These map directly to the `AiConfig` struct in our autoresearch plan. The Karpathy loop can discover optimal values for these thresholds without hand-tuning — something LucasArts spent months doing manually.
+The original AI has ~20 tunable thresholds across these functions (strength adequacy, bucket boundaries, scoring ratios). These map directly to the `AiConfig` struct in our autoresearch plan. The Karpathy loop can discover optimal values for these thresholds without hand-tuning—something LucasArts spent months doing manually.

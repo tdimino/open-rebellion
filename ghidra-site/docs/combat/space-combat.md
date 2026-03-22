@@ -23,14 +23,14 @@ Each phase follows the same pattern:
 
 | # | Phase | Gate Flag | Stat Getter | Per-Side Resolver | Vtable | Notif Handler | Type Code |
 |---|-------|-----------|-------------|-------------------|--------|---------------|-----------|
-| 1 | Init | — | — | FUN_005442f0 | — | — | — |
-| 2 | Fleet eval | — | — | FUN_00544da0 (96 lines) | — | — | — |
+| 1 | Init |—|—| FUN_005442f0 |—|—|—|
+| 2 | Fleet eval |—|—| FUN_00544da0 (96 lines) |—|—|—|
 | 3 | Weapon fire | `+0x58 & 0x01` (active) `& ~0x40` (enabled) | FUN_005434b0 | FUN_00543b60 | `+0x1c4` | FUN_0054a1d0 → vtable `+0x1f4` | `0x04` |
 | 4 | Shield absorb | `+0x58 & 0x40` | FUN_005434b0 | FUN_00543bd0 | `+0x1c8` | FUN_0054a260 | `0x20` |
 | 5 | Hull damage | `+0x58 & 0x40` | FUN_00543550 | FUN_00543cb0 | `+0x1d0` | FUN_0054a380 | `0x80` |
 | 6 | Fighter engage | `+0x58 & 0x40` | FUN_00543690 | FUN_00543d20 | `+0x1d4` | FUN_0054a410 | `0x100` |
-| 7 | Result | — | 5 getters | FUN_005445d0 (175 lines) | — | — | — |
-| 8 | Post-combat | — | — | FUN_00544a20 (86 lines) | — | — | — |
+| 7 | Result |—| 5 getters | FUN_005445d0 (175 lines) |—|—|—|
+| 8 | Post-combat |—|—| FUN_00544a20 (86 lines) |—|—|—|
 
 ## Flag Register at `this+0x58`
 
@@ -75,15 +75,15 @@ Extracts **2 bits from offset +0x24 bits 4-5** = difficulty level (0-3). This mo
 
 ## Decompiled Files
 
-- `FUN_00549910.c` — orchestrator (not saved separately, in FUN_005457f0)
-- `FUN_005442f0_combat_init.c` — initialization
-- `FUN_00544da0_fleet_eval.c` — fleet evaluation (96 lines)
-- `FUN_00544030_weapon_damage.c` — weapon phase
-- `FUN_00544130_shield_absorb.c` — shield phase (83 lines)
-- `FUN_005443f0_hull_damage_apply.c` — hull phase
-- `FUN_005444e0_fighter_engage.c` — fighter phase
-- `FUN_005445d0_combat_result.c` — result determination (175 lines)
-- `FUN_00544a20_post_combat.c` — post-combat cleanup (86 lines)
-- `FUN_00543b60.c` through `FUN_00543d20.c` — per-side resolvers
-- `FUN_005434b0.c` through `FUN_00543690.c` — stat getters
-- `FUN_0054a1d0.c` through `FUN_0054a410.c` — notification handlers
+- `FUN_00549910.c`—orchestrator (not saved separately, in FUN_005457f0)
+- `FUN_005442f0_combat_init.c`—initialization
+- `FUN_00544da0_fleet_eval.c`—fleet evaluation (96 lines)
+- `FUN_00544030_weapon_damage.c`—weapon phase
+- `FUN_00544130_shield_absorb.c`—shield phase (83 lines)
+- `FUN_005443f0_hull_damage_apply.c`—hull phase
+- `FUN_005444e0_fighter_engage.c`—fighter phase
+- `FUN_005445d0_combat_result.c`—result determination (175 lines)
+- `FUN_00544a20_post_combat.c`—post-combat cleanup (86 lines)
+- `FUN_00543b60.c` through `FUN_00543d20.c`—per-side resolvers
+- `FUN_005434b0.c` through `FUN_00543690.c`—stat getters
+- `FUN_0054a1d0.c` through `FUN_0054a410.c`—notification handlers

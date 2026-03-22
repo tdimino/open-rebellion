@@ -6,7 +6,7 @@ created: 2026-03-21
 updated: 2026-03-21
 ---
 
-# Function Index — 5,151 Decompiled Functions
+# Function Index—5,151 Decompiled Functions
 
 Auto-generated catalog of all decompiled C files from REBEXE.EXE Ghidra analysis.
 Address ranges map to game systems identified during the Ghidra RE campaign.

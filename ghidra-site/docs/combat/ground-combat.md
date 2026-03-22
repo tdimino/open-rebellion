@@ -10,7 +10,7 @@ updated: 2026-03-16
 
 ## Entry Point
 
-`FUN_00560d50` (232 lines) — called from system battle orchestrator (`FUN_00514a60`).
+`FUN_00560d50` (232 lines)—called from system battle orchestrator (`FUN_00514a60`).
 
 ## Entity Classification
 
@@ -20,7 +20,7 @@ Ground combat classifies entities by DatId family byte (`id >> 24`):
 |-------------|------|
 | `0x14-0x1b` | Troops / Special Forces (combat-eligible ground units) |
 | `0x30-0x3b` | Capital Ships (checked for bombardment, not ground combat) |
-| `0x34` | Special entity — Death Star handler (`FUN_005617b0`, 68 lines) |
+| `0x34` | Special entity—Death Star handler (`FUN_005617b0`, 68 lines) |
 | `0x08-0x0f` | Characters (checked for side validation) |
 
 ## Flow
@@ -72,6 +72,6 @@ Called when family_id == 0x34. Likely handles:
 
 ## Decompiled Files
 
-- `FUN_00560d50_ground_combat.c` — main ground combat (232 lines)
-- `FUN_004ee350_unit_combat.c` — per-unit resolution (30 lines)
-- `FUN_005617b0_death_star.c` — Death Star handler (68 lines)
+- `FUN_00560d50_ground_combat.c`—main ground combat (232 lines)
+- `FUN_004ee350_unit_combat.c`—per-unit resolution (30 lines)
+- `FUN_005617b0_death_star.c`—Death Star handler (68 lines)

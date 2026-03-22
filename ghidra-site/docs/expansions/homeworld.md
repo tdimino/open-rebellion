@@ -1,17 +1,17 @@
 # Homeworld Expansion
 
 <div style="text-align:center; margin: 1em 0;">
-  <img src="../assets/rebellion-starbird.png" alt="Rebel Alliance" width="50" style="margin: 0 10px;">
-  <img src="../assets/imperial-cog.png" alt="Galactic Empire" width="50" style="margin: 0 10px;">
+  <img src="/open-rebellion/assets/rebellion-starbird.png" alt="Rebel Alliance" width="50" style="margin: 0 10px;">
+  <img src="/open-rebellion/assets/imperial-cog.png" alt="Galactic Empire" width="50" style="margin: 0 10px;">
 </div>
 
-The Homeworld Expansion is the first major addon for Open Rebellion — enriching every character with a connection to a home system and introducing player-created characters via the Academy system.
+The Homeworld Expansion is the first major addon for Open Rebellion—enriching every character with a connection to a home system and introducing player-created characters via the Academy system.
 
 **Design inspirations**: The homeworld bonuses draw from **Star Wars Galaxies** (where your declared city of residence affected crafting and combat buffs), **Rome: Total War** (where generals gained traits tied to their province of origin), and **Crusader Kings** (where landed titles created emergent loyalty dynamics). The goal is the same: make geography *personal*.
 
 ## Homeworld System (Universal)
 
-Every character gains a `homeworld` field linking them to a star system. This is not addon-only — it enriches the base game for all 60+ original characters.
+Every character gains a `homeworld` field linking them to a star system. This is not addon-only—it enriches the base game for all 60+ original characters.
 
 ### Canon Assignments
 
@@ -35,11 +35,11 @@ Every character gains a `homeworld` field linking them to a star system. This is
 
 ## Create Your Own Character (Demiurgos)
 
-The original Rebellion gave you ~60 fixed characters. You never chose who joined your cause. **Create Your Own Character** breaks this contract deliberately — following the LucasArts golden age principle: *give the player a meaningful choice that has consequences they can't fully predict*.
+The original Rebellion gave you ~60 fixed characters. You never chose who joined your cause. **Create Your Own Character** breaks this contract deliberately—following the LucasArts golden age principle: *give the player a meaningful choice that has consequences they can't fully predict*.
 
 ### The Academy System
 
-The character graduates from an **Academy** — Imperial Academy (Carida) or Rebel Training Facility (Yavin IV). The academy determines baseline capabilities. The player customizes *within* those constraints.
+The character graduates from an **Academy**—Imperial Academy (Carida) or Rebel Training Facility (Yavin IV). The academy determines baseline capabilities. The player customizes *within* those constraints.
 
 ### Six Archetypes
 
@@ -54,13 +54,13 @@ The character graduates from an **Academy** — Imperial Academy (Carida) or Reb
 
 ### Creation Flow (7 Steps)
 
-1. **Choose Faction** — Alliance starbird or Imperial cog
-2. **Choose Archetype** — 6 cards with skill radar charts
-3. **Allocate Skills** — Point-buy within archetype floors/ceilings
-4. **Pick Homeworld** — Galaxy map, faction-controlled systems only
-5. **Force Roll** — 8–16% chance (NOT player-controlled)
-6. **Name & Portrait** — Entry field + portrait browser
-7. **Review & Commission** — Final confirmation
+1. **Choose Faction**—Alliance starbird or Imperial cog
+2. **Choose Archetype**—6 cards with skill radar charts
+3. **Allocate Skills**—Point-buy within archetype floors/ceilings
+4. **Pick Homeworld**—Galaxy map, faction-controlled systems only
+5. **Force Roll**—8–16% chance (NOT player-controlled)
+6. **Name & Portrait**—Entry field + portrait browser
+7. **Review & Commission**—Final confirmation
 
 ### Hard Balance Caps
 
@@ -74,9 +74,9 @@ The character graduates from an **Academy** — Imperial Academy (Carida) or Reb
 
 ### The Three LucasArts Principles
 
-1. **Every choice has consequences the player can't fully predict** — loyalty random, homeworld can fall, Force rolls rare
-2. **The flavor IS the mechanic** — academy archetypes aren't just stat templates, they're identity
-3. **The best characters are the ones the galaxy gives you** — custom characters supplement the roster, never replace it
+1. **Every choice has consequences the player can't fully predict**—loyalty random, homeworld can fall, Force rolls rare
+2. **The flavor IS the mechanic**—academy archetypes aren't just stat templates, they're identity
+3. **The best characters are the ones the galaxy gives you**—custom characters supplement the roster, never replace it
 
 ## Expanded Galaxy
 
