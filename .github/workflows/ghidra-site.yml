@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'ghidra-site/**'
+      - '.github/workflows/ghidra-site.yml'
 
 permissions:
   contents: read
