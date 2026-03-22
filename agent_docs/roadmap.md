@@ -129,22 +129,152 @@ Delivered:
 
 Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 
-## Immediate Next Steps
+## AI Parity Status (as of 2026-03-21)
 
-1. **Telemetry enrichment** -- control_changed events, 250-tick snapshots, research progress
-2. **Config-driven AI** -- externalize constants to JSON, parity/augmentation split
-3. **Combat spread** -- expand territory via diplomacy for diverse battle locations
-4. **Run autoresearch** -- 10+ iterations with 3 seeds, analyze optimal config
-5. **Custom character addon** -- Demiurgos: academy archetypes, homeworld, Force roll
+Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems/ai-parity-tracker.md` for full matrix.
+
+### Core Pipeline (6 Functions)
+
+| # | Original | Status | Gap |
+|---|----------|--------|-----|
+| 1 | FUN_00519d00 Galaxy evaluation | PARTIAL | Missing ratio scoring (FUN_0053e190) — AI doesn't scale aggression by galaxy control % |
+| 2 | FUN_00537180 Primary deployment | DONE | Per-fleet targeting with scoring function |
+| 3 | FUN_005385f0 Secondary deployment | PARTIAL | Our Pass 2 picks first undefended system; original proportionally distributes across ALL systems |
+| 4 | FUN_00502020 Garrison strength | DONE | Ships + troops + facilities |
+| 5 | FUN_00508250 Dispatch validation | MISSING | Original has 18 boolean AND checks; we have no pre-dispatch validation |
+| 6 | FUN_00520580 Movement orders | DONE | With already_moving dedup |
+
+### Confirmed Gaps (P0)
+
+1. **AI research dispatch** — AI never advances tech tree. No `evaluate_research()`. Characters with ship_design/troop_training skills sit idle. ~80 LOC to implement.
+2. **Ratio-based galaxy evaluation** — Original scales aggression proportionally to galaxy control %. A faction with 3/200 systems should be defensive; 100/200 should be aggressive. We treat all the same.
+3. **Proportional redistribution (Pass 2)** — Original divides remaining units across ALL friendly systems by count + remainder. We pick the first undefended system.
+
+### Confirmed Gaps (P1)
+
+4. **Troop deployment AI** — No `AIAction::MoveTroops`. AI doesn't build or deploy ground forces. Stranded troops (troops without ships) not detected.
+5. **Defense facility construction** — `evaluate_production` only builds capital ships, fighters, and yards. No defense facilities at key systems.
+6. **Dispatch validation cascade** — Original has 18 pre-checks (alive, not captured, faction match, capacity, etc.). We dispatch without validation.
+7. **Faction-specific Pass 2 evaluator** — Original uses `FUN_00506ea0` for different Alliance vs Empire redistribution. We use the same logic for both.
+
+### Possible Gaps (Need More RE)
+
+8. Death Star AI beyond "go to HQ" (escort, retreat, target selection between HQ and populated systems)
+9. `FUN_0052e970` scoring function not fully decoded — may have more parameters than our 4-factor model
+10. `FUN_005202d0` system pre-validation — may check "not being bombarded" or "not in uprising"
+11. Early-game vs late-game scaling — original may have phase-dependent thresholds
+
+### Code Hygiene (from simplicity reviewer)
+
+- 27 LOC dead code: unused `combat_score`, `sys_json`, `hull * 1`, unused imports, unused `GalaxyState` fields
+- 5 stale doc comments still referencing `controlling_faction` (now `ControlKind`)
+- 80 LOC test boilerplate reducible via `impl Default for Character`
+
+---
+
+## Roadmap: AI Parity Completion (v0.14.0)
+
+### Phase A: Config Externalization
+*Unblocks autoresearch. ~150 LOC.*
+
+- [ ] Create `crates/rebellion-core/src/tuning.rs` with `AiConfig` struct
+- [ ] Externalize: AI_TICK_INTERVAL, DISTANCE_SCALE, MIN_TRANSIT_TICKS, all skill thresholds
+- [ ] Add `--config <path>` to playtest binary
+- [ ] Default config at `configs/autoresearch/default.json`
+- [ ] Parity/augmentation split flags
+
+### Phase B: Research Dispatch (P0 Gap #1)
+*AI tech tree progression. ~80 LOC.*
+
+- [ ] Add `evaluate_research()` to AISystem
+- [ ] Assign characters with high ship_design/troop_training/facility_design to research
+- [ ] Emit `research_started` telemetry event
+- [ ] Wire into simulation tick
+
+### Phase C: Ratio-Based Galaxy Evaluation (P0 Gap #2)
+*Aggression scaling. ~60 LOC.*
+
+- [ ] Port FUN_0053e190 proportional allocation
+- [ ] Galaxy control % → attack/defense ratio
+- [ ] 10% controlled → 80% defensive, 60% → balanced, 90% → 80% offensive
+
+### Phase D: Proportional Redistribution (P0 Gap #3)
+*Replace Pass 2. ~50 LOC.*
+
+- [ ] Divide remaining units by friendly system count
+- [ ] Distribute quotient per system + remainder to weakest
+- [ ] Detect stranded troops (troops without ships) and send reinforcement
+
+### Phase E: Combat Spread
+*Territory expansion via diplomacy. ~40 LOC.*
+
+- [ ] Successful diplomacy missions flip neutral systems to faction control
+- [ ] AI dispatches diplomacy to border-adjacent neutral systems
+- [ ] More controlled systems → more attack targets → diverse battle locations
+
+### Phase F: Autoresearch Execution
+*Run the loop, find optimal config.*
+
+- [ ] Build release binary
+- [ ] Run 20 iterations × 3 seeds
+- [ ] Analyze: best config, score trajectory, parameter sensitivity
+- [ ] Document findings in `autoresearch/results/`
+
+---
+
+## Roadmap: Addons (v0.15.0+)
+
+### Addon 1: Create Your Own Character (Demiurgos)
+*Plan at `docs/plans/2026-03-21-addon-create-your-own-character.md`*
+
+**Phase 1: Homeworld System** (universal — enriches base game)
+- [ ] Add `homeworld: Option<SystemKey>` to Character
+- [ ] Create `data/homeworlds.json` with canon homeworld assignments (Luke→Tatooine, etc.)
+- [ ] HomeworldModifier: +10% at homeworld, -5% when enemy controls, -15 loyalty on fall
+- [ ] Wire into missions.rs probability + betrayal.rs loyalty
+- [ ] Display in Officers panel and Encyclopedia
+
+**Phase 2: Character Creation Core**
+- [ ] Add `CharacterOrigin`, `AcademyArchetype`, `ArchetypeTemplate` to rebellion-core
+- [ ] 6 archetypes: Diplomat, Operative, FleetOfficer, GroundCommander, Engineer, Fringer
+- [ ] 7-step creation UI as egui modal (faction → archetype → skills → homeworld → Force roll → name → review)
+- [ ] Point-buy within archetype floors/ceilings (5-point increments)
+- [ ] Max 3 custom characters per game
+
+**Phase 3: Force Sensitivity**
+- [ ] 8-16% base chance depending on species + archetype
+- [ ] Success: jedi_probability 15-30 (Luke = 100 — custom characters strictly inferior)
+- [ ] Wire to existing JediSystem progression
+
+**Phase 4: Portraits & Flavor**
+- [ ] 128 portrait BMPs (8 per species × 2 factions × 8 species)
+- [ ] Backstory templates: "Former Separatist Holdout", "Outer Rim Survivor", "Imperial Defector"
+- [ ] Encyclopedia integration
+
+**Phase 5: Mod Integration**
+- [ ] Extend mod loader for `"action": "add"` entity creation
+- [ ] DatId allocation from reserved custom range (0xFF000000+)
+- [ ] Example mod: "Kira Noss" character pack
+
+### Addon 2: Expanded Galaxy (Future)
+- Additional star systems from EU (200 → 400)
+- New sectors (Unknown Regions, Corporate Sector)
+- Hyperspace lane network (optional overlay on Euclidean model)
+
+### Addon 3: Tactical Combat View (Future)
+- 2D tactical view for space combat (currently auto-resolve only)
+- Ship placement, formation selection, manual targeting
+- 3D model sprite sheets from Hunyuan3D Pro pipeline
+
+---
 
 ## Known Technical Debt
 
 - dat-dumper in `tools/` is also a library dep of rebellion-data -- works but unconventional
 - WASM cfg guards added but browser data loading returns error stub (no fetch API yet)
-- `web/gl.js` fetched from external URL on first build -- should vendor or pin version
 - Save v3 files rejected (bincode layout incompatible) -- no migration possible without SaveStateV3
-- Mod Manager panel passes empty mod list -- needs ModRuntime data population in main.rs
 - `enabled_sorted()` silently returns empty on dependency resolution errors
 - `ModConfig::load()` silently drops corrupted config.toml
-- No additive entity creation in mods -- patches only modify existing entities
-- BuildableKind type safety -- class arenas needed for troops/facilities
+- No additive entity creation in mods -- patches only modify existing entities (until Addon 1 Phase 5)
+- 27 LOC dead code identified by simplicity reviewer (2026-03-21)
+- 5 stale doc comments referencing old `controlling_faction` field
