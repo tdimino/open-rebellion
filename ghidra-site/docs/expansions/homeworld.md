@@ -7,7 +7,7 @@
 
 The Homeworld Expansion is the first major addon for Open Rebellion. It does three things: gives every character a homeworld that matters mechanically, lets players create custom officers, and introduces a second mode where characters emerge organically from the galaxy itself.
 
-**Design inspirations**: **Star Wars Galaxies** (city-of-residence buffs), **Rome: Total War** (generals with provincial traits), **Crusader Kings** (landed titles driving loyalty dynamics), **XCOM** (national recruitment pools), **Fire Emblem** (mid-campaign character discovery). The throughline: geography should be *personal*.
+**Design inspirations**: The homeworld bonuses draw from **Star Wars Galaxies** (where your declared city of residence affected crafting and combat buffs), **Rome: Total War** (where generals gained traits tied to their province of origin), and **Crusader Kings** (where landed titles created emergent loyalty dynamics). The goal is the same: make geography *personal*.
 
 ## Homeworld System (Universal)
 
