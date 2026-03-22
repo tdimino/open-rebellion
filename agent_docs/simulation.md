@@ -33,7 +33,7 @@ The caller (rebellion-app `main.rs`) applies effects to `GameWorld` after each s
 | 2 | **Manufacturing** | `manufacturing.rs` | `advance_with_blockade(state, ticks, blocked)` | Blockaded systems skip production |
 | 3 | **Missions** | `missions.rs` | `advance(state, world, ticks, rolls)` | 9 kinds, MSTB tables, `target_character` for assassination/abduction/rescue |
 | 4 | **Events** | `events.rs` | `advance(state, world, ticks, rolls)` | `EventFired` chaining within same call |
-| 5 | **AI** | `ai.rs` | `advance(state, world, mfg, missions, ticks)` | Re-evaluates every 7 ticks only |
+| 5 | **AI** | `ai.rs` | `advance(state, world, mfg, missions, movement, ticks)` | Per-fleet targeting, deconfliction, battle penalty. Re-evaluates every 7 ticks. |
 | 6 | **Movement** | `movement.rs` | `advance(state, ticks) -> Vec<ArrivalEvent>` | Caller must update `fleet.location` + `system.fleets` |
 | 7 | **Fog** | `fog.rs` | `advance(state, world, movement)` | Fleet presence + sensor radius (detection * 15.0); monotonic |
 | 8 | **Combat** | `combat.rs` | `resolve_space()` / `resolve_ground()` | Phase gate: `ACTIVE && !PHASES_ENABLED` (inverted) |

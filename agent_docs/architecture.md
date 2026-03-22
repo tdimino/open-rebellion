@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-03-16
+updated: 2026-03-21
 ---
 
 # Architecture
@@ -41,8 +41,8 @@ crates/rebellion-core/src/
 ├── manufacturing.rs  — ProductionQueue, ManufacturingState, blockade-aware advance (520 LOC, 13 tests)
 ├── missions.rs       — 9 mission types, MSTB probability tables, 6 MissionEffect variants (880 LOC, 14 tests)
 ├── events.rs         — EventCondition/Action, chaining, deterministic rng (728 LOC, 17 tests)
-├── ai.rs             — AISystem, officer assignment, production, fleet deployment (936 LOC, 13 tests)
-├── movement.rs       — MovementOrder, tick-based hop progression (453 LOC, 11 tests)
+├── ai.rs             — AISystem, per-fleet targeting, deconfliction, two-pass deployment, battle penalty (1121 LOC, 13 tests)
+├── movement.rs       — MovementOrder, Euclidean distance-based transit (625 LOC, 19 tests)
 ├── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
 ├── combat.rs         — Space combat 7-phase pipeline, ground combat, CombatPhaseFlags
 ├── bombardment.rs    — Orbital bombardment: Euclidean distance / GNPRTB[0x1400]
@@ -54,7 +54,8 @@ crates/rebellion-core/src/
 ├── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
 ├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
 ├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba)
-└── game_events.rs    — GameEventRecord struct + 24 event type constants for JSONL telemetry
+├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI
+└── game_events.rs    — GameEventRecord struct + 26 event type constants for JSONL telemetry
 ```
 
 ## Render Modules (rebellion-render)
