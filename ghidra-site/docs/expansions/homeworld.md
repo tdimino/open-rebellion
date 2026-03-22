@@ -68,45 +68,45 @@ The character graduates from an **Academy**—Imperial Academy (Carida) or Rebel
 6. **Name & Portrait**—Entry field + portrait browser
 7. **Review & Commission**—Final confirmation
 
-### Mode 2: Recruitment (Discover Your Officer)
+### Mode 2: Recruitment (Earn Your Officer)
 
-Instead of designing characters upfront, **Recruitment Mode** scatters 6–10 recruitable candidates across the galaxy. Each has a pre-rolled archetype, a homeworld, and a **condition** that must be met before they can be recruited.
+You still design your characters in the Academy—same 7-step flow, same archetypes, same skill allocation. But instead of joining your roster immediately, **each character is placed at their chosen homeworld on the galaxy map**. They won't join until you meet a recruitment condition tied to that system.
 
-You don't know their skills until you recruit them. You earn your officers through gameplay, not menus.
-
-#### Faction Affinity
-
-Each candidate leans toward a faction—or is neutral:
-
-| Affinity | Who Can Recruit |
-|----------|----------------|
-| Alliance-leaning | Alliance only |
-| Empire-leaning | Empire only |
-| **Neutral** | **Either faction—first to recruit wins** |
-
-Neutral candidates are the most interesting: both factions see them on the map, both know the condition, and both race to meet it first. A neutral Fringer at Ord Mantell becomes a strategic objective.
+You designed them. Now you have to earn them.
 
 #### Recruitment Conditions
 
+Each character's homeworld determines the condition:
+
 | Condition | Example |
 |-----------|---------|
-| Control the system | "Joins after your faction controls Corellia" |
-| Win a battle there | "Impressed by your victory at Fondor" |
-| Popularity threshold | "Joins when your popularity at Chandrila exceeds 0.7" |
-| Liberate from enemy | "Freed from Imperial occupation of Mon Calamari" |
-| Tick threshold | "Available after tick 500 (veteran emerges from hiding)" |
-| Character visits | "Recruited only if Luke Skywalker visits the system" |
-| Force sensed | "Appears after a Jedi senses them (random)" |
+| Control the system | "Your operative at Corellia joins after you control it" |
+| Win a battle there | "Your fleet officer at Fondor joins after you win there" |
+| Popularity threshold | "Your diplomat at Chandrila joins when popularity exceeds 0.7" |
+| Liberate from enemy | "Your engineer at Mon Calamari joins after liberation" |
+| Character visits | "Your Fringer at Nar Shaddaa joins when Han Solo visits" |
 
-#### The Same Character, Either Side
+The condition is assigned based on the character's archetype and the system's strategic situation at game start.
 
-The key difference from Academy: the same candidate can end up on either side. A neutral operative at Nar Shaddaa might become a Rebel spy or an Imperial assassin depending on who gets there first. Their skills are identical—only the faction flag changes.
+#### Faction Affinity
 
-This creates emergent stories: *"We lost the Corellian engineer to the Empire because we couldn't take Corellia in time."*
+Each character has a faction leaning based on their homeworld and archetype:
+
+| Affinity | Who Can Recruit |
+|----------|----------------|
+| Alliance-leaning | Alliance only (unless enemy meets a special condition) |
+| Empire-leaning | Empire only (unless enemy meets a special condition) |
+| **Neutral** | **Either faction—first to recruit wins** |
+
+Most characters lean toward the faction that controls their homeworld at game start. But some—Fringers especially—are genuinely neutral. A neutral operative at Nar Shaddaa can be recruited by either side. If the enemy gets there first, they join the other side with the skills you designed.
+
+This creates real strategic stakes around homeworld choice in Step 4 of the Academy flow. Picking a homeworld deep in friendly territory is safe. Picking a contested border world risks losing your character to the enemy—but the homeworld bonus in a contested zone makes them more valuable if you hold it.
+
+*"We lost the Corellian engineer to the Empire because we couldn't take Corellia in time."*
 
 ### Mode 3: Both
 
-Create 1 character at game start via the Academy + 4–6 candidates spawn on the map. The best of both worlds.
+Create up to 3 characters—1 joins immediately at game start (your "founding officer"), the rest are placed on the map in Recruitment Mode. Blends the instant gratification of Academy with the strategic depth of Recruitment.
 
 ---
 
