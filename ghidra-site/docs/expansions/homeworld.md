@@ -70,23 +70,25 @@ The character graduates from an **Academy**—Imperial Academy (Carida) or Rebel
 
 ### Mode 2: Recruitment (Earn Your Officer)
 
-You still design your characters in the Academy—same 7-step flow, same archetypes, same skill allocation. But instead of joining your roster immediately, **each character is placed at their chosen homeworld on the galaxy map**. They won't join until you meet a recruitment condition tied to that system.
+You still design your characters in the Academy—same 7-step flow, same archetypes, same skill allocation. But instead of joining your roster immediately, **each character is placed somewhere on the galaxy map** with a condition that must be met before they'll join.
 
 You designed them. Now you have to earn them.
 
 #### Recruitment Conditions
 
-Each character's homeworld determines the condition:
+Conditions are assigned based on the character's archetype and the galaxy's strategic situation at game start. The recruitment location might be their homeworld—or it might not. A Corellian operative could be waiting at Nar Shaddaa. A Chandrilan diplomat could be stationed at Mon Calamari. The placement is at the discretion of the system.
 
 | Condition | Example |
 |-----------|---------|
-| Control the system | "Your operative at Corellia joins after you control it" |
-| Win a battle there | "Your fleet officer at Fondor joins after you win there" |
-| Popularity threshold | "Your diplomat at Chandrila joins when popularity exceeds 0.7" |
-| Liberate from enemy | "Your engineer at Mon Calamari joins after liberation" |
-| Character visits | "Your Fringer at Nar Shaddaa joins when Han Solo visits" |
+| Control a system | "Your operative joins after you control Corellia" |
+| Win a battle | "Your fleet officer joins after a victory at Fondor" |
+| Popularity threshold | "Your diplomat joins when popularity at Chandrila exceeds 0.7" |
+| Liberate from enemy | "Your engineer joins after Mon Calamari is liberated" |
+| Character visits | "Your Fringer joins when Han Solo visits Nar Shaddaa" |
+| Tick threshold | "Your veteran joins after tick 500" |
+| Homeworld controlled | "Your pilot joins after you control their homeworld" |
 
-The condition is assigned based on the character's archetype and the system's strategic situation at game start.
+Homeworld is one possible condition among many—not the default.
 
 #### Faction Affinity
 
@@ -106,7 +108,9 @@ This creates real strategic stakes around homeworld choice in Step 4 of the Acad
 
 ### Mode 3: Both
 
-Create up to 3 characters—1 joins immediately at game start (your "founding officer"), the rest are placed on the map in Recruitment Mode. Blends the instant gratification of Academy with the strategic depth of Recruitment.
+Design up to 3 characters through the Academy. The first joins your roster immediately at game start—your "founding officer." The remaining characters are placed on the galaxy map with recruitment conditions, just like Recruitment Mode.
+
+This gives you one officer to rely on from day one while the others become strategic objectives you pursue over the course of the campaign. It's the mode that most closely mirrors how the original game's recruitment missions worked—except now you know *who* you're looking for.
 
 ---
 
