@@ -19,6 +19,7 @@ scripts/logs/
 
 # Ghidra project files (binary, large)
 ghidra/
+!ghidra/README.md
 *.gpr
 *.rep/
 *.lock

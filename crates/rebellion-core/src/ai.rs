@@ -31,7 +31,8 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    CapitalShipKey, CharacterKey, FighterKey, FleetKey, ManufacturingFacilityKey, SystemKey,
+    CapitalShipKey, CharacterKey, DefenseFacilityKey, FighterKey, FleetKey,
+    ManufacturingFacilityKey, SystemKey, TroopKey,
 };
 use crate::tuning::GameConfig;
 use crate::manufacturing::{BuildableKind, ManufacturingState};
@@ -306,6 +307,39 @@ impl AISystem {
     // Officer heuristics
     // -----------------------------------------------------------------------
 
+    /// FUN_00508250 port: Pre-dispatch validation cascade.
+    /// Returns true if a character is eligible for mission dispatch.
+    /// Checks: alive, faction match, not captive, not on mission, not on mandatory mission,
+    /// can_be_commander, not already busy in AI state.
+    fn can_dispatch(
+        state: &AIState,
+        faction: AiFaction,
+        char_key: CharacterKey,
+        character: &Character,
+    ) -> bool {
+        // Faction match
+        if !faction.owns_character(character) {
+            return false;
+        }
+        // Must be commandable
+        if !character.can_be_commander {
+            return false;
+        }
+        // Already dispatched by AI
+        if state.is_busy(char_key) {
+            return false;
+        }
+        // Captive — cannot dispatch
+        if character.is_captive {
+            return false;
+        }
+        // Already on a mission
+        if character.on_mission || character.on_hidden_mission || character.on_mandatory_mission {
+            return false;
+        }
+        true
+    }
+
     /// For each available character, decide whether to dispatch a mission.
     ///
     /// Priority order (from AIManager.cs):
@@ -331,13 +365,7 @@ impl AISystem {
         let diplomacy_target = Self::find_diplomacy_target(world, faction, config.ai.diplomacy_target_popularity_cap);
 
         for (char_key, character) in world.characters.iter() {
-            if !faction.owns_character(character) {
-                continue;
-            }
-            if !character.can_be_commander {
-                continue;
-            }
-            if state.is_busy(char_key) {
+            if !Self::can_dispatch(state, faction, char_key, character) {
                 continue;
             }
 
@@ -463,7 +491,7 @@ impl AISystem {
             .characters
             .iter()
             .filter_map(|(key, c)| {
-                if !faction.owns_character(c) || state.is_busy(key) || !c.can_be_commander {
+                if !Self::can_dispatch(state, faction, key, c) {
                     return None;
                 }
                 let esp = c.espionage.base + c.espionage.variance / 2;
@@ -687,11 +715,7 @@ impl AISystem {
             let best = world
                 .characters
                 .iter()
-                .filter(|(key, c)| {
-                    faction.owns_character(c)
-                        && c.can_be_commander
-                        && !state.is_busy(*key)
-                })
+                .filter(|(key, c)| Self::can_dispatch(state, faction, *key, c))
                 .filter_map(|(key, c)| {
                     let skill = match tech {
                         TechType::Ship => c.ship_design.base + c.ship_design.variance / 2,
@@ -812,6 +836,38 @@ impl AISystem {
                 }
             }
 
+            // Build troops: controlled systems with < 2 friendly regiments get ground forces.
+            let friendly_troops = system.ground_units.iter()
+                .filter(|tk| world.troops.get(**tk).map(|t| t.is_alliance == is_alliance).unwrap_or(false))
+                .count();
+            if friendly_troops < 2 && system.control.is_controlled_by(if is_alliance {
+                crate::dat::Faction::Alliance } else { crate::dat::Faction::Empire }) {
+                if let Some(troop_key) = Self::find_troop_class(world, faction) {
+                    actions.push(AIAction::EnqueueProduction {
+                        system: sys_key,
+                        kind: BuildableKind::Troop(troop_key),
+                        ticks: 15,
+                    });
+                    continue;
+                }
+            }
+
+            // Build defense facilities: controlled systems with < 2 defenses.
+            let friendly_defenses = system.defense_facilities.iter()
+                .filter(|dk| world.defense_facilities.get(**dk).map(|d| d.is_alliance == is_alliance).unwrap_or(false))
+                .count();
+            if friendly_defenses < 2 && system.control.is_controlled_by(if is_alliance {
+                crate::dat::Faction::Alliance } else { crate::dat::Faction::Empire }) {
+                if let Some(def_key) = Self::find_defense_facility_class(world, faction) {
+                    actions.push(AIAction::EnqueueProduction {
+                        system: sys_key,
+                        kind: BuildableKind::DefenseFacility(def_key),
+                        ticks: 25,
+                    });
+                    continue;
+                }
+            }
+
             // Build more construction yards if below cap.
             let yard_count = system.manufacturing_facilities.len();
             if yard_count < config.ai.max_construction_yards {
@@ -884,6 +940,36 @@ impl AISystem {
             .find(|(_, f)| match faction {
                 AiFaction::Alliance => f.is_alliance,
                 AiFaction::Empire => !f.is_alliance,
+            })
+            .map(|(k, _)| k)
+    }
+
+    /// Find a troop unit key to use as a class reference for troop production.
+    fn find_troop_class(
+        world: &GameWorld,
+        faction: AiFaction,
+    ) -> Option<TroopKey> {
+        world
+            .troops
+            .iter()
+            .find(|(_, t)| match faction {
+                AiFaction::Alliance => t.is_alliance,
+                AiFaction::Empire => !t.is_alliance,
+            })
+            .map(|(k, _)| k)
+    }
+
+    /// Find a defense facility key to use as a class reference for defense construction.
+    fn find_defense_facility_class(
+        world: &GameWorld,
+        faction: AiFaction,
+    ) -> Option<DefenseFacilityKey> {
+        world
+            .defense_facilities
+            .iter()
+            .find(|(_, d)| match faction {
+                AiFaction::Alliance => d.is_alliance,
+                AiFaction::Empire => !d.is_alliance,
             })
             .map(|(k, _)| k)
     }
