@@ -8,7 +8,6 @@ tags: [guide, economy, manufacturing, production, shipyards]
 
 # Building Your War Machine
 
-<img src="/open-rebellion/assets/imperial-cog.png" alt="Galactic Empire" width="32" style="vertical-align:middle; margin-right:0.5em;"> <img src="/open-rebellion/assets/rebellion-starbird.png" alt="Rebel Alliance" width="28" style="vertical-align:middle;">
 
 Battles are won before they're fought. The faction that built more ships last month will win the engagement next month. Production is the bedrock of every long-term strategy—learn it early, or you will find yourself outgunned at the worst possible moment.
 

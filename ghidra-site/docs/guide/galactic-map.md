@@ -9,8 +9,6 @@ tags: [guide, galaxy, sectors, diplomacy, fog-of-war, uprisings]
 # The Galaxy
 
 <div style="display:flex; gap:1.5em; align-items:center; margin-bottom:1.5em;">
-  <img src="/open-rebellion/assets/rebellion-starbird.png" alt="Rebel Alliance" width="48">
-  <img src="/open-rebellion/assets/imperial-cog.png" alt="Galactic Empire" width="48">
 </div>
 
 The galaxy in Rebellion is not a battlefield with fixed front lines. It is a political and military space of 200 star systems distributed across 20 sectors—most of them contested, many of them neutral, and all of them potentially vital.

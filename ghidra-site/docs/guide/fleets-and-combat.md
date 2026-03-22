@@ -9,8 +9,6 @@ tags: [guide, fleets, combat, movement, hyperdrive]
 # Fleets & Combat
 
 <div style="display:flex; gap:1.5em; align-items:center; margin-bottom:1.5em;">
-  <img src="/open-rebellion/assets/rebellion-starbird.png" alt="Rebel Alliance" width="48">
-  <img src="/open-rebellion/assets/imperial-cog.png" alt="Galactic Empire" width="48">
 </div>
 
 Fleets are your primary instrument of power—they capture systems, blockade enemies, escort characters, and fight. Understanding how they move and what happens when they collide is foundational to everything else.
