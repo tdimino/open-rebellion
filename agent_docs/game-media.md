@@ -4,6 +4,7 @@ description: "Complete inventory of all visual and audio media in Star Wars Rebe
 category: "agent-docs"
 created: 2026-03-16
 updated: 2026-03-16
+tags: [dll, smacker, wav, audio, video]
 ---
 
 # Game Media Reference

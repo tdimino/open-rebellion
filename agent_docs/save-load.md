@@ -4,6 +4,7 @@ description: "Bincode serialization with versioned headers, mod metadata, and mi
 category: "agent-docs"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [save-load, bincode, migration, serialization]
 ---
 
 # Save/Load System

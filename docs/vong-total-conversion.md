@@ -4,6 +4,7 @@ description: "Asset replacement inventory and visual reference catalog for the N
 category: "reference"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [total-conversion, yuuzhan-vong, modding]
 ---
 
 # Yuuzhan Vong Total Conversion: Visual Reference Scope

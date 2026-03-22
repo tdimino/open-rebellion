@@ -3,7 +3,8 @@ title: "Changelog"
 description: "All notable changes to Open Rebellion by version"
 category: "reference"
 created: 2026-03-11
-updated: 2026-03-16
+updated: 2026-03-22
+tags: [changelog, versions, releases]
 ---
 
 # Changelog
@@ -21,9 +22,105 @@ Each entry includes:
 
 ---
 
+## [v0.14.0] - 2026-03-22
+
+**Parity:** Core 95% · UI 80% · Combat 60% | **Category:** AI Parity Completion | **Milestone:** Phases A–F COMPLETE
+
+### Added
+- **Config-driven AI** (`tuning.rs`): `GameConfig` with 16 tunable parameters across 4 sub-configs (`AiConfig`, `MovementConfig`, `ProductionConfig`, `ScoringConfig`). Playtest binary accepts `--config <path>` for JSON overrides. Parity/augmentation documented per-field.
+- **AI research dispatch**: `evaluate_research()` assigns idle characters to Ship/Troop/Facility tech trees by primary skill (ship_design/troop_training/facility_design ≥ 30). Ports FUN_004927c0.
+- **Ratio-based galaxy evaluation**: `GalaxyState.control_ratio` + `aggression` (0.1–0.9) scales `max_fronts` and Pass 2 behavior. Ports FUN_0053e190.
+- **Proportional redistribution**: Pass 2 distributes reinforcements across ALL undefended systems via round-robin (not just first). Ports FUN_005385f0.
+- **Combat spread**: Diplomacy popularity ≥ 0.6 with ≥ 0.1 lead flips `ControlKind` — creates more controlled territory for diverse battle locations.
+- **Troop deployment AI**: Builds troops (< 2 regiments) and defense facilities (< 2) at controlled systems. `find_troop_class()` + `find_defense_facility_class()`.
+- **Dispatch validation cascade**: `can_dispatch()` with 6 pre-checks (faction, can_be_commander, busy, captive, on_mission, on_mandatory_mission). Ports FUN_00508250.
+- **Ghidra README**: Comprehensive README tracked in git (`!ghidra/README.md` exception in .gitignore).
+- **AI fog-of-war research**: Two design proposals — industry survey (Civ/Stellaris/HOI4/Kohan II) + Nomos "Skotia" cognitive architecture blueprint.
+- **`configs/autoresearch/default.json`**: Default tuning parameters for autoresearch loop.
+
+### Technical
+- Core AI pipeline: **6/6 functions at DONE/AUGMENTED status**
+- All 3 P0 gaps resolved, both P1 gaps resolved
+- `autoresearch_loop.py` updated to write and pass `--config` files
+- `AIAction::DispatchResearch` variant with telemetry
+- 283+ tests passing, zero warnings
+
+---
+
+## [v0.13.0] - 2026-03-21
+
+**Parity:** Core 90% · UI 80% · Combat 60% | **Category:** AI Overhaul | **Milestone:** AI Overhaul COMPLETE
+
+### Added
+- **Distance-based fleet transit**: Euclidean distance with `DISTANCE_SCALE=2`, `MIN_TRANSIT_TICKS=10`, `DEFAULT_FIGHTER_HYPERDRIVE=60`
+- **Starting force distribution**: Empire 10 systems (nearest Coruscant), Alliance 3 systems (nearest Yavin)
+- **Garrison strength scoring**: Ships (hull total) + troops (regiment strength) + facilities (count × 10)
+- **Galaxy-wide strategic bucketing**: 7 categories (`our_controlled`, `our_undefended`, `our_hq`, `enemy_controlled`, `enemy_hq`, `contested`, `unoccupied`)
+- **Per-fleet attack targeting**: 4-factor scoring (weakness × proximity × deconfliction × freshness) with per-fleet evaluation
+- **Two-pass deployment**: Pass 1 assigns per-fleet targets, Pass 2 redistributes idle fleets
+- **Faction-asymmetric doctrine**: Empire biases toward enemy HQ (decisive strike), Alliance distributes across weak targets (guerrilla)
+- **Role-based character AI**: Jedi-potential reserved for training, high-diplomacy → diplomacy, high-espionage → covert ops
+- **Production doctrine**: Capital ships first (create fleets), then fighters (fill carriers), then yards, then default capships
+- **Build completion wiring**: Manufactured items (ships, fighters, facilities) now added to `GameWorld`
+- **HQ garrison defense**: First available fleet reinforces HQ before attacking
+- **ControlKind state machine**: `Uncontrolled`, `Controlled(Faction)`, `Contested`, `Uprising(Faction)` with `.faction()` and `.is_controlled_by()` helpers — replaces `controlling_faction: Option<Faction>`
+- **Human-readable JSONL payloads**: System/character names via `sys_name()`/`char_name()` helpers
+- **Enhanced `--summary`**: Galaxy control map, fleets in transit, combat diagnostics
+- **`--jsonl` streaming flag**: Raw JSONL events to stdout (incompatible with --repl/--exec)
+- **REPL commands**: `systems` (galaxy control), `transit` (fleets in transit), `events N` (last N events)
+- **`eval_game_quality.py`**: 8 sub-metrics (event diversity, combat quality with spread penalty, victory timing, faction balance, manufacturing activity, control dynamism, mission diversity, fleet engagement)
+- **`autoresearch_loop.py`**: Karpathy self-improvement loop — mutate config → run campaigns → evaluate → keep/discard
+- **AI parity tracker**: Maps all 6 original AI pipeline functions to our implementation
+- **Telemetry enrichment**: `control_changed` events, campaign snapshots every 250 ticks
+- **Death Star fleet exemption**: DS fleet always targets enemy HQ
+
+### Technical
+- Campaign results: VICTORY at tick 1188, 211 battles across multiple systems, eval score 0.59
+- ~65 files updated for ControlKind migration
+- 283 tests passing, zero warnings
+
+---
+
+## [v0.12.0] - 2026-03-20
+
+**Parity:** Core 92% · UI 80% · Combat 60% | **Category:** AI Infrastructure | **Milestone:** AI Overhaul BEGIN
+
+### Added
+- **REPL mode** (`--repl`): Interactive terminal with structured JSON command input for LLM agent play-testing
+- **AI behavior analysis**: Complete Ghidra RE documentation of original 6-function AI pipeline (FUN_00519d00 through FUN_00520580)
+
+### Fixed
+- **AI fleet deployment**: Now derives `controlling_faction` from seeded assets instead of hardcoded Empire
+- **3 reviewer findings**: Death Star sabotage no-op, uprising not cleared after subdue, JSON injection in event payloads
+- **WASM stubs**: Added stubs for `ModRuntime::apply_enabled` and `refresh`
+- **200-tick victory grace period**: Prevents instant victory from starting configuration
+
+### Technical
+- 280 tests passing
+- AI parity analysis started: 6 core functions, 10 sub-functions mapped
+
+---
+
+## [v0.11.0] - 2026-03-20
+
+**Parity:** Core 91% · UI 80% · Combat 60% | **Category:** Mission Expansion | **Milestone:** Parity Hardening
+
+### Added
+- **SubdueUprising mission type**: AI and player can dispatch characters to subdue uprisings at controlled systems
+- **DeathStarSabotage mission type**: Covert mission to sabotage Death Star construction progress
+
+### Fixed
+- 3 reviewer findings from v0.10.0 code review
+
+### Technical
+- 2 new `MissionKind` variants wired to MSTB probability tables
+- Mission effects applied to `GameWorld` (uprising cleared, construction delayed)
+
+---
+
 ## [v0.10.0] - 2026-03-20
 
-**Completion:** ~99% | **Category:** Full Wiring | **Milestone:** Knesset Tinnit Phase 2
+**Parity:** Core 90% · UI 80% · Combat 60% | **Category:** Full Wiring | **Milestone:** Knesset Tinnit Phase 2
 
 ### Added
 - **Dual-AI in shared simulation**: `SimulationStates.ai2: Option<AIState>` + second AI pass in `run_simulation_tick()`. Both interactive app and headless binary now support dual-AI.
@@ -369,6 +466,12 @@ Each entry includes:
 
 | Version | Date | Milestone | Completion | Summary |
 |---------|------|-----------|------------|---------|
+| **v0.14.0** | **2026-03-22** | **AI Parity** | **Core 95% · UI 80% · Combat 60%** | **Config-driven AI, research dispatch, ratio eval, combat spread, troop deploy, dispatch validation** |
+| v0.13.0 | 2026-03-21 | AI Overhaul | Core 94% · UI 80% · Combat 60% | Distance transit, galaxy bucketing, per-fleet targeting, ControlKind, telemetry, eval scripts |
+| v0.12.0 | 2026-03-20 | AI Infra | Core 92% · UI 80% · Combat 60% | REPL mode, AI behavior analysis, fleet deployment fix, victory grace period |
+| v0.11.0 | 2026-03-20 | Mission Expansion | Core 90% · UI 80% · Combat 60% | SubdueUprising + DeathStarSabotage mission types |
+| v0.10.0 | 2026-03-20 | Full Wiring | Core 90% · UI 80% · Combat 60% | Dual-AI, CLI --exec, ModRuntime startup, JSONL system names |
+| v0.9.0 | 2026-03-19 | Completion | Core 88% · UI 78% · Combat 60% | Shared command registry, dual AI mode, defense facility classes |
 | **v0.8.0** | **2026-03-17** | **Play-Test READY** | **~95%** | **Command palette, headless binary, seedable RNG, 7 new PanelAction variants** |
 | v0.7.0 | 2026-03-16 | Release READY | ~95% | 8 story event chains, 7 new event variants, release packaging, CI, example mod |
 | v0.6.0 | 2026-03-16 | Mod Workshop | ~92% | Mod manager panel, escape system, 3 reviewer bug fixes |

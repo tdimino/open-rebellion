@@ -4,6 +4,7 @@ description: "Loyalty-driven character faction defection mechanics"
 category: "agent-docs"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [betrayal, loyalty, defection, simulation]
 ---
 
 # Betrayal System

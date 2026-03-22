@@ -4,6 +4,7 @@ description: "Development milestones from Galaxy Viewer through Release packagin
 category: "agent-docs"
 created: 2026-03-11
 updated: 2026-03-16
+tags: [roadmap, planning, milestones, parity]
 ---
 
 # Roadmap

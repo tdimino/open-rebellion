@@ -4,6 +4,7 @@ description: "141 Wookieepedia category images of Yuuzhan Vong via Fandom API"
 category: "reference"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [index, yuuzhan-vong, wookieepedia]
 ---
 
 # Wookieepedia Yuuzhan Vong Reference Images

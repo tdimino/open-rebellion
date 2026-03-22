@@ -4,6 +4,7 @@ description: "Space and ground combat resolution via combat.rs and bombardment.r
 category: "agent-docs"
 created: 2026-03-14
 updated: 2026-03-16
+tags: [combat, space-combat, ground-combat, simulation]
 ---
 
 # Combat System

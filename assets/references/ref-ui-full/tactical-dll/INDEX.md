@@ -4,6 +4,7 @@ description: "Extracted BMP resources from TACTICAL.DLL"
 category: "reference"
 created: 2026-03-17
 updated: 2026-03-18
+tags: [index, dll, tactical, sprites]
 ---
 
 # TACTICAL.DLL — Resource Index

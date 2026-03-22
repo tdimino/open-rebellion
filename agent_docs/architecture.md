@@ -4,6 +4,7 @@ description: "Crate dependency graph and module structure for the Open Rebellion
 category: "agent-docs"
 created: 2026-03-11
 updated: 2026-03-21
+tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
 # Architecture

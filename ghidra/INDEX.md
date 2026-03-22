@@ -4,6 +4,7 @@ description: "Top-level index for the Ghidra RE project structure and resources"
 category: "ghidra"
 created: 2026-03-13
 updated: 2026-03-16
+tags: [index, ghidra, reverse-engineering]
 ---
 
 # Ghidra Project — Open Rebellion

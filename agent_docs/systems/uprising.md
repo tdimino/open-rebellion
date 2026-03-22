@@ -4,6 +4,7 @@ description: "Loyalty-driven control changes with UPRIS1TB/UPRIS2TB probability 
 category: "agent-docs"
 created: 2026-03-14
 updated: 2026-03-16
+tags: [uprising, incite, subdue, simulation]
 ---
 
 # Uprising System

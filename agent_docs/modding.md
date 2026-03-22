@@ -4,6 +4,7 @@ description: "TOML manifest + JSON overlay mod system with directory layout and 
 category: "agent-docs"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [modding, toml, semver, merge-patch]
 ---
 
 # Mod System

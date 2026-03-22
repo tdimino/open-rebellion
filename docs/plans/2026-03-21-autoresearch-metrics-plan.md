@@ -1,3 +1,12 @@
+---
+title: "Build Autoresearch Telemetry, Tunable Config, and a Fast 3-Seed Balance Loop"
+type: feat
+status: planned
+date: 2026-03-21
+project: open-rebellion
+tags: [autoresearch, telemetry, config, ai-balance, playtest]
+---
+
 # Build Autoresearch Telemetry, Tunable Config, and a Fast 3-Seed Balance Loop
 
 This ExecPlan is a living document. Sections Progress, Surprises &

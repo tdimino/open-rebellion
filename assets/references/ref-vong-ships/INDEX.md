@@ -4,6 +4,7 @@ description: "64 Wookieepedia reference images of Vong ships and entities"
 category: "reference"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [index, yuuzhan-vong, ships, 3d-models]
 ---
 
 # Yuuzhan Vong Ships & Entity Reference Images

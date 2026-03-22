@@ -4,6 +4,7 @@ description: "Research findings and implementation proposals for true fog of war
 category: "proposal"
 created: 2026-03-22
 status: draft
+tags: [ai, fog-of-war, research, 4x-strategy]
 ---
 
 # AI Fog of War — Research and Proposal

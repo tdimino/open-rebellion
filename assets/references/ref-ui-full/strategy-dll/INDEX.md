@@ -4,6 +4,7 @@ description: "Extracted BMP resources from STRATEGY.DLL"
 category: "reference"
 created: 2026-03-17
 updated: 2026-03-18
+tags: [index, dll, strategy, sprites]
 ---
 
 # STRATEGY.DLL — Resource Index

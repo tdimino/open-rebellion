@@ -7,6 +7,7 @@ agents: 4 (Deborah, Kaptaru, Mami, Melissa)
 model: claude-sonnet-4-6 (daborot), claude-opus-4-6 (lead)
 duration: ~45 minutes
 status: complete
+tags: [swarm, knesset, living-galaxy, war-room]
 ---
 
 # Knesset Athirat — Swarm Report

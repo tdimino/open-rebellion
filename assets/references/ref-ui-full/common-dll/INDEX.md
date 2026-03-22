@@ -4,6 +4,7 @@ description: "321 BMP images extracted from COMMON.DLL"
 category: "reference"
 created: 2026-03-17
 updated: 2026-03-18
+tags: [index, dll, common, resources]
 ---
 
 # COMMON.DLL — Resource Index

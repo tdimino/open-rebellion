@@ -4,6 +4,7 @@ description: "Runtime mod management architecture: discovery, validation, enable
 category: "agent-docs"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [modding, hot-reload, toml, rfc7396]
 ---
 
 # Mod Runtime

@@ -4,6 +4,7 @@ description: "Attribution for open-source projects, AI services, and community e
 category: "reference"
 created: 2026-03-14
 updated: 2026-03-16
+tags: [credits, attribution, tools]
 ---
 
 # Credits & Acknowledgments

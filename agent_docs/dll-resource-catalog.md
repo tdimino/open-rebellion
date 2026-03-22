@@ -4,6 +4,7 @@ description: "Complete extraction inventory of all 18 game DLLs — 5,664 resour
 category: "agent-docs"
 created: 2026-03-17
 updated: 2026-03-18
+tags: [dll, resources, bmp, sprites]
 ---
 
 # DLL Resource Catalog

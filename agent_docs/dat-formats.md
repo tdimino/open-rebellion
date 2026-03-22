@@ -4,6 +4,7 @@ description: "Binary format specifications for all .DAT files in Star Wars Rebel
 category: "agent-docs"
 created: 2026-03-11
 updated: 2026-03-16
+tags: [dat-format, binary-parsing, round-trip-validation]
 ---
 
 # DAT Binary Formats

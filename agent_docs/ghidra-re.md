@@ -4,6 +4,7 @@ description: "RE status and methodology for REBEXE.EXE decompilation (22,741 fun
 category: "agent-docs"
 created: 2026-03-11
 updated: 2026-03-16
+tags: [ghidra, reverse-engineering, rebexe, gnprtb]
 ---
 
 # Ghidra Reverse Engineering

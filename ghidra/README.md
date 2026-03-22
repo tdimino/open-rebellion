@@ -1,3 +1,12 @@
+---
+title: "Ghidra Reverse Engineering — REBEXE.EXE"
+description: "Exhaustive decompilation of Star Wars Rebellion (1998) — 5,127 functions, 7 scholar docs, 8 scripts"
+category: ghidra
+created: 2026-03-13
+updated: 2026-03-22
+tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
+---
+
 # Ghidra Reverse Engineering — REBEXE.EXE
 
 Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open Rebellion reimplementation.

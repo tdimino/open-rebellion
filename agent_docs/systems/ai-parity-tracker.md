@@ -4,6 +4,7 @@ description: "Comprehensive mapping of original REBEXE.EXE AI functions to Open 
 category: "agent-docs"
 created: 2026-03-21
 updated: 2026-03-21
+tags: [ai, parity, ghidra, fleet-deployment]
 ---
 
 # AI Parity Tracker

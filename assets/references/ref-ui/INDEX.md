@@ -4,6 +4,7 @@ description: "316 UI elements cataloged from Star Wars Rebellion via MetasharpNe
 category: "reference"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [index, ui, bmp, sprites]
 ---
 
 # UI Element Reference Collection

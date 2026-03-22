@@ -4,6 +4,7 @@ description: "HD upscaling, 3D model generation, and encyclopedia content pipeli
 category: "agent-docs"
 created: 2026-03-13
 updated: 2026-03-16
+tags: [asset-pipeline, upscaling, 3d-models, audio]
 ---
 
 # Asset Pipeline

@@ -4,6 +4,7 @@ description: "Construction countdown, planet destruction, and nearby-warning sca
 category: "agent-docs"
 created: 2026-03-14
 updated: 2026-03-16
+tags: [death-star, construction, planet-destruction, simulation]
 ---
 
 # Death Star System

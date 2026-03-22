@@ -4,6 +4,7 @@ type: design
 status: planned
 date: 2026-03-22
 designer: Nomos (soul architect subdaimon)
+tags: [ai, fog-of-war, cognitive-architecture, design]
 ---
 
 # AI Fog-of-War Cognitive Architecture — Skotia

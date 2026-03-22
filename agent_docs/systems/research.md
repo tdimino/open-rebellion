@@ -4,6 +4,7 @@ description: "Three independent tech trees per faction (Ship/Troop/Facility)"
 category: "agent-docs"
 created: 2026-03-14
 updated: 2026-03-16
+tags: [research, tech-tree, ship-design, simulation]
 ---
 
 # Research System

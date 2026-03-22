@@ -4,6 +4,7 @@ description: "Game mechanics overview covering galaxy structure, factions, units
 category: "agent-docs"
 created: 2026-03-11
 updated: 2026-03-16
+tags: [reference, game-mechanics, factions, missions]
 ---
 
 # Game Domain: Star Wars Rebellion

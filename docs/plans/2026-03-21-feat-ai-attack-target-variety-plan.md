@@ -4,6 +4,7 @@ type: feat
 status: active
 date: 2026-03-21
 project: open-rebellion
+tags: [ai, fleet-deployment, targeting, deconfliction]
 ---
 
 # AI Attack Target Variety

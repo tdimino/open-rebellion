@@ -4,6 +4,7 @@ description: "Fleet-presence blockade mechanics: manufacturing halt and in-trans
 category: "agent-docs"
 created: 2026-03-14
 updated: 2026-03-16
+tags: [blockade, manufacturing, fleet, simulation]
 ---
 
 # Blockade System

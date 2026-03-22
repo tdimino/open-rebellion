@@ -5,6 +5,7 @@ status: planned
 date: 2026-03-21
 project: open-rebellion
 designer: Nomos (soul architect subdaimon)
+tags: [addon, character-creation, homeworld, portraits]
 ---
 
 # Create Your Own Character — First Addon

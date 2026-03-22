@@ -4,6 +4,7 @@ description: "Tsuyoshi Nagano cover art reference for Japanese NJO novel edition
 category: "reference"
 created: 2026-03-15
 updated: 2026-03-16
+tags: [index, njo, japanese, reference]
 ---
 
 # Japanese New Jedi Order Covers — Tsuyoshi Nagano

@@ -4,6 +4,7 @@ description: "All external references used for Open Rebellion mechanics document
 category: "reference"
 created: 2026-03-16
 updated: 2026-03-16
+tags: [sources, bibliography, references]
 ---
 
 # External Sources

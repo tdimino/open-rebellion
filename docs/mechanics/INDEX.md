@@ -4,6 +4,7 @@ description: "Master reference for all Open Rebellion game mechanics"
 category: "mechanics"
 created: 2026-03-16
 updated: 2026-03-16
+tags: [index, game-mechanics]
 ---
 
 # Game Mechanics Index

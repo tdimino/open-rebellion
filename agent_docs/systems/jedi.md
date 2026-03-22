@@ -4,6 +4,7 @@ description: "4-tier Force progression with accumulated XP and detection checks"
 category: "agent-docs"
 created: 2026-03-14
 updated: 2026-03-16
+tags: [jedi, force, training, simulation]
 ---
 
 # Jedi Training System
