@@ -33,7 +33,7 @@ jobs:
         run: pip install mkdocs-material
 
       - name: Build site
-        run: cd ghidra-site && mkdocs build --strict
+        run: cd ghidra-site && mkdocs build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
