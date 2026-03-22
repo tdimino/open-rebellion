@@ -1,0 +1,82 @@
+{
+  "ai": {
+    "tick_interval": {
+      "value": 7,
+      "min": 3,
+      "max": 21,
+      "step": 2
+    },
+    "diplomacy_skill_threshold": {
+      "value": 60,
+      "min": 30,
+      "max": 90,
+      "step": 10
+    },
+    "espionage_skill_threshold": {
+      "value": 50,
+      "min": 30,
+      "max": 80,
+      "step": 10
+    },
+    "max_construction_yards": {
+      "value": 5,
+      "min": 2,
+      "max": 10,
+      "step": 1
+    },
+    "max_covert_ops_per_eval": {
+      "value": 3,
+      "min": 1,
+      "max": 8,
+      "step": 1
+    }
+  },
+  "movement": {
+    "distance_scale": {
+      "value": 3,
+      "min": 1,
+      "max": 5,
+      "step": 1
+    },
+    "min_transit_ticks": {
+      "value": 10,
+      "min": 5,
+      "max": 25,
+      "step": 5
+    }
+  },
+  "production": {
+    "capship_threshold": {
+      "value": 5,
+      "min": 2,
+      "max": 10,
+      "step": 1
+    },
+    "fighter_ratio": {
+      "value": 3,
+      "min": 1,
+      "max": 6,
+      "step": 1
+    }
+  },
+  "scoring": {
+    "victory_center": {
+      "value": 3000,
+      "min": 1500,
+      "max": 5000,
+      "step": 250
+    },
+    "combat_pct_center": {
+      "value": 10,
+      "min": 3,
+      "max": 20,
+      "step": 1
+    },
+    "mfg_target": {
+      "value": 55,
+      "min": 15,
+      "max": 100,
+      "step": 5
+    }
+  }
+}

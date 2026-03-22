@@ -215,13 +215,15 @@ Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems
 - [x] Existing diplomacy targeting already covers neutral/enemy systems
 - [x] More controlled territory → more attack targets → diverse battle locations
 
-### Phase F: Autoresearch Execution
-*Run the loop, find optimal config.*
+### Phase F: Autoresearch Execution — COMPLETE
+*Run 001: 20 iterations × 3 seeds.*
 
-- [ ] Build release binary
-- [ ] Run 20 iterations × 3 seeds
-- [ ] Analyze: best config, score trajectory, parameter sensitivity
-- [ ] Document findings in `autoresearch/results/`
+- [x] Release binary built (1.5MB, LTO)
+- [x] Run 20 iterations × 3 seeds × 5000 ticks
+- [x] Baseline: 0.5449 → Final: 0.6483 (+19% improvement)
+- [x] 2 accepted mutations: distance_scale 2→3, mfg_target 50→55
+- [x] Results at `autoresearch/run-001/`, best config at `configs/autoresearch/best_game_config.json`
+- [x] Finding: parameter space is narrow — most mutations cause degenerate games
 
 ---
 

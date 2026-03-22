@@ -1,0 +1,662 @@
+[
+  {
+    "iteration": 1,
+    "mutation": "ai.max_construction_yards: 5 \u2192 6",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.5449,
+    "improvement": -0.5449,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 1.12,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 2,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.6412,
+        "degenerate": false,
+        "combat": 318,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.5092,
+        "degenerate": false,
+        "combat": 10,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 2,
+    "mutation": "ai.diplomacy_skill_threshold: 60 \u2192 50",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.5449,
+    "improvement": -0.5449,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 0.66,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 2,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.6412,
+        "degenerate": false,
+        "combat": 318,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.598,
+        "degenerate": false,
+        "combat": 1511,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 3,
+    "mutation": "ai.tick_interval: 7 \u2192 9",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.5449,
+    "improvement": -0.5449,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 0.59,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6714,
+        "degenerate": false,
+        "combat": 281,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 74,
+        "mfg": 3
+      },
+      {
+        "seed": 999,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 75,
+        "mfg": 3
+      }
+    ]
+  },
+  {
+    "iteration": 4,
+    "mutation": "scoring.combat_pct_center: 10 \u2192 11",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.5449,
+    "improvement": -0.5449,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 1.18,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 6,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.6412,
+        "degenerate": false,
+        "combat": 318,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.5634,
+        "degenerate": false,
+        "combat": 660,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 5,
+    "mutation": "production.fighter_ratio: 3 \u2192 4",
+    "candidate_score": 0.486,
+    "incumbent_score": 0.5449,
+    "improvement": -0.0589,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.72,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.5273,
+        "degenerate": false,
+        "combat": 755,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.6412,
+        "degenerate": false,
+        "combat": 318,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.4805,
+        "degenerate": false,
+        "combat": 17,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 6,
+    "mutation": "ai.tick_interval: 7 \u2192 5",
+    "candidate_score": 0.4952,
+    "incumbent_score": 0.5449,
+    "improvement": -0.0497,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 1.03,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6707,
+        "degenerate": false,
+        "combat": 468,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.5321,
+        "degenerate": false,
+        "combat": 2635,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5348,
+        "degenerate": false,
+        "combat": 2635,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 7,
+    "mutation": "movement.distance_scale: 2 \u2192 3",
+    "candidate_score": 0.6329,
+    "incumbent_score": 0.6329,
+    "improvement": 0.088,
+    "accepted": true,
+    "rejected": false,
+    "wall_time": 0.82,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6489,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.5997,
+        "degenerate": false,
+        "combat": 306,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.6468,
+        "degenerate": false,
+        "combat": 478,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 8,
+    "mutation": "movement.min_transit_ticks: 10 \u2192 5",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.6329,
+    "improvement": -0.6329,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 1.43,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 2,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 2,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5359,
+        "degenerate": false,
+        "combat": 2059,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 9,
+    "mutation": "movement.distance_scale: 3 \u2192 2",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.6329,
+    "improvement": -0.6329,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 1.62,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 2,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.6412,
+        "degenerate": false,
+        "combat": 318,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.6134,
+        "degenerate": false,
+        "combat": 1276,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 10,
+    "mutation": "scoring.victory_center: 3000 \u2192 2750",
+    "candidate_score": 0.5752,
+    "incumbent_score": 0.6329,
+    "improvement": -0.0577,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.45,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6479,
+        "degenerate": false,
+        "combat": 478,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.5914,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.5915,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      }
+    ]
+  },
+  {
+    "iteration": 11,
+    "mutation": "production.capship_threshold: 5 \u2192 6",
+    "candidate_score": 0.631,
+    "incumbent_score": 0.6329,
+    "improvement": -0.0019,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.27,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.5925,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      },
+      {
+        "seed": 123,
+        "score": 0.647,
+        "degenerate": false,
+        "combat": 478,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.6487,
+        "degenerate": false,
+        "combat": 481,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 12,
+    "mutation": "ai.max_construction_yards: 5 \u2192 6",
+    "candidate_score": 0.5749,
+    "incumbent_score": 0.6329,
+    "improvement": -0.058,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.35,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.5914,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      },
+      {
+        "seed": 123,
+        "score": 0.6479,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5904,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      }
+    ]
+  },
+  {
+    "iteration": 13,
+    "mutation": "movement.min_transit_ticks: 10 \u2192 5",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.6329,
+    "improvement": -0.6329,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 0.87,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6592,
+        "degenerate": false,
+        "combat": 293,
+        "mfg": 5
+      },
+      {
+        "seed": 123,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 2,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5265,
+        "degenerate": false,
+        "combat": 2048,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 14,
+    "mutation": "scoring.mfg_target: 50 \u2192 55",
+    "candidate_score": 0.6483,
+    "incumbent_score": 0.6483,
+    "improvement": 0.0154,
+    "accepted": true,
+    "rejected": false,
+    "wall_time": 0.57,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6489,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.647,
+        "degenerate": false,
+        "combat": 478,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.6488,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 15,
+    "mutation": "movement.min_transit_ticks: 10 \u2192 15",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.6483,
+    "improvement": -0.6483,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 0.87,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 649,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 5,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5462,
+        "degenerate": false,
+        "combat": 829,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 16,
+    "mutation": "scoring.mfg_target: 55 \u2192 60",
+    "candidate_score": 0.6474,
+    "incumbent_score": 0.6483,
+    "improvement": -0.0009,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.44,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6479,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.646,
+        "degenerate": false,
+        "combat": 478,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.6479,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 17,
+    "mutation": "scoring.combat_pct_center: 10 \u2192 9",
+    "candidate_score": 0.5745,
+    "incumbent_score": 0.6483,
+    "improvement": -0.0738,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.51,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.5914,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      },
+      {
+        "seed": 123,
+        "score": 0.6495,
+        "degenerate": false,
+        "combat": 469,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5904,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      }
+    ]
+  },
+  {
+    "iteration": 18,
+    "mutation": "scoring.mfg_target: 55 \u2192 60",
+    "candidate_score": 0.631,
+    "incumbent_score": 0.6483,
+    "improvement": -0.0173,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.25,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6489,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.5903,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      },
+      {
+        "seed": 999,
+        "score": 0.6477,
+        "degenerate": false,
+        "combat": 478,
+        "mfg": 6
+      }
+    ]
+  },
+  {
+    "iteration": 19,
+    "mutation": "ai.max_construction_yards: 5 \u2192 6",
+    "candidate_score": 0.6313,
+    "incumbent_score": 0.6483,
+    "improvement": -0.017,
+    "accepted": false,
+    "rejected": false,
+    "wall_time": 0.28,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6479,
+        "degenerate": false,
+        "combat": 497,
+        "mfg": 6
+      },
+      {
+        "seed": 123,
+        "score": 0.6479,
+        "degenerate": false,
+        "combat": 481,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5904,
+        "degenerate": false,
+        "combat": 289,
+        "mfg": 5
+      }
+    ]
+  },
+  {
+    "iteration": 20,
+    "mutation": "movement.min_transit_ticks: 10 \u2192 5",
+    "candidate_score": 0.0,
+    "incumbent_score": 0.6483,
+    "improvement": -0.6483,
+    "accepted": false,
+    "rejected": true,
+    "wall_time": 0.36,
+    "per_seed": [
+      {
+        "seed": 42,
+        "score": 0.6592,
+        "degenerate": false,
+        "combat": 293,
+        "mfg": 5
+      },
+      {
+        "seed": 123,
+        "score": 0.0,
+        "degenerate": true,
+        "combat": 2,
+        "mfg": 6
+      },
+      {
+        "seed": 999,
+        "score": 0.5359,
+        "degenerate": false,
+        "combat": 2059,
+        "mfg": 6
+      }
+    ]
+  }
+]
