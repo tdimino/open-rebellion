@@ -19,7 +19,7 @@ Every character gains a `homeworld` field linking them to a star system. This en
 |-----------|-----------|
 | Luke Skywalker | Tatooine |
 | Darth Vader | Tatooine |
-| Leia Organa | Alderaan |
+| Leia Organa | Alderaan (destroyed) |
 | Han Solo | Corellia |
 | Mon Mothma | Chandrila |
 | Thrawn | Csilla |
@@ -33,7 +33,7 @@ Every character gains a `homeworld` field linking them to a star system. This en
 - **+10 loyalty** recovery when homeworld is liberated
 - Special dialogue and events when defending or liberating a homeworld
 
-When Alderaan falls, Leia's loyalty drops. When Corellia is liberated, Han fights harder. The map becomes personal.
+Leia's homeworld is already gone—she carries a permanent -5% penalty and can never recover it. Han fights harder when Corellia is liberated. Vader is conflicted at Tatooine. The map becomes personal.
 
 ---
 
