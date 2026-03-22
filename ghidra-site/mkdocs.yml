@@ -62,6 +62,7 @@ nav:
     - Modders Taxonomy: scholar/modders-taxonomy.md
     - Rust Implementation Guide: scholar/rust-implementation-guide.md
     - AI Behavior Analysis: scholar/ai-behavior-analysis.md
+    - COMMON.DLL Analysis: scholar/common-dll-analysis.md
   - Combat:
     - Space Combat Pipeline: combat/space-combat.md
     - Ground Combat: combat/ground-combat.md
