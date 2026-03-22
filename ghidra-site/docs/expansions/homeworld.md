@@ -100,11 +100,9 @@ Each character has a faction leaning based on their homeworld and archetype:
 | Empire-leaning | Empire only (unless enemy meets a special condition) |
 | **Neutral** | **Either faction—first to recruit wins** |
 
-Most characters lean toward the faction that controls their homeworld at game start. But some—Fringers especially—are genuinely neutral. A neutral operative at Nar Shaddaa can be recruited by either side. If the enemy gets there first, they join the other side with the skills you designed.
+Most characters lean toward the faction that controls their recruitment location at game start. But some—Fringers especially—are genuinely neutral. A neutral operative at Nar Shaddaa can be recruited by either side. If the enemy gets there first, they join the other side with the skills you designed.
 
-This creates real strategic stakes around homeworld choice in Step 4 of the Academy flow. Picking a homeworld deep in friendly territory is safe. Picking a contested border world risks losing your character to the enemy—but the homeworld bonus in a contested zone makes them more valuable if you hold it.
-
-*"We lost the Corellian engineer to the Empire because we couldn't take Corellia in time."*
+*"We lost the Corellian engineer to the Empire because we couldn't reach Nar Shaddaa in time."*
 
 ### Mode 3: Both
 
