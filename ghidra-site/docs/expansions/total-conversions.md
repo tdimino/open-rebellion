@@ -6,7 +6,7 @@ These are the eras and expansions we're designing toward.
 
 ---
 
-## New Jedi Order (1998–2003)
+## New Jedi Order (25–30 ABY)
 
 <div style="text-align:center; margin: 1em 0;">
   <img src="/open-rebellion/assets/new-jedi-order.png" alt="Jedi Order" width="60">
