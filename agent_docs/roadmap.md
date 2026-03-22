@@ -137,9 +137,9 @@ Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems
 
 | # | Original | Status | Gap |
 |---|----------|--------|-----|
-| 1 | FUN_00519d00 Galaxy evaluation | PARTIAL | Missing ratio scoring (FUN_0053e190) — AI doesn't scale aggression by galaxy control % |
+| 1 | FUN_00519d00 Galaxy evaluation | DONE | 7 buckets + control_ratio + aggression scaling |
 | 2 | FUN_00537180 Primary deployment | DONE | Per-fleet targeting with scoring function |
-| 3 | FUN_005385f0 Secondary deployment | PARTIAL | Our Pass 2 picks first undefended system; original proportionally distributes across ALL systems |
+| 3 | FUN_005385f0 Secondary deployment | DONE | Aggression-scaled: offensive piles onto attacks, defensive distributes across undefended systems |
 | 4 | FUN_00502020 Garrison strength | DONE | Ships + troops + facilities |
 | 5 | FUN_00508250 Dispatch validation | MISSING | Original has 18 boolean AND checks; we have no pre-dispatch validation |
 | 6 | FUN_00520580 Movement orders | DONE | With already_moving dedup |
@@ -192,19 +192,20 @@ Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems
 - [x] `AIAction::DispatchResearch` variant + telemetry event
 - [x] Wired into simulation tick (both factions) and interactive app
 
-### Phase C: Ratio-Based Galaxy Evaluation (P0 Gap #2)
-*Aggression scaling. ~60 LOC.*
+### Phase C: Ratio-Based Galaxy Evaluation (P0 Gap #2) — COMPLETE
+*Aggression scaling. ~30 LOC.*
 
-- [ ] Port FUN_0053e190 proportional allocation
-- [ ] Galaxy control % → attack/defense ratio
-- [ ] 10% controlled → 80% defensive, 60% → balanced, 90% → 80% offensive
+- [x] Ported FUN_0053e190: `control_ratio` and `aggression` fields on GalaxyState
+- [x] Galaxy control % → aggression: 10% → 0.18, 50% → 0.5, 90% → 0.82
+- [x] `max_fronts` scaled by aggression (weak faction opens fewer attack fronts)
+- [x] Pass 2 behavior: high aggression → pile onto attacks; low → reinforce
 
-### Phase D: Proportional Redistribution (P0 Gap #3)
-*Replace Pass 2. ~50 LOC.*
+### Phase D: Proportional Redistribution (P0 Gap #3) — COMPLETE
+*Replace Pass 2. ~25 LOC.*
 
-- [ ] Divide remaining units by friendly system count
-- [ ] Distribute quotient per system + remainder to weakest
-- [ ] Detect stranded troops (troops without ships) and send reinforcement
+- [x] Defensive reinforcement distributes across ALL undefended systems (not just first)
+- [x] Round-robin by fewest incoming reinforcements (even distribution)
+- [x] Falls back to all controlled systems when no undefended remain
 
 ### Phase E: Combat Spread
 *Territory expansion via diplomacy. ~40 LOC.*

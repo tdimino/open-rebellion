@@ -37,7 +37,7 @@ Maps every decompiled AI function from the original REBEXE.EXE to our Rust imple
 | Original Function | Purpose | Our Code | Status |
 |---|---|---|---|
 | `FUN_005597e0` | Faction-specific system counts | `galaxy.our_controlled.len()` etc. | DONE |
-| `FUN_0053e190` | Ratio/percentage scoring | Not implemented | MISSING |
+| `FUN_0053e190` | Ratio/percentage scoring | `GalaxyState.control_ratio` + `aggression` scaling max_fronts and Pass 2 | DONE |
 | `FUN_005007a0` | Fleet unit counting | `fleet.capital_ships.iter()` | DONE |
 | `FUN_005039d0` | Facility iteration | `sys.defense_facilities.len()` | DONE |
 | `FUN_00504c40` | Troop iteration | `sys.ground_units.iter()` | DONE |

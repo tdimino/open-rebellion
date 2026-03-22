@@ -93,6 +93,16 @@ struct GalaxyState {
     contested: Vec<SystemKey>,
     /// Neutral/unclaimed systems.
     unoccupied: Vec<SystemKey>,
+
+    /// Fraction of controlled systems that are ours: our / (our + enemy).
+    /// 0.0 = we control nothing, 1.0 = we control everything.
+    /// Used by FUN_0053e190 ratio scoring to scale aggression.
+    control_ratio: f64,
+
+    /// Aggression level derived from control_ratio.
+    /// 0.0 = fully defensive (hunker down), 1.0 = fully offensive (all-out attack).
+    /// Interpolated: 10% control → 0.2, 50% → 0.5, 90% → 0.8.
+    aggression: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -973,6 +983,17 @@ impl AISystem {
                 .unwrap_or(u32::MAX)
         });
 
+        // ── FUN_0053e190 port: ratio-based aggression scaling ──
+        let our = state.our_controlled.len() as f64;
+        let enemy = state.enemy_controlled.len() as f64;
+        let total = our + enemy;
+        state.control_ratio = if total > 0.0 { our / total } else { 0.5 };
+
+        // Aggression curve: weak → defensive, dominant → offensive.
+        // Linear interpolation with clamped floor/ceiling.
+        // 0% control → 0.1 aggression, 50% → 0.5, 100% → 0.9
+        state.aggression = (state.control_ratio * 0.8 + 0.1).clamp(0.1, 0.9);
+
         state
     }
 
@@ -1127,8 +1148,10 @@ impl AISystem {
             }
 
             // Per-fleet attack targeting: score all enemy systems, pick best.
-            // Cap simultaneous attack fronts at min(fleet_count, 3).
-            let max_fronts = idle_fleets.len().min(config.ai.max_attack_fronts);
+            // Cap simultaneous attack fronts scaled by aggression.
+            // Weak faction (aggression=0.2): 1 front. Dominant (0.8): up to config max.
+            let aggression_fronts = (galaxy.aggression * config.ai.max_attack_fronts as f64).ceil() as usize;
+            let max_fronts = idle_fleets.len().min(aggression_fronts.max(1));
             let distinct_targets = targeted_counts.values().filter(|&&v| v > 0).count();
 
             // Faction asymmetry: Empire biases toward enemy HQ.
@@ -1180,10 +1203,44 @@ impl AISystem {
         }
 
         // ── Pass 2: Redistribute idle fleets ────────────────────────
-        // Fleets that couldn't find a valid target: reinforce weakest friendly system.
+        // Behavior scaled by aggression:
+        // - High aggression: pile onto existing attack targets (reinforce the assault)
+        // - Low aggression: reinforce undefended friendly systems (hunker down)
         for (fleet_key, fleet_location) in pass2_idle {
-            let target = galaxy.our_undefended.first().copied()
-                .or_else(|| galaxy.our_controlled.first().copied());
+            if galaxy.aggression > 0.5 {
+                // Offensive: reinforce the most-targeted enemy system (pile onto attack)
+                let best_attack = targeted_counts.iter()
+                    .filter(|(_, &count)| count > 0)
+                    .max_by_key(|(_, &count)| count)
+                    .map(|(&sys, _)| sys);
+                if let Some(target) = best_attack {
+                    if target != fleet_location {
+                        actions.push(AIAction::MoveFleet {
+                            fleet: fleet_key,
+                            to_system: target,
+                            reason: FleetMoveReason::Attack,
+                        });
+                        *targeted_counts.entry(target).or_default() += 1;
+                        continue;
+                    }
+                }
+            }
+            // Defensive fallback: distribute across undefended systems proportionally.
+            // FUN_005385f0 port: original distributes quotient per system + remainder
+            // to the weakest. We round-robin across undefended, then fall back to all controlled.
+            let candidates = if !galaxy.our_undefended.is_empty() {
+                &galaxy.our_undefended
+            } else if !galaxy.our_controlled.is_empty() {
+                &galaxy.our_controlled
+            } else {
+                continue;
+            };
+            // Pick the candidate with fewest incoming reinforcements (distribute evenly).
+            let target = candidates.iter()
+                .copied()
+                .filter(|&sys| sys != fleet_location)
+                .min_by_key(|sys| targeted_counts.get(sys).copied().unwrap_or(0))
+                .or_else(|| candidates.first().copied());
             if let Some(t) = target {
                 if t != fleet_location {
                     actions.push(AIAction::MoveFleet {
@@ -1191,6 +1248,7 @@ impl AISystem {
                         to_system: t,
                         reason: FleetMoveReason::Reinforce,
                     });
+                    *targeted_counts.entry(t).or_default() += 1;
                 }
             }
         }
