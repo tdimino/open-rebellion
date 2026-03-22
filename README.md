@@ -11,9 +11,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Parity-95%25-brightgreen.svg" alt="Parity">
-  <img src="https://img.shields.io/badge/Tests-266%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Core-95%25-brightgreen.svg" alt="Core Parity">
+  <img src="https://img.shields.io/badge/UI-80%25-yellow.svg" alt="UI Parity">
+  <img src="https://img.shields.io/badge/Combat-60%25-orange.svg" alt="Combat Parity">
+  <img src="https://img.shields.io/badge/Tests-283%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
+  <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>
 
 ---
@@ -38,17 +41,26 @@ Rebellion was a game about grand strategy in the Star Wars universe—not the li
 
 Open Rebellion reads the original game data files, converts them to clean JSON, and reimplements the simulation from the ground up in Rust. It runs natively on macOS and in the browser via WebAssembly.
 
-### Current State: v0.7.0 — Release READY (~95% parity)
+### Current State: v0.14.0
 
-Seven phases complete. 15 simulation systems:
+| Layer | Parity | What's Done |
+|-------|--------|-------------|
+| **Core** | 95% | 15 simulation systems, 6/6 AI pipeline functions ported, config-driven AI, autoresearch loop |
+| **UI** | 80% | 5 panels, encyclopedia, fleet viz, fog overlay, message log, command palette |
+| **Combat** | 60% | Auto-resolve 7-phase pipeline, ground combat, bombardment — no tactical 2D view yet |
+
+Nine phases complete:
 
 - **Galaxy Viewer** — 200 star systems, pan/zoom/click, 51/51 DAT parsers with byte-level round-trip validation
 - **Living Galaxy** — Game clock, manufacturing, 9 mission types, AI manager, event system, mod loader
 - **War Room** — Player faction selection, 5 UI panels, fleet movement, fog of war, encyclopedia, audio
 - **War Machine** — Space combat (7-phase pipeline), ground combat, orbital bombardment, blockade, uprising, Death Star, research, Jedi training, victory conditions, save/load
-- **Full Parity** — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba's Palace), Han Solo speed bonus, betrayal mechanics, decoy system, character escape (ESCAPETB), mission state flags
-- **Mod Workshop** — Sensor-radius fog, captivity tracking, save format v4 with mod metadata + migration framework, ModRuntime (discover/enable/disable/reload), Mod Manager panel, pure research contract
-- **Ghidra RE Complete** — 5,127 functions decompiled from REBEXE.EXE, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
+- **Full Parity** — 4 scripted story chains, Han Solo speed bonus, betrayal, decoy, escape, mission state flags
+- **Mod Workshop** — Sensor-radius fog, captivity, save v4, ModRuntime, Mod Manager panel
+- **Release** — Story events, release packaging, GitHub Actions CI, example mod
+- **AI Overhaul** — Distance-based transit, per-fleet targeting with deconfliction, ControlKind state machine, faction-asymmetric doctrine, role-based character AI, eval_game_quality.py, autoresearch_loop.py
+- **AI Parity** — Config-driven AI (16 tunable params), research dispatch, ratio-based aggression, proportional redistribution, combat spread, troop/defense production, dispatch validation cascade
+- **Ghidra RE Complete** — [5,127 functions decompiled](https://tdimino.github.io/open-rebellion/) from REBEXE.EXE, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
 
 ## You Will Need
 
