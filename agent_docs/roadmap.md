@@ -207,12 +207,12 @@ Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems
 - [x] Round-robin by fewest incoming reinforcements (even distribution)
 - [x] Falls back to all controlled systems when no undefended remain
 
-### Phase E: Combat Spread
-*Territory expansion via diplomacy. ~40 LOC.*
+### Phase E: Combat Spread — COMPLETE
+*Territory expansion via diplomacy. ~20 LOC.*
 
-- [ ] Successful diplomacy missions flip neutral systems to faction control
-- [ ] AI dispatches diplomacy to border-adjacent neutral systems
-- [ ] More controlled systems → more attack targets → diverse battle locations
+- [x] Diplomacy-to-control transition: popularity ≥ 0.6 with ≥ 0.1 lead flips ControlKind
+- [x] Existing diplomacy targeting already covers neutral/enemy systems
+- [x] More controlled territory → more attack targets → diverse battle locations
 
 ### Phase F: Autoresearch Execution
 *Run the loop, find optimal config.*

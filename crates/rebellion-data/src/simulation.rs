@@ -834,6 +834,26 @@ fn apply_mission_effects(
                                 (sys.popularity_empire + delta).clamp(0.0, 1.0);
                         }
                     }
+
+                    // Diplomacy-to-control: when popularity crosses 0.6 and the
+                    // system is uncontrolled or controlled by the weaker faction,
+                    // flip control to the dominant faction. This creates more
+                    // controlled territory for diverse battle locations.
+                    const CONTROL_THRESHOLD: f32 = 0.6;
+                    let a_pop = sys.popularity_alliance;
+                    let e_pop = sys.popularity_empire;
+                    let new_control = if a_pop >= CONTROL_THRESHOLD && a_pop > e_pop + 0.1 {
+                        Some(ControlKind::Controlled(rebellion_core::dat::Faction::Alliance))
+                    } else if e_pop >= CONTROL_THRESHOLD && e_pop > a_pop + 0.1 {
+                        Some(ControlKind::Controlled(rebellion_core::dat::Faction::Empire))
+                    } else {
+                        None
+                    };
+                    if let Some(new) = new_control {
+                        if sys.control != new {
+                            sys.control = new;
+                        }
+                    }
                 }
             }
             MissionEffect::UprisingStarted {
