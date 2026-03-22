@@ -106,9 +106,7 @@ Most characters lean toward the faction that controls their recruitment location
 
 ### Mode 3: Both
 
-Design up to 3 characters through the Academy. The first joins your roster immediately at game start—your "founding officer." The remaining characters are placed on the galaxy map with recruitment conditions, just like Recruitment Mode.
-
-This gives you one officer to rely on from day one while the others become strategic objectives you pursue over the course of the campaign. It's the mode that most closely mirrors how the original game's recruitment missions worked—except now you know *who* you're looking for.
+Design up to 3 characters through the Academy. The first joins your roster immediately at game start. The remaining characters are placed on the galaxy map with recruitment conditions, just like Recruitment Mode.
 
 ---
 
