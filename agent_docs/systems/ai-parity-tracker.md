@@ -26,8 +26,8 @@ Maps every decompiled AI function from the original REBEXE.EXE to our Rust imple
 | # | Original Function | Lines | Purpose | Our Code | Status | Notes |
 |---|---|---|---|---|---|---|
 | 1 | `FUN_00519d00` | 252 | Galaxy-wide system bucketing into 7 categories | `evaluate_galaxy_state()` ai.rs:838 | PARTIAL | 7 buckets done, ratio scoring missing |
-| 2 | `FUN_00537180` | 381 | Primary system-level entity deployment | `evaluate_fleet_deployment()` ai.rs:896 | PARTIAL | Single-target bug, needs per-system iteration |
-| 3 | `FUN_005385f0` | 252 | Secondary deployment pass (redistribution) | Not implemented | MISSING | Two-pass architecture not yet ported |
+| 2 | `FUN_00537180` | 381 | Primary system-level entity deployment | `evaluate_fleet_deployment()` ai.rs:954 | AUGMENTED | Per-fleet scoring (weakness×proximity×deconfliction×freshness). Original was per-system iteration. |
+| 3 | `FUN_005385f0` | 252 | Secondary deployment pass (redistribution) | Pass 2 in `evaluate_fleet_deployment()` ai.rs:1100 | PARTIAL | Picks first undefended system. Original proportionally distributed across ALL systems + handled stranded troops. |
 | 4 | `FUN_00502020` | 897 | Garrison strength assessment (ships+troops+fac) | `system_strength()` ai.rs:809 | DONE | Simplified but correct formula |
 | 5 | `FUN_00508250` | ~200 | Action validation (pre-dispatch checks) | Inline checks in fleet loop | PARTIAL | No dedicated validation pass |
 | 6 | `FUN_00520580` | ~300 | Movement order issuance | `AIAction::MoveFleet` + simulation.rs | DONE | With `already_moving` dedup |
@@ -42,7 +42,10 @@ Maps every decompiled AI function from the original REBEXE.EXE to our Rust imple
 | `FUN_005039d0` | Facility iteration | `sys.defense_facilities.len()` | DONE |
 | `FUN_00504c40` | Troop iteration | `sys.ground_units.iter()` | DONE |
 | `FUN_0052e970` | Secondary pass scoring | Not implemented | MISSING |
-| `FUN_00508660` | Entity dispatch (assignment) | `evaluate_officers()` ai.rs:286 | PARTIAL |
+| `FUN_00508660` | Entity dispatch (10+ type handlers) | `evaluate_officers()` + `evaluate_production()` | PARTIAL — no troop/facility dispatch |
+| `FUN_00506ea0` | Faction-specific evaluator object | Faction asymmetry in attack targeting only | PARTIAL — no faction-specific Pass 2 |
+| `FUN_005202d0` | System pre-validation | Not implemented | MISSING |
+| `FUN_004927c0` | Master turn processing (research dispatch) | No research AI | MISSING — AI never advances tech |
 
 ## AI Behavioral Properties
 
@@ -50,7 +53,7 @@ Maps every decompiled AI function from the original REBEXE.EXE to our Rust imple
 |---|---|---|---|
 | Map visibility | Omniscient (no fog check) | Omniscient (no FogState param) | FAITHFUL |
 | Evaluation frequency | Unknown (possibly per-tick) | Every 7 ticks (`AI_TICK_INTERVAL`) | BY DESIGN |
-| Target selection scope | Per-system (distributed) | Per-faction (single target) | BROKEN → fix in progress |
+| Target selection scope | Per-system (distributed) | Per-fleet scoring (4 factors) | AUGMENTED |
 | Deployment passes | Two-pass (primary + secondary) | Single pass | MISSING |
 | Garrison scoring inputs | Ships + troops + facilities | Ships + troops + facilities | DONE |
 | Faction ownership encoding | 2-bit field at entity+0x24 | `ControlKind` enum (4 states) | AUGMENTED |

@@ -106,8 +106,8 @@ def evaluate(events: list[dict]) -> dict:
             kind = e.get("details", {}).get("kind", "unknown")
             mfg_kinds[kind] += 1
 
-    # Control changes (uprising_began flips control)
-    control_changes = type_counts.get("uprising_began", 0)
+    # Control changes (dedicated control_changed event + uprising_began fallback)
+    control_changes = type_counts.get("control_changed", 0) + type_counts.get("uprising_began", 0)
 
     # Fleet arrivals
     fleet_arrived = type_counts.get("fleet_arrived", 0)
