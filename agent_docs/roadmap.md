@@ -184,13 +184,13 @@ Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems
 - [x] Parity/augmentation split documented per-field in tuning.rs
 - [x] Updated `autoresearch_loop.py` to write and pass config files
 
-### Phase B: Research Dispatch (P0 Gap #1)
-*AI tech tree progression. ~80 LOC.*
+### Phase B: Research Dispatch (P0 Gap #1) — COMPLETE
+*AI tech tree progression. ~60 LOC.*
 
-- [ ] Add `evaluate_research()` to AISystem
-- [ ] Assign characters with high ship_design/troop_training/facility_design to research
-- [ ] Emit `research_started` telemetry event
-- [ ] Wire into simulation tick
+- [x] Added `evaluate_research()` to AISystem — assigns idle characters to Ship/Troop/Facility trees
+- [x] Characters matched by primary skill (ship_design ≥ 30, troop_training ≥ 30, facility_design ≥ 30)
+- [x] `AIAction::DispatchResearch` variant + telemetry event
+- [x] Wired into simulation tick (both factions) and interactive app
 
 ### Phase C: Ratio-Based Galaxy Evaluation (P0 Gap #2)
 *Aggression scaling. ~60 LOC.*

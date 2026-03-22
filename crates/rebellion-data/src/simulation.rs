@@ -101,6 +101,14 @@ fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value {
                 "ticks": ticks,
             })
         }
+        AIAction::DispatchResearch { character, tech_type, ticks } => {
+            serde_json::json!({
+                "type": "DispatchResearch",
+                "character": char_name(world, *character),
+                "tech_type": format!("{:?}", tech_type),
+                "ticks": ticks,
+            })
+        }
     }
 }
 
@@ -435,6 +443,7 @@ pub fn run_simulation_tick(
         &states.movement,
         tick_events,
         config,
+        &states.research,
     );
     let ai_rolls = take_rolls(8);
     apply_ai_actions_to_world(
@@ -444,6 +453,7 @@ pub fn run_simulation_tick(
         &mut states.missions,
         &mut states.manufacturing,
         &mut states.movement,
+        &mut states.research,
         world,
         current_tick,
         config,
@@ -468,6 +478,7 @@ pub fn run_simulation_tick(
             &states.movement,
             tick_events,
             config,
+            &states.research,
         );
         let ai2_rolls = take_rolls(8);
         apply_ai_actions_to_world(
@@ -477,6 +488,7 @@ pub fn run_simulation_tick(
             &mut states.missions,
             &mut states.manufacturing,
             &mut states.movement,
+            &mut states.research,
             world,
             current_tick,
             config,
@@ -1091,6 +1103,7 @@ fn apply_ai_actions_to_world(
     mission_state: &mut MissionState,
     mfg_state: &mut ManufacturingState,
     movement_state: &mut MovementState,
+    research_state: &mut rebellion_core::research::ResearchState,
     world: &GameWorld,
     _tick: u64,
     config: &rebellion_core::tuning::GameConfig,
@@ -1127,6 +1140,21 @@ fn apply_ai_actions_to_world(
                 ticks,
             } => {
                 mfg_state.enqueue(*system, QueueItem::new(*kind, *ticks, *ticks));
+            }
+            AIAction::DispatchResearch {
+                character, tech_type, ticks,
+            } => {
+                let is_alliance = ai_state.faction
+                    .map(|f| matches!(f, rebellion_core::ai::AiFaction::Alliance))
+                    .unwrap_or(false);
+                research_state.dispatch(rebellion_core::research::ResearchProject {
+                    tech_type: *tech_type,
+                    character: *character,
+                    faction_is_alliance: is_alliance,
+                    ticks_remaining: *ticks,
+                    total_ticks: *ticks,
+                });
+                ai_state.mark_busy(*character);
             }
             AIAction::MoveFleet {
                 fleet, to_system, ..

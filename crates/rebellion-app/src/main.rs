@@ -514,6 +514,7 @@ async fn main() {
                 &movement_state,
                 &tick_events,
                 &game_config,
+                &research_state,
             );
             let ai_rolls: Vec<f64> =
                 (0..8).map(|_| sim_rng.gen::<f64>()).collect();
@@ -524,6 +525,7 @@ async fn main() {
                 &mut mission_state,
                 &mut mfg_state,
                 &mut movement_state,
+                &mut research_state,
                 &world,
                 &mut msg_log,
                 tick_events.last().map(|e| e.tick).unwrap_or(0),
@@ -543,6 +545,7 @@ async fn main() {
                     &movement_state,
                     &tick_events,
                     &game_config,
+                    &research_state,
                 );
                 let second_rolls: Vec<f64> =
                     (0..8).map(|_| sim_rng.gen::<f64>()).collect();
@@ -553,6 +556,7 @@ async fn main() {
                     &mut mission_state,
                     &mut mfg_state,
                     &mut movement_state,
+                    &mut research_state,
                     &world,
                     &mut msg_log,
                     tick_events.last().map(|e| e.tick).unwrap_or(0),
@@ -1683,6 +1687,7 @@ fn apply_ai_actions(
     mission_state: &mut MissionState,
     mfg_state: &mut ManufacturingState,
     movement_state: &mut MovementState,
+    research_state: &mut ResearchState,
     world: &GameWorld,
     log: &mut MessageLog,
     tick: u64,
@@ -1751,6 +1756,28 @@ fn apply_ai_actions(
                     format!("Empire fleet moving to system ({})", reason_str),
                     MessageCategory::Ai,
                     *to_system,
+                ));
+            }
+            AIAction::DispatchResearch {
+                character, tech_type, ticks,
+            } => {
+                let is_alliance = ai_state.faction
+                    .map(|f| matches!(f, AiFaction::Alliance))
+                    .unwrap_or(false);
+                research_state.dispatch(rebellion_core::research::ResearchProject {
+                    tech_type: *tech_type,
+                    character: *character,
+                    faction_is_alliance: is_alliance,
+                    ticks_remaining: *ticks,
+                    total_ticks: *ticks,
+                });
+                ai_state.mark_busy(*character);
+                let char_name = world.characters.get(*character)
+                    .map(|c| c.name.as_str()).unwrap_or("unknown");
+                log.push(GameMessage::new(
+                    tick,
+                    format!("{} assigned to {:?} research ({} ticks)", char_name, tech_type, ticks),
+                    MessageCategory::Ai,
                 ));
             }
         }

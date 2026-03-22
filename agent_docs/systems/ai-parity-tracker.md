@@ -45,7 +45,7 @@ Maps every decompiled AI function from the original REBEXE.EXE to our Rust imple
 | `FUN_00508660` | Entity dispatch (10+ type handlers) | `evaluate_officers()` + `evaluate_production()` | PARTIAL — no troop/facility dispatch |
 | `FUN_00506ea0` | Faction-specific evaluator object | Faction asymmetry in attack targeting only | PARTIAL — no faction-specific Pass 2 |
 | `FUN_005202d0` | System pre-validation | Not implemented | MISSING |
-| `FUN_004927c0` | Master turn processing (research dispatch) | No research AI | MISSING — AI never advances tech |
+| `FUN_004927c0` | Master turn processing (research dispatch) | `evaluate_research()` ai.rs — assigns characters by skill to Ship/Troop/Facility trees | DONE |
 
 ## AI Behavioral Properties
 

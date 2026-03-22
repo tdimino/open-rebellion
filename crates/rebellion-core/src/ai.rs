@@ -36,6 +36,7 @@ use crate::ids::{
 use crate::tuning::GameConfig;
 use crate::manufacturing::{BuildableKind, ManufacturingState};
 use crate::missions::{MissionFaction, MissionKind, MissionState};
+use crate::research::{ResearchProject, ResearchState, ResearchSystem, TechType};
 use crate::dat::ExplorationStatus;
 use crate::tick::TickEvent;
 use crate::world::{Character, ControlKind, GameWorld};
@@ -217,6 +218,13 @@ pub enum AIAction {
         to_system: SystemKey,
         reason: FleetMoveReason,
     },
+
+    /// Assign a character to research a tech tree.
+    DispatchResearch {
+        character: CharacterKey,
+        tech_type: TechType,
+        ticks: u32,
+    },
 }
 
 /// Why the AI is moving a fleet.
@@ -253,6 +261,7 @@ impl AISystem {
         movement: &crate::movement::MovementState,
         tick_events: &[TickEvent],
         config: &GameConfig,
+        research_state: &ResearchState,
     ) -> Vec<AIAction> {
         if tick_events.is_empty() {
             return Vec::new();
@@ -276,6 +285,7 @@ impl AISystem {
         // Run each heuristic module.
         Self::evaluate_officers(state, world, faction, config, &mut actions);
         Self::evaluate_espionage(state, world, faction, config, &mut actions);
+        Self::evaluate_research(state, world, research_state, faction, &mut actions);
         Self::evaluate_production(world, mfg_state, faction, config, &mut actions);
         Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, config, &mut actions);
 
@@ -631,6 +641,68 @@ impl AISystem {
         };
 
         prob_pct / 100.0 >= min_prob
+    }
+
+    // -----------------------------------------------------------------------
+    // Research heuristics
+    // -----------------------------------------------------------------------
+
+    /// Assign idle characters with research skills to tech tree advancement.
+    ///
+    /// For each tech tree (Ship, Troop, Facility), if no project is active for
+    /// this faction, find the best available character and dispatch them.
+    /// Characters are matched by their primary research skill:
+    /// - Ship: `ship_design`
+    /// - Troop: `troop_training`
+    /// - Facility: `facility_design`
+    fn evaluate_research(
+        state: &AIState,
+        world: &GameWorld,
+        research_state: &ResearchState,
+        faction: AiFaction,
+        actions: &mut Vec<AIAction>,
+    ) {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+
+        for &tech in &[TechType::Ship, TechType::Troop, TechType::Facility] {
+            // Skip if there's already an active project for this faction + tree.
+            let has_active = research_state.projects.iter().any(|p| {
+                p.faction_is_alliance == is_alliance && p.tech_type == tech
+            });
+            if has_active {
+                continue;
+            }
+
+            // Find the best available character for this tree.
+            let best = world
+                .characters
+                .iter()
+                .filter(|(key, c)| {
+                    faction.owns_character(c)
+                        && c.can_be_commander
+                        && !state.is_busy(*key)
+                })
+                .filter_map(|(key, c)| {
+                    let skill = match tech {
+                        TechType::Ship => c.ship_design.base + c.ship_design.variance / 2,
+                        TechType::Troop => c.troop_training.base + c.troop_training.variance / 2,
+                        TechType::Facility => c.facility_design.base + c.facility_design.variance / 2,
+                    };
+                    // Only consider characters with meaningful skill (>= 30).
+                    if skill >= 30 { Some((key, skill)) } else { None }
+                })
+                .max_by_key(|&(_, skill)| skill);
+
+            if let Some((char_key, _)) = best {
+                let current_level = research_state.level(is_alliance, tech);
+                let ticks = ResearchSystem::ticks_for_next_level(world, is_alliance, tech, current_level);
+                actions.push(AIAction::DispatchResearch {
+                    character: char_key,
+                    tech_type: tech,
+                    ticks,
+                });
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1292,7 +1364,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[], &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[], &GameConfig::default(), &crate::research::ResearchState::new());
         assert!(actions.is_empty());
     }
 
@@ -1308,7 +1380,7 @@ mod tests {
         // 3 ticks elapsed since last eval (5+3=8... wait, current_tick = 8 > 5+7=12? No)
         // last_eval=5, current=8, diff=3 < 7 → should not evaluate
         let actions =
-            AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 8 }], &GameConfig::default());
+            AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 8 }], &GameConfig::default(), &crate::research::ResearchState::new());
         assert!(actions.is_empty());
     }
 
@@ -1331,7 +1403,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let recruitment = actions.iter().find(|a| matches!(
             a,
@@ -1355,7 +1427,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let diplomacy = actions.iter().find(|a| matches!(
             a,
@@ -1378,7 +1450,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -1400,7 +1472,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
         let mission_count = actions
             .iter()
             .filter(|a| matches!(a, AIAction::DispatchMission { .. }))
@@ -1463,7 +1535,7 @@ mod tests {
         let mfg = ManufacturingState::new(); // empty queue
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let has_fighter_enqueue = actions.iter().any(|a| matches!(
             a,
@@ -1502,7 +1574,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let fleet_move = actions.iter().find(|a| matches!(
             a,
@@ -1601,7 +1673,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let sabotage = actions.iter().find(|a| matches!(
             a,
@@ -1654,7 +1726,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let covert = actions.iter().filter(|a| matches!(
             a,
@@ -1701,7 +1773,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let intel = actions.iter().find(|a| matches!(
             a,
@@ -1759,7 +1831,7 @@ mod tests {
         let mfg = ManufacturingState::new();
         let missions = MissionState::new();
 
-        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default());
+        let actions = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &ticks(7), &GameConfig::default(), &crate::research::ResearchState::new());
 
         let covert_count = actions.iter().filter(|a| matches!(
             a,
@@ -1790,16 +1862,16 @@ mod tests {
         let missions = MissionState::new();
 
         // First evaluation at tick 7
-        let _first = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 7 }], &GameConfig::default());
+        let _first = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 7 }], &GameConfig::default(), &crate::research::ResearchState::new());
         assert_eq!(state.last_eval_tick, 7);
 
         // Tick 10 — only 3 days elapsed, should skip
-        let second = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 10 }], &GameConfig::default());
+        let second = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 10 }], &GameConfig::default(), &crate::research::ResearchState::new());
         assert!(second.is_empty(), "expected no actions before interval elapses");
         assert_eq!(state.last_eval_tick, 7); // unchanged
 
         // Tick 14 — 7 days elapsed, should evaluate again
-        let third = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 14 }], &GameConfig::default());
+        let third = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 14 }], &GameConfig::default(), &crate::research::ResearchState::new());
         assert_eq!(state.last_eval_tick, 14);
         let _ = third; // just checking it ran
     }
