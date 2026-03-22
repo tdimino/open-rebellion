@@ -14,15 +14,15 @@ These are the eras and expansions we're designing toward.
 
 The Yuuzhan Vong invasion—the defining crisis of the post-Endor Expanded Universe. 19 novels, from *Vector Prime* (1999) to *The Unifying Force* (2003).
 
-**Concept**: Replace the Empire with the Yuuzhan Vong Warmaster's forces. The Alliance becomes the New Republic / Galactic Alliance. Entirely new unit rosters—coralskippers replace TIE Fighters, worldships replace Star Destroyers, shapers replace engineers.
+**Concept**: A three-faction war. The New Republic and the Imperial Remnant face an extragalactic invasion by the Yuuzhan Vong—sometimes allied, sometimes at each other's throats, always outgunned. This is the first total conversion that requires third-faction support in the engine.
 
 **What changes**:
 
-- **Factions**: New Republic vs. Yuuzhan Vong (replacing Alliance vs. Empire)
-- **Units**: Organic biotech fleet (coralskippers, yorik-et, Kor Chokk grand cruisers) vs. New Republic ships (E-wings, Viscount-class Star Defenders)
-- **Characters**: Jacen Solo, Jaina Solo, Anakin Solo, Tsavong Lah, Nom Anor, Vergere, Warmaster Nas Choka
-- **Systems**: Helska IV, Myrkr, Zonama Sekot, Coruscant (occupied → Yuuzhan'tar)
-- **Mechanics**: Vong immune to Force detection, dovin basals instead of shields, villip communication instead of HoloNet
+- **Three factions**: New Republic, Imperial Remnant, Yuuzhan Vong—all on one galaxy map. The Remnant and Republic can cooperate against the Vong or fight each other for territory, mirroring the fractured politics of the NJO era
+- **Units**: Organic biotech fleet (coralskippers, yorik-et, Kor Chokk grand cruisers) vs. New Republic ships (E-wings, Viscount-class Star Defenders) vs. Imperial Remnant (Imperial II Star Destroyers, Pellaeon-class)
+- **Characters**: Jacen Solo, Jaina Solo, Anakin Solo, Luke Skywalker (Grand Master), Tsavong Lah, Nom Anor, Vergere, Warmaster Nas Choka, Gilad Pellaeon (Remnant)
+- **Systems**: Helska IV, Myrkr, Zonama Sekot, Coruscant (occupied → Yuuzhan'tar), Bastion (Remnant capital)
+- **Mechanics**: Vong immune to Force detection, dovin basals instead of shields, villip communication instead of HoloNet, shifting alliances between Republic and Remnant
 
 **Reference material**: See [Vong Total Conversion scope](https://github.com/tdimino/open-rebellion/blob/main/docs/vong-total-conversion.md) and the [NJO asset references](https://github.com/tdimino/open-rebellion/tree/main/assets/references/njo-total-conversion).
 
