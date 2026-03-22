@@ -43,14 +43,14 @@ The character graduates from an **Academy**—Imperial Academy (Carida) or Rebel
 
 ### Six Archetypes
 
-| Archetype | Primary Skills | Admiral | General | Bonus Pts |
-|-----------|---------------|---------|---------|-----------|
-| Diplomat | Diplomacy, Leadership | No | No | 40 |
-| Operative | Espionage, Combat | No | No | 40 |
-| Fleet Officer | Leadership, Combat | Yes | No | 35 |
-| Ground Commander | Combat, Troop Training | No | Yes | 35 |
-| Engineer | Ship Design, Facility Design | No | No | 35 |
-| Fringer | Balanced (jack of all trades) | No | No | 50 |
+| Archetype | Primary Skills | Admiral | General | Loyalty | Bonus Pts |
+|-----------|---------------|---------|---------|---------|-----------|
+| Diplomat | Diplomacy, Leadership | No | No | 55–80 | 40 |
+| Operative | Espionage, Combat | No | No | 45–75 | 40 |
+| Fleet Officer | Leadership, Combat | Yes | No | 55–85 | 35 |
+| Ground Commander | Combat, Troop Training | No | Yes | 55–85 | 35 |
+| Engineer | Ship Design, Facility Design | No | No | 55–80 | 35 |
+| Fringer | Balanced (jack of all trades) | No | No | 35–65 | 50 |
 
 ### Creation Flow (7 Steps)
 

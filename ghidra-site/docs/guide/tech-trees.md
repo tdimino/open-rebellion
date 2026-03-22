@@ -52,7 +52,7 @@ Currently, the Ship tree draws `research_difficulty` values directly from the or
 Only one project per (faction × tree) can run at a time. A character with the relevant skill is assigned to the project and spends their time there until it completes. This means:
 
 - A character running Ship research cannot simultaneously command a fleet or run a mission.
-- If you reassign the character mid-research, the project is cancelled—the ticks invested are lost.
+- If a new project is dispatched on the same tech tree, the previous project is replaced and all invested ticks are lost.
 - The AI automatically assigns characters to research based on skill thresholds: `ship_design ≥ 30`, `troop_training ≥ 30`, or `facility_design ≥ 30` qualifies a character for assignment to the relevant tree.
 
 Higher skill values do not speed up research directly—the duration is fixed by the `research_difficulty` of the class being unlocked. But characters with high skills are more valuable for research because they are more reliable and there are fewer of them.

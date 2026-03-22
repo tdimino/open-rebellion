@@ -9,8 +9,8 @@ tags: [guide, scenario, setting, victory]
 # The Galactic Civil War
 
 <div style="display:flex; gap:1.5em; align-items:center; margin-bottom:1.5em;">
-  <img src="../assets/rebellion-starbird.png" alt="Rebel Alliance" width="48">
-  <img src="../assets/imperial-cog.png" alt="Galactic Empire" width="48">
+  <img src="/open-rebellion/assets/rebellion-starbird.png" alt="Rebel Alliance" width="48">
+  <img src="/open-rebellion/assets/imperial-cog.png" alt="Galactic Empire" width="48">
 </div>
 
 Star Wars Rebellion drops you into the galaxy four years after the Battle of Yavin—after the first Death Star has been destroyed, but before the Empire has begun its second. The Emperor is furious. The Rebel Alliance is emboldened but still outgunned. Everything is in motion.

@@ -38,7 +38,7 @@ Characters come in two tiers: **major** characters (six per faction, with fixed 
 
 ### Minor Characters
 
-Each faction starts with a pool of approximately 27 generic officers. Their skill values are randomized within a base + variance range at game start—two games will never have identical minor characters. They are expendable in the sense that their deaths are setbacks, not narrative disasters, but losing a character with high ship_design mid-research is a real strategic cost.
+Each faction starts with a pool of 54 minor characters total (from MNCHARSD.DAT), distributed across both factions. Their skill values are randomized within a base + variance range at game start—two games will never have identical minor characters. They are expendable in the sense that their deaths are setbacks, not narrative disasters, but losing a character with high ship_design mid-research is a real strategic cost.
 
 ## The Eight Skills
 
@@ -88,8 +88,8 @@ Jedi training progresses through four tiers:
 |-------|--------|
 | 0 | No Force sensitivity |
 | 1 | Force-Aware—potential identified |
-| 2 | In Training—actively studying |
-| 3 | Jedi—fully realized Force user |
+| 2 | Training—actively studying |
+| 3 | Experienced—full Jedi Knight or Sith Lord |
 
 Training requires a trainer. For the Alliance, this is Yoda (if Luke reaches Dagobah—a scripted story event) or another experienced Jedi. Training takes time and keeps the Jedi candidate off other assignments.
 

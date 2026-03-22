@@ -10,11 +10,11 @@ tags: [guide, factions, alliance, empire, asymmetry]
 
 <div style="display:flex; gap:2em; align-items:flex-start; margin-bottom:1.5em;">
   <div style="text-align:center;">
-    <img src="../assets/rebellion-starbird.png" alt="Rebel Alliance" width="56">
+    <img src="/open-rebellion/assets/rebellion-starbird.png" alt="Rebel Alliance" width="56">
     <p><strong>Rebel Alliance</strong></p>
   </div>
   <div style="text-align:center;">
-    <img src="../assets/imperial-cog.png" alt="Galactic Empire" width="56">
+    <img src="/open-rebellion/assets/imperial-cog.png" alt="Galactic Empire" width="56">
     <p><strong>Galactic Empire</strong></p>
   </div>
 </div>

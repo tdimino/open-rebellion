@@ -57,8 +57,12 @@ nav:
     - The Galactic Civil War: guide/scenario.md
     - Factions: guide/factions.md
     - Characters & Officers: guide/characters.md
+    - The Galaxy: guide/galactic-map.md
+    - Building Your War Machine: guide/economy.md
     - Research & Tech Trees: guide/tech-trees.md
+    - Fleets & Combat: guide/fleets-and-combat.md
     - Missions: guide/missions.md
+    - Victory & Defeat: guide/winning.md
   - Scholar Documents:
     - Annotated Functions: scholar/annotated-functions.md
     - C++ Class Hierarchy: scholar/cpp-class-hierarchy.md

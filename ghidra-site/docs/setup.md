@@ -7,7 +7,7 @@ How we decompiled 5,127 functions from REBEXE.EXE using Ghidra, [GhidraMCP](http
 | Tool | Version | Role |
 |------|---------|------|
 | [Ghidra](https://ghidra-sre.org/) | 11.3.2 | Disassembly + decompilation |
-| [GhidraMCP](https://github.com/LaurieWired/GhidraMCP) | LaurieWired v11.3.2 | REST API bridge—exposes Ghidra's decompiler to Claude Code via HTTP |
+| [GhidraMCP](https://github.com/LaurieWired/GhidraMCP) | LaurieWired fork (Ghidra 11.3.2) | REST API bridge—exposes Ghidra's decompiler to Claude Code via HTTP |
 | [Claude Code](https://claude.ai/claude-code) | Opus 4.6 | AI agent—reads decompiled C, traces call chains, writes scholar docs |
 | 8 Jython scripts | Custom | Bulk function extraction, string search, GNPRTB tracing |
 
@@ -82,7 +82,7 @@ Claude Code reads the decompiled C, traces call chains across functions, identif
 | Script | Purpose | Output |
 |--------|---------|--------|
 | `FindAllFunctions.py` | Scan for x86 function prologues | Function count |
-| `DumpAllGameFunctions.py` | Decompile every function >100 bytes | 5,127 .c files |
+| `DumpAllGameFunctions.py` | Decompile every function >100 bytes | ~4,900 .c files |
 | `DumpStrings.py` | Find functions referencing a keyword | Matching functions |
 | `DumpCombatXrefs.py` | Trace string → function cross-references | Call chains |
 | `DumpCallers.py` | Find direct callers of a target function | Caller list |

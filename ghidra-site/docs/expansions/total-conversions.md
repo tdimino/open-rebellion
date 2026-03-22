@@ -92,21 +92,18 @@ Total conversions use the same mod system as balance patches—TOML manifests wi
 
 ```toml
 # mod.toml for a total conversion
-[mod]
 name = "New Jedi Order"
 version = "1.0.0"
 description = "Yuuzhan Vong invasion—replaces Empire with extragalactic invaders"
 author = "Open Rebellion Community"
-min_game_version = "0.15.0"
 
-[patches]
-characters = "patches/characters.json"
-capital_ships = "patches/capital_ships.json"
-fighters = "patches/fighters.json"
-systems = "patches/systems.json"
+[dependencies]
+# No dependencies for a standalone TC
 ```
 
-See the [modding guide](https://github.com/tdimino/open-rebellion/blob/main/agent_docs/modding.md) for the full mod loader specification.
+Patch files (JSON Merge Patch) go alongside the manifest and replace entity definitions wholesale.
+
+See the [modding guide](https://github.com/tdimino/open-rebellion/blob/main/agent_docs/modding.md) (developer reference) for the full mod loader specification.
 
 ---
 

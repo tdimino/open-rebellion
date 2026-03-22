@@ -36,7 +36,7 @@ A failed mission can have consequences beyond simply not achieving the objective
 
 Skill level affects not just success probability but also how likely a failed mission is to turn catastrophic.
 
-## The Nine Mission Types
+## The Eleven Mission Types
 
 | # | Mission | Skill | Primary Effect |
 |---|---------|-------|----------------|
@@ -59,8 +59,7 @@ There is also a **Death Star Sabotage** mission type for the Alliance—a high-d
 **Skill**: Diplomacy | **MSTB**: DIPLMSTB.DAT (10 entries)
 
 A successful diplomacy mission shifts the target system's popularity:
-- Your faction's popularity increases by 0.1 (capped at 1.0)
-- The enemy's popularity decreases by 0.05 (floored at 0.0)
+- Your faction's popularity increases by 0.01 (capped at 1.0)
 
 Over several successful missions, a neutral or lightly contested system will flip to your control without combat. This is the Alliance's primary expansion tool in the early game.
 
@@ -134,7 +133,7 @@ Rescue missions also consult the **Decoy table** (FDECOYTB.DAT)—a decoy can re
 
 When one of your systems is in revolt, a Subdue Uprising mission attempts to restore loyalty before control flips. This mission is handled by the Uprising system rather than the standard Mission pipeline—it consults `UPRIS2TB.DAT` for its success probability rather than the standard MSTB tables.
 
-Act fast. The window between an **uprising incident warning** and a full control flip is only 1–2 turns.
+Act fast. The window between an **uprising incident warning** and a full control flip is only a few game-ticks.
 
 ---
 
