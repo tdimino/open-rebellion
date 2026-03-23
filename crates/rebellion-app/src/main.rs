@@ -69,18 +69,107 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let gdata_path = PathBuf::from("data/base");
 
+    // ── Load game data ─────────────────────────────────────────────────────
+    // Native: filesystem read via load_game_data()
+    // WASM: HTTP fetch via macroquad::file::load_file() into cache, then load_game_data()
+    #[cfg(not(target_arch = "wasm32"))]
     let mut world = match rebellion_data::load_game_data(&gdata_path) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!(
-                "Failed to load game data from {}: {}",
-                gdata_path.display(),
-                e
-            );
-            #[cfg(not(target_arch = "wasm32"))]
+            eprintln!("Failed to load game data from {}: {}", gdata_path.display(), e);
             std::process::exit(1);
-            #[cfg(target_arch = "wasm32")]
-            panic!("Failed to load game data from {}: {}", gdata_path.display(), e);
+        }
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    let mut world = {
+        use std::collections::HashMap;
+
+        // Files to load via HTTP fetch
+        let required: &[&str] = &[
+            "SECTORSD.DAT", "SYSTEMSD.DAT", "CAPSHPSD.DAT", "FIGHTSD.DAT",
+            "MJCHARSD.DAT", "MNCHARSD.DAT",
+        ];
+        let optional: &[&str] = &[
+            "GNPRTB.DAT", "DEFFACSD.DAT",
+            "CMUNEFTB.DAT", "CMUNAFTB.DAT", "CMUNEMTB.DAT", "CMUNALTB.DAT",
+            "CMUNCRTB.DAT", "CMUNHQTB.DAT", "CMUNYVTB.DAT",
+            "FACLCRTB.DAT", "FACLHQTB.DAT",
+            "DIPLMSTB.DAT", "ESPIMSTB.DAT", "ASSNMSTB.DAT", "INCTMSTB.DAT",
+            "DSSBMSTB.DAT", "ABDCMSTB.DAT", "RCRTMSTB.DAT", "RESCMSTB.DAT",
+            "SBTGMSTB.DAT", "SUBDMSTB.DAT", "ESCAPETB.DAT", "FDECOYTB.DAT",
+            "FOILTB.DAT",   "INFORMTB.DAT", "CSCRHTTB.DAT", "UPRIS1TB.DAT",
+            "UPRIS2TB.DAT", "RLEVADTB.DAT", "RESRCTB.DAT",  "TDECOYTB.DAT",
+        ];
+
+        let mut files: HashMap<String, Vec<u8>> = HashMap::new();
+        let total = required.len() + optional.len();
+        let mut loaded = 0;
+
+        // Loading screen: show progress while fetching DAT files
+        for &name in required {
+            let path = format!("data/base/{}", name);
+            match macroquad::file::load_file(&path).await {
+                Ok(data) => {
+                    files.insert(name.to_string(), data);
+                    loaded += 1;
+                }
+                Err(e) => {
+                    panic!("Required file {} failed to load: {:?}", name, e);
+                }
+            }
+            // Draw loading progress
+            clear_background(Color::new(0.02, 0.02, 0.06, 1.0));
+            let text = format!("Loading... ({}/{})", loaded, total);
+            let font_size = 24.0;
+            let dims = measure_text(&text, None, font_size as u16, 1.0);
+            draw_text(&text, (screen_width() - dims.width) / 2.0,
+                screen_height() / 2.0, font_size, WHITE);
+            // Progress bar
+            let bar_w = 300.0;
+            let bar_h = 8.0;
+            let bar_x = (screen_width() - bar_w) / 2.0;
+            let bar_y = screen_height() / 2.0 + 20.0;
+            draw_rectangle(bar_x, bar_y, bar_w, bar_h, DARKGRAY);
+            draw_rectangle(bar_x, bar_y, bar_w * (loaded as f32 / total as f32), bar_h, GREEN);
+            next_frame().await;
+        }
+
+        // Optional files: silently skip on 404
+        for &name in optional {
+            let path = format!("data/base/{}", name);
+            if let Ok(data) = macroquad::file::load_file(&path).await {
+                files.insert(name.to_string(), data);
+            }
+            loaded += 1;
+            // Update loading bar
+            clear_background(Color::new(0.02, 0.02, 0.06, 1.0));
+            let text = format!("Loading... ({}/{})", loaded, total);
+            let font_size = 24.0;
+            let dims = measure_text(&text, None, font_size as u16, 1.0);
+            draw_text(&text, (screen_width() - dims.width) / 2.0,
+                screen_height() / 2.0, font_size, WHITE);
+            let bar_w = 300.0;
+            let bar_h = 8.0;
+            let bar_x = (screen_width() - bar_w) / 2.0;
+            let bar_y = screen_height() / 2.0 + 20.0;
+            draw_rectangle(bar_x, bar_y, bar_w, bar_h, DARKGRAY);
+            draw_rectangle(bar_x, bar_y, bar_w * (loaded as f32 / total as f32), bar_h, GREEN);
+            next_frame().await;
+        }
+
+        // Load string table from pre-extracted JSON (TEXTSTRA.DLL can't be parsed in WASM)
+        let _string_table: HashMap<u16, String> = match macroquad::file::load_file("data/base/textstra.json").await {
+            Ok(data) => serde_json::from_slice(&data).unwrap_or_default(),
+            Err(_) => HashMap::new(),
+        };
+
+        // Set the file cache so read_dat_file() can find the bytes
+        rebellion_data::set_file_cache(files);
+
+        match rebellion_data::load_game_data(&gdata_path) {
+            Ok(w) => w,
+            Err(e) => panic!("Failed to parse game data: {}", e),
         }
     };
 
@@ -108,12 +197,16 @@ async fn main() {
 
     // ── Simulation state ────────────────────────────────────────────────────
     // Seedable RNG for deterministic simulation
-    let mut sim_rng = Xoshiro256PlusPlus::seed_from_u64(
-        std::time::SystemTime::now()
+    let rng_seed = {
+        #[cfg(not(target_arch = "wasm32"))]
+        { std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
-            .unwrap_or(42)
-    );
+            .unwrap_or(42) }
+        #[cfg(target_arch = "wasm32")]
+        { (macroquad::time::get_time() * 1_000_000.0) as u64 }
+    };
+    let mut sim_rng = Xoshiro256PlusPlus::seed_from_u64(rng_seed);
     let mut clock = GameClock::new();
     let mut mfg_state = ManufacturingState::new();
     let mut mission_state = MissionState::new();

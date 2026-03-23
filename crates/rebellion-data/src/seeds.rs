@@ -282,6 +282,42 @@ pub fn apply_seeds(
     Ok(())
 }
 
+/// Apply seed tables from pre-loaded file bytes. Same logic as `apply_seeds` but
+/// reads from a HashMap instead of the filesystem.
+pub fn apply_seeds_from_files(
+    files: &std::collections::HashMap<String, Vec<u8>>,
+    world: &mut GameWorld,
+    system_key_map: &HashMap<u32, SystemKey>,
+) -> anyhow::Result<()> {
+    let capship_index: CapShipIndex = world.capital_ship_classes.iter()
+        .map(|(k, v)| (v.dat_id.raw(), k)).collect();
+    let fighter_index: FighterIndex = world.fighter_classes.iter()
+        .map(|(k, v)| (v.dat_id.raw(), k)).collect();
+
+    let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
+
+    apply_fleet_seed(&load_seed_from_files(files, "CMUNEFTB.DAT")?, system_key_map,
+        &capship_index, &fighter_index, &empire_systems, false, world);
+    apply_fleet_seed(&load_seed_from_files(files, "CMUNAFTB.DAT")?, system_key_map,
+        &capship_index, &fighter_index, &alliance_systems, true, world);
+    apply_army_seed(&load_seed_from_files(files, "CMUNEMTB.DAT")?, system_key_map,
+        &empire_systems, false, world);
+    apply_army_seed(&load_seed_from_files(files, "CMUNALTB.DAT")?, system_key_map,
+        &alliance_systems, true, world);
+    apply_garrison_seed(&load_seed_from_files(files, "CMUNCRTB.DAT")?, system_key_map,
+        CORUSCANT_SEQ_ID, false, world);
+    apply_garrison_seed(&load_seed_from_files(files, "CMUNHQTB.DAT")?, system_key_map,
+        YAVIN_SEQ_ID, true, world);
+    apply_garrison_seed(&load_seed_from_files(files, "CMUNYVTB.DAT")?, system_key_map,
+        YAVIN_SEQ_ID, true, world);
+    apply_facility_seed(&load_seed_from_files(files, "FACLCRTB.DAT")?, system_key_map,
+        CORUSCANT_SEQ_ID, false, world);
+    apply_facility_seed(&load_seed_from_files(files, "FACLHQTB.DAT")?, system_key_map,
+        YAVIN_SEQ_ID, true, world);
+
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -289,12 +325,23 @@ pub fn apply_seeds(
 /// Load a seed table file, returning `Ok(None)` if the file doesn't exist.
 fn load_seed(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<SeedTableFile>> {
     let path = gdata_path.join(filename);
-    if !path.exists() {
+    if !crate::file_available(&path) {
         return Ok(None);
     }
     let file: SeedTableFile = read_dat_file(&path)
         .with_context(|| format!("parsing seed table {}", filename))?;
     Ok(Some(file))
+}
+
+/// Load a seed table file from pre-loaded bytes, returning `Ok(None)` if not in the map.
+fn load_seed_from_files(files: &std::collections::HashMap<String, Vec<u8>>, filename: &str) -> anyhow::Result<Option<SeedTableFile>> {
+    match files.get(filename) {
+        Some(data) => {
+            let file: SeedTableFile = crate::parse_dat_bytes(data, filename)?;
+            Ok(Some(file))
+        }
+        None => Ok(None),
+    }
 }
 
 /// Apply a fleet seed table.  Each `SeedGroup` becomes one `Fleet`.

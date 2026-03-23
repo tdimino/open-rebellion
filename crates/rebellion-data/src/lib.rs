@@ -312,7 +312,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
 
     // ── 8. GNPRTB — game balance parameters ──────────────────────────────────
     let gnprtb_path = gdata_path.join("GNPRTB.DAT");
-    if gnprtb_path.exists() {
+    if file_available(&gnprtb_path) {
         let gnprtb_file: GeneralParamsFile = read_dat_file(&gnprtb_path)?;
         let entries = gnprtb_file.entries.into_iter().map(|e| GnprtbEntry {
             parameter_id: e.parameter_id,
@@ -330,7 +330,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
 
     // ── 8b. Defense facility classes ───────────────────────────────────────────
     let deffac_path = gdata_path.join("DEFFACSD.DAT");
-    if deffac_path.exists() {
+    if file_available(&deffac_path) {
         let deffac_file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
         for dat in &deffac_file.facilities {
             world.defense_facility_classes.insert(
@@ -353,7 +353,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     ];
     for filename in MSTB_FILES {
         let path = gdata_path.join(filename);
-        if path.exists() {
+        if file_available(&path) {
             let table_file: IntTableFile = read_dat_file(&path)?;
             let entries = table_file.entries.into_iter().map(|e| MstbEntry {
                 threshold: e.threshold,
@@ -380,6 +380,10 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
 
     Ok(world)
 }
+
+// NOTE: load_game_data_from_files() was removed — the WASM file cache approach
+// (set_file_cache + load_game_data) is simpler and avoids duplicating 250 lines
+// of conversion logic.
 
 /// Initialize the mod runtime for UI access. Returns `None` if the mods
 /// directory does not exist (common for first-time players).
@@ -433,17 +437,49 @@ fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Char
     }
 }
 
-/// Read and parse a single .DAT file into type `T`.
+/// Read and parse a single .DAT file into type `T` from the filesystem.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn read_dat_file<T: DatRecord>(path: &Path) -> anyhow::Result<T> {
     let data = std::fs::read(path)
         .with_context(|| format!("reading {}", path.display()))?;
-    let mut reader = ByteReader::new(&data);
-    T::parse(&mut reader).with_context(|| format!("parsing {}", path.display()))
+    parse_dat_bytes::<T>(&data, &path.display().to_string())
 }
 
-/// WASM stub — filesystem DAT loading is not supported in the browser.
+/// WASM variant: reads from the pre-loaded file cache set by `set_file_cache`.
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn read_dat_file<T: DatRecord>(path: &Path) -> anyhow::Result<T> {
-    anyhow::bail!("WASM data loading not yet supported ({})", path.display())
+    let filename = path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    let cache = WASM_FILE_CACHE.lock().unwrap();
+    let data = cache.get(filename)
+        .with_context(|| format!("file not in WASM cache: {} (have: {:?})", filename, cache.keys().collect::<Vec<_>>()))?;
+    parse_dat_bytes::<T>(data, filename)
+}
+
+/// Pre-load DAT file bytes for WASM. Call before `load_game_data()`.
+#[cfg(target_arch = "wasm32")]
+pub fn set_file_cache(files: std::collections::HashMap<String, Vec<u8>>) {
+    *WASM_FILE_CACHE.lock().unwrap() = files;
+}
+
+#[cfg(target_arch = "wasm32")]
+static WASM_FILE_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Check if a file exists. On native: filesystem. On WASM: checks the file cache.
+pub(crate) fn file_available(path: &Path) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    { path.exists() }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        WASM_FILE_CACHE.lock().unwrap().contains_key(filename)
+    }
+}
+
+/// Parse a DAT file from raw bytes. Platform-independent.
+pub fn parse_dat_bytes<T: DatRecord>(data: &[u8], name: &str) -> anyhow::Result<T> {
+    let mut reader = ByteReader::new(data);
+    T::parse(&mut reader).with_context(|| format!("parsing {}", name))
 }
