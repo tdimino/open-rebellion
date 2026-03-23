@@ -44,6 +44,12 @@ Feature plans, design proposals, and addon specs. [Full index](plans/INDEX.md).
 
 Note: `ghidra/` is gitignored except README.md — decompiled code is non-redistributable. Scholar docs published at [tdimino.github.io/open-rebellion](https://tdimino.github.io/open-rebellion/).
 
+## Game Flow Reference
+
+| Document | Description |
+|----------|-------------|
+| [GAME-FLOW](GAME-FLOW.md) | Complete screen-by-screen game flow: every screen, panel, button, and interaction from launch to game over. Foundation document for full reimplementation. |
+
 ## Reference
 
 | Document | Description |
