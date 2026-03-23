@@ -163,8 +163,8 @@ Calls approximately 18 validator functions before allowing entity deployment. Th
 | FUN_00504e60 | — | Entity lookup with family filter |
 | FUN_0050a1b0 | — | Faction-conditioned entity placement |
 | FUN_0050ac80 | — | Character placement |
-| FUN_00506ea0 | — | Faction-specific evaluator |
-| FUN_0052e970 | — | Scoring/evaluation function |
+| FUN_00506ea0 | 13 | Faction-specific evaluator pointer (Alliance +0xc4, Empire +0xc8) |
+| FUN_0052e970 | 53 | Binary capacity check (NOT a scoring function — see 2026-03-23 findings) |
 
 ## Key Patterns
 

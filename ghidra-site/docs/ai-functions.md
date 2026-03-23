@@ -37,27 +37,30 @@ Previously thought to be a weighted target scoring function. **Actual behavior**
 ```c
 bool FUN_0052e970(void *this, uint *param_1, int param_2, void *param_3)
 {
-  // Check entity family byte is in range 0x10-0x3f (ships/troops/facilities)
-  bool bVar1 = false;
-  if ((0xf < *param_1 >> 0x18) && (*param_1 >> 0x18 < 0x40)) {
-    bVar1 = true;
-  }
+  bool bVar4 = true;  // NOTE: returns true by default
 
-  if (bVar1) {
+  // Initial dispatch: reset/clear command {1, -1} — always issued
+  FUN_00520580(param_3, {1, 0xffffffff});
+
+  // Check entity family byte is in range 0x10-0x3f (ships/troops/facilities)
+  bool is_deployable = (*param_1 >> 0x18) > 0x0f && (*param_1 >> 0x18) < 0x40;
+
+  if (is_deployable) {
     int entity = FUN_0051cab0(param_1);  // Resolve entity pointer
-    if (entity != 0) {
+    bVar4 = entity != 0;                 // False if entity resolution fails
+    if (bVar4) {
       int capacity = FUN_0053b870(entity);  // Read *(entity + 0x4c) = capacity
       capacity = capacity * param_2;        // Scale by multiplier
 
-      // Compare against deployment budget: this+0x58 (allocated) vs this+0x5c (max)
-      int remaining = *(this + 0x58) - *(this + 0x5c);
-      if (capacity != 0 && remaining != capacity && remaining <= capacity) {
-        // Entity fits in budget → dispatch command 0xf3
+      // Compare against deployment budget: this+0x58 (consumed) vs this+0x5c (max)
+      int consumed = *(this + 0x58) - *(this + 0x5c);
+      if (capacity != 0 && consumed != capacity && consumed <= capacity) {
+        // Scaled capacity can cover the budget — dispatch deploy command 0xf3
         FUN_00520580(param_3, {0xf3, 1});
       }
     }
   }
-  return bVar4;
+  return bVar4;  // true unless entity resolution failed
 }
 
 // FUN_0053b870: entity capacity reader (7 lines)
@@ -98,17 +101,17 @@ void FUN_00520580(void *this, undefined4 *param_1)
 }
 ```
 
-## 18 Dispatch Validators — FUN_00508250
+## 19 Dispatch Validators — FUN_00508250
 
-All entity deployments pass through 18 AND-chained boolean checks. If any fails, the deployment is rejected.
+All entity deployments pass through 19 AND-chained boolean checks. If any fails, the deployment is rejected.
 
 ```c
-// Simplified structure — actual code chains 18 if/else blocks
+// Simplified structure — actual code chains 19 if/else blocks
 bool FUN_00508250(void *this, void *param_1)
 {
-  return FUN_0051ebb0()        // 1.  Always true (no-op)
+  return FUN_0051ebb0()        // 1.  Always true (no-op gate)
       && FUN_0050ad60(this, p) // 2.  Capacity overflow: +0x5c < +0x64
-      && FUN_0050ad80(this, p) // 3.  Fleet entity count vs capacity
+      && FUN_0050ad80(this, p) // 3.  Fleet entity count vs capacity (139 lines)
       && FUN_0050b0b0(this, p) // 4.  Entity count via vtable+0x1c8 vs budget
       && FUN_0050b230(this, p) // 5.  Faction + status bits + scoring
       && FUN_0050b2c0(this, p) // 6.  Faction + loyalty scoring
@@ -122,9 +125,9 @@ bool FUN_00508250(void *this, void *param_1)
       && FUN_0050be00(this, p) // 14. Mandatory mission check
       && FUN_0050c350(this, p) // 15. Fleet/facility nested iteration
       && FUN_0050b8e0(this, p) // 16. System strength scoring (both factions)
-      && FUN_0051ebb0()        // 17. Always true (no-op, same as #1)
+      && FUN_0051ebb0()        // 17. Always true (no-op gate, same as #1)
       && FUN_0050b800(this, p) // 18. Status bits + position check
-      && FUN_0050bb00(this, p);// 19. Final deployment flag
+      && FUN_0050bb00(this, p);// 19. Faction + status + deployment flag
 }
 ```
 
@@ -135,8 +138,8 @@ bool FUN_00508250(void *this, void *param_1)
 | **No-ops** | #1, #17 (`FUN_0051ebb0`) | Always return 1 — stub gates |
 | **Capacity** | #2, #3, #4, #10, #12 | Entity counts vs budget thresholds at +0x5c, +0x64, +0x80 |
 | **Faction/Status** | #5, #6, #9, #13, #18, #19 | Faction ownership (+0x24>>6&3), status bits at +0x88 |
-| **Type Compatibility** | #7, #8, #11 | Ship type, troop class, availability checks |
-| **Complex Iteration** | #14, #15, #16 | Character missions, fleet/facility nesting, system strength |
+| **Type Compat** | #7, #8, #11 | Ship type, troop class, availability checks |
+| **Iteration** | #14, #15, #16 | Character missions, fleet/facility nesting, system strength |
 
 ### Key Offset Map
 
