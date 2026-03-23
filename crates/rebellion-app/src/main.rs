@@ -37,6 +37,8 @@ use rebellion_render::{
     MessageCategory, MessageLog, MessageLogState, MissionsPanelState, OfficersState, PanelAction,
     SfxKind,
 };
+use rebellion_render::panels::research::{draw_research, ResearchPanelState};
+use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
 
 /// Top-level game mode state machine.
 ///
@@ -283,6 +285,8 @@ async fn main() {
     let mut mfg_panel_state = ManufacturingPanelState::default();
     let mut missions_panel_state = MissionsPanelState::default();
     let mut enc_state = EncyclopediaState::new();
+    let mut research_panel_state = ResearchPanelState::default();
+    let mut jedi_panel_state = JediPanelState::default();
     let mut mod_manager_state = rebellion_render::ModManagerState::default();
     #[cfg(debug_assertions)]
     let mut command_palette_state = rebellion_render::CommandPaletteState::new();
@@ -300,6 +304,8 @@ async fn main() {
     let mut show_fleets = false;
     let mut show_manufacturing = false;
     let mut show_missions = false;
+    let mut show_research = false;
+    let mut show_jedi = false;
 
     // ── Audio state ─────────────────────────────────────────────────────────
     let mut audio_vol = AudioVolumeState::default();
@@ -391,6 +397,26 @@ async fn main() {
                     show_officers = false;
                     show_fleets = false;
                     show_manufacturing = false;
+                }
+            }
+            if is_key_pressed(KeyCode::T) {
+                show_research = !show_research;
+                if show_research {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                    show_jedi = false;
+                }
+            }
+            if is_key_pressed(KeyCode::J) {
+                show_jedi = !show_jedi;
+                if show_jedi {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                    show_research = false;
                 }
             }
             if is_key_pressed(KeyCode::E) {
@@ -1042,6 +1068,28 @@ async fn main() {
                             panel_actions.push(action);
                         }
                     }
+                    if show_research {
+                        if let Some(action) = draw_research(
+                            ctx,
+                            &world,
+                            &research_state,
+                            &mut research_panel_state,
+                            player_faction,
+                        ) {
+                            panel_actions.push(action);
+                        }
+                    }
+                    if show_jedi {
+                        if let Some(action) = draw_jedi(
+                            ctx,
+                            &world,
+                            &jedi_state,
+                            &mut jedi_panel_state,
+                            player_faction,
+                        ) {
+                            panel_actions.push(action);
+                        }
+                    }
 
                     // Encyclopedia (floating window)
                     if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state) {
@@ -1107,6 +1155,8 @@ async fn main() {
                 &mut movement_state,
                 &mut fog_state,
                 &mut ai_state,
+                &mut research_state,
+                &mut jedi_state,
                 &mut msg_log,
                 &mut player_faction,
                 &mut clock,
@@ -1157,6 +1207,8 @@ fn apply_panel_action(
     _movement_state: &mut MovementState,
     fog_state: &mut FogState,
     ai_state: &mut AIState,
+    research_state: &mut ResearchState,
+    jedi_state: &mut JediState,
     msg_log: &mut MessageLog,
     player_faction: &mut MissionFaction,
     clock: &mut GameClock,
@@ -1407,6 +1459,77 @@ fn apply_panel_action(
             msg_log.push(GameMessage::new(
                 clock.tick,
                 format!("Events: {} defined, {} fired", total, fired),
+                MessageCategory::Event,
+            ));
+        }
+
+        // ── Research ─────────────────────────────────────────────────────────
+        PanelAction::DispatchResearch { character, tech_type, faction } => {
+            let is_alliance = faction == MissionFaction::Alliance;
+            let current_level = research_state.level(is_alliance, tech_type);
+            // Calculate research duration from world data
+            let ticks = rebellion_core::research::ResearchSystem::ticks_for_next_level(
+                world, is_alliance, tech_type, current_level,
+            );
+            let project = rebellion_core::research::ResearchProject {
+                tech_type,
+                character,
+                faction_is_alliance: is_alliance,
+                ticks_remaining: ticks,
+                total_ticks: ticks,
+            };
+            research_state.dispatch(project);
+            let char_name = world.characters.get(character)
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "Unknown".into());
+            let tree_name = match tech_type {
+                rebellion_core::research::TechType::Ship => "Ship",
+                rebellion_core::research::TechType::Troop => "Troop",
+                rebellion_core::research::TechType::Facility => "Facility",
+            };
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("{} assigned to {} research (level {} → {}, {} ticks)",
+                    char_name, tree_name, current_level, current_level + 1, ticks),
+                MessageCategory::Event,
+            ));
+        }
+        PanelAction::CancelResearch { tech_type, faction } => {
+            let is_alliance = faction == MissionFaction::Alliance;
+            research_state.cancel(is_alliance, tech_type);
+            let tree_name = match tech_type {
+                rebellion_core::research::TechType::Ship => "Ship",
+                rebellion_core::research::TechType::Troop => "Troop",
+                rebellion_core::research::TechType::Facility => "Facility",
+            };
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("{} research cancelled", tree_name),
+                MessageCategory::Event,
+            ));
+        }
+
+        // ── Jedi Training ────────────────────────────────────────────────────
+        PanelAction::StartJediTraining { character, faction } => {
+            let is_alliance = faction == MissionFaction::Alliance;
+            jedi_state.start_training(character, is_alliance, clock.tick);
+            let char_name = world.characters.get(character)
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "Unknown".into());
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("{} begins Force training", char_name),
+                MessageCategory::Event,
+            ));
+        }
+        PanelAction::StopJediTraining { character } => {
+            jedi_state.stop_training(character);
+            let char_name = world.characters.get(character)
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "Unknown".into());
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("{} Force training stopped", char_name),
                 MessageCategory::Event,
             ));
         }

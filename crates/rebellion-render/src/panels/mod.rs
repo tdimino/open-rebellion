@@ -21,10 +21,12 @@
 
 pub mod fleets;
 pub mod game_setup;
+pub mod jedi;
 pub mod manufacturing;
 pub mod missions;
 pub mod mod_manager;
 pub mod officers;
+pub mod research;
 pub mod save_load;
 
 #[cfg(debug_assertions)]
@@ -40,6 +42,7 @@ pub use save_load::{draw_save_load, SaveLoadPanelState, SaveSlotInfo};
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
 use rebellion_core::manufacturing::BuildableKind;
 use rebellion_core::missions::{MissionFaction, MissionKind};
+use rebellion_core::research::TechType;
 
 /// Player-initiated actions returned by War Room panels.
 ///
@@ -98,6 +101,30 @@ pub enum PanelAction {
     ToggleMod { name: String },
     /// Reload all mods from disk.
     ReloadMods,
+
+    // ── Research ──────────────────────────────────────────────────────────
+    /// Assign a character to research a tech tree.
+    DispatchResearch {
+        character: CharacterKey,
+        tech_type: TechType,
+        faction: MissionFaction,
+    },
+    /// Cancel an active research project.
+    CancelResearch {
+        tech_type: TechType,
+        faction: MissionFaction,
+    },
+
+    // ── Jedi Training ──────────────────────────────────────────────────────
+    /// Start Force training for a character.
+    StartJediTraining {
+        character: CharacterKey,
+        faction: MissionFaction,
+    },
+    /// Stop Force training for a character.
+    StopJediTraining {
+        character: CharacterKey,
+    },
 
     // ── Play-testing (command palette) ────────────────────────────────
     /// Advance simulation by N ticks immediately.
