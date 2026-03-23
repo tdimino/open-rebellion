@@ -2,6 +2,11 @@
 
 All AI functions from REBEXE.EXE, decompiled via GhidraMCP HTTP bridge on 2026-03-23. Cross-referenced against [TheArchitect2018's wiki](https://github.com/TheArchitect2018/Deep-Dive-into-SW-Rebellion-PC-Game-Internals/wiki).
 
+**Downloads:**
+
+- [AI Functions (39 files, 29KB)](downloads/ai-functions-decompiled.tar.gz) — Core AI pipeline, 18 validators, entity handlers, scoring, faction evaluator
+- [All Decompiled Functions (5,159 files, 936KB)](downloads/all-decompiled-functions.tar.gz) — Complete REBEXE.EXE decompilation corpus
+
 ## Architecture
 
 The original AI is **event-driven**, not tick-based. Message `0x1f0` (day tick notification) triggers evaluation every game-day through the CNotifyObject observer pattern. There is no tick interval — the AI runs once per day.
