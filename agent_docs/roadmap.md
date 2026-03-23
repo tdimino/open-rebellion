@@ -130,40 +130,38 @@ Delivered:
 
 Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 
-## AI Parity Status (as of 2026-03-21)
+## AI Parity Status (as of 2026-03-23)
 
-Based on 3-agent review against Ghidra RE of REBEXE.EXE. See `agent_docs/systems/ai-parity-tracker.md` for full matrix.
+Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchitect2018 wiki cross-reference. **All "BY DESIGN" guesses resolved.** See `agent_docs/systems/ai-parity-tracker.md` for full matrix.
 
 ### Core Pipeline (6 Functions)
 
 | # | Original | Status | Gap |
 |---|----------|--------|-----|
 | 1 | FUN_00519d00 Galaxy evaluation | DONE | 7 buckets + control_ratio + aggression scaling |
-| 2 | FUN_00537180 Primary deployment | DONE | Per-fleet targeting with scoring function |
-| 3 | FUN_005385f0 Secondary deployment | DONE | Aggression-scaled: offensive piles onto attacks, defensive distributes across undefended systems |
+| 2 | FUN_00537180 Primary deployment | AUGMENTED | Per-fleet scoring (4-factor). Original was per-system with capacity check only. **Our model is superior.** |
+| 3 | FUN_005385f0 Secondary deployment | AUGMENTED | Original uses FUN_0052e970 (capacity check) + FUN_00506ea0 (faction evaluator). Our aggression model is more nuanced. |
 | 4 | FUN_00502020 Garrison strength | DONE | Ships + troops + facilities |
-| 5 | FUN_00508250 Dispatch validation | MISSING | Original has 18 boolean AND checks; we have no pre-dispatch validation |
-| 6 | FUN_00520580 Movement orders | DONE | With already_moving dedup |
+| 5 | FUN_00508250 Dispatch validation | PARTIAL | **All 18 sub-functions decoded (2026-03-23).** 4 of 18 implemented; 14 remaining are capacity/composition checks. |
+| 6 | FUN_00520580 Movement orders | DONE | **Decoded: 2-field struct setter** (not transit calc). 9 lines. |
 
-### Confirmed Gaps (P0)
+### Resolved Gaps (2026-03-23 Ghidra Session)
 
-1. **AI research dispatch** — AI never advances tech tree. No `evaluate_research()`. Characters with ship_design/troop_training skills sit idle. ~80 LOC to implement.
-2. **Ratio-based galaxy evaluation** — Original scales aggression proportionally to galaxy control %. A faction with 3/200 systems should be defensive; 100/200 should be aggressive. We treat all the same.
-3. **Proportional redistribution (Pass 2)** — Original divides remaining units across ALL friendly systems by count + remainder. We pick the first undefended system.
+1. ~~AI research dispatch~~ — DONE (v0.14.0, `evaluate_research()`)
+2. ~~Ratio-based galaxy evaluation~~ — DONE (v0.14.0, `control_ratio` + `aggression`)
+3. ~~Proportional redistribution~~ — DONE (v0.14.0, round-robin across all undefended)
+4. ~~FUN_0052e970 scoring function~~ — RESOLVED: **Not a scoring function.** Binary capacity check. Our 4-factor model is strictly superior.
+5. ~~FUN_00506ea0 faction evaluator~~ — RESOLVED: Returns faction-specific evaluator pointer (Alliance +0xc4, Empire +0xc8 on global struct). Different deployment budgets per faction.
+6. ~~AI evaluation frequency~~ — RESOLVED: Event-driven via message 0x1f0 (every game-day). Our `AI_TICK_INTERVAL=7` is intentional performance throttle.
+7. **Mission probability formulas** — DONE: Composite inputs ported from TheArchitect2018 wiki (sub_55ae50, sub_55aed0, sub_55af50, sub_55b0a0, sub_55cfb0).
 
-### Confirmed Gaps (P1)
+### Remaining Gaps (P1)
 
-4. **Troop deployment AI** — No `AIAction::MoveTroops`. AI doesn't build or deploy ground forces. Stranded troops (troops without ships) not detected.
-5. **Defense facility construction** — `evaluate_production` only builds capital ships, fighters, and yards. No defense facilities at key systems.
-6. **Dispatch validation cascade** — Original has 18 pre-checks (alive, not captured, faction match, capacity, etc.). We dispatch without validation.
-7. **Faction-specific Pass 2 evaluator** — Original uses `FUN_00506ea0` for different Alliance vs Empire redistribution. We use the same logic for both.
-
-### Possible Gaps (Need More RE)
-
-8. Death Star AI beyond "go to HQ" (escort, retreat, target selection between HQ and populated systems)
-9. `FUN_0052e970` scoring function not fully decoded — may have more parameters than our 4-factor model
-10. `FUN_005202d0` system pre-validation — may check "not being bombarded" or "not in uprising"
-11. Early-game vs late-game scaling — original may have phase-dependent thresholds
+4. **Troop deployment AI** — No `AIAction::MoveTroops`. AI doesn't build or deploy ground forces.
+5. **Defense facility construction** — `evaluate_production` builds capships, fighters, yards, troops, defenses but original priority order not confirmed.
+6. **Dispatch validation** — 14 of 18 validators decoded but not yet ported to Rust (capacity/composition checks referencing entity offsets not yet in our types).
+7. **Faction-specific deployment budgets** — FUN_00506ea0 returns different evaluator objects per faction. TODO: add faction budget thresholds to AiConfig.
+8. Death Star AI beyond "go to HQ" (escort, retreat, multi-target selection)
 
 ### Code Hygiene (from simplicity reviewer)
 

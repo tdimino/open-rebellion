@@ -3,13 +3,13 @@ title: "Ghidra Reverse Engineering"
 description: "RE status and methodology for REBEXE.EXE decompilation (22,741 functions)"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-03-16
+updated: 2026-03-23
 tags: [ghidra, reverse-engineering, rebexe, gnprtb]
 ---
 
 # Ghidra Reverse Engineering
 
-REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,900 decompiled. STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT). RE is **complete** for implementation purposes. See `ghidra/notes/` for the full corpus: 4 scholar documents (4,179 lines), 11 markdown docs, ~4,900 decompiled C files, 8 Jython scripts.
+REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,923 decompiled. STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT). RE is **complete** for implementation purposes. See `ghidra/notes/` for the full corpus: 4 scholar documents (4,179 lines), 11 markdown docs, ~4,923 decompiled C files, 8 Jython scripts. 23 AI functions decompiled via GhidraMCP HTTP bridge on 2026-03-23.
 
 ## RE Status: COMPLETE
 
@@ -44,7 +44,7 @@ REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,900 decompil
 
 | File | Size | Functions | Decompiled | Content |
 |------|------|-----------|------------|---------|
-| **REBEXE.EXE** | 2.8MB | 22,741 | **~4,900** | ALL game logic |
+| **REBEXE.EXE** | 2.8MB | 22,741 | **~4,923** | ALL game logic |
 | COMMON.DLL | 2.9MB | TBD | 0 | MFC/Win32 shared library |
 | STRATEGY.DLL | 29MB | 43 (CRT) | N/A | Resource-only (sprites) |
 | TACTICAL.DLL | 7.8MB | TBD | 0 | Likely resource-only |
@@ -132,6 +132,30 @@ Run via Jython: `exec(open("path/to/script.py").read())`
 | FindCombatMath.py | Combat math pattern search |
 | DumpAllGameFunctions.py | Exhaustive 4,938-function catalog with string references |
 | DumpGNPRTBXrefs.py | GNPRTB parameter → consuming function tracer |
+
+## 2026-03-23 GhidraMCP Session — 23 AI Functions Decoded
+
+Decompiled via `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"` with REBEXE.EXE loaded in CodeBrowser.
+
+### Key Findings
+
+| Function | Lines | Finding |
+|----------|-------|---------|
+| `FUN_0052e970` | 53 | **Not a scoring function** — binary capacity check. Checks if entity (family 0x10-0x3f) fits deployment budget at `this+0x58 - this+0x5c`. Our 4-factor model is strictly superior. |
+| `FUN_00506ea0` | 13 | Faction-specific evaluator pointer: Alliance at `DAT_006b2bb0+0xc4`, Empire at `+0xc8`. Different deployment budgets per faction. |
+| `FUN_004927c0` | 2098 | Master turn processing. AI triggered by **event 0x1f0** (day tick) — evaluates every game-day. Our `AI_TICK_INTERVAL=7` is intentional performance throttle. |
+| `FUN_00520580` | 9 | 2-field struct setter (`*(this) = cmd; *(this+4) = param`). Not a transit calculator. |
+| `FUN_0053b870` | 7 | Entity capacity reader: returns `*(entity + 0x4c)`. |
+| `FUN_00508250` | 139 | **All 18 validator sub-functions decoded.** 2 are no-ops (FUN_0051ebb0 always returns 1). 4 match our existing checks. 12 are new capacity/composition/status checks. |
+
+### Mission Probability Formulas (from TheArchitect2018 wiki)
+
+Composite input formulas ported to `missions.rs::compute_table_input()`:
+- Diplomacy: `(enemy_pop - our_pop) + diplomacy_rating` (sub_55ae50)
+- Recruitment: `leadership - resistance` (sub_55aed0)
+- Subdue: `(enemy_pop - our_pop) + diplomacy` (sub_55af50)
+- DS Sabotage: `(espionage + combat) / 2` (sub_55b0a0)
+- Escape: `((p3 + p2) - p4) - p5` + RNG roll (sub_55cfb0)
 
 ## Workflow
 

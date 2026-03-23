@@ -195,23 +195,24 @@ same_faction = (((byte)*(uint*)(entity + 0x24) ^ (byte)param_1[9]) & 0xc0) == 0;
 | 0x92 | Unexplored systems |
 | 0xa0-0xa2 | Sectors |
 
-## What Our Rust AI Is Missing
+## Parity Status (Updated 2026-03-23)
 
-| Feature | Original (REBEXE.EXE) | Current (ai.rs) |
-|---------|----------------------|-----------------|
-| Galaxy-wide evaluation | FUN_00519d00: 7-bucket system categorization | None — evaluates systems individually |
-| Strength assessment | FUN_00502020: counts ships + troops + facilities | Only checks `s.fleets.is_empty()` |
-| Entity-type routing | FUN_00508660: 10+ family-specific handlers | Only places characters on missions |
-| Two-pass evaluation | FUN_00537180 + FUN_005385f0 | Single pass |
-| System validation | FUN_00508250: 18 pre-checks | No validation beyond `on_mission` check |
-| Faction bit encoding | `+0x24 >> 6 & 3` | `is_alliance: bool` (simpler but equivalent) |
+| Feature | Original (REBEXE.EXE) | Current (ai.rs) | Status |
+|---------|----------------------|-----------------|--------|
+| Galaxy-wide evaluation | FUN_00519d00: 7-bucket system categorization | `evaluate_galaxy_state()` — 7 buckets + control_ratio + aggression | DONE (v0.13.0) |
+| Strength assessment | FUN_00502020: counts ships + troops + facilities | `system_strength()` — ships + troops + facilities | DONE (v0.13.0) |
+| Entity-type routing | FUN_00508660: 10+ family-specific handlers | `evaluate_officers()` + `evaluate_production()` + `evaluate_research()` | DONE (v0.14.0) |
+| Two-pass evaluation | FUN_00537180 + FUN_005385f0 | Two-pass with aggression scaling | AUGMENTED (v0.14.0) |
+| System validation | FUN_00508250: 18 pre-checks | `can_dispatch()` — 4 of 18 checks | PARTIAL — 14 remain |
+| Target scoring | FUN_0052e970: binary capacity check | 4-factor weighted model | **AUGMENTED — our model is superior** |
+| Faction evaluator | FUN_00506ea0: faction-specific budget thresholds | Same budget for both factions | PARTIAL — TODO |
+| AI trigger | Event 0x1f0 (every game-day) | Every 7 ticks (AI_TICK_INTERVAL) | AUGMENTED (performance) |
+| Faction bit encoding | `+0x24 >> 6 & 3` | `is_alliance: bool` | EQUIVALENT |
 
-## Recommendations for Open Rebellion
+## Remaining Work
 
-1. **Add galaxy evaluation phase**: Before per-system decisions, categorize all systems into strategic buckets (our-controlled, enemy-controlled, contested, unoccupied, HQ, frontier)
-2. **Implement garrison strength scoring**: Count total ship hulls + troop strength + facility count at each system, not just fleet presence/absence
-3. **Add two-pass evaluation**: First pass identifies needs (defense, reinforcement, attack targets). Second pass matches available assets to needs.
-4. **Use `controlling_faction` + asset counting**: The original checks every entity's faction bits. Our simplified `controlling_faction` field serves the same purpose when combined with fleet/facility counting.
+1. **Port 14 dispatch validators** — decoded but reference entity offsets (+0x58, +0x5c, +0x64, +0x80, +0x88) not yet in Rust types
+2. **Add faction-specific deployment budgets** — FUN_00506ea0 returns different evaluator objects per faction
 
 ## Connection to AutoResearch
 

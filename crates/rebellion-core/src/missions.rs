@@ -170,6 +170,87 @@ impl MissionKind {
         pair.base + pair.variance / 2
     }
 
+    /// Compute the composite input value for MSTB table lookup.
+    ///
+    /// The original game (per Ghidra RE + TheArchitect2018 wiki) computes a
+    /// composite input from character skill + game-state context before looking
+    /// up the probability table. This replaces our previous approach of passing
+    /// raw skill_score directly to `MstbTable::lookup()`.
+    ///
+    /// Source functions from REBEXE.EXE:
+    /// - Diplomacy:     sub_55ae50 → `(enemy_pop - our_pop) + diplomacy_rating`
+    /// - Recruitment:   sub_55aed0 → `leadership - target_resistance`
+    /// - Espionage:     sub_55ae90 → `espionage_skill` (direct lookup)
+    /// - Subdue:        sub_55af50 → `(enemy_pop - our_pop) + diplomacy_rating`
+    /// - DS Sabotage:   sub_55b0a0 → `(espionage + combat) / 2`
+    /// - Escape:        sub_55cfb0 → `((p3 + p2) - p4) - p5` (see check_escapes)
+    pub fn compute_table_input(self, character: &Character, system: Option<&crate::world::System>, faction: MissionFaction) -> i32 {
+        let skill = self.skill_score(character) as i32;
+
+        match self {
+            // sub_55ae50: input = (enemy_popularity - our_popularity) + diplomacy_rating
+            // Harder to sway systems that already strongly favor the enemy.
+            MissionKind::Diplomacy | MissionKind::InciteUprising => {
+                if let Some(sys) = system {
+                    let (our_pop, enemy_pop) = match faction {
+                        MissionFaction::Alliance => (sys.popularity_alliance, sys.popularity_empire),
+                        MissionFaction::Empire => (sys.popularity_empire, sys.popularity_alliance),
+                    };
+                    let pop_delta = ((enemy_pop - our_pop) * 100.0) as i32;
+                    pop_delta + skill
+                } else {
+                    skill
+                }
+            }
+
+            // sub_55af50: input = (enemy_popularity - our_popularity) + diplomacy_rating
+            // Same formula as diplomacy.
+            MissionKind::SubdueUprising => {
+                if let Some(sys) = system {
+                    let (our_pop, enemy_pop) = match faction {
+                        MissionFaction::Alliance => (sys.popularity_alliance, sys.popularity_empire),
+                        MissionFaction::Empire => (sys.popularity_empire, sys.popularity_alliance),
+                    };
+                    let pop_delta = ((enemy_pop - our_pop) * 100.0) as i32;
+                    pop_delta + skill
+                } else {
+                    skill
+                }
+            }
+
+            // sub_55aed0: input = param_1 - param_2
+            // param_1 = leadership skill, param_2 = resistance (approximated as 50 - our_popularity * 100)
+            MissionKind::Recruitment => {
+                if let Some(sys) = system {
+                    let our_pop = match faction {
+                        MissionFaction::Alliance => sys.popularity_alliance,
+                        MissionFaction::Empire => sys.popularity_empire,
+                    };
+                    let resistance = (50.0 - our_pop * 100.0) as i32;
+                    skill - resistance.max(0)
+                } else {
+                    skill
+                }
+            }
+
+            // sub_55b0a0: input = (espionage + combat) / 2
+            MissionKind::DeathStarSabotage => {
+                let espionage = (character.espionage.base + character.espionage.variance / 2) as i32;
+                let combat = (character.combat.base + character.combat.variance / 2) as i32;
+                (espionage + combat) / 2
+            }
+
+            // sub_55ae90: direct skill lookup (no composite)
+            MissionKind::Espionage
+            | MissionKind::Sabotage
+            | MissionKind::Assassination
+            | MissionKind::Rescue
+            | MissionKind::Abduction => skill,
+
+            MissionKind::Autoscrap => 100,
+        }
+    }
+
     /// Minimum success probability (percent, 1–100).
     pub fn min_success_prob(self) -> f64 {
         1.0
@@ -614,8 +695,15 @@ impl MissionSystem {
         roll: f64,
     ) -> MissionResult {
         let character = world.characters.get(mission.character);
+        let target_system = world.systems.get(mission.target_system);
+
+        // Compute composite table input per original game formulas (TheArchitect2018 wiki).
+        let table_input = character
+            .map(|c| mission.kind.compute_table_input(c, target_system, mission.faction))
+            .unwrap_or(0);
+
         let (outcome, effects) =
-            Self::determine_outcome(mission, character, tick, roll, &world.mission_tables);
+            Self::determine_outcome(mission, character, table_input, tick, roll, &world.mission_tables);
 
         MissionResult {
             mission_id: mission.id,
@@ -632,13 +720,16 @@ impl MissionSystem {
     /// Compute outcome and effects given a pre-rolled value.
     ///
     /// Uses MSTB table lookup when available in `world.mission_tables`,
-    /// falls back to quadratic coefficients otherwise.
+    /// falls back to quadratic coefficients otherwise. The `table_input` is
+    /// a composite value computed from character skill + game context per the
+    /// original REBEXE.EXE formulas (see `MissionKind::compute_table_input`).
     fn determine_outcome(
         mission: &ActiveMission,
         character: Option<&Character>,
+        table_input: i32,
         _tick: u64,
         roll: f64,
-        mission_tables: &HashMap<String, MstbTable>, // from world.mission_tables
+        mission_tables: &HashMap<String, MstbTable>,
     ) -> (MissionOutcome, Vec<MissionEffect>) {
         // Autoscrap always succeeds — no character or probability check needed.
         if mission.kind == MissionKind::Autoscrap {
@@ -649,15 +740,16 @@ impl MissionSystem {
             .map(|c| mission.kind.skill_score(c))
             .unwrap_or(0);
 
-        // Priority 1: MSTB table lookup (piecewise-linear over IntTableEntry data).
-        // Priority 2: quadratic fallback (rebellion2 Mission.cs coefficients).
+        // Priority 1: MSTB table lookup using composite input (per original game formulas).
+        // Priority 2: quadratic fallback using raw skill_score (rebellion2 Mission.cs).
         let agent_prob = if let Some(key) = mission.kind.mstb_key() {
             if let Some(table) = mission_tables.get(key) {
-                // world::MstbTable::lookup takes a signed i32 skill delta and returns u32 (0-100).
-                let raw = table.lookup(skill_score as i32) as f64;
+                // Use composite input from compute_table_input() — factors in popularity,
+                // resistance, and other game-state context per REBEXE.EXE sub_55ae50 etc.
+                let raw = table.lookup(table_input) as f64;
                 clamp_prob(raw, mission.kind.min_success_prob(), mission.kind.max_success_prob())
             } else {
-                // Table not loaded yet — fall back to quadratic.
+                // Table not loaded yet — fall back to quadratic with raw skill score.
                 let (a, b, c) = mission.kind.coefficients();
                 let raw = quadratic_prob(skill_score as f64, a, b, c);
                 clamp_prob(raw, mission.kind.min_success_prob(), mission.kind.max_success_prob())

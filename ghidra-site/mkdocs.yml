@@ -53,6 +53,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - AI Functions: ai-functions.md
   - Scholar Documents:
     - Annotated Functions: scholar/annotated-functions.md
     - C++ Class Hierarchy: scholar/cpp-class-hierarchy.md
