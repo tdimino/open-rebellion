@@ -240,41 +240,152 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
         if let Some(system) = world.systems.get(sys_key) {
             egui::SidePanel::right("system_info")
                 .min_width(280.0)
-                .max_width(300.0)
+                .max_width(320.0)
                 .show(ctx, |ui| {
-                    ui.heading(&system.name);
-                    ui.separator();
-
-                    if let Some(sector) = world.sectors.get(system.sector) {
-                        ui.label(format!("Sector: {}", sector.name));
-                        let region_label = match sector.group {
-                            rebellion_core::dat::SectorGroup::Core => "Core",
-                            rebellion_core::dat::SectorGroup::RimInner => "Inner Rim",
-                            rebellion_core::dat::SectorGroup::RimOuter => "Outer Rim",
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        // ── Header ───────────────────────────────────────────
+                        let name_color = match system.control {
+                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => theme::ALLIANCE_BLUE,
+                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => theme::EMPIRE_RED,
+                            _ => theme::TEXT_PRIMARY,
                         };
-                        ui.label(format!("Region: {}", region_label));
-                    }
+                        ui.heading(egui::RichText::new(&system.name).color(name_color));
 
-                    ui.separator();
-                    ui.label(format!("Position: ({}, {})", system.x, system.y));
-                    ui.label(format!(
-                        "Alliance Support: {:.0}%",
-                        system.popularity_alliance * 100.0
-                    ));
-                    ui.label(format!(
-                        "Empire Support: {:.0}%",
-                        system.popularity_empire * 100.0
-                    ));
+                        if system.is_headquarters {
+                            ui.label(egui::RichText::new("HEADQUARTERS").color(theme::GOLD).size(10.0).strong());
+                        }
+                        if system.is_destroyed {
+                            ui.label(egui::RichText::new("DESTROYED").color(theme::DANGER_RED).size(10.0).strong());
+                        }
 
-                    ui.separator();
-                    ui.label(format!("Fleets: {}", system.fleets.len()));
-                    ui.label(format!("Ground Units: {}", system.ground_units.len()));
-                    ui.label(format!("Defenses: {}", system.defense_facilities.len()));
-                    ui.label(format!(
-                        "Manufacturing: {}",
-                        system.manufacturing_facilities.len()
-                    ));
-                    ui.label(format!("Production: {}", system.production_facilities.len()));
+                        // Sector + region
+                        if let Some(sector) = world.sectors.get(system.sector) {
+                            let region = match sector.group {
+                                rebellion_core::dat::SectorGroup::Core => "Core",
+                                rebellion_core::dat::SectorGroup::RimInner => "Inner Rim",
+                                rebellion_core::dat::SectorGroup::RimOuter => "Outer Rim",
+                            };
+                            ui.label(egui::RichText::new(format!("{} — {}", sector.name, region)).color(theme::TEXT_SECONDARY).size(11.0));
+                        }
+
+                        ui.separator();
+
+                        // ── Popularity bars ──────────────────────────────────
+                        ui.label(egui::RichText::new("SUPPORT").color(theme::GOLD_DIM).size(10.0).strong());
+
+                        let alliance_pct = system.popularity_alliance;
+                        let empire_pct = system.popularity_empire;
+
+                        // Alliance bar
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Alliance").color(theme::ALLIANCE_BLUE).size(11.0));
+                            let bar = egui::ProgressBar::new(alliance_pct)
+                                .text(format!("{:.0}%", alliance_pct * 100.0))
+                                .fill(theme::ALLIANCE_BLUE);
+                            ui.add(bar);
+                        });
+
+                        // Empire bar
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Empire  ").color(theme::EMPIRE_RED).size(11.0));
+                            let bar = egui::ProgressBar::new(empire_pct)
+                                .text(format!("{:.0}%", empire_pct * 100.0))
+                                .fill(theme::EMPIRE_RED);
+                            ui.add(bar);
+                        });
+
+                        // Control status
+                        let control_str = match system.control {
+                            rebellion_core::world::ControlKind::Uncontrolled => "Neutral",
+                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => "Alliance Controlled",
+                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => "Empire Controlled",
+                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Neutral) => "Neutral",
+                            rebellion_core::world::ControlKind::Contested => "Contested",
+                            rebellion_core::world::ControlKind::Uprising(_) => "Uprising",
+                        };
+                        ui.label(egui::RichText::new(control_str).color(theme::TEXT_SECONDARY).size(10.0));
+
+                        ui.separator();
+
+                        // ── Fleets ───────────────────────────────────────────
+                        if !system.fleets.is_empty() {
+                            ui.label(egui::RichText::new("FLEETS").color(theme::GOLD_DIM).size(10.0).strong());
+                            for &fleet_key in &system.fleets {
+                                if let Some(fleet) = world.fleets.get(fleet_key) {
+                                    let faction_color = if fleet.is_alliance { theme::ALLIANCE_BLUE } else { theme::EMPIRE_RED };
+                                    let faction_tag = if fleet.is_alliance { "A" } else { "E" };
+
+                                    let ship_count: u32 = fleet.capital_ships.iter().map(|e| e.count).sum();
+                                    let fighter_count: u32 = fleet.fighters.iter().map(|e| e.count).sum();
+
+                                    ui.horizontal(|ui| {
+                                        ui.label(egui::RichText::new(format!("[{}]", faction_tag)).color(faction_color).size(11.0).strong());
+
+                                        let mut parts = Vec::new();
+                                        if ship_count > 0 { parts.push(format!("{} ships", ship_count)); }
+                                        if fighter_count > 0 { parts.push(format!("{} sqns", fighter_count)); }
+                                        if fleet.has_death_star { parts.push("Death Star".to_string()); }
+                                        ui.label(egui::RichText::new(parts.join(", ")).color(theme::TEXT_PRIMARY).size(11.0));
+                                    });
+
+                                    // Ship class breakdown
+                                    for entry in &fleet.capital_ships {
+                                        if let Some(class) = world.capital_ship_classes.get(entry.class) {
+                                            ui.label(egui::RichText::new(format!("  {} ×{}", class.name, entry.count)).color(theme::TEXT_SECONDARY).size(10.0));
+                                        }
+                                    }
+
+                                    // Commander
+                                    for &char_key in &fleet.characters {
+                                        if let Some(c) = world.characters.get(char_key) {
+                                            ui.label(egui::RichText::new(format!("  Cmd: {}", c.name)).color(theme::GOLD_DIM).size(10.0));
+                                        }
+                                    }
+                                }
+                            }
+                            ui.add_space(4.0);
+                        }
+
+                        // ── Ground Units ─────────────────────────────────────
+                        if !system.ground_units.is_empty() {
+                            let alliance_troops = system.ground_units.iter()
+                                .filter(|k| world.troops.get(**k).map(|t| t.is_alliance).unwrap_or(false))
+                                .count();
+                            let empire_troops = system.ground_units.len() - alliance_troops;
+
+                            ui.label(egui::RichText::new(format!("GROUND FORCES ({})", system.ground_units.len())).color(theme::GOLD_DIM).size(10.0).strong());
+                            if alliance_troops > 0 {
+                                ui.label(egui::RichText::new(format!("  Alliance: {} regiments", alliance_troops)).color(theme::ALLIANCE_BLUE).size(10.0));
+                            }
+                            if empire_troops > 0 {
+                                ui.label(egui::RichText::new(format!("  Empire: {} regiments", empire_troops)).color(theme::EMPIRE_RED).size(10.0));
+                            }
+                            ui.add_space(4.0);
+                        }
+
+                        // ── Facilities ────────────────────────────────────────
+                        let total_fac = system.defense_facilities.len()
+                            + system.manufacturing_facilities.len()
+                            + system.production_facilities.len();
+                        if total_fac > 0 {
+                            ui.label(egui::RichText::new(format!("FACILITIES ({})", total_fac)).color(theme::GOLD_DIM).size(10.0).strong());
+
+                            if !system.defense_facilities.is_empty() {
+                                ui.label(egui::RichText::new(format!("  Defense: {}", system.defense_facilities.len())).color(theme::TEXT_SECONDARY).size(10.0));
+                            }
+                            if !system.manufacturing_facilities.is_empty() {
+                                ui.label(egui::RichText::new(format!("  Shipyards: {}", system.manufacturing_facilities.len())).color(theme::TEXT_SECONDARY).size(10.0));
+                            }
+                            if !system.production_facilities.is_empty() {
+                                ui.label(egui::RichText::new(format!("  Production: {}", system.production_facilities.len())).color(theme::TEXT_SECONDARY).size(10.0));
+                            }
+                            ui.add_space(4.0);
+                        }
+
+                        // ── Coordinates (small, at bottom) ───────────────────
+                        ui.separator();
+                        ui.label(egui::RichText::new(format!("({}, {})", system.x, system.y)).color(theme::TEXT_DISABLED).size(9.0));
+                    });
                 });
         }
     }
