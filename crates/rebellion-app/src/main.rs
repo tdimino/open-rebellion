@@ -28,13 +28,29 @@ use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{ControlKind, GameWorld, MstbTable};
 
 use rebellion_render::{
-    draw_encyclopedia, draw_faction_select, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
-    draw_galaxy_map, draw_manufacturing, draw_message_log, draw_missions, draw_officers,
-    draw_status_bar, draw_system_info_panel, AudioVolumeState, EncyclopediaState,
-    FactionSelectState, FleetsState, GalaxyMapState, GameMessage, ManufacturingPanelState,
+    draw_encyclopedia, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
+    draw_galaxy_map, draw_game_setup, draw_main_menu, draw_manufacturing,
+    draw_message_log, draw_missions, draw_officers,
+    draw_status_bar, draw_system_info_panel, AudioVolumeState, Difficulty, EncyclopediaState,
+    FleetsState, GalaxyMapState, GameMessage, GameSetupAction, GameSetupState,
+    MainMenuAction, ManufacturingPanelState,
     MessageCategory, MessageLog, MessageLogState, MissionsPanelState, OfficersState, PanelAction,
     SfxKind,
 };
+
+/// Top-level game mode state machine.
+///
+/// Controls which screen renders each frame. Transitions are handled
+/// in the main loop by matching on actions returned from each screen.
+#[derive(Debug, Clone, PartialEq)]
+enum GameMode {
+    /// Title screen: New Game / Load Game / Quit.
+    MainMenu,
+    /// Campaign configuration: galaxy size, difficulty, faction.
+    GameSetup,
+    /// The main strategy game: galaxy map + War Room panels.
+    Galaxy,
+}
 
 fn window_conf() -> Conf {
     Conf {
@@ -159,12 +175,16 @@ async fn main() {
         }
 
         // Load string table from pre-extracted JSON (TEXTSTRA.DLL can't be parsed in WASM)
-        let _string_table: HashMap<u16, String> = match macroquad::file::load_file("data/base/textstra.json").await {
+        let string_table: HashMap<u16, String> = match macroquad::file::load_file("data/base/textstra.json").await {
             Ok(data) => serde_json::from_slice(&data).unwrap_or_default(),
             Err(_) => HashMap::new(),
         };
+        if !string_table.is_empty() {
+            eprintln!("Loaded {} entity names from textstra.json", string_table.len());
+        }
 
-        // Set the file cache so read_dat_file() can find the bytes
+        // Set the file cache and string table so load_game_data() can find them
+        rebellion_data::set_string_table(string_table);
         rebellion_data::set_file_cache(files);
 
         match rebellion_data::load_game_data(&gdata_path) {
@@ -194,6 +214,11 @@ async fn main() {
             eprintln!("Mod error: {:?}", err);
         }
     }
+
+    // ── Game mode ─────────────────────────────────────────────────────────
+    let mut game_mode = GameMode::MainMenu;
+    let mut game_setup_state = GameSetupState::default();
+    let mut _difficulty = Difficulty::Medium; // stored after setup, used for AI tuning
 
     // ── Simulation state ────────────────────────────────────────────────────
     // Seedable RNG for deterministic simulation
@@ -252,7 +277,6 @@ async fn main() {
     let mut log_state = MessageLogState::default();
 
     // ── War Room panel state ────────────────────────────────────────────────
-    let mut faction_select_state = FactionSelectState::default();
     let mut player_faction = MissionFaction::Alliance;
     let mut officers_state = OfficersState::default();
     let mut fleets_state = FleetsState::default();
@@ -291,79 +315,102 @@ async fn main() {
         engine
     };
 
+    // ── Apply Star Wars theme ────────────────────────────────────────────
+    // Must happen inside the macroquad async context, after first frame init.
+    let mut theme_applied = false;
+
     loop {
         let dt = get_frame_time();
 
-        // ── Keyboard shortcuts ──────────────────────────────────────────────
-        if is_key_pressed(KeyCode::Escape) {
-            break;
-        }
-        if is_key_pressed(KeyCode::R) {
-            map_state = GalaxyMapState::default();
-        }
-        // Speed controls
-        if is_key_pressed(KeyCode::Space) {
-            if clock.speed == GameSpeed::Paused {
-                clock.set_speed(GameSpeed::Normal);
-            } else {
-                clock.set_speed(GameSpeed::Paused);
-            }
-        }
-        if is_key_pressed(KeyCode::Key1) {
-            clock.set_speed(GameSpeed::Normal);
-        }
-        if is_key_pressed(KeyCode::Key2) {
-            clock.set_speed(GameSpeed::Fast);
-        }
-        if is_key_pressed(KeyCode::Key3) {
-            clock.set_speed(GameSpeed::Faster);
-        }
-        // Panel toggles (mutually exclusive left panels)
-        if is_key_pressed(KeyCode::O) {
-            show_officers = !show_officers;
-            if show_officers {
-                show_fleets = false;
-                show_manufacturing = false;
-                show_missions = false;
-            }
-        }
-        if is_key_pressed(KeyCode::F) {
-            show_fleets = !show_fleets;
-            if show_fleets {
-                show_officers = false;
-                show_manufacturing = false;
-                show_missions = false;
-            }
-        }
-        if is_key_pressed(KeyCode::M) {
-            show_manufacturing = !show_manufacturing;
-            if show_manufacturing {
-                show_officers = false;
-                show_fleets = false;
-                show_missions = false;
-            }
-        }
-        if is_key_pressed(KeyCode::N) {
-            show_missions = !show_missions;
-            if show_missions {
-                show_officers = false;
-                show_fleets = false;
-                show_manufacturing = false;
-            }
-        }
-        if is_key_pressed(KeyCode::E) {
-            enc_state.open = !enc_state.open;
-        }
-        if is_key_pressed(KeyCode::Tab) {
-            mod_manager_state.open = !mod_manager_state.open;
-        }
-        #[cfg(debug_assertions)]
-        if is_key_pressed(KeyCode::GraveAccent) {
-            command_palette_state.open = !command_palette_state.open;
+        // Apply theme on first frame (egui context exists after first next_frame)
+        if !theme_applied {
+            egui_macroquad::ui(|ctx| {
+                rebellion_render::theme::load_fonts(ctx);
+                rebellion_render::theme::apply_theme(ctx);
+            });
+            egui_macroquad::draw();
+            theme_applied = true;
         }
 
-        // ── Tick the clock ──────────────────────────────────────────────────
-        let tick_events = clock.advance(dt);
+        // ── Global keyboard shortcuts ───────────────────────────────────────
+        if is_key_pressed(KeyCode::Escape) {
+            // In Galaxy mode, Escape could open a menu later.
+            // For now, Escape quits from any mode.
+            break;
+        }
+        // ── Galaxy-mode keyboard shortcuts ──────────────────────────────────
+        if game_mode == GameMode::Galaxy {
+            if is_key_pressed(KeyCode::R) {
+                map_state = GalaxyMapState::default();
+            }
+            // Speed controls
+            if is_key_pressed(KeyCode::Space) {
+                if clock.speed == GameSpeed::Paused {
+                    clock.set_speed(GameSpeed::Normal);
+                } else {
+                    clock.set_speed(GameSpeed::Paused);
+                }
+            }
+            if is_key_pressed(KeyCode::Key1) {
+                clock.set_speed(GameSpeed::Normal);
+            }
+            if is_key_pressed(KeyCode::Key2) {
+                clock.set_speed(GameSpeed::Fast);
+            }
+            if is_key_pressed(KeyCode::Key3) {
+                clock.set_speed(GameSpeed::Faster);
+            }
+            // Panel toggles (mutually exclusive left panels)
+            if is_key_pressed(KeyCode::O) {
+                show_officers = !show_officers;
+                if show_officers {
+                    show_fleets = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                }
+            }
+            if is_key_pressed(KeyCode::F) {
+                show_fleets = !show_fleets;
+                if show_fleets {
+                    show_officers = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                }
+            }
+            if is_key_pressed(KeyCode::M) {
+                show_manufacturing = !show_manufacturing;
+                if show_manufacturing {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_missions = false;
+                }
+            }
+            if is_key_pressed(KeyCode::N) {
+                show_missions = !show_missions;
+                if show_missions {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_manufacturing = false;
+                }
+            }
+            if is_key_pressed(KeyCode::E) {
+                enc_state.open = !enc_state.open;
+            }
+            if is_key_pressed(KeyCode::Tab) {
+                mod_manager_state.open = !mod_manager_state.open;
+            }
+            #[cfg(debug_assertions)]
+            if is_key_pressed(KeyCode::GraveAccent) {
+                command_palette_state.open = !command_palette_state.open;
+            }
+        }
+
+        // ── Tick the clock (Galaxy mode only) ────────────────────────────────
+        let tick_events = if game_mode == GameMode::Galaxy {
+            clock.advance(dt)
+        } else {
+            vec![]
+        };
 
         if !tick_events.is_empty() {
             // ── Manufacturing (blockaded systems are skipped) ─────────────────
@@ -840,134 +887,214 @@ async fn main() {
             }
         }
 
-        // ── Rendering ───────────────────────────────────────────────────────
+        // ── Rendering (mode-specific) ────────────────────────────────────────
 
-        // 1. Galaxy map (pure macroquad) — returns camera params
-        let cam = draw_galaxy_map(&world, &mut map_state);
-
-        // 2. Fog overlay (pure macroquad) — dim non-visible systems
-        draw_fog_overlay(
-            &world,
-            &fog_state,
-            cam.cam_x,
-            cam.cam_y,
-            cam.zoom,
-            cam.map_width,
-            cam.screen_height,
-        );
-
-        // 3. Fleet overlays (pure macroquad) — on top of fog
-        draw_fleet_overlays(
-            &world,
-            &movement_state,
-            cam.cam_x,
-            cam.cam_y,
-            cam.zoom,
-            cam.map_width,
-            cam.screen_height,
-        );
-
-        // 4. All egui panels in a single ui() + draw() pass
         let mut panel_actions: Vec<PanelAction> = Vec::new();
 
-        egui_macroquad::ui(|ctx| {
-            // Faction select modal (gates everything else)
-            if faction_select_state.chosen.is_none() {
-                if let Some(action) = draw_faction_select(ctx, &mut faction_select_state) {
-                    panel_actions.push(action);
-                }
-            } else {
-                // War Room panels (mutually exclusive left panels)
-                if show_officers {
-                    if let Some(action) =
-                        draw_officers(ctx, &world, &mut officers_state, player_faction)
-                    {
-                        panel_actions.push(action);
-                    }
-                }
-                if show_fleets {
-                    if let Some(action) =
-                        draw_fleets(ctx, &world, &mut fleets_state, player_faction)
-                    {
-                        panel_actions.push(action);
-                    }
-                }
-                if show_manufacturing {
-                    if let Some(action) = draw_manufacturing(
-                        ctx,
-                        &world,
-                        &mfg_state,
-                        &mut mfg_panel_state,
-                        player_faction,
-                    ) {
-                        panel_actions.push(action);
-                    }
-                }
-                if show_missions {
-                    let duration_roll = sim_rng.gen::<f64>();
-                    if let Some(action) = draw_missions(
-                        ctx,
-                        &world,
-                        &mission_state,
-                        &mut missions_panel_state,
-                        player_faction,
-                        duration_roll,
-                    ) {
-                        panel_actions.push(action);
-                    }
-                }
+        match game_mode {
+            GameMode::MainMenu => {
+                clear_background(Color::new(0.02, 0.02, 0.06, 1.0));
+                let mut menu_action = None;
+                egui_macroquad::ui(|ctx| {
+                    menu_action = draw_main_menu(ctx);
+                });
+                egui_macroquad::draw();
 
-                // Encyclopedia (floating window, always available when faction chosen)
-                if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state) {
-                    panel_actions.push(PanelAction::FocusFleetSystem(sys_key));
-                }
-
-                // Mod Manager (floating window)
-                let mod_infos: Vec<rebellion_render::ModInfo> = mod_runtime.discovered.iter().map(|m| {
-                    let err = mod_runtime.errors.iter().find(|e| format!("{:?}", e).contains(&m.name));
-                    rebellion_render::ModInfo {
-                        name: m.name.clone(),
-                        version: m.version.clone(),
-                        author: m.author.clone(),
-                        description: m.description.clone(),
-                        enabled: m.enabled,
-                        dependencies: m.dependencies.keys().cloned().collect(),
-                        has_error: err.is_some(),
-                        error_message: err.map(|e| format!("{:?}", e)),
-                    }
-                }).collect();
-                let mod_actions = rebellion_render::draw_mod_manager(ctx, &mod_infos, &mut mod_manager_state);
-                for action in mod_actions {
+                if let Some(action) = menu_action {
                     match action {
-                        rebellion_render::ModManagerAction::ToggleMod(name) => {
-                            panel_actions.push(PanelAction::ToggleMod { name });
+                        MainMenuAction::NewGame => {
+                            game_setup_state = GameSetupState::default();
+                            game_mode = GameMode::GameSetup;
                         }
-                        rebellion_render::ModManagerAction::ReloadMods => {
-                            panel_actions.push(PanelAction::ReloadMods);
+                        MainMenuAction::LoadGame => {
+                            // TODO: transition to save/load screen
+                            // For now, go straight to galaxy with defaults
+                            game_mode = GameMode::Galaxy;
+                        }
+                        MainMenuAction::Quit => {
+                            break;
                         }
                     }
                 }
             }
 
-            // Command palette (debug only)
-            #[cfg(debug_assertions)]
-            {
-                let palette_actions = rebellion_render::draw_command_palette(ctx, &mut command_palette_state);
-                for action in palette_actions {
-                    panel_actions.push(action);
+            GameMode::GameSetup => {
+                clear_background(Color::new(0.02, 0.02, 0.06, 1.0));
+                let mut setup_action = None;
+                egui_macroquad::ui(|ctx| {
+                    setup_action = draw_game_setup(ctx, &mut game_setup_state);
+                });
+                egui_macroquad::draw();
+
+                if let Some(action) = setup_action {
+                    match action {
+                        GameSetupAction::StartGame { difficulty, faction, .. } => {
+                            _difficulty = difficulty;
+                            player_faction = faction;
+
+                            // Initialize game state for chosen faction
+                            let dat_faction = match faction {
+                                MissionFaction::Alliance => Faction::Alliance,
+                                MissionFaction::Empire => Faction::Empire,
+                            };
+                            fog_state = FogState::new(dat_faction);
+                            FogSystem::seed(&mut fog_state, &world);
+
+                            // AI controls the opposite faction
+                            if faction == MissionFaction::Empire {
+                                ai_state = AIState::new(AiFaction::Alliance);
+                            } else {
+                                ai_state = AIState::new(AiFaction::Empire);
+                            }
+
+                            let faction_name = if faction == MissionFaction::Alliance {
+                                "Rebel Alliance"
+                            } else {
+                                "Galactic Empire"
+                            };
+                            msg_log.push(GameMessage::new(
+                                clock.tick,
+                                format!("You command the {}.", faction_name),
+                                MessageCategory::Event,
+                            ));
+
+                            // Start main theme music
+                            #[cfg(not(target_arch = "wasm32"))]
+                            audio_engine.play_music(
+                                rebellion_render::MusicTrack::MainTheme,
+                                &sounds_dir,
+                                &audio_vol,
+                            );
+
+                            game_mode = GameMode::Galaxy;
+                        }
+                        GameSetupAction::Back => {
+                            game_mode = GameMode::MainMenu;
+                        }
+                    }
                 }
             }
 
-            // System info panel (right side)
-            draw_system_info_panel(ctx, &world, &map_state);
+            GameMode::Galaxy => {
+                // 1. Galaxy map (pure macroquad) — returns camera params
+                let cam = draw_galaxy_map(&world, &mut map_state);
 
-            // Message log (bottom panel, above status bar)
-            draw_message_log(ctx, &msg_log, &mut log_state);
+                // 2. Fog overlay (pure macroquad) — dim non-visible systems
+                draw_fog_overlay(
+                    &world,
+                    &fog_state,
+                    cam.cam_x,
+                    cam.cam_y,
+                    cam.zoom,
+                    cam.map_width,
+                    cam.screen_height,
+                );
 
-            // Status bar (bottom-most, with speed controls + audio)
-            draw_status_bar(ctx, &world, &mut clock, &mut audio_vol);
-        });
-        egui_macroquad::draw();
+                // 3. Fleet overlays (pure macroquad) — on top of fog
+                draw_fleet_overlays(
+                    &world,
+                    &movement_state,
+                    cam.cam_x,
+                    cam.cam_y,
+                    cam.zoom,
+                    cam.map_width,
+                    cam.screen_height,
+                );
+
+                // 4. All egui panels in a single ui() + draw() pass
+                egui_macroquad::ui(|ctx| {
+                    // War Room panels (mutually exclusive left panels)
+                    if show_officers {
+                        if let Some(action) =
+                            draw_officers(ctx, &world, &mut officers_state, player_faction)
+                        {
+                            panel_actions.push(action);
+                        }
+                    }
+                    if show_fleets {
+                        if let Some(action) =
+                            draw_fleets(ctx, &world, &mut fleets_state, player_faction)
+                        {
+                            panel_actions.push(action);
+                        }
+                    }
+                    if show_manufacturing {
+                        if let Some(action) = draw_manufacturing(
+                            ctx,
+                            &world,
+                            &mfg_state,
+                            &mut mfg_panel_state,
+                            player_faction,
+                        ) {
+                            panel_actions.push(action);
+                        }
+                    }
+                    if show_missions {
+                        let duration_roll = sim_rng.gen::<f64>();
+                        if let Some(action) = draw_missions(
+                            ctx,
+                            &world,
+                            &mission_state,
+                            &mut missions_panel_state,
+                            player_faction,
+                            duration_roll,
+                        ) {
+                            panel_actions.push(action);
+                        }
+                    }
+
+                    // Encyclopedia (floating window)
+                    if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state) {
+                        panel_actions.push(PanelAction::FocusFleetSystem(sys_key));
+                    }
+
+                    // Mod Manager (floating window)
+                    let mod_infos: Vec<rebellion_render::ModInfo> = mod_runtime.discovered.iter().map(|m| {
+                        let err = mod_runtime.errors.iter().find(|e| format!("{:?}", e).contains(&m.name));
+                        rebellion_render::ModInfo {
+                            name: m.name.clone(),
+                            version: m.version.clone(),
+                            author: m.author.clone(),
+                            description: m.description.clone(),
+                            enabled: m.enabled,
+                            dependencies: m.dependencies.keys().cloned().collect(),
+                            has_error: err.is_some(),
+                            error_message: err.map(|e| format!("{:?}", e)),
+                        }
+                    }).collect();
+                    let mod_actions = rebellion_render::draw_mod_manager(ctx, &mod_infos, &mut mod_manager_state);
+                    for action in mod_actions {
+                        match action {
+                            rebellion_render::ModManagerAction::ToggleMod(name) => {
+                                panel_actions.push(PanelAction::ToggleMod { name });
+                            }
+                            rebellion_render::ModManagerAction::ReloadMods => {
+                                panel_actions.push(PanelAction::ReloadMods);
+                            }
+                        }
+                    }
+
+                    // Command palette (debug only)
+                    #[cfg(debug_assertions)]
+                    {
+                        let palette_actions = rebellion_render::draw_command_palette(ctx, &mut command_palette_state);
+                        for action in palette_actions {
+                            panel_actions.push(action);
+                        }
+                    }
+
+                    // System info panel (right side)
+                    draw_system_info_panel(ctx, &world, &map_state);
+
+                    // Message log (bottom panel, above status bar)
+                    draw_message_log(ctx, &msg_log, &mut log_state);
+
+                    // Status bar (bottom-most, with speed controls + audio)
+                    draw_status_bar(ctx, &world, &mut clock, &mut audio_vol);
+                });
+                egui_macroquad::draw();
+            }
+        }
 
         // 5. Apply panel actions
         for action in panel_actions {
@@ -1043,38 +1170,9 @@ fn apply_panel_action(
     #[cfg(not(target_arch = "wasm32"))] sounds_dir: &Path,
 ) {
     match action {
-        PanelAction::SelectFaction(faction) => {
-            *player_faction = faction;
-            // Re-seed fog for the correct faction
-            let dat_faction = match faction {
-                MissionFaction::Alliance => Faction::Alliance,
-                MissionFaction::Empire => Faction::Empire,
-            };
-            *fog_state = FogState::new(dat_faction);
-            FogSystem::seed(fog_state, world);
-            // Flip AI to control the opposite faction
-            if faction == MissionFaction::Empire {
-                *ai_state = AIState::new(AiFaction::Alliance);
-            } else {
-                *ai_state = AIState::new(AiFaction::Empire);
-            }
-            let faction_name = if faction == MissionFaction::Alliance {
-                "Rebel Alliance"
-            } else {
-                "Galactic Empire"
-            };
-            msg_log.push(GameMessage::new(
-                clock.tick,
-                format!("You command the {}.", faction_name),
-                MessageCategory::Event,
-            ));
-            // Start main theme music
-            #[cfg(not(target_arch = "wasm32"))]
-            audio_engine.play_music(
-                rebellion_render::MusicTrack::MainTheme,
-                sounds_dir,
-                audio_vol,
-            );
+        PanelAction::SelectFaction(_) => {
+            // Faction selection now handled by GameSetup screen transition.
+            // This variant is kept for backwards compatibility but is a no-op.
         }
         PanelAction::FocusCharacter(_) => {
             // Officers panel handles its own focus state internally

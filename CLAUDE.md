@@ -9,7 +9,7 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.14.0 — **Core 95%** | **UI 80%** | **Combat 60%** | **Overall ~80%**. 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI with per-fleet targeting + deconfliction + battle penalty, config-driven AI (`tuning.rs` + `--config` flag, 16 tunable parameters), REPL mode for LLM agent play (`--repl`, `--jsonl`), CLI `--exec` (16 + 3 REPL commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry with human-readable payloads, `ControlKind` state machine, distance-based fleet transit, force distribution (10 Empire / 3 Alliance), eval_game_quality.py + autoresearch_loop.py, 283 tests, zero warnings.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.15.0 — **Core 95%** | **UI 80%** | **Combat 60%** | **Overall ~80%**. GameMode state machine (MainMenu → GameSetup → Galaxy), Star Wars egui theme (dark space + gold/amber accents), Liberation Sans font (faithful to original Arial), TEXTSTRA.DLL string extraction (1,347 entity names), 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI with per-fleet targeting + deconfliction + battle penalty, config-driven AI (`tuning.rs` + `--config` flag, 16 tunable parameters), REPL mode for LLM agent play (`--repl`, `--jsonl`), CLI `--exec` (16 + 3 REPL commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry with human-readable payloads, `ControlKind` state machine, distance-based fleet transit, force distribution (10 Empire / 3 Alliance), eval_game_quality.py + autoresearch_loop.py, 280 tests, zero warnings.
 
 ## Build
 
@@ -25,6 +25,9 @@ bash scripts/build-wasm.sh
 # dat-dumper (DAT binary files to JSON)
 PATH="/usr/bin:$PATH" cargo run -p dat-dumper -- --gdata data/base --output data/base/json
 
+# Extract TEXTSTRA.DLL entity names to JSON (for WASM builds)
+PATH="/usr/bin:$PATH" cargo run -p dat-dumper -- --gdata data/base --extract-strings --output web/data/base
+
 # Type check
 PATH="/usr/bin:$PATH" cargo check
 ```
@@ -38,7 +41,7 @@ PATH="/usr/bin:$PATH" cargo check
 | `rebellion-render` | macroquad 0.4 + egui-macroquad 0.17 galaxy map | rebellion-core, macroquad |
 | `rebellion-app` | Entry point and main loop | all crates above |
 | `rebellion-playtest` | Headless play-test binary with JSONL logging | rebellion-core, rebellion-data, rand, rand_xoshiro, clap |
-| `dat-dumper` (tools/) | 51/51 DAT parsers with round-trip byte validation. CLI + library | clap, serde |
+| `dat-dumper` (tools/) | 51/51 DAT parsers with round-trip byte validation. `--extract-strings` for TEXTSTRA.DLL (1,347 entity names). CLI + library | clap, serde, pelite |
 
 ## Conventions
 
@@ -51,7 +54,7 @@ PATH="/usr/bin:$PATH" cargo check
 
 ## Known Limitations
 
-- WASM cfg guards added (v0.3.0) but browser data loading still returns error stub
+- ~~WASM cfg guards added (v0.3.0) but browser data loading still returns error stub~~ Fixed: WASM loads DAT files via HTTP fetch + file cache (v0.14.0)
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
 - MISSNSD.DAT flag_col6..flag_col21 semantics partially resolved via Ghidra RE -- see `ghidra/notes/annotated-functions.md`
 - CapitalShipClass/FighterClass world models carry only ~10 of 50+ DAT fields -- 15 more needed for combat (see `ghidra/notes/rust-implementation-guide.md`)

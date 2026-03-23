@@ -51,7 +51,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         }
     };
     #[cfg(target_arch = "wasm32")]
-    let string_table: HashMap<u16, String> = HashMap::new();
+    let string_table: HashMap<u16, String> = WASM_STRING_TABLE.lock().unwrap().clone();
 
     // Convenience closure: look up a string by its DLL id, or fall back to
     // "<kind> <id>" if the DLL was absent or the id is not present.
@@ -463,8 +463,19 @@ pub fn set_file_cache(files: std::collections::HashMap<String, Vec<u8>>) {
     *WASM_FILE_CACHE.lock().unwrap() = files;
 }
 
+/// Pre-load TEXTSTRA string table for WASM. Call before `load_game_data()`.
+/// The HashMap maps string resource IDs to their display names.
+#[cfg(target_arch = "wasm32")]
+pub fn set_string_table(strings: std::collections::HashMap<u16, String>) {
+    *WASM_STRING_TABLE.lock().unwrap() = strings;
+}
+
 #[cfg(target_arch = "wasm32")]
 static WASM_FILE_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+#[cfg(target_arch = "wasm32")]
+static WASM_STRING_TABLE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u16, String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 /// Check if a file exists. On native: filesystem. On WASM: checks the file cache.

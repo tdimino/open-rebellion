@@ -23,10 +23,41 @@ struct Cli {
     /// Output directory for JSON files. If omitted: stdout for a single file, summary only for all.
     #[arg(short, long)]
     output: Option<PathBuf>,
+
+    /// Extract TEXTSTRA.DLL string table to JSON. Outputs to --output dir as textstra.json,
+    /// or stdout if --output is not set. Requires TEXTSTRA.DLL in the --gdata directory.
+    #[arg(long)]
+    extract_strings: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    // ── TEXTSTRA.DLL string extraction (separate path) ───────────────────────
+    if cli.extract_strings {
+        let dll_path = cli.gdata.join("TEXTSTRA.DLL");
+        if !dll_path.exists() {
+            anyhow::bail!("TEXTSTRA.DLL not found in {}", cli.gdata.display());
+        }
+
+        let strings = types::textstra::load_strings(&dll_path)?;
+        let json = serde_json::to_string_pretty(&strings)?;
+
+        match &cli.output {
+            Some(out_dir) => {
+                std::fs::create_dir_all(out_dir)?;
+                let out_path = out_dir.join("textstra.json");
+                std::fs::write(&out_path, &json)?;
+                eprintln!("OK   TEXTSTRA.DLL -> {} ({} strings)", out_path.display(), strings.len());
+            }
+            None => {
+                println!("{}", json);
+            }
+        }
+        return Ok(());
+    }
+
+    // ── DAT file parsing ─────────────────────────────────────────────────────
     let registry = registry::build_registry();
 
     // Build the list of (filename, path) pairs to process.

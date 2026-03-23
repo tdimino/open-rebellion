@@ -5,8 +5,10 @@ pub mod combat_view;
 pub mod encyclopedia;
 pub mod fleet_movement;
 pub mod fog;
+pub mod main_menu;
 pub mod message_log;
 pub mod panels;
+pub mod theme;
 pub mod victory_screen;
 
 use egui_macroquad::egui;
@@ -21,15 +23,17 @@ pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
 pub use fleet_movement::draw_fleet_overlays;
 pub use fog::draw_fog_overlay;
+pub use main_menu::{draw_main_menu, MainMenuAction};
 pub use message_log::{draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState};
 pub use panels::{
-    draw_faction_select, draw_fleets, draw_manufacturing, draw_missions, draw_mod_manager,
+    draw_fleets, draw_manufacturing, draw_missions, draw_mod_manager,
     draw_officers, draw_save_load,
-    FactionSelectState, FleetsState, ManufacturingPanelState, MissionsPanelState,
+    FleetsState, ManufacturingPanelState, MissionsPanelState,
     ModInfo, ModManagerAction, ModManagerState,
     OfficersState, SaveLoadPanelState, SaveSlotInfo,
     PanelAction,
 };
+pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
 
 #[cfg(debug_assertions)]
 pub use panels::command_palette::{CommandPaletteState, draw_command_palette};

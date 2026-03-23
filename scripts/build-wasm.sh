@@ -36,24 +36,17 @@ cp "$GDATA"/*.DAT "$WEB_DATA/" 2>/dev/null || true
 cp "$GDATA"/*.DLL "$WEB_DATA/" 2>/dev/null || true
 
 # Extract TEXTSTRA strings to JSON for WASM (pelite can't target WASM)
-if [ -f "$WEB_DATA/textstra.json" ]; then
-    echo "textstra.json already exists, skipping extraction."
+echo "Extracting TEXTSTRA.DLL strings to textstra.json…"
+DAT_DUMPER="${ROOT}/target/release/dat-dumper"
+if [ ! -f "$DAT_DUMPER" ]; then
+    echo "Building dat-dumper for string extraction…"
+    PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" -p dat-dumper --release
+fi
+if [ -f "$GDATA/TEXTSTRA.DLL" ]; then
+    "$DAT_DUMPER" --gdata "$GDATA" --extract-strings --output "$WEB_DATA"
 else
-    echo "Extracting TEXTSTRA.DLL strings to textstra.json…"
-    if command -v dat-dumper &>/dev/null || [ -f "$ROOT/target/release/dat-dumper" ]; then
-        DAT_DUMPER="${ROOT}/target/release/dat-dumper"
-        if [ ! -f "$DAT_DUMPER" ]; then
-            echo "Building dat-dumper for string extraction…"
-            PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" -p dat-dumper --release
-        fi
-        # TODO: Add --extract-strings flag to dat-dumper when implemented.
-        # For now, generate a placeholder empty JSON.
-        echo "{}" > "$WEB_DATA/textstra.json"
-        echo "WARNING: textstra.json is a placeholder. Entity names will use fallback format."
-    else
-        echo "{}" > "$WEB_DATA/textstra.json"
-        echo "WARNING: dat-dumper not available. textstra.json is a placeholder."
-    fi
+    echo "{}" > "$WEB_DATA/textstra.json"
+    echo "WARNING: TEXTSTRA.DLL not found. Entity names will use fallback format."
 fi
 
 DAT_COUNT=$(ls -1 "$WEB_DATA"/*.DAT 2>/dev/null | wc -l | tr -d ' ')

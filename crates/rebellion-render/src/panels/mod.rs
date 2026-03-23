@@ -19,8 +19,8 @@
 //! egui_macroquad::draw();
 //! ```
 
-pub mod faction_select;
 pub mod fleets;
+pub mod game_setup;
 pub mod manufacturing;
 pub mod missions;
 pub mod mod_manager;
@@ -30,7 +30,6 @@ pub mod save_load;
 #[cfg(debug_assertions)]
 pub mod command_palette;
 
-pub use faction_select::{draw_faction_select, FactionSelectState};
 pub use fleets::{draw_fleets, FleetsState};
 pub use manufacturing::{draw_manufacturing, ManufacturingPanelState};
 pub use missions::{draw_missions, MissionsPanelState};
