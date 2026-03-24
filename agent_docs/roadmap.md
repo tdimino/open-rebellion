@@ -143,6 +143,9 @@ Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 - Phase 4.1: Research Panel (3 tech tree tabs, progress bars, character assignment)
 - Phase 4.2: Jedi Training Panel (Force roster, XP bars, training controls)
 - Phase 4.3: Fleet Composition Editor (assign/remove officers, merge fleets)
+- Phase 4.4: Bombardment Targeting Panel (fleet selection, damage forecast, fire button)
+- Phase 4.5: Death Star Control Panel (construction progress, superlaser targeting, movement)
+- Phase 4.6: Loyalty & Uprising Dashboard (per-system danger, betrayal risk)
 - Phase 4.7: Expanded System Detail Panel (fleets, troops, facilities, popularity bars)
 - Phase 4.8: Character Detail View (skills, Force progression, location, assignment)
 
@@ -152,7 +155,6 @@ Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 - Phase 3.1: Facility Status Icons (33 sprites on galaxy map)
 - Phase 3.2: Sector Boundaries (polygon outlines)
 - Phase 3.5: Blockade Visual Indicators
-- Phase 4.4-4.6: Bombardment, Death Star, Loyalty panels
 - Phase 5: Tactical Combat View
 - Phase 6: Audio Integration (285 voice lines + soundtrack)
 - Phase 7: Visual Polish (upscaled BMPs, portraits, ship sprites)

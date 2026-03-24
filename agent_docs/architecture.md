@@ -75,7 +75,7 @@ crates/rebellion-render/src/
 ├── combat_view.rs      — Combat results integration into message log
 ├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
-    ├── mod.rs           — PanelAction enum (28 variants, including context menu actions)
+    ├── mod.rs           — PanelAction enum (31 variants, including context menu + combat actions)
     ├── game_setup.rs    — Galaxy size, difficulty, faction selection (replaces faction_select)
     ├── officers.rs       — Character roster with skill bars, full detail view (Force, location, skills)
     ├── fleets.rs         — Fleet editor: composition, assign/remove officers, merge fleets
@@ -83,6 +83,9 @@ crates/rebellion-render/src/
     ├── missions.rs       — Mission dispatch with probability preview
     ├── research.rs       — 3 tech tree tabs, active project progress, character assignment
     ├── jedi.rs           — Force-sensitive roster, tier progression, training controls
+    ├── bombardment.rs    — Orbital bombardment targeting: fleet selection, damage forecast, fire
+    ├── death_star.rs     — Death Star: construction progress, superlaser targeting, movement orders
+    ├── loyalty.rs        — Loyalty dashboard: per-system danger, uprising risk, betrayal risk
     ├── save_load.rs      — Save/load UI: 10 slots, auto-save
     ├── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
     └── command_palette.rs — VS Code-style fuzzy command palette (nucleo-matcher, debug-only)
