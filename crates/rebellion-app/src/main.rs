@@ -28,16 +28,21 @@ use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{ControlKind, GameWorld, MstbTable};
 
 use rebellion_render::{
-    draw_encyclopedia, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
+    draw_blockade_indicators, draw_cockpit_chrome, draw_cockpit_egui_layer,
+    draw_encyclopedia, draw_facility_icons, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
     draw_fleet_context_menu, draw_galaxy_map, draw_game_setup, draw_main_menu,
     draw_manufacturing, draw_message_log, draw_missions, draw_officers,
+    draw_sector_boundaries,
     draw_status_bar, draw_system_context_menu, draw_system_info_panel,
+    draw_ground_combat, draw_tactical_view,
     hovered_fleet,
-    AudioVolumeState, Difficulty, EncyclopediaState,
+    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState,
+    Difficulty, EncyclopediaState,
     FleetsState, GalaxyMapState, GameMessage, GameSetupAction, GameSetupState,
-    MainMenuAction, ManufacturingPanelState,
+    GroundAction, GroundCombatState,
+    MainMenuAction, ManufacturingPanelState, MusicContext,
     MessageCategory, MessageLog, MessageLogState, MissionsPanelState, OfficersState, PanelAction,
-    SfxKind,
+    SfxKind, TacticalAction, TacticalState, VoiceLine,
 };
 use rebellion_render::panels::research::{draw_research, ResearchPanelState};
 use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
@@ -57,6 +62,10 @@ enum GameMode {
     GameSetup,
     /// The main strategy game: galaxy map + War Room panels.
     Galaxy,
+    /// 2D tactical combat view for player-involved battles.
+    TacticalCombat,
+    /// Ground combat phase after space combat.
+    GroundCombat,
 }
 
 fn window_conf() -> Conf {
@@ -316,6 +325,24 @@ async fn main() {
     let mut show_death_star = false;
     let mut show_loyalty = false;
 
+    // ── Tactical combat state ────────────────────────────────────────────────
+    let mut tactical_state = TacticalState::new();
+    let mut ground_combat_state: Option<GroundCombatState> = None;
+
+    // ── Cockpit chrome ───────────────────────────────────────────────────────
+    let mut cockpit_state = CockpitState::new(CockpitFaction::Alliance);
+    let mut bmp_cache = BmpCache::new();
+    {
+        // gdata_path is data/base; staged UI BMPs live at data/base/ui/
+        let ui_path = gdata_path.join("ui");
+        bmp_cache.set_base_path(&ui_path);
+        // HD PNG overrides at data/hd/ui/ (sibling of data/base/)
+        let hd_ui_path = gdata_path.parent().unwrap_or(std::path::Path::new("."))
+            .join("hd")
+            .join("ui");
+        bmp_cache.set_hd_path(hd_ui_path);
+    }
+
     // ── Audio state ─────────────────────────────────────────────────────────
     let mut audio_vol = AudioVolumeState::default();
     let sounds_dir = PathBuf::from("data/sounds");
@@ -569,7 +596,41 @@ async fn main() {
                     .map(|s| s.name.clone())
                     .unwrap_or_else(|| "Unknown".into());
 
-                // Generate RNG rolls: 256 rolls covers fleets up to 16 ships each.
+                // Check if the player is involved in this battle.
+                let player_is_alliance = player_faction == MissionFaction::Alliance;
+                let atk_is_alliance = world.fleets.get(atk_fleet)
+                    .map(|f| f.is_alliance).unwrap_or(false);
+                let def_is_alliance = world.fleets.get(def_fleet)
+                    .map(|f| f.is_alliance).unwrap_or(false);
+                // Player is involved if either fleet belongs to the player's faction.
+                let player_involved = (player_is_alliance == atk_is_alliance)
+                    || (player_is_alliance == def_is_alliance);
+
+                if player_involved && game_mode == GameMode::Galaxy {
+                    // Transition to tactical combat view for player-involved battles.
+                    let player_is_attacker = if player_is_alliance {
+                        atk_is_alliance
+                    } else {
+                        !atk_is_alliance
+                    };
+                    tactical_state.begin_battle(
+                        &world, sys_key, atk_fleet, def_fleet,
+                        player_is_attacker, current_tick,
+                    );
+                    combat_cooldowns.insert(sys_key, current_tick);
+                    msg_log.push(GameMessage::at_system(
+                        current_tick,
+                        format!("Battle at {} — entering tactical combat!", sys_name),
+                        MessageCategory::Combat,
+                        sys_key,
+                    ));
+                    #[cfg(not(target_arch = "wasm32"))]
+                    audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
+                    game_mode = GameMode::TacticalCombat;
+                    break; // Handle one player battle at a time.
+                }
+
+                // AI vs AI: auto-resolve as before.
                 let combat_rolls: Vec<f64> =
                     (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 let space_result = CombatSystem::resolve_space(
@@ -596,7 +657,7 @@ async fn main() {
                     sys_key,
                 ));
                 #[cfg(not(target_arch = "wasm32"))]
-                audio_engine.play_sfx(SfxKind::FleetArrival, &audio_vol);
+                audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
 
                 // Ground combat: if attacker wins space battle and system has enemy troops.
                 if space_result.winner == CombatSide::Attacker {
@@ -1006,6 +1067,13 @@ async fn main() {
                             _difficulty = difficulty;
                             player_faction = faction;
 
+                            // Sync cockpit chrome to player faction
+                            cockpit_state.faction = if faction == MissionFaction::Alliance {
+                                CockpitFaction::Alliance
+                            } else {
+                                CockpitFaction::Empire
+                            };
+
                             // Initialize game state for chosen faction
                             let dat_faction = match faction {
                                 MissionFaction::Alliance => Faction::Alliance,
@@ -1032,13 +1100,22 @@ async fn main() {
                                 MessageCategory::Event,
                             ));
 
-                            // Start main theme music
+                            // Start galaxy map music and play faction voice greeting.
                             #[cfg(not(target_arch = "wasm32"))]
-                            audio_engine.play_music(
-                                rebellion_render::MusicTrack::MainTheme,
-                                &sounds_dir,
-                                &audio_vol,
-                            );
+                            {
+                                audio_engine.play_music_for_context(
+                                    MusicContext::GalaxyMap,
+                                    &sounds_dir,
+                                    &audio_vol,
+                                );
+                                // Play the appropriate faction voice line for game start.
+                                let greeting = if faction == MissionFaction::Alliance {
+                                    VoiceLine::AllianceMissionSuccess
+                                } else {
+                                    VoiceLine::EmpireMissionSuccess
+                                };
+                                audio_engine.play_voice(greeting, &audio_vol);
+                            }
 
                             game_mode = GameMode::Galaxy;
                         }
@@ -1050,7 +1127,24 @@ async fn main() {
             }
 
             GameMode::Galaxy => {
-                // 1. Galaxy map (pure macroquad) — returns camera params
+                // 1. Cockpit chrome (pure macroquad) — draws top/bottom bars,
+                //    returns the viewport rect available for the galaxy map.
+                //    We need an egui context for the BmpCache texture registration,
+                //    but draw_cockpit_chrome is called before the egui pass so we
+                //    pass a dummy context ref via a temporary egui_macroquad scope.
+                //    The chrome bars themselves use only macroquad draw calls.
+                let _cockpit_vp = {
+                    // Use a temporary egui context scope just for texture registration.
+                    // The returned viewport is used below.
+                    let mut vp_out = None;
+                    egui_macroquad::ui(|ctx| {
+                        vp_out = Some(draw_cockpit_chrome(&cockpit_state, &mut bmp_cache, ctx));
+                    });
+                    egui_macroquad::draw();
+                    vp_out.unwrap_or_else(|| cockpit_state.galaxy_viewport())
+                };
+
+                // 2. Galaxy map (pure macroquad) — returns camera params
                 let cam = draw_galaxy_map(&world, &mut map_state);
 
                 // 2. Fog overlay (pure macroquad) — dim non-visible systems
@@ -1074,6 +1168,11 @@ async fn main() {
                     cam.map_width,
                     cam.screen_height,
                 );
+
+                // 3c. Galaxy map overlays (pure macroquad) — sector boundaries, facility icons, blockades
+                draw_sector_boundaries(&world, &cam, map_state.show_sector_labels);
+                draw_facility_icons(&world, &cam);
+                draw_blockade_indicators(&world, &blockade_state, &cam);
 
                 // 3b. Fleet hover detection — check if right-click landed on a fleet.
                 // Fleet takes priority over system — overrides the system menu set
@@ -1111,7 +1210,7 @@ async fn main() {
                     // War Room panels (mutually exclusive left panels)
                     if show_officers {
                         if let Some(action) =
-                            draw_officers(ctx, &world, &mut officers_state, player_faction)
+                            draw_officers(ctx, &world, &mut officers_state, player_faction, &mut bmp_cache)
                         {
                             panel_actions.push(action);
                         }
@@ -1200,7 +1299,7 @@ async fn main() {
                     }
 
                     // Encyclopedia (floating window)
-                    if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state) {
+                    if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state, &mut bmp_cache) {
                         panel_actions.push(PanelAction::FocusFleetSystem(sys_key));
                     }
 
@@ -1259,8 +1358,273 @@ async fn main() {
 
                     // Status bar (bottom-most, with speed controls + audio)
                     draw_status_bar(ctx, &world, &mut clock, &mut audio_vol);
+
+                    // Cockpit button bar (overlays bottom chrome)
+                    if let Some(btn) = draw_cockpit_egui_layer(
+                        ctx, &cockpit_state, &mut bmp_cache,
+                        show_officers, show_fleets, show_manufacturing,
+                        show_missions, show_research, enc_state.open,
+                    ) {
+                        match btn {
+                            CockpitButton::Officers => {
+                                show_officers = !show_officers;
+                                if show_officers { show_fleets = false; show_manufacturing = false; show_missions = false; }
+                            }
+                            CockpitButton::Fleets => {
+                                show_fleets = !show_fleets;
+                                if show_fleets { show_officers = false; show_manufacturing = false; show_missions = false; }
+                            }
+                            CockpitButton::Manufacturing => {
+                                show_manufacturing = !show_manufacturing;
+                                if show_manufacturing { show_officers = false; show_fleets = false; show_missions = false; }
+                            }
+                            CockpitButton::Missions => {
+                                show_missions = !show_missions;
+                                if show_missions { show_officers = false; show_fleets = false; show_manufacturing = false; }
+                            }
+                            CockpitButton::Research => {
+                                show_research = !show_research;
+                                if show_research { show_officers = false; show_fleets = false; show_manufacturing = false; show_missions = false; show_jedi = false; }
+                            }
+                            CockpitButton::Encyclopedia => {
+                                enc_state.open = !enc_state.open;
+                            }
+                            CockpitButton::SaveLoad => {
+                                panel_actions.push(PanelAction::OpenSaveLoad);
+                            }
+                            CockpitButton::SpeedDown => {
+                                let next = match clock.speed {
+                                    GameSpeed::Faster => GameSpeed::Fast,
+                                    GameSpeed::Fast   => GameSpeed::Normal,
+                                    _                 => GameSpeed::Paused,
+                                };
+                                clock.set_speed(next);
+                            }
+                            CockpitButton::SpeedUp => {
+                                let next = match clock.speed {
+                                    GameSpeed::Paused => GameSpeed::Normal,
+                                    GameSpeed::Normal => GameSpeed::Fast,
+                                    _                 => GameSpeed::Faster,
+                                };
+                                clock.set_speed(next);
+                            }
+                        }
+                    }
                 });
                 egui_macroquad::draw();
+            }
+
+            GameMode::TacticalCombat => {
+                let tac_action = draw_tactical_view(
+                    &mut tactical_state,
+                    &mut bmp_cache,
+                    &world,
+                );
+
+                match tac_action {
+                    TacticalAction::BeginCombat => {
+                        // Advance from placement to combat phase.
+                        if let Some(ref mut session) = tactical_state.session {
+                            session.phase = rebellion_render::BattlePhase::Combat;
+                        }
+                    }
+                    TacticalAction::AutoResolve => {
+                        // Player chose auto-resolve — run CombatSystem and return to galaxy.
+                        if let Some(session) = tactical_state.end_battle() {
+                            let combat_rolls: Vec<f64> =
+                                (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                            let space_result = CombatSystem::resolve_space(
+                                &world,
+                                session.attacker_fleet,
+                                session.defender_fleet,
+                                session.system,
+                                2,
+                                &combat_rolls,
+                                session.start_tick,
+                            );
+                            apply_space_combat_result(&space_result, &mut world);
+
+                            let winner_str = match space_result.winner {
+                                CombatSide::Attacker => "Alliance victory",
+                                CombatSide::Defender => "Empire victory",
+                                CombatSide::Draw     => "Draw",
+                            };
+                            msg_log.push(GameMessage::at_system(
+                                session.start_tick,
+                                format!(
+                                    "Space battle at {} — {} (auto-resolved)",
+                                    session.system_name, winner_str
+                                ),
+                                MessageCategory::Combat,
+                                session.system,
+                            ));
+                        }
+                        game_mode = GameMode::Galaxy;
+                    }
+                    TacticalAction::ReturnToGalaxy => {
+                        // Apply combat results from tactical session to GameWorld.
+                        if let Some(session) = tactical_state.end_battle() {
+                            apply_tactical_results(&session, &mut world);
+                            let winner_str = match session.winner {
+                                Some(rebellion_render::CombatWinner::Attacker) => "Attacker victory",
+                                Some(rebellion_render::CombatWinner::Defender) => "Defender victory",
+                                Some(rebellion_render::CombatWinner::Draw) | None => "Draw",
+                            };
+                            msg_log.push(GameMessage::at_system(
+                                session.start_tick,
+                                format!(
+                                    "Space battle at {} — {} (tactical)",
+                                    session.system_name, winner_str
+                                ),
+                                MessageCategory::Combat,
+                                session.system,
+                            ));
+
+                            // Check for ground combat: if attacker won and system has enemy troops.
+                            if session.winner == Some(rebellion_render::CombatWinner::Attacker) {
+                                let sys_key = session.system;
+                                let player_is_atk = session.player_is_attacker;
+                                if let Some(sys) = world.systems.get(sys_key) {
+                                    let attacker_is_alliance = if player_is_atk {
+                                        player_faction == MissionFaction::Alliance
+                                    } else {
+                                        player_faction != MissionFaction::Alliance
+                                    };
+                                    // Check if there are defender troops at this system.
+                                    let mut def_idx = 0u32;
+                                    let defender_troops: Vec<(String, i16)> = sys.ground_units.iter()
+                                        .filter_map(|&tk| {
+                                            let troop = world.troops.get(tk)?;
+                                            if troop.is_alliance != attacker_is_alliance && troop.regiment_strength > 0 {
+                                                def_idx += 1;
+                                                Some((format!("Defender Regiment {}", def_idx), troop.regiment_strength))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect();
+                                    let mut atk_idx = 0u32;
+                                    let attacker_troops: Vec<(String, i16)> = sys.ground_units.iter()
+                                        .filter_map(|&tk| {
+                                            let troop = world.troops.get(tk)?;
+                                            if troop.is_alliance == attacker_is_alliance && troop.regiment_strength > 0 {
+                                                atk_idx += 1;
+                                                Some((format!("Attacker Regiment {}", atk_idx), troop.regiment_strength))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect();
+
+                                    if !defender_troops.is_empty() && !attacker_troops.is_empty() {
+                                        let sys_name = sys.name.clone();
+                                        ground_combat_state = Some(GroundCombatState::new(
+                                            sys_key, sys_name,
+                                            attacker_troops, defender_troops,
+                                        ));
+                                        game_mode = GameMode::GroundCombat;
+                                    } else {
+                                        game_mode = GameMode::Galaxy;
+                                    }
+                                } else {
+                                    game_mode = GameMode::Galaxy;
+                                }
+                            } else {
+                                game_mode = GameMode::Galaxy;
+                            }
+                        } else {
+                            game_mode = GameMode::Galaxy;
+                        }
+                    }
+                    TacticalAction::TogglePause => {
+                        if let Some(ref mut session) = tactical_state.session {
+                            session.paused = !session.paused;
+                        }
+                    }
+                    TacticalAction::SetSpeed(speed) => {
+                        if let Some(ref mut session) = tactical_state.session {
+                            session.combat_speed = speed.clamp(1, 4);
+                        }
+                    }
+                    TacticalAction::RetreatSelected => {
+                        if let Some(ref mut session) = tactical_state.session {
+                            let player_side = session.player_is_attacker;
+                            for ship in &mut session.ships {
+                                if ship.selected && ship.is_attacker == player_side && ship.alive {
+                                    ship.retreating = true;
+                                    ship.selected = false;
+                                }
+                            }
+                            session.selected_ship = None;
+                        }
+                    }
+                    TacticalAction::None => {}
+                }
+            }
+
+            GameMode::GroundCombat => {
+                if let Some(ref mut gc_state) = ground_combat_state {
+                    let gc_action = draw_ground_combat(gc_state);
+                    if gc_action == GroundAction::Done {
+                        // Apply ground combat results to GameWorld.
+                        if let Some(gc) = ground_combat_state.take() {
+                            let sys_key = gc.system;
+                            let attacker_is_alliance = player_faction == MissionFaction::Alliance;
+
+                            // Remove destroyed side's troops from the system.
+                            match gc.winner {
+                                Some(rebellion_render::GroundWinner::Attacker) => {
+                                    // Attacker won: remove defender troops.
+                                    if let Some(sys) = world.systems.get(sys_key) {
+                                        let to_remove: Vec<_> = sys.ground_units.iter()
+                                            .filter(|tk| world.troops.get(**tk)
+                                                .map(|t| t.is_alliance != attacker_is_alliance)
+                                                .unwrap_or(false))
+                                            .cloned().collect();
+                                        for tk in &to_remove {
+                                            world.troops.remove(*tk);
+                                        }
+                                        if let Some(sys) = world.systems.get_mut(sys_key) {
+                                            sys.ground_units.retain(|tk| !to_remove.contains(tk));
+                                        }
+                                    }
+                                }
+                                Some(rebellion_render::GroundWinner::Defender) => {
+                                    // Defender won: remove attacker troops.
+                                    if let Some(sys) = world.systems.get(sys_key) {
+                                        let to_remove: Vec<_> = sys.ground_units.iter()
+                                            .filter(|tk| world.troops.get(**tk)
+                                                .map(|t| t.is_alliance == attacker_is_alliance)
+                                                .unwrap_or(false))
+                                            .cloned().collect();
+                                        for tk in &to_remove {
+                                            world.troops.remove(*tk);
+                                        }
+                                        if let Some(sys) = world.systems.get_mut(sys_key) {
+                                            sys.ground_units.retain(|tk| !to_remove.contains(tk));
+                                        }
+                                    }
+                                }
+                                _ => {} // Draw: both sides survive
+                            }
+
+                            let gc_winner_str = match gc.winner {
+                                Some(rebellion_render::GroundWinner::Attacker) => "Attacker ground victory",
+                                Some(rebellion_render::GroundWinner::Defender) => "Defender holds ground",
+                                Some(rebellion_render::GroundWinner::Draw) | None => "Ground combat draw",
+                            };
+                            msg_log.push(GameMessage::at_system(
+                                clock.tick,
+                                format!("Ground battle at {} — {}", gc.system_name, gc_winner_str),
+                                MessageCategory::Combat,
+                                gc.system,
+                            ));
+                        }
+                        game_mode = GameMode::Galaxy;
+                    }
+                } else {
+                    game_mode = GameMode::Galaxy;
+                }
             }
         }
 
@@ -1515,7 +1879,8 @@ fn apply_panel_action(
         // Save/load actions are handled by the caller before dispatching here;
         // they require access to the full save state and are not routed through
         // this helper.
-        PanelAction::SaveGame { .. }
+        PanelAction::OpenSaveLoad
+        | PanelAction::SaveGame { .. }
         | PanelAction::LoadGame { .. }
         | PanelAction::DeleteSave { .. }
         | PanelAction::CloseSaveLoadPanel => {}
@@ -1900,14 +2265,24 @@ fn apply_mission_result(
         result.target_system,
     ));
 
-    // SFX for mission outcomes
+    // SFX + voice lines for mission outcomes
     #[cfg(not(target_arch = "wasm32"))]
     match result.outcome {
         rebellion_core::missions::MissionOutcome::Success => {
             audio_engine.play_sfx(SfxKind::MissionSuccess, audio_vol);
+            let voice = match result.faction {
+                MissionFaction::Alliance => VoiceLine::AllianceMissionSuccess,
+                MissionFaction::Empire   => VoiceLine::EmpireMissionSuccess,
+            };
+            audio_engine.play_voice(voice, audio_vol);
         }
         _ => {
             audio_engine.play_sfx(SfxKind::MissionFail, audio_vol);
+            let voice = match result.faction {
+                MissionFaction::Alliance => VoiceLine::AllianceMissionFail,
+                MissionFaction::Empire   => VoiceLine::EmpireMissionFail,
+            };
+            audio_engine.play_voice(voice, audio_vol);
         }
     }
 
@@ -2296,6 +2671,84 @@ fn apply_ground_combat_result(
     }
 }
 
+/// Apply tactical combat session results to GameWorld.
+///
+/// Compares each ship's final hull_current to hull_max.
+/// Ships with hull_current == 0 are destroyed (count decremented).
+/// Fighter squadron losses are applied similarly.
+fn apply_tactical_results(
+    session: &rebellion_render::BattleSession,
+    world: &mut GameWorld,
+) {
+    // Apply capital ship losses for both fleets.
+    for (fleet_key, is_attacker) in [
+        (session.attacker_fleet, true),
+        (session.defender_fleet, false),
+    ] {
+        // Count destroyed ships per class entry index.
+        let mut destroyed_by_entry: std::collections::HashMap<usize, u32> =
+            std::collections::HashMap::new();
+
+        for ship in &session.ships {
+            if ship.is_attacker != is_attacker { continue; }
+            // Skip ships that successfully retreated — they survive.
+            if ship.retreated { continue; }
+            if !ship.alive {
+                // fleet_ship_index is the flat index; find which ShipEntry it belongs to.
+                if let Some(fleet) = world.fleets.get(fleet_key) {
+                    let mut offset = 0usize;
+                    for (i, entry) in fleet.capital_ships.iter().enumerate() {
+                        if ship.fleet_ship_index < offset + entry.count as usize {
+                            *destroyed_by_entry.entry(i).or_insert(0) += 1;
+                            break;
+                        }
+                        offset += entry.count as usize;
+                    }
+                }
+            }
+        }
+
+        // Apply reductions.
+        if let Some(fleet) = world.fleets.get_mut(fleet_key) {
+            for (&entry_idx, &lost) in &destroyed_by_entry {
+                if entry_idx < fleet.capital_ships.len() {
+                    fleet.capital_ships[entry_idx].count =
+                        fleet.capital_ships[entry_idx].count.saturating_sub(lost);
+                }
+            }
+        }
+
+        // Apply fighter squadron losses.
+        for fighter in &session.fighters {
+            if fighter.is_attacker != is_attacker { continue; }
+            if let Some(fleet) = world.fleets.get_mut(fleet_key) {
+                // Find the matching fighter entry by class key.
+                for entry in &mut fleet.fighters {
+                    if entry.class == fighter.class_key {
+                        entry.count = fighter.squad_count;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Remove empty fleets.
+        let is_empty = world.fleets.get(fleet_key)
+            .map(|f| f.capital_ships.iter().all(|e| e.count == 0)
+                && f.fighters.iter().all(|e| e.count == 0))
+            .unwrap_or(true);
+        if is_empty {
+            if let Some(fleet) = world.fleets.get(fleet_key) {
+                let loc = fleet.location;
+                if let Some(sys) = world.systems.get_mut(loc) {
+                    sys.fleets.retain(|&k| k != fleet_key);
+                }
+            }
+            world.fleets.remove(fleet_key);
+        }
+    }
+}
+
 fn apply_ai_actions(
     actions: &[AIAction],
     rolls: &[f64],
@@ -2364,7 +2817,15 @@ fn apply_ai_actions(
                             rebellion_core::movement::fleet_transit_ticks(f, world, f.location, *to_system);
                         movement_state.order(*fleet, f.location, *to_system, transit);
                         #[cfg(not(target_arch = "wasm32"))]
-                        audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
+                        {
+                            audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
+                            let voice = if f.is_alliance {
+                                VoiceLine::AllianceFleetDeparts
+                            } else {
+                                VoiceLine::EmpireFleetDeparts
+                            };
+                            audio_engine.play_voice(voice, audio_vol);
+                        }
                     }
                 }
                 log.push(GameMessage::at_system(
