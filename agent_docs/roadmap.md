@@ -149,15 +149,36 @@ Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 - Phase 4.7: Expanded System Detail Panel (fleets, troops, facilities, popularity bars)
 - Phase 4.8: Character Detail View (skills, Force progression, location, assignment)
 
-### Remaining
-- Phase 2.1-2.2: Cockpit Frame + Control Buttons (requires BMP asset loading)
+### Completed (Knesset Demiurge, 2026-03-24)
+- Phase 2.1-2.2: Cockpit Frame + Control Buttons (BmpCache, faction chrome, 9 buttons)
+- Phase 3.1: Facility Status Icons (colored squares by type, zoom-scaled)
+- Phase 3.2: Sector Boundaries (Graham scan convex hull, 3 SectorGroup colors)
+- Phase 3.5: Blockade Visual Indicators (red ring + fill on blockaded systems)
+- Phase 5: Tactical Combat View (2D arena, phased combat, targeting, retreat, ground)
+- Phase 6: Audio Integration (quad-snd soundtrack, 285 voice lines, SFX, context music)
+- Phase 7: Entity Portraits (GOKRES.DLL 61 portraits + 57 ship status views)
+
+### Remaining UI
 - Phase 2.3: Droid Advisor System (148 animation frames + BIN data)
-- Phase 3.1: Facility Status Icons (33 sprites on galaxy map)
-- Phase 3.2: Sector Boundaries (polygon outlines)
-- Phase 3.5: Blockade Visual Indicators
-- Phase 5: Tactical Combat View
-- Phase 6: Audio Integration (285 voice lines + soundtrack)
-- Phase 7: Visual Polish (upscaled BMPs, portraits, ship sprites)
+- Phase 7: HD Visual Polish (upscaled BMPs beyond original art)
+
+### Game Seeding Parity — CRITICAL GAP (~12% parity)
+
+*Discovered 2026-03-24 via audit against TheArchitect2018/Deep-Dive-into-SW-Rebellion-PC-Game-Internals/initial_game_seeding_logic*
+
+Full report: `.subdaimon-output/seeding-parity-audit.md`
+
+**What works**: 9 seed table DAT parsing + dispatch, Coruscant fleet/garrison/facilities, Yavin garrison, army table distribution.
+
+**What's missing** (priority order):
+1. **Character stat rolling + placement** — Characters retain raw SkillPair from DAT, never rolled to concrete stats. Named characters (Luke, Leia, Vader, Palpatine) have no initial system assignment.
+2. **Support/popularity initialization** — All systems start at 0.0. Original sets 20-100 for controlled, ~41-59 for neutral, based on control bucket assignment.
+3. **Procedural galaxy generation** — Political control bucket system (core/rim, Alliance strong/weak/Empire strong/weak/neutral) from GNPRTB params 7680/7681 not implemented. Systems aren't shuffled before seeding.
+4. **Energy/raw materials fields** — System struct has no total_energy or raw_materials. These drive the entire facility and mine generation system.
+5. **Maintenance-budget common unit seeding** — Section 10 of wiki (largest source of starting forces) entirely absent.
+6. **Alliance HQ randomization** — Original selects random rim system; we collapse to Yavin.
+7. **Difficulty/galaxy size affecting seeds** — GameSetupState choices never reach apply_seeds().
+8. **Fleet distribution model** — We spread across proximity; original puts only at 3 special systems.
 
 ## AI Parity Status (as of 2026-03-23)
 
