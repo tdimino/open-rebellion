@@ -21,10 +21,10 @@ Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open R
 | Target | Size | Total Functions | Decompiled | Coverage |
 |--------|------|-----------------|------------|----------|
 | **REBEXE.EXE** | 2.8 MB | 22,741 | **5,127** | Every function >100 bytes |
-| COMMON.DLL | 2.9 MB |—| 0 | Imported, not analyzed |
+| COMMON.DLL | 2.9 MB | 0 | 0 | Pure resource container — 321 BMPs (buttons, UI toolkit, main menu assets, cockpit controls), 5 WAVs. No game logic. No decompilation needed. |
 | STRATEGY.DLL | 29 MB | 43 (CRT only) | N/A | Resource-only—no game logic |
 
-**Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL is a resource container (BMPs, strings, data tables). COMMON.DLL handles DirectPlay networking.
+**Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL is a resource container (BMPs, strings, data tables). COMMON.DLL is a pure resource container (321 BMPs: buttons, UI toolkit, main menu assets, cockpit speed-control buttons). DirectPlay networking lives in REBEXE.EXE at `0x5a0000–0x5b0000`, which imports `DPLAYX.dll` directly.
 
 ## Scholar Documents (7 analysis docs, 6,049 lines)
 
@@ -125,6 +125,26 @@ ghidra/
 4. Navigate to function: Go → Address → `0x00519d00`
 5. [GhidraMCP](https://github.com/LaurieWired/GhidraMCP) plugin (LaurieWired v11.3.2): `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"`
 6. Jython scripts: Window → Jython → `exec(open("path/to/script.py").read())`
+
+## Frequently Asked Questions
+
+**What is REBEXE.EXE?**
+REBEXE.EXE is the 2.8 MB main executable of Star Wars Rebellion (1998, LucasArts). All game logic—combat, AI, diplomacy, research, events—lives in this binary. STRATEGY.DLL is a resource container only (BMPs, strings, data tables). COMMON.DLL is a pure resource container (321 BMPs: UI buttons, panel chrome, main menu backgrounds, cockpit speed-control buttons; 5 WAVs: UI interaction sounds). DirectPlay networking lives in REBEXE.EXE itself at `0x5a0000–0x5b0000`.
+
+**How many functions were decompiled?**
+5,127 functions—every function >100 bytes—out of 22,741 total identified in REBEXE.EXE. Coverage focuses on game logic: combat, AI deployment, movement, economy, events, and mission systems.
+
+**What is the GNPRTB table?**
+GNPRTB is a 111-parameter lookup table embedded in REBEXE.EXE that governs all combat math: damage formulas, accuracy, repair rates, and balance scaling. Parameter 0x1400 specifically controls orbital bombardment damage. The table has 34 general parameters (28 base + 6 per-side) and 77 combat parameters (25 base + 52 per-side).
+
+**How does space combat work?**
+Space combat resolves through a 7-phase pipeline. Phase 1 loads GNPRTB parameters. Phases 2-6 compute fleet power ratios, apply modifiers, iterate unit-by-unit damage, and resolve outcomes. Phase 7 writes results. The entry point is FUN_00549910; the main resolution loop is FUN_00544030.
+
+**Is the AI tick-based or event-driven?**
+Event-driven. Message 0x1f0 (day tick notification) triggers AI evaluation once per game-day via the CNotifyObject observer pattern. There is no fixed tick interval—the master turn function FUN_004927c0 (9,000 lines) processes all AI logic each day.
+
+**Can I use this for modding?**
+Yes. The Modders Taxonomy document maps all 10 game systems to specific function addresses and GNPRTB parameters with guidance for total conversion mods. The GNPRTB table is the primary lever for rebalancing combat, and all mission probability formulas are documented with their MSTB table inputs.
 
 ## Relationship to Open Rebellion
 
