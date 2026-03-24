@@ -63,6 +63,10 @@ pub enum PanelAction {
     FocusFleetSystem(SystemKey),
     /// Assign a character to a fleet as commander.
     AssignCharacterToFleet { character: CharacterKey, fleet: FleetKey },
+    /// Remove a character from a fleet.
+    RemoveCharacterFromFleet { character: CharacterKey, fleet: FleetKey },
+    /// Merge fleet_b into fleet_a (ships, fighters, characters transfer).
+    MergeFleets { fleet_a: FleetKey, fleet_b: FleetKey },
 
     // ── Manufacturing ─────────────────────────────────────────────────────────
     /// Add a buildable to the production queue at a system.

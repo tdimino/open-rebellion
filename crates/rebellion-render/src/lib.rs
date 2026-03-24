@@ -241,6 +241,8 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
 
     // ── Right-click context menu ─────────────────────────────────────────────
     // Open context menu only on a short right-click (no drag).
+    // NOTE: Do NOT clear right_click_start here — main.rs needs to read it
+    // for fleet hover detection before it gets cleared. main.rs clears it.
     if is_mouse_button_released(MouseButton::Right) && mx < map_width {
         let was_drag = state.right_click_start.map_or(true, |(sx, sy)| {
             let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
@@ -256,7 +258,6 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
                 state.context_menu_fleet = None;
             }
         }
-        state.right_click_start = None;
     }
 
     CameraView {
@@ -619,12 +620,9 @@ pub fn draw_fleet_context_menu(
                 keep_open = false;
             }
 
-            // Only show Move if not already in transit
-            if movement_state.get(fleet_key).is_none() {
-                if ui.button(egui::RichText::new("Issue Move Order").color(theme::TEXT_PRIMARY).size(11.0)).clicked() {
-                    action = Some(PanelAction::InitiateFleetMove { destination: fleet.location });
-                    keep_open = false;
-                }
+            // Transit status
+            if movement_state.get(fleet_key).is_some() {
+                ui.label(egui::RichText::new("In transit").color(theme::WARNING_AMBER).size(10.0));
             }
 
             ui.add_space(2.0);

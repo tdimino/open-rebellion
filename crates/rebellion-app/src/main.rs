@@ -1029,7 +1029,9 @@ async fn main() {
                     cam.screen_height,
                 );
 
-                // 3b. Fleet hover detection — check if right-click landed on a fleet
+                // 3b. Fleet hover detection — check if right-click landed on a fleet.
+                // Fleet takes priority over system — overrides the system menu set
+                // by draw_galaxy_map if both are under cursor.
                 {
                     let (mx, my) = mouse_position();
                     if is_mouse_button_released(macroquad::input::MouseButton::Right) && mx < cam.map_width {
@@ -1037,7 +1039,6 @@ async fn main() {
                             ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt() > 5.0
                         });
                         if !was_drag {
-                            // Fleet takes priority over system if both are under cursor
                             if let Some(fleet_key) = hovered_fleet(
                                 &world,
                                 &movement_state,
@@ -1053,6 +1054,9 @@ async fn main() {
                                 map_state.context_menu_system = None;
                             }
                         }
+                        // Clear right_click_start after both draw_galaxy_map and this
+                        // check have had a chance to read it.
+                        map_state.right_click_start = None;
                     }
                 }
 
@@ -1068,7 +1072,7 @@ async fn main() {
                     }
                     if show_fleets {
                         if let Some(action) =
-                            draw_fleets(ctx, &world, &mut fleets_state, player_faction)
+                            draw_fleets(ctx, &world, &movement_state, &mut fleets_state, player_faction)
                         {
                             panel_actions.push(action);
                         }
@@ -1245,7 +1249,7 @@ fn apply_panel_action(
     map_state: &mut GalaxyMapState,
     mfg_state: &mut ManufacturingState,
     mission_state: &mut MissionState,
-    _movement_state: &mut MovementState,
+    movement_state: &mut MovementState,
     fog_state: &mut FogState,
     ai_state: &mut AIState,
     research_state: &mut ResearchState,
@@ -1283,6 +1287,98 @@ fn apply_panel_action(
                     f.characters.push(character);
                 }
             }
+            if let Some(c) = world.characters.get_mut(character) {
+                let name = c.name.clone();
+                c.current_fleet = Some(fleet);
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("{} assigned to fleet", name),
+                    MessageCategory::Event,
+                ));
+            }
+        }
+        PanelAction::RemoveCharacterFromFleet { character, fleet } => {
+            if let Some(f) = world.fleets.get_mut(fleet) {
+                f.characters.retain(|&c| c != character);
+            }
+            if let Some(c) = world.characters.get_mut(character) {
+                let name = c.name.clone();
+                c.current_fleet = None;
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("{} removed from fleet", name),
+                    MessageCategory::Event,
+                ));
+            }
+        }
+        PanelAction::MergeFleets { fleet_a, fleet_b } => {
+            // Guard: both fleets must still exist and neither should be in transit.
+            let a_exists = world.fleets.contains_key(fleet_a);
+            let b_exists = world.fleets.contains_key(fleet_b);
+            let a_transit = movement_state.get(fleet_a).is_some();
+            let b_transit = movement_state.get(fleet_b).is_some();
+
+            if !a_exists || !b_exists || a_transit || b_transit {
+                // Abort silently — stale action from a previous frame.
+            } else {
+                // Transfer all ships, fighters, and characters from fleet_b into fleet_a.
+                let source = world.fleets.get(fleet_b).unwrap();
+                let ships = source.capital_ships.clone();
+                let fighters = source.fighters.clone();
+                let chars = source.characters.clone();
+                let had_ds = source.has_death_star;
+
+                let dest = world.fleets.get_mut(fleet_a).unwrap();
+                // Merge capital ships
+                for entry in ships {
+                    if let Some(existing) = dest.capital_ships.iter_mut().find(|e| e.class == entry.class) {
+                        existing.count += entry.count;
+                    } else {
+                        dest.capital_ships.push(entry);
+                    }
+                }
+                // Merge fighters
+                for entry in fighters {
+                    if let Some(existing) = dest.fighters.iter_mut().find(|e| e.class == entry.class) {
+                        existing.count += entry.count;
+                    } else {
+                        dest.fighters.push(entry);
+                    }
+                }
+                // Merge characters + update current_fleet
+                for ck in &chars {
+                    if let Some(c) = world.characters.get_mut(*ck) {
+                        c.current_fleet = Some(fleet_a);
+                    }
+                }
+                let dest = world.fleets.get_mut(fleet_a).unwrap();
+                for ck in chars {
+                    if !dest.characters.contains(&ck) {
+                        dest.characters.push(ck);
+                    }
+                }
+                if had_ds {
+                    dest.has_death_star = true;
+                }
+
+                // Cancel any movement order for fleet_b (defensive).
+                movement_state.cancel(fleet_b);
+
+                // Remove fleet_b from its system's fleet list and from the world.
+                if let Some(source) = world.fleets.get(fleet_b) {
+                    let loc = source.location;
+                    if let Some(sys) = world.systems.get_mut(loc) {
+                        sys.fleets.retain(|&fk| fk != fleet_b);
+                    }
+                }
+                world.fleets.remove(fleet_b);
+            }
+
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                "Fleets merged".to_string(),
+                MessageCategory::Event,
+            ));
         }
         PanelAction::Enqueue {
             system,
