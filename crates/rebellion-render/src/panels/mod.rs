@@ -19,9 +19,12 @@
 //! egui_macroquad::draw();
 //! ```
 
+pub mod bombardment;
+pub mod death_star;
 pub mod fleets;
 pub mod game_setup;
 pub mod jedi;
+pub mod loyalty;
 pub mod manufacturing;
 pub mod missions;
 pub mod mod_manager;
@@ -140,6 +143,23 @@ pub enum PanelAction {
     /// Start fleet movement selection — player picks which fleet to move.
     InitiateFleetMove {
         destination: SystemKey,
+    },
+
+    // ── Bombardment ──────────────────────────────────────────────────
+    /// Order orbital bombardment from a fleet against its current system.
+    OrderBombardment {
+        fleet: FleetKey,
+        system: SystemKey,
+    },
+
+    // ── Death Star ───────────────────────────────────────────────────
+    /// Fire the Death Star superlaser at a system.
+    FireDeathStar {
+        system: SystemKey,
+    },
+    /// Move the Death Star fleet to a target system.
+    MoveDeathStar {
+        system: SystemKey,
     },
 
     // ── Play-testing (command palette) ────────────────────────────────

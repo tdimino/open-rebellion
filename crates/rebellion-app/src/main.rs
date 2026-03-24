@@ -41,6 +41,9 @@ use rebellion_render::{
 };
 use rebellion_render::panels::research::{draw_research, ResearchPanelState};
 use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
+use rebellion_render::panels::bombardment::{draw_bombardment, BombardmentPanelState};
+use rebellion_render::panels::death_star::draw_death_star;
+use rebellion_render::panels::loyalty::draw_loyalty;
 
 /// Top-level game mode state machine.
 ///
@@ -289,6 +292,7 @@ async fn main() {
     let mut enc_state = EncyclopediaState::new();
     let mut research_panel_state = ResearchPanelState::default();
     let mut jedi_panel_state = JediPanelState::default();
+    let mut bombardment_panel_state = BombardmentPanelState::default();
     let mut mod_manager_state = rebellion_render::ModManagerState::default();
     #[cfg(debug_assertions)]
     let mut command_palette_state = rebellion_render::CommandPaletteState::new();
@@ -308,6 +312,9 @@ async fn main() {
     let mut show_missions = false;
     let mut show_research = false;
     let mut show_jedi = false;
+    let mut show_bombardment = false;
+    let mut show_death_star = false;
+    let mut show_loyalty = false;
 
     // ── Audio state ─────────────────────────────────────────────────────────
     let mut audio_vol = AudioVolumeState::default();
@@ -419,6 +426,45 @@ async fn main() {
                     show_manufacturing = false;
                     show_missions = false;
                     show_research = false;
+                }
+            }
+            if is_key_pressed(KeyCode::B) {
+                show_bombardment = !show_bombardment;
+                if show_bombardment {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                    show_research = false;
+                    show_jedi = false;
+                    show_death_star = false;
+                    show_loyalty = false;
+                }
+            }
+            if is_key_pressed(KeyCode::D) {
+                show_death_star = !show_death_star;
+                if show_death_star {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                    show_research = false;
+                    show_jedi = false;
+                    show_bombardment = false;
+                    show_loyalty = false;
+                }
+            }
+            if is_key_pressed(KeyCode::L) {
+                show_loyalty = !show_loyalty;
+                if show_loyalty {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                    show_research = false;
+                    show_jedi = false;
+                    show_bombardment = false;
+                    show_death_star = false;
                 }
             }
             if is_key_pressed(KeyCode::E) {
@@ -1123,6 +1169,35 @@ async fn main() {
                             panel_actions.push(action);
                         }
                     }
+                    if show_bombardment {
+                        if let Some(action) = draw_bombardment(
+                            ctx,
+                            &world,
+                            &mut bombardment_panel_state,
+                            player_faction,
+                        ) {
+                            panel_actions.push(action);
+                        }
+                    }
+                    if show_death_star {
+                        if let Some(action) = draw_death_star(
+                            ctx,
+                            &world,
+                            &death_star_state,
+                            player_faction,
+                        ) {
+                            panel_actions.push(action);
+                        }
+                    }
+                    if show_loyalty {
+                        if let Some(action) = draw_loyalty(
+                            ctx,
+                            &world,
+                            player_faction,
+                        ) {
+                            panel_actions.push(action);
+                        }
+                    }
 
                     // Encyclopedia (floating window)
                     if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state) {
@@ -1202,6 +1277,7 @@ async fn main() {
                 &mut ai_state,
                 &mut research_state,
                 &mut jedi_state,
+                &death_star_state,
                 &mut msg_log,
                 &mut player_faction,
                 &mut clock,
@@ -1254,6 +1330,7 @@ fn apply_panel_action(
     ai_state: &mut AIState,
     research_state: &mut ResearchState,
     jedi_state: &mut JediState,
+    death_star_state: &DeathStarState,
     msg_log: &mut MessageLog,
     player_faction: &mut MissionFaction,
     clock: &mut GameClock,
@@ -1477,6 +1554,64 @@ fn apply_panel_action(
             // and open the fleets panel for move order dispatch.
             map_state.selected_system = Some(destination);
             // TODO: implement fleet move selection flow in fleets panel.
+        }
+        PanelAction::OrderBombardment { fleet, system } => {
+            let result = BombardmentSystem::resolve_bombardment(
+                world, fleet, system, 3, // difficulty=3 (alliance_hard)
+                clock.tick,
+            );
+            if let Some(sys) = world.systems.get_mut(system) {
+                // Reduce enemy popularity by damage / 100 (clamped to 0.0).
+                let pop_reduction = result.damage as f32 / 100.0;
+                // Determine which faction's popularity to reduce.
+                if let Some(f) = world.fleets.get(fleet) {
+                    if f.is_alliance {
+                        sys.popularity_empire = (sys.popularity_empire - pop_reduction).max(0.0);
+                    } else {
+                        sys.popularity_alliance = (sys.popularity_alliance - pop_reduction).max(0.0);
+                    }
+                }
+            }
+            msg_log.push(GameMessage::new(
+                clock.tick,
+                format!("Orbital bombardment — {} damage", result.damage),
+                MessageCategory::Combat,
+            ));
+        }
+        PanelAction::FireDeathStar { system } => {
+            if let Some(sys) = world.systems.get_mut(system) {
+                let name = sys.name.clone();
+                sys.is_destroyed = true;
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("{} DESTROYED by Death Star superlaser!", name),
+                    MessageCategory::Combat,
+                ));
+            }
+        }
+        PanelAction::MoveDeathStar { system } => {
+            // Issue a movement order for the Death Star fleet to the target system.
+            if let Some(fleet_key) = death_star_state.death_star_fleet {
+                if let Some(fleet) = world.fleets.get(fleet_key) {
+                    let origin = fleet.location;
+                    if origin != system {
+                        let ticks = rebellion_core::movement::fleet_transit_ticks(
+                            fleet, world, origin, system,
+                        );
+                        let dest_name = world.systems.get(system)
+                            .map(|s| s.name.clone())
+                            .unwrap_or_else(|| "Unknown".to_string());
+                        movement_state.order(
+                            fleet_key, origin, system, ticks,
+                        );
+                        msg_log.push(GameMessage::new(
+                            clock.tick,
+                            format!("Death Star fleet moving to {} ({} days)", dest_name, ticks),
+                            MessageCategory::Event,
+                        ));
+                    }
+                }
+            }
         }
         PanelAction::AdvanceTicks(n) => {
             // Force-advance N ticks synchronously.
