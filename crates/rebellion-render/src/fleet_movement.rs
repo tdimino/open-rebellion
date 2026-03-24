@@ -155,6 +155,74 @@ pub fn draw_fleet_overlays(
     draw_transit_routes(world, movement_state, cam_x, cam_y, zoom, map_width, sh);
 }
 
+/// Find the fleet (if any) under the mouse cursor at (mx, my) screen position.
+///
+/// Checks stationary fleet diamonds and in-transit fleet dots.
+/// Returns `Some(FleetKey)` for the nearest fleet within hit radius.
+pub fn hovered_fleet(
+    world: &GameWorld,
+    movement_state: &MovementState,
+    cam_x: f32,
+    cam_y: f32,
+    zoom: f32,
+    map_width: f32,
+    sh: f32,
+    mx: f32,
+    my: f32,
+) -> Option<rebellion_core::ids::FleetKey> {
+    let hit_radius = (FLEET_ICON_RADIUS * zoom + 4.0).max(8.0);
+    let mut best: Option<(rebellion_core::ids::FleetKey, f32)> = None;
+
+    // Check stationary fleets
+    for (fleet_key, fleet) in world.fleets.iter() {
+        if movement_state.get(fleet_key).is_some() {
+            continue;
+        }
+        let system = match world.systems.get(fleet.location) {
+            Some(s) => s,
+            None => continue,
+        };
+        let (sx, sy) = to_screen(system.x as f32, system.y as f32, cam_x, cam_y, zoom, map_width, sh);
+        if !in_viewport(sx, sy, map_width, sh) {
+            continue;
+        }
+        let r = (FLEET_ICON_RADIUS * zoom).max(2.5);
+        // Diamond is offset above system dot
+        let dy = sy - r - 2.0 * zoom;
+        let dist = ((mx - sx).powi(2) + (my - dy).powi(2)).sqrt();
+        if dist < hit_radius {
+            if best.map_or(true, |(_, bd)| dist < bd) {
+                best = Some((fleet_key, dist));
+            }
+        }
+    }
+
+    // Check in-transit fleets
+    for (_fleet_key, order) in movement_state.orders().iter() {
+        let origin_sys = match world.systems.get(order.origin) {
+            Some(s) => s,
+            None => continue,
+        };
+        let dest_sys = match world.systems.get(order.destination) {
+            Some(s) => s,
+            None => continue,
+        };
+        let (ox, oy) = to_screen(origin_sys.x as f32, origin_sys.y as f32, cam_x, cam_y, zoom, map_width, sh);
+        let (dx, dy) = to_screen(dest_sys.x as f32, dest_sys.y as f32, cam_x, cam_y, zoom, map_width, sh);
+        let t = order.progress();
+        let fx = ox + (dx - ox) * t;
+        let fy = oy + (dy - oy) * t;
+        let dist = ((mx - fx).powi(2) + (my - fy).powi(2)).sqrt();
+        if dist < hit_radius {
+            if best.map_or(true, |(_, bd)| dist < bd) {
+                best = Some((order.fleet, dist));
+            }
+        }
+    }
+
+    best.map(|(k, _)| k)
+}
+
 /// Draw diamond icons for fleets that are NOT currently in transit.
 fn draw_stationary_fleets(
     world: &GameWorld,

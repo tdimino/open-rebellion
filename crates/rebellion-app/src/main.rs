@@ -29,9 +29,11 @@ use rebellion_core::world::{ControlKind, GameWorld, MstbTable};
 
 use rebellion_render::{
     draw_encyclopedia, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
-    draw_galaxy_map, draw_game_setup, draw_main_menu, draw_manufacturing,
-    draw_message_log, draw_missions, draw_officers,
-    draw_status_bar, draw_system_info_panel, AudioVolumeState, Difficulty, EncyclopediaState,
+    draw_fleet_context_menu, draw_galaxy_map, draw_game_setup, draw_main_menu,
+    draw_manufacturing, draw_message_log, draw_missions, draw_officers,
+    draw_status_bar, draw_system_context_menu, draw_system_info_panel,
+    hovered_fleet,
+    AudioVolumeState, Difficulty, EncyclopediaState,
     FleetsState, GalaxyMapState, GameMessage, GameSetupAction, GameSetupState,
     MainMenuAction, ManufacturingPanelState,
     MessageCategory, MessageLog, MessageLogState, MissionsPanelState, OfficersState, PanelAction,
@@ -1027,6 +1029,33 @@ async fn main() {
                     cam.screen_height,
                 );
 
+                // 3b. Fleet hover detection — check if right-click landed on a fleet
+                {
+                    let (mx, my) = mouse_position();
+                    if is_mouse_button_released(macroquad::input::MouseButton::Right) && mx < cam.map_width {
+                        let was_drag = map_state.right_click_start.map_or(true, |(sx, sy)| {
+                            ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt() > 5.0
+                        });
+                        if !was_drag {
+                            // Fleet takes priority over system if both are under cursor
+                            if let Some(fleet_key) = hovered_fleet(
+                                &world,
+                                &movement_state,
+                                cam.cam_x,
+                                cam.cam_y,
+                                cam.zoom,
+                                cam.map_width,
+                                cam.screen_height,
+                                mx,
+                                my,
+                            ) {
+                                map_state.context_menu_fleet = Some((fleet_key, mx, my));
+                                map_state.context_menu_system = None;
+                            }
+                        }
+                    }
+                }
+
                 // 4. All egui panels in a single ui() + draw() pass
                 egui_macroquad::ui(|ctx| {
                     // War Room panels (mutually exclusive left panels)
@@ -1133,6 +1162,18 @@ async fn main() {
 
                     // System info panel (right side)
                     draw_system_info_panel(ctx, &world, &map_state);
+
+                    // Context menus (floating, triggered by right-click)
+                    if let Some(action) = draw_system_context_menu(
+                        ctx, &world, &mut map_state, player_faction,
+                    ) {
+                        panel_actions.push(action);
+                    }
+                    if let Some(action) = draw_fleet_context_menu(
+                        ctx, &world, &movement_state, &mut map_state,
+                    ) {
+                        panel_actions.push(action);
+                    }
 
                     // Message log (bottom panel, above status bar)
                     draw_message_log(ctx, &msg_log, &mut log_state);
@@ -1327,6 +1368,19 @@ fn apply_panel_action(
                 format!("Reloaded {} mods", mod_runtime.discovered.len()),
                 MessageCategory::Event,
             ));
+        }
+        PanelAction::OpenMissionTo { target, kind: _, faction: _ } => {
+            // Select the target system and open missions panel.
+            // The mission panel will let the player pick character + confirm.
+            map_state.selected_system = Some(target);
+            // TODO: pre-select mission kind in MissionsPanelState when
+            // the panel supports target pre-selection.
+        }
+        PanelAction::InitiateFleetMove { destination } => {
+            // Select the destination system so the player can see it,
+            // and open the fleets panel for move order dispatch.
+            map_state.selected_system = Some(destination);
+            // TODO: implement fleet move selection flow in fleets panel.
         }
         PanelAction::AdvanceTicks(n) => {
             // Force-advance N ticks synchronously.
