@@ -130,6 +130,33 @@ Delivered:
 
 Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 
+## UI Rebuild — IN PROGRESS
+*v0.16.0 — Player-facing UI rebuild following `docs/plans/2026-03-22-001-feat-complete-game-ui-rebuild-plan.md`*
+
+### Completed (2026-03-23/24)
+- Phase 1.1: Main Menu Screen (title, New Game / Load Game / Quit)
+- Phase 1.2: Game Setup (galaxy size, difficulty, faction selection)
+- Phase 1.4: TEXTSTRA.DLL string extraction (1,347 entity names)
+- Phase 2.4: Star Wars egui theme (dark space + gold/amber accents, Liberation Sans)
+- Phase 3.3: System Context Menu (right-click: control, popularity, garrison, actions)
+- Phase 3.4: Fleet Context Menu (right-click: composition, commander, transit, actions)
+- Phase 4.1: Research Panel (3 tech tree tabs, progress bars, character assignment)
+- Phase 4.2: Jedi Training Panel (Force roster, XP bars, training controls)
+- Phase 4.3: Fleet Composition Editor (assign/remove officers, merge fleets)
+- Phase 4.7: Expanded System Detail Panel (fleets, troops, facilities, popularity bars)
+- Phase 4.8: Character Detail View (skills, Force progression, location, assignment)
+
+### Remaining
+- Phase 2.1-2.2: Cockpit Frame + Control Buttons (requires BMP asset loading)
+- Phase 2.3: Droid Advisor System (148 animation frames + BIN data)
+- Phase 3.1: Facility Status Icons (33 sprites on galaxy map)
+- Phase 3.2: Sector Boundaries (polygon outlines)
+- Phase 3.5: Blockade Visual Indicators
+- Phase 4.4-4.6: Bombardment, Death Star, Loyalty panels
+- Phase 5: Tactical Combat View
+- Phase 6: Audio Integration (285 voice lines + soundtrack)
+- Phase 7: Visual Polish (upscaled BMPs, portraits, ship sprites)
+
 ## AI Parity Status (as of 2026-03-23)
 
 Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchitect2018 wiki cross-reference. **All "BY DESIGN" guesses resolved.** See `agent_docs/systems/ai-parity-tracker.md` for full matrix.

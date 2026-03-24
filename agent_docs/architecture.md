@@ -64,20 +64,25 @@ crates/rebellion-core/src/
 
 ```
 crates/rebellion-render/src/
+├── lib.rs              — Galaxy map (pan/zoom/click), system info panel, context menus (system + fleet)
+├── main_menu.rs        — Title screen with New Game / Load Game / Quit
+├── theme.rs            — Star Wars egui theme: dark space bg, gold/amber accents, Liberation Sans font
 ├── message_log.rs      — Scrollable egui event feed, 7 color-coded categories (380 LOC)
-├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels (280 LOC)
+├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels, fleet hover detection
 ├── fog.rs              — Dim overlays for unexplored/unseen systems
 ├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget)
 ├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
 ├── combat_view.rs      — Combat results integration into message log
 ├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
-    ├── mod.rs           — PanelAction enum (including SaveGame/LoadGame)
-    ├── faction_select.rs — Empire/Alliance choice modal
-    ├── officers.rs       — Character roster with skill bars
-    ├── fleets.rs         — Fleet composition browser
+    ├── mod.rs           — PanelAction enum (28 variants, including context menu actions)
+    ├── game_setup.rs    — Galaxy size, difficulty, faction selection (replaces faction_select)
+    ├── officers.rs       — Character roster with skill bars, full detail view (Force, location, skills)
+    ├── fleets.rs         — Fleet editor: composition, assign/remove officers, merge fleets
     ├── manufacturing.rs  — Production queue manager
     ├── missions.rs       — Mission dispatch with probability preview
+    ├── research.rs       — 3 tech tree tabs, active project progress, character assignment
+    ├── jedi.rs           — Force-sensitive roster, tier progression, training controls
     ├── save_load.rs      — Save/load UI: 10 slots, auto-save
     ├── mod_manager.rs    — Mod Manager: discover, enable/disable, reload, dependency display
     └── command_palette.rs — VS Code-style fuzzy command palette (nucleo-matcher, debug-only)
@@ -161,8 +166,8 @@ Each frame:
     ResearchSystem::advance     → ResearchResults  → advance tech levels
     JediSystem::advance         → JediEvents       → tier advancement, detection
     VictorySystem::check        → VictoryOutcome?  → end game if terminal condition met
-  draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays
-  egui_macroquad::ui: panels + encyclopedia + system_info + message_log + status_bar
+  draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays → hovered_fleet (fleet context menu detection)
+  egui_macroquad::ui: panels + context_menus + encyclopedia + system_info + message_log + status_bar
 ```
 
 ### Fleet Arrival Lifecycle
@@ -191,15 +196,20 @@ Round-trip validation is enforced inside `parse_and_dump` in `tools/dat-dumper/s
 1. `draw_galaxy_map(world, state) -> CameraView` -- star map with pan/zoom/click, returns camera params
 2. `draw_fog_overlay(world, fog, cam)` -- dim non-visible systems
 3. `draw_fleet_overlays(world, movement, cam)` -- fleet icons and route lines
-4. `draw_system_info_panel(ctx, world, state)` -- egui right panel (selected system)
-5. `draw_status_bar(ctx, world, clock, audio_vol)` -- bottom bar with speed/audio controls
-6. `draw_message_log(ctx, log, state)` -- scrollable event feed
-7. Panel functions: `draw_faction_select`, `draw_officers`, `draw_fleets`, `draw_manufacturing`, `draw_missions`
-8. `draw_encyclopedia(ctx, world, state)` -- floating 4-tab entity browser
+4. `hovered_fleet(world, movement, cam, mx, my) -> Option<FleetKey>` -- fleet hit detection for context menus
+5. `draw_system_info_panel(ctx, world, state)` -- egui right panel (selected system)
+6. `draw_system_context_menu(ctx, world, state, faction) -> Option<PanelAction>` -- right-click system popup
+7. `draw_fleet_context_menu(ctx, world, movement, state) -> Option<PanelAction>` -- right-click fleet popup
+8. `draw_status_bar(ctx, world, clock, audio_vol)` -- bottom bar with speed/audio controls
+9. `draw_message_log(ctx, log, state)` -- scrollable event feed
+10. Panel functions: `draw_officers`, `draw_fleets`, `draw_manufacturing`, `draw_missions`, `draw_research`, `draw_jedi`
+11. `draw_encyclopedia(ctx, world, state)` -- floating 4-tab entity browser
+12. `draw_main_menu(ctx) -> MainMenuAction` -- title screen
+13. `draw_game_setup(ctx, state) -> GameSetupAction` -- new game config
 
-`GalaxyMapState` holds all mutable UI state: camera position, zoom, selected/hovered system, drag tracking.
+`GalaxyMapState` holds all mutable UI state: camera position, zoom, selected/hovered system, drag tracking, context menu state (system + fleet), right-click start position.
 
-Input: mouse within map area only. Right-drag pans, scroll zooms (0.3x-5.0x). Left-click selects nearest system within hover radius.
+Input: mouse within map area only. Right-drag pans, scroll zooms (0.3x-5.0x). Left-click selects nearest system within hover radius. Right-click (no drag) opens context menu on hovered system or fleet.
 
 ## Adding a New Entity Type
 
