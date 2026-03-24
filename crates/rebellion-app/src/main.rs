@@ -1556,43 +1556,60 @@ fn apply_panel_action(
             // TODO: implement fleet move selection flow in fleets panel.
         }
         PanelAction::OrderBombardment { fleet, system } => {
-            let result = BombardmentSystem::resolve_bombardment(
-                world, fleet, system, 3, // difficulty=3 (alliance_hard)
-                clock.tick,
-            );
-            if let Some(sys) = world.systems.get_mut(system) {
-                // Reduce enemy popularity by damage / 100 (clamped to 0.0).
-                let pop_reduction = result.damage as f32 / 100.0;
-                // Determine which faction's popularity to reduce.
-                if let Some(f) = world.fleets.get(fleet) {
-                    if f.is_alliance {
-                        sys.popularity_empire = (sys.popularity_empire - pop_reduction).max(0.0);
-                    } else {
-                        sys.popularity_alliance = (sys.popularity_alliance - pop_reduction).max(0.0);
+            // Guard: both fleet and system must still exist (prevents panic in resolve).
+            if world.fleets.contains_key(fleet) && world.systems.contains_key(system) {
+                let result = BombardmentSystem::resolve_bombardment(
+                    world, fleet, system, 2, // difficulty=2 (medium); TODO: use actual game difficulty
+                    clock.tick,
+                );
+                if let Some(sys) = world.systems.get_mut(system) {
+                    let pop_reduction = (result.damage as f32 / 100.0).min(0.25);
+                    if let Some(f) = world.fleets.get(fleet) {
+                        if f.is_alliance {
+                            sys.popularity_empire = (sys.popularity_empire - pop_reduction).clamp(0.0, 1.0);
+                        } else {
+                            sys.popularity_alliance = (sys.popularity_alliance - pop_reduction).clamp(0.0, 1.0);
+                        }
                     }
                 }
-            }
-            msg_log.push(GameMessage::new(
-                clock.tick,
-                format!("Orbital bombardment — {} damage", result.damage),
-                MessageCategory::Combat,
-            ));
-        }
-        PanelAction::FireDeathStar { system } => {
-            if let Some(sys) = world.systems.get_mut(system) {
-                let name = sys.name.clone();
-                sys.is_destroyed = true;
                 msg_log.push(GameMessage::new(
                     clock.tick,
-                    format!("{} DESTROYED by Death Star superlaser!", name),
+                    format!("Orbital bombardment — {} damage", result.damage),
                     MessageCategory::Combat,
                 ));
+            }
+        }
+        PanelAction::FireDeathStar { system } => {
+            // Use DeathStarSystem::fire() for precondition validation (guards from Ghidra RE).
+            if let Some(evt) = DeathStarSystem::fire(world, system, clock.tick) {
+                if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. } = evt {
+                    let name = world.systems.get(system)
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    if let Some(sys) = world.systems.get_mut(system) {
+                        sys.is_destroyed = true;
+                    }
+                    // TODO: update victory_state.death_star_location (needs &mut VictoryState)
+                    // TODO: clean up entities at destroyed system (fleets, troops, facilities)
+                    msg_log.push(GameMessage::new(
+                        clock.tick,
+                        format!("{} DESTROYED by Death Star superlaser!", name),
+                        MessageCategory::Combat,
+                    ));
+                }
             }
         }
         PanelAction::MoveDeathStar { system } => {
             // Issue a movement order for the Death Star fleet to the target system.
             if let Some(fleet_key) = death_star_state.death_star_fleet {
-                if let Some(fleet) = world.fleets.get(fleet_key) {
+                // Don't issue if already in transit.
+                if movement_state.get(fleet_key).is_some() {
+                    msg_log.push(GameMessage::new(
+                        clock.tick,
+                        "Death Star fleet is already in transit".to_string(),
+                        MessageCategory::Event,
+                    ));
+                } else if let Some(fleet) = world.fleets.get(fleet_key) {
                     let origin = fleet.location;
                     if origin != system {
                         let ticks = rebellion_core::movement::fleet_transit_ticks(

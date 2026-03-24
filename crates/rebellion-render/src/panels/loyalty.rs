@@ -31,6 +31,7 @@ pub fn draw_loyalty(
             let mut systems: Vec<(&str, f32, f32, bool, bool)> = Vec::new();
 
             for (_, system) in world.systems.iter() {
+                if system.is_destroyed { continue; }
                 let our_pop = if is_alliance {
                     system.popularity_alliance
                 } else {
@@ -56,7 +57,7 @@ pub fn draw_loyalty(
             systems.sort_by(|a, b| {
                 let a_danger = if a.4 { -1.0 } else { a.1 };
                 let b_danger = if b.4 { -1.0 } else { b.1 };
-                a_danger.partial_cmp(&b_danger).unwrap()
+                a_danger.partial_cmp(&b_danger).unwrap_or(std::cmp::Ordering::Equal)
             });
 
             // ── Summary counts ───────────────────────────────────────

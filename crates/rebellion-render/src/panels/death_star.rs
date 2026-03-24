@@ -210,7 +210,7 @@ fn draw_empire_view(
                     }
                 }
             }
-            nearby.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+            nearby.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
             nearby.truncate(8);
 
             if nearby.is_empty() {
