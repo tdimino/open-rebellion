@@ -26,27 +26,29 @@
 //! | 0x90/0x92  | System (by DatId)          |
 //! | 0x00  | Null / placeholder (skip)       |
 //!
-//! # Placement logic
+//! # Placement logic (3-system model)
 //!
-//! - **CMUNEFTB** (Empire fleet, 1 group): all ships placed at Coruscant.
-//! - **CMUNAFTB** (Alliance fleet, 2 groups): group 1 at Yavin, group 2 at the
-//!   first Alliance-owned system found.  Without text names we approximate by
-//!   using the Yavin DatId for group 1 and the HQ placeholder for group 2.
-//! - **CMUNCRTB / CMUNHQTB / CMUNYVTB**: single-system garrison tables; placed
-//!   at Coruscant, Alliance-HQ, and Yavin respectively.  The first item in each
-//!   group is always `0x00000000` (a null placeholder) and is skipped.
-//! - **CMUNEMTB / CMUNALTB**: multi-group army tables; items with a capital-ship
-//!   id are treated as the fleet component for that group, remaining items as
-//!   ground units at the same system.  Groups are cycled over the faction's
-//!   known starting systems (Coruscant / Yavin order).
-//! - **FACLCRTB / FACLHQTB**: facility tables; placed at Coruscant and Alliance
-//!   HQ respectively.
+//! The original game routes fixed seed tables to exactly 3 special systems:
+//!
+//! - **Coruscant** (Empire HQ): CMUNEFTB (Empire fleet), CMUNCRTB (garrison),
+//!   FACLCRTB (facilities). Palpatine + Vader placed here.
+//! - **Yavin** (Alliance base): CMUNAFTB group 1 (fleet), CMUNYVTB (garrison).
+//!   Luke, Leia, Han, Wedge, Chewbacca, Jan Dodonna placed here.
+//! - **Rebel HQ** (random rim system, NOT Yavin): CMUNAFTB group 2 (fleet),
+//!   CMUNHQTB (garrison), FACLHQTB (facilities). Mon Mothma placed here.
+//!
+//! Army tables (CMUNEMTB, CMUNALTB) are distributed across the faction's
+//! special systems.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Context;
 use dat_dumper::types::seed_table::SeedTableFile;
+use rand::{Rng, SeedableRng};
+use rand::seq::SliceRandom;
+use rand_xoshiro::Xoshiro256PlusPlus;
+use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
 use rebellion_core::ids::*;
 use rebellion_core::world::*;
 
@@ -69,9 +71,106 @@ const CORUSCANT_SEQ_ID: u32 = 0x109;
 const YAVIN_SEQ_ID: u32 = 0x121;
 
 /// Number of starting systems for Empire (HQ + 9 nearest).
+/// Used by the legacy proximity model; kept for backward compatibility.
 const EMPIRE_STARTING_SYSTEMS: usize = 10;
 /// Number of starting systems for Alliance (HQ + 2 nearest).
+/// Used by the legacy proximity model; kept for backward compatibility.
 const ALLIANCE_STARTING_SYSTEMS: usize = 3;
+
+/// The three special systems that receive fixed seed table assets.
+#[derive(Debug, Clone, Copy)]
+pub struct SpecialSystems {
+    /// Coruscant — Empire HQ. Receives CMUNEFTB, CMUNCRTB, FACLCRTB.
+    pub coruscant: SystemKey,
+    /// Yavin — Alliance base. Receives CMUNAFTB group 1, CMUNYVTB.
+    pub yavin: SystemKey,
+    /// Rebel HQ — random rim system (not Yavin). Receives CMUNAFTB group 2,
+    /// CMUNHQTB, FACLHQTB. Mon Mothma placed here.
+    pub rebel_hq: SystemKey,
+    /// The sequential DatId of the rebel HQ system (for lookup purposes).
+    pub rebel_hq_seq_id: u32,
+}
+
+/// Select the 3 special systems for seeding: Coruscant, Yavin, and a random
+/// rim system as the Rebel HQ.
+///
+/// The Rebel HQ is chosen by shuffling all rim systems (RimInner + RimOuter)
+/// and picking the first one that is not Yavin. This matches the original
+/// game's behavior of selecting the first eligible rim system from a shuffled
+/// system list.
+fn select_special_systems<R: Rng + ?Sized>(
+    world: &GameWorld,
+    system_key_map: &HashMap<u32, SystemKey>,
+    rng: &mut R,
+) -> Option<SpecialSystems> {
+    let coruscant_key = system_key_map.get(&CORUSCANT_SEQ_ID).copied()?;
+    let yavin_key = system_key_map.get(&YAVIN_SEQ_ID).copied()?;
+
+    // Collect all rim systems (RimInner + RimOuter) that are not Yavin.
+    // Sort by seq_id first to ensure deterministic ordering before the shuffle,
+    // since HashMap iteration order is non-deterministic.
+    let mut rim_candidates: Vec<(u32, SystemKey)> = system_key_map
+        .iter()
+        .filter_map(|(&seq_id, &sys_key)| {
+            if seq_id == YAVIN_SEQ_ID {
+                return None; // Yavin is the Alliance base, not eligible for HQ
+            }
+            let sys = world.systems.get(sys_key)?;
+            let sector = world.sectors.get(sys.sector)?;
+            match sector.group {
+                SectorGroup::RimInner | SectorGroup::RimOuter => Some((seq_id, sys_key)),
+                SectorGroup::Core => None,
+            }
+        })
+        .collect();
+
+    // Sort by seq_id for deterministic ordering before shuffle.
+    rim_candidates.sort_by_key(|(seq_id, _)| *seq_id);
+    rim_candidates.shuffle(rng);
+
+    let (rebel_hq_seq_id, rebel_hq_key) = rim_candidates.first().copied()?;
+
+    Some(SpecialSystems {
+        coruscant: coruscant_key,
+        yavin: yavin_key,
+        rebel_hq: rebel_hq_key,
+        rebel_hq_seq_id,
+    })
+}
+
+/// Mark the 3 special systems as populated, charted, and fully controlled
+/// by their respective factions with 100% support.
+fn initialize_special_systems(world: &mut GameWorld, special: &SpecialSystems) {
+    // Coruscant — Empire HQ
+    if let Some(sys) = world.systems.get_mut(special.coruscant) {
+        sys.is_populated = true;
+        sys.exploration_status = ExplorationStatus::Explored;
+        sys.control = ControlKind::Controlled(Faction::Empire);
+        sys.popularity_empire = 1.0;
+        sys.popularity_alliance = 0.0;
+        sys.is_headquarters = true;
+    }
+
+    // Yavin — Alliance base
+    if let Some(sys) = world.systems.get_mut(special.yavin) {
+        sys.is_populated = true;
+        sys.exploration_status = ExplorationStatus::Explored;
+        sys.control = ControlKind::Controlled(Faction::Alliance);
+        sys.popularity_alliance = 1.0;
+        sys.popularity_empire = 0.0;
+        sys.is_headquarters = true;
+    }
+
+    // Rebel HQ — Alliance headquarters (separate from Yavin)
+    if let Some(sys) = world.systems.get_mut(special.rebel_hq) {
+        sys.is_populated = true;
+        sys.exploration_status = ExplorationStatus::Explored;
+        sys.control = ControlKind::Controlled(Faction::Alliance);
+        sys.popularity_alliance = 1.0;
+        sys.popularity_empire = 0.0;
+        sys.is_headquarters = true;
+    }
+}
 
 // ── Family byte constants ─────────────────────────────────────────────────────
 
@@ -175,6 +274,23 @@ pub fn apply_seeds(
     gdata_path: &Path,
     world: &mut GameWorld,
     system_key_map: &HashMap<u32, SystemKey>,
+    seed_options: &SeedOptions,
+) -> anyhow::Result<()> {
+    let mut rng = make_seed_rng(seed_options);
+    apply_seeds_with_rng(gdata_path, world, system_key_map, seed_options, &mut rng)
+}
+
+/// Apply all seed tables with an injected RNG for deterministic tests.
+///
+/// Uses the 3-system model: Coruscant (Empire HQ), Yavin (Alliance base),
+/// and a random rim system as the Rebel HQ. Fixed seed tables are routed
+/// only to these 3 systems, matching the original 1998 game behavior.
+pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
+    gdata_path: &Path,
+    world: &mut GameWorld,
+    system_key_map: &HashMap<u32, SystemKey>,
+    _seed_options: &SeedOptions,
+    rng: &mut R,
 ) -> anyhow::Result<()> {
     // Build class-lookup indices once (avoid repeated arena scans).
     let capship_index: CapShipIndex = world
@@ -188,53 +304,61 @@ pub fn apply_seeds(
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
 
-    // Select starting systems: Empire gets 10, Alliance gets 3.
-    let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
+    // Select the 3 special systems. If Coruscant or Yavin are missing from the
+    // data files, fall back to the legacy proximity model.
+    let special = match select_special_systems(world, system_key_map, rng) {
+        Some(s) => s,
+        None => {
+            // Fallback: use old proximity model if special systems can't be resolved.
+            // This should only happen with incomplete data files.
+            return apply_seeds_legacy(gdata_path, world, system_key_map, &capship_index, &fighter_index);
+        }
+    };
 
-    // ── Empire fleet (CMUNEFTB) ───────────────────────────────────────────────
-    // Fleet groups distributed across Empire starting systems.
+    // Mark special systems as populated, charted, and controlled.
+    initialize_special_systems(world, &special);
+
+    // ── Empire fleet (CMUNEFTB) → Coruscant only ─────────────────────────────
     apply_fleet_seed(
         &load_seed(gdata_path, "CMUNEFTB.DAT")?,
         system_key_map,
         &capship_index,
         &fighter_index,
-        &empire_systems,
-        false, // is_alliance
+        &[CORUSCANT_SEQ_ID],
+        false,
         world,
     );
 
-    // ── Alliance fleet (CMUNAFTB) ─────────────────────────────────────────────
-    // Fleet groups distributed across Alliance starting systems.
+    // ── Alliance fleet (CMUNAFTB) → group 1 at Yavin, group 2 at Rebel HQ ──
     apply_fleet_seed(
         &load_seed(gdata_path, "CMUNAFTB.DAT")?,
         system_key_map,
         &capship_index,
         &fighter_index,
-        &alliance_systems,
-        true, // is_alliance
-        world,
-    );
-
-    // ── Empire army (CMUNEMTB) ────────────────────────────────────────────────
-    // Army groups distributed across Empire starting systems.
-    apply_army_seed(
-        &load_seed(gdata_path, "CMUNEMTB.DAT")?,
-        system_key_map,
-        &empire_systems,
-        false,
-        world,
-    );
-
-    // ── Alliance army (CMUNALTB) ──────────────────────────────────────────────
-    apply_army_seed(
-        &load_seed(gdata_path, "CMUNALTB.DAT")?,
-        system_key_map,
-        &alliance_systems,
+        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
         true,
         world,
     );
 
-    // ── Empire Coruscant garrison (CMUNCRTB) ──────────────────────────────────
+    // ── Empire army (CMUNEMTB) → Coruscant only ─────────────────────────────
+    apply_army_seed(
+        &load_seed(gdata_path, "CMUNEMTB.DAT")?,
+        system_key_map,
+        &[CORUSCANT_SEQ_ID],
+        false,
+        world,
+    );
+
+    // ── Alliance army (CMUNALTB) → Yavin + Rebel HQ ────────────────────────
+    apply_army_seed(
+        &load_seed(gdata_path, "CMUNALTB.DAT")?,
+        system_key_map,
+        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
+        true,
+        world,
+    );
+
+    // ── Empire Coruscant garrison (CMUNCRTB) → Coruscant ────────────────────
     apply_garrison_seed(
         &load_seed(gdata_path, "CMUNCRTB.DAT")?,
         system_key_map,
@@ -243,16 +367,16 @@ pub fn apply_seeds(
         world,
     );
 
-    // ── Alliance HQ garrison (CMUNHQTB) ──────────────────────────────────────
+    // ── Alliance HQ garrison (CMUNHQTB) → Rebel HQ (NOT Yavin) ─────────────
     apply_garrison_seed(
         &load_seed(gdata_path, "CMUNHQTB.DAT")?,
         system_key_map,
-        YAVIN_SEQ_ID,
+        special.rebel_hq_seq_id,
         true,
         world,
     );
 
-    // ── Alliance Yavin garrison (CMUNYVTB) ────────────────────────────────────
+    // ── Alliance Yavin garrison (CMUNYVTB) → Yavin ──────────────────────────
     apply_garrison_seed(
         &load_seed(gdata_path, "CMUNYVTB.DAT")?,
         system_key_map,
@@ -261,7 +385,7 @@ pub fn apply_seeds(
         world,
     );
 
-    // ── Empire Coruscant facilities (FACLCRTB) ────────────────────────────────
+    // ── Empire Coruscant facilities (FACLCRTB) → Coruscant ──────────────────
     apply_facility_seed(
         &load_seed(gdata_path, "FACLCRTB.DAT")?,
         system_key_map,
@@ -270,14 +394,51 @@ pub fn apply_seeds(
         world,
     );
 
-    // ── Alliance HQ facilities (FACLHQTB) ────────────────────────────────────
+    // ── Alliance HQ facilities (FACLHQTB) → Rebel HQ (NOT Yavin) ───────────
     apply_facility_seed(
         &load_seed(gdata_path, "FACLHQTB.DAT")?,
         system_key_map,
-        YAVIN_SEQ_ID,
+        special.rebel_hq_seq_id,
         true,
         world,
     );
+
+    // ── Character stat rolling + placement ──────────────────────────────────
+    roll_character_stats(world, rng);
+    place_named_characters(world, &special);
+
+    Ok(())
+}
+
+/// Legacy seed application using proximity-based fleet spread.
+/// Used as fallback when Coruscant or Yavin can't be found in the data.
+fn apply_seeds_legacy(
+    gdata_path: &Path,
+    world: &mut GameWorld,
+    system_key_map: &HashMap<u32, SystemKey>,
+    capship_index: &CapShipIndex,
+    fighter_index: &FighterIndex,
+) -> anyhow::Result<()> {
+    let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
+
+    apply_fleet_seed(&load_seed(gdata_path, "CMUNEFTB.DAT")?, system_key_map,
+        capship_index, fighter_index, &empire_systems, false, world);
+    apply_fleet_seed(&load_seed(gdata_path, "CMUNAFTB.DAT")?, system_key_map,
+        capship_index, fighter_index, &alliance_systems, true, world);
+    apply_army_seed(&load_seed(gdata_path, "CMUNEMTB.DAT")?, system_key_map,
+        &empire_systems, false, world);
+    apply_army_seed(&load_seed(gdata_path, "CMUNALTB.DAT")?, system_key_map,
+        &alliance_systems, true, world);
+    apply_garrison_seed(&load_seed(gdata_path, "CMUNCRTB.DAT")?, system_key_map,
+        CORUSCANT_SEQ_ID, false, world);
+    apply_garrison_seed(&load_seed(gdata_path, "CMUNHQTB.DAT")?, system_key_map,
+        YAVIN_SEQ_ID, true, world);
+    apply_garrison_seed(&load_seed(gdata_path, "CMUNYVTB.DAT")?, system_key_map,
+        YAVIN_SEQ_ID, true, world);
+    apply_facility_seed(&load_seed(gdata_path, "FACLCRTB.DAT")?, system_key_map,
+        CORUSCANT_SEQ_ID, false, world);
+    apply_facility_seed(&load_seed(gdata_path, "FACLHQTB.DAT")?, system_key_map,
+        YAVIN_SEQ_ID, true, world);
 
     Ok(())
 }
@@ -288,34 +449,96 @@ pub fn apply_seeds_from_files(
     files: &std::collections::HashMap<String, Vec<u8>>,
     world: &mut GameWorld,
     system_key_map: &HashMap<u32, SystemKey>,
+    seed_options: &SeedOptions,
+) -> anyhow::Result<()> {
+    let mut rng = make_seed_rng(seed_options);
+    apply_seeds_from_files_with_rng(files, world, system_key_map, seed_options, &mut rng)
+}
+
+/// Apply seed tables from pre-loaded file bytes with an injected RNG.
+pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
+    files: &std::collections::HashMap<String, Vec<u8>>,
+    world: &mut GameWorld,
+    system_key_map: &HashMap<u32, SystemKey>,
+    _seed_options: &SeedOptions,
+    rng: &mut R,
 ) -> anyhow::Result<()> {
     let capship_index: CapShipIndex = world.capital_ship_classes.iter()
         .map(|(k, v)| (v.dat_id.raw(), k)).collect();
     let fighter_index: FighterIndex = world.fighter_classes.iter()
         .map(|(k, v)| (v.dat_id.raw(), k)).collect();
 
-    let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
+    // Use 3-system model when possible.
+    let special = match select_special_systems(world, system_key_map, rng) {
+        Some(s) => s,
+        None => {
+            // Fallback to proximity model for incomplete data
+            let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
+            apply_fleet_seed(&load_seed_from_files(files, "CMUNEFTB.DAT")?, system_key_map,
+                &capship_index, &fighter_index, &empire_systems, false, world);
+            apply_fleet_seed(&load_seed_from_files(files, "CMUNAFTB.DAT")?, system_key_map,
+                &capship_index, &fighter_index, &alliance_systems, true, world);
+            apply_army_seed(&load_seed_from_files(files, "CMUNEMTB.DAT")?, system_key_map,
+                &empire_systems, false, world);
+            apply_army_seed(&load_seed_from_files(files, "CMUNALTB.DAT")?, system_key_map,
+                &alliance_systems, true, world);
+            apply_garrison_seed(&load_seed_from_files(files, "CMUNCRTB.DAT")?, system_key_map,
+                CORUSCANT_SEQ_ID, false, world);
+            apply_garrison_seed(&load_seed_from_files(files, "CMUNHQTB.DAT")?, system_key_map,
+                YAVIN_SEQ_ID, true, world);
+            apply_garrison_seed(&load_seed_from_files(files, "CMUNYVTB.DAT")?, system_key_map,
+                YAVIN_SEQ_ID, true, world);
+            apply_facility_seed(&load_seed_from_files(files, "FACLCRTB.DAT")?, system_key_map,
+                CORUSCANT_SEQ_ID, false, world);
+            apply_facility_seed(&load_seed_from_files(files, "FACLHQTB.DAT")?, system_key_map,
+                YAVIN_SEQ_ID, true, world);
+            return Ok(());
+        }
+    };
+
+    initialize_special_systems(world, &special);
 
     apply_fleet_seed(&load_seed_from_files(files, "CMUNEFTB.DAT")?, system_key_map,
-        &capship_index, &fighter_index, &empire_systems, false, world);
+        &capship_index, &fighter_index, &[CORUSCANT_SEQ_ID], false, world);
     apply_fleet_seed(&load_seed_from_files(files, "CMUNAFTB.DAT")?, system_key_map,
-        &capship_index, &fighter_index, &alliance_systems, true, world);
+        &capship_index, &fighter_index, &[YAVIN_SEQ_ID, special.rebel_hq_seq_id], true, world);
     apply_army_seed(&load_seed_from_files(files, "CMUNEMTB.DAT")?, system_key_map,
-        &empire_systems, false, world);
+        &[CORUSCANT_SEQ_ID], false, world);
     apply_army_seed(&load_seed_from_files(files, "CMUNALTB.DAT")?, system_key_map,
-        &alliance_systems, true, world);
+        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id], true, world);
     apply_garrison_seed(&load_seed_from_files(files, "CMUNCRTB.DAT")?, system_key_map,
         CORUSCANT_SEQ_ID, false, world);
     apply_garrison_seed(&load_seed_from_files(files, "CMUNHQTB.DAT")?, system_key_map,
-        YAVIN_SEQ_ID, true, world);
+        special.rebel_hq_seq_id, true, world);
     apply_garrison_seed(&load_seed_from_files(files, "CMUNYVTB.DAT")?, system_key_map,
         YAVIN_SEQ_ID, true, world);
     apply_facility_seed(&load_seed_from_files(files, "FACLCRTB.DAT")?, system_key_map,
         CORUSCANT_SEQ_ID, false, world);
     apply_facility_seed(&load_seed_from_files(files, "FACLHQTB.DAT")?, system_key_map,
-        YAVIN_SEQ_ID, true, world);
+        special.rebel_hq_seq_id, true, world);
+
+    roll_character_stats(world, rng);
+    place_named_characters(world, &special);
 
     Ok(())
+}
+
+fn make_seed_rng(seed_options: &SeedOptions) -> Xoshiro256PlusPlus {
+    Xoshiro256PlusPlus::seed_from_u64(seed_options.rng_seed.unwrap_or_else(default_seed))
+}
+
+fn default_seed() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos() as u64)
+            .unwrap_or(0)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -608,10 +831,99 @@ fn dispatch_facility_item(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// M4: Character stat rolling + named character placement
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Roll concrete stats from SkillPair{base, variance} for all characters.
+///
+/// After rolling, each SkillPair is normalized: `base = rolled_value`, `variance = 0`.
+/// This matches the original game's `setup_character()` which generates concrete
+/// stats at game start from the DAT base+variance templates.
+///
+/// Jedi probability is also rolled here: characters with `jedi_probability > 0`
+/// have a chance to become Force-sensitive based on their probability value.
+fn roll_character_stats<R: Rng + ?Sized>(world: &mut GameWorld, rng: &mut R) {
+    for (_, character) in world.characters.iter_mut() {
+        roll_skill_pair(&mut character.diplomacy, rng);
+        roll_skill_pair(&mut character.espionage, rng);
+        roll_skill_pair(&mut character.ship_design, rng);
+        roll_skill_pair(&mut character.troop_training, rng);
+        roll_skill_pair(&mut character.facility_design, rng);
+        roll_skill_pair(&mut character.combat, rng);
+        roll_skill_pair(&mut character.leadership, rng);
+        roll_skill_pair(&mut character.loyalty, rng);
+
+        // Roll Jedi level
+        roll_skill_pair(&mut character.jedi_level, rng);
+
+        // Roll Jedi probability: if the character isn't already a known Jedi,
+        // check if they become Force-sensitive.
+        if !character.is_known_jedi && character.jedi_probability > 0 {
+            let roll: u32 = rng.gen_range(0..100);
+            if roll < character.jedi_probability {
+                character.force_tier = ForceTier::Aware;
+            }
+        }
+    }
+}
+
+/// Roll a single SkillPair into a concrete value: base + random(0..=variance).
+/// After rolling, variance is set to 0 so the value is fixed.
+fn roll_skill_pair<R: Rng + ?Sized>(pair: &mut SkillPair, rng: &mut R) {
+    if pair.variance > 0 {
+        let bonus: u32 = rng.gen_range(0..=pair.variance);
+        pair.base += bonus;
+        pair.variance = 0;
+    }
+}
+
+/// Place named characters at their starting systems.
+///
+/// Per the original game:
+/// - Luke Skywalker, Princess Leia, Han Solo, Wedge Antilles, Chewbacca,
+///   and Jan Dodonna are placed at Yavin.
+/// - Mon Mothma is placed at the Rebel HQ (random rim system).
+/// - Emperor Palpatine and Darth Vader are placed at Coruscant.
+fn place_named_characters(world: &mut GameWorld, special: &SpecialSystems) {
+    // Alliance characters at Yavin
+    const YAVIN_CHARACTERS: &[&str] = &[
+        "Luke Skywalker",
+        "Princess Leia",
+        "Han Solo",
+        "Wedge Antilles",
+        "Chewbacca",
+        "Jan Dodonna",
+    ];
+
+    // Alliance character at Rebel HQ
+    const REBEL_HQ_CHARACTERS: &[&str] = &["Mon Mothma"];
+
+    // Empire characters at Coruscant
+    const CORUSCANT_CHARACTERS: &[&str] = &[
+        "Emperor Palpatine",
+        "Darth Vader",
+    ];
+
+    for (_, character) in world.characters.iter_mut() {
+        let name = character.name.as_str();
+
+        if YAVIN_CHARACTERS.iter().any(|&n| name == n) {
+            character.current_system = Some(special.yavin);
+        } else if REBEL_HQ_CHARACTERS.iter().any(|&n| name == n) {
+            character.current_system = Some(special.rebel_hq);
+        } else if CORUSCANT_CHARACTERS.iter().any(|&n| name == n) {
+            character.current_system = Some(special.coruscant);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use rand::SeedableRng;
+    use rand_xoshiro::Xoshiro256PlusPlus;
 
     fn gdata_path() -> PathBuf {
         // Relative to workspace root when running `cargo test`.
@@ -664,5 +976,297 @@ mod tests {
                 "Yavin should have ground units"
             );
         }
+    }
+
+    // ── M3: Special system tests ────────────────────────────────────────────
+
+    #[test]
+    fn special_systems_match_original_roles() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // Coruscant: Empire-controlled, populated, charted, has fleet + facilities
+        let coruscant = world.systems.iter()
+            .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
+            .map(|(k, s)| (k, s));
+        assert!(coruscant.is_some(), "Coruscant must exist");
+        let (_ck, cs) = coruscant.unwrap();
+        assert!(cs.is_populated, "Coruscant must be populated");
+        assert_eq!(cs.exploration_status, ExplorationStatus::Explored, "Coruscant must be charted");
+        assert!(cs.control.is_controlled_by(Faction::Empire), "Coruscant must be Empire-controlled");
+        assert!(!cs.fleets.is_empty(), "Coruscant must have fleets (CMUNEFTB)");
+        assert!(!cs.manufacturing_facilities.is_empty(), "Coruscant must have facilities (FACLCRTB)");
+
+        // Yavin: Alliance-controlled, populated, charted, has ground units
+        let yavin = world.systems.iter()
+            .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
+            .map(|(k, s)| (k, s));
+        assert!(yavin.is_some(), "Yavin must exist");
+        let (yk, ys) = yavin.unwrap();
+        assert!(ys.is_populated, "Yavin must be populated");
+        assert_eq!(ys.exploration_status, ExplorationStatus::Explored, "Yavin must be charted");
+        assert!(ys.control.is_controlled_by(Faction::Alliance), "Yavin must be Alliance-controlled");
+        assert!(!ys.ground_units.is_empty(), "Yavin must have ground units (CMUNYVTB)");
+
+        // Rebel HQ: must exist, be Alliance-controlled, populated, charted,
+        // and be a DIFFERENT system from Yavin.
+        // Find it: it's the Alliance HQ system that is NOT Yavin.
+        let rebel_hq = world.systems.iter()
+            .find(|(k, s)| {
+                s.is_headquarters
+                    && s.control.is_controlled_by(Faction::Alliance)
+                    && s.dat_id.raw() != YAVIN_SEQ_ID
+                    && *k != yk
+            });
+        assert!(rebel_hq.is_some(), "Rebel HQ must be a separate system from Yavin");
+        let (_rhk, rhs) = rebel_hq.unwrap();
+        assert!(rhs.is_populated, "Rebel HQ must be populated");
+        assert_eq!(rhs.exploration_status, ExplorationStatus::Explored, "Rebel HQ must be charted");
+
+        // Rebel HQ must be a rim system (not core)
+        let hq_sector = world.sectors.get(rhs.sector);
+        assert!(hq_sector.is_some(), "Rebel HQ sector must exist");
+        let group = hq_sector.unwrap().group;
+        assert!(
+            group == SectorGroup::RimInner || group == SectorGroup::RimOuter,
+            "Rebel HQ must be a rim system, got {:?}", group
+        );
+
+        // FACLHQTB should be at Rebel HQ, NOT at Yavin
+        assert!(
+            !rhs.manufacturing_facilities.is_empty() || !rhs.defense_facilities.is_empty()
+                || !rhs.production_facilities.is_empty(),
+            "Rebel HQ should have facilities from FACLHQTB"
+        );
+    }
+
+    #[test]
+    fn fixed_fleet_tables_only_target_special_systems() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // Collect all systems that have fleets
+        let systems_with_fleets: Vec<_> = world.systems.iter()
+            .filter(|(_, s)| !s.fleets.is_empty())
+            .map(|(_, s)| s.dat_id.raw())
+            .collect();
+
+        // With fixed seed tables only, fleets should appear at special systems only
+        // (Coruscant, Yavin, or Rebel HQ). The Rebel HQ seq_id varies by RNG seed,
+        // but Coruscant and Yavin should always be present.
+        assert!(
+            systems_with_fleets.contains(&CORUSCANT_SEQ_ID),
+            "Coruscant should have fleet(s)"
+        );
+
+        // Empire fleets should NOT be at more than ~3 systems (was 10 in old proximity model)
+        let empire_fleet_system_count = world.systems.iter()
+            .filter(|(_, s)| {
+                s.fleets.iter().any(|&fk| {
+                    world.fleets.get(fk).map_or(false, |f| !f.is_alliance)
+                })
+            })
+            .count();
+        assert!(
+            empire_fleet_system_count <= 3,
+            "Empire fleets should be at <= 3 systems (3-system model), found {}",
+            empire_fleet_system_count
+        );
+    }
+
+    #[test]
+    fn deterministic_rebel_hq_with_same_seed() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(12345),
+            ..SeedOptions::default()
+        };
+
+        let world1 = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("first load failed");
+        let world2 = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("second load failed");
+
+        // Find Rebel HQ in both worlds
+        let find_rebel_hq = |world: &GameWorld| -> Option<u32> {
+            world.systems.iter()
+                .find(|(_, s)| {
+                    s.is_headquarters
+                        && s.control.is_controlled_by(Faction::Alliance)
+                        && s.dat_id.raw() != YAVIN_SEQ_ID
+                })
+                .map(|(_, s)| s.dat_id.raw())
+        };
+
+        let hq1 = find_rebel_hq(&world1);
+        let hq2 = find_rebel_hq(&world2);
+        assert!(hq1.is_some(), "Rebel HQ should exist in world 1");
+        assert_eq!(hq1, hq2, "Same RNG seed must produce same Rebel HQ system");
+    }
+
+    // ── M4: Character stat rolling + placement tests ────────────────────────
+
+    #[test]
+    fn fixed_named_characters_spawn_at_expected_systems() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // Find system keys
+        let coruscant_key = world.systems.iter()
+            .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
+            .map(|(k, _)| k);
+        let yavin_key = world.systems.iter()
+            .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
+            .map(|(k, _)| k);
+        let rebel_hq_key = world.systems.iter()
+            .find(|(_, s)| {
+                s.is_headquarters
+                    && s.control.is_controlled_by(Faction::Alliance)
+                    && s.dat_id.raw() != YAVIN_SEQ_ID
+            })
+            .map(|(k, _)| k);
+
+        assert!(coruscant_key.is_some(), "Coruscant must exist");
+        assert!(yavin_key.is_some(), "Yavin must exist");
+        assert!(rebel_hq_key.is_some(), "Rebel HQ must exist");
+
+        // Check Alliance characters at Yavin
+        for name in &["Luke Skywalker", "Princess Leia", "Han Solo", "Wedge Antilles",
+                       "Chewbacca", "Jan Dodonna"] {
+            let found = world.characters.iter()
+                .find(|(_, c)| c.name == *name);
+            if let Some((_, ch)) = found {
+                assert_eq!(
+                    ch.current_system, yavin_key,
+                    "{} should be at Yavin, but is at {:?}", name, ch.current_system
+                );
+            }
+            // If the name isn't found, that's OK (TEXTSTRA.DLL may use different names)
+        }
+
+        // Check Mon Mothma at Rebel HQ
+        if let Some((_, mm)) = world.characters.iter().find(|(_, c)| c.name == "Mon Mothma") {
+            assert_eq!(
+                mm.current_system, rebel_hq_key,
+                "Mon Mothma should be at Rebel HQ"
+            );
+        }
+
+        // Check Empire characters at Coruscant
+        for name in &["Emperor Palpatine", "Darth Vader"] {
+            if let Some((_, ch)) = world.characters.iter().find(|(_, c)| c.name == *name) {
+                assert_eq!(
+                    ch.current_system, coruscant_key,
+                    "{} should be at Coruscant, but is at {:?}", name, ch.current_system
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn character_stats_are_rolled_not_raw() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // After rolling, all character skill variances should be 0
+        for (_, character) in world.characters.iter() {
+            assert_eq!(character.diplomacy.variance, 0,
+                "Character {} diplomacy variance should be 0 after rolling", character.name);
+            assert_eq!(character.espionage.variance, 0,
+                "Character {} espionage variance should be 0 after rolling", character.name);
+            assert_eq!(character.combat.variance, 0,
+                "Character {} combat variance should be 0 after rolling", character.name);
+            assert_eq!(character.leadership.variance, 0,
+                "Character {} leadership variance should be 0 after rolling", character.name);
+            assert_eq!(character.loyalty.variance, 0,
+                "Character {} loyalty variance should be 0 after rolling", character.name);
+        }
+    }
+
+    #[test]
+    fn deterministic_stat_rolls_with_same_seed() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(99999),
+            ..SeedOptions::default()
+        };
+
+        let world1 = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("first load failed");
+        let world2 = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("second load failed");
+
+        // Same seed must produce identical character stats
+        for ((_, c1), (_, c2)) in world1.characters.iter().zip(world2.characters.iter()) {
+            assert_eq!(c1.name, c2.name, "Character order must be deterministic");
+            assert_eq!(c1.diplomacy.base, c2.diplomacy.base,
+                "Character {} diplomacy should be deterministic", c1.name);
+            assert_eq!(c1.combat.base, c2.combat.base,
+                "Character {} combat should be deterministic", c1.name);
+            assert_eq!(c1.leadership.base, c2.leadership.base,
+                "Character {} leadership should be deterministic", c1.name);
+        }
+    }
+
+    #[test]
+    fn roll_skill_pair_unit() {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let mut pair = SkillPair { base: 50, variance: 20 };
+        roll_skill_pair(&mut pair, &mut rng);
+        assert!(pair.base >= 50 && pair.base <= 70, "rolled base should be in [50, 70], got {}", pair.base);
+        assert_eq!(pair.variance, 0, "variance should be zeroed after rolling");
+    }
+
+    #[test]
+    fn roll_skill_pair_zero_variance() {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let mut pair = SkillPair { base: 100, variance: 0 };
+        roll_skill_pair(&mut pair, &mut rng);
+        assert_eq!(pair.base, 100, "zero-variance pair should keep original base");
+        assert_eq!(pair.variance, 0);
     }
 }
