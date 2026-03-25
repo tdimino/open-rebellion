@@ -21,10 +21,10 @@ Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open R
 | Target | Size | Total Functions | Decompiled | Coverage |
 |--------|------|-----------------|------------|----------|
 | **REBEXE.EXE** | 2.8 MB | 22,741 | **5,127** | Every function >100 bytes |
-| COMMON.DLL | 2.9 MB | 0 | 0 | Pure resource container — 321 BMPs (buttons, UI toolkit, main menu assets, cockpit controls), 5 WAVs. No game logic. No decompilation needed. |
+| COMMON.DLL | 2.9 MB | 0 | 0 | Resource container (321 BMPs, 5 WAVs). No game logic. |
 | STRATEGY.DLL | 29 MB | 43 (CRT only) | N/A | Resource-only—no game logic |
 
-**Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL is a resource container (BMPs, strings, data tables). COMMON.DLL is a pure resource container (321 BMPs: buttons, UI toolkit, main menu assets, cockpit speed-control buttons). DirectPlay networking lives in REBEXE.EXE at `0x5a0000–0x5b0000`, which imports `DPLAYX.dll` directly.
+**Key finding:** All game logic lives in REBEXE.EXE. STRATEGY.DLL and COMMON.DLL are resource containers only (BMPs, strings, data tables). DirectPlay networking lives in REBEXE.EXE at `0x5a0000–0x5b0000`.
 
 ## Scholar Documents (7 analysis docs, 6,049 lines)
 

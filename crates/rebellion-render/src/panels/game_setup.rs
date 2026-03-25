@@ -308,33 +308,36 @@ fn faction_button(
     };
     let stroke_color = if selected { accent } else { Color32::from_rgb(50, 52, 68) };
 
-    let resp = ui.allocate_ui(egui::vec2(200.0, 100.0), |ui| {
-        let frame = egui::Frame::default()
-            .fill(fill)
-            .stroke(egui::Stroke::new(if selected { 2.0 } else { 1.0 }, stroke_color))
-            .corner_radius(4.0)
-            .inner_margin(12.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(200.0, 100.0), egui::Sense::click());
 
-        frame.show(ui, |ui| {
-            ui.set_min_size(egui::vec2(176.0, 72.0));
-            ui.vertical(|ui| {
-                ui.label(
-                    RichText::new(name)
-                        .color(if selected { accent } else { theme::TEXT_PRIMARY })
-                        .size(15.0)
-                        .strong(),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new(description)
-                        .color(theme::TEXT_SECONDARY)
-                        .size(11.0),
-                );
-            });
-        });
-    });
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        painter.rect(
+            rect,
+            egui::CornerRadius::same(4),
+            fill,
+            egui::Stroke::new(if selected { 2.0 } else { 1.0 }, stroke_color),
+            egui::StrokeKind::Outside,
+        );
 
-    if resp.response.interact(egui::Sense::click()).clicked() {
+        let text_rect = rect.shrink(12.0);
+        painter.text(
+            text_rect.left_top(),
+            egui::Align2::LEFT_TOP,
+            name,
+            egui::FontId::proportional(15.0),
+            if selected { accent } else { theme::TEXT_PRIMARY },
+        );
+        painter.text(
+            text_rect.left_top() + egui::vec2(0.0, 22.0),
+            egui::Align2::LEFT_TOP,
+            description,
+            egui::FontId::proportional(11.0),
+            theme::TEXT_SECONDARY,
+        );
+    }
+
+    if response.clicked() {
         *current = Some(value);
     }
 }

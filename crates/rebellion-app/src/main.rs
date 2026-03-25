@@ -403,97 +403,35 @@ async fn main() {
                 clock.set_speed(GameSpeed::Faster);
             }
             // Panel toggles (mutually exclusive left panels)
-            if is_key_pressed(KeyCode::O) {
-                show_officers = !show_officers;
-                if show_officers {
-                    show_fleets = false;
-                    show_manufacturing = false;
-                    show_missions = false;
-                }
+            // Unified panel mutual exclusion: opening any panel closes all others.
+            macro_rules! toggle_panel {
+                ($key:expr, $flag:ident) => {
+                    if is_key_pressed($key) {
+                        $flag = !$flag;
+                        if $flag {
+                            show_officers = false;
+                            show_fleets = false;
+                            show_manufacturing = false;
+                            show_missions = false;
+                            show_research = false;
+                            show_jedi = false;
+                            show_bombardment = false;
+                            show_death_star = false;
+                            show_loyalty = false;
+                            $flag = true; // restore after blanket clear
+                        }
+                    }
+                };
             }
-            if is_key_pressed(KeyCode::F) {
-                show_fleets = !show_fleets;
-                if show_fleets {
-                    show_officers = false;
-                    show_manufacturing = false;
-                    show_missions = false;
-                }
-            }
-            if is_key_pressed(KeyCode::M) {
-                show_manufacturing = !show_manufacturing;
-                if show_manufacturing {
-                    show_officers = false;
-                    show_fleets = false;
-                    show_missions = false;
-                }
-            }
-            if is_key_pressed(KeyCode::N) {
-                show_missions = !show_missions;
-                if show_missions {
-                    show_officers = false;
-                    show_fleets = false;
-                    show_manufacturing = false;
-                }
-            }
-            if is_key_pressed(KeyCode::T) {
-                show_research = !show_research;
-                if show_research {
-                    show_officers = false;
-                    show_fleets = false;
-                    show_manufacturing = false;
-                    show_missions = false;
-                    show_jedi = false;
-                }
-            }
-            if is_key_pressed(KeyCode::J) {
-                show_jedi = !show_jedi;
-                if show_jedi {
-                    show_officers = false;
-                    show_fleets = false;
-                    show_manufacturing = false;
-                    show_missions = false;
-                    show_research = false;
-                }
-            }
-            if is_key_pressed(KeyCode::B) {
-                show_bombardment = !show_bombardment;
-                if show_bombardment {
-                    show_officers = false;
-                    show_fleets = false;
-                    show_manufacturing = false;
-                    show_missions = false;
-                    show_research = false;
-                    show_jedi = false;
-                    show_death_star = false;
-                    show_loyalty = false;
-                }
-            }
-            if is_key_pressed(KeyCode::D) {
-                show_death_star = !show_death_star;
-                if show_death_star {
-                    show_officers = false;
-                    show_fleets = false;
-                    show_manufacturing = false;
-                    show_missions = false;
-                    show_research = false;
-                    show_jedi = false;
-                    show_bombardment = false;
-                    show_loyalty = false;
-                }
-            }
-            if is_key_pressed(KeyCode::L) {
-                show_loyalty = !show_loyalty;
-                if show_loyalty {
-                    show_officers = false;
-                    show_fleets = false;
-                    show_manufacturing = false;
-                    show_missions = false;
-                    show_research = false;
-                    show_jedi = false;
-                    show_bombardment = false;
-                    show_death_star = false;
-                }
-            }
+            toggle_panel!(KeyCode::O, show_officers);
+            toggle_panel!(KeyCode::F, show_fleets);
+            toggle_panel!(KeyCode::M, show_manufacturing);
+            toggle_panel!(KeyCode::N, show_missions);
+            toggle_panel!(KeyCode::T, show_research);
+            toggle_panel!(KeyCode::J, show_jedi);
+            toggle_panel!(KeyCode::B, show_bombardment);
+            toggle_panel!(KeyCode::D, show_death_star);
+            toggle_panel!(KeyCode::L, show_loyalty);
             if is_key_pressed(KeyCode::E) {
                 enc_state.open = !enc_state.open;
             }
