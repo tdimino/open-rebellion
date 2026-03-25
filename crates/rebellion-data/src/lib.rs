@@ -206,21 +206,21 @@ pub fn load_game_data_with_options(
             shield_recharge_rate: dat.shield_recharge_rate,
             damage_control: dat.damage_control,
             bombardment_modifier: dat.bombardment_modifier,
-            // Extended combat stats (promoted by Shapash — default 0 until DAT wiring lands)
-            overall_attack_strength: 0,
-            weapon_recharge_rate: 0,
-            turbolaser_attack_strength: 0,
-            ion_cannon_attack_strength: 0,
-            laser_cannon_attack_strength: 0,
-            turbolaser_range: 0,
-            ion_cannon_range: 0,
-            laser_cannon_range: 0,
-            tractor_beam_power: 0,
-            tractor_beam_range: 0,
-            gravity_well_projector: 0,
-            interdiction_strength: 0,
-            uprising_defense: 0,
-            hyperdrive_if_damaged: 0,
+            // Extended combat stats — wired from CAPSHPSD.DAT
+            overall_attack_strength: dat.overall_attack_strength,
+            weapon_recharge_rate: dat.weapon_recharge_rate,
+            turbolaser_attack_strength: dat.turbolaser_attack_strength,
+            ion_cannon_attack_strength: dat.ion_cannon_attack_strength,
+            laser_cannon_attack_strength: dat.laser_cannon_attack_strength,
+            turbolaser_range: dat.turbolaser_range,
+            ion_cannon_range: dat.ion_cannon_range,
+            laser_cannon_range: dat.laser_cannon_range,
+            tractor_beam_power: dat.tractor_beam_power,
+            tractor_beam_range: dat.tractor_beam_range,
+            gravity_well_projector: dat.gravity_well_projector,
+            interdiction_strength: dat.interdiction_strength,
+            uprising_defense: dat.uprising_defense,
+            hyperdrive_if_damaged: dat.hyperdrive_if_damaged,
         };
         world.capital_ship_classes.insert(class);
     }
@@ -236,25 +236,25 @@ pub fn load_game_data_with_options(
             is_empire: dat.is_empire != 0,
             refined_material_cost: dat.refined_material_cost,
             maintenance_cost: dat.maintenance_cost,
-            research_order: 0,
-            research_difficulty: 0,
+            research_order: dat.research_order,
+            research_difficulty: dat.research_difficulty,
             squadron_size: dat.squadron_size,
             torpedoes: dat.torpedoes,
-            torpedoes_range: 0,
+            torpedoes_range: dat.torpedoes_range,
             overall_attack_strength: dat.overall_attack_strength,
             bombardment_defense: dat.bombardment_defense,
-            // Extended fighter stats (promoted by Shapash — default 0 until DAT wiring lands)
-            shield_strength: 0,
-            sub_light_engine: 0,
-            maneuverability: 0,
-            detection: 0,
-            uprising_defense: 0,
-            turbolaser_fore: 0,
-            ion_cannon_fore: 0,
-            laser_cannon_fore: 0,
-            turbolaser_attack_strength: 0,
-            ion_cannon_attack_strength: 0,
-            laser_cannon_attack_strength: 0,
+            // Extended fighter stats — wired from FIGHTSD.DAT
+            shield_strength: dat.shield_strength,
+            sub_light_engine: dat.sub_light_engine,
+            maneuverability: dat.maneuverability,
+            detection: dat.detection,
+            uprising_defense: dat.uprising_defense,
+            turbolaser_fore: dat.turbolaser_fore,
+            ion_cannon_fore: dat.ion_cannon_fore,
+            laser_cannon_fore: dat.laser_cannon_fore,
+            turbolaser_attack_strength: dat.turbolaser_attack_strength,
+            ion_cannon_attack_strength: dat.ion_cannon_attack_strength,
+            laser_cannon_attack_strength: dat.laser_cannon_attack_strength,
         };
         world.fighter_classes.insert(class);
     }
@@ -323,17 +323,16 @@ pub fn load_game_data_with_options(
     // tables after seeding parameters are available.
     seeds::apply_seeds(gdata_path, &mut world, &system_key_map, seed_options)?;
 
-    // ── 8b. Derive controlling_faction from seeded assets ───────────────────
-    // After seeding fleets, troops, and facilities, determine which faction controls
-    // each system based on what assets are present. Systems with only one faction's
-    // assets are controlled by that faction; mixed or empty systems stay None.
+    // ── 8b. Derive controlling_faction from seeded assets (fallback only) ──
+    // For systems that still have no explicit control after the M5 procedural
+    // bucket assignment, infer control from asset ownership. Systems already
+    // assigned control by the seed pipeline (special systems, bucket assignment)
+    // are left untouched.
     {
-        // Collect faction presence from ALL asset types at each system
         let fleet_factions: Vec<(SystemKey, bool)> = world.fleets.values()
             .map(|f| (f.location, f.is_alliance))
             .collect();
 
-        // Collect from all facility and unit types
         let mut asset_factions: Vec<(SystemKey, bool)> = Vec::new();
         for (sys_key, sys) in world.systems.iter() {
             for &k in &sys.defense_facilities {
@@ -364,6 +363,10 @@ pub fn load_game_data_with_options(
         }
 
         for (sys_key, sys) in world.systems.iter_mut() {
+            // Skip systems that already have explicit control from seeding.
+            if sys.control != ControlKind::Uncontrolled {
+                continue;
+            }
             let mut has_alliance = false;
             let mut has_empire = false;
             for &(fk, is_a) in &fleet_factions {
@@ -377,7 +380,6 @@ pub fn load_game_data_with_options(
             } else if has_empire && !has_alliance {
                 sys.control = ControlKind::Controlled(rebellion_core::dat::Faction::Empire);
             }
-            // Mixed or empty → None (neutral/contested)
         }
     }
 

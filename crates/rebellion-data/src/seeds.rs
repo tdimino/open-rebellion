@@ -45,6 +45,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use dat_dumper::types::seed_table::SeedTableFile;
+use dat_dumper::types::syfc_table::SyfcTableFile;
 use rand::{Rng, SeedableRng};
 use rand::seq::SliceRandom;
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -408,9 +409,15 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     place_named_characters(world, &special);
 
     // ── M5: Procedural control buckets, population, and support ──────────
-    assign_control_buckets(world, &special, seed_options, rng);
+    let bucket_map = assign_control_buckets(world, &special, seed_options, rng);
     initialize_population(world, seed_options, rng);
-    initialize_support(world, &special, seed_options, rng);
+    initialize_support(world, &special, seed_options, &bucket_map, rng);
+
+    // ── M6: Energy, raw materials, and procedural facility generation ────
+    initialize_energy_and_raw_materials(world, seed_options, rng);
+    let syfccr = load_syfc_table(gdata_path, "SYFCCRTB.DAT")?;
+    let syfcrm = load_syfc_table(gdata_path, "SYFCRMTB.DAT")?;
+    generate_procedural_facilities(world, seed_options, &syfccr, &syfcrm, rng);
 
     Ok(())
 }
@@ -526,9 +533,15 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     place_named_characters(world, &special);
 
     // M5: Procedural control buckets, population, and support
-    assign_control_buckets(world, &special, seed_options, rng);
+    let bucket_map = assign_control_buckets(world, &special, seed_options, rng);
     initialize_population(world, seed_options, rng);
-    initialize_support(world, &special, seed_options, rng);
+    initialize_support(world, &special, seed_options, &bucket_map, rng);
+
+    // M6: Energy, raw materials, and procedural facilities
+    initialize_energy_and_raw_materials(world, seed_options, rng);
+    let syfccr = load_syfc_table_from_files(files, "SYFCCRTB.DAT")?;
+    let syfcrm = load_syfc_table_from_files(files, "SYFCRMTB.DAT")?;
+    generate_procedural_facilities(world, seed_options, &syfccr, &syfcrm, rng);
 
     Ok(())
 }
@@ -845,8 +858,18 @@ fn dispatch_facility_item(
 // M5: Procedural control buckets, population state, and support initialization
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Assign political control to all non-special core systems using the original
-/// bucket algorithm from SDPRTB 7680 (strong%) / 7681 (weak%).
+/// Political control bucket type for a core system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlBucket {
+    AllianceStrong,
+    AllianceWeak,
+    EmpireStrong,
+    EmpireWeak,
+    Neutral,
+}
+
+/// Assign political control AND support to all non-special core systems using
+/// the original bucket algorithm from SDPRTB 7680 (strong%) / 7681 (weak%).
 ///
 /// The original game:
 /// 1. Counts all core systems.
@@ -854,15 +877,17 @@ fn dispatch_facility_item(
 ///    `floor(core_count * percent / 100)`.
 /// 3. Subtracts 1 from Empire strong (Coruscant is pre-assigned).
 /// 4. Neutral = remainder.
-/// 5. Shuffles all systems, then drains buckets in order:
-///    Alliance strong → Alliance weak → Empire strong → Empire weak → neutral.
+/// 5. Shuffles all systems, then drains buckets in order.
+///
+/// Returns the bucket assignment map so `initialize_support` can use it.
 fn assign_control_buckets<R: Rng + ?Sized>(
     world: &mut GameWorld,
     special: &SpecialSystems,
     seed_options: &SeedOptions,
     rng: &mut R,
-) {
+) -> HashMap<SystemKey, ControlBucket> {
     let diff = seed_options.gnprtb_index();
+    let mut bucket_map: HashMap<SystemKey, ControlBucket> = HashMap::new();
 
     // Collect core systems that are NOT one of the 3 special systems.
     let mut core_systems: Vec<SystemKey> = Vec::new();
@@ -886,7 +911,6 @@ fn assign_control_buckets<R: Rng + ?Sized>(
     let core_count = core_systems.len() as i32;
 
     // SDPRTB 7680 = strong support percentage, 7681 = weak support percentage.
-    // These are per-faction: Alliance column and Empire column.
     let alliance_strong_pct = world.sdprtb.value(7680, diff, Faction::Alliance);
     let alliance_weak_pct   = world.sdprtb.value(7681, diff, Faction::Alliance);
     let empire_strong_pct   = world.sdprtb.value(7680, diff, Faction::Empire);
@@ -894,49 +918,54 @@ fn assign_control_buckets<R: Rng + ?Sized>(
 
     let alliance_strong = (core_count * alliance_strong_pct / 100).max(0) as usize;
     let alliance_weak   = (core_count * alliance_weak_pct / 100).max(0) as usize;
-    // Subtract 1 from Empire strong for Coruscant (already assigned).
     let empire_strong   = ((core_count * empire_strong_pct / 100).max(0) as usize).saturating_sub(1);
     let empire_weak     = (core_count * empire_weak_pct / 100).max(0) as usize;
 
     // Drain buckets in order across the shuffled system list.
     let mut idx = 0;
-    // Alliance strong
     for _ in 0..alliance_strong {
         if idx >= core_systems.len() { break; }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Alliance);
         }
+        bucket_map.insert(k, ControlBucket::AllianceStrong);
         idx += 1;
     }
-    // Alliance weak
     for _ in 0..alliance_weak {
         if idx >= core_systems.len() { break; }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Alliance);
         }
+        bucket_map.insert(k, ControlBucket::AllianceWeak);
         idx += 1;
     }
-    // Empire strong
     for _ in 0..empire_strong {
         if idx >= core_systems.len() { break; }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Empire);
         }
+        bucket_map.insert(k, ControlBucket::EmpireStrong);
         idx += 1;
     }
-    // Empire weak
     for _ in 0..empire_weak {
         if idx >= core_systems.len() { break; }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Empire);
         }
+        bucket_map.insert(k, ControlBucket::EmpireWeak);
         idx += 1;
     }
-    // Remainder: neutral (Uncontrolled) — already the default, no action needed.
+    // Remainder: neutral
+    while idx < core_systems.len() {
+        bucket_map.insert(core_systems[idx], ControlBucket::Neutral);
+        idx += 1;
+    }
+
+    bucket_map
 }
 
 /// Set `is_populated` on systems based on GNPRTB 7730 (core %) and 7731 (rim %).
@@ -984,7 +1013,7 @@ fn initialize_population<R: Rng + ?Sized>(
     }
 }
 
-/// Initialize support (popularity) values for all systems.
+/// Initialize support (popularity) values for all systems using the bucket map.
 ///
 /// Mapping from original 0-100 support to our dual f32 popularity:
 /// - For faction-controlled systems, the controlling faction gets `support / 100.0`
@@ -1002,43 +1031,19 @@ fn initialize_support<R: Rng + ?Sized>(
     world: &mut GameWorld,
     special: &SpecialSystems,
     seed_options: &SeedOptions,
+    bucket_map: &HashMap<SystemKey, ControlBucket>,
     rng: &mut R,
 ) {
     let diff = seed_options.gnprtb_index();
 
-    // Neutral spread params from GNPRTB.
-    let core_neutral_spread = world.gnprtb.value(7764, diff).max(0) as u32;  // 18 in stock
-    let rim_pop_spread      = world.gnprtb.value(7765, diff).max(0) as u32;  // 0 in stock
-
-    // We need to know which systems are in the "strong" vs "weak" bucket.
-    // The bucket assignment is implicit in assign_control_buckets above,
-    // but we didn't persist which bucket each system landed in.
-    // We need to re-derive it: collect core controlled systems, and classify
-    // them as strong or weak based on the SDPRTB percentage split.
-    //
-    // Approach: collect all non-special core systems that are controlled,
-    // sort deterministically, shuffle with same RNG state would be ideal but
-    // RNG has already advanced. Instead, we'll use a simpler scheme:
-    // For each faction's controlled core systems, the first N are "strong"
-    // (where N = floor(core_count * strong_pct / 100)), rest are "weak".
-    //
-    // Actually, since assign_control_buckets drains in order
-    // (alliance_strong, alliance_weak, empire_strong, empire_weak),
-    // and the core_systems list was shuffled then drained sequentially,
-    // the first alliance_strong systems in the drained list got Alliance control,
-    // etc. But we don't have that list anymore.
-    //
-    // Simpler: for each faction, count how many core systems it controls.
-    // The first `strong_count` get strong support, rest get weak support.
-    // Since the bucket assignment was random, which ones are "strong" vs "weak"
-    // is also random — so we can just assign strong to the first N.
+    let core_neutral_spread = world.gnprtb.value(7764, diff).max(0) as u32;
+    let rim_pop_spread      = world.gnprtb.value(7765, diff).max(0) as u32;
 
     // Collect system info to avoid borrow issues.
     struct SysInfo {
         key: SystemKey,
         group: SectorGroup,
         is_populated: bool,
-        control: ControlKind,
         is_special: bool,
     }
     let sys_infos: Vec<SysInfo> = world.systems.iter()
@@ -1047,102 +1052,87 @@ fn initialize_support<R: Rng + ?Sized>(
                 .map(|s| s.group)
                 .unwrap_or(SectorGroup::RimOuter);
             let is_special = k == special.coruscant || k == special.yavin || k == special.rebel_hq;
-            SysInfo { key: k, group, is_populated: sys.is_populated, control: sys.control, is_special }
+            SysInfo { key: k, group, is_populated: sys.is_populated, is_special }
         })
         .collect();
 
-    // Count core systems for bucket math.
-    let total_core_non_special: usize = sys_infos.iter()
-        .filter(|s| s.group == SectorGroup::Core && !s.is_special)
-        .count();
-    let core_count = total_core_non_special as i32;
-
-    // Compute strong counts per faction.
-    let alliance_strong_pct = world.sdprtb.value(7680, diff, Faction::Alliance);
-    let empire_strong_pct   = world.sdprtb.value(7680, diff, Faction::Empire);
-    let alliance_strong_count = (core_count * alliance_strong_pct / 100).max(0) as usize;
-    let empire_strong_count = ((core_count * empire_strong_pct / 100).max(0) as usize).saturating_sub(1);
-
     // Support base/extra from SDPRTB 7682-7685 (side-aware).
-    let get_strong_support = |faction: Faction| -> (i32, i32) {
-        let base  = world.sdprtb.value(7682, diff, faction);
-        let extra = world.sdprtb.value(7683, diff, faction).max(0);
-        (base, extra)
-    };
-    let get_weak_support = |faction: Faction| -> (i32, i32) {
-        let base  = world.sdprtb.value(7684, diff, faction);
-        let extra = world.sdprtb.value(7685, diff, faction).max(0);
-        (base, extra)
-    };
-
-    // Track how many of each faction's core systems we've seen (to split strong/weak).
-    let mut alliance_core_seen: usize = 0;
-    let mut empire_core_seen: usize = 0;
+    let strong_base_a  = world.sdprtb.value(7682, diff, Faction::Alliance);
+    let strong_extra_a = world.sdprtb.value(7683, diff, Faction::Alliance).max(0);
+    let weak_base_a    = world.sdprtb.value(7684, diff, Faction::Alliance);
+    let weak_extra_a   = world.sdprtb.value(7685, diff, Faction::Alliance).max(0);
+    let strong_base_e  = world.sdprtb.value(7682, diff, Faction::Empire);
+    let strong_extra_e = world.sdprtb.value(7683, diff, Faction::Empire).max(0);
+    let weak_base_e    = world.sdprtb.value(7684, diff, Faction::Empire);
+    let weak_extra_e   = world.sdprtb.value(7685, diff, Faction::Empire).max(0);
 
     for info in &sys_infos {
         if info.is_special {
             continue; // Already set to 100% loyalty by initialize_special_systems.
         }
 
+        let bucket = bucket_map.get(&info.key).copied();
+
         let (pop_a, pop_e) = match info.group {
             SectorGroup::Core => {
-                match info.control {
-                    ControlKind::Controlled(Faction::Alliance) => {
-                        let is_strong = alliance_core_seen < alliance_strong_count;
-                        alliance_core_seen += 1;
-                        let (base, extra) = if is_strong {
-                            get_strong_support(Faction::Alliance)
+                match bucket {
+                    Some(ControlBucket::AllianceStrong) => {
+                        let support = if strong_extra_a > 0 {
+                            strong_base_a + rng.gen_range(0..=strong_extra_a)
                         } else {
-                            get_weak_support(Faction::Alliance)
+                            strong_base_a
                         };
-                        let support = if extra > 0 {
-                            base + rng.gen_range(0..=extra)
-                        } else {
-                            base
-                        };
-                        let support = support.clamp(0, 100) as f32 / 100.0;
-                        (support, 1.0 - support)
+                        let s = support.clamp(0, 100) as f32 / 100.0;
+                        (s, 1.0 - s)
                     }
-                    ControlKind::Controlled(Faction::Empire) => {
-                        let is_strong = empire_core_seen < empire_strong_count;
-                        empire_core_seen += 1;
-                        let (base, extra) = if is_strong {
-                            get_strong_support(Faction::Empire)
+                    Some(ControlBucket::AllianceWeak) => {
+                        let support = if weak_extra_a > 0 {
+                            weak_base_a + rng.gen_range(0..=weak_extra_a)
                         } else {
-                            get_weak_support(Faction::Empire)
+                            weak_base_a
                         };
-                        let support = if extra > 0 {
-                            base + rng.gen_range(0..=extra)
-                        } else {
-                            base
-                        };
-                        let support = support.clamp(0, 100) as f32 / 100.0;
-                        (1.0 - support, support)
+                        let s = support.clamp(0, 100) as f32 / 100.0;
+                        (s, 1.0 - s)
                     }
-                    _ => {
-                        // Neutral core: random(0..spread) + (50 - spread/2)
+                    Some(ControlBucket::EmpireStrong) => {
+                        let support = if strong_extra_e > 0 {
+                            strong_base_e + rng.gen_range(0..=strong_extra_e)
+                        } else {
+                            strong_base_e
+                        };
+                        let s = support.clamp(0, 100) as f32 / 100.0;
+                        (1.0 - s, s)
+                    }
+                    Some(ControlBucket::EmpireWeak) => {
+                        let support = if weak_extra_e > 0 {
+                            weak_base_e + rng.gen_range(0..=weak_extra_e)
+                        } else {
+                            weak_base_e
+                        };
+                        let s = support.clamp(0, 100) as f32 / 100.0;
+                        (1.0 - s, s)
+                    }
+                    Some(ControlBucket::Neutral) | None => {
                         let support = if core_neutral_spread > 0 {
                             let r = rng.gen_range(0..core_neutral_spread) as i32;
                             (50 - (core_neutral_spread as i32) / 2 + r).clamp(0, 100) as f32 / 100.0
                         } else {
                             0.5
                         };
-                        (support, support) // Both factions see same neutral support
+                        (support, support)
                     }
                 }
             }
             SectorGroup::RimInner | SectorGroup::RimOuter => {
                 if info.is_populated {
-                    // Rim populated: random(0..spread) + 50
                     let support = if rim_pop_spread > 0 {
                         let r = rng.gen_range(0..rim_pop_spread) as i32;
                         (50 + r).clamp(0, 100) as f32 / 100.0
                     } else {
                         0.5
                     };
-                    (support, support) // Neutral rim systems
+                    (support, support)
                 } else {
-                    // Unpopulated: always 50
                     (0.5, 0.5)
                 }
             }
@@ -1151,6 +1141,218 @@ fn initialize_support<R: Rng + ?Sized>(
         if let Some(sys) = world.systems.get_mut(info.key) {
             sys.popularity_alliance = pop_a;
             sys.popularity_empire = pop_e;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// M6: Energy, raw materials, and procedural facility generation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Load a SYFC table from the filesystem, returning None if missing.
+fn load_syfc_table(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<SyfcTableFile>> {
+    let path = gdata_path.join(filename);
+    if !crate::file_available(&path) {
+        return Ok(None);
+    }
+    let file: SyfcTableFile = read_dat_file(&path)
+        .with_context(|| format!("parsing syfc table {}", filename))?;
+    Ok(Some(file))
+}
+
+/// Load a SYFC table from pre-loaded bytes.
+fn load_syfc_table_from_files(
+    files: &std::collections::HashMap<String, Vec<u8>>,
+    filename: &str,
+) -> anyhow::Result<Option<SyfcTableFile>> {
+    match files.get(filename) {
+        Some(data) => {
+            let file: SyfcTableFile = crate::parse_dat_bytes(data, filename)?;
+            Ok(Some(file))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Compute energy and raw materials for all populated systems.
+///
+/// Original formulas from GNPRTB:
+/// - Core energy: `clamp(param_7721 + random(0..param_7722), 0, 15)`
+/// - Core raw:    `clamp(param_7723 + random(0..param_7724), 0, 15)`, then `min(raw, energy)`
+/// - Rim energy:  `clamp(param_7725 + random(0..param_7726) + random(0..param_7727), 0, 15)`
+/// - Rim raw:     `clamp(1 + random(0..14), 0, 15)`, then `min(raw, energy)`
+///
+/// Stock values: core energy base=10, rand=4; core raw base=5, rand=9;
+/// rim energy base=1, rand1=4, rand2=9.
+fn initialize_energy_and_raw_materials<R: Rng + ?Sized>(
+    world: &mut GameWorld,
+    seed_options: &SeedOptions,
+    rng: &mut R,
+) {
+    let diff = seed_options.gnprtb_index();
+
+    // Core params
+    let core_energy_base  = world.gnprtb.value(7721, diff).max(0) as u32; // 10
+    let core_energy_rand  = world.gnprtb.value(7722, diff).max(0) as u32; // 4
+    let core_raw_base     = world.gnprtb.value(7723, diff).max(0) as u32; // 5
+    let core_raw_rand     = world.gnprtb.value(7724, diff).max(0) as u32; // 9
+    // Rim params
+    let rim_energy_base   = world.gnprtb.value(7725, diff).max(0) as u32; // 1
+    let rim_energy_rand1  = world.gnprtb.value(7726, diff).max(0) as u32; // 4
+    let rim_energy_rand2  = world.gnprtb.value(7727, diff).max(0) as u32; // 9
+
+    // Collect system info to avoid borrow issues.
+    let system_info: Vec<(SystemKey, SectorGroup, bool)> = world.systems.iter()
+        .map(|(k, sys)| {
+            let group = world.sectors.get(sys.sector)
+                .map(|s| s.group)
+                .unwrap_or(SectorGroup::RimOuter);
+            (k, group, sys.is_populated)
+        })
+        .collect();
+
+    for (key, group, is_populated) in system_info {
+        if !is_populated {
+            continue; // Unpopulated systems get no energy/raw.
+        }
+
+        let (energy, raw) = match group {
+            SectorGroup::Core => {
+                let e = (core_energy_base + if core_energy_rand > 0 { rng.gen_range(0..core_energy_rand) } else { 0 })
+                    .min(15);
+                let r = (core_raw_base + if core_raw_rand > 0 { rng.gen_range(0..core_raw_rand) } else { 0 })
+                    .min(15)
+                    .min(e); // raw capped by energy
+                (e, r)
+            }
+            SectorGroup::RimInner | SectorGroup::RimOuter => {
+                let e = (rim_energy_base
+                    + if rim_energy_rand1 > 0 { rng.gen_range(0..rim_energy_rand1) } else { 0 }
+                    + if rim_energy_rand2 > 0 { rng.gen_range(0..rim_energy_rand2) } else { 0 })
+                    .min(15);
+                let r = (1 + rng.gen_range(0u32..14))
+                    .min(15)
+                    .min(e); // raw capped by energy
+                (e, r)
+            }
+        };
+
+        if let Some(sys) = world.systems.get_mut(key) {
+            sys.total_energy = energy as u8;
+            sys.raw_materials = raw as u8;
+        }
+    }
+}
+
+/// Weighted facility entry parsed from SYFCCRTB/SYFCRMTB.
+struct FacilityWeight {
+    /// Cumulative weight threshold (0-99 range).
+    cumulative_weight: u32,
+    /// Packed facility id: `(family_byte << 24) | index`.
+    facility_id: u32,
+}
+
+/// Parse SYFC table entries into a sorted list of (cumulative_weight, facility_id).
+fn parse_facility_weights(table: &Option<SyfcTableFile>) -> Vec<FacilityWeight> {
+    let table = match table {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+    table.entries.iter()
+        .filter(|e| e.facility != 0) // Skip null entry
+        .map(|e| FacilityWeight {
+            // The system_id field is actually the cumulative weight percentage.
+            cumulative_weight: e.system_id,
+            facility_id: e.facility,
+        })
+        .collect()
+}
+
+/// Pick a weighted random facility from the weight table.
+fn pick_weighted_facility<R: Rng + ?Sized>(weights: &[FacilityWeight], rng: &mut R) -> Option<u32> {
+    if weights.is_empty() {
+        return None;
+    }
+    let max_weight = weights.last().map(|w| w.cumulative_weight).unwrap_or(100);
+    if max_weight == 0 { return None; }
+    let roll = rng.gen_range(0..max_weight);
+    // Find the first entry whose cumulative weight exceeds the roll.
+    weights.iter()
+        .find(|w| roll < w.cumulative_weight)
+        .map(|w| w.facility_id)
+}
+
+/// Generate procedural facilities for all populated systems based on energy slots.
+///
+/// Original algorithm: for each energy slot (0..total_energy):
+/// 1. Compute mine chance: `(total_raw - current_mines) * mine_multiplier`
+///    where mine_multiplier is GNPRTB 7766 (core=4) or 7767 (rim=2).
+/// 2. If random(0..100) < mine_chance, place a mine (production facility).
+/// 3. Otherwise, pick a weighted random facility from SYFCCRTB (core) or SYFCRMTB (rim).
+/// 4. Post-adjust: ensure energy >= used_energy, raw >= mine_count.
+fn generate_procedural_facilities<R: Rng + ?Sized>(
+    world: &mut GameWorld,
+    seed_options: &SeedOptions,
+    syfccr: &Option<SyfcTableFile>,
+    syfcrm: &Option<SyfcTableFile>,
+    rng: &mut R,
+) {
+    let diff = seed_options.gnprtb_index();
+    let core_mine_mult = world.gnprtb.value(7766, diff).max(0) as u32; // 4
+    let rim_mine_mult  = world.gnprtb.value(7767, diff).max(0) as u32; // 2
+
+    let core_weights = parse_facility_weights(syfccr);
+    let rim_weights  = parse_facility_weights(syfcrm);
+
+    // Collect system info to avoid borrow issues.
+    let system_info: Vec<(SystemKey, SectorGroup, u8, u8, bool)> = world.systems.iter()
+        .map(|(k, sys)| {
+            let group = world.sectors.get(sys.sector)
+                .map(|s| s.group)
+                .unwrap_or(SectorGroup::RimOuter);
+            (k, group, sys.total_energy, sys.raw_materials, sys.is_populated)
+        })
+        .collect();
+
+    for (key, group, total_energy, raw_materials, is_populated) in system_info {
+        if !is_populated || total_energy == 0 {
+            continue;
+        }
+
+        let mine_mult = match group {
+            SectorGroup::Core => core_mine_mult,
+            SectorGroup::RimInner | SectorGroup::RimOuter => rim_mine_mult,
+        };
+        let weights = match group {
+            SectorGroup::Core => &core_weights,
+            SectorGroup::RimInner | SectorGroup::RimOuter => &rim_weights,
+        };
+
+        let mut mine_count: u32 = 0;
+
+        for _ in 0..total_energy {
+            // Mine chance
+            let mine_chance = (raw_materials as u32).saturating_sub(mine_count) * mine_mult;
+            let is_mine = mine_chance > 0 && rng.gen_range(0u32..100) < mine_chance;
+
+            if is_mine {
+                // Place a mine (production facility — family 0x2D = mine)
+                // Use a generic mine DatId. The original uses a specific mine class.
+                // Family 0x2D index 1 = first mine type.
+                let mine_dat_id = DatId::new(0x2D000001);
+                let inst = ProductionFacilityInstance {
+                    class_dat_id: mine_dat_id,
+                    is_alliance: false, // Mines are neutral/faction-inherited
+                };
+                let fac_key = world.production_facilities.insert(inst);
+                if let Some(sys) = world.systems.get_mut(key) {
+                    sys.production_facilities.push(fac_key);
+                }
+                mine_count += 1;
+            } else if let Some(facility_id) = pick_weighted_facility(weights, rng) {
+                // Place the weighted facility
+                dispatch_facility_item(facility_id, key, false, world);
+            }
         }
     }
 }
@@ -1784,5 +1986,96 @@ mod tests {
                 pct, rim_populated, rim_count
             );
         }
+    }
+
+    // ── M6: Energy/raw materials and procedural facility tests ──────────
+
+    #[test]
+    fn energy_and_raw_materials_respect_param_ranges() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        let mut populated_with_energy = 0;
+        let mut populated_count = 0;
+
+        for (_, sys) in world.systems.iter() {
+            if sys.is_populated {
+                populated_count += 1;
+                // Energy should be in [1, 15] for populated systems.
+                assert!(
+                    sys.total_energy >= 1 && sys.total_energy <= 15,
+                    "Populated system '{}' energy={} should be in [1, 15]",
+                    sys.name, sys.total_energy
+                );
+                // Raw materials <= energy (capped by energy).
+                assert!(
+                    sys.raw_materials <= sys.total_energy,
+                    "System '{}' raw_materials={} should be <= total_energy={}",
+                    sys.name, sys.raw_materials, sys.total_energy
+                );
+                if sys.total_energy > 0 { populated_with_energy += 1; }
+            } else {
+                // Unpopulated systems should have 0 energy/raw.
+                assert_eq!(
+                    sys.total_energy, 0,
+                    "Unpopulated system '{}' should have 0 energy, got {}",
+                    sys.name, sys.total_energy
+                );
+            }
+        }
+
+        assert!(populated_count > 0, "Should have populated systems");
+        assert_eq!(
+            populated_count, populated_with_energy,
+            "All populated systems should have energy"
+        );
+    }
+
+    #[test]
+    fn procedural_facilities_placed_at_populated_systems() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // Count total facilities across all systems (excluding special HQ facilities).
+        let mut total_facilities = 0;
+        let mut systems_with_facilities = 0;
+        for (_, sys) in world.systems.iter() {
+            let fac_count = sys.defense_facilities.len()
+                + sys.manufacturing_facilities.len()
+                + sys.production_facilities.len();
+            total_facilities += fac_count;
+            if fac_count > 0 { systems_with_facilities += 1; }
+        }
+
+        // With procedural generation, we should have significantly more facilities
+        // than just the HQ ones (which would be ~10-20 from FACLCRTB + FACLHQTB).
+        assert!(
+            total_facilities > 30,
+            "Procedural facility generation should produce many facilities, got {}",
+            total_facilities
+        );
+        assert!(
+            systems_with_facilities > 10,
+            "Multiple systems should have facilities, got {} systems",
+            systems_with_facilities
+        );
     }
 }
