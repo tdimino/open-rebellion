@@ -72,6 +72,10 @@ crates/rebellion-render/src/
 ├── fog.rs              — Dim overlays for unexplored/unseen systems
 ├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget)
 ├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
+├── bmp_cache.rs        — DllSource enum, BMP/PNG texture cache with HD fallback, WASM stubs
+├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport
+├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
+├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
 ├── combat_view.rs      — Combat results integration into message log
 ├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
@@ -103,7 +107,8 @@ crates/rebellion-app/src/
 
 ```
 crates/rebellion-data/src/
-├── seeds.rs      — 9 seed table loader, fleet/unit/facility instantiation (545 LOC)
+├── seeds.rs      — Game seeding: 3-system model, character stat rolling, named placement (~1200 LOC, 8 tests)
+├── save.rs       — Save/load: bincode snapshots, save slots, version migration (v5)
 ├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
 └── simulation.rs — Shared simulation tick: SimulationStates bundle + run_simulation_tick() → Vec<GameEventRecord>
 ```

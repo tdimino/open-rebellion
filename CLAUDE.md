@@ -3,7 +3,7 @@ title: "Open Rebellion"
 description: "Project instructions and build configuration for the Open Rebellion Rust reimplementation"
 category: "reference"
 created: 2026-03-11
-updated: 2026-03-21
+updated: 2026-03-25
 tags: [claude-code, build, conventions, workspace]
 ---
 
@@ -54,13 +54,11 @@ PATH="/usr/bin:$PATH" cargo check
 
 ## Known Limitations
 
-- ~~WASM cfg guards added (v0.3.0) but browser data loading still returns error stub~~ Fixed: WASM loads DAT files via HTTP fetch + file cache (v0.14.0)
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
-- MISSNSD.DAT flag_col6..flag_col21 semantics partially resolved via Ghidra RE -- see `ghidra/notes/annotated-functions.md`
-- CapitalShipClass/FighterClass world models carry only ~10 of 50+ DAT fields -- 15 more needed for combat (see `ghidra/notes/rust-implementation-guide.md`)
-- Save v3 files rejected (bincode layout incompatible) -- migration from v3 not possible without SaveStateV3 struct
-- Mod Manager panel now shows discovered mods (wired in v0.10.0)
-- `web/gl.js` vendored in v0.7.0 -- WASM builds no longer fetch from network
+- CapitalShipClass/FighterClass world models carry only ~10 of 50+ DAT fields — 15 more needed for full combat parity
+- Save v5 format (v3/v4 rejected) — no backward migration
+- Game seeding ~50% parity — M5-M8 remaining (popularity init, control buckets, maintenance budget). See `agent_docs/roadmap.md`
+- Droid Advisor (Phase 2.3) not implemented — BIN animation format needs RE
 
 ## Agent Docs
 
@@ -78,12 +76,16 @@ agent_docs/systems/ai-parity-tracker.md -- Maps every original AI function to ou
 agent_docs/assets.md -- Asset pipeline: 6 pipelines (HD upscaling, 3D models, encyclopedia, reference image generation, audio, UI upscaling). 11 reference collections, 4 3D providers, 6 audio tools, 450+ UI BMPs. Read when working on visual or audio assets.
 agent_docs/game-media.md -- Game media overview: 18 DLLs, Smacker videos, WAV soundtrack. Read for high-level media inventory.
 agent_docs/dll-resource-catalog.md -- Granular DLL resource catalog: 2,441 BMPs + 3,223 data files across 11 DLLs. Per-DLL resource ID ranges, image dimensions, content descriptions. Read when working with specific DLL resources.
+agent_docs/seeding.md -- Game seeding pipeline: 3-system model, character stat rolling, named placement, 9 seed tables. Read when modifying initial galaxy state.
 
 docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for player/modder-facing mechanics reference.
 
 ## Reports
 
-- [Knesset Athirat Swarm Report (2026-03-13)](docs/reports/2026-03-13-knesset-athirat-swarm-report.md) — Living Galaxy (COMPLETE) + War Room (COMPLETE). 4 daborot, ~45 min, ~11.7K LOC, 105+ tests.
+- [Knesset Athirat (2026-03-13)](docs/reports/2026-03-13-knesset-athirat-swarm-report.md) — Living Galaxy + War Room. 4 daborot, ~11.7K LOC, 105+ tests.
+- Knesset Demiurge (2026-03-24) — UI parity swarm. 5 daborot, 13 tasks, ~3.8K LOC. Cockpit, tactical combat, audio, overlays, portraits.
+- Knesset Sassuratu (2026-03-24) — Visual QA + SEO/GEO. 47 test scenarios, 25 screenshots, 5 defects found and fixed.
+- [Game Seeding Audit](docs/plans/2026-03-24-003-game-seeding-parity-execplan.md) — 56 gaps found vs TheArchitect2018 wiki. M1-M4 implemented (8 tests).
 
 ## External References
 
