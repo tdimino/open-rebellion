@@ -635,6 +635,7 @@ async fn main() {
                         (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                     let ground_result = CombatSystem::resolve_ground(
                         &world, sys_key, true, // alliance is attacker
+                        2, // difficulty; TODO: use actual game difficulty
                         &ground_rolls, current_tick,
                     );
                     apply_ground_combat_result(&ground_result, &mut world);

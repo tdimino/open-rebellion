@@ -882,6 +882,18 @@ pub struct ProductionFacilityInstance {
     pub is_alliance: bool,
 }
 
+/// Class definition for a troop type — a template loaded from TROOPSD.DAT.
+///
+/// Instances (`TroopUnit`) reference this by `class_dat_id`.
+/// Used by ground combat to look up per-class attack/defense values.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TroopClassDef {
+    /// Ground attack strength of this troop class.
+    pub attack_strength: u32,
+    /// Ground defense strength of this troop class.
+    pub defense_strength: u32,
+}
+
 /// Class definition for a defense facility — a template loaded from DEFFACSD.DAT.
 ///
 /// Instances (`DefenseFacilityInstance`) reference this by `class_dat_id`.
@@ -915,6 +927,11 @@ pub struct GameWorld {
     pub manufacturing_facilities: slotmap::SlotMap<ManufacturingFacilityKey, ManufacturingFacilityInstance>,
     /// Production facilities (mines, refineries).
     pub production_facilities: slotmap::SlotMap<ProductionFacilityKey, ProductionFacilityInstance>,
+    /// Troop class definitions keyed by DatId (from TROOPSD.DAT).
+    /// Used by ground combat to look up per-class attack/defense values.
+    /// Repopulated from DAT on load; default to empty for save compatibility.
+    #[serde(default)]
+    pub troop_classes: HashMap<crate::ids::DatId, TroopClassDef>,
     /// Defense facility class definitions keyed by DatId (from DEFFACSD.DAT).
     /// Used by bombardment to look up per-class bombardment_defense values.
     /// Repopulated from DAT on load; default to empty for save compatibility.

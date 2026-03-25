@@ -302,7 +302,7 @@ pub fn run_simulation_tick(
         if space_result.winner == CombatSide::Attacker {
             let ground_rolls = take_rolls(256);
             let ground_result =
-                CombatSystem::resolve_ground(world, sys_key, true, &ground_rolls, current_tick);
+                CombatSystem::resolve_ground(world, sys_key, true, 2, &ground_rolls, current_tick);
             apply_ground_combat_result(&ground_result, world);
 
             if !ground_result.troop_damage.is_empty() {
@@ -1465,6 +1465,9 @@ mod tests {
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5,
             popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
@@ -1484,6 +1487,9 @@ mod tests {
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5,
             popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
@@ -1533,6 +1539,9 @@ mod tests {
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5,
             popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
@@ -1552,6 +1561,9 @@ mod tests {
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5,
             popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],

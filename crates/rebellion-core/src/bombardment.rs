@@ -207,6 +207,7 @@ mod tests {
             gnprtb: GnprtbParams::default(),
             sdprtb: SdprtbParams::default(),
             mission_tables: HashMap::new(),
+            troop_classes: HashMap::new(),
             defense_facility_classes: HashMap::new(),
         }
     }

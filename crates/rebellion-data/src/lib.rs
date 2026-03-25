@@ -16,6 +16,7 @@ use dat_dumper::types::minor_characters::MinorCharactersFile;
 use dat_dumper::types::sectors::SectorsFile;
 use dat_dumper::types::side_params::SideParamsFile;
 use dat_dumper::types::systems::SystemsFile;
+use dat_dumper::types::troops::TroopsFile;
 #[cfg(not(target_arch = "wasm32"))]
 use dat_dumper::types::textstra;
 use rebellion_core::dat::{ExplorationStatus, SectorGroup};
@@ -86,6 +87,7 @@ pub fn load_game_data_with_options(
         gnprtb: GnprtbParams::default(),
         sdprtb: SdprtbParams::default(),
         mission_tables: std::collections::HashMap::new(),
+        troop_classes: std::collections::HashMap::new(),
         defense_facility_classes: std::collections::HashMap::new(),
     };
 
@@ -398,7 +400,22 @@ pub fn load_game_data_with_options(
         }
     }
 
-    // ── 9. Defense facility classes ─────────────────────────────────────────
+    // ── 9. Troop classes ──────────────────────────────────────────────────
+    let troops_path = gdata_path.join("TROOPSD.DAT");
+    if file_available(&troops_path) {
+        let troops_file: TroopsFile = read_dat_file(&troops_path)?;
+        for dat in &troops_file.troops {
+            world.troop_classes.insert(
+                DatId::new(dat.id),
+                TroopClassDef {
+                    attack_strength: dat.attack_strength,
+                    defense_strength: dat.defense_strength,
+                },
+            );
+        }
+    }
+
+    // ── 10. Defense facility classes ─────────────────────────────────────────
     let deffac_path = gdata_path.join("DEFFACSD.DAT");
     if file_available(&deffac_path) {
         let deffac_file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;

@@ -15,6 +15,11 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{FleetKey, SystemKey, TroopKey};
 use crate::world::GameWorld;
 
+/// GNPRTB parameter for combat difficulty modifier (DAT_00661a88).
+/// Scales combat damage output. Value is percentage (100 = 1.0x).
+/// Same param used by FUN_0053e190 for bombardment and ground combat.
+const GNPRTB_COMBAT_DIFFICULTY_MODIFIER: u16 = 0x1400;
+
 // ---------------------------------------------------------------------------
 // Phase flags
 // ---------------------------------------------------------------------------
@@ -159,9 +164,7 @@ impl CombatSystem {
         attacker: FleetKey,
         defender: FleetKey,
         system: SystemKey,
-        // difficulty is consumed by the shield/hull phases once fully decompiled.
-        // Accepted now so the API is stable; suppressed until those phases land.
-        _difficulty: u8,
+        difficulty: u8,
         rng_rolls: &[f64],
         tick: u64,
     ) -> SpaceCombatResult {
@@ -179,6 +182,12 @@ impl CombatSystem {
         // Checks if either side has armed ships. Does NOT set PHASES_ENABLED yet.
         let any_armed = atk_ships.iter().any(|s| s.alive && s.weapon_nibble > 0)
             || def_ships.iter().any(|s| s.alive && s.weapon_nibble > 0);
+
+        // Difficulty modifier: FUN_0053e190 scales combat damage via GNPRTB.
+        let difficulty_mod = {
+            let raw = world.gnprtb.value(GNPRTB_COMBAT_DIFFICULTY_MODIFIER, difficulty);
+            if raw > 0 { raw as f64 / 100.0 } else { 1.0 }
+        };
 
         // Phase 3: Weapon fire (FUN_00544030).
         // Gate: ACTIVE && !PHASES_ENABLED — weapon fire runs BEFORE the pipeline is armed.
@@ -206,9 +215,9 @@ impl CombatSystem {
             Self::phase_shield_absorb(&mut def_ships);
 
             // Phase 5: Hull damage application (FUN_005443f0, 54 lines, vtable +0x1d0).
-            // Overflow damage after shields is applied to hull_current.
-            Self::phase_hull_damage(&mut atk_ships);
-            Self::phase_hull_damage(&mut def_ships);
+            // Overflow damage after shields is applied to hull_current, scaled by difficulty.
+            Self::phase_hull_damage(&mut atk_ships, difficulty_mod);
+            Self::phase_hull_damage(&mut def_ships, difficulty_mod);
 
             // Phase 6: Fighter engagement (FUN_005444e0, 53 lines, vtable +0x1d4).
             // Family 0x71 exactly uses alt_shield_path (C++ +0x78 bit7).
@@ -402,11 +411,13 @@ impl CombatSystem {
     /// Applies remaining pending damage (after shield absorption) to hull.
     /// No-op guard: only fires when pending_damage > 0 (mirrors C++ check
     /// `new_hull != current_hull` from FUN_00501490).
-    fn phase_hull_damage(ships: &mut [ShipSnap]) {
+    fn phase_hull_damage(ships: &mut [ShipSnap], difficulty_mod: f64) {
         for ship in ships.iter_mut() {
             if !ship.alive || ship.pending_damage == 0 { continue; }
 
-            ship.hull_current = (ship.hull_current - ship.pending_damage).max(0);
+            // Scale hull damage by difficulty modifier (FUN_0053e190).
+            let scaled_damage = ((ship.pending_damage as f64 * difficulty_mod) as i32).max(1);
+            ship.hull_current = (ship.hull_current - scaled_damage).max(0);
             ship.pending_damage = 0;
             ship.pending_ion_damage = 0;
 
@@ -743,15 +754,21 @@ impl CombatSystem {
     /// at the system, checks `regiment_strength` at C++ offset +0x96, calls per-unit
     /// resolution `FUN_004ee350`.
     ///
+    /// Per-unit resolution uses class-based attack/defense stats from TROOPSD.DAT
+    /// (`TroopClassDef`). Defense facilities at the system grant a defense bonus
+    /// to the defending faction's troops.
+    ///
     /// Death Star (family 0x34) takes a separate path — call `resolve_death_star()`.
     ///
     /// # Advance contract
     /// - Does NOT mutate world. Returns TroopDamageEvents.
+    /// - `difficulty`: 0-7 index into GNPRTB difficulty columns.
     /// - `rng_rolls`: one roll per attacker-defender pair. Budget: troop_count² rolls.
     pub fn resolve_ground(
         world: &GameWorld,
         system: SystemKey,
         attacker_is_alliance: bool,
+        difficulty: u8,
         rng_rolls: &[f64],
         tick: u64,
     ) -> GroundCombatResult {
@@ -760,8 +777,6 @@ impl CombatSystem {
         let mut troop_damage: Vec<TroopDamageEvent> = Vec::new();
 
         // Step 6-8 of FUN_00560d50: iterate all troops at system by faction.
-        // C++ uses `FUN_004f25c0(type=3)` to iterate troops (family 0x14-0x1b).
-        // In Rust: walk system.ground_units and partition by is_alliance.
         let (atk_keys, def_keys): (Vec<TroopKey>, Vec<TroopKey>) = sys.ground_units
             .iter()
             .copied()
@@ -778,14 +793,36 @@ impl CombatSystem {
             .filter(|&k| world.troops[k].regiment_strength > 0)
             .collect();
 
+        // Defense facility bonus: sum bombardment_defense of defending faction's facilities.
+        // Provides a flat defense bonus spread across defending troops (fortification advantage).
+        let defender_is_alliance = !attacker_is_alliance;
+        let facility_defense_bonus: f64 = sys.defense_facilities.iter()
+            .filter_map(|&key| world.defense_facilities.get(key))
+            .filter(|fac| fac.is_alliance == defender_is_alliance)
+            .map(|fac| {
+                world.defense_facility_classes
+                    .get(&fac.class_dat_id)
+                    .map(|c| c.bombardment_defense)
+                    .unwrap_or(10) as f64
+            })
+            .sum();
+
+        let facility_bonus_per_unit = if active_def.is_empty() {
+            0.0
+        } else {
+            facility_defense_bonus / active_def.len() as f64
+        };
+
+        // Difficulty modifier: scales damage via GNPRTB (FUN_0053e190).
+        // Default to 1.0x (100) if GNPRTB not loaded.
+        let difficulty_mod = {
+            let raw = world.gnprtb.value(GNPRTB_COMBAT_DIFFICULTY_MODIFIER, difficulty);
+            if raw > 0 { raw as f64 / 100.0 } else { 1.0 }
+        };
+
         // Per-unit resolution: FUN_004ee350 (30 lines).
-        // For each attacker-defender pair:
-        //   1. `old_strength = unit->regiment_strength` (offset +0x96)
-        //   2. If old_strength != new_value: set, notify both sides, vtable +0x330
-        //
-        // Same-side guard: `param_2 == param_1 → skip` (no friendly fire).
-        // In Rust: both keys are already in opposite partitions, guard is implicit.
-        // current_strength tracks live strength as damage accumulates within this battle.
+        // Each attacker regiment attacks each defender regiment individually.
+        // Damage computed from class attack/defense stats scaled by regiment strength.
         let mut current_strength: std::collections::HashMap<TroopKey, i16> = active_atk.iter()
             .chain(active_def.iter())
             .map(|&k| (k, world.troops[k].regiment_strength))
@@ -795,19 +832,50 @@ impl CombatSystem {
             for &def_key in &active_def {
                 let roll = rng.next().unwrap_or(0.5);
 
-                let atk_power = *current_strength.get(&atk_key).unwrap_or(&0) as f64;
-                let def_power = *current_strength.get(&def_key).unwrap_or(&0) as f64;
-                if atk_power <= 0.0 || def_power <= 0.0 { continue; }
+                let atk_str = *current_strength.get(&atk_key).unwrap_or(&0);
+                let def_str = *current_strength.get(&def_key).unwrap_or(&0);
+                if atk_str <= 0 || def_str <= 0 { continue; }
 
-                let total = atk_power + def_power;
-                // Hit probability: proportional to attacker strength vs combined strength.
-                // Approximation (vtable +0x330 formula pending decompile).
-                let hit_prob = atk_power / total;
+                // Look up class-based attack/defense stats from TROOPSD.DAT.
+                let atk_unit = &world.troops[atk_key];
+                let def_unit = &world.troops[def_key];
+
+                let atk_class_attack = world.troop_classes
+                    .get(&atk_unit.class_dat_id)
+                    .map(|c| c.attack_strength as f64)
+                    .unwrap_or(10.0);
+                let def_class_defense = world.troop_classes
+                    .get(&def_unit.class_dat_id)
+                    .map(|c| c.defense_strength as f64)
+                    .unwrap_or(10.0);
+                let def_class_attack = world.troop_classes
+                    .get(&def_unit.class_dat_id)
+                    .map(|c| c.attack_strength as f64)
+                    .unwrap_or(10.0);
+                let atk_class_defense = world.troop_classes
+                    .get(&atk_unit.class_dat_id)
+                    .map(|c| c.defense_strength as f64)
+                    .unwrap_or(10.0);
+                let _ = atk_class_defense; // reserved for future attacker-defense checks
+
+                // Effective power: class stat * (regiment_strength / 100).
+                // Defender gets facility bonus spread across defending units.
+                let atk_effective = atk_class_attack * (atk_str as f64 / 100.0);
+                let def_effective = def_class_defense * (def_str as f64 / 100.0)
+                    + facility_bonus_per_unit;
+
+                let total = atk_effective + def_effective;
+                if total <= 0.0 { continue; }
+
+                // Hit probability: proportional to effective attack vs total.
+                let hit_prob = atk_effective / total;
 
                 if roll < hit_prob {
                     // Attacker hits defender.
+                    let raw_damage = (atk_class_attack * (atk_str as f64 / 100.0) * difficulty_mod)
+                        .max(1.0);
+                    let reduction = (raw_damage as i16).max(1).min(def_str);
                     let old_strength = current_strength[&def_key];
-                    let reduction = (old_strength / 4).max(1);
                     let new_strength = (old_strength - reduction).max(0);
                     current_strength.insert(def_key, new_strength);
                     troop_damage.push(TroopDamageEvent {
@@ -816,9 +884,11 @@ impl CombatSystem {
                         strength_after: new_strength,
                     });
                 } else {
-                    // Defender hits attacker.
+                    // Defender counter-attacks.
+                    let raw_damage = (def_class_attack * (def_str as f64 / 100.0) * difficulty_mod)
+                        .max(1.0);
+                    let reduction = (raw_damage as i16).max(1).min(atk_str);
                     let old_strength = current_strength[&atk_key];
-                    let reduction = (old_strength / 4).max(1);
                     let new_strength = (old_strength - reduction).max(0);
                     current_strength.insert(atk_key, new_strength);
                     troop_damage.push(TroopDamageEvent {
@@ -1122,7 +1192,7 @@ mod tests {
         world.systems[sys].ground_units.push(def_key);
 
         let rolls: Vec<f64> = vec![0.1; 100]; // low rolls → attacker almost always hits
-        let result = CombatSystem::resolve_ground(&world, sys, true, &rolls, 1);
+        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
         assert_eq!(result.winner, CombatSide::Attacker);
     }
 
@@ -1133,7 +1203,7 @@ mod tests {
         let sys = make_system(&mut world, sector);
 
         let rolls: Vec<f64> = vec![];
-        let result = CombatSystem::resolve_ground(&world, sys, true, &rolls, 1);
+        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
         assert_eq!(result.winner, CombatSide::Draw);
         assert!(result.troop_damage.is_empty());
     }
@@ -1158,7 +1228,7 @@ mod tests {
         world.systems[sys].ground_units.extend([k1, k2]);
 
         let rolls: Vec<f64> = vec![0.5; 10];
-        let result = CombatSystem::resolve_ground(&world, sys, true, &rolls, 1);
+        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
         assert_eq!(result.winner, CombatSide::Draw);
     }
 
@@ -1171,6 +1241,275 @@ mod tests {
         let result = CombatSystem::resolve_death_star(&world, sys, 42);
         assert_eq!(result.winner, CombatSide::Attacker);
         assert_eq!(result.tick, 42);
+    }
+
+    // -----------------------------------------------------------------------
+    // Ground combat formula + difficulty modifier tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_ground_combat_uses_class_attack_defense_stats() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        // Register troop classes with asymmetric stats.
+        let strong_class = DatId::new(0x14000001);
+        let weak_class = DatId::new(0x14000002);
+        world.troop_classes.insert(strong_class, TroopClassDef {
+            attack_strength: 50,
+            defense_strength: 20,
+        });
+        world.troop_classes.insert(weak_class, TroopClassDef {
+            attack_strength: 5,
+            defense_strength: 5,
+        });
+
+        // 3 strong attackers vs 1 weak defender.
+        for _ in 0..3 {
+            let key = world.troops.insert(TroopUnit {
+                class_dat_id: strong_class,
+                is_alliance: true,
+                regiment_strength: 100,
+            });
+            world.systems[sys].ground_units.push(key);
+        }
+        let def_key = world.troops.insert(TroopUnit {
+            class_dat_id: weak_class,
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        world.systems[sys].ground_units.push(def_key);
+
+        let rolls: Vec<f64> = vec![0.1; 100]; // low rolls → attacker hits
+        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
+        assert_eq!(result.winner, CombatSide::Attacker);
+        // Verify damage events reference the defender troop.
+        assert!(result.troop_damage.iter().any(|e| e.troop == def_key));
+    }
+
+    #[test]
+    fn test_ground_combat_defense_facility_helps_defender() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        let class_id = DatId::new(0x14000001);
+        world.troop_classes.insert(class_id, TroopClassDef {
+            attack_strength: 20,
+            defense_strength: 20,
+        });
+
+        // Equal forces: 2 attackers vs 2 defenders.
+        for _ in 0..2 {
+            let key = world.troops.insert(TroopUnit {
+                class_dat_id: class_id,
+                is_alliance: true,
+                regiment_strength: 100,
+            });
+            world.systems[sys].ground_units.push(key);
+        }
+        for _ in 0..2 {
+            let key = world.troops.insert(TroopUnit {
+                class_dat_id: class_id,
+                is_alliance: false,
+                regiment_strength: 100,
+            });
+            world.systems[sys].ground_units.push(key);
+        }
+
+        // Add a strong defense facility for the Empire (defender).
+        let fac_class_id = DatId::new(0x1c000001);
+        world.defense_facility_classes.insert(fac_class_id, DefenseFacilityClassDef {
+            bombardment_defense: 200,
+        });
+        let fac_key = world.defense_facilities.insert(DefenseFacilityInstance {
+            class_dat_id: fac_class_id,
+            is_alliance: false, // empire facility
+        });
+        world.systems[sys].defense_facilities.push(fac_key);
+
+        // With massive facility bonus, defender should win or draw with equal forces.
+        let rolls: Vec<f64> = vec![0.5; 100];
+        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
+        // The facility bonus shifts hit probability toward the defender.
+        assert!(result.winner == CombatSide::Defender || result.winner == CombatSide::Draw,
+            "Defense facilities should help the defender, got {:?}", result.winner);
+    }
+
+    #[test]
+    fn test_ground_combat_difficulty_scales_damage() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        let class_id = DatId::new(0x14000001);
+        world.troop_classes.insert(class_id, TroopClassDef {
+            attack_strength: 20,
+            defense_strength: 10,
+        });
+
+        // Set up GNPRTB with difficulty-varying modifier.
+        // Param 0x1400: easy=50 (0.5x damage), hard=200 (2x damage).
+        world.gnprtb = GnprtbParams::new(vec![GnprtbEntry {
+            parameter_id: 0x1400,
+            development: 100,
+            alliance_sp_easy: 50,   // difficulty=1 → 0.5x damage
+            alliance_sp_medium: 100, // difficulty=2 → 1.0x
+            alliance_sp_hard: 200,   // difficulty=3 → 2.0x
+            empire_sp_easy: 100,
+            empire_sp_medium: 100,
+            empire_sp_hard: 100,
+            multiplayer: 100,
+        }]);
+
+        // 1 attacker vs 1 defender at easy difficulty.
+        let atk = world.troops.insert(TroopUnit {
+            class_dat_id: class_id,
+            is_alliance: true,
+            regiment_strength: 100,
+        });
+        let def = world.troops.insert(TroopUnit {
+            class_dat_id: class_id,
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        world.systems[sys].ground_units.extend([atk, def]);
+
+        let rolls: Vec<f64> = vec![0.1]; // attacker hits
+        let easy_result = CombatSystem::resolve_ground(&world, sys, true, 1, &rolls, 1);
+        let easy_damage: i16 = easy_result.troop_damage.iter()
+            .filter(|e| e.troop == def)
+            .map(|e| e.strength_before - e.strength_after)
+            .sum();
+
+        // Reset strengths for hard difficulty test.
+        world.troops[atk].regiment_strength = 100;
+        world.troops[def].regiment_strength = 100;
+
+        let rolls: Vec<f64> = vec![0.1];
+        let hard_result = CombatSystem::resolve_ground(&world, sys, true, 3, &rolls, 1);
+        let hard_damage: i16 = hard_result.troop_damage.iter()
+            .filter(|e| e.troop == def)
+            .map(|e| e.strength_before - e.strength_after)
+            .sum();
+
+        // Hard (2.0x) should deal more damage than easy (0.5x).
+        assert!(hard_damage > easy_damage,
+            "Hard difficulty damage ({}) should exceed easy ({})", hard_damage, easy_damage);
+    }
+
+    #[test]
+    fn test_ground_combat_no_class_data_uses_fallback() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        // Do NOT register any troop classes — should use fallback (10/10).
+        let atk = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(0x14000099), // unknown class
+            is_alliance: true,
+            regiment_strength: 100,
+        });
+        let def = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(0x14000099),
+            is_alliance: false,
+            regiment_strength: 50,
+        });
+        world.systems[sys].ground_units.extend([atk, def]);
+
+        let rolls: Vec<f64> = vec![0.1; 10]; // attacker hits
+        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
+        // Should produce damage events using fallback stats, not panic.
+        assert!(!result.troop_damage.is_empty());
+    }
+
+    #[test]
+    fn test_space_combat_difficulty_scales_hull_damage() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        // Set up GNPRTB with difficulty-varying modifier.
+        world.gnprtb = GnprtbParams::new(vec![GnprtbEntry {
+            parameter_id: 0x1400,
+            development: 100,
+            alliance_sp_easy: 50,
+            alliance_sp_medium: 100,
+            alliance_sp_hard: 200,
+            empire_sp_easy: 100,
+            empire_sp_medium: 100,
+            empire_sp_hard: 100,
+            multiplayer: 100,
+        }]);
+
+        let atk_class = make_class(&mut world, 500, 100);
+        let def_class = make_class(&mut world, 500, 100);
+        let atk = make_fleet(&mut world, sys, atk_class, 2, true);
+        let def = make_fleet(&mut world, sys, def_class, 2, false);
+
+        // Run at easy difficulty (0.5x damage).
+        let rolls: Vec<f64> = vec![0.5; 200];
+        let easy_result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let easy_total_damage: i32 = easy_result.ship_damage.iter()
+            .map(|e| e.hull_before - e.hull_after)
+            .sum();
+
+        // Run at hard difficulty (2.0x damage) with same rolls.
+        let hard_result = CombatSystem::resolve_space(&world, atk, def, sys, 3, &rolls, 1);
+        let hard_total_damage: i32 = hard_result.ship_damage.iter()
+            .map(|e| e.hull_before - e.hull_after)
+            .sum();
+
+        // Hard should deal more total damage than easy.
+        assert!(hard_total_damage > easy_total_damage,
+            "Hard difficulty damage ({}) should exceed easy ({})", hard_total_damage, easy_total_damage);
+    }
+
+    #[test]
+    fn test_ground_combat_large_asymmetric_battle() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        let elite_class = DatId::new(0x14000001);
+        let militia_class = DatId::new(0x14000002);
+        world.troop_classes.insert(elite_class, TroopClassDef {
+            attack_strength: 80,
+            defense_strength: 60,
+        });
+        world.troop_classes.insert(militia_class, TroopClassDef {
+            attack_strength: 10,
+            defense_strength: 5,
+        });
+
+        // 2 elite attackers vs 6 militia defenders.
+        for _ in 0..2 {
+            let key = world.troops.insert(TroopUnit {
+                class_dat_id: elite_class,
+                is_alliance: true,
+                regiment_strength: 100,
+            });
+            world.systems[sys].ground_units.push(key);
+        }
+        for _ in 0..6 {
+            let key = world.troops.insert(TroopUnit {
+                class_dat_id: militia_class,
+                is_alliance: false,
+                regiment_strength: 100,
+            });
+            world.systems[sys].ground_units.push(key);
+        }
+
+        // With median rolls the elite troops should inflict heavy casualties.
+        let rolls: Vec<f64> = vec![0.3; 200];
+        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
+        // Elite attackers should win against weak militia despite being outnumbered.
+        assert_eq!(result.winner, CombatSide::Attacker,
+            "Elite troops should overcome militia numbers");
+        // Should have generated substantial damage events.
+        assert!(result.troop_damage.len() >= 6,
+            "Expected at least 6 damage events, got {}", result.troop_damage.len());
     }
 
     // -----------------------------------------------------------------------
@@ -1451,7 +1790,7 @@ mod tests {
             alive: true,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
-        CombatSystem::phase_hull_damage(&mut ships);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0);
         assert_eq!(ships[0].shield_current, 50);
         assert_eq!(ships[0].hull_current, 100);
         assert!(ships[0].alive);
@@ -1473,7 +1812,7 @@ mod tests {
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 0);
         assert!(ships[0].pending_damage > 0);
-        CombatSystem::phase_hull_damage(&mut ships);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0);
         assert!(ships[0].hull_current < 100);
         assert!(ships[0].hull_current > 0);
     }
@@ -1524,7 +1863,7 @@ mod tests {
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 145);
-        CombatSystem::phase_hull_damage(&mut ships);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0);
         assert_eq!(ships[0].hull_current, 100);
     }
 
@@ -1543,7 +1882,7 @@ mod tests {
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].pending_damage, 60);
-        CombatSystem::phase_hull_damage(&mut ships);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0);
         assert_eq!(ships[0].hull_current, 40);
     }
 
@@ -1561,7 +1900,7 @@ mod tests {
             alive: true,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
-        CombatSystem::phase_hull_damage(&mut ships);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0);
         assert!(ships[0].alive);
         assert_eq!(ships[0].hull_current, 50);
         assert_eq!(ships[0].shield_current, 100);
