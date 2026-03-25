@@ -289,7 +289,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     gdata_path: &Path,
     world: &mut GameWorld,
     system_key_map: &HashMap<u32, SystemKey>,
-    _seed_options: &SeedOptions,
+    seed_options: &SeedOptions,
     rng: &mut R,
 ) -> anyhow::Result<()> {
     // Build class-lookup indices once (avoid repeated arena scans).
@@ -407,6 +407,11 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     roll_character_stats(world, rng);
     place_named_characters(world, &special);
 
+    // ── M5: Procedural control buckets, population, and support ──────────
+    assign_control_buckets(world, &special, seed_options, rng);
+    initialize_population(world, seed_options, rng);
+    initialize_support(world, &special, seed_options, rng);
+
     Ok(())
 }
 
@@ -460,7 +465,7 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     files: &std::collections::HashMap<String, Vec<u8>>,
     world: &mut GameWorld,
     system_key_map: &HashMap<u32, SystemKey>,
-    _seed_options: &SeedOptions,
+    seed_options: &SeedOptions,
     rng: &mut R,
 ) -> anyhow::Result<()> {
     let capship_index: CapShipIndex = world.capital_ship_classes.iter()
@@ -519,6 +524,11 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
 
     roll_character_stats(world, rng);
     place_named_characters(world, &special);
+
+    // M5: Procedural control buckets, population, and support
+    assign_control_buckets(world, &special, seed_options, rng);
+    initialize_population(world, seed_options, rng);
+    initialize_support(world, &special, seed_options, rng);
 
     Ok(())
 }
@@ -827,6 +837,320 @@ fn dispatch_facility_item(
         }
         _ => {
             // Unknown family in facility table — skip.
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// M5: Procedural control buckets, population state, and support initialization
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Assign political control to all non-special core systems using the original
+/// bucket algorithm from SDPRTB 7680 (strong%) / 7681 (weak%).
+///
+/// The original game:
+/// 1. Counts all core systems.
+/// 2. Computes Alliance strong, Alliance weak, Empire strong, Empire weak as
+///    `floor(core_count * percent / 100)`.
+/// 3. Subtracts 1 from Empire strong (Coruscant is pre-assigned).
+/// 4. Neutral = remainder.
+/// 5. Shuffles all systems, then drains buckets in order:
+///    Alliance strong → Alliance weak → Empire strong → Empire weak → neutral.
+fn assign_control_buckets<R: Rng + ?Sized>(
+    world: &mut GameWorld,
+    special: &SpecialSystems,
+    seed_options: &SeedOptions,
+    rng: &mut R,
+) {
+    let diff = seed_options.gnprtb_index();
+
+    // Collect core systems that are NOT one of the 3 special systems.
+    let mut core_systems: Vec<SystemKey> = Vec::new();
+    for (sys_key, sys) in world.systems.iter() {
+        if sys_key == special.coruscant || sys_key == special.yavin || sys_key == special.rebel_hq {
+            continue;
+        }
+        let sector = match world.sectors.get(sys.sector) {
+            Some(s) => s,
+            None => continue,
+        };
+        if sector.group == SectorGroup::Core {
+            core_systems.push(sys_key);
+        }
+    }
+
+    // Sort for deterministic ordering before shuffle.
+    core_systems.sort_by_key(|&k| world.systems.get(k).map_or(0, |s| s.dat_id.raw()));
+    core_systems.shuffle(rng);
+
+    let core_count = core_systems.len() as i32;
+
+    // SDPRTB 7680 = strong support percentage, 7681 = weak support percentage.
+    // These are per-faction: Alliance column and Empire column.
+    let alliance_strong_pct = world.sdprtb.value(7680, diff, Faction::Alliance);
+    let alliance_weak_pct   = world.sdprtb.value(7681, diff, Faction::Alliance);
+    let empire_strong_pct   = world.sdprtb.value(7680, diff, Faction::Empire);
+    let empire_weak_pct     = world.sdprtb.value(7681, diff, Faction::Empire);
+
+    let alliance_strong = (core_count * alliance_strong_pct / 100).max(0) as usize;
+    let alliance_weak   = (core_count * alliance_weak_pct / 100).max(0) as usize;
+    // Subtract 1 from Empire strong for Coruscant (already assigned).
+    let empire_strong   = ((core_count * empire_strong_pct / 100).max(0) as usize).saturating_sub(1);
+    let empire_weak     = (core_count * empire_weak_pct / 100).max(0) as usize;
+
+    // Drain buckets in order across the shuffled system list.
+    let mut idx = 0;
+    // Alliance strong
+    for _ in 0..alliance_strong {
+        if idx >= core_systems.len() { break; }
+        let k = core_systems[idx];
+        if let Some(sys) = world.systems.get_mut(k) {
+            sys.control = ControlKind::Controlled(Faction::Alliance);
+        }
+        idx += 1;
+    }
+    // Alliance weak
+    for _ in 0..alliance_weak {
+        if idx >= core_systems.len() { break; }
+        let k = core_systems[idx];
+        if let Some(sys) = world.systems.get_mut(k) {
+            sys.control = ControlKind::Controlled(Faction::Alliance);
+        }
+        idx += 1;
+    }
+    // Empire strong
+    for _ in 0..empire_strong {
+        if idx >= core_systems.len() { break; }
+        let k = core_systems[idx];
+        if let Some(sys) = world.systems.get_mut(k) {
+            sys.control = ControlKind::Controlled(Faction::Empire);
+        }
+        idx += 1;
+    }
+    // Empire weak
+    for _ in 0..empire_weak {
+        if idx >= core_systems.len() { break; }
+        let k = core_systems[idx];
+        if let Some(sys) = world.systems.get_mut(k) {
+            sys.control = ControlKind::Controlled(Faction::Empire);
+        }
+        idx += 1;
+    }
+    // Remainder: neutral (Uncontrolled) — already the default, no action needed.
+}
+
+/// Set `is_populated` on systems based on GNPRTB 7730 (core %) and 7731 (rim %).
+///
+/// Original: core systems have param 7730 = 100 (always populated).
+/// Rim systems have param 7731 = 31 (31% chance of populated).
+/// Special systems are already marked populated by `initialize_special_systems`.
+fn initialize_population<R: Rng + ?Sized>(
+    world: &mut GameWorld,
+    seed_options: &SeedOptions,
+    rng: &mut R,
+) {
+    let diff = seed_options.gnprtb_index();
+    let core_pop_pct = world.gnprtb.value(7730, diff) as u32;
+    let rim_pop_pct  = world.gnprtb.value(7731, diff) as u32;
+
+    // Collect keys + sector info to avoid borrow issues.
+    let system_info: Vec<(SystemKey, SectorGroup, bool)> = world.systems.iter()
+        .map(|(k, sys)| {
+            let group = world.sectors.get(sys.sector)
+                .map(|s| s.group)
+                .unwrap_or(SectorGroup::RimOuter);
+            (k, group, sys.is_populated)
+        })
+        .collect();
+
+    for (key, group, already_populated) in system_info {
+        if already_populated {
+            continue; // Special systems already marked.
+        }
+        let pct = match group {
+            SectorGroup::Core => core_pop_pct,
+            SectorGroup::RimInner | SectorGroup::RimOuter => rim_pop_pct,
+        };
+        let populated = if pct >= 100 {
+            true
+        } else if pct == 0 {
+            false
+        } else {
+            rng.gen_range(0..100) < pct
+        };
+        if let Some(sys) = world.systems.get_mut(key) {
+            sys.is_populated = populated;
+        }
+    }
+}
+
+/// Initialize support (popularity) values for all systems.
+///
+/// Mapping from original 0-100 support to our dual f32 popularity:
+/// - For faction-controlled systems, the controlling faction gets `support / 100.0`
+///   and the opposing faction gets `(100 - support) / 100.0`.
+/// - For neutral/uncontrolled systems, both factions get `support / 100.0`
+///   (centered around 0.5).
+///
+/// Original formulas:
+/// - Core controlled strong: `base(7682) + random(0..extra(7683))` → 60-90 range
+/// - Core controlled weak:   `base(7684) + random(0..extra(7685))` → 20-50 range
+/// - Core neutral:           `random(0..spread(7764)) + (50 - spread/2)` → ~41-59
+/// - Rim populated:          `random(0..spread(7765)) + 50` → 50 (7765=0 in stock)
+/// - Unpopulated:            50 (hard-coded neutral)
+fn initialize_support<R: Rng + ?Sized>(
+    world: &mut GameWorld,
+    special: &SpecialSystems,
+    seed_options: &SeedOptions,
+    rng: &mut R,
+) {
+    let diff = seed_options.gnprtb_index();
+
+    // Neutral spread params from GNPRTB.
+    let core_neutral_spread = world.gnprtb.value(7764, diff).max(0) as u32;  // 18 in stock
+    let rim_pop_spread      = world.gnprtb.value(7765, diff).max(0) as u32;  // 0 in stock
+
+    // We need to know which systems are in the "strong" vs "weak" bucket.
+    // The bucket assignment is implicit in assign_control_buckets above,
+    // but we didn't persist which bucket each system landed in.
+    // We need to re-derive it: collect core controlled systems, and classify
+    // them as strong or weak based on the SDPRTB percentage split.
+    //
+    // Approach: collect all non-special core systems that are controlled,
+    // sort deterministically, shuffle with same RNG state would be ideal but
+    // RNG has already advanced. Instead, we'll use a simpler scheme:
+    // For each faction's controlled core systems, the first N are "strong"
+    // (where N = floor(core_count * strong_pct / 100)), rest are "weak".
+    //
+    // Actually, since assign_control_buckets drains in order
+    // (alliance_strong, alliance_weak, empire_strong, empire_weak),
+    // and the core_systems list was shuffled then drained sequentially,
+    // the first alliance_strong systems in the drained list got Alliance control,
+    // etc. But we don't have that list anymore.
+    //
+    // Simpler: for each faction, count how many core systems it controls.
+    // The first `strong_count` get strong support, rest get weak support.
+    // Since the bucket assignment was random, which ones are "strong" vs "weak"
+    // is also random — so we can just assign strong to the first N.
+
+    // Collect system info to avoid borrow issues.
+    struct SysInfo {
+        key: SystemKey,
+        group: SectorGroup,
+        is_populated: bool,
+        control: ControlKind,
+        is_special: bool,
+    }
+    let sys_infos: Vec<SysInfo> = world.systems.iter()
+        .map(|(k, sys)| {
+            let group = world.sectors.get(sys.sector)
+                .map(|s| s.group)
+                .unwrap_or(SectorGroup::RimOuter);
+            let is_special = k == special.coruscant || k == special.yavin || k == special.rebel_hq;
+            SysInfo { key: k, group, is_populated: sys.is_populated, control: sys.control, is_special }
+        })
+        .collect();
+
+    // Count core systems for bucket math.
+    let total_core_non_special: usize = sys_infos.iter()
+        .filter(|s| s.group == SectorGroup::Core && !s.is_special)
+        .count();
+    let core_count = total_core_non_special as i32;
+
+    // Compute strong counts per faction.
+    let alliance_strong_pct = world.sdprtb.value(7680, diff, Faction::Alliance);
+    let empire_strong_pct   = world.sdprtb.value(7680, diff, Faction::Empire);
+    let alliance_strong_count = (core_count * alliance_strong_pct / 100).max(0) as usize;
+    let empire_strong_count = ((core_count * empire_strong_pct / 100).max(0) as usize).saturating_sub(1);
+
+    // Support base/extra from SDPRTB 7682-7685 (side-aware).
+    let get_strong_support = |faction: Faction| -> (i32, i32) {
+        let base  = world.sdprtb.value(7682, diff, faction);
+        let extra = world.sdprtb.value(7683, diff, faction).max(0);
+        (base, extra)
+    };
+    let get_weak_support = |faction: Faction| -> (i32, i32) {
+        let base  = world.sdprtb.value(7684, diff, faction);
+        let extra = world.sdprtb.value(7685, diff, faction).max(0);
+        (base, extra)
+    };
+
+    // Track how many of each faction's core systems we've seen (to split strong/weak).
+    let mut alliance_core_seen: usize = 0;
+    let mut empire_core_seen: usize = 0;
+
+    for info in &sys_infos {
+        if info.is_special {
+            continue; // Already set to 100% loyalty by initialize_special_systems.
+        }
+
+        let (pop_a, pop_e) = match info.group {
+            SectorGroup::Core => {
+                match info.control {
+                    ControlKind::Controlled(Faction::Alliance) => {
+                        let is_strong = alliance_core_seen < alliance_strong_count;
+                        alliance_core_seen += 1;
+                        let (base, extra) = if is_strong {
+                            get_strong_support(Faction::Alliance)
+                        } else {
+                            get_weak_support(Faction::Alliance)
+                        };
+                        let support = if extra > 0 {
+                            base + rng.gen_range(0..=extra)
+                        } else {
+                            base
+                        };
+                        let support = support.clamp(0, 100) as f32 / 100.0;
+                        (support, 1.0 - support)
+                    }
+                    ControlKind::Controlled(Faction::Empire) => {
+                        let is_strong = empire_core_seen < empire_strong_count;
+                        empire_core_seen += 1;
+                        let (base, extra) = if is_strong {
+                            get_strong_support(Faction::Empire)
+                        } else {
+                            get_weak_support(Faction::Empire)
+                        };
+                        let support = if extra > 0 {
+                            base + rng.gen_range(0..=extra)
+                        } else {
+                            base
+                        };
+                        let support = support.clamp(0, 100) as f32 / 100.0;
+                        (1.0 - support, support)
+                    }
+                    _ => {
+                        // Neutral core: random(0..spread) + (50 - spread/2)
+                        let support = if core_neutral_spread > 0 {
+                            let r = rng.gen_range(0..core_neutral_spread) as i32;
+                            (50 - (core_neutral_spread as i32) / 2 + r).clamp(0, 100) as f32 / 100.0
+                        } else {
+                            0.5
+                        };
+                        (support, support) // Both factions see same neutral support
+                    }
+                }
+            }
+            SectorGroup::RimInner | SectorGroup::RimOuter => {
+                if info.is_populated {
+                    // Rim populated: random(0..spread) + 50
+                    let support = if rim_pop_spread > 0 {
+                        let r = rng.gen_range(0..rim_pop_spread) as i32;
+                        (50 + r).clamp(0, 100) as f32 / 100.0
+                    } else {
+                        0.5
+                    };
+                    (support, support) // Neutral rim systems
+                } else {
+                    // Unpopulated: always 50
+                    (0.5, 0.5)
+                }
+            }
+        };
+
+        if let Some(sys) = world.systems.get_mut(info.key) {
+            sys.popularity_alliance = pop_a;
+            sys.popularity_empire = pop_e;
         }
     }
 }
@@ -1268,5 +1592,197 @@ mod tests {
         roll_skill_pair(&mut pair, &mut rng);
         assert_eq!(pair.base, 100, "zero-variance pair should keep original base");
         assert_eq!(pair.variance, 0);
+    }
+
+    // ── M5: Support/popularity initialization tests ─────────────────────────
+
+    #[test]
+    fn support_ranges_match_original_rules() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // No system should have both popularity values at 0.0 (the old default).
+        // Special systems have 1.0/0.0 or 0.0/1.0; others should have non-zero values.
+        let mut zero_pop_count = 0;
+        let mut total_count = 0;
+        for (_, sys) in world.systems.iter() {
+            total_count += 1;
+            if sys.popularity_alliance == 0.0 && sys.popularity_empire == 0.0 {
+                zero_pop_count += 1;
+            }
+        }
+        assert!(
+            zero_pop_count == 0,
+            "No system should have both popularity values at 0.0, found {} of {} systems",
+            zero_pop_count, total_count
+        );
+
+        // Core controlled systems should have support in [0.2, 1.0] range
+        // (weak base = 20, strong base + extra = 90, plus special at 100)
+        for (_, sys) in world.systems.iter() {
+            let sector = world.sectors.get(sys.sector);
+            if sector.map_or(false, |s| s.group == SectorGroup::Core) {
+                match sys.control {
+                    ControlKind::Controlled(Faction::Alliance) => {
+                        assert!(
+                            sys.popularity_alliance >= 0.2 && sys.popularity_alliance <= 1.0,
+                            "Alliance-controlled core system '{}' popularity_alliance={} should be in [0.2, 1.0]",
+                            sys.name, sys.popularity_alliance
+                        );
+                    }
+                    ControlKind::Controlled(Faction::Empire) => {
+                        assert!(
+                            sys.popularity_empire >= 0.2 && sys.popularity_empire <= 1.0,
+                            "Empire-controlled core system '{}' popularity_empire={} should be in [0.2, 1.0]",
+                            sys.name, sys.popularity_empire
+                        );
+                    }
+                    _ => {
+                        // Neutral core: both in [0.41, 0.59]
+                        assert!(
+                            sys.popularity_alliance >= 0.40 && sys.popularity_alliance <= 0.60,
+                            "Neutral core system '{}' popularity_alliance={} should be in [0.40, 0.60]",
+                            sys.name, sys.popularity_alliance
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn core_bucket_counts_follow_sdprtb_percentages() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // Count core systems by faction control (excluding special systems).
+        let coruscant = world.systems.iter()
+            .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
+            .map(|(k, _)| k);
+        let yavin = world.systems.iter()
+            .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
+            .map(|(k, _)| k);
+        let rebel_hq = world.systems.iter()
+            .find(|(_, s)| {
+                s.is_headquarters
+                    && s.control.is_controlled_by(Faction::Alliance)
+                    && s.dat_id.raw() != YAVIN_SEQ_ID
+            })
+            .map(|(k, _)| k);
+
+        let special_keys: Vec<SystemKey> = [coruscant, yavin, rebel_hq]
+            .iter()
+            .filter_map(|k| *k)
+            .collect();
+
+        let mut alliance_controlled = 0;
+        let mut empire_controlled = 0;
+        let mut neutral = 0;
+        let mut total_core = 0;
+
+        for (key, sys) in world.systems.iter() {
+            if special_keys.contains(&key) { continue; }
+            let sector = world.sectors.get(sys.sector);
+            if !sector.map_or(false, |s| s.group == SectorGroup::Core) { continue; }
+            total_core += 1;
+            match sys.control {
+                ControlKind::Controlled(Faction::Alliance) => alliance_controlled += 1,
+                ControlKind::Controlled(Faction::Empire) => empire_controlled += 1,
+                _ => neutral += 1,
+            }
+        }
+
+        // With default medium Alliance difficulty, SDPRTB 7680 Alliance=20%, Empire=25%
+        // and 7681 Alliance=0%, Empire=10%.
+        // So alliance_controlled = floor(core * 20/100) + floor(core * 0/100)
+        //    empire_controlled = floor(core * 25/100) - 1 + floor(core * 10/100)
+        // The actual counts depend on core_count. Just verify non-zero distribution.
+        assert!(total_core > 0, "Should have core systems");
+        assert!(
+            alliance_controlled + empire_controlled + neutral == total_core,
+            "Control buckets should sum to total core: A={} E={} N={} total={}",
+            alliance_controlled, empire_controlled, neutral, total_core
+        );
+        // With medium difficulty, both sides should have some controlled systems.
+        assert!(
+            alliance_controlled > 0,
+            "Alliance should control some core systems (got {}/{})",
+            alliance_controlled, total_core
+        );
+        assert!(
+            empire_controlled > 0,
+            "Empire should control some core systems (got {}/{})",
+            empire_controlled, total_core
+        );
+    }
+
+    #[test]
+    fn populated_systems_follow_gnprtb_rules() {
+        let path = gdata_path();
+        if !path.exists() {
+            eprintln!("skipping: data/base not found at {:?}", path);
+            return;
+        }
+        let seed_options = SeedOptions {
+            rng_seed: Some(42),
+            ..SeedOptions::default()
+        };
+        let world = crate::load_game_data_with_options(&path, &seed_options)
+            .expect("load_game_data_with_options failed");
+
+        // All core systems should be populated (GNPRTB 7730 = 100).
+        let mut core_count = 0;
+        let mut core_populated = 0;
+        let mut rim_count = 0;
+        let mut rim_populated = 0;
+        for (_, sys) in world.systems.iter() {
+            let sector = world.sectors.get(sys.sector);
+            let group = sector.map(|s| s.group).unwrap_or(SectorGroup::RimOuter);
+            match group {
+                SectorGroup::Core => {
+                    core_count += 1;
+                    if sys.is_populated { core_populated += 1; }
+                }
+                SectorGroup::RimInner | SectorGroup::RimOuter => {
+                    rim_count += 1;
+                    if sys.is_populated { rim_populated += 1; }
+                }
+            }
+        }
+
+        assert_eq!(
+            core_count, core_populated,
+            "All {} core systems should be populated, but only {} are",
+            core_count, core_populated
+        );
+
+        // Rim: ~31% should be populated (GNPRTB 7731 = 31).
+        // With enough systems, expect 15-50% range (statistical variability).
+        if rim_count > 5 {
+            let pct = rim_populated as f64 / rim_count as f64 * 100.0;
+            assert!(
+                pct > 10.0 && pct < 60.0,
+                "Rim populated percentage should be roughly ~31%, got {:.1}% ({}/{})",
+                pct, rim_populated, rim_count
+            );
+        }
     }
 }

@@ -14,6 +14,7 @@ use dat_dumper::types::int_table::IntTableFile;
 use dat_dumper::types::major_characters::{CharacterEntry, MajorCharactersFile};
 use dat_dumper::types::minor_characters::MinorCharactersFile;
 use dat_dumper::types::sectors::SectorsFile;
+use dat_dumper::types::side_params::SideParamsFile;
 use dat_dumper::types::systems::SystemsFile;
 #[cfg(not(target_arch = "wasm32"))]
 use dat_dumper::types::textstra;
@@ -37,6 +38,14 @@ pub mod simulation;
 /// - `MJCHARSD.DAT`
 /// - `MNCHARSD.DAT`
 pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
+    load_game_data_with_options(gdata_path, &SeedOptions::default())
+}
+
+/// Load a new game with explicit seeding options.
+pub fn load_game_data_with_options(
+    gdata_path: &Path,
+    seed_options: &SeedOptions,
+) -> anyhow::Result<GameWorld> {
     // ── 0. String table ──────────────────────────────────────────────────────
     // Load TEXTSTRA.DLL for real entity names. Fall back to placeholders if
     // the file is absent (WASM builds, test environments, stripped installs).
@@ -75,6 +84,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         manufacturing_facilities: slotmap::SlotMap::with_key(),
         production_facilities: slotmap::SlotMap::with_key(),
         gnprtb: GnprtbParams::default(),
+        sdprtb: SdprtbParams::default(),
         mission_tables: std::collections::HashMap::new(),
         defense_facility_classes: std::collections::HashMap::new(),
     };
@@ -140,6 +150,9 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             exploration_status,
             popularity_alliance: 0.0,
             popularity_empire: 0.0,
+            is_populated: is_headquarters,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: Vec::new(),
             ground_units: Vec::new(),
             special_forces: Vec::new(),
@@ -193,6 +206,21 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             shield_recharge_rate: dat.shield_recharge_rate,
             damage_control: dat.damage_control,
             bombardment_modifier: dat.bombardment_modifier,
+            // Extended combat stats (promoted by Shapash — default 0 until DAT wiring lands)
+            overall_attack_strength: 0,
+            weapon_recharge_rate: 0,
+            turbolaser_attack_strength: 0,
+            ion_cannon_attack_strength: 0,
+            laser_cannon_attack_strength: 0,
+            turbolaser_range: 0,
+            ion_cannon_range: 0,
+            laser_cannon_range: 0,
+            tractor_beam_power: 0,
+            tractor_beam_range: 0,
+            gravity_well_projector: 0,
+            interdiction_strength: 0,
+            uprising_defense: 0,
+            hyperdrive_if_damaged: 0,
         };
         world.capital_ship_classes.insert(class);
     }
@@ -208,10 +236,25 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
             is_empire: dat.is_empire != 0,
             refined_material_cost: dat.refined_material_cost,
             maintenance_cost: dat.maintenance_cost,
+            research_order: 0,
+            research_difficulty: 0,
             squadron_size: dat.squadron_size,
             torpedoes: dat.torpedoes,
+            torpedoes_range: 0,
             overall_attack_strength: dat.overall_attack_strength,
             bombardment_defense: dat.bombardment_defense,
+            // Extended fighter stats (promoted by Shapash — default 0 until DAT wiring lands)
+            shield_strength: 0,
+            sub_light_engine: 0,
+            maneuverability: 0,
+            detection: 0,
+            uprising_defense: 0,
+            turbolaser_fore: 0,
+            ion_cannon_fore: 0,
+            laser_cannon_fore: 0,
+            turbolaser_attack_strength: 0,
+            ion_cannon_attack_strength: 0,
+            laser_cannon_attack_strength: 0,
         };
         world.fighter_classes.insert(class);
     }
@@ -232,12 +275,55 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         world.characters.insert(convert_character(dat, false, name));
     }
 
-    // ── 7. Seed tables ───────────────────────────────────────────────────────
-    // Populate starting fleets, ground units, and facilities from the 9 seed
-    // DAT files.  Missing files are silently skipped (stripped installs).
-    seeds::apply_seeds(gdata_path, &mut world, &system_key_map)?;
+    // ── 7. GNPRTB / SDPRTB seeding parameters ───────────────────────────────
+    let gnprtb_path = gdata_path.join("GNPRTB.DAT");
+    if file_available(&gnprtb_path) {
+        let gnprtb_file: GeneralParamsFile = read_dat_file(&gnprtb_path)?;
+        let entries = gnprtb_file.entries.into_iter().map(|e| GnprtbEntry {
+            parameter_id: e.parameter_id,
+            development: e.development,
+            alliance_sp_easy: e.alliance_sp_easy,
+            alliance_sp_medium: e.alliance_sp_medium,
+            alliance_sp_hard: e.alliance_sp_hard,
+            empire_sp_easy: e.empire_sp_easy,
+            empire_sp_medium: e.empire_sp_medium,
+            empire_sp_hard: e.empire_sp_hard,
+            multiplayer: e.multiplayer,
+        }).collect();
+        world.gnprtb = GnprtbParams::new(entries);
+    }
 
-    // ── 7b. Derive controlling_faction from seeded assets ──────────────────────
+    let sdprtb_path = gdata_path.join("SDPRTB.DAT");
+    if file_available(&sdprtb_path) {
+        let sdprtb_file: SideParamsFile = read_dat_file(&sdprtb_path)?;
+        let entries = sdprtb_file.entries.into_iter().map(|e| SdprtbEntry {
+            parameter_id: e.parameter_id,
+            dev_alliance: e.dev_alliance,
+            dev_empire: e.dev_empire,
+            alliance_sp_easy_alliance: e.alliance_sp_easy_alliance,
+            alliance_sp_easy_empire: e.alliance_sp_easy_empire,
+            alliance_sp_medium_alliance: e.alliance_sp_medium_alliance,
+            alliance_sp_medium_empire: e.alliance_sp_medium_empire,
+            alliance_sp_hard_alliance: e.alliance_sp_hard_alliance,
+            alliance_sp_hard_empire: e.alliance_sp_hard_empire,
+            empire_sp_easy_alliance: e.empire_sp_easy_alliance,
+            empire_sp_easy_empire: e.empire_sp_easy_empire,
+            empire_sp_medium_alliance: e.empire_sp_medium_alliance,
+            empire_sp_medium_empire: e.empire_sp_medium_empire,
+            empire_sp_hard_alliance: e.empire_sp_hard_alliance,
+            empire_sp_hard_empire: e.empire_sp_hard_empire,
+            multiplayer_alliance: e.multiplayer_alliance,
+            multiplayer_empire: e.multiplayer_empire,
+        }).collect();
+        world.sdprtb = SdprtbParams::new(entries);
+    }
+
+    // ── 8. Seed tables ──────────────────────────────────────────────────────
+    // Populate starting fleets, ground units, and facilities from the DAT
+    // tables after seeding parameters are available.
+    seeds::apply_seeds(gdata_path, &mut world, &system_key_map, seed_options)?;
+
+    // ── 8b. Derive controlling_faction from seeded assets ───────────────────
     // After seeding fleets, troops, and facilities, determine which faction controls
     // each system based on what assets are present. Systems with only one faction's
     // assets are controlled by that faction; mixed or empty systems stay None.
@@ -295,7 +381,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         }
     }
 
-    // ── 7c. Populate character location tracking ─────────────────────────────
+    // ── 8c. Populate character location tracking ────────────────────────────
     // Scan all fleets to back-fill each character's current_system and current_fleet.
     let fleet_keys: Vec<_> = world.fleets.keys().collect();
     for fleet_key in fleet_keys {
@@ -310,25 +396,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         }
     }
 
-    // ── 8. GNPRTB — game balance parameters ──────────────────────────────────
-    let gnprtb_path = gdata_path.join("GNPRTB.DAT");
-    if file_available(&gnprtb_path) {
-        let gnprtb_file: GeneralParamsFile = read_dat_file(&gnprtb_path)?;
-        let entries = gnprtb_file.entries.into_iter().map(|e| GnprtbEntry {
-            parameter_id: e.parameter_id,
-            development: e.development,
-            alliance_sp_easy: e.alliance_sp_easy,
-            alliance_sp_medium: e.alliance_sp_medium,
-            alliance_sp_hard: e.alliance_sp_hard,
-            empire_sp_easy: e.empire_sp_easy,
-            empire_sp_medium: e.empire_sp_medium,
-            empire_sp_hard: e.empire_sp_hard,
-            multiplayer: e.multiplayer,
-        }).collect();
-        world.gnprtb = GnprtbParams::new(entries);
-    }
-
-    // ── 8b. Defense facility classes ───────────────────────────────────────────
+    // ── 9. Defense facility classes ─────────────────────────────────────────
     let deffac_path = gdata_path.join("DEFFACSD.DAT");
     if file_available(&deffac_path) {
         let deffac_file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
@@ -342,7 +410,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         }
     }
 
-    // ── 9. Mission probability tables (*MSTB.DAT and *TB.DAT) ────────────────
+    // ── 10. Mission probability tables (*MSTB.DAT and *TB.DAT) ──────────────
     // All 19 IntTableFile tables. Missing files are silently skipped.
     const MSTB_FILES: &[&str] = &[
         "DIPLMSTB.DAT", "ESPIMSTB.DAT", "ASSNMSTB.DAT", "INCTMSTB.DAT",
@@ -365,7 +433,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
         }
     }
 
-    // ── 10. Apply enabled mods ─────────────────────────────────────────────
+    // ── 11. Apply enabled mods ──────────────────────────────────────────────
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mods_dir = gdata_path.parent().and_then(|p| p.parent()).unwrap_or(Path::new(".")).join("mods");
