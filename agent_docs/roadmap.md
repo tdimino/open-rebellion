@@ -170,15 +170,17 @@ Full report: `.subdaimon-output/seeding-parity-audit.md`
 
 **What works**: 9 seed table DAT parsing + dispatch, Coruscant fleet/garrison/facilities, Yavin garrison, army table distribution.
 
-**What's missing** (priority order):
-1. **Character stat rolling + placement** — Characters retain raw SkillPair from DAT, never rolled to concrete stats. Named characters (Luke, Leia, Vader, Palpatine) have no initial system assignment.
-2. **Support/popularity initialization** — All systems start at 0.0. Original sets 20-100 for controlled, ~41-59 for neutral, based on control bucket assignment.
-3. **Procedural galaxy generation** — Political control bucket system (core/rim, Alliance strong/weak/Empire strong/weak/neutral) from GNPRTB params 7680/7681 not implemented. Systems aren't shuffled before seeding.
-4. **Energy/raw materials fields** — System struct has no total_energy or raw_materials. These drive the entire facility and mine generation system.
-5. **Maintenance-budget common unit seeding** — Section 10 of wiki (largest source of starting forces) entirely absent.
-6. **Alliance HQ randomization** — Original selects random rim system; we collapse to Yavin.
-7. **Difficulty/galaxy size affecting seeds** — GameSetupState choices never reach apply_seeds().
-8. **Fleet distribution model** — We spread across proximity; original puts only at 3 special systems.
+**Fixed (M1-M4, 2026-03-24):**
+1. ~~Character stat rolling + placement~~ — DONE. SkillPair rolled to concrete stats, named characters placed (Luke/Leia/Han at Yavin, Vader/Palpatine at Coruscant, Mon Mothma at random HQ). 8 tests.
+2. ~~Alliance HQ randomization~~ — DONE. Random rim system selected as Rebel HQ, deterministic with RNG seed.
+3. ~~Fleet distribution model~~ — DONE. 3-system model (Coruscant/Yavin/Rebel HQ) replaces proximity spread.
+4. ~~Difficulty/galaxy size affecting seeds~~ — DONE. SeedOptions threaded through to apply_seeds.
+5. ~~Energy/raw materials fields~~ — DONE. System struct extended with is_populated, total_energy, raw_materials.
+
+**Still missing** (M5-M8):
+1. **Support/popularity initialization** — All systems start at 0.0. Original sets 20-100 for controlled, ~41-59 for neutral.
+2. **Procedural galaxy generation** — Political control bucket system (core/rim, strong/weak/neutral) from GNPRTB 7680/7681.
+3. **Maintenance-budget common unit seeding** — Section 10 of wiki (largest source of starting forces) entirely absent.
 
 ## AI Parity Status (as of 2026-03-23)
 
