@@ -1,0 +1,184 @@
+═══════════════════════════════════════════════════════════════════════════════
+                   COMBAT PARITY GAPS — QUICK REFERENCE (90% → 100%)
+═══════════════════════════════════════════════════════════════════════════════
+
+CURRENT STATUS: 90% parity | 11 gaps identified | 22 days to 100% (1 agent)
+
+───────────────────────────────────────────────────────────────────────────────
+SPACE COMBAT (7-Phase Pipeline)
+───────────────────────────────────────────────────────────────────────────────
+
+GAP 1.1: Shield Absorption (Phase 4) ─ CRITICAL
+  Status: STUBBED (damage applied directly to hull)
+  Impact: Shields have zero protective value
+  Decompile: FUN_00544130 (83 lines)
+  Closure: Apply shield damage reduction before hull (25 LOC)
+  Tests: 6 (per difficulty, with/without shields)
+
+GAP 1.2: Hull Damage (Phase 5) ─ CRITICAL
+  Status: STUBBED (no separate hull phase)
+  Impact: Hull damage model fundamentally wrong
+  Decompile: FUN_005443f0 (54 lines)
+  Closure: Implement hull_current -= residual_damage (20 LOC)
+  Tests: 6 (damage accumulation, destruction threshold)
+
+GAP 1.3: Weapon Fire Per-Arc (Phase 3) ─ HIGH
+  Status: PARTIAL (all weapons lumped into single pool)
+  Impact: Weapon type selection irrelevant, no arc targeting
+  Data: ✓ 25 fields promoted (turbolaser_attack_strength, etc.)
+  Decompile: FUN_00543b60 (per-side resolver, ~50 lines)
+  Closure: Iterate arcs, apply per-type modifiers (100 LOC)
+  Tests: 4 (turbo vs ion vs laser, per arc)
+
+GAP 1.4: Fighter Engagement (Phase 6) ─ CRITICAL
+  Status: MAJOR MISSING (randomized losses, no formulation)
+  Impact: Fighter losses unpredictable; squadrons indistinguishable
+  Data: ✓ FighterClass.overall_attack_strength, torpedoes, etc.
+  Decompile: FUN_005444e0 (53 lines), FUN_00543d20 (per-side, ~60 lines)
+  Closure: Per-squadron matchups, bomber vs capital modeling (150 LOC)
+  Tests: 6 (mixed squadrons, bomber engagement, loss rates)
+
+───────────────────────────────────────────────────────────────────────────────
+GROUND COMBAT
+───────────────────────────────────────────────────────────────────────────────
+
+GAP 2.1: Ground Combat Resolution ─ CRITICAL
+  Status: MISSING (no ground combat phase)
+  Impact: No troop attrition from engagement
+  Decompile: FUN_00560d50 (232 lines), FUN_004ee350 (30 lines, already done)
+  Closure: Full ground_combat.rs module (300 LOC)
+  Tests: 4 (single vs multiple, attrition rates)
+
+GAP 2.2: Validation Checks ─ PARTIAL
+  Status: Depends on GAP 2.1
+  Impact: No same-side guards, no capability checks
+  Closure: Part of ground_combat.rs (20 LOC included above)
+
+───────────────────────────────────────────────────────────────────────────────
+BOMBARDMENT
+───────────────────────────────────────────────────────────────────────────────
+
+GAP 3.1: Bombardment Blocked Flag ─ LOW PRIORITY
+  Status: LOW PRIORITY (functional but missing guard)
+  Impact: Unlimited bombardment spam possible
+  Closure: Add bombardment_blocked: bool to System (10 LOC)
+  Tests: 1 (blocked flag prevents damage)
+
+───────────────────────────────────────────────────────────────────────────────
+DIFFICULTY MODIFIERS
+───────────────────────────────────────────────────────────────────────────────
+
+GAP 4.1: Difficulty Application ─ MEDIUM
+  Status: UNTESTED (parameter accepted but never used)
+  Impact: All difficulties produce identical results
+  Decompile: FUN_004fd600 (difficulty modifier, ~50 lines)
+  Closure: Apply multiplier to Phases 3–6 (30 LOC)
+  Tests: 4 (parametric: each difficulty level)
+
+───────────────────────────────────────────────────────────────────────────────
+GNPRTB PARAMETERS
+───────────────────────────────────────────────────────────────────────────────
+
+GAP 5.1: 74 Unimplemented Combat Parameters ─ INFORMATIONAL
+  Status: Documented but formulas unknown
+  Impact: Combat balance tweaks inaccessible
+  Closure: As formulas are decompiled, register GNPRTB mapping
+  Notes: Not blockers; enables future mod support
+
+───────────────────────────────────────────────────────────────────────────────
+SPECIAL CASES (Lower Priority)
+───────────────────────────────────────────────────────────────────────────────
+
+Death Star Combat
+  Status: Fights as regular capital ship
+  Decompile: FUN_005617b0 (68 lines)
+  Closure: If needed (100 LOC)
+
+Fighter Launch/Recall
+  Status: Always engaged; no launch state
+  Impact: Tactical view feature; auto-resolve OK as-is
+  Closure: Design choice; not parity issue
+
+Retreat/Surrender
+  Status: Auto-resolve fights to completion
+  Impact: Matches auto-resolve contract
+  Closure: Design choice; not parity issue
+
+───────────────────────────────────────────────────────────────────────────────
+IMPLEMENTATION ROADMAP
+───────────────────────────────────────────────────────────────────────────────
+
+PHASE A: Shield & Hull (Phases 4–5) ──────────────────── 4 days
+  1. Decompile FUN_00544130 (shield absorption)
+  2. Decompile FUN_005443f0 (hull damage)
+  3. Refactor combat.rs Phases 4–5
+  4. Add 6 tests
+  Est: 200 LOC
+
+PHASE B: Weapon Fire Arc (Phase 3) ──────────────────── 3 days
+  1. Decompile FUN_00543b60 (per-side weapon fire)
+  2. Refactor phase_weapon_fire() for arcs
+  3. Add per-type modifiers
+  4. Add 4 tests
+  Est: 150 LOC
+
+PHASE C: Fighter Engagement (Phase 6) ──────────────── 4 days
+  1. Decompile FUN_005444e0 + FUN_00543d20
+  2. Implement per-squadron matchups
+  3. Model torpedo bombing
+  4. Add 6 tests
+  Est: 250 LOC
+
+PHASE D: Ground Combat (FUN_00560d50) ─────────────── 5 days
+  1. Create ground_combat.rs
+  2. Decompile FUN_00560d50 (232 lines)
+  3. Implement GroundCombatSystem::resolve()
+  4. Wire into simulation tick
+  5. Add 4 tests
+  Est: 300 LOC
+
+PHASE E: Difficulty Modifiers ────────────────────── 2 days
+  1. Decompile FUN_004fd600
+  2. Apply to Phases 3–6
+  3. Add parametric tests
+  Est: 80 LOC
+
+PHASE F: Polish & Integration ────────────────────── 1 day
+  1. Add bombardment_blocked guard (10 LOC)
+  2. Resolve GNPRTB parameters as needed
+
+───────────────────────────────────────────────────────────────────────────────
+EFFORT SUMMARY
+───────────────────────────────────────────────────────────────────────────────
+
+Total Implementation:   ~1,330 LOC
+Total Tests:           ~300 LOC
+Sequential Duration:   ~22 days (1 agent)
+Parallel Duration:     ~13 days (2 agents)
+  - Critical path: A → {B, C, D parallel} → E → F
+
+Blocked By:            5 decompilation tasks (~315 lines total)
+  Priority 1: Shield/Hull, Fighters, Ground Combat
+  Priority 2: Weapon Fire per-arc
+  Priority 3: Difficulty modifier
+
+Data Ready:            ✓ 25 ship fields promoted
+                       ✓ 111 GNPRTB parameters mapped
+                       Need: Formulas (RE work)
+
+───────────────────────────────────────────────────────────────────────────────
+DECOMPILATION PRIORITY QUEUE
+───────────────────────────────────────────────────────────────────────────────
+
+[1] FUN_00544130 (shield absorption, 83 lines) ────────── CRITICAL
+[2] FUN_005444e0 (fighter engagement, 53 lines) ─────── CRITICAL
+[3] FUN_00560d50 (ground combat main, 232 lines) ───── CRITICAL
+[4] FUN_00543b60 (weapon fire per-arc, ~50 lines) ──── HIGH
+[5] FUN_004fd600 (difficulty modifier, ~50 lines) ──── MEDIUM
+
+Est. Ghidra work: 8–10 hours (90 min per function average)
+
+═══════════════════════════════════════════════════════════════════════════════
+Report: .subdaimon-output/combat-parity-gap-analysis.md (full detail)
+Compiled: 2026-03-25 | Open Rebellion v0.18.0
+═══════════════════════════════════════════════════════════════════════════════
