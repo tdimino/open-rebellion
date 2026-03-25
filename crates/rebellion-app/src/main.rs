@@ -28,7 +28,7 @@ use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{ControlKind, GameWorld, MstbTable};
 
 use rebellion_render::{
-    draw_blockade_indicators, draw_cockpit_chrome, draw_cockpit_egui_layer,
+    draw_advisor, draw_blockade_indicators, draw_cockpit_chrome, draw_cockpit_egui_layer,
     draw_encyclopedia, draw_facility_icons, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
     draw_fleet_context_menu, draw_galaxy_map, draw_game_setup, draw_main_menu,
     draw_manufacturing, draw_message_log, draw_missions, draw_officers,
@@ -37,6 +37,9 @@ use rebellion_render::{
     draw_status_bar, draw_system_context_menu, draw_system_info_panel,
     draw_ground_combat, draw_tactical_view,
     hovered_fleet,
+    advisor_greet, advisor_combat_result, advisor_mission_result,
+    advisor_uprising, advisor_death_star, advisor_manufacturing_complete,
+    AdvisorFaction, AdvisorState,
     AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState,
     Difficulty, EncyclopediaState,
     FleetsState, GalaxyMapState, GameMessage, GameSetupAction, GameSetupState,
@@ -347,6 +350,15 @@ async fn main() {
         bmp_cache.set_hd_path(hd_ui_path);
     }
 
+    // ── Droid advisor ──────────────────────────────────────────────────────
+    let mut advisor_state = AdvisorState::new(AdvisorFaction::Alliance);
+    {
+        let sprite_dir = PathBuf::from("assets/references/ref-ui/07-droid-advisors");
+        if sprite_dir.exists() {
+            advisor_state.set_sprite_dir(&sprite_dir);
+        }
+    }
+
     // ── Audio state ─────────────────────────────────────────────────────────
     let mut audio_vol = AudioVolumeState::default();
     let sounds_dir = PathBuf::from("data/sounds");
@@ -377,6 +389,9 @@ async fn main() {
             egui_macroquad::draw();
             theme_applied = true;
         }
+
+        // ── Advisor animation timer ────────────────────────────────────────
+        advisor_state.update(dt);
 
         // ── Global keyboard shortcuts ───────────────────────────────────────
         if is_key_pressed(KeyCode::Escape) {
@@ -475,6 +490,7 @@ async fn main() {
                     MessageCategory::Manufacturing,
                     completion.system,
                 ));
+                advisor_manufacturing_complete(&mut advisor_state, &sys_name);
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::BuildComplete, &audio_vol);
             }
@@ -680,6 +696,13 @@ async fn main() {
                     &audio_vol,
                 );
                 ai_state.mark_available(result.character);
+
+                // Advisor trigger for player faction missions.
+                if result.faction == player_faction {
+                    let kind_name = format!("{:?}", result.kind);
+                    let success = result.outcome == rebellion_core::missions::MissionOutcome::Success;
+                    advisor_mission_result(&mut advisor_state, &kind_name, success);
+                }
             }
 
             // ── Character escapes ────────────────────────────────────────────
@@ -823,6 +846,18 @@ async fn main() {
                         msg_log.push(GameMessage::at_system(*tick, format!("Uprising incident at {}", name), MessageCategory::Diplomacy, *system));
                     }
                     rebellion_core::uprising::UprisingEvent::UprisingBegan { system, tick } => {
+                        // Determine if the player gains or loses this system.
+                        let player_gains = if let Some(sys) = world.systems.get(*system) {
+                            // Before flip: if the system is currently enemy-controlled, the uprising helps the player.
+                            match sys.control {
+                                ControlKind::Controlled(Faction::Alliance) => player_faction != MissionFaction::Alliance,
+                                ControlKind::Controlled(Faction::Empire)   => player_faction == MissionFaction::Alliance,
+                                _ => false,
+                            }
+                        } else {
+                            false
+                        };
+
                         // Flip controlling faction
                         if let Some(sys) = world.systems.get_mut(*system) {
                             sys.control = match sys.control {
@@ -833,6 +868,7 @@ async fn main() {
                         }
                         let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
                         msg_log.push(GameMessage::at_system(*tick, format!("Uprising! {} has changed hands", name), MessageCategory::Diplomacy, *system));
+                        advisor_uprising(&mut advisor_state, &name, player_gains);
                     }
                     rebellion_core::uprising::UprisingEvent::UprisingSubdued { system, tick } => {
                         let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
@@ -876,10 +912,12 @@ async fn main() {
                         }
                         let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
                         msg_log.push(GameMessage::at_system(*tick, format!("{} destroyed by Death Star!", name), MessageCategory::Event, *system));
+                        advisor_death_star(&mut advisor_state, &format!("{} has been destroyed by the Death Star!", name));
                     }
                     rebellion_core::death_star::DeathStarEvent::NearbyWarning { system, tick } => {
                         let name = world.systems.get(*system).map(|s| s.name.clone()).unwrap_or_else(|| "unknown".into());
                         msg_log.push(GameMessage::at_system(*tick, format!("Death Star detected near {}!", name), MessageCategory::Event, *system));
+                        advisor_death_star(&mut advisor_state, &format!("Warning! Death Star detected near {}!", name));
                     }
                 }
             }
@@ -1062,6 +1100,10 @@ async fn main() {
                                 audio_engine.play_voice(greeting, &audio_vol);
                             }
 
+                            // Sync advisor faction and send greeting
+                            advisor_state.faction = AdvisorFaction::from(cockpit_state.faction);
+                            advisor_greet(&mut advisor_state);
+
                             game_mode = GameMode::Galaxy;
                         }
                         GameSetupAction::Back => {
@@ -1127,7 +1169,15 @@ async fn main() {
                 // by draw_galaxy_map if both are under cursor.
                 {
                     let (mx, my) = mouse_position();
-                    if is_mouse_button_released(macroquad::input::MouseButton::Right) && mx < cam.map_width {
+                    // WASM fallback: browsers swallow the mouseup on right-click so
+                    // is_mouse_button_released never fires. Detect the transition by
+                    // checking that we held ≥1 frame and button is now not down.
+                    let right_released = is_mouse_button_released(macroquad::input::MouseButton::Right);
+                    let right_released_wasm = !right_released
+                        && map_state.right_click_held_frames >= 1
+                        && !is_mouse_button_down(macroquad::input::MouseButton::Right)
+                        && map_state.right_click_start.is_some();
+                    if (right_released || right_released_wasm) && mx < cam.map_width {
                         let was_drag = map_state.right_click_start.map_or(true, |(sx, sy)| {
                             ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt() > 5.0
                         });
@@ -1150,6 +1200,7 @@ async fn main() {
                         // Clear right_click_start after both draw_galaxy_map and this
                         // check have had a chance to read it.
                         map_state.right_click_start = None;
+                        map_state.right_click_held_frames = 0;
                     }
                 }
 
@@ -1326,6 +1377,9 @@ async fn main() {
                     // Status bar (bottom-most, with speed controls + audio)
                     draw_status_bar(ctx, &world, &mut clock, &mut audio_vol);
 
+                    // Droid advisor (floating window, bottom-right)
+                    draw_advisor(ctx, &mut advisor_state);
+
                     // Cockpit button bar (overlays bottom chrome)
                     if let Some(btn) = draw_cockpit_egui_layer(
                         ctx, &cockpit_state, &mut bmp_cache,
@@ -1425,6 +1479,14 @@ async fn main() {
                                 MessageCategory::Combat,
                                 session.system,
                             ));
+
+                            // Advisor: combat result
+                            let player_won = match space_result.winner {
+                                CombatSide::Attacker => session.player_is_attacker,
+                                CombatSide::Defender => !session.player_is_attacker,
+                                CombatSide::Draw => false,
+                            };
+                            advisor_combat_result(&mut advisor_state, &session.system_name, player_won);
                         }
                         game_mode = GameMode::Galaxy;
                     }
@@ -1446,6 +1508,14 @@ async fn main() {
                                 MessageCategory::Combat,
                                 session.system,
                             ));
+
+                            // Advisor: combat result
+                            let player_won = match session.winner {
+                                Some(rebellion_render::CombatWinner::Attacker) => session.player_is_attacker,
+                                Some(rebellion_render::CombatWinner::Defender) => !session.player_is_attacker,
+                                _ => false,
+                            };
+                            advisor_combat_result(&mut advisor_state, &session.system_name, player_won);
 
                             // Check for ground combat: if attacker won and system has enemy troops.
                             if session.winner == Some(rebellion_render::CombatWinner::Attacker) {

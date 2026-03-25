@@ -1,5 +1,6 @@
 //! Galaxy map rendering and egui UI panels.
 
+pub mod advisor;
 pub mod audio;
 pub mod bmp_cache;
 pub mod cockpit;
@@ -24,6 +25,11 @@ use rebellion_core::movement::MovementState;
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::GameWorld;
 
+pub use advisor::{
+    draw_advisor, advisor_greet, advisor_mission_result, advisor_combat_result,
+    advisor_uprising, advisor_death_star, advisor_manufacturing_complete,
+    AdvisorFaction, AdvisorMessage, AdvisorPriority, AdvisorState,
+};
 pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine};
 pub use bmp_cache::{BmpCache, DllSource};
 pub use cockpit::{
@@ -85,6 +91,12 @@ pub struct GalaxyMapState {
     /// Cockpit viewport bounds for mouse input clamping.
     /// If set, mouse input outside this rect is ignored.
     pub viewport: Option<(f32, f32, f32, f32)>,
+    /// Frame counter incremented while right-mouse is held.
+    /// Used as a WASM fallback: browsers swallow the mouseup on right-click
+    /// (context menu intercepts it), so `is_mouse_button_released` never fires.
+    /// When the button goes from held → not-held without a released event, we
+    /// detect it on the next frame via this counter (> 0 but button not down).
+    pub right_click_held_frames: u32,
 }
 
 impl Default for GalaxyMapState {
@@ -102,6 +114,7 @@ impl Default for GalaxyMapState {
             context_menu_fleet: None,
             right_click_start: None,
             viewport: None,
+            right_click_held_frames: 0,
         }
     }
 }
@@ -146,8 +159,10 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         // We store the position from last frame and compute the delta ourselves.
         if is_mouse_button_pressed(MouseButton::Right) {
             state.right_click_start = Some((mx, my));
+            state.right_click_held_frames = 0;
         }
         if is_mouse_button_down(MouseButton::Right) {
+            state.right_click_held_frames += 1;
             if let Some((px, py)) = state.drag_start {
                 let dx = mx - px;
                 let dy = my - py;
@@ -264,9 +279,24 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
 
     // ── Right-click context menu ─────────────────────────────────────────────
     // Open context menu only on a short right-click (no drag).
+    //
+    // WASM note: browsers intercept the contextmenu event and swallow the
+    // mouseup, so `is_mouse_button_released(Right)` never fires in WebAssembly.
+    // We detect the fallback condition: right_click_start is set (button was
+    // pressed at least 1 frame) but button is no longer held this frame and no
+    // released event arrived. Both paths share the same drag-distance check.
+    //
     // NOTE: Do NOT clear right_click_start here — main.rs needs to read it
     // for fleet hover detection before it gets cleared. main.rs clears it.
-    if is_mouse_button_released(MouseButton::Right) && mx < map_width {
+    let right_released = is_mouse_button_released(MouseButton::Right);
+    // WASM fallback: held for ≥1 frame, button no longer down, no released event.
+    let right_released_wasm = !right_released
+        && state.right_click_held_frames >= 1
+        && !is_mouse_button_down(MouseButton::Right)
+        && state.right_click_start.is_some();
+    if (right_released || right_released_wasm) && mx < map_width {
+        // Reset held counter on either release path.
+        state.right_click_held_frames = 0;
         let was_drag = state.right_click_start.map_or(true, |(sx, sy)| {
             let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
             dist > 5.0
