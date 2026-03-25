@@ -1,26 +1,38 @@
 //! Galaxy map rendering and egui UI panels.
 
 pub mod audio;
+pub mod bmp_cache;
+pub mod cockpit;
 pub mod combat_view;
 pub mod encyclopedia;
 pub mod fleet_movement;
+pub mod ground_combat;
 pub mod fog;
 pub mod main_menu;
 pub mod message_log;
 pub mod panels;
+pub mod tactical_view;
 pub mod theme;
 pub mod victory_screen;
 
 use egui_macroquad::egui;
 use macroquad::prelude::*;
+use rebellion_core::blockade::BlockadeState;
 use rebellion_core::ids::{FleetKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::movement::MovementState;
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::GameWorld;
 
-pub use audio::{draw_audio_controls, AudioVolumeState, MusicTrack, SfxKind};
+pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine};
+pub use bmp_cache::{BmpCache, DllSource};
+pub use cockpit::{
+    draw_cockpit_chrome, draw_cockpit_egui_layer,
+    CockpitButton, CockpitFaction, CockpitState, CockpitViewport,
+};
 pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
+pub use ground_combat::{draw_ground_combat, GroundAction, GroundCombatState, GroundWinner};
+pub use tactical_view::{draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState};
 pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
 pub use fleet_movement::{draw_fleet_overlays, hovered_fleet};
@@ -70,6 +82,9 @@ pub struct GalaxyMapState {
     pub context_menu_fleet: Option<(FleetKey, f32, f32)>,
     /// Tracks whether right-mouse dragged (to distinguish click from pan).
     pub right_click_start: Option<(f32, f32)>,
+    /// Cockpit viewport bounds for mouse input clamping.
+    /// If set, mouse input outside this rect is ignored.
+    pub viewport: Option<(f32, f32, f32, f32)>,
 }
 
 impl Default for GalaxyMapState {
@@ -86,6 +101,7 @@ impl Default for GalaxyMapState {
             context_menu_system: None,
             context_menu_fleet: None,
             right_click_start: None,
+            viewport: None,
         }
     }
 }
@@ -110,8 +126,15 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
 
     let (mx, my) = mouse_position();
 
+    // Check if mouse is within the cockpit viewport (if set).
+    let in_viewport = if let Some((vx, vy, vw, vh)) = state.viewport {
+        mx >= vx && mx <= vx + vw && my >= vy && my <= vy + vh
+    } else {
+        true
+    };
+
     // ── Input: only when the cursor is in the map area ───────────────────────
-    if mx < map_width {
+    if mx < map_width && in_viewport {
         // Zoom with scroll wheel (vertical component).
         let wheel_y = mouse_wheel().1;
         if wheel_y != 0.0 {
@@ -266,6 +289,250 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         zoom,
         map_width,
         screen_height: sh,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Galaxy map overlays (macroquad, called after draw_galaxy_map)
+// ---------------------------------------------------------------------------
+
+/// Coordinate transform: game-space → screen-space.
+///
+/// Mirrors the closure inside `draw_galaxy_map` so overlays align.
+#[inline]
+fn map_to_screen(dat_x: f32, dat_y: f32, cam: &CameraView) -> (f32, f32) {
+    let sx = (dat_x - cam.cam_x) * cam.zoom + cam.map_width / 2.0;
+    let sy = (dat_y - cam.cam_y) * cam.zoom + cam.screen_height / 2.0;
+    (sx, sy)
+}
+
+/// True if the screen-space point is inside the visible map area.
+#[inline]
+fn in_map_viewport(sx: f32, sy: f32, cam: &CameraView) -> bool {
+    sx > -30.0 && sx < cam.map_width + 30.0 && sy > -30.0 && sy < cam.screen_height + 30.0
+}
+
+/// Draw small facility indicator squares next to systems that have facilities.
+///
+/// Three icon types are shown in a horizontal row offset to the upper-right of
+/// the system dot, each as a 5×5 pixel square scaled by zoom:
+/// - Yellow  = production facilities (mines / refineries)
+/// - Cyan    = manufacturing facilities (shipyards / training)
+/// - Orange  = defense facilities
+///
+/// Icons are only drawn when `zoom >= 0.5` to avoid clutter at high zoom-out.
+/// Scale with zoom up to a cap so they stay readable without dominating.
+///
+/// Pass the `CameraView` returned by `draw_galaxy_map`.
+pub fn draw_facility_icons(world: &GameWorld, cam: &CameraView) {
+    if cam.zoom < 0.5 {
+        return;
+    }
+
+    let icon_size = (4.0 * cam.zoom).clamp(2.5, 8.0);
+    let gap = icon_size + 1.5;
+
+    for (_key, system) in &world.systems {
+        let has_prod = !system.production_facilities.is_empty();
+        let has_mfg = !system.manufacturing_facilities.is_empty();
+        let has_def = !system.defense_facilities.is_empty();
+
+        if !has_prod && !has_mfg && !has_def {
+            continue;
+        }
+
+        let (sx, sy) = map_to_screen(system.x as f32, system.y as f32, cam);
+        if !in_map_viewport(sx, sy, cam) {
+            continue;
+        }
+
+        // Offset cluster to upper-right of the system dot so it doesn't
+        // overlap the name label (which appears to the right) or the fleet
+        // diamond (which appears directly above).
+        let base_x = sx + 6.0 * cam.zoom;
+        let base_y = sy - 8.0 * cam.zoom - icon_size;
+
+        let mut col = 0;
+
+        if has_prod {
+            // Yellow: resource production
+            let ix = base_x + col as f32 * gap;
+            draw_rectangle(ix, base_y, icon_size, icon_size, Color::new(0.9, 0.8, 0.1, 0.85));
+            col += 1;
+        }
+        if has_mfg {
+            // Cyan: manufacturing (shipyards)
+            let ix = base_x + col as f32 * gap;
+            draw_rectangle(ix, base_y, icon_size, icon_size, Color::new(0.2, 0.8, 0.9, 0.85));
+            col += 1;
+        }
+        if has_def {
+            // Orange: defense installations
+            let ix = base_x + col as f32 * gap;
+            draw_rectangle(ix, base_y, icon_size, icon_size, Color::new(0.9, 0.5, 0.1, 0.85));
+        }
+    }
+}
+
+/// Compute a convex hull (Graham scan) of a set of 2D screen-space points.
+///
+/// Returns the points in counter-clockwise order.  Returns an empty Vec if
+/// fewer than 3 points are provided.
+fn convex_hull(mut pts: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
+    if pts.len() < 3 {
+        return pts;
+    }
+
+    // Sort by x then y.
+    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+    pts.dedup_by(|a, b| (a.0 - b.0).abs() < 0.5 && (a.1 - b.1).abs() < 0.5);
+
+    if pts.len() < 3 {
+        return pts;
+    }
+
+    let cross = |o: (f32, f32), a: (f32, f32), b: (f32, f32)| -> f32 {
+        (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+    };
+
+    let n = pts.len();
+    let mut hull: Vec<(f32, f32)> = Vec::with_capacity(2 * n);
+
+    // Build lower hull.
+    for &p in &pts {
+        while hull.len() >= 2 && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0 {
+            hull.pop();
+        }
+        hull.push(p);
+    }
+
+    // Build upper hull.
+    let lower_len = hull.len() + 1;
+    for &p in pts.iter().rev() {
+        while hull.len() >= lower_len && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0 {
+            hull.pop();
+        }
+        hull.push(p);
+    }
+
+    hull.pop(); // Remove the last point (same as first).
+    hull
+}
+
+/// Dim sector-specific color from the SectorGroup.
+fn sector_boundary_color(group: rebellion_core::dat::SectorGroup) -> Color {
+    match group {
+        rebellion_core::dat::SectorGroup::Core =>
+            Color::new(0.7, 0.6, 0.2, 0.25), // warm gold — galactic core
+        rebellion_core::dat::SectorGroup::RimInner =>
+            Color::new(0.3, 0.5, 0.7, 0.22), // cool blue — inner rim
+        rebellion_core::dat::SectorGroup::RimOuter =>
+            Color::new(0.4, 0.3, 0.6, 0.20), // purple-grey — outer rim
+    }
+}
+
+/// Draw translucent polygon outlines for each sector region.
+///
+/// Computes the convex hull of member systems' screen positions, expands it
+/// outward by `padding` pixels, then draws the hull edges with `draw_line()`.
+///
+/// Toggle controlled via `GalaxyMapState::show_sector_labels` — if sector
+/// labels are hidden, boundaries are also hidden.
+///
+/// Pass the `CameraView` returned by `draw_galaxy_map`.
+pub fn draw_sector_boundaries(world: &GameWorld, cam: &CameraView, show: bool) {
+    if !show {
+        return;
+    }
+
+    let padding = 12.0 * cam.zoom.clamp(0.5, 2.0);
+
+    for (_sec_key, sector) in &world.sectors {
+        if sector.systems.len() < 2 {
+            continue;
+        }
+
+        // Collect screen-space positions of all systems in this sector.
+        let pts: Vec<(f32, f32)> = sector
+            .systems
+            .iter()
+            .filter_map(|&sk| world.systems.get(sk))
+            .map(|sys| map_to_screen(sys.x as f32, sys.y as f32, cam))
+            .filter(|&(sx, sy)| in_map_viewport(sx, sy, cam))
+            .collect();
+
+        if pts.len() < 2 {
+            continue;
+        }
+
+        let hull = if pts.len() == 2 {
+            // Two-point degenerate case: just draw the line.
+            pts.clone()
+        } else {
+            convex_hull(pts.clone())
+        };
+
+        if hull.len() < 2 {
+            continue;
+        }
+
+        let color = sector_boundary_color(sector.group);
+
+        // Expand each hull vertex outward from the centroid by `padding`.
+        let cx = hull.iter().map(|p| p.0).sum::<f32>() / hull.len() as f32;
+        let cy = hull.iter().map(|p| p.1).sum::<f32>() / hull.len() as f32;
+
+        let expanded: Vec<(f32, f32)> = hull
+            .iter()
+            .map(|&(px, py)| {
+                let dx = px - cx;
+                let dy = py - cy;
+                let len = (dx * dx + dy * dy).sqrt().max(0.001);
+                (px + dx / len * padding, py + dy / len * padding)
+            })
+            .collect();
+
+        // Draw edges.
+        let n = expanded.len();
+        for i in 0..n {
+            let (x1, y1) = expanded[i];
+            let (x2, y2) = expanded[(i + 1) % n];
+            draw_line(x1, y1, x2, y2, 1.0, color);
+        }
+    }
+}
+
+/// Draw a blockade indicator (pulsing red ring) around each blockaded system.
+///
+/// Renders a solid outer ring in danger-red at low alpha around the system dot
+/// to visually flag active blockades without obscuring the system color.
+///
+/// Pass the `CameraView` returned by `draw_galaxy_map` and the current
+/// `BlockadeState` from the simulation.
+pub fn draw_blockade_indicators(world: &GameWorld, blockade: &BlockadeState, cam: &CameraView) {
+    let blockaded = blockade.blockaded_systems();
+    if blockaded.is_empty() {
+        return;
+    }
+
+    let ring_radius = (7.0 * cam.zoom).clamp(5.0, 18.0);
+    let ring_color = Color::new(0.9, 0.15, 0.15, 0.7);
+
+    for &sys_key in blockaded {
+        let system = match world.systems.get(sys_key) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let (sx, sy) = map_to_screen(system.x as f32, system.y as f32, cam);
+        if !in_map_viewport(sx, sy, cam) {
+            continue;
+        }
+
+        // Outer ring — solid dim red.
+        draw_circle_lines(sx, sy, ring_radius, 1.5, ring_color);
+        // Inner fill — very faint red tint over the system dot.
+        draw_circle(sx, sy, ring_radius - 1.5, Color::new(0.9, 0.1, 0.1, 0.08));
     }
 }
 

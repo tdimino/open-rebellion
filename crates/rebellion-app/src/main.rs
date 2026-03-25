@@ -33,6 +33,7 @@ use rebellion_render::{
     draw_fleet_context_menu, draw_galaxy_map, draw_game_setup, draw_main_menu,
     draw_manufacturing, draw_message_log, draw_missions, draw_officers,
     draw_sector_boundaries,
+    draw_save_load,
     draw_status_bar, draw_system_context_menu, draw_system_info_panel,
     draw_ground_combat, draw_tactical_view,
     hovered_fleet,
@@ -324,6 +325,9 @@ async fn main() {
     let mut show_bombardment = false;
     let mut show_death_star = false;
     let mut show_loyalty = false;
+    let mut show_save_load = false;
+    let mut save_load_panel_state = rebellion_render::SaveLoadPanelState::default();
+    let save_slots: Vec<rebellion_render::SaveSlotInfo> = vec![]; // TODO: populate from save files
 
     // ── Tactical combat state ────────────────────────────────────────────────
     let mut tactical_state = TacticalState::new();
@@ -432,6 +436,9 @@ async fn main() {
             toggle_panel!(KeyCode::B, show_bombardment);
             toggle_panel!(KeyCode::D, show_death_star);
             toggle_panel!(KeyCode::L, show_loyalty);
+            if is_key_pressed(KeyCode::S) {
+                show_save_load = !show_save_load;
+            }
             if is_key_pressed(KeyCode::E) {
                 enc_state.open = !enc_state.open;
             }
@@ -1071,7 +1078,7 @@ async fn main() {
                 //    but draw_cockpit_chrome is called before the egui pass so we
                 //    pass a dummy context ref via a temporary egui_macroquad scope.
                 //    The chrome bars themselves use only macroquad draw calls.
-                let _cockpit_vp = {
+                let cockpit_vp = {
                     // Use a temporary egui context scope just for texture registration.
                     // The returned viewport is used below.
                     let mut vp_out = None;
@@ -1081,6 +1088,9 @@ async fn main() {
                     egui_macroquad::draw();
                     vp_out.unwrap_or_else(|| cockpit_state.galaxy_viewport())
                 };
+
+                // Pass cockpit viewport to galaxy map for mouse input clamping.
+                map_state.viewport = Some((cockpit_vp.x, cockpit_vp.y, cockpit_vp.width, cockpit_vp.height));
 
                 // 2. Galaxy map (pure macroquad) — returns camera params
                 let cam = draw_galaxy_map(&world, &mut map_state);
@@ -1236,6 +1246,25 @@ async fn main() {
                         }
                     }
 
+                    // Save/Load panel (floating window)
+                    if show_save_load {
+                        save_load_panel_state.open = true;
+                        if let Some(action) = draw_save_load(
+                            ctx,
+                            &save_slots,
+                            &mut save_load_panel_state,
+                        ) {
+                            match &action {
+                                PanelAction::CloseSaveLoadPanel => {
+                                    show_save_load = false;
+                                }
+                                _ => {
+                                    panel_actions.push(action);
+                                }
+                            }
+                        }
+                    }
+
                     // Encyclopedia (floating window)
                     if let Some(sys_key) = draw_encyclopedia(ctx, &world, &mut enc_state, &mut bmp_cache) {
                         panel_actions.push(PanelAction::FocusFleetSystem(sys_key));
@@ -1328,7 +1357,7 @@ async fn main() {
                                 enc_state.open = !enc_state.open;
                             }
                             CockpitButton::SaveLoad => {
-                                panel_actions.push(PanelAction::OpenSaveLoad);
+                                show_save_load = !show_save_load;
                             }
                             CockpitButton::SpeedDown => {
                                 let next = match clock.speed {
@@ -1817,8 +1846,12 @@ fn apply_panel_action(
         // Save/load actions are handled by the caller before dispatching here;
         // they require access to the full save state and are not routed through
         // this helper.
-        PanelAction::OpenSaveLoad
-        | PanelAction::SaveGame { .. }
+        PanelAction::OpenSaveLoad => {
+            // Handled in the Galaxy mode egui block via show_save_load flag.
+            // This action is emitted by the cockpit button — no additional
+            // work needed here since the button handler is in the render loop.
+        }
+        PanelAction::SaveGame { .. }
         | PanelAction::LoadGame { .. }
         | PanelAction::DeleteSave { .. }
         | PanelAction::CloseSaveLoadPanel => {}
