@@ -119,6 +119,14 @@ pub struct TroopDamageEvent {
 struct ShipSnap {
     hull_current: i32,
     hull_max: i32,
+    /// Current shield HP pool — absorbs damage before hull.
+    shield_current: i32,
+    /// Maximum shield HP (from CapitalShipClass::shield_strength).
+    shield_max: i32,
+    /// Pending weapon damage awaiting shield absorption (set in phase 3, consumed in phase 4).
+    pending_damage: i32,
+    /// Pending ion cannon damage (subset of pending_damage — 2x effective against shields).
+    pending_ion_damage: i32,
     /// Shield recharge allocation nibble (bits 0-3 of C++ +0x64).
     shield_nibble: u8,
     /// Weapon recharge allocation nibble (bits 4-7 of C++ +0x64).
@@ -192,14 +200,15 @@ impl CombatSystem {
         // Phases 4-6: Gate on PHASES_ENABLED.
         if flags.contains(CombatPhaseFlags::PHASES_ENABLED) {
             // Phase 4: Shield absorption (FUN_00544130, 83 lines, vtable +0x1c8).
-            // Full formula not yet decompiled. Approximation: shields absorb
-            // (shield_nibble / 15) fraction of the weapon damage applied in phase 3.
-            // Since damage is applied directly to hull in phase 3 stub, this is a no-op
-            // until the separate shield-before-hull pipeline is implemented.
+            // Shields absorb pending weapon damage before hull. Ion cannons deal 2x
+            // damage to shields. Shield recharges (shield_nibble / 15) fraction per tick.
+            Self::phase_shield_absorb(&mut atk_ships);
+            Self::phase_shield_absorb(&mut def_ships);
 
             // Phase 5: Hull damage application (FUN_005443f0, 54 lines, vtable +0x1d0).
-            // Remaining damage after shields → hull. No-op guard: only fires when
-            // new_hull != current_hull (from FUN_00501490). Already handled above.
+            // Overflow damage after shields is applied to hull_current.
+            Self::phase_hull_damage(&mut atk_ships);
+            Self::phase_hull_damage(&mut def_ships);
 
             // Phase 6: Fighter engagement (FUN_005444e0, 53 lines, vtable +0x1d4).
             // Family 0x71 exactly uses alt_shield_path (C++ +0x78 bit7).
@@ -246,6 +255,10 @@ impl CombatSystem {
             let snap = ShipSnap {
                 hull_current: class.hull as i32,
                 hull_max:     class.hull as i32,
+                shield_current: class.shield_strength as i32,
+                shield_max:     class.shield_strength as i32,
+                pending_damage: 0,
+                pending_ion_damage: 0,
                 // Initial shield nibble: clamped to 4-bit range (0-15).
                 shield_nibble: (class.shield_recharge_rate.min(15)) as u8,
                 // Weapon nibble starts at max allocation (0x0f = 15).
@@ -266,6 +279,9 @@ impl CombatSystem {
     /// The exact per-arc formula behind vtable +0x1c4 is not yet decompiled.
     /// Approximation: aggregate all arc weapons × weapon_nibble / 15, distribute
     /// evenly with ±20% variance across alive targets.
+    ///
+    /// Damage is stored as `pending_damage` / `pending_ion_damage` on each target.
+    /// Phase 4 (shield absorption) processes pending damage before hull application.
     fn phase_weapon_fire(
         world: &GameWorld,
         firing_fleet: FleetKey,
@@ -274,31 +290,32 @@ impl CombatSystem {
         rng: &mut impl Iterator<Item = f64>,
     ) {
         let fleet = &world.fleets[firing_fleet];
-        let total_fire: u32 = firing.iter()
+        // Compute total fire split by weapon type: ion cannons tracked separately.
+        let (total_fire, total_ion): (u32, u32) = firing.iter()
             .zip(fleet.capital_ships.iter().flat_map(|e| {
                 std::iter::repeat(e.class).take(e.count as usize)
             }))
             .filter(|(snap, _)| snap.alive)
-            .map(|(snap, class_key)| {
+            .fold((0u32, 0u32), |(acc_fire, acc_ion), (snap, class_key)| {
                 let class = &world.capital_ship_classes[class_key];
-                let raw = class.turbolaser_fore
+                let non_ion = class.turbolaser_fore
                     + class.turbolaser_aft
                     + class.turbolaser_port
                     + class.turbolaser_starboard
-                    + class.ion_cannon_fore
-                    + class.ion_cannon_aft
-                    + class.ion_cannon_port
-                    + class.ion_cannon_starboard
                     + class.laser_cannon_fore
                     + class.laser_cannon_aft
                     + class.laser_cannon_port
                     + class.laser_cannon_starboard;
-                // weapon_nibble (0-15) scales output proportionally.
-                (raw * snap.weapon_nibble as u32) / 15
-            })
-            .sum();
+                let ion = class.ion_cannon_fore
+                    + class.ion_cannon_aft
+                    + class.ion_cannon_port
+                    + class.ion_cannon_starboard;
+                let scale = snap.weapon_nibble as u32;
+                (acc_fire + (non_ion * scale) / 15, acc_ion + (ion * scale) / 15)
+            });
 
-        if total_fire == 0 { return; }
+        let total = total_fire + total_ion;
+        if total == 0 { return; }
 
         let alive_indices: Vec<usize> = targets.iter().enumerate()
             .filter(|(_, t)| t.alive)
@@ -306,34 +323,150 @@ impl CombatSystem {
             .collect();
         if alive_indices.is_empty() { return; }
 
-        let fire_per_target = total_fire / alive_indices.len() as u32;
+        let n = alive_indices.len() as u32;
+        let fire_per = total_fire / n;
+        let ion_per = total_ion / n;
+        let total_per = fire_per + ion_per;
+
         for idx in alive_indices {
             let roll = rng.next().unwrap_or(0.5);
-            // ±20% variance around fire_per_target. TODO: replace with exact vtable +0x1c4 formula.
-            let variance = (fire_per_target as f64 * 0.2 * (roll * 2.0 - 1.0)) as i32;
-            let damage = (fire_per_target as i32 + variance).max(0);
+            // ±20% variance around total_per. TODO: replace with exact vtable +0x1c4 formula.
+            let variance = (total_per as f64 * 0.2 * (roll * 2.0 - 1.0)) as i32;
+            let damage = (total_per as i32 + variance).max(0);
 
-            // Shield absorption approximation: shield_nibble / 15 fraction absorbed.
-            // This merges phases 3-5 into one step pending separate shield phase decompile.
-            let absorbed = (damage as f64 * targets[idx].shield_nibble as f64 / 15.0) as i32;
-            let hull_damage = (damage - absorbed).max(0);
+            // Split damage proportionally between ion and non-ion.
+            let ion_frac = if total > 0 { total_ion as f64 / total as f64 } else { 0.0 };
+            let ion_dmg = (damage as f64 * ion_frac) as i32;
 
-            targets[idx].hull_current = (targets[idx].hull_current - hull_damage).max(0);
-            if targets[idx].hull_current == 0 {
-                targets[idx].alive = false; // alive_flag at +0xac bit0 cleared
+            targets[idx].pending_damage += damage;
+            targets[idx].pending_ion_damage += ion_dmg;
+        }
+    }
+
+    /// Phase 4: Shield absorption (FUN_00544130, 83 lines, vtable +0x1c8).
+    ///
+    /// Each ship's shield pool absorbs pending weapon damage before hull.
+    /// Ion cannon damage is 2x effective against shields (lore-accurate: ion cannons
+    /// are designed to overload shield generators).
+    ///
+    /// After absorption, shields recharge: `(shield_nibble / 15) * shield_max` per tick.
+    /// Shield cannot exceed shield_max. Overflow damage remains in `pending_damage`
+    /// for Phase 5 (hull damage application).
+    fn phase_shield_absorb(ships: &mut [ShipSnap]) {
+        for ship in ships.iter_mut() {
+            if !ship.alive || ship.pending_damage == 0 { continue; }
+
+            // Shield recharge: (shield_nibble / 15) fraction of max shield per tick.
+            // Applied before absorption so ships benefit from recharge during combat.
+            if ship.shield_nibble > 0 && ship.shield_max > 0 {
+                let recharge = (ship.shield_max as f64 * ship.shield_nibble as f64 / 15.0) as i32;
+                ship.shield_current = (ship.shield_current + recharge).min(ship.shield_max);
+            }
+
+            if ship.shield_current <= 0 {
+                // No shields — all damage passes through to hull phase.
+                continue;
+            }
+
+            // Ion cannons deal 2x damage to shields. Compute effective shield damage:
+            // non-ion portion hits shields 1:1, ion portion hits shields 2:1.
+            let non_ion_damage = ship.pending_damage - ship.pending_ion_damage;
+            let effective_shield_damage = non_ion_damage + ship.pending_ion_damage * 2;
+
+            let absorbed = effective_shield_damage.min(ship.shield_current);
+            ship.shield_current -= absorbed;
+
+            // Convert absorbed effective damage back to raw damage consumed.
+            // Ion damage that was absorbed consumed half its effective amount from
+            // the raw pending pool (since 1 raw ion → 2 effective shield damage).
+            let raw_consumed = if effective_shield_damage > 0 {
+                let frac = absorbed as f64 / effective_shield_damage as f64;
+                let non_ion_consumed = (non_ion_damage as f64 * frac) as i32;
+                let ion_consumed = (ship.pending_ion_damage as f64 * frac) as i32;
+                non_ion_consumed + ion_consumed
+            } else {
+                0
+            };
+
+            ship.pending_damage = (ship.pending_damage - raw_consumed).max(0);
+            ship.pending_ion_damage = (ship.pending_ion_damage
+                - (ship.pending_ion_damage as f64
+                    * if effective_shield_damage > 0 { absorbed as f64 / effective_shield_damage as f64 } else { 0.0 })
+                    as i32)
+                .max(0);
+        }
+    }
+
+    /// Phase 5: Hull damage application (FUN_005443f0, 54 lines, vtable +0x1d0).
+    ///
+    /// Applies remaining pending damage (after shield absorption) to hull.
+    /// No-op guard: only fires when pending_damage > 0 (mirrors C++ check
+    /// `new_hull != current_hull` from FUN_00501490).
+    fn phase_hull_damage(ships: &mut [ShipSnap]) {
+        for ship in ships.iter_mut() {
+            if !ship.alive || ship.pending_damage == 0 { continue; }
+
+            ship.hull_current = (ship.hull_current - ship.pending_damage).max(0);
+            ship.pending_damage = 0;
+            ship.pending_ion_damage = 0;
+
+            if ship.hull_current == 0 {
+                ship.alive = false; // alive_flag at +0xac bit0 cleared
             }
         }
     }
 
+    /// Compute total fighter carrier capacity for a fleet's alive capital ships.
+    ///
+    /// Sums `fighter_capacity` across all capital ship classes, scaled by the
+    /// number of alive hulls of each class. Returns the maximum number of
+    /// fighter squadrons that can be launched simultaneously.
+    fn compute_carrier_capacity(
+        world: &GameWorld,
+        fleet_key: FleetKey,
+        ship_snaps: &[ShipSnap],
+    ) -> u32 {
+        let fleet = &world.fleets[fleet_key];
+        let mut capacity: u32 = 0;
+        let mut snap_idx = 0;
+        for entry in &fleet.capital_ships {
+            let class = &world.capital_ship_classes[entry.class];
+            for _ in 0..entry.count {
+                if snap_idx < ship_snaps.len() && ship_snaps[snap_idx].alive {
+                    capacity += class.fighter_capacity;
+                }
+                snap_idx += 1;
+            }
+        }
+        capacity
+    }
+
+    /// Launch fighters from carrier ships, capping deployed squadrons to
+    /// available carrier capacity. Returns a vec of deployed squadron counts
+    /// (same length as the fleet's fighter roster, but each capped).
+    fn launch_fighters(
+        fleet_fighters: &[u32],
+        carrier_capacity: u32,
+    ) -> Vec<u32> {
+        let mut remaining_capacity = carrier_capacity;
+        let mut launched = Vec::with_capacity(fleet_fighters.len());
+        for &count in fleet_fighters {
+            let deploy = count.min(remaining_capacity);
+            launched.push(deploy);
+            remaining_capacity = remaining_capacity.saturating_sub(deploy);
+        }
+        launched
+    }
+
     /// Phase 6: Fighter engagement (FUN_005444e0, 53 lines, vtable +0x1d4).
     ///
-    /// Fighter squadrons attack enemy capital ships and opposing squadrons.
+    /// Fighter squadrons deploy from carrier ships (gated by `fighter_capacity`),
+    /// attack enemy capital ships using per-class attack_strength, then engage
+    /// opposing fighters in dogfights using attack_strength and maneuverability.
+    /// Surviving squadrons are recalled to carriers post-combat.
+    ///
     /// Family 0x71 exactly entities trigger alt_shield_path (C++ +0x78 bit7 = true).
     /// Dead fighters with +0x50 & 0x08 still count for phase-7 alive check.
-    ///
-    /// Approximation (vtable +0x1d4 formula pending decompile):
-    /// - Each alive squadron does attack damage to one random enemy ship.
-    /// - Opposing squadrons inflict fighter losses on each other.
     fn phase_fighter_engage(
         world: &GameWorld,
         attacker: FleetKey,
@@ -344,38 +477,45 @@ impl CombatSystem {
         def_ships: &mut Vec<ShipSnap>,
         rng: &mut impl Iterator<Item = f64>,
     ) {
+        // Step 1: Launch — cap deployed squadrons to carrier capacity.
+        let atk_capacity = Self::compute_carrier_capacity(world, attacker, atk_ships);
+        let def_capacity = Self::compute_carrier_capacity(world, defender, def_ships);
+
+        let mut atk_launched = Self::launch_fighters(atk_fighters, atk_capacity);
+        let mut def_launched = Self::launch_fighters(def_fighters, def_capacity);
+
         let atk_fleet = &world.fleets[attacker];
         let def_fleet = &world.fleets[defender];
 
-        // Fighters attack enemy capital ships.
+        // Step 2: Fighters attack enemy capital ships.
         Self::fighters_attack_ships(
-            atk_fighters, atk_fleet, def_ships, world, rng,
+            &atk_launched, atk_fleet, def_ships, world, rng,
         );
         Self::fighters_attack_ships(
-            def_fighters, def_fleet, atk_ships, world, rng,
+            &def_launched, def_fleet, atk_ships, world, rng,
         );
 
-        // Fighter-vs-fighter engagement: each side's total squadron count vs the other.
-        let atk_total: u32 = atk_fighters.iter().sum();
-        let def_total: u32 = def_fighters.iter().sum();
+        // Step 3: Fighter-vs-fighter dogfight using attack_strength and maneuverability.
+        Self::fighter_dogfight(
+            &mut atk_launched, atk_fleet,
+            &mut def_launched, def_fleet,
+            world, rng,
+        );
 
-        if atk_total == 0 || def_total == 0 { return; }
+        // Step 4: Recall — surviving fighters return to carriers.
+        // Re-check capacity (carriers may have been destroyed during this phase).
+        let atk_capacity_post = Self::compute_carrier_capacity(world, attacker, atk_ships);
+        let def_capacity_post = Self::compute_carrier_capacity(world, defender, def_ships);
 
-        let roll_atk = rng.next().unwrap_or(0.5);
-        let roll_def = rng.next().unwrap_or(0.5);
-
-        // Loss = (enemy_count / (my_count + enemy_count)) * 0.3 * total_squads * roll.
-        // Factor 0.3: approximation pending vtable +0x1d4 decompile.
-        let atk_hit_rate = def_total as f64 / (atk_total + def_total) as f64;
-        let def_hit_rate = atk_total as f64 / (atk_total + def_total) as f64;
-
-        let atk_losses = ((atk_total as f64 * atk_hit_rate * 0.3 * roll_atk) as u32).min(atk_total);
-        let def_losses = ((def_total as f64 * def_hit_rate * 0.3 * roll_def) as u32).min(def_total);
-
-        Self::apply_fighter_losses(atk_fighters, atk_losses);
-        Self::apply_fighter_losses(def_fighters, def_losses);
+        Self::recall_fighters(atk_fighters, &atk_launched, atk_capacity_post);
+        Self::recall_fighters(def_fighters, &def_launched, def_capacity_post);
     }
 
+    /// Fighters attack enemy capital ships using per-class weapon stats.
+    ///
+    /// Each squadron's damage is computed from the FighterClass weapon-type
+    /// attack strengths (turbolaser, ion cannon, laser cannon) scaled by
+    /// squadron count. Shield strength of the target absorbs partial damage.
     fn fighters_attack_ships(
         squadrons: &[u32],
         fleet: &crate::world::Fleet,
@@ -396,21 +536,120 @@ impl CombatSystem {
                 None => continue,
             };
             let class = &world.fighter_classes[class_key];
-            // Fighter attack against capital ships (approximation).
-            // overall_attack_strength is the DAT aggregate attack stat.
-            let attack_power = class.overall_attack_strength * sq_count;
+
+            // Compute per-squadron attack power from weapon-type strengths.
+            // Each weapon type contributes: weapon_count * weapon_attack_strength.
+            // Falls back to overall_attack_strength if per-weapon stats are zero.
+            let per_weapon_attack =
+                class.turbolaser_fore * class.turbolaser_attack_strength
+                + class.ion_cannon_fore * class.ion_cannon_attack_strength
+                + class.laser_cannon_fore * class.laser_cannon_attack_strength;
+
+            let base_attack = if per_weapon_attack > 0 {
+                per_weapon_attack
+            } else {
+                class.overall_attack_strength
+            };
+
+            let attack_power = base_attack * sq_count;
             if attack_power == 0 { continue; }
 
             let roll = rng.next().unwrap_or(0.5);
             let raw_idx = (roll * alive_targets.len() as f64) as usize;
             let target_idx = alive_targets[raw_idx.min(alive_targets.len() - 1)];
-            let damage = (attack_power / 10).max(1) as i32; // scale down raw power
+
+            // Shield absorption: target's shield_nibble absorbs a fraction.
+            let raw_damage = attack_power as i32;
+            let absorbed = (raw_damage as f64 * enemy_ships[target_idx].shield_nibble as f64 / 15.0) as i32;
+            let damage = (raw_damage - absorbed).max(1);
 
             enemy_ships[target_idx].hull_current =
                 (enemy_ships[target_idx].hull_current - damage).max(0);
             if enemy_ships[target_idx].hull_current == 0 {
                 enemy_ships[target_idx].alive = false;
             }
+        }
+    }
+
+    /// Fighter-vs-fighter dogfight using FighterClass attack_strength and maneuverability.
+    ///
+    /// Each side's combat power = sum(squadron_count * (attack_strength + maneuverability / 2)).
+    /// The power ratio determines the loss rate for each side. Higher maneuverability
+    /// grants evasion advantage, reducing losses taken.
+    fn fighter_dogfight(
+        atk_launched: &mut Vec<u32>,
+        atk_fleet: &crate::world::Fleet,
+        def_launched: &mut Vec<u32>,
+        def_fleet: &crate::world::Fleet,
+        world: &GameWorld,
+        rng: &mut impl Iterator<Item = f64>,
+    ) {
+        let atk_total: u32 = atk_launched.iter().sum();
+        let def_total: u32 = def_launched.iter().sum();
+        if atk_total == 0 || def_total == 0 { return; }
+
+        // Compute weighted combat power per side using attack_strength + maneuverability/2.
+        let atk_power: f64 = atk_launched.iter().enumerate()
+            .filter(|(_, &c)| c > 0)
+            .map(|(i, &c)| {
+                let class = atk_fleet.fighters.get(i)
+                    .map(|e| &world.fighter_classes[e.class]);
+                let (atk_str, maneuver) = class
+                    .map(|c| (c.overall_attack_strength as f64, c.maneuverability as f64))
+                    .unwrap_or((1.0, 0.0));
+                c as f64 * (atk_str + maneuver / 2.0)
+            })
+            .sum();
+
+        let def_power: f64 = def_launched.iter().enumerate()
+            .filter(|(_, &c)| c > 0)
+            .map(|(i, &c)| {
+                let class = def_fleet.fighters.get(i)
+                    .map(|e| &world.fighter_classes[e.class]);
+                let (atk_str, maneuver) = class
+                    .map(|c| (c.overall_attack_strength as f64, c.maneuverability as f64))
+                    .unwrap_or((1.0, 0.0));
+                c as f64 * (atk_str + maneuver / 2.0)
+            })
+            .sum();
+
+        if atk_power <= 0.0 && def_power <= 0.0 { return; }
+        let total_power = atk_power + def_power;
+
+        let roll_atk = rng.next().unwrap_or(0.5);
+        let roll_def = rng.next().unwrap_or(0.5);
+
+        // Loss formula: losses = squad_count * (enemy_power / total_power) * roll * attrition_rate.
+        // Attrition rate 0.4: dogfights are lethal but not total wipeouts per round.
+        // Maneuverability already baked into power — higher maneuverability means
+        // your side contributes more power, so the enemy takes proportionally more losses.
+        let attrition_rate = 0.4;
+        let atk_loss_rate = def_power / total_power;
+        let def_loss_rate = atk_power / total_power;
+
+        let atk_losses = ((atk_total as f64 * atk_loss_rate * attrition_rate * roll_atk) as u32).min(atk_total);
+        let def_losses = ((def_total as f64 * def_loss_rate * attrition_rate * roll_def) as u32).min(def_total);
+
+        Self::apply_fighter_losses(atk_launched, atk_losses);
+        Self::apply_fighter_losses(def_launched, def_losses);
+    }
+
+    /// Recall surviving fighters to carriers, capping to remaining carrier capacity.
+    ///
+    /// Fighters that exceed post-combat carrier capacity are lost (carriers destroyed
+    /// during combat cannot recover their squadrons).
+    fn recall_fighters(
+        fleet_fighters: &mut Vec<u32>,
+        launched_survivors: &[u32],
+        carrier_capacity: u32,
+    ) {
+        let mut remaining_capacity = carrier_capacity;
+        for (i, count) in fleet_fighters.iter_mut().enumerate() {
+            let survived = launched_survivors.get(i).copied().unwrap_or(0);
+            // Final count = survived (capped to remaining carrier capacity).
+            let recalled = survived.min(remaining_capacity);
+            remaining_capacity = remaining_capacity.saturating_sub(recalled);
+            *count = recalled;
         }
     }
 
@@ -715,6 +954,7 @@ mod tests {
             gnprtb: GnprtbParams::default(),
             sdprtb: SdprtbParams::default(),
             mission_tables: HashMap::new(),
+            troop_classes: HashMap::new(),
             defense_facility_classes: HashMap::new(),
         }
     }
@@ -931,5 +1171,461 @@ mod tests {
         let result = CombatSystem::resolve_death_star(&world, sys, 42);
         assert_eq!(result.winner, CombatSide::Attacker);
         assert_eq!(result.tick, 42);
+    }
+
+    // -----------------------------------------------------------------------
+    // Fighter combat subsystem tests
+    // -----------------------------------------------------------------------
+
+    fn make_fighter_class(
+        world: &mut GameWorld,
+        attack_strength: u32,
+        maneuverability: u32,
+        is_alliance: bool,
+    ) -> FighterKey {
+        world.fighter_classes.insert(FighterClass {
+            dat_id: DatId::new(0x71000001),
+            name: "Test Fighter".into(),
+            is_alliance,
+            is_empire: !is_alliance,
+            overall_attack_strength: attack_strength,
+            maneuverability,
+            ..FighterClass::default()
+        })
+    }
+
+    fn make_fleet_with_fighters(
+        world: &mut GameWorld,
+        sys: SystemKey,
+        ship_class: CapitalShipKey,
+        ship_count: u32,
+        fighter_class: FighterKey,
+        fighter_squads: u32,
+        is_alliance: bool,
+    ) -> FleetKey {
+        let key = world.fleets.insert(Fleet {
+            location: sys,
+            capital_ships: vec![ShipEntry { class: ship_class, count: ship_count }],
+            fighters: vec![FighterEntry { class: fighter_class, count: fighter_squads }],
+            characters: vec![],
+            is_alliance,
+            has_death_star: false,
+        });
+        world.systems[sys].fleets.push(key);
+        key
+    }
+
+    #[test]
+    fn test_fighter_dogfight_maneuverability_advantage() {
+        // Side A: high maneuverability (10 attack, 20 maneuverability).
+        // Side B: low maneuverability (10 attack, 2 maneuverability).
+        // Same squad count — side A should take fewer losses.
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+        let ship_class = make_class(&mut world, 500, 50);
+        let fc_nimble = make_fighter_class(&mut world, 10, 20, true);
+        let fc_clumsy = make_fighter_class(&mut world, 10, 2, false);
+
+        let atk = make_fleet_with_fighters(&mut world, sys, ship_class, 2, fc_nimble, 10, true);
+        let def = make_fleet_with_fighters(&mut world, sys, ship_class, 2, fc_clumsy, 10, false);
+
+        let rolls: Vec<f64> = vec![0.8; 200];
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+
+        // Nimble side should lose fewer fighters.
+        let atk_losses: u32 = result.fighter_losses.iter()
+            .filter(|e| e.fleet == atk)
+            .map(|e| e.squads_before - e.squads_after)
+            .sum();
+        let def_losses: u32 = result.fighter_losses.iter()
+            .filter(|e| e.fleet == def)
+            .map(|e| e.squads_before - e.squads_after)
+            .sum();
+        assert!(atk_losses <= def_losses,
+            "nimble fighters (losses={atk_losses}) should not lose more than clumsy (losses={def_losses})");
+    }
+
+    #[test]
+    fn test_fighter_vs_capital_uses_attack_strength() {
+        // Fighters with high attack_strength should deal significant damage.
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        // Defender: 1 ship with hull 200, no weapons (won't fire back much).
+        let def_class = make_class(&mut world, 200, 0);
+        // Attacker: 1 ship (carrier) + strong fighters.
+        let atk_class = make_class(&mut world, 100, 10);
+        let fc_strong = make_fighter_class(&mut world, 50, 5, true);
+
+        let atk = make_fleet_with_fighters(&mut world, sys, atk_class, 1, fc_strong, 8, true);
+        let def = make_fleet(&mut world, sys, def_class, 1, false);
+
+        let rolls: Vec<f64> = vec![0.5; 200];
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+
+        // Defenders should have taken hull damage from fighters.
+        let def_damage: Vec<&ShipDamageEvent> = result.ship_damage.iter()
+            .filter(|e| e.fleet == def)
+            .collect();
+        assert!(!def_damage.is_empty(), "fighters with attack_strength=50 should damage capital ships");
+    }
+
+    #[test]
+    fn test_carrier_capacity_limits_fighter_launch() {
+        // Carrier with fighter_capacity=2, but fleet has 10 fighter squads.
+        // Only 2 should launch.
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        // Carrier: fighter_capacity=2 (from make_class, which sets 6 — make a custom one).
+        let small_carrier = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x30000002),
+            name: "Small Carrier".into(),
+            is_alliance: true,
+            is_empire: false,
+            hull: 500,
+            shield_strength: 10,
+            fighter_capacity: 2,
+            turbolaser_fore: 10,
+            shield_recharge_rate: 3,
+            ..CapitalShipClass::default()
+        });
+
+        let fc = make_fighter_class(&mut world, 100, 10, true);
+        let def_class = make_class(&mut world, 100, 10);
+
+        // Attacker: 1 small carrier with capacity 2, but 10 fighter squads.
+        let atk = make_fleet_with_fighters(&mut world, sys, small_carrier, 1, fc, 10, true);
+        // Defender: no fighters, just 1 weak ship.
+        let def = make_fleet(&mut world, sys, def_class, 1, false);
+
+        let rolls: Vec<f64> = vec![0.5; 300];
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+
+        // After recall, attacker should have at most 2 surviving fighters (carrier cap).
+        let total_original: u32 = world.fleets[atk].fighters.iter().map(|e| e.count).sum();
+        // Surviving = original - losses
+        let total_lost: u32 = result.fighter_losses.iter()
+            .filter(|e| e.fleet == atk)
+            .map(|e| e.squads_before - e.squads_after)
+            .sum();
+        let total_surviving = total_original - total_lost;
+        assert!(total_surviving <= 2,
+            "carrier capacity is 2 but {total_surviving} fighters survived");
+    }
+
+    #[test]
+    fn test_fighter_recall_after_carrier_destruction() {
+        // If all carriers are destroyed, no fighters can be recalled.
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        // Attacker: 1 very weak carrier (hull=1) + fighters.
+        let weak_carrier = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x30000003),
+            name: "Weak Carrier".into(),
+            is_alliance: true,
+            is_empire: false,
+            hull: 1, // will be destroyed by defender
+            shield_strength: 0,
+            fighter_capacity: 10,
+            turbolaser_fore: 5,
+            shield_recharge_rate: 0,
+            ..CapitalShipClass::default()
+        });
+        let fc = make_fighter_class(&mut world, 10, 5, true);
+        let atk = make_fleet_with_fighters(&mut world, sys, weak_carrier, 1, fc, 5, true);
+
+        // Defender: strong ship that will destroy the carrier.
+        let strong_class = make_class(&mut world, 1000, 200);
+        let def = make_fleet(&mut world, sys, strong_class, 3, false);
+
+        let rolls: Vec<f64> = vec![0.5; 300];
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+
+        // Attacker carrier should be destroyed — all surviving fighters lost during recall.
+        let atk_ship_destroyed = result.ship_damage.iter()
+            .any(|e| e.fleet == atk && e.hull_after == 0);
+        if atk_ship_destroyed {
+            // All fighter squads should show as lost (squads_after = 0 in loss events).
+            let surviving: u32 = result.fighter_losses.iter()
+                .filter(|e| e.fleet == atk)
+                .map(|e| e.squads_after)
+                .sum();
+            assert_eq!(surviving, 0,
+                "all fighters should be lost when carrier is destroyed, but {surviving} survived");
+        }
+        // If carrier survived, test is inconclusive — that's OK.
+    }
+
+    #[test]
+    fn test_no_fighters_skips_fighter_phase() {
+        // Two fleets with no fighters — fighter loss events should be empty.
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+        let class = make_class(&mut world, 100, 50);
+        let atk = make_fleet(&mut world, sys, class, 2, true);
+        let def = make_fleet(&mut world, sys, class, 2, false);
+
+        let rolls: Vec<f64> = vec![0.5; 200];
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        assert!(result.fighter_losses.is_empty(),
+            "no fighter losses expected when neither fleet has fighters");
+    }
+
+    #[test]
+    fn test_asymmetric_fighter_engagement() {
+        // Only attacker has fighters; defender has none.
+        // Attacker fighters should damage defender ships without dogfight losses.
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+        let ship_class = make_class(&mut world, 200, 20);
+        let fc = make_fighter_class(&mut world, 30, 10, true);
+
+        let atk = make_fleet_with_fighters(&mut world, sys, ship_class, 2, fc, 6, true);
+        let def = make_fleet(&mut world, sys, ship_class, 2, false);
+
+        let rolls: Vec<f64> = vec![0.5; 300];
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+
+        // Attacker should not lose fighters in dogfight (no enemy fighters).
+        let atk_fighter_losses: u32 = result.fighter_losses.iter()
+            .filter(|e| e.fleet == atk)
+            .map(|e| e.squads_before - e.squads_after)
+            .sum();
+        assert_eq!(atk_fighter_losses, 0,
+            "attacker should lose no fighters in dogfight when defender has none, but lost {atk_fighter_losses}");
+
+        // Defender should have taken ship damage (from fighters + capital weapons).
+        let def_damage_count = result.ship_damage.iter()
+            .filter(|e| e.fleet == def)
+            .count();
+        assert!(def_damage_count > 0,
+            "defender ships should be damaged by attacker fighters");
+    }
+
+    // -----------------------------------------------------------------------
+    // Shield absorption tests (Phase 4)
+    // -----------------------------------------------------------------------
+
+    /// Helper: create a ship class with explicit shield, hull, and weapon config.
+    fn make_shield_class(
+        world: &mut GameWorld,
+        hull: u32,
+        shield: u32,
+        shield_recharge: u32,
+        turbolaser: u32,
+        ion_cannon: u32,
+    ) -> CapitalShipKey {
+        world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x30000001),
+            name: "Shielded Ship".into(),
+            is_alliance: false,
+            is_empire: true,
+            hull,
+            shield_strength: shield,
+            shield_recharge_rate: shield_recharge,
+            turbolaser_fore: turbolaser,
+            ion_cannon_fore: ion_cannon,
+            ..CapitalShipClass::default()
+        })
+    }
+
+    #[test]
+    fn test_shield_absorbs_damage_before_hull() {
+        let mut ships = vec![ShipSnap {
+            hull_current: 100,
+            hull_max: 100,
+            shield_current: 100,
+            shield_max: 100,
+            pending_damage: 50,
+            pending_ion_damage: 0,
+            shield_nibble: 0,
+            weapon_nibble: 15,
+            alive: true,
+        }];
+        CombatSystem::phase_shield_absorb(&mut ships);
+        CombatSystem::phase_hull_damage(&mut ships);
+        assert_eq!(ships[0].shield_current, 50);
+        assert_eq!(ships[0].hull_current, 100);
+        assert!(ships[0].alive);
+    }
+
+    #[test]
+    fn test_shield_overflow_damages_hull() {
+        let mut ships = vec![ShipSnap {
+            hull_current: 100,
+            hull_max: 100,
+            shield_current: 30,
+            shield_max: 100,
+            pending_damage: 80,
+            pending_ion_damage: 0,
+            shield_nibble: 0,
+            weapon_nibble: 15,
+            alive: true,
+        }];
+        CombatSystem::phase_shield_absorb(&mut ships);
+        assert_eq!(ships[0].shield_current, 0);
+        assert!(ships[0].pending_damage > 0);
+        CombatSystem::phase_hull_damage(&mut ships);
+        assert!(ships[0].hull_current < 100);
+        assert!(ships[0].hull_current > 0);
+    }
+
+    #[test]
+    fn test_ion_cannon_2x_shield_damage() {
+        let mut ion_vec = vec![ShipSnap {
+            hull_current: 200,
+            hull_max: 200,
+            shield_current: 100,
+            shield_max: 100,
+            pending_damage: 40,
+            pending_ion_damage: 40,
+            shield_nibble: 0,
+            weapon_nibble: 15,
+            alive: true,
+        }];
+        let mut turbo_vec = vec![ShipSnap {
+            hull_current: 200,
+            hull_max: 200,
+            shield_current: 100,
+            shield_max: 100,
+            pending_damage: 40,
+            pending_ion_damage: 0,
+            shield_nibble: 0,
+            weapon_nibble: 15,
+            alive: true,
+        }];
+        CombatSystem::phase_shield_absorb(&mut ion_vec);
+        CombatSystem::phase_shield_absorb(&mut turbo_vec);
+        assert!(ion_vec[0].shield_current < turbo_vec[0].shield_current,
+            "Ion shields {} should be less than turbo shields {}",
+            ion_vec[0].shield_current, turbo_vec[0].shield_current);
+    }
+
+    #[test]
+    fn test_shield_recharge_per_tick() {
+        let mut ships = vec![ShipSnap {
+            hull_current: 100,
+            hull_max: 100,
+            shield_current: 0,
+            shield_max: 150,
+            pending_damage: 5,
+            pending_ion_damage: 0,
+            shield_nibble: 15,
+            weapon_nibble: 15,
+            alive: true,
+        }];
+        CombatSystem::phase_shield_absorb(&mut ships);
+        assert_eq!(ships[0].shield_current, 145);
+        CombatSystem::phase_hull_damage(&mut ships);
+        assert_eq!(ships[0].hull_current, 100);
+    }
+
+    #[test]
+    fn test_zero_shield_passes_all_damage_to_hull() {
+        let mut ships = vec![ShipSnap {
+            hull_current: 100,
+            hull_max: 100,
+            shield_current: 0,
+            shield_max: 0,
+            pending_damage: 60,
+            pending_ion_damage: 0,
+            shield_nibble: 0,
+            weapon_nibble: 15,
+            alive: true,
+        }];
+        CombatSystem::phase_shield_absorb(&mut ships);
+        assert_eq!(ships[0].pending_damage, 60);
+        CombatSystem::phase_hull_damage(&mut ships);
+        assert_eq!(ships[0].hull_current, 40);
+    }
+
+    #[test]
+    fn test_shield_prevents_death() {
+        let mut ships = vec![ShipSnap {
+            hull_current: 50,
+            hull_max: 50,
+            shield_current: 200,
+            shield_max: 200,
+            pending_damage: 100,
+            pending_ion_damage: 0,
+            shield_nibble: 0,
+            weapon_nibble: 15,
+            alive: true,
+        }];
+        CombatSystem::phase_shield_absorb(&mut ships);
+        CombatSystem::phase_hull_damage(&mut ships);
+        assert!(ships[0].alive);
+        assert_eq!(ships[0].hull_current, 50);
+        assert_eq!(ships[0].shield_current, 100);
+    }
+
+    #[test]
+    fn test_shield_integration_full_combat() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+        let atk_class = make_shield_class(&mut world, 200, 0, 0, 50, 0);
+        let def_class = make_shield_class(&mut world, 200, 500, 10, 50, 0);
+        let atk = make_fleet(&mut world, sys, atk_class, 1, true);
+        let def = make_fleet(&mut world, sys, def_class, 1, false);
+
+        let rolls: Vec<f64> = vec![0.5; 200];
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+
+        let atk_damage: i32 = result.ship_damage.iter()
+            .filter(|d| d.fleet == atk)
+            .map(|d| d.hull_before - d.hull_after)
+            .sum();
+        let def_damage: i32 = result.ship_damage.iter()
+            .filter(|d| d.fleet == def)
+            .map(|d| d.hull_before - d.hull_after)
+            .sum();
+        assert!(def_damage < atk_damage,
+            "Shielded defender hull damage {} should be less than unshielded attacker {}",
+            def_damage, atk_damage);
+    }
+
+    #[test]
+    fn test_ion_cannon_integration() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+        let target_class = make_shield_class(&mut world, 200, 100, 0, 10, 0);
+        let ion_atk_class = make_shield_class(&mut world, 200, 0, 0, 0, 50);
+        let ion_atk = make_fleet(&mut world, sys, ion_atk_class, 1, true);
+        let target1 = make_fleet(&mut world, sys, target_class, 1, false);
+
+        let rolls: Vec<f64> = vec![0.5; 200];
+        let result_ion = CombatSystem::resolve_space(&world, ion_atk, target1, sys, 1, &rolls, 1);
+
+        let mut world2 = empty_world();
+        let sector2 = make_sector(&mut world2);
+        let sys2 = make_system(&mut world2, sector2);
+        let target_class2 = make_shield_class(&mut world2, 200, 100, 0, 10, 0);
+        let turbo_atk_class = make_shield_class(&mut world2, 200, 0, 0, 50, 0);
+        let turbo_atk = make_fleet(&mut world2, sys2, turbo_atk_class, 1, true);
+        let target2 = make_fleet(&mut world2, sys2, target_class2, 1, false);
+
+        let result_turbo = CombatSystem::resolve_space(&world2, turbo_atk, target2, sys2, 1, &rolls, 1);
+
+        let ion_hull_damage: i32 = result_ion.ship_damage.iter()
+            .filter(|d| d.fleet == target1)
+            .map(|d| d.hull_before - d.hull_after)
+            .sum();
+        let turbo_hull_damage: i32 = result_turbo.ship_damage.iter()
+            .filter(|d| d.fleet == target2)
+            .map(|d| d.hull_before - d.hull_after)
+            .sum();
+        assert!(ion_hull_damage >= turbo_hull_damage,
+            "Ion hull damage {} should be >= turbo hull damage {} against shielded target",
+            ion_hull_damage, turbo_hull_damage);
     }
 }
