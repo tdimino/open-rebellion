@@ -6,14 +6,26 @@
 //! squadrons, assigned characters, and action buttons (assign/remove officer,
 //! merge with another fleet at same system, go to system).
 
-use egui_macroquad::egui::{self, RichText, ScrollArea};
+use egui_macroquad::egui::{self, RichText, ScrollArea, Vec2};
 use rebellion_core::ids::{CharacterKey, FleetKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::movement::MovementState;
 use rebellion_core::world::GameWorld;
 
+use crate::bmp_cache::{BmpCache, DllSource};
 use crate::theme;
 use super::PanelAction;
+
+// GOKRES.DLL mini-icon ID offsets.
+// Capital ship mini-icons: dat_id.raw() + CAPSHIP_MINI_OFFSET maps into 18000-18999.
+// Fighter mini-icons: dat_id.raw() + FIGHTER_MINI_OFFSET maps into 18000-18999.
+// These constants approximate the mapping from ship/fighter DatIds (range ~800-1050)
+// into the 18000 resource range. Missing icons fall through silently (cache returns None).
+const CAPSHIP_MINI_OFFSET: u32 = 17000;
+const FIGHTER_MINI_OFFSET: u32 = 17000;
+
+/// Displayed size for GOKRES mini-icons in panel lists (original is 61x25).
+const MINI_ICON_HEIGHT: f32 = 20.0;
 
 // ---------------------------------------------------------------------------
 // FleetsState
@@ -42,6 +54,7 @@ pub fn draw_fleets(
     movement_state: &MovementState,
     state: &mut FleetsState,
     player_faction: MissionFaction,
+    bmp_cache: &mut BmpCache,
 ) -> Option<PanelAction> {
     let mut action = None;
 
@@ -122,16 +135,28 @@ pub fn draw_fleets(
                                         .strong(),
                                 );
                                 for entry in &fleet.capital_ships {
-                                    let class_name = world
+                                    let (class_name, dat_id_raw) = world
                                         .capital_ship_classes
                                         .get(entry.class)
-                                        .map(|c| c.name.as_str())
-                                        .unwrap_or("Unknown");
-                                    ui.label(
-                                        RichText::new(format!("  {} ×{}", class_name, entry.count))
-                                            .color(theme::TEXT_PRIMARY)
-                                            .size(11.0),
-                                    );
+                                        .map(|c| (c.name.as_str(), c.dat_id.raw()))
+                                        .unwrap_or(("Unknown", 0));
+                                    ui.horizontal(|ui| {
+                                        // GOKRES.DLL 61x25 mini-icon for this ship class.
+                                        let mini_id = dat_id_raw + CAPSHIP_MINI_OFFSET;
+                                        if let Some(tex) = bmp_cache.get(ctx, DllSource::Gokres, mini_id) {
+                                            let size = tex.size();
+                                            let h = MINI_ICON_HEIGHT;
+                                            let w = h * size[0] as f32 / size[1] as f32;
+                                            ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                                                tex.id(), Vec2::new(w, h),
+                                            )));
+                                        }
+                                        ui.label(
+                                            RichText::new(format!("{} ×{}", class_name, entry.count))
+                                                .color(theme::TEXT_PRIMARY)
+                                                .size(11.0),
+                                        );
+                                    });
                                 }
                             }
 
@@ -145,16 +170,28 @@ pub fn draw_fleets(
                                         .strong(),
                                 );
                                 for entry in &fleet.fighters {
-                                    let class_name = world
+                                    let (class_name, dat_id_raw) = world
                                         .fighter_classes
                                         .get(entry.class)
-                                        .map(|c| c.name.as_str())
-                                        .unwrap_or("Unknown");
-                                    ui.label(
-                                        RichText::new(format!("  {} ×{}", class_name, entry.count))
-                                            .color(theme::TEXT_PRIMARY)
-                                            .size(11.0),
-                                    );
+                                        .map(|c| (c.name.as_str(), c.dat_id.raw()))
+                                        .unwrap_or(("Unknown", 0));
+                                    ui.horizontal(|ui| {
+                                        // GOKRES.DLL 61x25 mini-icon for this fighter class.
+                                        let mini_id = dat_id_raw + FIGHTER_MINI_OFFSET;
+                                        if let Some(tex) = bmp_cache.get(ctx, DllSource::Gokres, mini_id) {
+                                            let size = tex.size();
+                                            let h = MINI_ICON_HEIGHT;
+                                            let w = h * size[0] as f32 / size[1] as f32;
+                                            ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                                                tex.id(), Vec2::new(w, h),
+                                            )));
+                                        }
+                                        ui.label(
+                                            RichText::new(format!("{} ×{}", class_name, entry.count))
+                                                .color(theme::TEXT_PRIMARY)
+                                                .size(11.0),
+                                        );
+                                    });
                                 }
                             }
 

@@ -29,7 +29,8 @@ use rebellion_core::world::{ControlKind, GameWorld, MstbTable, SeedDifficulty, S
 
 use rebellion_render::{
     draw_advisor, draw_blockade_indicators, draw_cockpit_chrome, draw_cockpit_egui_layer,
-    draw_encyclopedia, draw_facility_icons, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
+    draw_encyclopedia, draw_event_screen, draw_facility_icons, draw_fleet_overlays, draw_fleets,
+    draw_fog_overlay,
     draw_fleet_context_menu, draw_galaxy_map, draw_game_setup, draw_main_menu,
     draw_manufacturing, draw_message_log, draw_missions, draw_officers,
     draw_sector_boundaries,
@@ -37,11 +38,12 @@ use rebellion_render::{
     draw_status_bar, draw_system_context_menu, draw_system_info_panel,
     draw_ground_combat, draw_tactical_view,
     hovered_fleet,
+    show_event_screen, update_event_screen,
     advisor_greet, advisor_combat_result, advisor_mission_result,
     advisor_uprising, advisor_death_star, advisor_manufacturing_complete,
     AdvisorFaction, AdvisorState,
     AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState,
-    Difficulty, EncyclopediaState,
+    Difficulty, EncyclopediaState, EventScreenState,
     FleetsState, GalaxyMapState, GameMessage, GameSetupAction, GameSetupState,
     GroundAction, GroundCombatState,
     MainMenuAction, ManufacturingPanelState, MusicContext,
@@ -333,6 +335,9 @@ async fn main() {
     let mut save_load_panel_state = rebellion_render::SaveLoadPanelState::default();
     let save_slots: Vec<rebellion_render::SaveSlotInfo> = vec![]; // TODO: populate from save files
 
+    // ── Event screen overlay ─────────────────────────────────────────────────
+    let mut event_screen_state = EventScreenState::new();
+
     // ── Tactical combat state ────────────────────────────────────────────────
     let mut tactical_state = TacticalState::new();
     let mut ground_combat_state: Option<GroundCombatState> = None;
@@ -393,6 +398,9 @@ async fn main() {
 
         // ── Advisor animation timer ────────────────────────────────────────
         advisor_state.update(dt);
+
+        // ── Event screen overlay timer ────────────────────────────────────
+        update_event_screen(&mut event_screen_state, dt);
 
         // ── Global keyboard shortcuts ───────────────────────────────────────
         if is_key_pressed(KeyCode::Escape) {
@@ -1240,7 +1248,7 @@ async fn main() {
                     }
                     if show_fleets {
                         if let Some(action) =
-                            draw_fleets(ctx, &world, &movement_state, &mut fleets_state, player_faction)
+                            draw_fleets(ctx, &world, &movement_state, &mut fleets_state, player_faction, &mut bmp_cache)
                         {
                             panel_actions.push(action);
                         }

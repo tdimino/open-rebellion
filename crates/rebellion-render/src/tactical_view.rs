@@ -44,6 +44,20 @@ const DEPLOY_ZONE_FRACTION: f32 = 0.3;
 const TACTICAL_SHIP_SPRITE_START: u32 = 2001;
 const TACTICAL_SHIP_SPRITE_END: u32 = 2130;
 
+/// Task force info panel BMP IDs in TACTICAL.DLL.
+/// 1001 = attacker/Alliance panel, 1002 = defender/Empire panel.
+/// Full range 1001-1037 covers faction-colored task force + squadron frames.
+const TACTICAL_TASKFORCE_PANEL_ATTACKER: u32 = 1001;
+const TACTICAL_TASKFORCE_PANEL_DEFENDER: u32 = 1002;
+
+/// Weapon recharge gauge BMP IDs (5-step animation, 0%→100%).
+/// Frame 0 (empty) = 1206, frame 4 (full) = 1210.
+const TACTICAL_RECHARGE_GAUGE_BASE: u32 = 1206;
+const TACTICAL_RECHARGE_GAUGE_STEPS: u32 = 5;
+
+/// Hull integrity + shield strength combined display panel.
+const TACTICAL_HULL_SHIELD_PANEL: u32 = 1302;
+
 /// Default ship icon size when no sprite is available.
 const DEFAULT_SHIP_SIZE: f32 = 40.0;
 
@@ -1023,6 +1037,45 @@ pub fn draw_tactical_view(
             bmp_cache.preload_range(ctx, DllSource::Tactical, TACTICAL_SHIP_SPRITE_START, TACTICAL_SHIP_SPRITE_END);
         }
 
+        // Task force info panel overlay (top-left floating window).
+        // Shows the faction-colored HUD panel from TACTICAL.DLL for both sides.
+        egui::Window::new("task_force_hud")
+            .title_bar(false)
+            .resizable(false)
+            .collapsible(false)
+            .frame(egui::Frame::none())
+            .fixed_pos(egui::pos2(8.0, 40.0))
+            .show(ctx, |ui| {
+                let atk_panel_id = if player_is_attacker {
+                    TACTICAL_TASKFORCE_PANEL_ATTACKER
+                } else {
+                    TACTICAL_TASKFORCE_PANEL_DEFENDER
+                };
+                let def_panel_id = if player_is_attacker {
+                    TACTICAL_TASKFORCE_PANEL_DEFENDER
+                } else {
+                    TACTICAL_TASKFORCE_PANEL_ATTACKER
+                };
+
+                // Attacker panel (player side).
+                if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, atk_panel_id) {
+                    let size = tex.size();
+                    let w = (size[0] as f32).min(160.0);
+                    let h = w * size[1] as f32 / size[0] as f32;
+                    ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                }
+
+                ui.add_space(4.0);
+
+                // Defender panel (enemy side).
+                if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, def_panel_id) {
+                    let size = tex.size();
+                    let w = (size[0] as f32).min(160.0);
+                    let h = w * size[1] as f32 / size[0] as f32;
+                    ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                }
+            });
+
         // Top bar: battle title.
         egui::TopBottomPanel::top("tactical_top").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -1094,6 +1147,18 @@ pub fn draw_tactical_view(
                             Color32::from_rgb(255, 140, 60)
                         };
                         ui.label(RichText::new(status_text).color(status_color).strong());
+
+                        // Weapon recharge gauge: 5-step animation from TACTICAL.DLL.
+                        // Cycles through IDs 1206-1210 based on combat tick.
+                        // Each full cycle = 20 ticks (4 ticks per step).
+                        let gauge_step = (combat_tick / 4) % TACTICAL_RECHARGE_GAUGE_STEPS;
+                        let gauge_id = TACTICAL_RECHARGE_GAUGE_BASE + gauge_step;
+                        if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, gauge_id) {
+                            let size = tex.size();
+                            let h = 20.0_f32;
+                            let w = h * size[0] as f32 / size[1] as f32;
+                            ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                        }
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Speed controls.
@@ -1175,6 +1240,15 @@ pub fn draw_tactical_view(
                             .color(Color32::from_rgb(255, 220, 100))
                     );
                     ui.separator();
+
+                    // Hull/shield display panel background (TACTICAL.DLL ID 1302).
+                    if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, TACTICAL_HULL_SHIELD_PANEL) {
+                        let size = tex.size();
+                        let w = 180.0_f32.min(size[0] as f32);
+                        let h = w * size[1] as f32 / size[0] as f32;
+                        ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                        ui.add_space(2.0);
+                    }
 
                     // Try to show ship sprite from BmpCache.
                     if let Some(sid) = sprite_id {
