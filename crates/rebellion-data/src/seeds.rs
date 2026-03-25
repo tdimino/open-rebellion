@@ -449,6 +449,9 @@ fn apply_seeds_legacy(
         &alliance_systems, true, world);
     apply_garrison_seed(&load_seed(gdata_path, "CMUNCRTB.DAT")?, system_key_map,
         CORUSCANT_SEQ_ID, false, world);
+    // NOTE: Legacy fallback collapses Alliance HQ to Yavin because the 3-system
+    // model (which randomizes Rebel HQ) requires Coruscant to be present.
+    // This fallback only runs when special systems can't be identified.
     apply_garrison_seed(&load_seed(gdata_path, "CMUNHQTB.DAT")?, system_key_map,
         YAVIN_SEQ_ID, true, world);
     apply_garrison_seed(&load_seed(gdata_path, "CMUNYVTB.DAT")?, system_key_map,
@@ -502,6 +505,7 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
                 &alliance_systems, true, world);
             apply_garrison_seed(&load_seed_from_files(files, "CMUNCRTB.DAT")?, system_key_map,
                 CORUSCANT_SEQ_ID, false, world);
+            // NOTE: WASM legacy fallback collapses Alliance HQ to Yavin (same as filesystem fallback).
             apply_garrison_seed(&load_seed_from_files(files, "CMUNHQTB.DAT")?, system_key_map,
                 YAVIN_SEQ_ID, true, world);
             apply_garrison_seed(&load_seed_from_files(files, "CMUNYVTB.DAT")?, system_key_map,
@@ -1598,10 +1602,16 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
     let threshold = world.gnprtb.value(7761, diff) as i32; // 60
     let divisor = world.gnprtb.value(7762, diff).abs().max(1) as i32; // 10
 
-    // Alliance regiment DatId: family 0x10, index 1
-    let alliance_regiment = DatId::new(0x10000001);
-    // Empire regiment DatId: family 0x10, index 6 (Imperial Army Regiment)
-    let empire_regiment = DatId::new(0x10000006);
+    // Alliance regiment DatId: family 0x10, index 2 (ALLIANCE_ARMY_REGIMENT per TheArchitect2018)
+    let alliance_regiment = DatId::new(0x10000002);
+    // Empire regiment DatId: family 0x10, index 8 (IMPERIAL_ARMY_REGIMENT per TheArchitect2018)
+    let empire_regiment = DatId::new(0x10000008);
+    // Guard: if these troop classes don't exist in the data, skip garrison seeding.
+    let alliance_exists = world.troops.values().any(|t| t.class_dat_id == alliance_regiment);
+    let empire_exists = world.troops.values().any(|t| t.class_dat_id == empire_regiment);
+    if !alliance_exists && !empire_exists {
+        return; // Troop classes not loaded — can't seed garrisons.
+    }
 
     // Collect system info.
     struct GarrisonInfo {

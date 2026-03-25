@@ -215,3 +215,20 @@ From TheArchitect2018 wiki, ported to Open Rebellion `missions.rs::compute_table
 |-----|--------|--------|
 | 14 dispatch validators not ported to Rust | Invalid deployments possible | Medium — entity offsets need Rust type modeling |
 | Faction-specific deployment budgets | Both factions use same thresholds | Low — add to AiConfig |
+
+## Frequently Asked Questions
+
+**How does the original AI decide where to send fleets?**
+The original AI does not score deployment targets—it performs a binary capacity check (FUN_0052e970). A fleet is sent to a system if the deployment budget at `+0x58` is not yet exhausted. Open Rebellion replaces this with a 4-factor weighted model scoring weakness, proximity, deconfliction, and freshness, which is strictly more strategic.
+
+**How many functions make up the AI pipeline?**
+The core AI pipeline is 6 functions: FUN_00519d00 (galaxy evaluation, 252 lines), FUN_00537180 (primary deployment, 381 lines), FUN_005385f0 (secondary deployment, 252 lines), FUN_00502020 (garrison strength, 897 lines), FUN_00508250 (dispatch validation, 18+ checks), and FUN_00520580 (movement order setter, 9 lines). The master orchestrator is FUN_004927c0 at 9,000 lines.
+
+**What is the dispatch validation chain?**
+FUN_00508250 chains 19 AND-checked boolean validators. Every fleet deployment must pass all 19 checks or it is rejected. Checks cover capacity limits, faction ownership, status bitfields, ship type compatibility, troop availability, and character mission conflicts. Two validators (#1 and #17, FUN_0051ebb0) are no-ops that always return true.
+
+**Do Alliance and Empire use the same AI?**
+Same pipeline, different budgets. FUN_00506ea0 returns a faction-specific evaluator object: Alliance uses the pointer at global offset +0xc4, Empire uses +0xc8. These evaluator objects have different deployment budget values at +0x58 (consumed) and +0x5c (max), giving each faction asymmetric deployment thresholds.
+
+**Is the original AI omniscient?**
+Yes. FUN_00519d00 (galaxy evaluation) performs no fog-of-war check—the AI evaluates all systems regardless of visibility. Open Rebellion preserves this behavior to maintain parity with the original game.

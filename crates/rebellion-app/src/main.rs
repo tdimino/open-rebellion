@@ -127,7 +127,8 @@ async fn main() {
             "MJCHARSD.DAT", "MNCHARSD.DAT",
         ];
         let optional: &[&str] = &[
-            "GNPRTB.DAT", "DEFFACSD.DAT",
+            "GNPRTB.DAT", "SDPRTB.DAT", "DEFFACSD.DAT",
+            "SYFCCRTB.DAT", "SYFCRMTB.DAT",
             "CMUNEFTB.DAT", "CMUNAFTB.DAT", "CMUNEMTB.DAT", "CMUNALTB.DAT",
             "CMUNCRTB.DAT", "CMUNHQTB.DAT", "CMUNYVTB.DAT",
             "FACLCRTB.DAT", "FACLHQTB.DAT",

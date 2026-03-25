@@ -37,9 +37,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use egui_macroquad::egui::{self, Color32, RichText, ScrollArea, TextureHandle, TextureOptions};
+use egui_macroquad::egui::{self, Color32, RichText, ScrollArea, TextureHandle, TextureOptions, Vec2};
 use rebellion_core::ids::{CapitalShipKey, CharacterKey, FighterKey, SystemKey};
 use rebellion_core::world::GameWorld;
+
+use crate::bmp_cache::{BmpCache, DllSource};
 
 // ---------------------------------------------------------------------------
 // Tab selection
@@ -118,6 +120,7 @@ pub fn draw_encyclopedia(
     ctx: &egui::Context,
     world: &GameWorld,
     state: &mut EncyclopediaState,
+    bmp_cache: &mut BmpCache,
 ) -> Option<SystemKey> {
     if !state.open {
         return None;
@@ -228,6 +231,14 @@ pub fn draw_encyclopedia(
                                     world.capital_ship_classes.keys().collect();
                                 if let Some(&key) = ships.get(state.selected_index) {
                                     if let Some(ship) = world.capital_ship_classes.get(key) {
+                                        // GOKRES.DLL 122×50 ship status sprite.
+                                        // Formula: resource_id = dat_id.raw() + 1024.
+                                        // Ships without a sprite fall through to the EDATA image.
+                                        let gokres_id = ship.dat_id.raw() + 1024;
+                                        if let Some(tex) = bmp_cache.get(ctx, DllSource::Gokres, gokres_id) {
+                                            ui.add(egui::Image::new(tex).fit_to_exact_size(Vec2::new(122.0, 50.0)));
+                                        }
+
                                         // EDATA offset for capital ships: 42 + 0-based index
                                         let edata_n = 42u16 + state.selected_index as u16;
                                         show_edata_image(ui, ctx, edata_n, state);

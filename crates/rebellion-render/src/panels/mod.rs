@@ -92,6 +92,8 @@ pub enum PanelAction {
     CancelMission(u64),
 
     // ── Save / Load ───────────────────────────────────────────────────────────
+    /// Open (toggle) the save/load panel.
+    OpenSaveLoad,
     /// Player confirmed a save to the given slot with the given name.
     SaveGame { slot: usize, name: String },
     /// Player confirmed a load from the given slot.

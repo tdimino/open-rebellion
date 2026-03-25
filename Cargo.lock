@@ -1382,6 +1382,8 @@ dependencies = [
  "bincode",
  "dat-dumper",
  "notify",
+ "rand",
+ "rand_xoshiro",
  "rebellion-core",
  "semver",
  "serde",

@@ -30,7 +30,7 @@ use egui_macroquad::egui::{self, Color32, RichText};
 /// Named sound effect identifiers.
 ///
 /// Shared between the render crate (for type-safe callbacks) and the app
-/// crate (which maps them to file names and kira handles).
+/// crate (which maps them to file names and `quad-snd` handles).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SfxKind {
     MissionSuccess,
@@ -38,6 +38,12 @@ pub enum SfxKind {
     BuildComplete,
     FleetDeparture,
     FleetArrival,
+    /// Space battle begins at a system.
+    CombatStart,
+    /// Clicked a button or opened a panel.
+    UiClick,
+    /// Closed a panel or dismissed a dialog.
+    UiClose,
 }
 
 // ---------------------------------------------------------------------------
@@ -45,12 +51,72 @@ pub enum SfxKind {
 // ---------------------------------------------------------------------------
 
 /// Named music track identifiers.
+///
+/// Maps 1:1 to WAV files under `data/sounds/music/`.  Files are named
+/// `{lowercase_variant}.wav` (e.g. `main_theme.wav`, `battle.wav`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MusicTrack {
     MainTheme,
     Battle,
     Victory,
     Defeat,
+    /// Emperor Arrives / Death of Yoda / Obi-Wan Revelation (MDATA.306)
+    Imperial,
+    /// Battle of Hoth medley (MDATA.312)
+    Hoth,
+    /// Battle of Endor medley (MDATA.300)
+    Endor,
+}
+
+// ---------------------------------------------------------------------------
+// MusicContext — high-level game context → track selection
+// ---------------------------------------------------------------------------
+
+/// High-level game context used by the app to pick a `MusicTrack`.
+///
+/// The audio engine maps context to track so callers do not hard-code tracks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MusicContext {
+    /// Title screen and setup screens.
+    MainMenu,
+    /// Galaxy map during normal play.
+    GalaxyMap,
+    /// Active space battle (tactical or auto-resolve).
+    Combat,
+    /// Game won.
+    Victory,
+    /// Game lost.
+    Defeat,
+}
+
+// ---------------------------------------------------------------------------
+// VoiceLine — faction voice line identifiers
+// ---------------------------------------------------------------------------
+
+/// Voice line event identifiers.
+///
+/// The audio engine maps these to WAV files in
+/// `data/sounds/voice/{alliance,empire}/{id}.wav`.
+/// Resource IDs correspond to VOICEFXA.DLL (14001–15163) and
+/// VOICEFXE.DLL (15001–15132) extraction outputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VoiceLine {
+    /// Generic mission success acknowledgement.
+    AllianceMissionSuccess,
+    /// Generic mission failure.
+    AllianceMissionFail,
+    /// Fleet departure order confirmed.
+    AllianceFleetDeparts,
+    /// Construction complete at a system.
+    AllianceBuildComplete,
+    /// Empire mission success acknowledgement.
+    EmpireMissionSuccess,
+    /// Empire mission failure.
+    EmpireMissionFail,
+    /// Empire fleet departure.
+    EmpireFleetDeparts,
+    /// Empire construction complete.
+    EmpireBuildComplete,
 }
 
 // ---------------------------------------------------------------------------

@@ -52,6 +52,19 @@ fi
 DAT_COUNT=$(ls -1 "$WEB_DATA"/*.DAT 2>/dev/null | wc -l | tr -d ' ')
 echo "Staged $DAT_COUNT DAT files + textstra.json in web/data/base/"
 
+# ── Stage UI BMPs into web/data/ui/ ─────────────────────────────────────────
+UI_SRC="$ROOT/data/base/ui"
+WEB_UI="$ROOT/web/data/ui"
+if [ -d "$UI_SRC" ]; then
+    echo "Copying staged UI BMPs to web/data/ui/…"
+    mkdir -p "$WEB_UI"
+    cp -r "$UI_SRC"/. "$WEB_UI/"
+    UI_COUNT=$(find "$WEB_UI" -name "*.bmp" 2>/dev/null | wc -l | tr -d ' ')
+    echo "Staged $UI_COUNT UI BMPs in web/data/ui/"
+else
+    echo "WARNING: data/base/ui/ not found — run scripts/stage-ui-assets.py first."
+fi
+
 WASM_SIZE=$(du -h "$ROOT/web/open-rebellion.wasm" | cut -f1)
 echo "Done. WASM size: $WASM_SIZE"
 echo "Serve web/ with any HTTP server, e.g.: python3 -m http.server 8080 -d web/"

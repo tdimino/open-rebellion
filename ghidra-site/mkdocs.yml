@@ -1,11 +1,12 @@
 site_name: "Open Rebellion — Ghidra RE"
-site_description: "Reverse engineering documentation for Star Wars Rebellion (1998, LucasArts)"
+site_description: "Exhaustive reverse engineering of Star Wars Rebellion (1998, LucasArts)—5,127 decompiled functions, full combat formulas, AI behavior decoded, C++ class hierarchy reconstructed."
 site_url: "https://tdimino.github.io/open-rebellion/"
 repo_url: "https://github.com/tdimino/open-rebellion"
 repo_name: "tdimino/open-rebellion"
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     - scheme: slate
       primary: amber
@@ -50,8 +51,21 @@ markdown_extensions:
 extra_css:
   - stylesheets/extra.css
 
+extra_files:
+  - robots.txt
+  - llms.txt
+
 plugins:
   - search
+  - meta
+  - social:
+      cards_layout_options:
+        background_color: "#0d0d0d"
+        color: "#ffc107"
+        font_family: Roboto
+  - sitemap:
+      changefreq: monthly
+      priority: 0.7
 
 nav:
   - Home: index.md

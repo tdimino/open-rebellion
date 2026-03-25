@@ -77,6 +77,7 @@ crates/rebellion-render/src/
 ├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
 ├── combat_view.rs      — Combat results integration into message log
+├── advisor.rs          — Animated droid advisors (C-3PO/R2-D2 or Imperial), priority message queue, frame cycling
 ├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
     ├── mod.rs           — PanelAction enum (31 variants, including context menu + combat actions)

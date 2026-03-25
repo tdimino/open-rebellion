@@ -43,20 +43,20 @@ pub struct SeedOptions {
 
 Threaded from Game Setup screen → `load_game_data()` → `apply_seeds_with_rng()`.
 
-## Parity Status (~50%)
+## Parity Status (~95%)
 
-**Done (M1-M4):**
-- SeedOptions threading, load ordering fix
-- System struct extended (is_populated, total_energy, raw_materials)
-- 3-system model replacing proximity spread
-- Character stat rolling + named placement
-- 8 tests (deterministic, seed-reproducible)
+**All 8 milestones complete (M1-M8):**
+- M1: SeedOptions threading, GNPRTB/SDPRTB load ordering
+- M2: System struct extended (is_populated, total_energy, raw_materials)
+- M3: 3-system model (Coruscant/Yavin/random Rebel HQ)
+- M4: Character stat rolling + named placement (8 named characters)
+- M5: Support/popularity initialization from SDPRTB 7682-7685 + GNPRTB 7764-7765
+- M6: Energy/raw materials + procedural facility generation from SYFCCRTB/SYFCRMTB
+- M7: Maintenance-budget common unit seeding from SDPRTB 5168-5170
+- M8: Integration wiring (GameSetup → SeedOptions → loader) + regression tests
+- 23 seeding-specific tests (deterministic, seed-reproducible)
 
-**Remaining (M5-M8):**
-- M5: Support/popularity initialization (SDPRTB 7682-7685, GNPRTB 7764-7765)
-- M6: Energy, raw materials, procedural facilities (GNPRTB 7721-7727)
-- M7: Maintenance-budget common unit seeding (SDPRTB 5168-5170)
-- M8: Integration wiring + regression tests
+**Confirmed complete.** Rim systems excluded from maintenance-budget seeding — verified against TheArchitect2018 `seed.js` Section 10: `fetch_galaxy(session, side, ...)` only returns faction-controlled systems. Uncontrolled rim systems are excluded from the seed pool in the original game.
 
 ExecPlan: `docs/plans/2026-03-24-003-game-seeding-parity-execplan.md`
 Audit: `.subdaimon-output/seeding-parity-audit.md`

@@ -30,8 +30,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install mkdocs-material
-        run: pip install mkdocs-material
+      - name: Install dependencies
+        run: pip install -r ghidra-site/requirements.txt
 
       - name: Build site
         run: cd ghidra-site && mkdocs build

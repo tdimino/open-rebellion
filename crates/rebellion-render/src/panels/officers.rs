@@ -4,15 +4,32 @@
 //! focuses that character's detail view in the same panel. The panel is
 //! rendered as an egui side panel on the left side of the screen.
 
-use egui_macroquad::egui::{self, Color32, ProgressBar, RichText, ScrollArea};
+use egui_macroquad::egui::{self, Color32, ProgressBar, RichText, ScrollArea, Vec2};
 use rebellion_core::ids::CharacterKey;
 use rebellion_core::jedi::{DETECT_PROB_AWARE, DETECT_PROB_TRAINING, DETECT_PROB_EXPERIENCED,
     XP_TO_TRAINING, XP_TO_EXPERIENCED};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::{Character, ForceTier, GameWorld, SkillPair};
 
+use crate::bmp_cache::{BmpCache, DllSource};
 use crate::theme;
 use super::PanelAction;
+
+// ---------------------------------------------------------------------------
+// Portrait resource ID helpers
+// ---------------------------------------------------------------------------
+
+/// Return the GOKRES.DLL resource ID for a character's 80×80 portrait.
+///
+/// Formula derived from the DAT binary layout:
+///   `portrait_id = dat_id + family_id * 32`
+///
+/// Major characters use `family_id = 48` (0x30), giving offset 1536.
+/// Minor characters use `family_id = 56` (0x38), giving offset 1792.
+fn portrait_resource_id(character: &Character) -> u32 {
+    let offset = if character.is_major { 1536u32 } else { 1792u32 };
+    character.dat_id.raw() + offset
+}
 
 // ---------------------------------------------------------------------------
 // OfficersState
@@ -36,12 +53,14 @@ pub struct OfficersState {
 /// Render the character roster as a left-side egui panel.
 ///
 /// `player_faction` determines which characters are highlighted as "yours".
+/// `bmp_cache` provides GOKRES.DLL portrait textures for the detail view.
 /// Returns `Some(PanelAction::FocusCharacter(_))` when the player clicks a row.
 pub fn draw_officers(
     ctx: &egui::Context,
     world: &GameWorld,
     state: &mut OfficersState,
     player_faction: MissionFaction,
+    bmp_cache: &mut BmpCache,
 ) -> Option<PanelAction> {
     let mut action = None;
 
@@ -67,7 +86,7 @@ pub fn draw_officers(
                 }
                 ui.separator();
                 if let Some(character) = world.characters.get(key) {
-                    draw_character_detail(ui, key, character, world);
+                    draw_character_detail(ui, ctx, key, character, world, bmp_cache);
                 } else {
                     ui.label("Character not found.");
                     state.focused = None;
@@ -145,7 +164,20 @@ pub fn draw_officers(
 // ---------------------------------------------------------------------------
 
 /// Render the full character detail inside an already-open panel UI.
-fn draw_character_detail(ui: &mut egui::Ui, key: CharacterKey, character: &Character, world: &GameWorld) {
+fn draw_character_detail(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    key: CharacterKey,
+    character: &Character,
+    world: &GameWorld,
+    bmp_cache: &mut BmpCache,
+) {
+    // ── Portrait (GOKRES.DLL 80×80 headshot) ─────────────────────────────────
+    let portrait_id = portrait_resource_id(character);
+    if let Some(texture) = bmp_cache.get(ctx, DllSource::Gokres, portrait_id) {
+        ui.add(egui::Image::new(texture).fit_to_exact_size(Vec2::new(80.0, 80.0)));
+    }
+
     // ── 40a: Themed header + status badges ───────────────────────────────────
     let name_color = if character.is_alliance { theme::ALLIANCE_BLUE }
         else if character.is_empire { theme::EMPIRE_RED }

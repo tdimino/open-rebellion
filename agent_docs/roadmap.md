@@ -177,10 +177,12 @@ Full report: `.subdaimon-output/seeding-parity-audit.md`
 4. ~~Difficulty/galaxy size affecting seeds~~ — DONE. SeedOptions threaded through to apply_seeds.
 5. ~~Energy/raw materials fields~~ — DONE. System struct extended with is_populated, total_energy, raw_materials.
 
-**Still missing** (M5-M8):
-1. **Support/popularity initialization** — All systems start at 0.0. Original sets 20-100 for controlled, ~41-59 for neutral.
-2. **Procedural galaxy generation** — Political control bucket system (core/rim, strong/weak/neutral) from GNPRTB 7680/7681.
-3. **Maintenance-budget common unit seeding** — Section 10 of wiki (largest source of starting forces) entirely absent.
+**Fixed (M5-M8, 2026-03-25):**
+6. ~~Support/popularity initialization~~ — DONE. Control buckets (core strong/weak/neutral), support 20-100 for controlled, ~41-59 for neutral.
+7. ~~Procedural galaxy generation~~ — DONE. Core/rim bucket percentages from SDPRTB 7680/7681. Energy/raw materials from GNPRTB 7721-7727. Facility generation from SYFCCRTB/SYFCRMTB.
+8. ~~Maintenance-budget common unit seeding~~ — DONE. Budget from SDPRTB 5168/5169/5170, bundle rolling from CMUNALTB/CMUNEMTB, low-support garrison pass.
+
+**Seeding parity: COMPLETE.** Verified against TheArchitect2018 seed.js — rim exclusion from maintenance budget is parity-correct.
 
 ## AI Parity Status (as of 2026-03-23)
 
