@@ -757,6 +757,63 @@ async fn main() {
                 }
             }
 
+            // ── Story event screens ──────────────────────────────────────────
+            // Show a full-screen BMP overlay for scripted story moments.
+            // Only trigger if no overlay is already active (highest-priority event wins).
+            if !event_screen_state.is_active() {
+                for fired in &fired_events {
+                    use rebellion_core::events::{
+                        EVT_CHARACTER_FORCE, EVT_FORCE_TRAINING,
+                        EVT_LUKE_DAGOBAH, EVT_DAGOBAH_COMPLETED,
+                        EVT_FINAL_BATTLE, EVT_BOUNTY_ATTACK,
+                    };
+                    // Build a human-readable title + description for each story beat.
+                    let screen = match fired.event_id {
+                        EVT_CHARACTER_FORCE => Some((
+                            "The Force Awakens",
+                            "A disturbance in the Force... Luke Skywalker's potential has been noticed.",
+                        )),
+                        EVT_FORCE_TRAINING => Some((
+                            "Jedi Training Begins",
+                            "Luke Skywalker begins his path in the ways of the Force.",
+                        )),
+                        EVT_LUKE_DAGOBAH => Some((
+                            "The Path to Dagobah",
+                            "Luke has departed for the Dagobah system to seek out Yoda.",
+                        )),
+                        EVT_DAGOBAH_COMPLETED => Some((
+                            "Training Complete",
+                            "Luke Skywalker has completed his Jedi training on Dagobah.",
+                        )),
+                        EVT_FINAL_BATTLE => Some((
+                            "The Final Battle",
+                            "The Emperor has mobilized the full might of the Empire. The fate of the galaxy will be decided now.",
+                        )),
+                        EVT_BOUNTY_ATTACK => Some((
+                            "A Trap is Sprung",
+                            "Bounty hunters strike! Han Solo has been captured and frozen in carbonite.",
+                        )),
+                        0x380 => Some(("Jabba's Demand", "Jabba the Hutt demands the return of Solo. A debt must be paid.")),
+                        0x381 => Some(("The Rescue Plan", "Princess Leia has devised a plan to rescue Han Solo from Jabba's palace.")),
+                        0x382 => Some(("Into Jabba's Palace", "Alliance agents infiltrate Jabba's fortress. The rescue is underway.")),
+                        0x383 => Some(("Jabba Defeated", "Jabba the Hutt is dead. Han Solo is free.")),
+                        0x390 => Some(("The Empire Strikes", "Darth Vader has launched a devastating offensive.")),
+                        0x391 => Some(("Vader's Ultimatum", "Darth Vader delivers an ultimatum to Alliance command.")),
+                        0x393 => Some(("The Emperor Watches", "The Emperor himself turns his attention to the conflict.")),
+                        0x394 => Some(("Imperial Intervention", "The Emperor has intervened directly in the war.")),
+                        0x397 => Some(("Hunters Dispatched", "Bounty hunters have been unleashed across the galaxy.")),
+                        0x398 => Some(("Closing In", "The bounty hunters are closing in on their quarry.")),
+                        0x399 => Some(("Alliance Mobilizes", "Mon Mothma has ordered a full mobilization of Alliance forces.")),
+                        0x39A => Some(("The Final Stand", "The Alliance makes its final stand against the Empire.")),
+                        _ => None,
+                    };
+                    if let Some((title, description)) = screen {
+                        show_event_screen(&mut event_screen_state, fired.event_id, title, description);
+                        break; // One overlay at a time
+                    }
+                }
+            }
+
             // ── AI ──────────────────────────────────────────────────────────
             let ai_actions = AISystem::advance(
                 &mut ai_state,
@@ -1411,6 +1468,9 @@ async fn main() {
 
                     // Droid advisor (floating window, bottom-right)
                     draw_advisor(ctx, &mut advisor_state);
+
+                    // Story event screen overlay (top-most — over everything including advisor)
+                    draw_event_screen(ctx, &mut event_screen_state, &mut bmp_cache);
 
                     // Cockpit button bar (overlays bottom chrome)
                     if let Some(btn) = draw_cockpit_egui_layer(

@@ -6,6 +6,7 @@ pub mod bmp_cache;
 pub mod cockpit;
 pub mod combat_view;
 pub mod encyclopedia;
+pub mod event_screen;
 pub mod fleet_movement;
 pub mod ground_combat;
 pub mod fog;
@@ -37,6 +38,10 @@ pub use cockpit::{
     CockpitButton, CockpitFaction, CockpitState, CockpitViewport,
 };
 pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
+pub use event_screen::{
+    draw_event_screen, show_event_screen, show_event_screen_raw, update_event_screen,
+    EventScreenState,
+};
 pub use ground_combat::{draw_ground_combat, GroundAction, GroundCombatState, GroundWinner};
 pub use tactical_view::{draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState};
 pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
