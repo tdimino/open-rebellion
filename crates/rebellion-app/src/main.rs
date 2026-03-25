@@ -25,7 +25,7 @@ use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
-use rebellion_core::world::{ControlKind, GameWorld, MstbTable};
+use rebellion_core::world::{ControlKind, GameWorld, MstbTable, SeedDifficulty, SeedOptions};
 
 use rebellion_render::{
     draw_advisor, draw_blockade_indicators, draw_cockpit_chrome, draw_cockpit_egui_layer,
@@ -1046,9 +1046,32 @@ async fn main() {
 
                 if let Some(action) = setup_action {
                     match action {
-                        GameSetupAction::StartGame { difficulty, faction, .. } => {
+                        GameSetupAction::StartGame { difficulty, faction, galaxy_size } => {
                             _difficulty = difficulty;
                             player_faction = faction;
+
+                            // Convert setup choices to SeedOptions and reload world.
+                            let dat_faction_for_seed = match faction {
+                                MissionFaction::Alliance => Faction::Alliance,
+                                MissionFaction::Empire => Faction::Empire,
+                            };
+                            let seed_difficulty = match difficulty {
+                                rebellion_render::Difficulty::Easy => SeedDifficulty::Easy,
+                                rebellion_render::Difficulty::Medium => SeedDifficulty::Medium,
+                                rebellion_render::Difficulty::Hard => SeedDifficulty::Hard,
+                            };
+                            let seed_options = SeedOptions {
+                                galaxy_size,
+                                difficulty: seed_difficulty,
+                                player_faction: dat_faction_for_seed,
+                                rng_seed: None, // Fresh random seed each game
+                            };
+                            match rebellion_data::load_game_data_with_options(&gdata_path, &seed_options) {
+                                Ok(w) => { world = w; }
+                                Err(e) => {
+                                    eprintln!("Failed to reload game data with seed options: {}", e);
+                                }
+                            }
 
                             // Sync cockpit chrome to player faction
                             cockpit_state.faction = if faction == MissionFaction::Alliance {

@@ -22,7 +22,7 @@ use rebellion_core::ai::{AiFaction, AIState};
 use rebellion_core::commands::all_commands;
 use rebellion_core::dat::Faction;
 use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::world::ControlKind;
+use rebellion_core::world::{ControlKind, SeedOptions};
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_data::simulation::{run_simulation_tick, SimulationStates};
 
@@ -204,9 +204,13 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Load game data
+    // Load game data with deterministic seed options
     eprintln!("Loading game data from {}...", args.data_dir.display());
-    let mut world = rebellion_data::load_game_data(&args.data_dir)?;
+    let seed_options = SeedOptions {
+        rng_seed: Some(args.seed),
+        ..SeedOptions::default()
+    };
+    let mut world = rebellion_data::load_game_data_with_options(&args.data_dir, &seed_options)?;
     eprintln!(
         "Loaded: {} systems, {} characters, {} fleets",
         world.systems.len(),
