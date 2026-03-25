@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dat::ExplorationStatus;
+use crate::dat::{ExplorationStatus, Faction, GalaxySize};
 use crate::ids::*;
 
 /// Force sensitivity tier for a character.
@@ -78,6 +78,67 @@ impl ControlKind {
     }
 }
 
+/// New-game seeding difficulty.
+///
+/// This stays in `rebellion-core` so headless crates can share setup values
+/// without depending on rendering/UI enums.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SeedDifficulty {
+    Easy,
+    Medium,
+    Hard,
+}
+
+impl Default for SeedDifficulty {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+impl SeedDifficulty {
+    /// Convert to the original GNPRTB difficulty column for the chosen player side.
+    pub fn gnprtb_index(self, player_faction: Faction) -> u8 {
+        match (player_faction, self) {
+            (Faction::Alliance, SeedDifficulty::Easy) => 1,
+            (Faction::Alliance, SeedDifficulty::Medium) => 2,
+            (Faction::Alliance, SeedDifficulty::Hard) => 3,
+            (Faction::Empire, SeedDifficulty::Easy) => 4,
+            (Faction::Empire, SeedDifficulty::Medium) => 5,
+            (Faction::Empire, SeedDifficulty::Hard) => 6,
+            (Faction::Neutral, SeedDifficulty::Easy) => 1,
+            (Faction::Neutral, SeedDifficulty::Medium) => 2,
+            (Faction::Neutral, SeedDifficulty::Hard) => 3,
+        }
+    }
+}
+
+/// New-game setup values that influence one-time campaign seeding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeedOptions {
+    pub galaxy_size: GalaxySize,
+    pub difficulty: SeedDifficulty,
+    pub player_faction: Faction,
+    /// Optional deterministic seed for startup randomization.
+    pub rng_seed: Option<u64>,
+}
+
+impl Default for SeedOptions {
+    fn default() -> Self {
+        Self {
+            galaxy_size: GalaxySize::Standard,
+            difficulty: SeedDifficulty::Medium,
+            player_faction: Faction::Alliance,
+            rng_seed: None,
+        }
+    }
+}
+
+impl SeedOptions {
+    pub fn gnprtb_index(self) -> u8 {
+        self.difficulty.gnprtb_index(self.player_faction)
+    }
+}
+
 /// A star system in the galaxy — the atomic unit of territory and production.
 ///
 /// Systems belong to a sector and hold all surface assets (facilities, ground units)
@@ -100,6 +161,15 @@ pub struct System {
     pub popularity_alliance: f32,
     /// Empire popularity fraction in [0.0, 1.0].
     pub popularity_empire: f32,
+    /// True if the original startup generator considers this system populated.
+    #[serde(default)]
+    pub is_populated: bool,
+    /// Planetary energy capacity used by initial facility generation.
+    #[serde(default)]
+    pub total_energy: u8,
+    /// Planetary raw-material capacity used by initial facility generation.
+    #[serde(default)]
+    pub raw_materials: u8,
     /// Fleets currently orbiting or departing from this system.
     pub fleets: Vec<FleetKey>,
     /// Ground troop units stationed on the surface.
@@ -200,6 +270,102 @@ pub struct CapitalShipClass {
     pub damage_control: u32,
     /// Orbital bombardment attack stat (used in bombardment formula §4).
     pub bombardment_modifier: u32,
+
+    // ── Extended combat stats (DAT fields promoted for full combat parity) ──
+
+    /// Aggregate attack power (sum of all arcs × attack strength). DAT offset: `overall_attack_strength`.
+    #[serde(default)]
+    pub overall_attack_strength: u32,
+    /// Weapon energy recharge rate per combat round. DAT offset: `weapon_recharge_rate`.
+    #[serde(default)]
+    pub weapon_recharge_rate: u32,
+    /// Per-weapon-type attack strength scalars. DAT offsets: `turbolaser_attack_strength`,
+    /// `ion_cannon_attack_strength`, `laser_cannon_attack_strength`.
+    #[serde(default)]
+    pub turbolaser_attack_strength: u32,
+    #[serde(default)]
+    pub ion_cannon_attack_strength: u32,
+    #[serde(default)]
+    pub laser_cannon_attack_strength: u32,
+    /// Per-weapon-type engagement ranges. DAT offsets: `turbolaser_range`,
+    /// `ion_cannon_range`, `laser_cannon_range`.
+    #[serde(default)]
+    pub turbolaser_range: u32,
+    #[serde(default)]
+    pub ion_cannon_range: u32,
+    #[serde(default)]
+    pub laser_cannon_range: u32,
+    /// Tractor beam stats for interception/capture mechanics. DAT offsets: `tractor_beam_power`,
+    /// `tractor_beam_range`.
+    #[serde(default)]
+    pub tractor_beam_power: u32,
+    #[serde(default)]
+    pub tractor_beam_range: u32,
+    /// Gravity well projector strength (Interdictor-class — prevents hyperspace escape).
+    /// DAT offset: `gravity_well_projector`.
+    #[serde(default)]
+    pub gravity_well_projector: u32,
+    /// Interdiction field strength. DAT offset: `interdiction_strength`.
+    #[serde(default)]
+    pub interdiction_strength: u32,
+    /// Bombardment/uprising suppression defense value. DAT offset: `uprising_defense`.
+    #[serde(default)]
+    pub uprising_defense: u32,
+    /// Hyperdrive rating when the ship has taken hull damage. DAT offset: `hyperdrive_if_damaged`.
+    #[serde(default)]
+    pub hyperdrive_if_damaged: u32,
+}
+
+impl Default for CapitalShipClass {
+    fn default() -> Self {
+        Self {
+            dat_id: DatId::new(0),
+            name: String::new(),
+            is_alliance: false,
+            is_empire: false,
+            refined_material_cost: 0,
+            maintenance_cost: 0,
+            research_order: 0,
+            research_difficulty: 0,
+            hull: 0,
+            shield_strength: 0,
+            sub_light_engine: 0,
+            maneuverability: 0,
+            hyperdrive: 0,
+            fighter_capacity: 0,
+            troop_capacity: 0,
+            detection: 0,
+            turbolaser_fore: 0,
+            turbolaser_aft: 0,
+            turbolaser_port: 0,
+            turbolaser_starboard: 0,
+            ion_cannon_fore: 0,
+            ion_cannon_aft: 0,
+            ion_cannon_port: 0,
+            ion_cannon_starboard: 0,
+            laser_cannon_fore: 0,
+            laser_cannon_aft: 0,
+            laser_cannon_port: 0,
+            laser_cannon_starboard: 0,
+            shield_recharge_rate: 0,
+            damage_control: 0,
+            bombardment_modifier: 0,
+            overall_attack_strength: 0,
+            weapon_recharge_rate: 0,
+            turbolaser_attack_strength: 0,
+            ion_cannon_attack_strength: 0,
+            laser_cannon_attack_strength: 0,
+            turbolaser_range: 0,
+            ion_cannon_range: 0,
+            laser_cannon_range: 0,
+            tractor_beam_power: 0,
+            tractor_beam_range: 0,
+            gravity_well_projector: 0,
+            interdiction_strength: 0,
+            uprising_defense: 0,
+            hyperdrive_if_damaged: 0,
+        }
+    }
 }
 
 /// Class definition for a fighter squadron — template, not an instance.
@@ -211,13 +377,83 @@ pub struct FighterClass {
     pub is_empire: bool,
     pub refined_material_cost: u32,
     pub maintenance_cost: u32,
+    /// Position in the tech tree (lower = earlier unlock). DAT offset: `research_order`.
+    pub research_order: u32,
+    pub research_difficulty: u32,
     /// Number of individual craft in one squadron.
     pub squadron_size: u32,
     pub torpedoes: u32,
+    /// Torpedo engagement range. DAT offset: `torpedoes_range`.
+    pub torpedoes_range: u32,
     /// Fighter attack stat for combat resolution.
     pub overall_attack_strength: u32,
     /// Bombardment defense modifier.
     pub bombardment_defense: u32,
+
+    // ── Extended fighter stats (DAT fields promoted for combat parity) ───────
+
+    /// Shield strength (fighters rarely have shields but field exists). DAT offset: `shield_strength`.
+    #[serde(default)]
+    pub shield_strength: u32,
+    /// Sub-light engine rating (speed in tactical combat). DAT offset: `sub_light_engine`.
+    #[serde(default)]
+    pub sub_light_engine: u32,
+    /// Maneuverability rating (evasion in combat). DAT offset: `maneuverability`.
+    #[serde(default)]
+    pub maneuverability: u32,
+    /// Sensor detection range. DAT offset: `detection`.
+    #[serde(default)]
+    pub detection: u32,
+    /// Uprising/bombardment suppression defense. DAT offset: `uprising_defense`.
+    #[serde(default)]
+    pub uprising_defense: u32,
+    /// Weapon batteries per arc — fighters typically have fore weapons only.
+    /// DAT offsets: `turbolaser_fore`, `ion_cannon_fore`, `laser_cannon_fore`.
+    #[serde(default)]
+    pub turbolaser_fore: u32,
+    #[serde(default)]
+    pub ion_cannon_fore: u32,
+    #[serde(default)]
+    pub laser_cannon_fore: u32,
+    /// Per-weapon-type attack strength scalars. DAT offsets: `turbolaser_attack_strength`,
+    /// `ion_cannon_attack_strength`, `laser_cannon_attack_strength`.
+    #[serde(default)]
+    pub turbolaser_attack_strength: u32,
+    #[serde(default)]
+    pub ion_cannon_attack_strength: u32,
+    #[serde(default)]
+    pub laser_cannon_attack_strength: u32,
+}
+
+impl Default for FighterClass {
+    fn default() -> Self {
+        Self {
+            dat_id: DatId::new(0),
+            name: String::new(),
+            is_alliance: false,
+            is_empire: false,
+            refined_material_cost: 0,
+            maintenance_cost: 0,
+            research_order: 0,
+            research_difficulty: 0,
+            squadron_size: 0,
+            torpedoes: 0,
+            torpedoes_range: 0,
+            overall_attack_strength: 0,
+            bombardment_defense: 0,
+            shield_strength: 0,
+            sub_light_engine: 0,
+            maneuverability: 0,
+            detection: 0,
+            uprising_defense: 0,
+            turbolaser_fore: 0,
+            ion_cannon_fore: 0,
+            laser_cannon_fore: 0,
+            turbolaser_attack_strength: 0,
+            ion_cannon_attack_strength: 0,
+            laser_cannon_attack_strength: 0,
+        }
+    }
 }
 
 /// A character — either a named major hero/villain or a generic minor character.
@@ -475,6 +711,73 @@ impl GnprtbParams {
     }
 }
 
+/// Side-aware seeding parameters loaded from SDPRTB.DAT.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SdprtbParams {
+    entries: Vec<SdprtbEntry>,
+}
+
+/// One entry from SDPRTB.DAT.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SdprtbEntry {
+    pub parameter_id: u32,
+    pub dev_alliance: i32,
+    pub dev_empire: i32,
+    pub alliance_sp_easy_alliance: i32,
+    pub alliance_sp_easy_empire: i32,
+    pub alliance_sp_medium_alliance: i32,
+    pub alliance_sp_medium_empire: i32,
+    pub alliance_sp_hard_alliance: i32,
+    pub alliance_sp_hard_empire: i32,
+    pub empire_sp_easy_alliance: i32,
+    pub empire_sp_easy_empire: i32,
+    pub empire_sp_medium_alliance: i32,
+    pub empire_sp_medium_empire: i32,
+    pub empire_sp_hard_alliance: i32,
+    pub empire_sp_hard_empire: i32,
+    pub multiplayer_alliance: i32,
+    pub multiplayer_empire: i32,
+}
+
+impl Default for SdprtbParams {
+    fn default() -> Self {
+        Self { entries: Vec::new() }
+    }
+}
+
+impl SdprtbParams {
+    pub fn new(entries: Vec<SdprtbEntry>) -> Self {
+        Self { entries }
+    }
+
+    /// Return a side-aware seeding parameter for the requested difficulty column.
+    pub fn value(&self, param_id: u16, difficulty: u8, faction: Faction) -> i32 {
+        self.entries
+            .iter()
+            .find(|e| e.parameter_id == param_id as u32)
+            .map(|entry| match (difficulty, faction) {
+                (0, Faction::Alliance) => entry.dev_alliance,
+                (0, Faction::Empire) => entry.dev_empire,
+                (1, Faction::Alliance) => entry.alliance_sp_easy_alliance,
+                (1, Faction::Empire) => entry.alliance_sp_easy_empire,
+                (2, Faction::Alliance) => entry.alliance_sp_medium_alliance,
+                (2, Faction::Empire) => entry.alliance_sp_medium_empire,
+                (3, Faction::Alliance) => entry.alliance_sp_hard_alliance,
+                (3, Faction::Empire) => entry.alliance_sp_hard_empire,
+                (4, Faction::Alliance) => entry.empire_sp_easy_alliance,
+                (4, Faction::Empire) => entry.empire_sp_easy_empire,
+                (5, Faction::Alliance) => entry.empire_sp_medium_alliance,
+                (5, Faction::Empire) => entry.empire_sp_medium_empire,
+                (6, Faction::Alliance) => entry.empire_sp_hard_alliance,
+                (6, Faction::Empire) => entry.empire_sp_hard_empire,
+                (_, Faction::Alliance) => entry.multiplayer_alliance,
+                (_, Faction::Empire) => entry.multiplayer_empire,
+                (_, Faction::Neutral) => 0,
+            })
+            .unwrap_or(0)
+    }
+}
+
 /// A lookup table loaded from one of the `*MSTB.DAT` / `*TB.DAT` files.
 ///
 /// Each table is a sorted list of `(threshold, value)` pairs where `threshold`
@@ -619,6 +922,8 @@ pub struct GameWorld {
     pub defense_facility_classes: HashMap<crate::ids::DatId, DefenseFacilityClassDef>,
     /// Game-balance parameters from GNPRTB.DAT (combat formulas, bombardment divisors, etc.).
     pub gnprtb: GnprtbParams,
+    /// Side-aware startup parameters from SDPRTB.DAT.
+    pub sdprtb: SdprtbParams,
     /// Mission probability tables keyed by DAT file stem (e.g. "DIPLMSTB", "ESPIMSTB").
     pub mission_tables: HashMap<String, MstbTable>,
 }

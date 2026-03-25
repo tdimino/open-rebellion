@@ -394,7 +394,6 @@ mod tests {
 
     fn add_ship_class(world: &mut GameWorld, research_order: u32, research_difficulty: u32, is_alliance: bool) {
         world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId(0),
             name: "TestShip".into(),
             is_alliance,
             is_empire: !is_alliance,
@@ -407,24 +406,15 @@ mod tests {
             sub_light_engine: 5,
             maneuverability: 5,
             hyperdrive: 2,
-            fighter_capacity: 0,
-            troop_capacity: 0,
             detection: 3,
             turbolaser_fore: 2,
             turbolaser_aft: 1,
             turbolaser_port: 1,
             turbolaser_starboard: 1,
-            ion_cannon_fore: 0,
-            ion_cannon_aft: 0,
-            ion_cannon_port: 0,
-            ion_cannon_starboard: 0,
-            laser_cannon_fore: 0,
-            laser_cannon_aft: 0,
-            laser_cannon_port: 0,
-            laser_cannon_starboard: 0,
             shield_recharge_rate: 5,
             damage_control: 3,
             bombardment_modifier: 10,
+            ..CapitalShipClass::default()
         });
     }
 

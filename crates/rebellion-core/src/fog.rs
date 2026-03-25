@@ -253,6 +253,9 @@ mod tests {
                     exploration_status: crate::dat::ExplorationStatus::Explored,
                     popularity_alliance: 0.5,
                     popularity_empire: 0.5,
+                    is_populated: true,
+                    total_energy: 0,
+                    raw_materials: 0,
                     fleets: vec![],
                     ground_units: vec![],
                     special_forces: vec![],
@@ -424,6 +427,9 @@ mod tests {
             x: 0, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
@@ -434,6 +440,9 @@ mod tests {
             x: 100, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
@@ -444,6 +453,9 @@ mod tests {
             x: 1000, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
@@ -453,16 +465,10 @@ mod tests {
         let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
             dat_id: DatId(0), name: "Sensor Ship".into(),
             is_alliance: true, is_empire: false,
-            refined_material_cost: 100, maintenance_cost: 10,
-            research_order: 0, research_difficulty: 0,
             hull: 100, shield_strength: 50,
             sub_light_engine: 5, maneuverability: 5, hyperdrive: 2,
-            fighter_capacity: 0, troop_capacity: 0,
             detection: 10,
-            turbolaser_fore: 0, turbolaser_aft: 0, turbolaser_port: 0, turbolaser_starboard: 0,
-            ion_cannon_fore: 0, ion_cannon_aft: 0, ion_cannon_port: 0, ion_cannon_starboard: 0,
-            laser_cannon_fore: 0, laser_cannon_aft: 0, laser_cannon_port: 0, laser_cannon_starboard: 0,
-            shield_recharge_rate: 0, damage_control: 0, bombardment_modifier: 0,
+            ..CapitalShipClass::default()
         });
 
         world.fleets.insert(Fleet {
@@ -504,6 +510,9 @@ mod tests {
             x: 0, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
@@ -514,6 +523,9 @@ mod tests {
             x: 10, y: 0, // very close
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: false,
@@ -524,16 +536,10 @@ mod tests {
         let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
             dat_id: DatId(0), name: "Blind Ship".into(),
             is_alliance: true, is_empire: false,
-            refined_material_cost: 100, maintenance_cost: 10,
-            research_order: 0, research_difficulty: 0,
             hull: 100, shield_strength: 50,
             sub_light_engine: 5, maneuverability: 5, hyperdrive: 2,
-            fighter_capacity: 0, troop_capacity: 0,
             detection: 0, // no detection
-            turbolaser_fore: 0, turbolaser_aft: 0, turbolaser_port: 0, turbolaser_starboard: 0,
-            ion_cannon_fore: 0, ion_cannon_aft: 0, ion_cannon_port: 0, ion_cannon_starboard: 0,
-            laser_cannon_fore: 0, laser_cannon_aft: 0, laser_cannon_port: 0, laser_cannon_starboard: 0,
-            shield_recharge_rate: 0, damage_control: 0, bombardment_modifier: 0,
+            ..CapitalShipClass::default()
         });
 
         world.fleets.insert(Fleet {
