@@ -656,7 +656,7 @@ async fn main() {
 
                     // Orbital bombardment: empire fleet bombards remaining defenders.
                     let brd_result = BombardmentSystem::resolve_bombardment(
-                        &world, atk_fleet, sys_key, 2, current_tick,
+                        &world, atk_fleet, sys_key, world.difficulty_index, current_tick,
                     );
                     if brd_result.damage > 0 {
                         msg_log.push(GameMessage::at_system(

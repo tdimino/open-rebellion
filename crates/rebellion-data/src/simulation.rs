@@ -324,7 +324,7 @@ pub fn run_simulation_tick(
             }
 
             let brd_result =
-                BombardmentSystem::resolve_bombardment(world, atk_fleet, sys_key, 2, current_tick);
+                BombardmentSystem::resolve_bombardment(world, atk_fleet, sys_key, world.difficulty_index, current_tick);
             if brd_result.damage > 0 {
                 events.push(GameEventRecord::new(
                     current_tick,
