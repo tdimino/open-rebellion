@@ -184,6 +184,20 @@ Full report: `.subdaimon-output/seeding-parity-audit.md`
 
 **Seeding parity: COMPLETE.** Verified against TheArchitect2018 seed.js — rim exclusion from maintenance budget is parity-correct.
 
+### Combat Review Fixes — DONE (2026-03-25)
+
+All 10 review findings from Knesset Ma'at resolved:
+- Shield absorption double-rounding → single i64 integer division
+- `recall_fighters` grounded squad loss → `originally_launched` parameter
+- Hardcoded `difficulty: 2` → `GameWorld.difficulty_index` threaded everywhere (space, ground, bombardment)
+- TroopClassDef fallback warning → `eprintln!` on missing class
+- Tactical fighter shield bypass → shield absorption added
+- Tactical weapon type from hull_max → actual `CapitalShipClass` weapon stats
+- Dead code (`ButtonSprite::disabled`, `atk_class_defense`) → removed
+- Deprecated API (`Frame::none()`) → `Frame::NONE`
+
+**Combat parity: 99%.** Only 74 informational GNPRTB parameters deferred.
+
 ## AI Parity Status (as of 2026-03-23)
 
 Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchitect2018 wiki cross-reference. **All "BY DESIGN" guesses resolved.** See `agent_docs/systems/ai-parity-tracker.md` for full matrix.

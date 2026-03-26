@@ -89,6 +89,7 @@ pub fn load_game_data_with_options(
         mission_tables: std::collections::HashMap::new(),
         troop_classes: std::collections::HashMap::new(),
         defense_facility_classes: std::collections::HashMap::new(),
+        difficulty_index: seed_options.gnprtb_index(),
     };
 
     // ── 1. Sectors ───────────────────────────────────────────────────────────

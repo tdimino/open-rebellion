@@ -113,6 +113,12 @@ pub struct TacticalShip {
     pub fleet_ship_index: usize,
     /// Sprite resource ID in TACTICAL.DLL (if known).
     pub sprite_id: Option<u32>,
+    /// Total turbolaser firepower (sum of fore/aft/port/starboard arcs).
+    pub turbolaser_power: i32,
+    /// Total ion cannon firepower (sum of all arcs).
+    pub ion_cannon_power: i32,
+    /// Total laser cannon firepower (sum of all arcs).
+    pub laser_cannon_power: i32,
     /// Focus-fire target: index in `ships` that this ship prioritizes.
     pub focus_target: Option<usize>,
     /// True if this ship is retreating (moving off-screen).
@@ -286,6 +292,14 @@ impl BattleSession {
             // For now, use a simple offset from the base sprite range.
             let sprite_id = Self::class_to_sprite_id(class.dat_id.index());
 
+            // Sum weapon counts across all arcs for total firepower.
+            let turbolaser_total = (class.turbolaser_fore + class.turbolaser_aft
+                + class.turbolaser_port + class.turbolaser_starboard) as i32;
+            let ion_cannon_total = (class.ion_cannon_fore + class.ion_cannon_aft
+                + class.ion_cannon_port + class.ion_cannon_starboard) as i32;
+            let laser_cannon_total = (class.laser_cannon_fore + class.laser_cannon_aft
+                + class.laser_cannon_port + class.laser_cannon_starboard) as i32;
+
             for _ in 0..entry.count {
                 ships.push(TacticalShip {
                     class_key: entry.class,
@@ -301,6 +315,9 @@ impl BattleSession {
                     selected: false,
                     fleet_ship_index: ship_idx,
                     sprite_id,
+                    turbolaser_power: turbolaser_total,
+                    ion_cannon_power: ion_cannon_total,
+                    laser_cannon_power: laser_cannon_total,
                     focus_target: None,
                     retreating: false,
                     retreat_progress: 0.0,
@@ -541,18 +558,22 @@ impl BattleSession {
                 targets[((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7)) % targets.len()]
             };
 
-            // Calculate total weapon output for this ship.
-            // Since we don't carry per-arc stats in TacticalShip, approximate
-            // from hull_max (bigger ship = more firepower).
-            let fire_power = (ships[fire_idx].hull_max / 10).max(1);
-
-            // Determine weapon kind based on hull size.
-            let kind = if fire_power > 20 {
-                WeaponKind::Turbolaser
-            } else if fire_power > 10 {
-                WeaponKind::IonCannon
+            // Calculate total weapon output and kind from actual weapon stats.
+            let ship = &ships[fire_idx];
+            let (fire_power, kind) = if ship.turbolaser_power >= ship.ion_cannon_power
+                && ship.turbolaser_power >= ship.laser_cannon_power
+                && ship.turbolaser_power > 0
+            {
+                (ship.turbolaser_power, WeaponKind::Turbolaser)
+            } else if ship.ion_cannon_power >= ship.laser_cannon_power
+                && ship.ion_cannon_power > 0
+            {
+                (ship.ion_cannon_power, WeaponKind::IonCannon)
+            } else if ship.laser_cannon_power > 0 {
+                (ship.laser_cannon_power, WeaponKind::LaserCannon)
             } else {
-                WeaponKind::LaserCannon
+                // Fallback for ships with no weapon data: hull-based approximation.
+                ((ship.hull_max / 10).max(1), WeaponKind::LaserCannon)
             };
 
             // Variance: +-30% using tick-based pseudo-random.
@@ -601,7 +622,11 @@ impl BattleSession {
             if !def_ships.is_empty() {
                 let target = def_ships[self.combat_tick as usize % def_ships.len()];
                 let damage = ((atk_fighter_power / 5) as i32).max(1);
-                self.ships[target].hull_current = (self.ships[target].hull_current - damage).max(0);
+                // Shields absorb fighter damage first (consistent with auto-resolve path).
+                let shield_absorb = damage.min(self.ships[target].shield);
+                self.ships[target].shield -= shield_absorb;
+                let hull_damage = damage - shield_absorb;
+                self.ships[target].hull_current = (self.ships[target].hull_current - hull_damage).max(0);
                 if self.ships[target].hull_current == 0 {
                     self.ships[target].alive = false;
                 }
@@ -615,7 +640,11 @@ impl BattleSession {
             if !atk_ships.is_empty() {
                 let target = atk_ships[(self.combat_tick as usize + 3) % atk_ships.len()];
                 let damage = ((def_fighter_power / 5) as i32).max(1);
-                self.ships[target].hull_current = (self.ships[target].hull_current - damage).max(0);
+                // Shields absorb fighter damage first (consistent with auto-resolve path).
+                let shield_absorb = damage.min(self.ships[target].shield);
+                self.ships[target].shield -= shield_absorb;
+                let hull_damage = damage - shield_absorb;
+                self.ships[target].hull_current = (self.ships[target].hull_current - hull_damage).max(0);
                 if self.ships[target].hull_current == 0 {
                     self.ships[target].alive = false;
                 }
@@ -1043,7 +1072,7 @@ pub fn draw_tactical_view(
             .title_bar(false)
             .resizable(false)
             .collapsible(false)
-            .frame(egui::Frame::none())
+            .frame(egui::Frame::NONE)
             .fixed_pos(egui::pos2(8.0, 40.0))
             .show(ctx, |ui| {
                 let atk_panel_id = if player_is_attacker {

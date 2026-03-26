@@ -386,23 +386,23 @@ impl CombatSystem {
             ship.shield_current -= absorbed;
 
             // Convert absorbed effective damage back to raw damage consumed.
-            // Ion damage that was absorbed consumed half its effective amount from
-            // the raw pending pool (since 1 raw ion → 2 effective shield damage).
+            // Use integer math (via i64 to avoid overflow) to eliminate
+            // double-rounding that previously lost up to 2 raw damage.
             let raw_consumed = if effective_shield_damage > 0 {
-                let frac = absorbed as f64 / effective_shield_damage as f64;
-                let non_ion_consumed = (non_ion_damage as f64 * frac) as i32;
-                let ion_consumed = (ship.pending_ion_damage as f64 * frac) as i32;
-                non_ion_consumed + ion_consumed
+                (ship.pending_damage as i64 * absorbed as i64
+                    / effective_shield_damage as i64) as i32
             } else {
                 0
             };
 
             ship.pending_damage = (ship.pending_damage - raw_consumed).max(0);
-            ship.pending_ion_damage = (ship.pending_ion_damage
-                - (ship.pending_ion_damage as f64
-                    * if effective_shield_damage > 0 { absorbed as f64 / effective_shield_damage as f64 } else { 0.0 })
-                    as i32)
-                .max(0);
+            let ion_consumed = if effective_shield_damage > 0 {
+                (ship.pending_ion_damage as i64 * absorbed as i64
+                    / effective_shield_damage as i64) as i32
+            } else {
+                0
+            };
+            ship.pending_ion_damage = (ship.pending_ion_damage - ion_consumed).max(0);
         }
     }
 
@@ -495,6 +495,11 @@ impl CombatSystem {
         let mut atk_launched = Self::launch_fighters(atk_fighters, atk_capacity);
         let mut def_launched = Self::launch_fighters(def_fighters, def_capacity);
 
+        // Snapshot original launched counts before combat modifies them —
+        // needed by recall_fighters to distinguish grounded squads from wiped ones.
+        let atk_originally_launched = atk_launched.clone();
+        let def_originally_launched = def_launched.clone();
+
         let atk_fleet = &world.fleets[attacker];
         let def_fleet = &world.fleets[defender];
 
@@ -518,8 +523,8 @@ impl CombatSystem {
         let atk_capacity_post = Self::compute_carrier_capacity(world, attacker, atk_ships);
         let def_capacity_post = Self::compute_carrier_capacity(world, defender, def_ships);
 
-        Self::recall_fighters(atk_fighters, &atk_launched, atk_capacity_post);
-        Self::recall_fighters(def_fighters, &def_launched, def_capacity_post);
+        Self::recall_fighters(atk_fighters, &atk_launched, &atk_originally_launched, atk_capacity_post);
+        Self::recall_fighters(def_fighters, &def_launched, &def_originally_launched, def_capacity_post);
     }
 
     /// Fighters attack enemy capital ships using per-class weapon stats.
@@ -649,15 +654,24 @@ impl CombatSystem {
     ///
     /// Fighters that exceed post-combat carrier capacity are lost (carriers destroyed
     /// during combat cannot recover their squadrons).
+    ///
+    /// `originally_launched`: per-squadron counts that were actually deployed (from
+    /// `launch_fighters`). Squads with 0 launched were grounded and are preserved.
     fn recall_fighters(
         fleet_fighters: &mut Vec<u32>,
         launched_survivors: &[u32],
+        originally_launched: &[u32],
         carrier_capacity: u32,
     ) {
         let mut remaining_capacity = carrier_capacity;
         for (i, count) in fleet_fighters.iter_mut().enumerate() {
+            let was_launched = originally_launched.get(i).copied().unwrap_or(0);
+            if was_launched == 0 {
+                // Squadron was grounded (never launched) — preserve its count.
+                continue;
+            }
             let survived = launched_survivors.get(i).copied().unwrap_or(0);
-            // Final count = survived (capped to remaining carrier capacity).
+            // Recalled = survived (capped to remaining carrier capacity).
             let recalled = survived.min(remaining_capacity);
             remaining_capacity = remaining_capacity.saturating_sub(recalled);
             *count = recalled;
@@ -828,6 +842,17 @@ impl CombatSystem {
             .map(|&k| (k, world.troops[k].regiment_strength))
             .collect();
 
+        // Warn once per missing class (not per inner-loop iteration).
+        {
+            let mut warned = std::collections::HashSet::new();
+            for &key in active_atk.iter().chain(active_def.iter()) {
+                let dat_id = world.troops[key].class_dat_id;
+                if !world.troop_classes.contains_key(&dat_id) && warned.insert(dat_id) {
+                    eprintln!("WARNING: missing TroopClassDef for {:?}, using fallback (10/10). Is TROOPSD.DAT loaded?", dat_id);
+                }
+            }
+        }
+
         for &atk_key in &active_atk {
             for &def_key in &active_def {
                 let roll = rng.next().unwrap_or(0.5);
@@ -840,23 +865,12 @@ impl CombatSystem {
                 let atk_unit = &world.troops[atk_key];
                 let def_unit = &world.troops[def_key];
 
-                let atk_class_attack = world.troop_classes
-                    .get(&atk_unit.class_dat_id)
-                    .map(|c| c.attack_strength as f64)
-                    .unwrap_or(10.0);
-                let def_class_defense = world.troop_classes
-                    .get(&def_unit.class_dat_id)
-                    .map(|c| c.defense_strength as f64)
-                    .unwrap_or(10.0);
-                let def_class_attack = world.troop_classes
-                    .get(&def_unit.class_dat_id)
-                    .map(|c| c.attack_strength as f64)
-                    .unwrap_or(10.0);
-                let atk_class_defense = world.troop_classes
-                    .get(&atk_unit.class_dat_id)
-                    .map(|c| c.defense_strength as f64)
-                    .unwrap_or(10.0);
-                let _ = atk_class_defense; // reserved for future attacker-defense checks
+                let atk_class_attack = world.troop_classes.get(&atk_unit.class_dat_id)
+                    .map(|c| c.attack_strength as f64).unwrap_or(10.0);
+                let def_class_defense = world.troop_classes.get(&def_unit.class_dat_id)
+                    .map(|c| c.defense_strength as f64).unwrap_or(10.0);
+                let def_class_attack = world.troop_classes.get(&def_unit.class_dat_id)
+                    .map(|c| c.attack_strength as f64).unwrap_or(10.0);
 
                 // Effective power: class stat * (regiment_strength / 100).
                 // Defender gets facility bonus spread across defending units.
@@ -1026,6 +1040,7 @@ mod tests {
             mission_tables: HashMap::new(),
             troop_classes: HashMap::new(),
             defense_facility_classes: HashMap::new(),
+            difficulty_index: 2,
         }
     }
 

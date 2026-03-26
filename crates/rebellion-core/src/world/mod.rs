@@ -943,7 +943,13 @@ pub struct GameWorld {
     pub sdprtb: SdprtbParams,
     /// Mission probability tables keyed by DAT file stem (e.g. "DIPLMSTB", "ESPIMSTB").
     pub mission_tables: HashMap<String, MstbTable>,
+    /// GNPRTB difficulty column index (0-7) for this game session.
+    /// Set from `SeedOptions::gnprtb_index()` at game start. Default 2 (Alliance Medium).
+    #[serde(default = "default_difficulty_index")]
+    pub difficulty_index: u8,
 }
+
+fn default_difficulty_index() -> u8 { 2 }
 
 #[cfg(test)]
 mod tests {

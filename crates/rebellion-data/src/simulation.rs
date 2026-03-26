@@ -268,7 +268,7 @@ pub fn run_simulation_tick(
             atk_fleet,
             def_fleet,
             sys_key,
-            2,
+            world.difficulty_index,
             &combat_rolls,
             current_tick,
         );
@@ -302,7 +302,7 @@ pub fn run_simulation_tick(
         if space_result.winner == CombatSide::Attacker {
             let ground_rolls = take_rolls(256);
             let ground_result =
-                CombatSystem::resolve_ground(world, sys_key, true, 2, &ground_rolls, current_tick);
+                CombatSystem::resolve_ground(world, sys_key, true, world.difficulty_index, &ground_rolls, current_tick);
             apply_ground_combat_result(&ground_result, world);
 
             if !ground_result.troop_damage.is_empty() {

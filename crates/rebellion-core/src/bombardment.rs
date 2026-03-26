@@ -209,6 +209,7 @@ mod tests {
             mission_tables: HashMap::new(),
             troop_classes: HashMap::new(),
             defense_facility_classes: HashMap::new(),
+            difficulty_index: 2,
         }
     }
 

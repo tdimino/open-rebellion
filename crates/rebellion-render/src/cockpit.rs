@@ -58,13 +58,11 @@ struct ButtonSprite {
     normal: u32,
     /// COMMON.DLL resource ID for the pressed/active state.
     pressed: u32,
-    /// COMMON.DLL resource ID for the disabled/grayed state.
-    disabled: u32,
 }
 
 impl ButtonSprite {
     const fn from_base(base: u32) -> Self {
-        ButtonSprite { normal: base, pressed: base + 1, disabled: base + 2 }
+        ButtonSprite { normal: base, pressed: base + 1 }
     }
 }
 

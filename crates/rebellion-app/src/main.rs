@@ -605,7 +605,7 @@ async fn main() {
                     (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 let space_result = CombatSystem::resolve_space(
                     &world, atk_fleet, def_fleet, sys_key,
-                    2, // medium difficulty
+                    world.difficulty_index,
                     &combat_rolls,
                     current_tick,
                 );
@@ -635,7 +635,7 @@ async fn main() {
                         (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                     let ground_result = CombatSystem::resolve_ground(
                         &world, sys_key, true, // alliance is attacker
-                        2, // difficulty; TODO: use actual game difficulty
+                        world.difficulty_index,
                         &ground_rolls, current_tick,
                     );
                     apply_ground_combat_result(&ground_result, &mut world);
@@ -2058,7 +2058,7 @@ fn apply_panel_action(
             // Guard: both fleet and system must still exist (prevents panic in resolve).
             if world.fleets.contains_key(fleet) && world.systems.contains_key(system) {
                 let result = BombardmentSystem::resolve_bombardment(
-                    world, fleet, system, 2, // difficulty=2 (medium); TODO: use actual game difficulty
+                    world, fleet, system, world.difficulty_index,
                     clock.tick,
                 );
                 if let Some(sys) = world.systems.get_mut(system) {

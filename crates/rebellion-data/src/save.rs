@@ -1,6 +1,6 @@
 //! Save / load for the full game state.
 //!
-//! # Format (v4)
+//! # Format (v5)
 //!
 //! Binary `bincode` encoding. A save file is:
 //!
@@ -61,7 +61,7 @@ use rebellion_core::world::{ControlKind, GameWorld};
 pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes.
-pub const SAVE_VERSION: u32 = 4;
+pub const SAVE_VERSION: u32 = 5;
 
 /// Minimum save version we can migrate from.
 const MIN_MIGRATABLE_VERSION: u32 = 3;
@@ -345,6 +345,12 @@ mod native {
             SAVE_VERSION => {
                 bincode::deserialize(&body).context("deserializing save state")?
             }
+            4 => {
+                anyhow::bail!(
+                    "save version 4 is incompatible with this build (System seeding fields changed). \
+                     Please start a new game."
+                );
+            }
             3 => {
                 // v3 saves used a different Character struct layout (no captivity fields)
                 // and bincode is positional — #[serde(default)] is inoperative.
@@ -481,6 +487,9 @@ mod tests {
             name: "A".into(), sector: sector_key, x: 0, y: 0,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
@@ -491,6 +500,9 @@ mod tests {
             name: "B".into(), sector: sector_key, x: 100, y: 100,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
@@ -552,6 +564,10 @@ mod tests {
         file.write_all(name_bytes).unwrap();
         let timestamp: u64 = 1700000000;
         file.write_all(&timestamp.to_le_bytes()).unwrap();
+        if version >= 4 {
+            file.write_all(&0u32.to_le_bytes()).unwrap(); // empty mod list
+            file.write_all(&compute_mod_hash(&[]).to_le_bytes()).unwrap();
+        }
         let encoded = bincode::serialize(state).expect("serialize body");
         file.write_all(&encoded).unwrap();
     }
@@ -560,7 +576,7 @@ mod tests {
 
     #[test]
     fn round_trip_save_load() {
-        let saves_dir = tmp_dir("round_trip_v4");
+        let saves_dir = tmp_dir("round_trip_v5");
 
         let state = minimal_save_state();
         save_slot(&saves_dir, 0, "Test Save", &state, &[])
@@ -584,7 +600,7 @@ mod tests {
 
     #[test]
     fn list_saves_after_write() {
-        let saves_dir = tmp_dir("list_after_write_v4");
+        let saves_dir = tmp_dir("list_after_write_v5");
 
         let state = minimal_save_state();
         save_slot(&saves_dir, 2, "Slot 2", &state, &[]).unwrap();
@@ -602,7 +618,7 @@ mod tests {
 
     #[test]
     fn delete_slot_removes_file() {
-        let saves_dir = tmp_dir("delete_slot_v4");
+        let saves_dir = tmp_dir("delete_slot_v5");
 
         let state = minimal_save_state();
         save_slot(&saves_dir, 1, "To Delete", &state, &[]).unwrap();
@@ -628,6 +644,22 @@ mod tests {
         assert!(
             err_msg.contains("incompatible") || err_msg.contains("version 3"),
             "error should mention incompatibility: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn v4_or_v5_compatibility_path() {
+        let saves_dir = tmp_dir("v4_rejected");
+        let state = minimal_save_state();
+        let path = slot_path(&saves_dir, 0);
+        write_versioned_fixture(&path, 4, "V4 Save", &state);
+
+        let err = load_slot(&saves_dir, 0)
+            .expect_err("v4 saves should be rejected after the v5 layout change");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("version 4") && msg.contains("incompatible"),
+            "error should explain the v4 rejection path: {msg}"
         );
     }
 
