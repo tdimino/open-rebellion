@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Open Rebellion — Upscale Comparison (waifu2x 4x)</title>
+<style>
+  body { background: #0d0d0d; color: #d4a843; font-family: monospace; padding: 20px; }
+  h1 { color: #ffc107; }
+  h2 { color: #d4a843; border-bottom: 1px solid #333; padding-bottom: 4px; }
+  .pair { display: flex; gap: 20px; margin: 16px 0; align-items: flex-start; }
+  .pair div { text-align: center; }
+  .pair img { border: 1px solid #333; image-rendering: pixelated; }
+  .label { font-size: 11px; color: #888; margin-top: 4px; }
+  .original img { max-width: 200px; }
+  .upscaled img { max-width: 400px; }
+</style>
+</head>
+<body>
+<h1>Open Rebellion — Upscale Comparison</h1>
+<p>Method: waifu2x-ncnn-vulkan 4x, denoise 1, PNG output</p>
+
+<h2>COMMON.DLL — UI Buttons</h2>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/common-dll/BMP/10001.bmp"><p class="label">Original: 10001.bmp</p></div>
+  <div class="upscaled"><img src="../../data/hd/common-dll/10001.png"><p class="label">HD 4x: 10001.png</p></div>
+</div>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/common-dll/BMP/10002.bmp"><p class="label">Original: 10002.bmp</p></div>
+  <div class="upscaled"><img src="../../data/hd/common-dll/10002.png"><p class="label">HD 4x: 10002.png</p></div>
+</div>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/common-dll/BMP/10003.bmp"><p class="label">Original: 10003.bmp</p></div>
+  <div class="upscaled"><img src="../../data/hd/common-dll/10003.png"><p class="label">HD 4x: 10003.png</p></div>
+</div>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/common-dll/BMP/10005.bmp"><p class="label">Original: 10005.bmp</p></div>
+  <div class="upscaled"><img src="../../data/hd/common-dll/10005.png"><p class="label">HD 4x: 10005.png</p></div>
+</div>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/common-dll/BMP/15856.bmp"><p class="label">Original: 15856.bmp</p></div>
+  <div class="upscaled"><img src="../../data/hd/common-dll/15856.png"><p class="label">HD 4x: 15856.png</p></div>
+</div>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/common-dll/BMP/20001.bmp"><p class="label">Original: 20001.bmp (main menu bg)</p></div>
+  <div class="upscaled"><img src="../../data/hd/common-dll/20001.png"><p class="label">HD 4x: 20001.png</p></div>
+</div>
+
+<h2>GOKRES.DLL — Portraits (if available)</h2>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/gokres-dll/BMP/1600.bmp"><p class="label">Original: 1600.bmp (portrait)</p></div>
+  <div class="upscaled"><img src="../../data/hd/gokres-dll/1600.png"><p class="label">HD 4x: 1600.png</p></div>
+</div>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/gokres-dll/BMP/1601.bmp"><p class="label">Original: 1601.bmp (portrait)</p></div>
+  <div class="upscaled"><img src="../../data/hd/gokres-dll/1601.png"><p class="label">HD 4x: 1601.png</p></div>
+</div>
+<div class="pair">
+  <div class="original"><img src="../../data/base/ui/gokres-dll/BMP/1856.bmp"><p class="label">Original: 1856.bmp (ship status)</p></div>
+  <div class="upscaled"><img src="../../data/hd/gokres-dll/1856.png"><p class="label">HD 4x: 1856.png</p></div>
+</div>
+
+<p style="color:#555; margin-top:40px;">Generated 2026-03-25. Pipeline: BMP → PIL convert → waifu2x 4x denoise 1 → PNG</p>
+</body>
+</html>

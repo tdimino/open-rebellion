@@ -403,13 +403,13 @@ async fn main() {
         update_event_screen(&mut event_screen_state, dt);
 
         // ── Global keyboard shortcuts ───────────────────────────────────────
-        if is_key_pressed(KeyCode::Escape) {
+        if is_key_pressed(KeyCode::Escape) && !event_screen_state.is_active() {
             // In Galaxy mode, Escape could open a menu later.
             // For now, Escape quits from any mode.
             break;
         }
-        // ── Galaxy-mode keyboard shortcuts ──────────────────────────────────
-        if game_mode == GameMode::Galaxy {
+        // ── Galaxy-mode keyboard shortcuts (blocked during event screen) ────
+        if game_mode == GameMode::Galaxy && !event_screen_state.is_active() {
             if is_key_pressed(KeyCode::R) {
                 map_state = GalaxyMapState::default();
             }

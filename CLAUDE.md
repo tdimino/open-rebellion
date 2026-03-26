@@ -9,7 +9,14 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.18.0 — **Core 97%** | **UI 95%** | **Combat 90%** | **Overall ~93%**. GameMode state machine (MainMenu → GameSetup → Galaxy), Star Wars egui theme (dark space + gold/amber accents), Liberation Sans font (faithful to original Arial), TEXTSTRA.DLL string extraction (1,347 entity names), right-click context menus (system + fleet), interactive fleet editor (assign/remove officers, merge fleets), 9 player control panels (officers, fleets, manufacturing, missions, research, jedi training, bombardment, Death Star, loyalty/uprising), character detail view with Force progression, expanded system info panel, BMP texture cache with DllSource enum + HD PNG fallback, faction cockpit chrome with 9 clickable control buttons, galaxy map overlays (facility icons, sector boundaries, blockade indicators), tactical combat view (2D arena, ship placement, phased combat, targeting/retreat, ground combat), audio integration (quad-snd soundtrack + 285 voice lines + SFX), entity portraits from GOKRES.DLL, 15 simulation systems, 11 mission types, fleet combat + blockades working, dual-AI with per-fleet targeting + deconfliction + battle penalty, config-driven AI (`tuning.rs` + `--config` flag, 16 tunable parameters), REPL mode for LLM agent play (`--repl`, `--jsonl`), CLI `--exec` (16 + 3 REPL commands), ModRuntime with toggle/reload, shared command registry, JSONL telemetry with human-readable payloads, `ControlKind` state machine, distance-based fleet transit, force distribution (10 Empire / 3 Alliance), eval_game_quality.py + autoresearch_loop.py, 308 tests, zero warnings. Game seeding: 3-system model, character stat rolling + named placement, procedural control buckets, support initialization, energy/raw materials, facility generation, maintenance-budget unit seeding, deterministic RNG. Droid Advisor (animated C-3PO/R2-D2 or Imperial protocol droid), 25 promoted ship class DAT fields for combat parity, 32 HD upscaled assets.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 97%** | **Overall ~97%**. 328 tests, zero warnings.
+
+| Area | Key Features |
+|------|-------------|
+| **Simulation** | 15 systems, 11 mission types, dual-AI with config-driven targeting, ControlKind state machine, deterministic RNG seeding (3-system model, procedural control buckets, maintenance-budget units) |
+| **Combat** | 7-phase pipeline: per-arc weapon fire, shield absorption (Phase 4), fighter launch/dogfight/recall, per-unit ground combat (TroopClassDef + facility bonus), difficulty modifiers, 25+ ship class DAT fields |
+| **UI** | 9 panels, cockpit BMP sprites (3-state), galaxy overlays (facilities/sectors/blockades), tactical combat view, event screen overlays (61 BMPs), droid advisor (animated), GOKRES portraits + mini-icons |
+| **Infrastructure** | BmpCache (HD PNG fallback), quad-snd audio (285 voice lines + soundtrack), REPL/CLI/JSONL telemetry, ModRuntime, WASM build with 2,231 staged BMPs |
 
 ## Build
 
@@ -55,7 +62,7 @@ PATH="/usr/bin:$PATH" cargo check
 ## Known Limitations
 
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
-- CapitalShipClass/FighterClass world models carry only ~10 of 50+ DAT fields — 15 more needed for full combat parity
+- CapitalShipClass has 25+ promoted DAT fields; FighterClass has 20+. Remaining ~15 fields are decorative/unused by combat formulas
 - Save v5 format (v3/v4 rejected) — no backward migration
 - Droid Advisor BIN animation format partially decoded — uses frame-cycling fallback (see advisor.rs)
 - Legacy seed fallback collapses Alliance HQ to Yavin (only when 3-system model can't identify Coruscant)
@@ -66,7 +73,7 @@ PATH="/usr/bin:$PATH" cargo check
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
 agent_docs/simulation.md -- 15 simulation systems index, advance() pattern, integration order, "how to add" guides. Read when touching game logic.
 agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory, betrayal). Read when modifying a specific system.
-agent_docs/save-load.md -- Save format (v4), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
+agent_docs/save-load.md -- Save format (v5), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
 agent_docs/mod-runtime.md -- ModRuntime, ModConfig, enable/disable, hot reload, structured errors. Read when wiring mod features.
 agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
@@ -85,7 +92,9 @@ docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for pla
 - [Knesset Athirat (2026-03-13)](docs/reports/2026-03-13-knesset-athirat-swarm-report.md) — Living Galaxy + War Room. 4 daborot, ~11.7K LOC, 105+ tests.
 - Knesset Demiurge (2026-03-24) — UI parity swarm. 5 daborot, 13 tasks, ~3.8K LOC. Cockpit, tactical combat, audio, overlays, portraits.
 - Knesset Sassuratu (2026-03-24) — Visual QA + SEO/GEO. 47 test scenarios, 25 screenshots, 5 defects found and fixed.
-- [Game Seeding Audit](docs/plans/2026-03-24-003-game-seeding-parity-execplan.md) — 56 gaps found vs TheArchitect2018 wiki. M1-M4 implemented (8 tests).
+- [Game Seeding Audit](docs/plans/2026-03-24-003-game-seeding-parity-execplan.md) — 56 gaps found vs TheArchitect2018 wiki. All M1-M8 implemented, seeding COMPLETE.
+- Knesset Kothar (2026-03-25) — Final parity sprint. 4 daborot, 9 tasks. Seeding M5-M8, 25 ship class fields, droid advisor, WASM fixes, HD assets.
+- Knesset Ma'at (2026-03-25) — Combat + asset wave. 5 daborot. Shield phase, fighter combat, ground combat + difficulty, cockpit sprites, HUD overlays.
 
 ## External References
 
