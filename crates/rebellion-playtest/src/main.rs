@@ -297,6 +297,7 @@ fn main() -> anyhow::Result<()> {
         jedi: rebellion_core::jedi::JediState::new(),
         victory: rebellion_core::victory::VictoryState::new(victory_a, victory_e),
         betrayal: rebellion_core::betrayal::BetrayalState::new(),
+        economy: rebellion_core::economy::EconomyState::default(),
         combat_cooldowns: HashMap::new(),
     };
 

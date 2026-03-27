@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use rebellion_core::ai::{AIAction, AIState, AISystem};
+use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::betrayal::{BetrayalEvent, BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeEvent, BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
@@ -132,6 +133,7 @@ pub struct SimulationStates {
     pub jedi: JediState,
     pub victory: VictoryState,
     pub betrayal: BetrayalState,
+    pub economy: EconomyState,
     pub combat_cooldowns: HashMap<SystemKey, u64>,
 }
 
@@ -174,6 +176,50 @@ pub fn run_simulation_tick(
         v.resize(n, 1.0);
         v
     };
+
+    // ── 0. Economy (runs BEFORE manufacturing — affects production) ──────
+    let economy_events = EconomySystem::advance(
+        &mut states.economy,
+        world,
+        tick_events,
+        world.difficulty_index,
+    );
+    for ev in &economy_events {
+        match ev {
+            EconomyEvent::SupportDrifted { system, alliance_delta, empire_delta } => {
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    sys.popularity_alliance = (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
+                    sys.popularity_empire = (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
+                }
+                events.push(GameEventRecord::new(
+                    current_tick, wall_ms, SYS_ECONOMY, EVT_SUPPORT_DRIFT,
+                    serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "alliance_delta": alliance_delta,
+                        "empire_delta": empire_delta,
+                    }),
+                ));
+            }
+            EconomyEvent::CollectionRateChanged { system, new_rate } => {
+                events.push(GameEventRecord::new(
+                    current_tick, wall_ms, SYS_ECONOMY, EVT_COLLECTION_RATE,
+                    serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "rate": new_rate,
+                    }),
+                ));
+            }
+            EconomyEvent::GarrisonRequirementChanged { system, new_requirement } => {
+                events.push(GameEventRecord::new(
+                    current_tick, wall_ms, SYS_ECONOMY, EVT_GARRISON_REQUIRED,
+                    serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "garrison_required": new_requirement,
+                    }),
+                ));
+            }
+        }
+    }
 
     // ── 1. Manufacturing ─────────────────────────────────────────────────
     let completions = ManufacturingSystem::advance_with_blockade(
@@ -1516,6 +1562,7 @@ mod tests {
             jedi: JediState::new(),
             victory: VictoryState::new(s1, s2),
             betrayal: BetrayalState::new(),
+            economy: EconomyState::default(),
             combat_cooldowns: HashMap::new(),
         };
         states
@@ -1590,6 +1637,7 @@ mod tests {
             jedi: JediState::new(),
             victory: VictoryState::new(s1, s2),
             betrayal: BetrayalState::new(),
+            economy: EconomyState::default(),
             combat_cooldowns: HashMap::new(),
         };
 

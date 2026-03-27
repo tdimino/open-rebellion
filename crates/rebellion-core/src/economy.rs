@@ -175,6 +175,8 @@ impl EconomySystem {
             let eco = state.per_system.entry(sys_key).or_default();
             let old_rate = eco.collection_rate;
             eco.collection_rate = new_rate;
+            let old_garrison = eco.garrison_requirement;
+            eco.collection_rate = new_rate;
             eco.garrison_requirement = new_garrison;
 
             if (new_rate - old_rate).abs() > 0.01 {
@@ -184,10 +186,12 @@ impl EconomySystem {
                 });
             }
 
-            events.push(EconomyEvent::GarrisonRequirementChanged {
-                system: sys_key,
-                new_requirement: new_garrison,
-            });
+            if new_garrison != old_garrison {
+                events.push(EconomyEvent::GarrisonRequirementChanged {
+                    system: sys_key,
+                    new_requirement: new_garrison,
+                });
+            }
         }
 
         events
