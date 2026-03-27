@@ -834,6 +834,26 @@ impl CombatSystem {
             if raw > 0 { raw as f64 / 100.0 } else { 1.0 }
         };
 
+        // Officer combat rating modifier (from community disassembly cross-reference:
+        // character combat rating at offset +0x86 factors into ground combat).
+        // Sum combat skills of all characters assigned to fleets at this system
+        // that match the attacker's faction.
+        let officer_combat_bonus: f64 = {
+            let mut total = 0u32;
+            for &fleet_key in &sys.fleets {
+                if let Some(fleet) = world.fleets.get(fleet_key) {
+                    if fleet.is_alliance == attacker_is_alliance {
+                        for &char_key in &fleet.characters {
+                            if let Some(ch) = world.characters.get(char_key) {
+                                total += ch.combat.base + ch.combat.variance / 2;
+                            }
+                        }
+                    }
+                }
+            }
+            1.0 + (total as f64 / 200.0)
+        };
+
         // Per-unit resolution: FUN_004ee350 (30 lines).
         // Each attacker regiment attacks each defender regiment individually.
         // Damage computed from class attack/defense stats scaled by regiment strength.
@@ -885,8 +905,8 @@ impl CombatSystem {
                 let hit_prob = atk_effective / total;
 
                 if roll < hit_prob {
-                    // Attacker hits defender.
-                    let raw_damage = (atk_class_attack * (atk_str as f64 / 100.0) * difficulty_mod)
+                    // Attacker hits defender. Officer combat rating modifies damage.
+                    let raw_damage = (atk_class_attack * (atk_str as f64 / 100.0) * difficulty_mod * officer_combat_bonus)
                         .max(1.0);
                     let reduction = (raw_damage as i16).max(1).min(def_str);
                     let old_strength = current_strength[&def_key];

@@ -2080,7 +2080,7 @@ fn apply_panel_action(
         }
         PanelAction::FireDeathStar { system } => {
             // Use DeathStarSystem::fire() for precondition validation (guards from Ghidra RE).
-            if let Some(evt) = DeathStarSystem::fire(world, system, clock.tick) {
+            if let Some(evt) = DeathStarSystem::fire(&death_star_state, world, system, clock.tick) {
                 if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. } = evt {
                     let name = world.systems.get(system)
                         .map(|s| s.name.clone())
