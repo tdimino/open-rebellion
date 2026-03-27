@@ -365,6 +365,11 @@ pub struct ActiveMission {
     pub target_system: SystemKey,
     /// The target character (for assassination, abduction, rescue). None for area missions.
     pub target_character: Option<CharacterKey>,
+    /// True if this mission is a decoy — draws enemy counter-intelligence
+    /// away from the real mission at the same system. From community disassembly:
+    /// TDECOYTB/FDECOYTB tables with GNPRTB[3588] = 35% penalty.
+    #[serde(default)]
+    pub is_decoy: bool,
     /// Game-days remaining until execution.
     pub ticks_remaining: u32,
     /// Original duration (for progress display).
@@ -388,6 +393,7 @@ impl ActiveMission {
             character,
             target_system,
             target_character: None,
+            is_decoy: false,
             ticks_remaining: duration,
             total_ticks: duration,
         }
@@ -751,6 +757,21 @@ impl MissionSystem {
         let table_input = character
             .map(|c| mission.kind.compute_table_input(c, target_system, mission.faction, target_char))
             .unwrap_or(0);
+
+        // Decoy missions always "succeed" as distractions — they draw foil checks
+        // but produce no game effects. GNPRTB[3588] = 35% base penalty on decoy.
+        if mission.is_decoy {
+            return MissionResult {
+                mission_id: mission.id,
+                tick,
+                kind: mission.kind,
+                faction: mission.faction,
+                character: mission.character,
+                target_system: mission.target_system,
+                outcome: if roll < 0.65 { MissionOutcome::Success } else { MissionOutcome::Foiled },
+                effects: Vec::new(), // Decoys produce no world effects
+            };
+        }
 
         let (outcome, effects) =
             Self::determine_outcome(mission, character, table_input, tick, roll, &world.mission_tables);
@@ -2068,5 +2089,94 @@ mod tests {
         );
         // 60 - 45 = 15
         assert_eq!(input, 15, "recruitment should use target loyalty as resistance");
+    }
+
+    // --- Decoy mission tests ---
+
+    #[test]
+    fn decoy_mission_produces_no_effects() {
+        let mut world = GameWorld::default();
+        let char_key = character_with_skills(&mut world, 50, 50, 50, 50, 50);
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId(0),
+            name: "Target".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 5, raw_materials: 5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: crate::world::ControlKind::Uncontrolled,
+        });
+        let mut mission = ActiveMission::new(
+            1, MissionKind::Espionage, MissionFaction::Alliance, char_key, sys_key, 10,
+        );
+        mission.is_decoy = true;
+        mission.ticks_remaining = 0;
+
+        let result = MissionSystem::resolve_mission(&mission, &world, 100, 0.3);
+        // Decoy produces no world effects regardless of outcome
+        assert!(result.effects.is_empty(), "decoy should produce no effects");
+    }
+
+    #[test]
+    fn decoy_mission_can_be_foiled() {
+        let mut world = GameWorld::default();
+        let char_key = character_with_skills(&mut world, 50, 50, 50, 50, 50);
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId(0),
+            name: "Target".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 5, raw_materials: 5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: crate::world::ControlKind::Uncontrolled,
+        });
+        let mut mission = ActiveMission::new(
+            1, MissionKind::Espionage, MissionFaction::Alliance, char_key, sys_key, 10,
+        );
+        mission.is_decoy = true;
+        mission.ticks_remaining = 0;
+
+        // High roll (>0.65) → foiled per GNPRTB[3588] 35% penalty
+        let result = MissionSystem::resolve_mission(&mission, &world, 100, 0.9);
+        assert_eq!(result.outcome, MissionOutcome::Foiled, "high roll should foil decoy");
+    }
+
+    #[test]
+    fn decoy_success_at_low_roll() {
+        let mut world = GameWorld::default();
+        let char_key = character_with_skills(&mut world, 50, 50, 50, 50, 50);
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId(0),
+            name: "Target".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 5, raw_materials: 5,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: crate::world::ControlKind::Uncontrolled,
+        });
+        let mut mission = ActiveMission::new(
+            1, MissionKind::Espionage, MissionFaction::Alliance, char_key, sys_key, 10,
+        );
+        mission.is_decoy = true;
+        mission.ticks_remaining = 0;
+
+        // Low roll (<0.65) → decoy succeeds as distraction
+        let result = MissionSystem::resolve_mission(&mission, &world, 100, 0.3);
+        assert_eq!(result.outcome, MissionOutcome::Success, "low roll should succeed decoy");
     }
 }
