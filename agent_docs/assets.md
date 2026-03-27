@@ -3,8 +3,8 @@ title: "Asset Pipeline"
 description: "HD upscaling, 3D model generation, and encyclopedia content pipelines"
 category: "agent-docs"
 created: 2026-03-13
-updated: 2026-03-16
-tags: [asset-pipeline, upscaling, 3d-models, audio]
+updated: 2026-03-26
+tags: [asset-pipeline, upscaling, 3d-models, audio, references]
 ---
 
 # Asset Pipeline
@@ -37,28 +37,40 @@ Original BMPs from game's installed directories:
 
 ### Upscaling Tools
 
-**Primary: waifu2x-ncnn-vulkan** (INSTALLED)
+**Primary: Real-ESRGAN x4plus** (INSTALLED — industry standard for game textures)
 
 ```bash
-# Wrapper with model path baked in:
+# Must run from its own directory (finds models/ relative to binary):
+cd ~/tools/realesrgan && ./realesrgan-ncnn-vulkan -i input.png -o output.png -n realesrgan-x4plus -s 4 -f png
+
+# Batch: entire directory
+cd ~/tools/realesrgan && ./realesrgan-ncnn-vulkan -i /tmp/common-png -o data/hd/common-dll -n realesrgan-x4plus -s 4 -f png
+
+# Binary: ~/tools/realesrgan/realesrgan-ncnn-vulkan (26MB, universal arm64+x86_64)
+# Models: ~/tools/realesrgan/models/ (realesrgan-x4plus 32MB, realesrgan-x4plus-anime 8.5MB, realesr-animevideov3 1.2MB)
+# Source: xinntao/Real-ESRGAN v0.2.5.0 portable macOS release
+```
+
+Universal binary (x86_64 + arm64). Native Apple Silicon via Vulkan/MoltenVK. Tested on M4 Max — processes 2,231 images in ~75 minutes. **$0 cost.** Same tool used by the Jedi Knight Neural Upscale Texture Pack (same-era Star Wars game mod).
+
+**Secondary: waifu2x-ncnn-vulkan** (INSTALLED — geometric art only)
+
+```bash
 ~/.local/bin/waifu2x -i input.png -o output.png -n 1 -s 4 -f png
-
-# Binary: ~/tools/waifu2x/waifu2x-ncnn-vulkan-20250915-macos/
-# Models: models-cunet (default), models-upconv_7_anime_style_art_rgb, models-upconv_7_photo
 ```
 
-Universal binary (x86_64 + arm64). Native Apple Silicon via Vulkan. Tested on M4 Max — 400x200 → 1600x800 in <1s.
+Good for clean geometric widgets and line-heavy diagrams. Inferior to Real-ESRGAN for textured game art.
 
-**Important**: Do not call waifu2x directly on `EData/` — the original BMPs are indexed-palette and use extensionless names (`EDATA.042`). Use `scripts/upscale-assets.py` which handles palette→RGB conversion and renames output to `EDATA_NNN.png` (the format `encyclopedia.rs` expects).
-
-**Comparison: PBRify_UpscalerV4 via chaiNNer or Upscayl** (MODELS DOWNLOADED)
+**Legacy: PBRify/UltraSharp .pth models** (NOT USABLE via CLI)
 
 ```
-~/tools/upscale-models/4x-PBRify_UpscalerV4.pth  (134MB, Kim2091, May 2025)
-~/tools/upscale-models/4x-UltraSharpV2.pth        (134MB, Kim2091, May 2025)
+~/tools/upscale-models/4x-PBRify_UpscalerV4.pth  (PyTorch format — requires chaiNNer GUI, not ncnn CLI)
+~/tools/upscale-models/4x-UltraSharpV2.pth        (same limitation)
 ```
 
-**PBRify_UpscalerV4** — DAT2 architecture, purpose-built for 2000s-era game textures with DDS compression removal. Supersedes the older 4x SGI model by the same author. **UltraSharpV2** is a strong secondary comparison. Load `.pth` files in chaiNNer (chainner.app, macOS MPS backend) or **Upscayl v2.5** (Feb 2026, free, wraps ncnn-vulkan with custom model import).
+These `.pth` files are PyTorch format and cannot be used with Upscayl's ncnn backend directly. Use Upscayl's built-in models (`remacri-4x`, `ultrasharp-4x`) instead, but test results were poor on 1998 game art. **Real-ESRGAN x4plus is the recommended tool.**
+
+**Important**: All source BMPs are 256-color indexed palette. Convert to PNG (RGBA) before upscaling: `Image.open(bmp).convert("RGBA").save(out, "PNG")`. The `/tmp/{dll}-png/` trees are rebuilt from `data/base/ui/{dll-dir}/BMP/` each session.
 
 ### Gemini Generative Upscale (Method A — TESTED)
 
@@ -145,21 +157,61 @@ uv run scripts/upscale-assets.py --scale 8            # 8x for hero assets
 uv run scripts/upscale-assets.py --dry-run            # Preview without processing
 ```
 
+### Reference Image Collections (for Gemini multi-image upscaling)
+
+Gemini supports up to 14 reference images per request. Feed a relevant HD reference alongside the source BMP to guide detail reconstruction.
+
+| Collection | Path | Count | Content |
+|-----------|------|-------|---------|
+| **Wookieepedia Portraits** | `assets/references/ref-wookieepedia-portraits/` | 60 | All 60 game characters from starwars.fandom.com. `{faction}-{name}.jpg` format. |
+| **CCG Card Art** | `assets/references/ref-ccg-card-art/` | 56 | Decipher/FFG painted Star Wars CCG character cards. Same era, painted style. |
+| **Incredible Cross-Sections** | `assets/references/ref-cross-sections/` | 1 PDF | 1998 OT vehicle cutaway diagrams (Hans Jenssen/Richard Chasemore). 13MB, 36 pages. |
+| **ROTJ Illustrated Edition** | `assets/references/ref-illustrated-books/` | 1 PDF | 2021 illustrated novel — full-color OT scene paintings. 11MB. |
+| **GB Concept Art** | `assets/references/ref-gb-concept-art/` | 25 | Galactic Battlegrounds concept art from MixnMojo LucasArts Archive. Same era. |
+| **Galactic Battlegrounds** | `assets/references/ref-galactic-battlegrounds/` | 5 | Sprite sheets from Spriters Resource. |
+| **EData Characters** | `assets/references/ref-characters/` | 7 | 400x200 character panels from game EData (existing). |
+| **EData Capital Ships** | `assets/references/ref-capital-ships/` | 5 | 400x200 ship panels from game EData (existing). |
+| **EData Facilities** | `assets/references/ref-facilities/` | 9 | 400x200 facility panels from game EData (existing). |
+| **Damage Diagrams** | `assets/references/ref-damage-diagrams/` | 14 | Ship damage overlay sprites from GOKRES (existing). |
+
+Full index: `assets/references/INDEX.md` — 479 images across 21 collections with DLL→reference mapping table.
+
+### DLL Upscale Pipeline (2,231 BMPs)
+
+Full plan: `docs/plans/2026-03-25-003-upscale-all-dll-bmps-execplan.md`
+
+**HD override contract**: `data/hd/{dll-dir-name}/{resource_id}.png` — `BmpCache` checks here first, falls back to staged BMP.
+
+| DLL | Staged BMPs | Path |
+|-----|------------|------|
+| COMMON | 321 | `data/base/ui/common-dll/BMP/` |
+| GOKRES | 580 | `data/base/ui/gokres-dll/BMP/` |
+| STRATEGY | 1,042 | `data/base/ui/strategy-dll/BMP/` |
+| TACTICAL | 288 | `data/base/ui/tactical-dll/BMP/` |
+
+**Size distribution**: 88% under 10K pixels (tiny buttons/icons), 6% small (panels), 9% large (scenes/maps).
+
+**Approach under evaluation**: Asset-type-specific Gemini prompts with HD reference images vs Real-ESRGAN x4plus (free, local) vs hybrid chain (ESRGAN → Gemini polish). Phase 1 comparison at `docs/qa/upscale-final-comparison.html`.
+
 ### File Organization
 
 ```
 data/
 ├── base/              # Original game data (user-extracted, gitignored)
-│   ├── *.DAT
-│   ├── EData/         # Original BMPs (EDATA.NNN, 3-digit zero-padded)
+│   ├─�� *.DAT
+��   ├─�� EData/         # Original BMPs (EDATA.NNN, 3-digit zero-padded)
+│   ├── ui/            # Staged DLL BMPs: {dll-dir}/BMP/{resource_id}.bmp
 │   └── TEXTSTRA.DLL
-├── hd/                # AI-upscaled PNGs (generated, checked in)
+���── hd/                # AI-upscaled PNGs (generated, checked in)
 │   ├── EData/         # EDATA_NNN.png (underscore, PNG extension)
-│   ├── sprites/       # Upscaled DLL sprites
-│   └── manifest.json
+│   ├── common-dll/    # HD overrides for COMMON.DLL
+│   ├── gokres-dll/    # HD overrides for GOKRES.DLL
+│   ├── strategy-dll/  # HD overrides for STRATEGY.DLL
+│   ├── tactical-dll/  # HD overrides for TACTICAL.DLL
+│   └── README.md
 └── models/            # 3D tactical models (final outputs only)
     ├── optimized/     # DRACO-compressed GLBs (from prepare-rebellion-models.sh)
-    └── sprites/       # Pre-rendered sprite sheets (from Blender)
+    └─�� sprites/       # Pre-rendered sprite sheets (from Blender)
 
 scripts/
 ├── models-staging/    # Raw GLBs from Hunyuan/Meshy (gitignored, not in data/)
