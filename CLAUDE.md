@@ -9,7 +9,7 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 379 tests, zero warnings. Knesset Ereshkigal Phase 0-3 complete: effect algebra, economy system, P0 formula fixes, DS shield, officer combat rating, decoy missions, ship repair, Jabba 5-case chain, Emperor co-location, Leia Force discovery, 17 RE event IDs.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 377 tests, zero warnings. Knesset Ereshkigal Phase 0-3 + 3b bugs complete: effect algebra, economy system, P0 formula fixes, DS shield, officer combat rating, decoy missions, ship repair, Jabba 5-case chain, Emperor co-location, Leia Force discovery, 17 RE event IDs.
 
 | Area | Key Features |
 |------|-------------|
@@ -103,7 +103,7 @@ docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decom
 - Knesset Kothar (2026-03-25) — Final parity sprint. 4 daborot, 9 tasks. Seeding M5-M8, 25 ship class fields, droid advisor, WASM fixes, HD assets.
 - Knesset Ma'at (2026-03-25) — Combat + asset wave. 5 daborot. Shield phase, fighter combat, ground combat + difficulty, cockpit sprites, HUD overlays.
 - [Community Disassembly Cross-Reference (2026-03-26)](docs/reports/2026-03-26-community-disassembly-cross-reference.md) — 13,036 decompiled functions vs our 5,151. 4 domain agents. Overall parity: ~85%. Biggest gap: economy tick loop.
-- [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. Phase 0-3 complete: effect algebra, economy system, P0 formula fixes, DS shield, Jabba 5-case, Emperor co-location, Leia Force. 6 phases total.
+- [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. Phase 0-3+3b complete. Phase 3b (Knesset Shamash): source tree cross-ref revealed economy is 17% parity (3/17 functions); fixed swapped IDs, removed wrong notification model, corrected support drift + garrison formulas. 7 phases total.
 
 ## External References
 
