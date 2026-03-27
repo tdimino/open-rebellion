@@ -233,11 +233,25 @@ impl EconomySystem {
                 difficulty,
             );
 
+            // 4. KDY production modifier (FUN_0050a480_adjust_for_kdy).
+            // Formula: clamp_nonneg(100 - capships * GNPRTB[7684] - fighters * GNPRTB[7685])
+            // Original only applies at systems with KDY flag (field_0x88 bit 5).
+            // We apply to all controlled systems — modifier is 100 when no ships, harmless.
+            let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty) as i32;
+            let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty) as i32;
+            let total_capships = presence.alliance_capships as i32 + presence.empire_capships as i32;
+            let total_fighters = presence.alliance_fighters as i32 + presence.empire_fighters as i32;
+            let new_prod_mod = (100 - total_capships * capship_penalty
+                - total_fighters * fighter_penalty)
+                .max(0)
+                .min(100) as i8;
+
             // Update per-system economy state (eco already bound above in step 0a).
             let old_rate = eco.collection_rate;
             let old_garrison = eco.garrison_requirement;
             eco.collection_rate = new_rate;
             eco.garrison_requirement = new_garrison;
+            eco.production_modifier = new_prod_mod;
 
             if (new_rate - old_rate).abs() > 0.01 {
                 events.push(EconomyEvent::CollectionRateChanged {
@@ -262,7 +276,7 @@ impl EconomySystem {
 // Military presence counting
 // ---------------------------------------------------------------------------
 
-/// Military presence at a system, used by support drift calculations.
+/// Military presence at a system, used by support drift and KDY calculations.
 struct MilitaryPresence {
     alliance_fleets: u32,
     empire_fleets: u32,
@@ -270,6 +284,10 @@ struct MilitaryPresence {
     empire_fighters: u32,
     alliance_troops: u32,
     empire_troops: u32,
+    /// Total capital ship hulls (sum of ShipEntry.count across all fleets).
+    /// Used by KDY production modifier (FUN_0050a480).
+    alliance_capships: u32,
+    empire_capships: u32,
 }
 
 fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> MilitaryPresence {
@@ -280,18 +298,22 @@ fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> Mil
         empire_fighters: 0,
         alliance_troops: 0,
         empire_troops: 0,
+        alliance_capships: 0,
+        empire_capships: 0,
     };
 
     for &fleet_key in &sys.fleets {
         if let Some(fleet) = world.fleets.get(fleet_key) {
+            let capship_count: u32 = fleet.capital_ships.iter().map(|s| s.count).sum();
+            let fighter_count: u32 = fleet.fighters.iter().map(|f| f.count).sum();
             if fleet.is_alliance {
                 presence.alliance_fleets += 1;
-                presence.alliance_fighters +=
-                    fleet.fighters.iter().map(|f| f.count).sum::<u32>();
+                presence.alliance_capships += capship_count;
+                presence.alliance_fighters += fighter_count;
             } else {
                 presence.empire_fleets += 1;
-                presence.empire_fighters +=
-                    fleet.fighters.iter().map(|f| f.count).sum::<u32>();
+                presence.empire_capships += capship_count;
+                presence.empire_fighters += fighter_count;
             }
         }
     }
@@ -585,6 +607,7 @@ mod tests {
             alliance_fleets: 0, empire_fleets: 0,
             alliance_fighters: 0, empire_fighters: 0,
             alliance_troops: 0, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2);
         // Low alliance support (0.1 < 0.40 threshold), no fleet → should drift away
@@ -615,6 +638,7 @@ mod tests {
             alliance_fleets: 1, empire_fleets: 0, // Friendly fleet present
             alliance_fighters: 0, empire_fighters: 0,
             alliance_troops: 0, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2);
         // Fleet present → no drift
@@ -645,11 +669,13 @@ mod tests {
             alliance_fleets: 0, empire_fleets: 0,
             alliance_fighters: 0, empire_fighters: 0,
             alliance_troops: 0, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
         };
         let with_troops = MilitaryPresence {
             alliance_fleets: 0, empire_fleets: 0,
             alliance_fighters: 0, empire_fighters: 0,
             alliance_troops: 5, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
         };
         let (a_no, _) = calculate_support_drift(&sys, &no_troops, &gnprtb, 2);
         let (a_with, _) = calculate_support_drift(&sys, &with_troops, &gnprtb, 2);
@@ -772,6 +798,97 @@ mod tests {
     // -----------------------------------------------------------------------
     // Phase 3b: Resource capacity enforcement tests
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn kdy_production_modifier_reduces_with_ships() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with fleet presence (capships reduce production)
+        let fleet_key = world.fleets.insert(crate::world::Fleet {
+            location: crate::ids::SystemKey::default(),
+            capital_ships: vec![
+                crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 3 },
+            ],
+            fighters: vec![
+                crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 4 },
+            ],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "KDY".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.7, popularity_empire: 0.3,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![fleet_key],
+            ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+
+        let eco = state.per_system.get(&sys_key).unwrap();
+        // 3 capships * 5 (capship penalty) + 4 fighters * 2 (fighter penalty) = 15 + 8 = 23
+        // production_modifier = max(100 - 23, 0) = 77
+        assert_eq!(eco.production_modifier, 77,
+            "production_modifier should be 100 - 3*5 - 4*2 = 77, got {}",
+            eco.production_modifier);
+    }
+
+    #[test]
+    fn kdy_production_modifier_floors_at_zero() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with massive fleet presence
+        let fleet_key = world.fleets.insert(crate::world::Fleet {
+            location: crate::ids::SystemKey::default(),
+            capital_ships: vec![
+                crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 10 },
+            ],
+            fighters: vec![
+                crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 30 },
+            ],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Overcrowded".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.7, popularity_empire: 0.3,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![fleet_key],
+            ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+
+        let eco = state.per_system.get(&sys_key).unwrap();
+        // 10 capships * 5 + 30 fighters * 2 = 50 + 60 = 110 → max(100 - 110, 0) = 0
+        assert_eq!(eco.production_modifier, 0,
+            "production modifier should floor at 0, got {}",
+            eco.production_modifier);
+    }
 
     #[test]
     fn energy_overcap_emits_event() {
