@@ -19,11 +19,22 @@ origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 | 4 | PENDING | — | PerceptionIntegrator (simulation.rs 1,400→200 LOC) |
 | 5 | PENDING | — | 178 multiplayer protocol types, telemetry coverage test |
 
-### Follow-ons from Code Review (13 findings, all resolved)
-- **InciteUprising**: counter_intel stubbed to 0 — needs `System::espionage_rating` field
-- **target_character dispatch**: AI/UI dispatchers don't set `target_character` on missions — Assassination/Abduction/Recruitment fixes are structurally correct but inert at runtime until dispatch is wired
-- **Eval script**: Economy event volume (198K/run) dilutes ratio-based metrics — `eval_game_quality.py` denominators need adjustment
-- **production_modifier**: Field exists on `SystemEconomy` but is never computed — remove or implement KDY/fleet modifier
+### Follow-ons from Code Reviews (21 findings across 6 review agents, all resolved)
+
+**Implemented in commits:**
+- effects.rs: Removed dead SkillModified variant, added ControlChanged inversion, stability comment on sort
+- economy.rs: Removed duplicate assignment, fixed troop suppression *2.0, tagged Empire garrison as AUGMENTED, clamped collection_rate, fixed doc comment
+- missions.rs: InciteUprising counter_intel stubbed to 0 (not fabricated), decoy uses FDECOYTB table lookup with GNPRTB[3588] penalty
+- combat.rs: DS shield gates hull damage in phase_hull_damage (not just fire()), officer uses base only (not variance/2), is_death_star on ShipSnap
+- repair.rs: Suppressed events for undamaged ships, documented shipyard class filtering gap
+
+**Still pending (tracked for Phase 3+):**
+- **System::espionage_rating**: InciteUprising counter-intel needs this field — currently stubbed to 0
+- **target_character dispatch**: AI/UI dispatchers don't set `target_character` — Assassination/Abduction/Recruitment formulas structurally correct but inert at runtime
+- **Eval script denominators**: Economy event volume dilutes ratio-based metrics
+- **production_modifier**: Field on SystemEconomy never computed — needs KDY/fleet modifier or removal
+- **DS shield in resolve_space tests**: 4 plan-specified tests (shield_blocks_damage, shield_destroyed_first, vulnerable_after_shield, telemetry) not yet written for the hull-damage path
+- **Officer tests**: 2 plan-specified tests (officer_combat_bonus, no_officer_no_bonus) not yet written
 
 ## Context
 
@@ -34,11 +45,11 @@ A community RE effort produced 13,036 decompiled C functions from REBEXE.EXE (vs
 
 **After Phase 0+1 (2026-03-26):**
 - Tests: 351 | Event types: 39 | New modules: effects.rs, economy.rs
-- Branch: `feat/knesset-ereshkigal-phase-0-1` (6 commits, 13 review findings resolved)
 
-**After Phase 2 (2026-03-27):**
+**After Phase 2 + all reviews (2026-03-27):**
 - Tests: 360 | New modules: +repair.rs | Modified: death_star.rs, combat.rs, missions.rs
-- Branch: 10 commits total. DS shield, officer combat rating, decoy missions, ship repair framework.
+- Branch: `feat/knesset-ereshkigal-phase-0-1` — 13 commits, 21 review findings resolved
+- DS shield gates hull damage (not just fire), decoy uses FDECOYTB table lookup, repair suppresses undamaged events
 
 **Target:**
 - Eval score: >= 0.72 | Tests: >= 400 | Event types: >= 38 | Parity: ~97%
