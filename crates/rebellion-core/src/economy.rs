@@ -269,15 +269,17 @@ fn calculate_support_drift(
     gnprtb: &GnprtbParams,
     difficulty: u8,
 ) -> (f32, f32) {
-    let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1) as f32;
-    let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1) as f32;
-    let troop_influence = gnprtb.value(GNPRTB_TROOP_INFLUENCE, difficulty).max(1) as f32;
-    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty) as f32 / 100.0;
-    let threshold_1 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_1, difficulty) as f32 / 100.0;
-    let threshold_2 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_2, difficulty) as f32 / 100.0;
-    let base_low = gnprtb.value(GNPRTB_DRIFT_BASE_LOW, difficulty) as f32 / 100.0;
-    let base_low_mid = gnprtb.value(GNPRTB_DRIFT_BASE_LOW_MID, difficulty) as f32 / 100.0;
-    let base_mid = gnprtb.value(GNPRTB_DRIFT_BASE_MID, difficulty) as f32 / 100.0;
+    // All computation in integer 0-100 to match original (FUN_005583c0).
+    // Our popularity fields are f32 0.0-1.0; convert at boundary.
+    let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1) as i32;
+    let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1) as i32;
+    let troop_influence = gnprtb.value(GNPRTB_TROOP_INFLUENCE, difficulty).max(1) as i32;
+    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty) as i32; // 40
+    let threshold_1 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_1, difficulty) as i32; // 20
+    let threshold_2 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_2, difficulty) as i32; // 30
+    let base_low = gnprtb.value(GNPRTB_DRIFT_BASE_LOW, difficulty) as i32; // 75
+    let base_low_mid = gnprtb.value(GNPRTB_DRIFT_BASE_LOW_MID, difficulty) as i32; // 50
+    let base_mid = gnprtb.value(GNPRTB_DRIFT_BASE_MID, difficulty) as i32; // 25
 
     let is_alliance_controlled = matches!(
         sys.control,
@@ -289,11 +291,10 @@ fn calculate_support_drift(
     );
 
     if !is_alliance_controlled && !is_empire_controlled {
-        // Neutral/uncontrolled systems don't drift.
         return (0.0, 0.0);
     }
 
-    let (controlling_support, friendly_fleets, friendly_fighters, friendly_troops) =
+    let (controlling_support_f32, friendly_fleets, friendly_fighters, friendly_troops) =
         if is_alliance_controlled {
             (
                 sys.popularity_alliance,
@@ -310,38 +311,57 @@ fn calculate_support_drift(
             )
         };
 
-    // Only drift if support is below threshold and no friendly fleet present.
-    if controlling_support > drift_threshold || friendly_fleets > 0 {
+    // Convert f32 0.0-1.0 to integer 0-100 for computation
+    let support = (controlling_support_f32 * 100.0) as i32;
+
+    // Only drift if support is below threshold AND no friendly fleet present.
+    // Original: if (support <= GNPRTB[7732]) && (fleet1 == 0)
+    if support > drift_threshold || friendly_fleets > 0 {
         return (0.0, 0.0);
     }
 
     // Determine base drift rate based on support bracket.
-    let base = if controlling_support <= threshold_1 {
-        base_low // Very low support: strong drift
-    } else if controlling_support <= threshold_2 {
-        base_low_mid // Low-mid: moderate drift
+    // Original bracket logic from FUN_005583c0:
+    //   if threshold_1 < support <= threshold_2: base = base_low_mid (50)
+    //   elif support > threshold_1: base = base_mid (25)
+    //   else: base = base_low (75)
+    let base = if support <= threshold_1 {
+        base_low // ≤20: strong drift (75)
+    } else if support <= threshold_2 {
+        base_low_mid // 21-30: moderate drift (50)
     } else {
-        base_mid // Mid: mild drift
+        base_mid // 31-40: mild drift (25)
     };
 
-    // Military presence reduces drift (troops/fighters suppress dissent).
-    // Original: drift = clamp(base - fighters*5 - troops*2 - fleet*10, 0, 100)
-    // GNPRTB values are the per-unit multipliers directly.
-    let suppression = (friendly_fighters as f32 * fighter_influence
-        + friendly_troops as f32 * troop_influence
-        + friendly_fleets as f32 * fleet_influence)
-        / 100.0;
+    // Empire troop doubling via FUN_005582e0_adjust_value_for_strong_support:
+    // When side==Empire (side==2), troop count is multiplied by GNPRTB[7680] (=2).
+    // This doubles troop suppression effectiveness for the Empire.
+    let adjusted_troops = if is_empire_controlled {
+        // GNPRTB[7680] defaults to 2 — Empire troops suppress twice as effectively
+        let empire_mult = gnprtb.value(7680, difficulty).max(1) as i32;
+        friendly_troops as i32 * empire_mult
+    } else {
+        friendly_troops as i32
+    };
 
-    let drift = (base - suppression).clamp(0.0, 1.0);
+    // Military suppression: integer subtraction matching original exactly.
+    // Original: clamp(base - fighters*GNPRTB[7687] - troops_adj*GNPRTB[7688] - fleet*GNPRTB[7686], 0, 100)
+    let suppression = friendly_fighters as i32 * fighter_influence
+        + adjusted_troops * troop_influence
+        + friendly_fleets as i32 * fleet_influence;
+
+    let drift = (base - suppression).clamp(0, 100);
+
+    // Convert drift back to f32 0.0-1.0 delta.
+    // Original applies full drift as integer per game-day; we store as f32 0.0-1.0.
+    let delta = drift as f32 / 100.0;
 
     // Drift direction: support moves AWAY from controlling faction.
-    // Scale to a small per-tick delta (original applies per game-day).
-    let per_tick_drift = drift * 0.01; // 1% of computed drift per tick
-
+    // If Empire controlled, drift is negated (support moves toward Alliance).
     if is_alliance_controlled {
-        (-per_tick_drift, per_tick_drift)
+        (-delta, delta)
     } else {
-        (per_tick_drift, -per_tick_drift)
+        (delta, -delta)
     }
 }
 
@@ -373,25 +393,42 @@ fn calculate_garrison_requirement(
     gnprtb: &GnprtbParams,
     difficulty: u8,
 ) -> u32 {
-    let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty) as f32 / 100.0;
-    let divisor = gnprtb.value(GNPRTB_GARRISON_DIVISOR, difficulty).abs().max(1) as f32 / 100.0;
+    // Integer arithmetic matching FUN_005587d0_uprising_threshold + FUN_00558760_garrison_requirement.
+    // Our support is f32 0.0-1.0; convert to integer 0-100.
+    let support_int = (support * 100.0) as i32;
+    let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty) as i32; // 60
+    let divisor = gnprtb.value(GNPRTB_GARRISON_DIVISOR, difficulty).abs().max(1) as i32; // 10
 
-    if support >= threshold {
+    if support_int >= threshold {
         return 0;
     }
 
-    let raw = (threshold - support) / divisor;
+    // Integer ceil division: ceil(dividend / divisor) = (divisor - 1 + dividend) / divisor
+    let dividend = threshold - support_int;
+    let raw = (divisor - 1 + dividend) / divisor;
 
-    // AUGMENTED: Empire core systems need half the garrison.
-    // No specific GNPRTB parameter identified for this modifier;
-    // halving is a balance decision based on the original's faction-asymmetric
-    // garrison logic (FUN_00558760).
-    let modifier = match control {
-        ControlKind::Controlled(crate::dat::Faction::Empire) => 0.5,
-        _ => 1.0,
+    // Empire halving via GNPRTB[7680] (=2, used as divisor).
+    // Original: if Empire + param_3: garrison /= GNPRTB[7680]
+    let after_faction = match control {
+        ControlKind::Controlled(crate::dat::Faction::Empire) => {
+            let empire_divisor = gnprtb.value(7680, difficulty).max(1) as i32; // default 2
+            raw / empire_divisor
+        }
+        _ => raw,
     };
 
-    (raw * modifier).ceil() as u32
+    // Uprising doubler via GNPRTB[7682] (=2).
+    // Original: if system under uprising (field_0x88 bit 2): garrison *= GNPRTB[7682]
+    // Our ControlKind::Uprising(faction) maps directly to this bit.
+    let after_uprising = match control {
+        ControlKind::Uprising(_) => {
+            let uprising_mult = gnprtb.value(7682, difficulty).max(1) as i32; // default 2
+            after_faction * uprising_mult
+        }
+        _ => after_faction,
+    };
+
+    after_uprising.max(0) as u32
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +456,9 @@ mod tests {
             GnprtbEntry { parameter_id: 7761, development: 60, alliance_sp_easy: 60, alliance_sp_medium: 60, alliance_sp_hard: 60, empire_sp_easy: 60, empire_sp_medium: 60, empire_sp_hard: 60, multiplayer: 60 },
             GnprtbEntry { parameter_id: 7762, development: -10, alliance_sp_easy: -10, alliance_sp_medium: -10, alliance_sp_hard: -10, empire_sp_easy: -10, empire_sp_medium: -10, empire_sp_hard: -10, multiplayer: -10 },
             GnprtbEntry { parameter_id: 7763, development: 100, alliance_sp_easy: 100, alliance_sp_medium: 100, alliance_sp_hard: 100, empire_sp_easy: 100, empire_sp_medium: 100, empire_sp_hard: 100, multiplayer: 100 },
+            // Phase 3b additions: Empire troop doubling + garrison modifiers
+            GnprtbEntry { parameter_id: 7680, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },
+            GnprtbEntry { parameter_id: 7682, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },
         ];
         GnprtbParams::new(entries)
     }

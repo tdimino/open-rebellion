@@ -687,136 +687,19 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
     // -----------------------------------------------------------------------
 
     // -----------------------------------------------------------------------
-    // Notification event probabilities tuned to ~1 fire per 100 ticks on
-    // average. All are DisplayMessage-only stubs — mechanical effects
-    // (ShiftPopularity, resource changes) require per-system targeting which
-    // will be wired in the Phase 4 PerceptionIntegrator refactor.
+    // NOTE: 8 random notification events REMOVED (Phase 3b, Knesset Shamash).
+    //
+    // The original game generates incidents (uprising 0x152, informant 0x153,
+    // disaster 0x154, resource 0x155) via state-transition logic in the economy
+    // tick (FUN_0050a970), NOT random per-tick probability. Bits 16-19 of the
+    // system's field_0x88 are compared against neutral galaxy state; incidents
+    // fire only when these bits differ (state change).
+    //
+    // Maintenance shortfall fires every GNPRTB[7694]=30 ticks via event timer.
+    // Saboteur/traitor are triggered by mission/loyalty systems, not random events.
+    //
+    // These will be wired into the economy tick in Phase 3b implementation.
     // -----------------------------------------------------------------------
-
-    // 0x100: Support change notification — ~1 per 67 ticks
-    state.define(GameEvent {
-        id: EVT_SUPPORT_CHANGE,
-        name: "Popular Support Shift".into(),
-        conditions: vec![
-            EventCondition::TickAtLeast { tick: 20 },
-            EventCondition::Random { probability: 0.015 },
-        ],
-        actions: vec![EventAction::DisplayMessage {
-            text: "Popular support is shifting across the galaxy...".into(),
-        }],
-        is_repeatable: true,
-        enabled: true,
-    });
-
-    // 0x153: Informant intelligence — ~1 per 50 ticks
-    state.define(GameEvent {
-        id: EVT_INFORMANT_INTEL,
-        name: "Informant Intelligence".into(),
-        conditions: vec![
-            EventCondition::TickAtLeast { tick: 40 },
-            EventCondition::Random { probability: 0.02 },
-        ],
-        actions: vec![EventAction::DisplayMessage {
-            text: "Informants report intelligence on enemy activities.".into(),
-        }],
-        is_repeatable: true,
-        enabled: true,
-    });
-
-    // 0x154: Resource discovery — ~1 per 100 ticks
-    state.define(GameEvent {
-        id: EVT_RESOURCE_DISCOVERY,
-        name: "Resource Discovery".into(),
-        conditions: vec![
-            EventCondition::TickAtLeast { tick: 30 },
-            EventCondition::Random { probability: 0.01 },
-        ],
-        actions: vec![EventAction::DisplayMessage {
-            text: "New resource deposits have been discovered!".into(),
-        }],
-        is_repeatable: true,
-        enabled: true,
-    });
-
-    // 0x155: Natural disaster — ~1 per 200 ticks (rare)
-    state.define(GameEvent {
-        id: EVT_NATURAL_DISASTER,
-        name: "Natural Disaster".into(),
-        conditions: vec![
-            EventCondition::TickAtLeast { tick: 50 },
-            EventCondition::Random { probability: 0.005 },
-        ],
-        actions: vec![EventAction::DisplayMessage {
-            text: "A natural disaster has struck a system!".into(),
-        }],
-        is_repeatable: true,
-        enabled: true,
-    });
-
-    // 0x304: Maintenance shortfall — ~1 per 67 ticks
-    state.define(GameEvent {
-        id: EVT_MAINTENANCE_SHORTFALL_EVENT,
-        name: "Maintenance Budget Shortfall".into(),
-        conditions: vec![
-            EventCondition::TickAtLeast { tick: 60 },
-            EventCondition::Random { probability: 0.015 },
-        ],
-        actions: vec![EventAction::DisplayMessage {
-            text: "Maintenance budgets are falling short — units may suffer attrition.".into(),
-        }],
-        is_repeatable: true,
-        enabled: true,
-    });
-
-    // 0x305: Saboteur detected — ~1 per 100 ticks
-    state.define(GameEvent {
-        id: EVT_SABOTEUR_DETECTED,
-        name: "Saboteur Detected".into(),
-        conditions: vec![
-            EventCondition::TickAtLeast { tick: 35 },
-            EventCondition::Random { probability: 0.01 },
-        ],
-        actions: vec![EventAction::DisplayMessage {
-            text: "Counter-intelligence has detected an enemy saboteur!".into(),
-        }],
-        is_repeatable: true,
-        enabled: true,
-    });
-
-    // 0x361: Traitor revealed — ~1 per 100 ticks
-    state.define(GameEvent {
-        id: EVT_TRAITOR_REVEALED,
-        name: "Traitor Revealed".into(),
-        conditions: vec![
-            EventCondition::TickAtLeast { tick: 100 },
-            EventCondition::Random { probability: 0.01 },
-        ],
-        actions: vec![EventAction::DisplayMessage {
-            text: "A traitor has been revealed within the ranks!".into(),
-        }],
-        is_repeatable: true,
-        enabled: true,
-    });
-
-    // 0x231: Jabba's prisoners — ~1 per 50 ticks after bounty attack
-    if han.is_some() {
-        state.define(GameEvent {
-            id: EVT_JABBA_PRISONERS,
-            name: "Jabba's Prisoners".into(),
-            conditions: vec![
-                EventCondition::EventFired {
-                    id: EVT_BOUNTY_ATTACK,
-                },
-                EventCondition::TickAtLeast { tick: 130 },
-                EventCondition::Random { probability: 0.02 },
-            ],
-            actions: vec![EventAction::DisplayMessage {
-                text: "Jabba the Hutt expands his collection of prisoners...".into(),
-            }],
-            is_repeatable: true,
-            enabled: true,
-        });
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -908,13 +791,9 @@ mod tests {
         let world = GameWorld::default();
         let mut state = EventState::new();
         define_story_events(&mut state, &world);
-        // No characters found — only system notification events registered
-        // (support change, informant, resource, disaster, maintenance, saboteur, traitor)
-        assert!(
-            state.events().len() >= 7,
-            "expected system notification events, got {}",
-            state.events().len()
-        );
+        // No characters found — no story events registered
+        // (notification events removed in Phase 3b — they belong in economy tick)
+        assert!(state.events().is_empty());
     }
 
     #[test]
@@ -1453,48 +1332,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn notification_events_fire_with_random_rolls() {
-        let world = GameWorld::default();
-        let mut state = EventState::new();
-        define_story_events(&mut state, &world);
-
-        // Notification events are repeatable with Random conditions
-        // Support change: tick >= 20, random < 0.015
-        let fired = EventSystem::advance(&mut state, &world, &tick(20), &[0.001]);
-        assert!(
-            fired.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
-            "Support change notification should fire at tick 20 with roll 0.001"
-        );
-
-        // Should fire again (repeatable)
-        let fired2 = EventSystem::advance(&mut state, &world, &tick(21), &[0.001]);
-        assert!(
-            fired2.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
-            "Support change should fire again (repeatable)"
-        );
-
-        // High roll should NOT fire (probability 0.015)
-        let fired3 = EventSystem::advance(&mut state, &world, &tick(22), &[0.5]);
-        assert!(
-            !fired3.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
-            "Support change should NOT fire with high roll (0.5 > 0.015)"
-        );
-    }
-
-    #[test]
-    fn notification_events_need_correct_tick() {
-        let world = GameWorld::default();
-        let mut state = EventState::new();
-        define_story_events(&mut state, &world);
-
-        // Too early for support change (needs tick >= 20)
-        let fired = EventSystem::advance(&mut state, &world, &tick(10), &[0.01]);
-        assert!(
-            !fired.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
-            "Support change should NOT fire before tick 20"
-        );
-    }
+    // notification_events_fire_with_random_rolls — REMOVED (Phase 3b)
+    // notification_events_need_correct_tick — REMOVED (Phase 3b)
+    // Notification events moved to economy tick state-transition model.
 
     #[test]
     fn emperor_palpatine_adds_emperor_specific_events() {
