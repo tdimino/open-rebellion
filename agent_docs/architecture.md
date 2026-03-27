@@ -57,7 +57,10 @@ crates/rebellion-core/src/
 ├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
 ├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba)
 ├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI
-└── game_events.rs    — GameEventRecord struct + 26 event type constants for JSONL telemetry
+├── game_events.rs    — GameEventRecord struct + 39 event type constants for JSONL telemetry
+├── effects.rs        — GameEffect enum (36 variants), EffectPhase ordering, monoidal composition, inversion
+├── economy.rs        — Per-system economy tick: support drift, collection rate, garrison requirements (GNPRTB 7686-7688, 7732-7737, 7761-7763)
+└── repair.rs         — Ship repair framework: RepairSystem at shipyard systems, damage_control rate
 ```
 
 ## Render Modules (rebellion-render)
@@ -162,6 +165,7 @@ macroquad drawing + egui panels
 Each frame:
   tick_events = clock.advance(dt)
   if tick_events not empty:
+    EconomySystem::advance          → EconomyEvents    → apply support drift, collection rate, garrison
     ManufacturingSystem::advance_with_blockade → CompletionEvents (skips blockaded systems)
     MovementSystem::advance     → ArrivalEvents    → update fleet.location + system.fleets
     CombatSystem (per system)   → SpaceCombat/Ground/Bombardment → apply damage

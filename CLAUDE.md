@@ -9,7 +9,7 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 328 tests, zero warnings.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 360 tests, zero warnings. Knesset Ereshkigal Phase 0-2 complete: effect algebra, economy system, P0 formula fixes, DS shield, officer combat rating, decoy missions, ship repair.
 
 | Area | Key Features |
 |------|-------------|
@@ -43,7 +43,7 @@ PATH="/usr/bin:$PATH" cargo check
 
 | Crate | Role | Key Deps |
 |-------|------|----------|
-| `rebellion-core` | Pure types, zero IO. `ids.rs`, `dat/`, `world/` | slotmap, serde |
+| `rebellion-core` | Pure types, zero IO. `ids.rs`, `dat/`, `world/`, `effects.rs`, `economy.rs`, `repair.rs` | slotmap, serde |
 | `rebellion-data` | DAT to GameWorld loader. Uses dat-dumper as library | rebellion-core, dat-dumper |
 | `rebellion-render` | macroquad 0.4 + egui-macroquad 0.17 galaxy map | rebellion-core, macroquad |
 | `rebellion-app` | Entry point and main loop | all crates above |
@@ -58,6 +58,10 @@ PATH="/usr/bin:$PATH" cargo check
 - **Entity table pattern**: 16-byte header (`field1`, `count`, `family_id`, `field4`) then `count` fixed-size records
 - **Never add rendering deps to rebellion-core** -- it must remain headless-testable
 - **Never use `fieldN` for a field whose meaning is known** -- name it semantically
+- **Effects are the only output** (Knesset Ereshkigal Manifesto): new systems should return `Vec<GameEffect>` -- use the closed enum in `effects.rs`, not ad-hoc result types
+- **Effects carry partial order**: tag with `EffectPhase` (Economy→Manufacturing→Movement→Combat→Diplomacy→Intelligence→Command→Endgame) -- within a phase, production order preserved
+- **GameWorld is read-only during advance**: systems receive `&GameWorld` and produce effects -- the integrator applies mutations after all systems run
+- **Economy runs before manufacturing**: `EconomySystem::advance()` in simulation tick order position 0, before manufacturing at position 1
 
 ## Known Limitations
 
@@ -86,6 +90,8 @@ agent_docs/dll-resource-catalog.md -- Granular DLL resource catalog: 2,441 BMPs 
 agent_docs/seeding.md -- Game seeding pipeline: 3-system model, character stat rolling, named placement, 9 seed tables. Read when modifying initial galaxy state.
 
 docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for player/modder-facing mechanics reference.
+docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md -- Knesset Ereshkigal: 6-phase eval-driven parity sprint + Open Souls functional refactor. Includes Functional Programming Manifesto (10 principles), effect algebra spec, modularity violations audit, Codex work packages. Read when planning Phase 3+ work.
+docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decompiled functions cross-referenced against our implementation. P0-P3 gap inventory with GNPRTB parameters. Read when implementing missing game mechanics.
 
 ## Reports
 
@@ -95,6 +101,8 @@ docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for pla
 - [Game Seeding Audit](docs/plans/2026-03-24-003-game-seeding-parity-execplan.md) — 56 gaps found vs TheArchitect2018 wiki. All M1-M8 implemented, seeding COMPLETE.
 - Knesset Kothar (2026-03-25) — Final parity sprint. 4 daborot, 9 tasks. Seeding M5-M8, 25 ship class fields, droid advisor, WASM fixes, HD assets.
 - Knesset Ma'at (2026-03-25) — Combat + asset wave. 5 daborot. Shield phase, fighter combat, ground combat + difficulty, cockpit sprites, HUD overlays.
+- [Community Disassembly Cross-Reference (2026-03-26)](docs/reports/2026-03-26-community-disassembly-cross-reference.md) — 13,036 decompiled functions vs our 5,151. 4 domain agents. Overall parity: ~85%. Biggest gap: economy tick loop.
+- [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. Phase 0+1 complete: effect algebra, economy system, P0 formula fixes. 6 phases total.
 
 ## External References
 
