@@ -210,10 +210,9 @@ pub enum GameEffect {
     UprisingIncident {
         system: SystemKey,
     },
-    SkillModified {
-        character: CharacterKey,
-        delta: i32,
-    },
+    // SkillModified intentionally deferred — needs a SkillKind discriminant
+    // to identify which of the 8 skill pairs changed. Will be added when
+    // the PerceptionIntegrator applies skill effects.
 
     // ── Endgame (Phase 7) ────────────────────────────────────────────
     DeathStarConstructionProgress {
@@ -279,8 +278,7 @@ impl GameEffect {
             | Self::JediDiscovered { .. }
             | Self::EventFired { .. }
             | Self::CharacterBetrayed { .. }
-            | Self::UprisingIncident { .. }
-            | Self::SkillModified { .. } => EffectPhase::Command,
+            | Self::UprisingIncident { .. } => EffectPhase::Command,
 
             Self::DeathStarConstructionProgress { .. }
             | Self::PlanetDestroyed { .. }
@@ -324,6 +322,11 @@ impl GameEffect {
                 hull_before: *hull_after,
                 hull_after: *hull_before,
             }),
+            Self::ControlChanged { system, from, to } => Some(Self::ControlChanged {
+                system: *system,
+                from: to.clone(),
+                to: from.clone(),
+            }),
             // Effects that create/destroy entities require full entity snapshots
             // for inversion. Use full-state clone for these.
             _ => None,
@@ -351,6 +354,9 @@ impl GameEffect {
 
 /// Combine two effect sequences with phase-stable sort.
 /// This is the semigroup operation: production order preserved within each phase.
+///
+/// NOTE: must remain `sort_by_key` (stable), not `sort_unstable_by_key` —
+/// within-phase ordering is load-bearing for deterministic replay.
 pub fn combine_effects(mut a: Vec<GameEffect>, mut b: Vec<GameEffect>) -> Vec<GameEffect> {
     a.append(&mut b);
     a.sort_by_key(|e| e.phase());

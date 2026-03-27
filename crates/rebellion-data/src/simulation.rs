@@ -139,7 +139,7 @@ pub struct SimulationStates {
 
 /// Run one simulation tick across all 15 systems.
 ///
-/// Advances each system in the canonical order (manufacturing → movement →
+/// Advances each system in the canonical order (economy → manufacturing → movement →
 /// combat → fog → missions → events → AI → blockade → uprising → betrayal →
 /// death_star → research → jedi → victory), applies effects to `world`, and
 /// returns a `Vec<GameEventRecord>` describing everything that happened.

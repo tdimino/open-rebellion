@@ -174,7 +174,6 @@ impl EconomySystem {
             // Update per-system economy state.
             let eco = state.per_system.entry(sys_key).or_default();
             let old_rate = eco.collection_rate;
-            eco.collection_rate = new_rate;
             let old_garrison = eco.garrison_requirement;
             eco.collection_rate = new_rate;
             eco.garrison_requirement = new_garrison;
