@@ -57,6 +57,8 @@ pub const SYS_JEDI: &str = "jedi";
 pub const SYS_VICTORY: &str = "victory";
 pub const SYS_BETRAYAL: &str = "betrayal";
 pub const SYS_STORY: &str = "story";
+pub const SYS_ECONOMY: &str = "economy";
+pub const SYS_REPAIR: &str = "repair";
 
 // ---------------------------------------------------------------------------
 // Event type constants
@@ -89,6 +91,18 @@ pub const EVT_CAPTURE: &str = "character_captured";
 pub const EVT_FOG_REVEALED: &str = "fog_revealed";
 pub const EVT_CONTROL_CHANGED: &str = "control_changed";
 pub const EVT_CAMPAIGN_SNAPSHOT: &str = "campaign_snapshot";
+pub const EVT_ECONOMY_TICK: &str = "economy_tick";
+pub const EVT_SUPPORT_DRIFT: &str = "support_drift";
+pub const EVT_COLLECTION_RATE: &str = "collection_rate";
+pub const EVT_GARRISON_REQUIRED: &str = "garrison_required";
+pub const EVT_SHIP_REPAIRED: &str = "ship_repaired";
+pub const EVT_SHIP_REPAIR_STARTED: &str = "ship_repair_started";
+pub const EVT_DECOY_TRIGGERED: &str = "decoy_triggered";
+pub const EVT_DS_SHIELD_STATUS: &str = "death_star_shield_status";
+pub const EVT_CHARACTER_COMBAT_RATING: &str = "character_combat_rating";
+pub const EVT_STORY_JABBA: &str = "story_jabba";
+pub const EVT_STORY_FINAL_BATTLE: &str = "story_final_battle";
+pub const EVT_MAINTENANCE_SHORTFALL: &str = "maintenance_shortfall";
 
 #[cfg(test)]
 mod tests {
@@ -152,6 +166,21 @@ mod tests {
             EVT_ESCAPE,
             EVT_STORY,
             EVT_CAPTURE,
+            EVT_FOG_REVEALED,
+            EVT_CONTROL_CHANGED,
+            EVT_CAMPAIGN_SNAPSHOT,
+            EVT_ECONOMY_TICK,
+            EVT_SUPPORT_DRIFT,
+            EVT_COLLECTION_RATE,
+            EVT_GARRISON_REQUIRED,
+            EVT_SHIP_REPAIRED,
+            EVT_SHIP_REPAIR_STARTED,
+            EVT_DECOY_TRIGGERED,
+            EVT_DS_SHIELD_STATUS,
+            EVT_CHARACTER_COMBAT_RATING,
+            EVT_STORY_JABBA,
+            EVT_STORY_FINAL_BATTLE,
+            EVT_MAINTENANCE_SHORTFALL,
         ];
         let mut seen = std::collections::HashSet::new();
         for evt in &all {

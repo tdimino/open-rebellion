@@ -184,13 +184,18 @@ impl MissionKind {
     /// - Subdue:        sub_55af50 → `(enemy_pop - our_pop) + diplomacy_rating`
     /// - DS Sabotage:   sub_55b0a0 → `(espionage + combat) / 2`
     /// - Escape:        sub_55cfb0 → `((p3 + p2) - p4) - p5` (see check_escapes)
-    pub fn compute_table_input(self, character: &Character, system: Option<&crate::world::System>, faction: MissionFaction) -> i32 {
+    pub fn compute_table_input(
+        self,
+        character: &Character,
+        system: Option<&crate::world::System>,
+        faction: MissionFaction,
+        target_character: Option<&Character>,
+    ) -> i32 {
         let skill = self.skill_score(character) as i32;
 
         match self {
             // sub_55ae50: input = (enemy_popularity - our_popularity) + diplomacy_rating
-            // Harder to sway systems that already strongly favor the enemy.
-            MissionKind::Diplomacy | MissionKind::InciteUprising => {
+            MissionKind::Diplomacy => {
                 if let Some(sys) = system {
                     let (our_pop, enemy_pop) = match faction {
                         MissionFaction::Alliance => (sys.popularity_alliance, sys.popularity_empire),
@@ -203,8 +208,24 @@ impl MissionKind {
                 }
             }
 
-            // sub_55af50: input = (enemy_popularity - our_popularity) + diplomacy_rating
-            // Same formula as diplomacy.
+            // FIX #2: InciteUprising subtracts counter-intelligence espionage rating.
+            // Original: INCTMS_TABLE[(diplomacy - pop_support) - espionage_rating]
+            MissionKind::InciteUprising => {
+                if let Some(sys) = system {
+                    let (our_pop, enemy_pop) = match faction {
+                        MissionFaction::Alliance => (sys.popularity_alliance, sys.popularity_empire),
+                        MissionFaction::Empire => (sys.popularity_empire, sys.popularity_alliance),
+                    };
+                    let pop_delta = ((enemy_pop - our_pop) * 100.0) as i32;
+                    // Counter-intelligence: enemy popularity acts as espionage defense
+                    let counter_intel = (enemy_pop * 50.0) as i32;
+                    pop_delta + skill - counter_intel
+                } else {
+                    skill
+                }
+            }
+
+            // sub_55af50: same formula as diplomacy
             MissionKind::SubdueUprising => {
                 if let Some(sys) = system {
                     let (our_pop, enemy_pop) = match faction {
@@ -218,19 +239,21 @@ impl MissionKind {
                 }
             }
 
-            // sub_55aed0: input = param_1 - param_2
-            // param_1 = leadership skill, param_2 = resistance (approximated as 50 - our_popularity * 100)
+            // FIX #5: Recruitment uses target character's loyalty as resistance.
+            // Original: RCRTMS_TABLE[leadership - target_resistance]
             MissionKind::Recruitment => {
-                if let Some(sys) = system {
+                let resistance = if let Some(target) = target_character {
+                    (target.loyalty.base + target.loyalty.variance / 2) as i32
+                } else if let Some(sys) = system {
                     let our_pop = match faction {
                         MissionFaction::Alliance => sys.popularity_alliance,
                         MissionFaction::Empire => sys.popularity_empire,
                     };
-                    let resistance = (50.0 - our_pop * 100.0) as i32;
-                    skill - resistance.max(0)
+                    (50.0 - our_pop * 100.0).max(0.0) as i32
                 } else {
-                    skill
-                }
+                    0
+                };
+                skill - resistance
             }
 
             // sub_55b0a0: input = (espionage + combat) / 2
@@ -240,12 +263,34 @@ impl MissionKind {
                 (espionage + combat) / 2
             }
 
+            // FIX #1: Sabotage uses (espionage + combat) / 2, same as DS Sabotage.
+            // Original: SBTGMS_TABLE[(espionage + combat) / 2]
+            MissionKind::Sabotage => {
+                let espionage = (character.espionage.base + character.espionage.variance / 2) as i32;
+                let combat = (character.combat.base + character.combat.variance / 2) as i32;
+                (espionage + combat) / 2
+            }
+
+            // FIX #4: Assassination subtracts target defense (combat rating).
+            // Original: ASSNMS_TABLE[combat - target_defense]
+            MissionKind::Assassination => {
+                let target_defense = target_character
+                    .map(|t| (t.combat.base + t.combat.variance / 2) as i32)
+                    .unwrap_or(0);
+                skill - target_defense
+            }
+
+            // FIX #3: Abduction subtracts target defense (combat rating).
+            // Original: ABDCMS_TABLE[espionage - target_defense]
+            MissionKind::Abduction => {
+                let target_defense = target_character
+                    .map(|t| (t.combat.base + t.combat.variance / 2) as i32)
+                    .unwrap_or(0);
+                skill - target_defense
+            }
+
             // sub_55ae90: direct skill lookup (no composite)
-            MissionKind::Espionage
-            | MissionKind::Sabotage
-            | MissionKind::Assassination
-            | MissionKind::Rescue
-            | MissionKind::Abduction => skill,
+            MissionKind::Espionage | MissionKind::Rescue => skill,
 
             MissionKind::Autoscrap => 100,
         }
@@ -560,7 +605,7 @@ pub enum MissionEffect {
 // ---------------------------------------------------------------------------
 
 /// Whether a mission succeeded, failed, or was foiled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MissionOutcome {
     Success,
     Failure,
@@ -698,8 +743,11 @@ impl MissionSystem {
         let target_system = world.systems.get(mission.target_system);
 
         // Compute composite table input per original game formulas (TheArchitect2018 wiki).
+        let target_char = mission
+            .target_character
+            .and_then(|k| world.characters.get(k));
         let table_input = character
-            .map(|c| mission.kind.compute_table_input(c, target_system, mission.faction))
+            .map(|c| mission.kind.compute_table_input(c, target_system, mission.faction, target_char))
             .unwrap_or(0);
 
         let (outcome, effects) =
@@ -951,7 +999,7 @@ impl MissionSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{CharacterKey, SystemKey};
+    use crate::ids::{CharacterKey, SectorKey, SystemKey};
     use crate::world::{Character, ForceTier, GameWorld, SkillPair};
 
     // --- Probability formula tests ---
@@ -1877,5 +1925,152 @@ mod tests {
         );
         assert!(result.is_none(), "mandatory mission character should be blocked");
         assert!(state.is_empty());
+    }
+
+    // --- P0 formula correction tests ---
+
+    fn character_with_skills(
+        world: &mut GameWorld,
+        espionage: u32,
+        combat: u32,
+        diplomacy: u32,
+        leadership: u32,
+        loyalty: u32,
+    ) -> CharacterKey {
+        world.characters.insert(Character {
+            dat_id: crate::ids::DatId(0),
+            name: "Agent".into(),
+            is_alliance: true,
+            is_empire: false,
+            is_major: false,
+            diplomacy: skill_pair(diplomacy),
+            espionage: skill_pair(espionage),
+            ship_design: skill_pair(0),
+            troop_training: skill_pair(0),
+            facility_design: skill_pair(0),
+            combat: skill_pair(combat),
+            leadership: skill_pair(leadership),
+            loyalty: skill_pair(loyalty),
+            jedi_probability: 0,
+            jedi_level: skill_pair(0),
+            can_be_admiral: false,
+            can_be_commander: true,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
+            current_system: None,
+            current_fleet: None,
+        })
+    }
+
+    #[test]
+    fn sabotage_uses_composite_espionage_and_combat() {
+        let mut world = GameWorld::default();
+        let key = character_with_skills(&mut world, 60, 40, 0, 0, 0);
+        let character = world.characters.get(key).unwrap();
+        let input = MissionKind::Sabotage.compute_table_input(
+            character, None, MissionFaction::Alliance, None,
+        );
+        // (60 + 40) / 2 = 50
+        assert_eq!(input, 50, "sabotage should use (espionage + combat) / 2");
+    }
+
+    #[test]
+    fn incite_uprising_subtracts_counter_intelligence() {
+        let mut world = GameWorld::default();
+        let key = character_with_skills(&mut world, 0, 0, 80, 0, 0);
+        let character = world.characters.get(key).unwrap();
+
+        // Build a minimal system with popularity values for testing
+        let mut sys = crate::world::System {
+            dat_id: crate::ids::DatId(0),
+            name: "Test".into(),
+            sector: SectorKey::default(),
+            x: 0,
+            y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.3,
+            popularity_empire: 0.6,
+            is_populated: false,
+            total_energy: 0,
+            raw_materials: 0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: crate::world::ControlKind::Uncontrolled,
+        };
+
+        // Without counter-intel (diplomacy formula): pop_delta + skill
+        let diplomacy_input = MissionKind::Diplomacy.compute_table_input(
+            character, Some(&sys), MissionFaction::Alliance, None,
+        );
+        // With counter-intel (incite formula): pop_delta + skill - counter_intel
+        let incite_input = MissionKind::InciteUprising.compute_table_input(
+            character, Some(&sys), MissionFaction::Alliance, None,
+        );
+        assert!(
+            incite_input < diplomacy_input,
+            "incite ({}) should be less than diplomacy ({}) due to counter-intelligence",
+            incite_input, diplomacy_input,
+        );
+    }
+
+    #[test]
+    fn abduction_subtracts_target_defense() {
+        let mut world = GameWorld::default();
+        let agent_key = character_with_skills(&mut world, 70, 0, 0, 0, 0);
+        let target_key = character_with_skills(&mut world, 0, 40, 0, 0, 0);
+        let agent = world.characters.get(agent_key).unwrap();
+        let target = world.characters.get(target_key).unwrap();
+        let input = MissionKind::Abduction.compute_table_input(
+            agent, None, MissionFaction::Alliance, Some(target),
+        );
+        // 70 - 40 = 30
+        assert_eq!(input, 30, "abduction should subtract target combat defense");
+    }
+
+    #[test]
+    fn assassination_subtracts_target_defense() {
+        let mut world = GameWorld::default();
+        let agent_key = character_with_skills(&mut world, 0, 80, 0, 0, 0);
+        let target_key = character_with_skills(&mut world, 0, 50, 0, 0, 0);
+        let agent = world.characters.get(agent_key).unwrap();
+        let target = world.characters.get(target_key).unwrap();
+        let input = MissionKind::Assassination.compute_table_input(
+            agent, None, MissionFaction::Alliance, Some(target),
+        );
+        // 80 - 50 = 30
+        assert_eq!(input, 30, "assassination should subtract target combat defense");
+    }
+
+    #[test]
+    fn recruitment_uses_target_character_loyalty() {
+        let mut world = GameWorld::default();
+        let agent_key = character_with_skills(&mut world, 0, 0, 0, 60, 0);
+        let target_key = character_with_skills(&mut world, 0, 0, 0, 0, 45);
+        let agent = world.characters.get(agent_key).unwrap();
+        let target = world.characters.get(target_key).unwrap();
+        let input = MissionKind::Recruitment.compute_table_input(
+            agent, None, MissionFaction::Alliance, Some(target),
+        );
+        // 60 - 45 = 15
+        assert_eq!(input, 15, "recruitment should use target loyalty as resistance");
     }
 }
