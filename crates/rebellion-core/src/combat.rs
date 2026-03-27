@@ -137,6 +137,9 @@ struct ShipSnap {
     /// Weapon recharge allocation nibble (bits 4-7 of C++ +0x64).
     weapon_nibble: u8,
     alive: bool,
+    /// True if this ship is a Death Star hull (entity family 0x34).
+    /// When the Death Star shield generator is active, hull damage is absorbed.
+    is_death_star: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +170,7 @@ impl CombatSystem {
         difficulty: u8,
         rng_rolls: &[f64],
         tick: u64,
+        death_star_shield_active: bool,
     ) -> SpaceCombatResult {
         let mut rng = rng_rolls.iter().copied();
 
@@ -216,8 +220,9 @@ impl CombatSystem {
 
             // Phase 5: Hull damage application (FUN_005443f0, 54 lines, vtable +0x1d0).
             // Overflow damage after shields is applied to hull_current, scaled by difficulty.
-            Self::phase_hull_damage(&mut atk_ships, difficulty_mod);
-            Self::phase_hull_damage(&mut def_ships, difficulty_mod);
+            // Death Star ships are immune while shield generator is active (entity 0x25).
+            Self::phase_hull_damage(&mut atk_ships, difficulty_mod, death_star_shield_active);
+            Self::phase_hull_damage(&mut def_ships, difficulty_mod, death_star_shield_active);
 
             // Phase 6: Fighter engagement (FUN_005444e0, 53 lines, vtable +0x1d4).
             // Family 0x71 exactly uses alt_shield_path (C++ +0x78 bit7).
@@ -258,9 +263,13 @@ impl CombatSystem {
     /// records. Combat operates on individual hulls, not class-count summaries.
     fn snapshot_fleet(world: &GameWorld, fleet: FleetKey) -> (Vec<ShipSnap>, Vec<u32>) {
         let f = &world.fleets[fleet];
+        let is_ds_fleet = f.has_death_star;
         let mut ships = Vec::new();
         for entry in &f.capital_ships {
             let class = &world.capital_ship_classes[entry.class];
+            // Death Star ships identified by family byte 0x34 on the class DatId,
+            // or by the fleet's has_death_star flag (simpler, already tracked).
+            let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
             let snap = ShipSnap {
                 hull_current: class.hull as i32,
                 hull_max:     class.hull as i32,
@@ -268,11 +277,10 @@ impl CombatSystem {
                 shield_max:     class.shield_strength as i32,
                 pending_damage: 0,
                 pending_ion_damage: 0,
-                // Initial shield nibble: clamped to 4-bit range (0-15).
                 shield_nibble: (class.shield_recharge_rate.min(15)) as u8,
-                // Weapon nibble starts at max allocation (0x0f = 15).
                 weapon_nibble: 0x0f,
                 alive: true,
+                is_death_star: is_ds_ship,
             };
             for _ in 0..entry.count {
                 ships.push(snap.clone());
@@ -411,9 +419,17 @@ impl CombatSystem {
     /// Applies remaining pending damage (after shield absorption) to hull.
     /// No-op guard: only fires when pending_damage > 0 (mirrors C++ check
     /// `new_hull != current_hull` from FUN_00501490).
-    fn phase_hull_damage(ships: &mut [ShipSnap], difficulty_mod: f64) {
+    fn phase_hull_damage(ships: &mut [ShipSnap], difficulty_mod: f64, ds_shield_active: bool) {
         for ship in ships.iter_mut() {
             if !ship.alive || ship.pending_damage == 0 { continue; }
+
+            // Death Star shield generator (entity 0x25) absorbs all hull damage
+            // while active. The shield must be destroyed before the DS takes damage.
+            if ship.is_death_star && ds_shield_active {
+                ship.pending_damage = 0;
+                ship.pending_ion_damage = 0;
+                continue;
+            }
 
             // Scale hull damage by difficulty modifier (FUN_0053e190).
             let scaled_damage = ((ship.pending_damage as f64 * difficulty_mod) as i32).max(1);
@@ -1172,7 +1188,7 @@ mod tests {
 
         // Provide ample RNG rolls.
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
         assert_eq!(result.winner, CombatSide::Attacker);
     }
 
@@ -1187,7 +1203,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, def_class, 1, false);
 
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
         // Damage events should exist since combat occurred.
         assert!(!result.ship_damage.is_empty() || result.winner != CombatSide::Draw);
     }
@@ -1203,7 +1219,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, class, 2, false);
 
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
         // Equal forces with median rolls → at minimum both sides survive (draw) or one wins.
         // Just verify it returns a valid CombatSide.
         assert!(matches!(result.winner,
@@ -1491,13 +1507,13 @@ mod tests {
 
         // Run at easy difficulty (0.5x damage).
         let rolls: Vec<f64> = vec![0.5; 200];
-        let easy_result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let easy_result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
         let easy_total_damage: i32 = easy_result.ship_damage.iter()
             .map(|e| e.hull_before - e.hull_after)
             .sum();
 
         // Run at hard difficulty (2.0x damage) with same rolls.
-        let hard_result = CombatSystem::resolve_space(&world, atk, def, sys, 3, &rolls, 1);
+        let hard_result = CombatSystem::resolve_space(&world, atk, def, sys, 3, &rolls, 1, false);
         let hard_total_damage: i32 = hard_result.ship_damage.iter()
             .map(|e| e.hull_before - e.hull_after)
             .sum();
@@ -1611,7 +1627,7 @@ mod tests {
         let def = make_fleet_with_fighters(&mut world, sys, ship_class, 2, fc_clumsy, 10, false);
 
         let rolls: Vec<f64> = vec![0.8; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Nimble side should lose fewer fighters.
         let atk_losses: u32 = result.fighter_losses.iter()
@@ -1643,7 +1659,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, def_class, 1, false);
 
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Defenders should have taken hull damage from fighters.
         let def_damage: Vec<&ShipDamageEvent> = result.ship_damage.iter()
@@ -1683,7 +1699,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, def_class, 1, false);
 
         let rolls: Vec<f64> = vec![0.5; 300];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // After recall, attacker should have at most 2 surviving fighters (carrier cap).
         let total_original: u32 = world.fleets[atk].fighters.iter().map(|e| e.count).sum();
@@ -1725,7 +1741,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, strong_class, 3, false);
 
         let rolls: Vec<f64> = vec![0.5; 300];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Attacker carrier should be destroyed — all surviving fighters lost during recall.
         let atk_ship_destroyed = result.ship_damage.iter()
@@ -1753,7 +1769,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, class, 2, false);
 
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
         assert!(result.fighter_losses.is_empty(),
             "no fighter losses expected when neither fleet has fighters");
     }
@@ -1772,7 +1788,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, ship_class, 2, false);
 
         let rolls: Vec<f64> = vec![0.5; 300];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Attacker should not lose fighters in dogfight (no enemy fighters).
         let atk_fighter_losses: u32 = result.fighter_losses.iter()
@@ -1829,9 +1845,10 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
+        is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
-        CombatSystem::phase_hull_damage(&mut ships, 1.0);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
         assert_eq!(ships[0].shield_current, 50);
         assert_eq!(ships[0].hull_current, 100);
         assert!(ships[0].alive);
@@ -1849,11 +1866,12 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
+        is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 0);
         assert!(ships[0].pending_damage > 0);
-        CombatSystem::phase_hull_damage(&mut ships, 1.0);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
         assert!(ships[0].hull_current < 100);
         assert!(ships[0].hull_current > 0);
     }
@@ -1870,6 +1888,7 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
+        is_death_star: false,
         }];
         let mut turbo_vec = vec![ShipSnap {
             hull_current: 200,
@@ -1881,6 +1900,7 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
+        is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ion_vec);
         CombatSystem::phase_shield_absorb(&mut turbo_vec);
@@ -1901,10 +1921,11 @@ mod tests {
             shield_nibble: 15,
             weapon_nibble: 15,
             alive: true,
+        is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 145);
-        CombatSystem::phase_hull_damage(&mut ships, 1.0);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
         assert_eq!(ships[0].hull_current, 100);
     }
 
@@ -1920,10 +1941,11 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
+        is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].pending_damage, 60);
-        CombatSystem::phase_hull_damage(&mut ships, 1.0);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
         assert_eq!(ships[0].hull_current, 40);
     }
 
@@ -1939,9 +1961,10 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
+        is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
-        CombatSystem::phase_hull_damage(&mut ships, 1.0);
+        CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
         assert!(ships[0].alive);
         assert_eq!(ships[0].hull_current, 50);
         assert_eq!(ships[0].shield_current, 100);
@@ -1958,7 +1981,7 @@ mod tests {
         let def = make_fleet(&mut world, sys, def_class, 1, false);
 
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1);
+        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         let atk_damage: i32 = result.ship_damage.iter()
             .filter(|d| d.fleet == atk)
@@ -1984,7 +2007,7 @@ mod tests {
         let target1 = make_fleet(&mut world, sys, target_class, 1, false);
 
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result_ion = CombatSystem::resolve_space(&world, ion_atk, target1, sys, 1, &rolls, 1);
+        let result_ion = CombatSystem::resolve_space(&world, ion_atk, target1, sys, 1, &rolls, 1, false);
 
         let mut world2 = empty_world();
         let sector2 = make_sector(&mut world2);
@@ -1994,7 +2017,7 @@ mod tests {
         let turbo_atk = make_fleet(&mut world2, sys2, turbo_atk_class, 1, true);
         let target2 = make_fleet(&mut world2, sys2, target_class2, 1, false);
 
-        let result_turbo = CombatSystem::resolve_space(&world2, turbo_atk, target2, sys2, 1, &rolls, 1);
+        let result_turbo = CombatSystem::resolve_space(&world2, turbo_atk, target2, sys2, 1, &rolls, 1, false);
 
         let ion_hull_damage: i32 = result_ion.ship_damage.iter()
             .filter(|d| d.fleet == target1)

@@ -608,6 +608,7 @@ async fn main() {
                     world.difficulty_index,
                     &combat_rolls,
                     current_tick,
+                    death_star_state.shield_generator_active,
                 );
 
                 // Apply ship damage: reduce counts proportional to destroyed hulls.
@@ -1555,6 +1556,7 @@ async fn main() {
                                 2,
                                 &combat_rolls,
                                 session.start_tick,
+                                death_star_state.shield_generator_active,
                             );
                             apply_space_combat_result(&space_result, &mut world);
 

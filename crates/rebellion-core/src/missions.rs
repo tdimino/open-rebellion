@@ -758,9 +758,25 @@ impl MissionSystem {
             .map(|c| mission.kind.compute_table_input(c, target_system, mission.faction, target_char))
             .unwrap_or(0);
 
-        // Decoy missions always "succeed" as distractions — they draw foil checks
-        // but produce no game effects. GNPRTB[3588] = 35% base penalty on decoy.
+        // Decoy missions draw enemy counter-intelligence but produce no game effects.
+        // From community disassembly FUN_005871d0 + FUN_0055cbe0:
+        // Success probability from FDECOYTB (fleet) or TDECOYTB (troop) tables,
+        // penalized by GNPRTB[3588] = 35% reduction.
         if mission.is_decoy {
+            let character_skill = character
+                .map(|c| mission.kind.skill_score(c) as i32)
+                .unwrap_or(0);
+            // Use FDECOYTB if available, otherwise fall back to 65% flat threshold.
+            let decoy_prob = if let Some(table) = world.mission_tables.get("FDECOYTB") {
+                let raw = table.lookup(character_skill) as f64;
+                // Apply GNPRTB[3588] = 35% penalty: reduce probability by 35%.
+                let penalty = world.gnprtb.value(3588, world.difficulty_index) as f64 / 100.0;
+                let penalized = raw * (1.0 - penalty.clamp(0.0, 1.0));
+                clamp_prob(penalized, 1.0, 100.0) / 100.0
+            } else {
+                0.65 // Fallback when table not loaded
+            };
+
             return MissionResult {
                 mission_id: mission.id,
                 tick,
@@ -768,8 +784,8 @@ impl MissionSystem {
                 faction: mission.faction,
                 character: mission.character,
                 target_system: mission.target_system,
-                outcome: if roll < 0.65 { MissionOutcome::Success } else { MissionOutcome::Foiled },
-                effects: Vec::new(), // Decoys produce no world effects
+                outcome: if roll < decoy_prob { MissionOutcome::Success } else { MissionOutcome::Foiled },
+                effects: Vec::new(),
             };
         }
 

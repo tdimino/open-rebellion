@@ -317,6 +317,7 @@ pub fn run_simulation_tick(
             world.difficulty_index,
             &combat_rolls,
             current_tick,
+            states.death_star.shield_generator_active,
         );
 
         // Apply ship damage
