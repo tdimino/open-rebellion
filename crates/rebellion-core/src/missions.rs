@@ -208,8 +208,11 @@ impl MissionKind {
                 }
             }
 
-            // FIX #2: InciteUprising subtracts counter-intelligence espionage rating.
+            // FIX #2: InciteUprising should subtract system espionage_rating.
             // Original: INCTMS_TABLE[(diplomacy - pop_support) - espionage_rating]
+            // TODO: subtract System::espionage_rating when the field is added.
+            // For now, counter_intel = 0 (matches pre-fix behavior, avoids
+            // fabricating a phantom penalty with no RE basis).
             MissionKind::InciteUprising => {
                 if let Some(sys) = system {
                     let (our_pop, enemy_pop) = match faction {
@@ -217,9 +220,8 @@ impl MissionKind {
                         MissionFaction::Empire => (sys.popularity_empire, sys.popularity_alliance),
                     };
                     let pop_delta = ((enemy_pop - our_pop) * 100.0) as i32;
-                    // Counter-intelligence: enemy popularity acts as espionage defense
-                    let counter_intel = (enemy_pop * 50.0) as i32;
-                    pop_delta + skill - counter_intel
+                    let _counter_intel = 0_i32; // placeholder for System::espionage_rating
+                    pop_delta + skill - _counter_intel
                 } else {
                     skill
                 }
@@ -1988,47 +1990,41 @@ mod tests {
     }
 
     #[test]
-    fn incite_uprising_subtracts_counter_intelligence() {
+    fn incite_uprising_matches_diplomacy_until_espionage_rating_added() {
+        // TODO: Once System::espionage_rating is added, this test should
+        // verify that incite_input < diplomacy_input. For now, counter_intel = 0
+        // means they are equal (no fabricated penalty).
         let mut world = GameWorld::default();
         let key = character_with_skills(&mut world, 0, 0, 80, 0, 0);
         let character = world.characters.get(key).unwrap();
 
-        // Build a minimal system with popularity values for testing
-        let mut sys = crate::world::System {
+        let sys = crate::world::System {
             dat_id: crate::ids::DatId(0),
             name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0,
-            y: 0,
+            x: 0, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.3,
             popularity_empire: 0.6,
             is_populated: false,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
+            total_energy: 0, raw_materials: 0,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
+            is_headquarters: false, is_destroyed: false,
             control: crate::world::ControlKind::Uncontrolled,
         };
 
-        // Without counter-intel (diplomacy formula): pop_delta + skill
         let diplomacy_input = MissionKind::Diplomacy.compute_table_input(
             character, Some(&sys), MissionFaction::Alliance, None,
         );
-        // With counter-intel (incite formula): pop_delta + skill - counter_intel
         let incite_input = MissionKind::InciteUprising.compute_table_input(
             character, Some(&sys), MissionFaction::Alliance, None,
         );
-        assert!(
-            incite_input < diplomacy_input,
-            "incite ({}) should be less than diplomacy ({}) due to counter-intelligence",
+        // With counter_intel = 0, they should be equal
+        assert_eq!(
             incite_input, diplomacy_input,
+            "incite should equal diplomacy while counter_intel is stubbed to 0"
         );
     }
 
