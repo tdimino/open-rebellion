@@ -218,6 +218,28 @@ pub fn run_simulation_tick(
                     }),
                 ));
             }
+            EconomyEvent::EnergyOvercapped { system, allocated, capacity } => {
+                events.push(GameEventRecord::new(
+                    current_tick, wall_ms, SYS_ECONOMY, EVT_ECONOMY_TICK,
+                    serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "energy_overcap": true,
+                        "allocated": allocated,
+                        "capacity": capacity,
+                    }),
+                ));
+            }
+            EconomyEvent::RawMaterialOvercapped { system, allocated, capacity } => {
+                events.push(GameEventRecord::new(
+                    current_tick, wall_ms, SYS_ECONOMY, EVT_ECONOMY_TICK,
+                    serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "raw_material_overcap": true,
+                        "allocated": allocated,
+                        "capacity": capacity,
+                    }),
+                ));
+            }
         }
     }
 

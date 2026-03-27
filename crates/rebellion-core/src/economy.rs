@@ -66,8 +66,18 @@ pub struct SystemEconomy {
     pub collection_rate: f32,
     /// Number of troops required to prevent uprising.
     pub garrison_requirement: u32,
-    /// Production speed modifier from fleet/KDY presence (-100 to +100).
+    /// Production speed modifier from fleet/KDY presence (0-100).
     pub production_modifier: i8,
+    /// Current energy output (sum of production facility outputs, capped at system capacity).
+    /// FUN_00509ed0: if energy_allocated > System.total_energy, cap it.
+    pub energy_allocated: u32,
+    /// Current raw material output (sum of mine outputs, capped at system capacity).
+    /// FUN_0050a220: if raw_material_allocated > System.raw_materials, cap it.
+    pub raw_material_allocated: u32,
+    /// True if facilities exceed energy capacity (facility pruning needed).
+    pub energy_overcapped: bool,
+    /// True if mines exceed raw material capacity (mine pruning needed).
+    pub raw_material_overcapped: bool,
 }
 
 impl Default for SystemEconomy {
@@ -76,6 +86,10 @@ impl Default for SystemEconomy {
             collection_rate: 1.0,
             garrison_requirement: 0,
             production_modifier: 0,
+            energy_allocated: 0,
+            raw_material_allocated: 0,
+            energy_overcapped: false,
+            raw_material_overcapped: false,
         }
     }
 }
@@ -108,6 +122,18 @@ pub enum EconomyEvent {
     GarrisonRequirementChanged {
         system: SystemKey,
         new_requirement: u32,
+    },
+    /// Energy allocated exceeds system capacity (FUN_00509ed0).
+    EnergyOvercapped {
+        system: SystemKey,
+        allocated: u32,
+        capacity: u32,
+    },
+    /// Raw material output exceeds system capacity (FUN_0050a220).
+    RawMaterialOvercapped {
+        system: SystemKey,
+        allocated: u32,
+        capacity: u32,
     },
 }
 
@@ -152,6 +178,33 @@ impl EconomySystem {
             // Count military presence at this system.
             let presence = count_military_presence(world, sys);
 
+            // 0a. Resource capacity enforcement (FUN_00509ed0 + FUN_00509ef0 + FUN_0050a220).
+            // Sum facility/mine outputs and cap at system limits.
+            let eco = state.per_system.entry(sys_key).or_default();
+            let (energy_alloc, raw_alloc) = calculate_resource_allocation(world, sys);
+            let energy_cap = sys.total_energy as u32;
+            let raw_cap = sys.raw_materials as u32;
+
+            eco.energy_allocated = energy_alloc.min(energy_cap);
+            eco.energy_overcapped = energy_alloc > energy_cap;
+            eco.raw_material_allocated = raw_alloc.min(raw_cap);
+            eco.raw_material_overcapped = raw_alloc > raw_cap;
+
+            if eco.energy_overcapped {
+                events.push(EconomyEvent::EnergyOvercapped {
+                    system: sys_key,
+                    allocated: energy_alloc,
+                    capacity: energy_cap,
+                });
+            }
+            if eco.raw_material_overcapped {
+                events.push(EconomyEvent::RawMaterialOvercapped {
+                    system: sys_key,
+                    allocated: raw_alloc,
+                    capacity: raw_cap,
+                });
+            }
+
             // 1. Calculate and apply popular support drift.
             let (alliance_delta, empire_delta) =
                 calculate_support_drift(sys, &presence, gnprtb, difficulty);
@@ -180,8 +233,7 @@ impl EconomySystem {
                 difficulty,
             );
 
-            // Update per-system economy state.
-            let eco = state.per_system.entry(sys_key).or_default();
+            // Update per-system economy state (eco already bound above in step 0a).
             let old_rate = eco.collection_rate;
             let old_garrison = eco.garrison_requirement;
             eco.collection_rate = new_rate;
@@ -382,6 +434,35 @@ fn calculate_support_drift(
 /// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`
 /// Higher support = lower collection rate (less taxation needed).
 /// Range: [1.0, 100.0]. At full support (1.0) rate = 1.0; at zero support rate = 100.0.
+// ---------------------------------------------------------------------------
+// Resource capacity (FUN_00509ed0 + FUN_00509ef0 + FUN_0050a220)
+// ---------------------------------------------------------------------------
+
+/// Calculate total energy and raw material allocation from facilities and mines.
+///
+/// Returns (energy_allocated, raw_material_allocated).
+/// The original sums facility outputs (virtual method at +0x1c8) and mine outputs,
+/// then caps at system limits. If overcapped, the original randomly prunes facilities/mines.
+/// We report overcap via events and let the caller decide on pruning.
+fn calculate_resource_allocation(
+    world: &GameWorld,
+    sys: &crate::world::System,
+) -> (u32, u32) {
+    // Sum production facility outputs (energy generators).
+    // Each production facility contributes 1 unit of energy output.
+    let energy_output = sys.production_facilities.len() as u32;
+
+    // Sum mine outputs (raw material generators).
+    // In the original, mines have a per-mine virtual output method.
+    // We count manufacturing facilities that are mines (by class type).
+    // For now, use a simple count — each mine contributes 1 raw material unit.
+    // TODO: distinguish mine facilities from non-mine manufacturing facilities
+    // once ManufacturingFacilityInstance has class-type information.
+    let raw_material_output = sys.manufacturing_facilities.len() as u32;
+
+    (energy_output, raw_material_output)
+}
+
 fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8) -> f32 {
     let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1) as f32;
     let support_pct = (support * 100.0).max(1.0);
@@ -686,5 +767,145 @@ mod tests {
         let events = EconomySystem::advance(&mut state, &world, &tick_events, 2);
         // Should produce at least garrison requirement events.
         assert!(!events.is_empty(), "should produce economy events");
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3b: Resource capacity enforcement tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn energy_overcap_emits_event() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with total_energy=2 but 5 production facilities
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Overcap".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 2, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x18000001), is_alliance: true,
+                }),
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x18000002), is_alliance: true,
+                }),
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x18000003), is_alliance: true,
+                }),
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x18000004), is_alliance: true,
+                }),
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x18000005), is_alliance: true,
+                }),
+            ],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+
+        // Should emit EnergyOvercapped (5 facilities > 2 capacity)
+        assert!(
+            events.iter().any(|e| matches!(e, EconomyEvent::EnergyOvercapped { .. })),
+            "Expected EnergyOvercapped event"
+        );
+
+        // energy_allocated should be capped at capacity
+        let eco = state.per_system.get(&sys_key).unwrap();
+        assert_eq!(eco.energy_allocated, 2, "energy should be capped at system capacity");
+        assert!(eco.energy_overcapped, "should flag overcap");
+    }
+
+    #[test]
+    fn no_overcap_when_within_limits() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with total_energy=10 and only 3 production facilities
+        world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Normal".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x18000001), is_alliance: true,
+                }),
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x18000002), is_alliance: true,
+                }),
+            ],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+
+        // Should NOT emit overcap events
+        assert!(
+            !events.iter().any(|e| matches!(e, EconomyEvent::EnergyOvercapped { .. })),
+            "Should not overcap with 2 facilities and capacity 10"
+        );
+    }
+
+    #[test]
+    fn raw_material_overcap_emits_event() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with raw_materials=1 but 3 manufacturing facilities
+        world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "MineCap".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 10, raw_materials: 1,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![
+                world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(0x16000001), is_alliance: true,
+                }),
+                world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(0x16000002), is_alliance: true,
+                }),
+                world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(0x16000003), is_alliance: true,
+                }),
+            ],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+
+        assert!(
+            events.iter().any(|e| matches!(e, EconomyEvent::RawMaterialOvercapped { .. })),
+            "Expected RawMaterialOvercapped event"
+        );
     }
 }
