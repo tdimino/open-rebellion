@@ -414,10 +414,10 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     EventCondition::EventFired {
                         id: EVT_BOUNTY_ATTACK,
                     },
-                    EventCondition::TickAtLeast { tick: 140 },
+                    EventCondition::TickAtLeast { tick: 135 },
                     EventCondition::EventNotFired { id: 0x383 }, // not already rescued
                     EventCondition::EventNotFired { id: 0x399 }, // not already captured
-                    EventCondition::Random { probability: 0.08 },
+                    EventCondition::Random { probability: 0.10 },
                 ],
                 actions: vec![
                     EventAction::SetCarboniteState {
@@ -438,6 +438,8 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             });
 
             // Case 3: Luke captured at palace (0x399) — if rescue hasn't happened
+            // Random gate (0.20) makes this non-deterministic so other outcomes
+            // (Leia captured at 108, Chewie captured at 110) can preempt it.
             state.define(GameEvent {
                 id: 0x399,
                 name: "Luke Captured at Palace".into(),
@@ -447,6 +449,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     EventCondition::EventNotFired { id: 0x383 }, // Han not rescued yet
                     EventCondition::EventNotFired { id: 0x39A }, // rescue not completed
                     EventCondition::EventNotFired { id: 0x384 }, // don't capture after self-escape
+                    EventCondition::Random { probability: 0.20 },
                 ],
                 actions: vec![
                     EventAction::CaptureCharacter {
@@ -623,16 +626,16 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             }
 
             // Case 4: Jabba captures Leia during rescue attempt (0x385)
-            // Random outcome — rescue attempt goes wrong
+            // Tick 108 — earlier than Luke capture (115) so this outcome can preempt it
             state.define(GameEvent {
                 id: 0x385,
                 name: "Leia Captured by Jabba".into(),
                 conditions: vec![
                     EventCondition::EventFired { id: 0x381 }, // Leia planned rescue
-                    EventCondition::TickAtLeast { tick: 120 },
+                    EventCondition::TickAtLeast { tick: 108 },
                     EventCondition::EventNotFired { id: 0x383 }, // rescue hasn't succeeded
                     EventCondition::EventNotFired { id: 0x384 }, // Han hasn't self-escaped
-                    EventCondition::Random { probability: 0.12 },
+                    EventCondition::Random { probability: 0.15 },
                 ],
                 actions: vec![
                     EventAction::CaptureCharacter {
@@ -655,11 +658,11 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     name: "Chewbacca Captured by Jabba".into(),
                     conditions: vec![
                         EventCondition::EventFired { id: 0x382 }, // Chewie joined rescue
-                        EventCondition::TickAtLeast { tick: 125 },
+                        EventCondition::TickAtLeast { tick: 110 },
                         EventCondition::EventNotFired { id: 0x383 }, // rescue hasn't succeeded
                         EventCondition::EventNotFired { id: 0x384 }, // Han hasn't self-escaped
                         EventCondition::EventNotFired { id: 0x385 }, // Leia not already captured
-                        EventCondition::Random { probability: 0.10 },
+                        EventCondition::Random { probability: 0.12 },
                     ],
                     actions: vec![
                         EventAction::CaptureCharacter {
@@ -683,14 +686,20 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
     // These fire based on game state conditions, not specific characters.
     // -----------------------------------------------------------------------
 
-    // 0x100: Support change notification — repeating, fires when any system
-    // has extreme support imbalance (popular uprising risk)
+    // -----------------------------------------------------------------------
+    // Notification event probabilities tuned to ~1 fire per 100 ticks on
+    // average. All are DisplayMessage-only stubs — mechanical effects
+    // (ShiftPopularity, resource changes) require per-system targeting which
+    // will be wired in the Phase 4 PerceptionIntegrator refactor.
+    // -----------------------------------------------------------------------
+
+    // 0x100: Support change notification — ~1 per 67 ticks
     state.define(GameEvent {
         id: EVT_SUPPORT_CHANGE,
         name: "Popular Support Shift".into(),
         conditions: vec![
             EventCondition::TickAtLeast { tick: 20 },
-            EventCondition::Random { probability: 0.03 },
+            EventCondition::Random { probability: 0.015 },
         ],
         actions: vec![EventAction::DisplayMessage {
             text: "Popular support is shifting across the galaxy...".into(),
@@ -699,13 +708,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         enabled: true,
     });
 
-    // 0x153: Informant intelligence — random intel from embedded operatives
+    // 0x153: Informant intelligence — ~1 per 50 ticks
     state.define(GameEvent {
         id: EVT_INFORMANT_INTEL,
         name: "Informant Intelligence".into(),
         conditions: vec![
             EventCondition::TickAtLeast { tick: 40 },
-            EventCondition::Random { probability: 0.05 },
+            EventCondition::Random { probability: 0.02 },
         ],
         actions: vec![EventAction::DisplayMessage {
             text: "Informants report intelligence on enemy activities.".into(),
@@ -714,13 +723,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         enabled: true,
     });
 
-    // 0x154: Resource discovery — random resource find at a system
+    // 0x154: Resource discovery — ~1 per 100 ticks
     state.define(GameEvent {
         id: EVT_RESOURCE_DISCOVERY,
         name: "Resource Discovery".into(),
         conditions: vec![
             EventCondition::TickAtLeast { tick: 30 },
-            EventCondition::Random { probability: 0.02 },
+            EventCondition::Random { probability: 0.01 },
         ],
         actions: vec![EventAction::DisplayMessage {
             text: "New resource deposits have been discovered!".into(),
@@ -729,13 +738,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         enabled: true,
     });
 
-    // 0x155: Natural disaster — random disaster hits a system
+    // 0x155: Natural disaster — ~1 per 200 ticks (rare)
     state.define(GameEvent {
         id: EVT_NATURAL_DISASTER,
         name: "Natural Disaster".into(),
         conditions: vec![
             EventCondition::TickAtLeast { tick: 50 },
-            EventCondition::Random { probability: 0.01 },
+            EventCondition::Random { probability: 0.005 },
         ],
         actions: vec![EventAction::DisplayMessage {
             text: "A natural disaster has struck a system!".into(),
@@ -744,13 +753,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         enabled: true,
     });
 
-    // 0x304: Maintenance shortfall — fires when budget is insufficient
+    // 0x304: Maintenance shortfall — ~1 per 67 ticks
     state.define(GameEvent {
         id: EVT_MAINTENANCE_SHORTFALL_EVENT,
         name: "Maintenance Budget Shortfall".into(),
         conditions: vec![
             EventCondition::TickAtLeast { tick: 60 },
-            EventCondition::Random { probability: 0.04 },
+            EventCondition::Random { probability: 0.015 },
         ],
         actions: vec![EventAction::DisplayMessage {
             text: "Maintenance budgets are falling short — units may suffer attrition.".into(),
@@ -759,13 +768,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         enabled: true,
     });
 
-    // 0x305: Saboteur detected — counter-intelligence finds enemy operative
+    // 0x305: Saboteur detected — ~1 per 100 ticks
     state.define(GameEvent {
         id: EVT_SABOTEUR_DETECTED,
         name: "Saboteur Detected".into(),
         conditions: vec![
             EventCondition::TickAtLeast { tick: 35 },
-            EventCondition::Random { probability: 0.03 },
+            EventCondition::Random { probability: 0.01 },
         ],
         actions: vec![EventAction::DisplayMessage {
             text: "Counter-intelligence has detected an enemy saboteur!".into(),
@@ -774,13 +783,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         enabled: true,
     });
 
-    // 0x361: Traitor revealed — loyalty breach notification
+    // 0x361: Traitor revealed — ~1 per 100 ticks
     state.define(GameEvent {
         id: EVT_TRAITOR_REVEALED,
         name: "Traitor Revealed".into(),
         conditions: vec![
             EventCondition::TickAtLeast { tick: 100 },
-            EventCondition::Random { probability: 0.02 },
+            EventCondition::Random { probability: 0.01 },
         ],
         actions: vec![EventAction::DisplayMessage {
             text: "A traitor has been revealed within the ranks!".into(),
@@ -789,7 +798,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         enabled: true,
     });
 
-    // 0x231: Jabba's prisoners — Jabba takes new prisoners
+    // 0x231: Jabba's prisoners — ~1 per 50 ticks after bounty attack
     if han.is_some() {
         state.define(GameEvent {
             id: EVT_JABBA_PRISONERS,
@@ -799,7 +808,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     id: EVT_BOUNTY_ATTACK,
                 },
                 EventCondition::TickAtLeast { tick: 130 },
-                EventCondition::Random { probability: 0.06 },
+                EventCondition::Random { probability: 0.02 },
             ],
             actions: vec![EventAction::DisplayMessage {
                 text: "Jabba the Hutt expands his collection of prisoners...".into(),
@@ -1395,11 +1404,11 @@ mod tests {
         EventSystem::advance(&mut state, &world, &tick(80), &[]);
         EventSystem::advance(&mut state, &world, &tick(100), &[0.05]); // bounty attack fires
 
-        // Self-escape (0x384) needs tick >= 140, no rescue, no capture, random < 0.08
-        let fired = EventSystem::advance(&mut state, &world, &tick(140), &[0.01, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+        // Self-escape (0x384) needs tick >= 135, no rescue, no capture, random < 0.10
+        let fired = EventSystem::advance(&mut state, &world, &tick(135), &[0.01, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
         assert!(
             fired.iter().any(|f| f.event_id == 0x384),
-            "Han self-escape should fire at tick 140 with low roll. Events: {:?}",
+            "Han self-escape should fire at tick 135 with low roll. Events: {:?}",
             fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
         );
     }
@@ -1451,18 +1460,25 @@ mod tests {
         define_story_events(&mut state, &world);
 
         // Notification events are repeatable with Random conditions
-        // Support change: tick >= 20, random < 0.03
-        let fired = EventSystem::advance(&mut state, &world, &tick(20), &[0.01]);
+        // Support change: tick >= 20, random < 0.015
+        let fired = EventSystem::advance(&mut state, &world, &tick(20), &[0.001]);
         assert!(
             fired.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
-            "Support change notification should fire at tick 20 with roll 0.01"
+            "Support change notification should fire at tick 20 with roll 0.001"
         );
 
         // Should fire again (repeatable)
-        let fired2 = EventSystem::advance(&mut state, &world, &tick(21), &[0.01]);
+        let fired2 = EventSystem::advance(&mut state, &world, &tick(21), &[0.001]);
         assert!(
             fired2.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
             "Support change should fire again (repeatable)"
+        );
+
+        // High roll should NOT fire (probability 0.015)
+        let fired3 = EventSystem::advance(&mut state, &world, &tick(22), &[0.5]);
+        assert!(
+            !fired3.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
+            "Support change should NOT fire with high roll (0.5 > 0.015)"
         );
     }
 
