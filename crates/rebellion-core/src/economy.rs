@@ -46,6 +46,15 @@ const GNPRTB_GARRISON_THRESHOLD: u16 = 7761;
 const GNPRTB_GARRISON_DIVISOR: u16 = 7762;
 const GNPRTB_COLLECTION_RATE_BASE: u16 = 7763;
 
+// Phase 3b: new constants from source tree cross-reference
+const GNPRTB_EMPIRE_TROOP_MULT: u16 = 7680;    // =2: Empire troop doubling + garrison halving divisor
+const GNPRTB_UPRISING_GARRISON_MULT: u16 = 7682; // =2: garrison doubles during uprising
+const GNPRTB_KDY_CAPSHIP_PENALTY: u16 = 7684;   // =5: KDY production penalty per capital ship
+const GNPRTB_KDY_FIGHTER_PENALTY: u16 = 7685;   // =2: KDY production penalty per fighter
+const GNPRTB_ENERGY_CONTROL_THRESHOLD: u16 = 7760; // =60: energy needed for control eligibility
+const GNPRTB_MAINTENANCE_RATE_CONTROLLED: u16 = 7694; // =30: ticks between maintenance checks (controlled)
+const GNPRTB_MAINTENANCE_RATE_NEUTRAL: u16 = 7696;   // =30: ticks between maintenance checks (neutral)
+
 // ---------------------------------------------------------------------------
 // Economy state
 // ---------------------------------------------------------------------------
@@ -337,8 +346,7 @@ fn calculate_support_drift(
     // When side==Empire (side==2), troop count is multiplied by GNPRTB[7680] (=2).
     // This doubles troop suppression effectiveness for the Empire.
     let adjusted_troops = if is_empire_controlled {
-        // GNPRTB[7680] defaults to 2 — Empire troops suppress twice as effectively
-        let empire_mult = gnprtb.value(7680, difficulty).max(1) as i32;
+        let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1) as i32;
         friendly_troops as i32 * empire_mult
     } else {
         friendly_troops as i32
@@ -411,7 +419,7 @@ fn calculate_garrison_requirement(
     // Original: if Empire + param_3: garrison /= GNPRTB[7680]
     let after_faction = match control {
         ControlKind::Controlled(crate::dat::Faction::Empire) => {
-            let empire_divisor = gnprtb.value(7680, difficulty).max(1) as i32; // default 2
+            let empire_divisor = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1) as i32;
             raw / empire_divisor
         }
         _ => raw,
@@ -422,7 +430,7 @@ fn calculate_garrison_requirement(
     // Our ControlKind::Uprising(faction) maps directly to this bit.
     let after_uprising = match control {
         ControlKind::Uprising(_) => {
-            let uprising_mult = gnprtb.value(7682, difficulty).max(1) as i32; // default 2
+            let uprising_mult = gnprtb.value(GNPRTB_UPRISING_GARRISON_MULT, difficulty).max(1) as i32;
             after_faction * uprising_mult
         }
         _ => after_faction,
@@ -456,9 +464,18 @@ mod tests {
             GnprtbEntry { parameter_id: 7761, development: 60, alliance_sp_easy: 60, alliance_sp_medium: 60, alliance_sp_hard: 60, empire_sp_easy: 60, empire_sp_medium: 60, empire_sp_hard: 60, multiplayer: 60 },
             GnprtbEntry { parameter_id: 7762, development: -10, alliance_sp_easy: -10, alliance_sp_medium: -10, alliance_sp_hard: -10, empire_sp_easy: -10, empire_sp_medium: -10, empire_sp_hard: -10, multiplayer: -10 },
             GnprtbEntry { parameter_id: 7763, development: 100, alliance_sp_easy: 100, alliance_sp_medium: 100, alliance_sp_hard: 100, empire_sp_easy: 100, empire_sp_medium: 100, empire_sp_hard: 100, multiplayer: 100 },
-            // Phase 3b additions: Empire troop doubling + garrison modifiers
-            GnprtbEntry { parameter_id: 7680, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },
-            GnprtbEntry { parameter_id: 7682, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },
+            // Phase 3b additions: all economy tick GNPRTB indices (values from GNPRTB.DAT)
+            GnprtbEntry { parameter_id: 7680, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },   // Empire troop doubling + garrison halving
+            GnprtbEntry { parameter_id: 7682, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },   // Uprising garrison doubler
+            GnprtbEntry { parameter_id: 7684, development: 5, alliance_sp_easy: 5, alliance_sp_medium: 5, alliance_sp_hard: 5, empire_sp_easy: 5, empire_sp_medium: 5, empire_sp_hard: 5, multiplayer: 5 },   // KDY capship penalty per unit
+            GnprtbEntry { parameter_id: 7685, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },   // KDY fighter penalty per unit
+            GnprtbEntry { parameter_id: 7691, development: 0, alliance_sp_easy: 0, alliance_sp_medium: 0, alliance_sp_hard: 0, empire_sp_easy: 0, empire_sp_medium: 0, empire_sp_hard: 0, multiplayer: 0 },   // Support delta Empire-controlled transition
+            GnprtbEntry { parameter_id: 7693, development: 1, alliance_sp_easy: 1, alliance_sp_medium: 1, alliance_sp_hard: 1, empire_sp_easy: 1, empire_sp_medium: 1, empire_sp_hard: 1, multiplayer: 1 },   // Support delta favors controller
+            GnprtbEntry { parameter_id: 7694, development: 30, alliance_sp_easy: 30, alliance_sp_medium: 30, alliance_sp_hard: 30, empire_sp_easy: 30, empire_sp_medium: 30, empire_sp_hard: 30, multiplayer: 30 },  // Maintenance check rate (controlled)
+            GnprtbEntry { parameter_id: 7695, development: -1, alliance_sp_easy: -1, alliance_sp_medium: -1, alliance_sp_hard: -1, empire_sp_easy: -1, empire_sp_medium: -1, empire_sp_hard: -1, multiplayer: -1 },  // Support delta opposes controller
+            GnprtbEntry { parameter_id: 7696, development: 30, alliance_sp_easy: 30, alliance_sp_medium: 30, alliance_sp_hard: 30, empire_sp_easy: 30, empire_sp_medium: 30, empire_sp_hard: 30, multiplayer: 30 },  // Maintenance check rate (neutral)
+            GnprtbEntry { parameter_id: 7697, development: -1, alliance_sp_easy: -1, alliance_sp_medium: -1, alliance_sp_hard: -1, empire_sp_easy: -1, empire_sp_medium: -1, empire_sp_hard: -1, multiplayer: -1 },  // Support delta controlled systems
+            GnprtbEntry { parameter_id: 7760, development: 60, alliance_sp_easy: 60, alliance_sp_medium: 60, alliance_sp_hard: 60, empire_sp_easy: 60, empire_sp_medium: 60, empire_sp_hard: 60, multiplayer: 60 },  // Energy-based control threshold
         ];
         GnprtbParams::new(entries)
     }
