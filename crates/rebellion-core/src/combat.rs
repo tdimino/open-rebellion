@@ -2089,6 +2089,13 @@ mod tests {
             .map(|d| d.hull_before - d.hull_after)
             .sum();
         assert_eq!(ds_damage, 0, "DS shield should block all hull damage");
+
+        // Verify combat actually occurred — attacker should have taken damage from DS turbolasers
+        let atk_damage: i32 = result.ship_damage.iter()
+            .filter(|d| d.fleet == atk)
+            .map(|d| d.hull_before - d.hull_after)
+            .sum();
+        assert!(atk_damage > 0, "Attacker should take damage, confirming combat occurred");
     }
 
     #[test]
@@ -2300,8 +2307,8 @@ mod tests {
             .map(|d| d.strength_before - d.strength_after)
             .sum();
 
-        assert!(with_officer_damage >= no_officer_damage,
-            "Officer should increase damage: with={}, without={}",
+        assert!(with_officer_damage > no_officer_damage,
+            "Officer (combat=80, 1.4x multiplier) should strictly increase damage: with={}, without={}",
             with_officer_damage, no_officer_damage);
     }
 

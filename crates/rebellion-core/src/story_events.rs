@@ -444,7 +444,8 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 conditions: vec![
                     EventCondition::EventFired { id: 0x380 },
                     EventCondition::TickAtLeast { tick: 115 },
-                    EventCondition::EventNotFired { id: 0x39A }, // don't capture after rescue
+                    EventCondition::EventNotFired { id: 0x383 }, // Han not rescued yet
+                    EventCondition::EventNotFired { id: 0x39A }, // rescue not completed
                     EventCondition::EventNotFired { id: 0x384 }, // don't capture after self-escape
                 ],
                 actions: vec![
@@ -574,6 +575,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             }
 
             // Event 0x383: Han rescued (requires both Luke and Leia events)
+            // Guards: rescue can't succeed if Luke/Leia/Chewie already captured
             if luke.is_some() {
                 state.define(GameEvent {
                     id: 0x383,
@@ -581,6 +583,9 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     conditions: vec![
                         EventCondition::EventFired { id: 0x380 },
                         EventCondition::EventFired { id: 0x381 },
+                        EventCondition::EventNotFired { id: 0x399 }, // Luke not captured
+                        EventCondition::EventNotFired { id: 0x385 }, // Leia not captured
+                        EventCondition::EventNotFired { id: EVT_JABBA_CAPTURES_CHEWIE }, // Chewie not captured
                     ],
                     actions: vec![
                         EventAction::SetMandatoryMission {
@@ -646,7 +651,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             // Case 5: Jabba captures Chewbacca during rescue attempt (0x386)
             if let Some(chewbacca) = chewbacca {
                 state.define(GameEvent {
-                    id: EVT_SIDE_CHANGE, // 0x386 — reused RE ID
+                    id: EVT_JABBA_CAPTURES_CHEWIE,
                     name: "Chewbacca Captured by Jabba".into(),
                     conditions: vec![
                         EventCondition::EventFired { id: 0x382 }, // Chewie joined rescue
@@ -1476,22 +1481,25 @@ mod tests {
     }
 
     #[test]
-    fn emperor_palpatine_added_to_world() {
+    fn emperor_palpatine_adds_emperor_specific_events() {
         let mut world = make_world_with_characters();
-        // Add Emperor Palpatine
         world.characters.insert(make_character("Emperor Palpatine", ForceTier::Experienced, false));
 
         let mut state = EventState::new();
         define_story_events(&mut state, &world);
 
-        // With Emperor present, the Final Battle event should have CharactersCoLocated
-        // The event count should be higher than without Emperor
-        let event_count = state.events().len();
+        // Verify Emperor Arrival event (0x230) is registered
         assert!(
-            event_count > 10,
-            "Expected many events with Emperor present, got {}",
-            event_count
+            state.events().iter().any(|e| e.id == EVT_EMPEROR_ARRIVAL),
+            "EVT_EMPEROR_ARRIVAL should be registered when Emperor exists"
         );
+
+        // Verify Final Battle event (0x220) has CharactersCoLocated condition
+        let final_battle = state.events().iter().find(|e| e.id == EVT_FINAL_BATTLE);
+        assert!(final_battle.is_some(), "Final Battle should be registered");
+        let fb = final_battle.unwrap();
+        let has_co_loc = fb.conditions.iter().any(|c| matches!(c, EventCondition::CharactersCoLocated { .. }));
+        assert!(has_co_loc, "Final Battle should have CharactersCoLocated when Emperor present");
     }
 
     #[test]
