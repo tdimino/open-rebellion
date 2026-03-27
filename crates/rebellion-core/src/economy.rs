@@ -109,8 +109,8 @@ pub enum EconomyEvent {
 pub struct EconomySystem;
 
 impl EconomySystem {
-    /// Run the per-system economy tick. Pure function: reads GameWorld, mutates
-    /// EconomyState, returns events for the integrator.
+    /// Run the per-system economy tick. Mutates EconomyState in-place,
+    /// returns events for the integrator.
     ///
     /// Runs BEFORE manufacturing in the tick order (economy affects production).
     pub fn advance(
@@ -325,8 +325,10 @@ fn calculate_support_drift(
     };
 
     // Military presence reduces drift (troops/fighters suppress dissent).
+    // Original: drift = clamp(base - fighters*5 - troops*2 - fleet*10, 0, 100)
+    // GNPRTB values are the per-unit multipliers directly.
     let suppression = (friendly_fighters as f32 * fighter_influence
-        + friendly_troops as f32 * troop_influence * 2.0
+        + friendly_troops as f32 * troop_influence
         + friendly_fleets as f32 * fleet_influence)
         / 100.0;
 
@@ -351,10 +353,11 @@ fn calculate_support_drift(
 ///
 /// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`
 /// Higher support = lower collection rate (less taxation needed).
+/// Range: [1.0, 100.0]. At full support (1.0) rate = 1.0; at zero support rate = 100.0.
 fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8) -> f32 {
     let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1) as f32;
     let support_pct = (support * 100.0).max(1.0);
-    base / support_pct
+    (base / support_pct).clamp(1.0, 100.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +382,10 @@ fn calculate_garrison_requirement(
 
     let raw = (threshold - support) / divisor;
 
-    // Empire core systems need half the garrison (GNPRTB 7680 = 2).
+    // AUGMENTED: Empire core systems need half the garrison.
+    // No specific GNPRTB parameter identified for this modifier;
+    // halving is a balance decision based on the original's faction-asymmetric
+    // garrison logic (FUN_00558760).
     let modifier = match control {
         ControlKind::Controlled(crate::dat::Faction::Empire) => 0.5,
         _ => 1.0,
