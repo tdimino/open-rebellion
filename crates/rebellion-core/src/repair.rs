@@ -91,16 +91,16 @@ impl RepairSystem {
                     // implementation provides the system framework and telemetry
                     // infrastructure — actual hull restoration will be wired when
                     // ShipInstance is promoted to fleet-level storage.
-                    if class.damage_control > 0 && class.hull > 0 {
-                        // Emit a repair-capability event (system has repair capacity).
-                        // Actual hull restoration deferred until ShipInstance tracking.
-                        events.push(RepairEvent::ShipRepaired {
-                            fleet: fleet_key,
-                            ship_index: ship_idx,
-                            hull_before: class.hull as i32,
-                            hull_after: class.hull as i32, // no change yet
-                        });
-                    }
+                    // Only emit repair events when actual hull restoration occurs.
+                    // Per-hull tracking requires ShipInstance promotion to fleet-level
+                    // storage. Until then, the repair system is a framework that
+                    // validates preconditions (shipyard present, class has damage_control)
+                    // but does not emit events for undamaged ships.
+                    //
+                    // TODO: when ShipInstance is promoted, check hull_current < class.hull
+                    // and emit ShipRepaired with actual delta.
+                    // TODO: filter to shipyard class only once facility type is promoted
+                    let _ = (class.damage_control, ship_idx, fleet_key); // suppress unused warnings
                 }
             }
         }
@@ -196,7 +196,10 @@ mod tests {
     }
 
     #[test]
-    fn repair_at_shipyard_produces_events() {
+    fn repair_at_shipyard_no_events_until_ship_instance() {
+        // Until ShipInstance is promoted to fleet-level storage, the repair
+        // system validates preconditions but does not emit events for
+        // undamaged ships (avoids log spam per review finding).
         let mut world = GameWorld::default();
         let sys_key = make_shipyard_system(&mut world);
         add_fleet_with_ship(&mut world, sys_key);
@@ -204,7 +207,7 @@ mod tests {
         let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
 
         let events = RepairSystem::advance(&mut state, &world, &tick_events);
-        assert!(!events.is_empty(), "should produce repair events at shipyard");
+        assert!(events.is_empty(), "no repair events until ShipInstance hull tracking");
     }
 
     #[test]

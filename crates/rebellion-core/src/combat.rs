@@ -838,6 +838,12 @@ impl CombatSystem {
         // character combat rating at offset +0x86 factors into ground combat).
         // Sum combat skills of all characters assigned to fleets at this system
         // that match the attacker's faction.
+        // Officer combat rating modifier (from community disassembly cross-reference:
+        // character combat rating at offset +0x86 factors into ground combat).
+        // Uses base stat only (not variance midpoint) — the original reads the
+        // rolled-concrete stat at +0x86, which is set to base during seeding.
+        // Applied to attacker damage only (defender officers not factored — consistent
+        // with the original's attacker-side damage modifier pattern).
         let officer_combat_bonus: f64 = {
             let mut total = 0u32;
             for &fleet_key in &sys.fleets {
@@ -845,7 +851,7 @@ impl CombatSystem {
                     if fleet.is_alliance == attacker_is_alliance {
                         for &char_key in &fleet.characters {
                             if let Some(ch) = world.characters.get(char_key) {
-                                total += ch.combat.base + ch.combat.variance / 2;
+                                total += ch.combat.base;
                             }
                         }
                     }
