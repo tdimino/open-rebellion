@@ -55,9 +55,9 @@ crates/rebellion-core/src/
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
 ├── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
 ├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
-├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba)
+├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba) + 8 notification events, CharactersCoLocated condition
 ├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI
-├── game_events.rs    — GameEventRecord struct + 39 event type constants for JSONL telemetry
+├── game_events.rs    — GameEventRecord struct + 54 event type constants for JSONL telemetry
 ├── effects.rs        — GameEffect enum (36 variants), EffectPhase ordering, monoidal composition, inversion
 ├── economy.rs        — Per-system economy tick: support drift, collection rate, garrison requirements (GNPRTB 7686-7688, 7732-7737, 7761-7763)
 └── repair.rs         — Ship repair framework: RepairSystem at shipyard systems, damage_control rate

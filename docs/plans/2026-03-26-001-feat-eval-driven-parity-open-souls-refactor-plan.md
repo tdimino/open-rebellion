@@ -15,7 +15,7 @@ origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 | 0 | ✅ DONE | +12 | effects.rs (36-variant GameEffect enum), 14 telemetry constants |
 | 1 | ✅ DONE | +11 | economy.rs (support drift, collection, garrison), 4 mission formula fixes + 1 stubbed |
 | 2 | ✅ DONE | +9 | DS shield generator, officer combat rating, decoy missions, ship repair framework |
-| 3 | PENDING | — | Jabba full chain, Final Battle Emperor, 15+ event IDs |
+| 3 | ✅ DONE | +16 | Jabba 5-case, Emperor co-location, Leia Force, 17 RE IDs, 8 notification events |
 | 4 | PENDING | — | PerceptionIntegrator (simulation.rs 1,400→200 LOC) |
 | 5 | PENDING | — | 178 multiplayer protocol types, telemetry coverage test |
 
@@ -50,6 +50,12 @@ A community RE effort produced 13,036 decompiled C functions from REBEXE.EXE (vs
 - Tests: 360 | New modules: +repair.rs | Modified: death_star.rs, combat.rs, missions.rs
 - Branch: `feat/knesset-ereshkigal-phase-0-1` — 13 commits, 21 review findings resolved
 - DS shield gates hull damage (not just fire), decoy uses FDECOYTB table lookup, repair suppresses undamaged events
+
+**After Phase 3 (2026-03-27):**
+- Tests: 376 | Modified: events.rs, story_events.rs, game_events.rs, combat.rs
+- Jabba 5-case outcome switch, Emperor co-location, Leia Force discovery
+- 17 new RE event ID constants, 15 new telemetry constants, 8 notification events
+- 6 Phase 2 pending tests written (DS shield hull-damage + officer combat)
 
 **Target:**
 - Eval score: >= 0.72 | Tests: >= 400 | Event types: >= 38 | Parity: ~97%
@@ -275,9 +281,9 @@ Add 9th sub-metric `economy_activity` to `scripts/eval_game_quality.py` (weight 
 
 ---
 
-## Phase 3: P2 Story + Event Completeness
+## Phase 3: P2 Story + Event Completeness ✅ COMPLETE
 
-**Gate: eval score >= 0.72, all 4 story chains emit events**
+**Gate: eval score >= 0.72, all 4 story chains emit events** — 376 tests passing. All story chains enriched with 5-case Jabba outcomes, Emperor co-location, Leia Force discovery, 8 notification events.
 
 ### 3.1 Jabba's Palace Full Chain
 
