@@ -51,11 +51,17 @@ A community RE effort produced 13,036 decompiled C functions from REBEXE.EXE (vs
 - Branch: `feat/knesset-ereshkigal-phase-0-1` — 13 commits, 21 review findings resolved
 - DS shield gates hull damage (not just fire), decoy uses FDECOYTB table lookup, repair suppresses undamaged events
 
-**After Phase 3 (2026-03-27):**
-- Tests: 376 | Modified: events.rs, story_events.rs, game_events.rs, combat.rs
+**After Phase 3 + all reviews (2026-03-27):**
+- Tests: 379 | Modified: events.rs, story_events.rs, game_events.rs, combat.rs
 - Jabba 5-case outcome switch, Emperor co-location, Leia Force discovery
 - 17 new RE event ID constants, 15 new telemetry constants, 8 notification events
 - 6 Phase 2 pending tests written (DS shield hull-damage + officer combat)
+- 10 review findings resolved (3 agents: code reviewer, pattern specialist, test analyzer)
+  - P0: EVT_LEIA_FORCE ID collision (0x362→0x363)
+  - P1: EVT_SIDE_CHANGE reuse → EVT_JABBA_CAPTURES_CHEWIE (0x387)
+  - P1: Jabba mutual exclusion completed (rescue guards vs captures)
+  - P2: CharactersCoLocated now checks current_system fallback
+  - MEDIUM: 4 test improvements (officer strict >, DS combat verification, Emperor specificity, 4 new edge case tests)
 
 **Target:**
 - Eval score: >= 0.72 | Tests: >= 400 | Event types: >= 38 | Parity: ~97%
