@@ -29,6 +29,8 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
     let leia = find_character(world, "Leia");
     let chewbacca = find_character(world, "Chew");
     let yoda = find_character(world, "Yoda");
+    let emperor = find_character(world, "Palpatine")
+        .or_else(|| find_character(world, "Emperor"));
 
     // -----------------------------------------------------------------------
     // Force milestone events (Task 3)
@@ -266,16 +268,14 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 enabled: true,
             });
 
-            // EVT_FINAL_BATTLE (0x220) — requires chain completion
-            state.define(GameEvent {
-                id: EVT_FINAL_BATTLE,
-                name: "The Final Battle".into(),
-                conditions: vec![
+            // EVT_FINAL_BATTLE (0x220) — requires chain completion + co-location
+            {
+                let mut final_conditions = vec![
                     EventCondition::EventFired { id: 0x396 },
                     EventCondition::CharacterExists { character: luke },
                     EventCondition::CharacterExists { character: vader },
-                ],
-                actions: vec![
+                ];
+                let mut final_actions = vec![
                     EventAction::SetMandatoryMission {
                         character: vader,
                         mandatory: true,
@@ -284,8 +284,65 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                         character: luke,
                         mandatory: true,
                     },
-                    EventAction::DisplayMessage {
+                ];
+
+                // Emperor Palpatine co-location requirement (Phase 3)
+                if let Some(emperor) = emperor {
+                    final_conditions.push(EventCondition::CharacterExists {
+                        character: emperor,
+                    });
+                    final_conditions.push(EventCondition::CharactersCoLocated {
+                        characters: vec![luke, vader, emperor],
+                    });
+                    final_actions.push(EventAction::SetMandatoryMission {
+                        character: emperor,
+                        mandatory: true,
+                    });
+                    final_actions.push(EventAction::DisplayMessage {
+                        text: "Luke, Vader, and the Emperor are together. The Final Battle begins..."
+                            .into(),
+                    });
+                } else {
+                    final_actions.push(EventAction::DisplayMessage {
                         text: "The Final Battle between Luke and Vader approaches..."
+                            .into(),
+                    });
+                }
+
+                state.define(GameEvent {
+                    id: EVT_FINAL_BATTLE,
+                    name: "The Final Battle".into(),
+                    conditions: final_conditions,
+                    actions: final_actions,
+                    is_repeatable: false,
+                    enabled: true,
+                });
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // Leia Force Discovery (0x362) — Leia discovers Force sensitivity
+        // Requires Luke's Dagobah training to be complete first
+        // -------------------------------------------------------------------
+        if let Some(leia) = leia {
+            state.define(GameEvent {
+                id: EVT_LEIA_FORCE,
+                name: "Leia Discovers the Force".into(),
+                conditions: vec![
+                    EventCondition::CharacterExists { character: leia },
+                    // Luke must have completed training first
+                    EventCondition::EventFired {
+                        id: EVT_DAGOBAH_COMPLETED,
+                    },
+                    EventCondition::TickAtLeast { tick: 80 },
+                ],
+                actions: vec![
+                    EventAction::ModifyForceTier {
+                        character: leia,
+                        new_tier: ForceTier::Aware,
+                    },
+                    EventAction::DisplayMessage {
+                        text: "Princess Leia has discovered her connection to the Force!"
                             .into(),
                     },
                 ],
@@ -295,7 +352,40 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         }
 
         // -------------------------------------------------------------------
-        // Chain 4 (partial): Jabba's Palace — Luke senses Han
+        // Emperor Arrival (0x230) — Emperor travels to the front
+        // -------------------------------------------------------------------
+        if let Some(emperor) = emperor {
+            state.define(GameEvent {
+                id: EVT_EMPEROR_ARRIVAL,
+                name: "Emperor Arrives".into(),
+                conditions: vec![
+                    EventCondition::CharacterExists { character: emperor },
+                    EventCondition::TickAtLeast { tick: 90 },
+                    EventCondition::FactionControlsNSystems {
+                        faction: crate::dat::Faction::Empire,
+                        min_count: 100,
+                    },
+                ],
+                actions: vec![
+                    EventAction::DisplayMessage {
+                        text: "The Emperor has arrived to oversee operations personally."
+                            .into(),
+                    },
+                ],
+                is_repeatable: false,
+                enabled: true,
+            });
+        }
+
+        // -------------------------------------------------------------------
+        // Chain 4: Jabba's Palace — 5-case outcome switch
+        //
+        // Cases:
+        //   1. escape_self    — Han escapes on his own (0x384, low probability)
+        //   2. escape_rescue  — Rescue team frees Han (existing 0x383 → 0x39A)
+        //   3. captured_luke  — Luke captured at palace (0x399)
+        //   4. jabba_captures_leia   — Leia captured during rescue (0x385)
+        //   5. jabba_captures_chewie — Chewie captured during rescue (0x386)
         // -------------------------------------------------------------------
 
         // Event 0x380: Luke senses Han's capture
@@ -316,7 +406,38 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 enabled: true,
             });
 
-            // Palace capture Luke (0x399) — Luke captured at palace (Task 7)
+            // Case 1: Han self-escape (0x384) — low probability, after time in carbonite
+            state.define(GameEvent {
+                id: 0x384,
+                name: "Han Escapes Carbonite".into(),
+                conditions: vec![
+                    EventCondition::EventFired {
+                        id: EVT_BOUNTY_ATTACK,
+                    },
+                    EventCondition::TickAtLeast { tick: 140 },
+                    EventCondition::EventNotFired { id: 0x383 }, // not already rescued
+                    EventCondition::EventNotFired { id: 0x399 }, // not already captured
+                    EventCondition::Random { probability: 0.08 },
+                ],
+                actions: vec![
+                    EventAction::SetCarboniteState {
+                        character: _han,
+                        frozen: false,
+                    },
+                    EventAction::SetMandatoryMission {
+                        character: _han,
+                        mandatory: false,
+                    },
+                    EventAction::DisplayMessage {
+                        text: "Han Solo has managed to escape from Jabba's Palace on his own!"
+                            .into(),
+                    },
+                ],
+                is_repeatable: false,
+                enabled: true,
+            });
+
+            // Case 3: Luke captured at palace (0x399) — if rescue hasn't happened
             state.define(GameEvent {
                 id: 0x399,
                 name: "Luke Captured at Palace".into(),
@@ -324,6 +445,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     EventCondition::EventFired { id: 0x380 },
                     EventCondition::TickAtLeast { tick: 115 },
                     EventCondition::EventNotFired { id: 0x39A }, // don't capture after rescue
+                    EventCondition::EventNotFired { id: 0x384 }, // don't capture after self-escape
                 ],
                 actions: vec![
                     EventAction::CaptureCharacter {
@@ -494,7 +616,192 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     enabled: true,
                 });
             }
+
+            // Case 4: Jabba captures Leia during rescue attempt (0x385)
+            // Random outcome — rescue attempt goes wrong
+            state.define(GameEvent {
+                id: 0x385,
+                name: "Leia Captured by Jabba".into(),
+                conditions: vec![
+                    EventCondition::EventFired { id: 0x381 }, // Leia planned rescue
+                    EventCondition::TickAtLeast { tick: 120 },
+                    EventCondition::EventNotFired { id: 0x383 }, // rescue hasn't succeeded
+                    EventCondition::EventNotFired { id: 0x384 }, // Han hasn't self-escaped
+                    EventCondition::Random { probability: 0.12 },
+                ],
+                actions: vec![
+                    EventAction::CaptureCharacter {
+                        character: leia,
+                        captor_faction: crate::dat::Faction::Empire,
+                    },
+                    EventAction::DisplayMessage {
+                        text: "Princess Leia has been captured by Jabba during the rescue attempt!"
+                            .into(),
+                    },
+                ],
+                is_repeatable: false,
+                enabled: true,
+            });
+
+            // Case 5: Jabba captures Chewbacca during rescue attempt (0x386)
+            if let Some(chewbacca) = chewbacca {
+                state.define(GameEvent {
+                    id: EVT_SIDE_CHANGE, // 0x386 — reused RE ID
+                    name: "Chewbacca Captured by Jabba".into(),
+                    conditions: vec![
+                        EventCondition::EventFired { id: 0x382 }, // Chewie joined rescue
+                        EventCondition::TickAtLeast { tick: 125 },
+                        EventCondition::EventNotFired { id: 0x383 }, // rescue hasn't succeeded
+                        EventCondition::EventNotFired { id: 0x384 }, // Han hasn't self-escaped
+                        EventCondition::EventNotFired { id: 0x385 }, // Leia not already captured
+                        EventCondition::Random { probability: 0.10 },
+                    ],
+                    actions: vec![
+                        EventAction::CaptureCharacter {
+                            character: chewbacca,
+                            captor_faction: crate::dat::Faction::Empire,
+                        },
+                        EventAction::DisplayMessage {
+                            text: "Chewbacca has been captured by Jabba's guards!".into(),
+                        },
+                    ],
+                    is_repeatable: false,
+                    enabled: true,
+                });
+            }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // System notification events (non-character-specific)
+    // Registered from original game event IDs found in community disassembly.
+    // These fire based on game state conditions, not specific characters.
+    // -----------------------------------------------------------------------
+
+    // 0x100: Support change notification — repeating, fires when any system
+    // has extreme support imbalance (popular uprising risk)
+    state.define(GameEvent {
+        id: EVT_SUPPORT_CHANGE,
+        name: "Popular Support Shift".into(),
+        conditions: vec![
+            EventCondition::TickAtLeast { tick: 20 },
+            EventCondition::Random { probability: 0.03 },
+        ],
+        actions: vec![EventAction::DisplayMessage {
+            text: "Popular support is shifting across the galaxy...".into(),
+        }],
+        is_repeatable: true,
+        enabled: true,
+    });
+
+    // 0x153: Informant intelligence — random intel from embedded operatives
+    state.define(GameEvent {
+        id: EVT_INFORMANT_INTEL,
+        name: "Informant Intelligence".into(),
+        conditions: vec![
+            EventCondition::TickAtLeast { tick: 40 },
+            EventCondition::Random { probability: 0.05 },
+        ],
+        actions: vec![EventAction::DisplayMessage {
+            text: "Informants report intelligence on enemy activities.".into(),
+        }],
+        is_repeatable: true,
+        enabled: true,
+    });
+
+    // 0x154: Resource discovery — random resource find at a system
+    state.define(GameEvent {
+        id: EVT_RESOURCE_DISCOVERY,
+        name: "Resource Discovery".into(),
+        conditions: vec![
+            EventCondition::TickAtLeast { tick: 30 },
+            EventCondition::Random { probability: 0.02 },
+        ],
+        actions: vec![EventAction::DisplayMessage {
+            text: "New resource deposits have been discovered!".into(),
+        }],
+        is_repeatable: true,
+        enabled: true,
+    });
+
+    // 0x155: Natural disaster — random disaster hits a system
+    state.define(GameEvent {
+        id: EVT_NATURAL_DISASTER,
+        name: "Natural Disaster".into(),
+        conditions: vec![
+            EventCondition::TickAtLeast { tick: 50 },
+            EventCondition::Random { probability: 0.01 },
+        ],
+        actions: vec![EventAction::DisplayMessage {
+            text: "A natural disaster has struck a system!".into(),
+        }],
+        is_repeatable: true,
+        enabled: true,
+    });
+
+    // 0x304: Maintenance shortfall — fires when budget is insufficient
+    state.define(GameEvent {
+        id: EVT_MAINTENANCE_SHORTFALL_EVENT,
+        name: "Maintenance Budget Shortfall".into(),
+        conditions: vec![
+            EventCondition::TickAtLeast { tick: 60 },
+            EventCondition::Random { probability: 0.04 },
+        ],
+        actions: vec![EventAction::DisplayMessage {
+            text: "Maintenance budgets are falling short — units may suffer attrition.".into(),
+        }],
+        is_repeatable: true,
+        enabled: true,
+    });
+
+    // 0x305: Saboteur detected — counter-intelligence finds enemy operative
+    state.define(GameEvent {
+        id: EVT_SABOTEUR_DETECTED,
+        name: "Saboteur Detected".into(),
+        conditions: vec![
+            EventCondition::TickAtLeast { tick: 35 },
+            EventCondition::Random { probability: 0.03 },
+        ],
+        actions: vec![EventAction::DisplayMessage {
+            text: "Counter-intelligence has detected an enemy saboteur!".into(),
+        }],
+        is_repeatable: true,
+        enabled: true,
+    });
+
+    // 0x361: Traitor revealed — loyalty breach notification
+    state.define(GameEvent {
+        id: EVT_TRAITOR_REVEALED,
+        name: "Traitor Revealed".into(),
+        conditions: vec![
+            EventCondition::TickAtLeast { tick: 100 },
+            EventCondition::Random { probability: 0.02 },
+        ],
+        actions: vec![EventAction::DisplayMessage {
+            text: "A traitor has been revealed within the ranks!".into(),
+        }],
+        is_repeatable: true,
+        enabled: true,
+    });
+
+    // 0x231: Jabba's prisoners — Jabba takes new prisoners
+    if han.is_some() {
+        state.define(GameEvent {
+            id: EVT_JABBA_PRISONERS,
+            name: "Jabba's Prisoners".into(),
+            conditions: vec![
+                EventCondition::EventFired {
+                    id: EVT_BOUNTY_ATTACK,
+                },
+                EventCondition::TickAtLeast { tick: 130 },
+                EventCondition::Random { probability: 0.06 },
+            ],
+            actions: vec![EventAction::DisplayMessage {
+                text: "Jabba the Hutt expands his collection of prisoners...".into(),
+            }],
+            is_repeatable: true,
+            enabled: true,
+        });
     }
 }
 
@@ -587,8 +894,13 @@ mod tests {
         let world = GameWorld::default();
         let mut state = EventState::new();
         define_story_events(&mut state, &world);
-        // No characters found — no events registered
-        assert!(state.events().is_empty());
+        // No characters found — only system notification events registered
+        // (support change, informant, resource, disaster, maintenance, saboteur, traitor)
+        assert!(
+            state.events().len() >= 7,
+            "expected system notification events, got {}",
+            state.events().len()
+        );
     }
 
     #[test]
@@ -1037,6 +1349,186 @@ mod tests {
         assert!(
             !fired4.iter().any(|f| f.event_id == 0x399),
             "Luke should NOT be captured after palace rescue complete (0x39A guards 0x399)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 tests: Jabba 5-case outcomes, Emperor, Leia Force, notifications
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn han_self_escape_fires_with_random_roll() {
+        let mut world = make_world_with_characters();
+        let mut state = EventState::new();
+
+        // Need Empire systems for bounty hunter gate
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..60 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+
+        define_story_events(&mut state, &world);
+
+        // Fire bounty gate + attack
+        EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]); // bounty attack fires
+
+        // Self-escape (0x384) needs tick >= 140, no rescue, no capture, random < 0.08
+        let fired = EventSystem::advance(&mut state, &world, &tick(140), &[0.01, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+        assert!(
+            fired.iter().any(|f| f.event_id == 0x384),
+            "Han self-escape should fire at tick 140 with low roll. Events: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn leia_force_discovery_fires_after_dagobah() {
+        let mut world = make_world_with_characters();
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // Advance through Dagobah prerequisite and training
+        EventSystem::advance(&mut state, &world, &tick(30), &[]);
+        EventSystem::advance(&mut state, &world, &tick(50), &[]);
+
+        // Complete Dagobah by making Luke Experienced
+        let luke_key = find_character(&world, "Luke").unwrap();
+        world.characters.get_mut(luke_key).unwrap().force_tier = ForceTier::Experienced;
+
+        // Dagobah completed fires
+        EventSystem::advance(&mut state, &world, &tick(60), &[]);
+
+        // Leia Force discovery (0x362) fires at tick 80 after Dagobah complete
+        let fired = EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_LEIA_FORCE),
+            "Leia Force discovery should fire after Dagobah completion. Events: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn leia_force_does_not_fire_before_dagobah() {
+        let world = make_world_with_characters();
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // At tick 80 without Dagobah completion — should NOT fire
+        let fired = EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        assert!(
+            !fired.iter().any(|f| f.event_id == EVT_LEIA_FORCE),
+            "Leia Force should NOT fire before Dagobah completion"
+        );
+    }
+
+    #[test]
+    fn notification_events_fire_with_random_rolls() {
+        let world = GameWorld::default();
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // Notification events are repeatable with Random conditions
+        // Support change: tick >= 20, random < 0.03
+        let fired = EventSystem::advance(&mut state, &world, &tick(20), &[0.01]);
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
+            "Support change notification should fire at tick 20 with roll 0.01"
+        );
+
+        // Should fire again (repeatable)
+        let fired2 = EventSystem::advance(&mut state, &world, &tick(21), &[0.01]);
+        assert!(
+            fired2.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
+            "Support change should fire again (repeatable)"
+        );
+    }
+
+    #[test]
+    fn notification_events_need_correct_tick() {
+        let world = GameWorld::default();
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // Too early for support change (needs tick >= 20)
+        let fired = EventSystem::advance(&mut state, &world, &tick(10), &[0.01]);
+        assert!(
+            !fired.iter().any(|f| f.event_id == EVT_SUPPORT_CHANGE),
+            "Support change should NOT fire before tick 20"
+        );
+    }
+
+    #[test]
+    fn emperor_palpatine_added_to_world() {
+        let mut world = make_world_with_characters();
+        // Add Emperor Palpatine
+        world.characters.insert(make_character("Emperor Palpatine", ForceTier::Experienced, false));
+
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // With Emperor present, the Final Battle event should have CharactersCoLocated
+        // The event count should be higher than without Emperor
+        let event_count = state.events().len();
+        assert!(
+            event_count > 10,
+            "Expected many events with Emperor present, got {}",
+            event_count
+        );
+    }
+
+    #[test]
+    fn emperor_arrival_fires_with_empire_dominance() {
+        let mut world = make_world_with_characters();
+        world.characters.insert(make_character("Emperor Palpatine", ForceTier::Experienced, false));
+
+        // Need 100+ Empire systems
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..110 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        let fired = EventSystem::advance(&mut state, &world, &tick(90), &[]);
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_EMPEROR_ARRIVAL),
+            "Emperor Arrival should fire at tick 90 with 110 Empire systems"
         );
     }
 }

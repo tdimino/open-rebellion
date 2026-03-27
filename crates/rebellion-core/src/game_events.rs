@@ -104,6 +104,23 @@ pub const EVT_STORY_JABBA: &str = "story_jabba";
 pub const EVT_STORY_FINAL_BATTLE: &str = "story_final_battle";
 pub const EVT_MAINTENANCE_SHORTFALL: &str = "maintenance_shortfall";
 
+// Phase 3 telemetry constants
+pub const EVT_SUPPORT_CHANGE: &str = "support_change";
+pub const EVT_UNITS_DEPLOYED: &str = "units_deployed";
+pub const EVT_HQ_CAPTURED: &str = "hq_captured";
+pub const EVT_INFORMANT_INTEL: &str = "informant_intel";
+pub const EVT_RESOURCE_DISCOVERY: &str = "resource_discovery";
+pub const EVT_NATURAL_DISASTER: &str = "natural_disaster";
+pub const EVT_MANUFACTURING_IDLE: &str = "manufacturing_idle";
+pub const EVT_SABOTEUR_DETECTED: &str = "saboteur_detected";
+pub const EVT_CHARACTER_KILLED: &str = "character_killed";
+pub const EVT_TRAITOR_REVEALED: &str = "traitor_revealed";
+pub const EVT_LEIA_FORCE: &str = "leia_force_discovery";
+pub const EVT_SIDE_CHANGE: &str = "side_change";
+pub const EVT_EMPEROR_ARRIVAL: &str = "emperor_arrival";
+pub const EVT_JABBA_PRISONERS: &str = "jabba_prisoners";
+pub const EVT_HAN_RESCUE: &str = "han_rescue";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +198,22 @@ mod tests {
             EVT_STORY_JABBA,
             EVT_STORY_FINAL_BATTLE,
             EVT_MAINTENANCE_SHORTFALL,
+            // Phase 3
+            EVT_SUPPORT_CHANGE,
+            EVT_UNITS_DEPLOYED,
+            EVT_HQ_CAPTURED,
+            EVT_INFORMANT_INTEL,
+            EVT_RESOURCE_DISCOVERY,
+            EVT_NATURAL_DISASTER,
+            EVT_MANUFACTURING_IDLE,
+            EVT_SABOTEUR_DETECTED,
+            EVT_CHARACTER_KILLED,
+            EVT_TRAITOR_REVEALED,
+            EVT_LEIA_FORCE,
+            EVT_SIDE_CHANGE,
+            EVT_EMPEROR_ARRIVAL,
+            EVT_JABBA_PRISONERS,
+            EVT_HAN_RESCUE,
         ];
         let mut seen = std::collections::HashSet::new();
         for evt in &all {
