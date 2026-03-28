@@ -218,6 +218,15 @@ pub fn run_simulation_tick(
                     }),
                 ));
             }
+            EconomyEvent::IncidentTriggered { system, incident_type } => {
+                events.push(GameEventRecord::new(
+                    current_tick, wall_ms, SYS_ECONOMY, EVT_ECONOMY_TICK,
+                    serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "incident": incident_type,
+                    }),
+                ));
+            }
             EconomyEvent::ControlResolved { system, new_control } => {
                 if let Some(sys) = world.systems.get_mut(*system) {
                     sys.control = *new_control;

@@ -59,6 +59,21 @@ const GNPRTB_MAINTENANCE_RATE_NEUTRAL: u16 = 7696;   // =30: ticks between maint
 // Economy state
 // ---------------------------------------------------------------------------
 
+/// Incident state flags (bits 16-19 of original field_0x88).
+/// When these change between ticks, the corresponding incident notification fires.
+/// FUN_0050a970 evaluates these each tick; FUN_0050d720 dispatches on transitions.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IncidentFlags {
+    /// Bit 16 (0x10000): uprising incident active (event 0x152).
+    pub uprising: bool,
+    /// Bit 17 (0x20000): informant incident active (event 0x153).
+    pub informant: bool,
+    /// Bit 18 (0x40000): disaster incident active (event 0x154).
+    pub disaster: bool,
+    /// Bit 19 (0x80000): resource incident active (event 0x155).
+    pub resource: bool,
+}
+
 /// Fleet posture summary for a system (FUN_0050add0/af70/b4c0).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FleetPosture {
@@ -120,6 +135,11 @@ pub struct SystemEconomy {
     pub raw_material_overcapped: bool,
     /// Derived troop/fleet/shipyard summary (functions 9-15).
     pub summary: SystemSummary,
+    /// Incident state flags (bits 16-19 of field_0x88). FUN_0050a970.
+    /// When these change from the previous tick, corresponding incidents fire.
+    pub incident_flags: IncidentFlags,
+    /// System is visibly under uprising. FUN_0050ac70.
+    pub uprising_visible: bool,
 }
 
 impl Default for SystemEconomy {
@@ -133,6 +153,8 @@ impl Default for SystemEconomy {
             energy_overcapped: false,
             raw_material_overcapped: false,
             summary: SystemSummary::default(),
+            incident_flags: IncidentFlags::default(),
+            uprising_visible: false,
         }
     }
 }
@@ -170,6 +192,11 @@ pub enum EconomyEvent {
     ControlResolved {
         system: SystemKey,
         new_control: ControlKind,
+    },
+    /// Incident state changed — fire the corresponding notification (FUN_0050a970 + FUN_0050d720).
+    IncidentTriggered {
+        system: SystemKey,
+        incident_type: &'static str,
     },
     /// Energy allocated exceeds system capacity (FUN_00509ed0).
     EnergyOvercapped {
@@ -317,6 +344,27 @@ impl EconomySystem {
 
             // 6. Troop/fleet summary propagation (FUN_0050a670 through FUN_0050aa50).
             eco.summary = compute_system_summary(world, sys, &presence, eco.garrison_requirement);
+
+            // 7. Incident state + uprising visibility (FUN_0050a970 + FUN_0050ac70).
+            // Evaluate incident flags based on system state. Fire events on transitions.
+            let new_flags = evaluate_incident_flags(sys, &eco.summary);
+            let old_flags = &eco.incident_flags;
+            if new_flags.uprising && !old_flags.uprising {
+                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "uprising" });
+            }
+            if new_flags.informant && !old_flags.informant {
+                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "informant" });
+            }
+            if new_flags.disaster && !old_flags.disaster {
+                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "disaster" });
+            }
+            if new_flags.resource && !old_flags.resource {
+                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "resource" });
+            }
+            eco.incident_flags = new_flags;
+
+            // Uprising visibility flag
+            eco.uprising_visible = matches!(sys.control, ControlKind::Uprising(_));
 
             if (new_rate - old_rate).abs() > 0.01 {
                 events.push(EconomyEvent::CollectionRateChanged {
@@ -636,6 +684,45 @@ fn compute_system_summary(
         has_shipyard,
         fleet_posture,
         fighter_posture,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Incident evaluation (FUN_0050a970 + FUN_0050ac70)
+// ---------------------------------------------------------------------------
+
+/// Evaluate incident flags for a system based on its current state.
+///
+/// In the original, FUN_0050a970 evaluates field_0x88 bits and the galaxy
+/// notification hub (FUN_0050d720) fires incidents on state transitions.
+/// We compute flags each tick and let the advance loop detect transitions.
+///
+/// Flags:
+/// - uprising: system under uprising or troop deficit
+/// - informant: system has negative troop surplus (garrison shortfall)
+/// - disaster: system has very low support (below 20%)
+/// - resource: system has overcapped resources
+fn evaluate_incident_flags(
+    sys: &crate::world::System,
+    summary: &SystemSummary,
+) -> IncidentFlags {
+    IncidentFlags {
+        // Uprising incident: system is under uprising or has severe troop deficit
+        uprising: matches!(sys.control, ControlKind::Uprising(_))
+            || summary.troop_surplus < -2,
+        // Informant incident: garrison shortfall (mild deficit)
+        informant: summary.troop_surplus < 0,
+        // Disaster incident: very low popular support (below 20%)
+        disaster: {
+            let controlling_support = match sys.control {
+                ControlKind::Controlled(crate::dat::Faction::Alliance) => sys.popularity_alliance,
+                ControlKind::Controlled(crate::dat::Faction::Empire) => sys.popularity_empire,
+                _ => 0.5,
+            };
+            controlling_support < 0.20
+        },
+        // Resource incident: resource allocation issues (overcap or zero output)
+        resource: sys.total_energy == 0 || sys.raw_materials == 0,
     }
 }
 
@@ -1183,6 +1270,78 @@ mod tests {
     // -----------------------------------------------------------------------
     // Phase 3b: Troop-based side resolution tests
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Phase 3b: Incident state tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn incident_fires_on_state_transition() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with very low alliance support (< 20%) — triggers disaster incident
+        world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Crisis".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.10, popularity_empire: 0.90,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        // First tick: should fire disaster incident (transition from false to true)
+        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        assert!(
+            events1.iter().any(|e| matches!(e, EconomyEvent::IncidentTriggered { incident_type: "disaster", .. })),
+            "Should fire disaster incident on first tick when support < 20%"
+        );
+
+        // Second tick: should NOT fire again (no transition — flags already set)
+        let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
+        assert!(
+            !events2.iter().any(|e| matches!(e, EconomyEvent::IncidentTriggered { incident_type: "disaster", .. })),
+            "Should NOT re-fire disaster incident when flags unchanged"
+        );
+    }
+
+    #[test]
+    fn informant_incident_on_garrison_shortfall() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with low support (garrison > 0) but no troops (deficit)
+        world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Undermanned".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.4, popularity_empire: 0.6,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        assert!(
+            events.iter().any(|e| matches!(e, EconomyEvent::IncidentTriggered { incident_type: "informant", .. })),
+            "Should fire informant incident on garrison shortfall"
+        );
+    }
 
     // -----------------------------------------------------------------------
     // Phase 3b: System summary tests
