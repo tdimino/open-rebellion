@@ -1,7 +1,7 @@
 ---
 title: "Knesset Ereshkigal — Eval-Driven Parity Sprint + Open Souls Refactor"
 type: feat
-status: active
+status: completed
 date: 2026-03-26
 origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 ---
@@ -19,7 +19,7 @@ origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 | 3b | ✅ DONE | +7 | Knesset Shamash: economy 17%→97% (16/17 functions, 30 tests), swapped IDs, incident model, GNPRTB[7760] energy threshold, all review fixes |
 | 3c | ✅ DONE | — | P0/P1 review fixes: collection rate formula `(100*base)/support`, f32→round(), incident flags (overcap + uprising-only), energy threshold wired |
 | 4 | ✅ DONE | — | PerceptionIntegrator extraction: simulation.rs 1,658→449 LOC (73% reduction). All 17 sections migrated. P0/P1/P2 review fixes applied. 10 commits on feat/knesset-ereshkigal-phase-4. |
-| 5 | PENDING | — | 179 multiplayer protocol types, telemetry coverage test |
+| 5 | ✅ DONE | +6 | 179 NetMessage variants (net_protocol.rs), telemetry coverage integration test (10 required + 7 optional SYS_* systems) |
 
 ### Phase 3c: Post-Review Bug Fixes (2026-03-28)
 
@@ -67,7 +67,13 @@ origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 | 10 | #56 | Final wiring — delete events Vec | — | #48-#55 |
 | 11 | #57 | Cleanup + documentation | — | #56 |
 
-**Completed:** Step 1 (fog/victory/snapshot migrated to integrator). sim.rs 1,691→1,658.
+**Completed (2026-03-28):** All 11 WPs done. Merged to main via `5c9e85d`.
+- simulation.rs: 1,658→451 LOC (73% reduction)
+- integrator.rs: 144→1,204 LOC (17 apply methods)
+- Review fixes: P0 economy in main.rs, P1 build completions, P1 strong_support guard, P2 faction dispatch, P2 import cleanup
+- RepairSystem wired into simulation tick (position 12b)
+- Simplicity reviewer: 0 P0, 3 P1 (all fixed), 4 P2 (1 fixed, 3 cosmetic)
+- Docs updated: simulation.md, architecture.md, CLAUDE.md
 
 ### Follow-ons from Earlier Code Reviews (21 findings, all resolved)
 
