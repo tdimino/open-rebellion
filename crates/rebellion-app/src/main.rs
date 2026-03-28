@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use rebellion_core::ai::{AiFaction, AIAction, AIState, AISystem, FleetMoveReason};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
+use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::bombardment::BombardmentSystem;
 use rebellion_core::combat::{CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
@@ -273,6 +274,7 @@ async fn main() {
     let mut research_state = ResearchState::new();
     let mut jedi_state = JediState::new();
     let mut betrayal_state = BetrayalState::new();
+    let mut economy_state = EconomyState::default();
     // Find HQ systems for victory detection
     let alliance_hq = world.systems.iter()
         .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Alliance))
@@ -483,11 +485,37 @@ async fn main() {
         };
 
         if !tick_events.is_empty() {
+            // ── Economy (runs BEFORE manufacturing — affects production) ──────
+            let economy_events = EconomySystem::advance(
+                &mut economy_state,
+                &world,
+                &tick_events,
+                world.difficulty_index,
+            );
+            for ev in &economy_events {
+                match ev {
+                    EconomyEvent::SupportDrifted { system, alliance_delta, empire_delta } => {
+                        if let Some(sys) = world.systems.get_mut(*system) {
+                            sys.popularity_alliance = (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
+                            sys.popularity_empire = (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
+                        }
+                    }
+                    EconomyEvent::ControlResolved { system, new_control } => {
+                        if let Some(sys) = world.systems.get_mut(*system) {
+                            sys.control = *new_control;
+                        }
+                    }
+                    _ => {} // Telemetry-only events (collection rate, garrison, incidents, overcaps)
+                }
+            }
+
             // ── Manufacturing (blockaded systems are skipped) ─────────────────
             let completions = ManufacturingSystem::advance_with_blockade(
                 &mut mfg_state, &tick_events, blockade_state.blockaded_systems(),
             );
             for completion in &completions {
+                // Apply the built item to the game world (ships, facilities, troops).
+                rebellion_data::simulation::apply_build_completion(completion, &mut world);
                 let sys_name = world
                     .systems
                     .get(completion.system)
@@ -1155,6 +1183,7 @@ async fn main() {
                             };
                             fog_state = FogState::new(dat_faction);
                             FogSystem::seed(&mut fog_state, &world);
+                            economy_state = EconomyState::default();
 
                             // AI controls the opposite faction
                             if faction == MissionFaction::Empire {
@@ -2910,17 +2939,22 @@ fn apply_ai_actions(
             } => {
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
                 roll_idx += 1;
+                let ai_faction = ai_state.faction.unwrap_or(AiFaction::Empire);
                 mission_state.dispatch(
                     *kind,
-                    MissionFaction::Empire,
+                    ai_faction.as_mission_faction(),
                     *character,
                     *target_system,
                     roll,
                 );
                 ai_state.mark_busy(*character);
+                let faction_name = match ai_faction {
+                    AiFaction::Alliance => "Alliance",
+                    AiFaction::Empire => "Empire",
+                };
                 log.push(GameMessage::at_system(
                     tick,
-                    format!("Empire dispatched {:?} mission", kind),
+                    format!("{} dispatched {:?} mission", faction_name, kind),
                     MessageCategory::Ai,
                     *target_system,
                 ));

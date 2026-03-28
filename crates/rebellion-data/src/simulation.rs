@@ -1266,7 +1266,7 @@ fn apply_ai_actions_to_world(
 /// Apply a manufacturing completion to the game world.
 /// Capital ships and fighters are added to the first friendly fleet at the system
 /// (or a new fleet is created). Facilities are added to the system's lists.
-fn apply_build_completion(
+pub fn apply_build_completion(
     completion: &rebellion_core::manufacturing::CompletionEvent,
     world: &mut GameWorld,
 ) {
