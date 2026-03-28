@@ -515,7 +515,7 @@ async fn main() {
             );
             for completion in &completions {
                 // Apply the built item to the game world (ships, facilities, troops).
-                rebellion_data::simulation::apply_build_completion(completion, &mut world);
+                rebellion_data::integrator::apply_build_completion_inner(completion, &mut world);
                 let sys_name = world
                     .systems
                     .get(completion.system)

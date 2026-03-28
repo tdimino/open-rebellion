@@ -15,8 +15,10 @@ use rebellion_core::economy::EconomyEvent;
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::*;
 use rebellion_core::ids::{CharacterKey, SystemKey};
+use rebellion_core::manufacturing::{BuildableKind, CompletionEvent};
+use rebellion_core::movement::ArrivalEvent;
 use rebellion_core::victory::VictoryOutcome;
-use rebellion_core::world::{ControlKind, GameWorld};
+use rebellion_core::world::{ControlKind, Fleet, FighterEntry, GameWorld, ShipEntry, TroopUnit};
 
 // ---------------------------------------------------------------------------
 // Name resolution helpers (shared with simulation.rs)
@@ -269,6 +271,189 @@ impl PerceptionIntegrator {
                         "capacity": capacity,
                     }));
                 }
+            }
+        }
+    }
+
+    // ── Step 3: Manufacturing + Movement ──────────────────────────────────
+
+    /// Apply build completions: add manufactured items to GameWorld + emit telemetry.
+    pub fn apply_build_completions(
+        &mut self,
+        world: &mut GameWorld,
+        completions: &[CompletionEvent],
+    ) {
+        for c in completions {
+            apply_build_completion_inner(c, world);
+            self.emit(SYS_MANUFACTURING, EVT_BUILD_COMPLETE, serde_json::json!({
+                "system": sys_name(world, c.system),
+                "kind": format!("{:?}", c.kind),
+            }));
+        }
+    }
+
+    /// Apply fleet arrivals: update locations + emit telemetry.
+    pub fn apply_arrivals(
+        &mut self,
+        world: &mut GameWorld,
+        arrivals: &[ArrivalEvent],
+    ) {
+        for arrival in arrivals {
+            if let Some(fleet) = world.fleets.get_mut(arrival.fleet) {
+                fleet.location = arrival.system;
+            }
+            if let Some(origin_sys) = world.systems.get_mut(arrival.origin) {
+                origin_sys.fleets.retain(|&k| k != arrival.fleet);
+            }
+            if let Some(dest_sys) = world.systems.get_mut(arrival.system) {
+                if !dest_sys.fleets.contains(&arrival.fleet) {
+                    dest_sys.fleets.push(arrival.fleet);
+                }
+            }
+            self.emit(SYS_MOVEMENT, EVT_FLEET_ARRIVED, serde_json::json!({
+                "system": sys_name(world, arrival.system),
+                "origin": sys_name(world, arrival.origin),
+                "fleet_faction": if world.fleets.get(arrival.fleet).map(|f| f.is_alliance).unwrap_or(false) { "Alliance" } else { "Empire" },
+            }));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Build completion helper (moved from simulation.rs)
+// ---------------------------------------------------------------------------
+
+pub fn apply_build_completion_inner(
+    completion: &CompletionEvent,
+    world: &mut GameWorld,
+) {
+    let sys_key = completion.system;
+
+    match &completion.kind {
+        BuildableKind::CapitalShip(class_key) => {
+            let is_alliance = world
+                .capital_ship_classes
+                .get(*class_key)
+                .map(|c| c.is_alliance)
+                .unwrap_or(false);
+
+            let fleet_key = {
+                let sys = match world.systems.get(sys_key) {
+                    Some(s) => s,
+                    None => return,
+                };
+                sys.fleets
+                    .iter()
+                    .copied()
+                    .find(|&fk| {
+                        world.fleets.get(fk).map(|f| f.is_alliance == is_alliance).unwrap_or(false)
+                    })
+            };
+
+            if let Some(fk) = fleet_key {
+                if let Some(fleet) = world.fleets.get_mut(fk) {
+                    if let Some(entry) = fleet.capital_ships.iter_mut().find(|e| e.class == *class_key) {
+                        entry.count += 1;
+                    } else {
+                        fleet.capital_ships.push(ShipEntry { class: *class_key, count: 1 });
+                    }
+                }
+            } else {
+                let fleet = Fleet {
+                    location: sys_key,
+                    capital_ships: vec![ShipEntry { class: *class_key, count: 1 }],
+                    fighters: vec![],
+                    characters: vec![],
+                    is_alliance,
+                    has_death_star: false,
+                };
+                let fk = world.fleets.insert(fleet);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.fleets.push(fk);
+                }
+            }
+        }
+        BuildableKind::Fighter(class_key) => {
+            let is_alliance = world
+                .fighter_classes
+                .get(*class_key)
+                .map(|c| c.is_alliance)
+                .unwrap_or(false);
+
+            let fleet_key = {
+                let sys = match world.systems.get(sys_key) {
+                    Some(s) => s,
+                    None => return,
+                };
+                sys.fleets
+                    .iter()
+                    .copied()
+                    .find(|&fk| {
+                        world.fleets.get(fk).map(|f| f.is_alliance == is_alliance).unwrap_or(false)
+                    })
+            };
+
+            if let Some(fk) = fleet_key {
+                if let Some(fleet) = world.fleets.get_mut(fk) {
+                    if let Some(entry) = fleet.fighters.iter_mut().find(|e| e.class == *class_key) {
+                        entry.count += 1;
+                    } else {
+                        fleet.fighters.push(FighterEntry { class: *class_key, count: 1 });
+                    }
+                }
+            } else {
+                let fleet = Fleet {
+                    location: sys_key,
+                    capital_ships: vec![],
+                    fighters: vec![FighterEntry { class: *class_key, count: 1 }],
+                    characters: vec![],
+                    is_alliance,
+                    has_death_star: false,
+                };
+                let fk = world.fleets.insert(fleet);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.fleets.push(fk);
+                }
+            }
+        }
+        BuildableKind::ManufacturingFacility(class_key) => {
+            if let Some(template) = world.manufacturing_facilities.get(*class_key).cloned() {
+                let fac_key = world.manufacturing_facilities.insert(template);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.manufacturing_facilities.push(fac_key);
+                }
+            }
+        }
+        BuildableKind::DefenseFacility(class_key) => {
+            if let Some(template) = world.defense_facilities.get(*class_key).cloned() {
+                let fac_key = world.defense_facilities.insert(template);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.defense_facilities.push(fac_key);
+                }
+            }
+        }
+        BuildableKind::ProductionFacility(class_key) => {
+            if let Some(template) = world.production_facilities.get(*class_key).cloned() {
+                let fac_key = world.production_facilities.insert(template);
+                if let Some(sys) = world.systems.get_mut(sys_key) {
+                    sys.production_facilities.push(fac_key);
+                }
+            }
+        }
+        BuildableKind::Troop(class_key) => {
+            let is_alliance = world
+                .troops
+                .get(*class_key)
+                .map(|t| t.is_alliance)
+                .unwrap_or(false);
+            let unit = TroopUnit {
+                class_dat_id: rebellion_core::ids::DatId::new(0),
+                is_alliance,
+                regiment_strength: 100,
+            };
+            let tk = world.troops.insert(unit);
+            if let Some(sys) = world.systems.get_mut(sys_key) {
+                sys.ground_units.push(tk);
             }
         }
     }
