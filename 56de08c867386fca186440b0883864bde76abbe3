@@ -1,6 +1,6 @@
 kind constraint
-supersedes 4a3cfa7ff095e0b4203a5d0a605382e31313df96
+supersedes 24f1a1a7f93f794911b4c2a82ee0cf6fd66d2ea2
 edge applies-to tree:56de08c867386fca186440b0883864bde76abbe3
 edge targets-treepath treepath:.
 
-Two-layer types: dat/ structs mirror binary layout (import/export only); world/ structs are the runtime model. Never add rendering deps to rebellion-core -- it must remain headless-testable. Never use fieldN for a field whose meaning is known -- name it semantically.
+Build: PATH=/usr/bin:$PATH prefix required for all cargo commands. ~/.local/bin/cc shadows Apple clang and will cause build failures without this workaround.
