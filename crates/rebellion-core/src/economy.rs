@@ -59,6 +59,46 @@ const GNPRTB_MAINTENANCE_RATE_NEUTRAL: u16 = 7696;   // =30: ticks between maint
 // Economy state
 // ---------------------------------------------------------------------------
 
+/// Fleet posture summary for a system (FUN_0050add0/af70/b4c0).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FleetPosture {
+    /// Number of Alliance capital ship hulls at this system.
+    pub alliance_capships: u32,
+    /// Number of Empire capital ship hulls at this system.
+    pub empire_capships: u32,
+    /// True if both sides have fleets (2+ each) present.
+    pub is_contested: bool,
+}
+
+/// Fighter posture for a system (FUN_0050aa50).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FighterPosture {
+    /// True if both sides have fighters present.
+    pub is_contested: bool,
+    /// Alliance fighter count.
+    pub alliance_fighters: u32,
+    /// Empire fighter count.
+    pub empire_fighters: u32,
+}
+
+/// Derived summary computed per-system per-tick (functions 9-15 of economy pipeline).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SystemSummary {
+    /// Troops present minus garrison requirement (negative = deficit).
+    /// FUN_0050a670.
+    pub troop_surplus: i32,
+    /// Total troops for the controlling faction.
+    /// FUN_0050ac00.
+    pub total_controlling_troops: u32,
+    /// Whether an orbital shipyard is present.
+    /// FUN_0050ace0.
+    pub has_shipyard: bool,
+    /// Fleet posture (3-pass result).
+    pub fleet_posture: FleetPosture,
+    /// Fighter posture.
+    pub fighter_posture: FighterPosture,
+}
+
 /// Per-system resource and economy tracking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemEconomy {
@@ -78,6 +118,8 @@ pub struct SystemEconomy {
     pub energy_overcapped: bool,
     /// True if mines exceed raw material capacity (mine pruning needed).
     pub raw_material_overcapped: bool,
+    /// Derived troop/fleet/shipyard summary (functions 9-15).
+    pub summary: SystemSummary,
 }
 
 impl Default for SystemEconomy {
@@ -90,6 +132,7 @@ impl Default for SystemEconomy {
             raw_material_allocated: 0,
             energy_overcapped: false,
             raw_material_overcapped: false,
+            summary: SystemSummary::default(),
         }
     }
 }
@@ -271,6 +314,9 @@ impl EconomySystem {
             eco.collection_rate = new_rate;
             eco.garrison_requirement = new_garrison;
             eco.production_modifier = new_prod_mod;
+
+            // 6. Troop/fleet summary propagation (FUN_0050a670 through FUN_0050aa50).
+            eco.summary = compute_system_summary(world, sys, &presence, eco.garrison_requirement);
 
             if (new_rate - old_rate).abs() > 0.01 {
                 events.push(EconomyEvent::CollectionRateChanged {
@@ -539,6 +585,57 @@ fn resolve_system_control(
             // signal is troop presence. Preserve existing control for stability.
             sys.control
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Troop/fleet summary propagation (FUN_0050a670 through FUN_0050aa50)
+// ---------------------------------------------------------------------------
+
+/// Compute the per-system derived summary from troop/fleet/facility presence.
+/// Implements functions 9-15 of the economy tick pipeline.
+fn compute_system_summary(
+    world: &GameWorld,
+    sys: &crate::world::System,
+    presence: &MilitaryPresence,
+    garrison_requirement: u32,
+) -> SystemSummary {
+    // FUN_0050a670: troop surplus = controlling troops - garrison requirement
+    let controlling_troops = match sys.control {
+        ControlKind::Controlled(crate::dat::Faction::Alliance) => presence.alliance_troops,
+        ControlKind::Controlled(crate::dat::Faction::Empire) => presence.empire_troops,
+        _ => presence.alliance_troops.max(presence.empire_troops),
+    };
+    let troop_surplus = controlling_troops as i32 - garrison_requirement as i32;
+
+    // FUN_0050ac00: total controlling troops
+    let total_controlling_troops = controlling_troops;
+
+    // FUN_0050ace0: shipyard presence (check defense facilities for shipyard type)
+    // Original checks virtual method on facility class. We check for any defense facility.
+    // TODO: distinguish shipyard class once facility type promotion is complete.
+    let has_shipyard = !sys.defense_facilities.is_empty();
+
+    // FUN_0050add0/af70/b4c0: fleet posture (3 passes)
+    let fleet_posture = FleetPosture {
+        alliance_capships: presence.alliance_capships,
+        empire_capships: presence.empire_capships,
+        is_contested: presence.alliance_fleets >= 2 && presence.empire_fleets >= 2,
+    };
+
+    // FUN_0050aa50: fighter posture
+    let fighter_posture = FighterPosture {
+        is_contested: presence.alliance_fighters > 0 && presence.empire_fighters > 0,
+        alliance_fighters: presence.alliance_fighters,
+        empire_fighters: presence.empire_fighters,
+    };
+
+    SystemSummary {
+        troop_surplus,
+        total_controlling_troops,
+        has_shipyard,
+        fleet_posture,
+        fighter_posture,
     }
 }
 
@@ -1081,6 +1178,95 @@ mod tests {
             events.iter().any(|e| matches!(e, EconomyEvent::RawMaterialOvercapped { .. })),
             "Expected RawMaterialOvercapped event"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3b: Troop-based side resolution tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Phase 3b: System summary tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn system_summary_troop_surplus() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        // System with low support (triggers garrison requirement) and some troops
+        let troop1 = world.troops.insert(crate::world::TroopUnit {
+            class_dat_id: DatId(0x14000100), is_alliance: true, regiment_strength: 100,
+        });
+        let troop2 = world.troops.insert(crate::world::TroopUnit {
+            class_dat_id: DatId(0x14000100), is_alliance: true, regiment_strength: 100,
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Test".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.3, popularity_empire: 0.7,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![troop1, troop2], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+
+        let eco = state.per_system.get(&sys_key).unwrap();
+        // Garrison = ceil(30/10) = 3, troops = 2, surplus = 2 - 3 = -1
+        assert_eq!(eco.summary.troop_surplus, -1,
+            "troop surplus should be troops - garrison = 2 - 3 = -1, got {}",
+            eco.summary.troop_surplus);
+        assert_eq!(eco.summary.total_controlling_troops, 2);
+    }
+
+    #[test]
+    fn system_summary_fleet_posture() {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        let fleet1 = world.fleets.insert(crate::world::Fleet {
+            location: crate::ids::SystemKey::default(),
+            capital_ships: vec![crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 2 }],
+            fighters: vec![crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 5 }],
+            characters: vec![], is_alliance: true, has_death_star: false,
+        });
+        let fleet2 = world.fleets.insert(crate::world::Fleet {
+            location: crate::ids::SystemKey::default(),
+            capital_ships: vec![crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 3 }],
+            fighters: vec![], characters: vec![], is_alliance: false, has_death_star: false,
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Contested".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![fleet1, fleet2], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        });
+
+        let mut state = EconomyState::default();
+        EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+
+        let eco = state.per_system.get(&sys_key).unwrap();
+        assert_eq!(eco.summary.fleet_posture.alliance_capships, 2);
+        assert_eq!(eco.summary.fleet_posture.empire_capships, 3);
+        assert_eq!(eco.summary.fighter_posture.alliance_fighters, 5);
+        assert_eq!(eco.summary.fighter_posture.empire_fighters, 0);
     }
 
     // -----------------------------------------------------------------------
