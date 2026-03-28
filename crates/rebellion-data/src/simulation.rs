@@ -218,6 +218,18 @@ pub fn run_simulation_tick(
                     }),
                 ));
             }
+            EconomyEvent::ControlResolved { system, new_control } => {
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    sys.control = *new_control;
+                }
+                events.push(GameEventRecord::new(
+                    current_tick, wall_ms, SYS_ECONOMY, EVT_CONTROL_CHANGED,
+                    serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "new_control": format!("{:?}", new_control),
+                    }),
+                ));
+            }
             EconomyEvent::EnergyOvercapped { system, allocated, capacity } => {
                 events.push(GameEventRecord::new(
                     current_tick, wall_ms, SYS_ECONOMY, EVT_ECONOMY_TICK,
