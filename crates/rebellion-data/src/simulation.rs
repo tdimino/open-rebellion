@@ -204,55 +204,17 @@ pub fn run_simulation_tick(
     let mission_results =
         MissionSystem::advance(&mut states.missions, world, tick_events, &mission_rolls);
     for result in &mission_results {
-        apply_mission_effects(&result.effects, world, &mut states.uprising, &mut states.death_star);
+        integrator.apply_mission_result(world, result, &mut states.uprising, &mut states.death_star);
         states.ai.mark_available(result.character);
         if let Some(ref mut ai2) = states.ai2 {
             ai2.mark_available(result.character);
         }
-        events.push(GameEventRecord::new(
-            result.tick,
-            wall_ms,
-            SYS_MISSIONS,
-            EVT_MISSION_RESOLVED,
-            serde_json::json!({
-                "kind": format!("{:?}", result.kind),
-                "outcome": format!("{:?}", result.outcome),
-                "target_system": sys_name(world, result.target_system),
-            }),
-        ));
     }
 
     // ── 5b. Character escapes ────────────────────────────────────────────
     let escape_rolls = take_rolls(world.characters.len());
     let escape_effects = MissionSystem::check_escapes(world, &escape_rolls);
-    for effect in &escape_effects {
-        if let MissionEffect::CharacterEscaped {
-            character,
-            escaped_to_alliance,
-        } = effect
-        {
-            if let Some(c) = world.characters.get_mut(*character) {
-                c.is_alliance = *escaped_to_alliance;
-                c.is_empire = !*escaped_to_alliance;
-                c.is_captive = false;
-                c.captured_by = None;
-                c.capture_tick = None;
-            }
-            for (_, fleet) in world.fleets.iter_mut() {
-                fleet.characters.retain(|&k| k != *character);
-            }
-            events.push(GameEventRecord::new(
-                current_tick,
-                wall_ms,
-                SYS_MISSIONS,
-                EVT_ESCAPE,
-                serde_json::json!({
-                    "character": char_name(world, *character),
-                    "escaped_to_alliance": escaped_to_alliance,
-                }),
-            ));
-        }
-    }
+    integrator.apply_escape_effects(world, &escape_effects);
 
     // ── 6. Events ────────────────────────────────────────────────────────
     let event_rolls: Vec<f32> = take_rolls(16).iter().map(|&r| r as f32).collect();
@@ -624,183 +586,6 @@ pub fn run_simulation_tick(
 // ---------------------------------------------------------------------------
 // Effect application helpers (extracted from main.rs, no MessageLog)
 // ---------------------------------------------------------------------------
-
-fn apply_mission_effects(
-    effects: &[MissionEffect],
-    world: &mut GameWorld,
-    uprising_state: &mut rebellion_core::uprising::UprisingState,
-    death_star_state: &mut rebellion_core::death_star::DeathStarState,
-) {
-    use rebellion_core::missions::MissionFaction;
-
-    for effect in effects {
-        match effect {
-            MissionEffect::PopularityShifted {
-                system,
-                faction,
-                delta,
-            } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    match faction {
-                        MissionFaction::Alliance => {
-                            sys.popularity_alliance =
-                                (sys.popularity_alliance + delta).clamp(0.0, 1.0);
-                        }
-                        MissionFaction::Empire => {
-                            sys.popularity_empire =
-                                (sys.popularity_empire + delta).clamp(0.0, 1.0);
-                        }
-                    }
-
-                    // Diplomacy-to-control: when popularity crosses 0.6 and the
-                    // system is uncontrolled or controlled by the weaker faction,
-                    // flip control to the dominant faction. This creates more
-                    // controlled territory for diverse battle locations.
-                    const CONTROL_THRESHOLD: f32 = 0.6;
-                    let a_pop = sys.popularity_alliance;
-                    let e_pop = sys.popularity_empire;
-                    let new_control = if a_pop >= CONTROL_THRESHOLD && a_pop > e_pop + 0.1 {
-                        Some(ControlKind::Controlled(rebellion_core::dat::Faction::Alliance))
-                    } else if e_pop >= CONTROL_THRESHOLD && e_pop > a_pop + 0.1 {
-                        Some(ControlKind::Controlled(rebellion_core::dat::Faction::Empire))
-                    } else {
-                        None
-                    };
-                    if let Some(new) = new_control {
-                        if sys.control != new {
-                            sys.control = new;
-                        }
-                    }
-                }
-            }
-            MissionEffect::UprisingStarted {
-                system,
-                popularity_delta,
-            } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.popularity_alliance =
-                        (sys.popularity_alliance + popularity_delta).clamp(0.0, 1.0);
-                    sys.popularity_empire =
-                        (sys.popularity_empire - popularity_delta).clamp(0.0, 1.0);
-                }
-            }
-            MissionEffect::SystemIntelligenceGathered { system, .. } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.exploration_status = rebellion_core::dat::ExplorationStatus::Explored;
-                }
-            }
-            MissionEffect::CharacterRecruited { .. } => {}
-            MissionEffect::FacilitySabotaged {
-                system,
-                facility_index,
-                ..
-            } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    if *facility_index < sys.manufacturing_facilities.len() {
-                        let fac_key = sys.manufacturing_facilities.remove(*facility_index);
-                        world.manufacturing_facilities.remove(fac_key);
-                    } else if *facility_index
-                        < sys.manufacturing_facilities.len() + sys.defense_facilities.len()
-                    {
-                        let adj_idx = *facility_index - sys.manufacturing_facilities.len();
-                        let fac_key = sys.defense_facilities.remove(adj_idx);
-                        world.defense_facilities.remove(fac_key);
-                    }
-                }
-            }
-            MissionEffect::CharacterKilled { character, .. } => {
-                for (_, fleet) in world.fleets.iter_mut() {
-                    fleet.characters.retain(|&k| k != *character);
-                }
-                world.characters.remove(*character);
-            }
-            MissionEffect::CharacterCaptured {
-                character,
-                captured_by,
-                ..
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.is_captive = true;
-                    c.captured_by = Some(match captured_by {
-                        MissionFaction::Alliance => rebellion_core::dat::Faction::Alliance,
-                        MissionFaction::Empire => rebellion_core::dat::Faction::Empire,
-                    });
-                }
-                for (_, fleet) in world.fleets.iter_mut() {
-                    fleet.characters.retain(|&k| k != *character);
-                }
-            }
-            MissionEffect::CharacterRescued {
-                character,
-                returned_to,
-                ..
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    match returned_to {
-                        MissionFaction::Alliance => {
-                            c.is_alliance = true;
-                            c.is_empire = false;
-                        }
-                        MissionFaction::Empire => {
-                            c.is_alliance = false;
-                            c.is_empire = true;
-                        }
-                    }
-                    c.is_captive = false;
-                    c.captured_by = None;
-                    c.capture_tick = None;
-                }
-            }
-            MissionEffect::CharacterBusy { character } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.on_mission = true;
-                }
-            }
-            MissionEffect::CharacterAvailable { character } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.on_mission = false;
-                    c.on_hidden_mission = false;
-                }
-            }
-            MissionEffect::DecoyTriggered { .. } => {}
-            MissionEffect::CharacterEscaped {
-                character,
-                escaped_to_alliance,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.is_alliance = *escaped_to_alliance;
-                    c.is_empire = !*escaped_to_alliance;
-                    c.is_captive = false;
-                    c.captured_by = None;
-                    c.capture_tick = None;
-                }
-            }
-            MissionEffect::UprisingSubdued { system } => {
-                // Subdue uprising: shift popularity toward controlling faction and
-                // remove the uprising from active state.
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    // Shift toward whichever faction controls the system
-                    match sys.control {
-                        ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
-                            sys.popularity_alliance = (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
-                            sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
-                        }
-                        _ => {
-                            sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
-                            sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
-                        }
-                    }
-                }
-                // Clear the uprising from active state
-                uprising_state.clear_uprising(*system);
-            }
-            MissionEffect::DeathStarSabotaged { ticks_delayed } => {
-                // Delay Death Star construction by adding ticks to countdown
-                death_star_state.add_sabotage_delay(*ticks_delayed);
-            }
-        }
-    }
-}
 
 fn apply_event_actions_to_world(actions: &[EventAction], world: &mut GameWorld, tick: u64) {
     use rebellion_core::events::SkillField;
