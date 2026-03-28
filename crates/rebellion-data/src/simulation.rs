@@ -83,7 +83,6 @@ pub fn run_simulation_tick(
         return Vec::new();
     }
 
-    let mut events = Vec::new();
     let mut integrator = PerceptionIntegrator::new(
         tick_events.last().unwrap().tick,
         wall_ms,
@@ -219,354 +218,67 @@ pub fn run_simulation_tick(
     // ── 6. Events ────────────────────────────────────────────────────────
     let event_rolls: Vec<f32> = take_rolls(16).iter().map(|&r| r as f32).collect();
     let fired_events = EventSystem::advance(&mut states.events, world, tick_events, &event_rolls);
-    for fired in &fired_events {
-        apply_event_actions_to_world(&fired.actions, world, current_tick);
-        events.push(GameEventRecord::new(
-            fired.tick,
-            wall_ms,
-            SYS_EVENTS,
-            EVT_EVENT_FIRED,
-            serde_json::json!({ "event_id": fired.event_id }),
-        ));
-    }
-
-    // Apply Jedi training from story events
-    for fired in &fired_events {
-        for action in &fired.actions {
-            if let EventAction::StartJediTraining { character } = action {
-                if let Some(c) = world.characters.get(*character) {
-                    states
-                        .jedi
-                        .start_training(*character, c.is_alliance, current_tick);
-                }
-            }
-        }
-    }
+    integrator.apply_fired_events(world, &fired_events, &mut states.jedi, current_tick);
 
     // ── 7. AI ────────────────────────────────────────────────────────────
     let ai_actions = AISystem::advance(
-        &mut states.ai,
-        world,
-        &states.manufacturing,
-        &states.missions,
-        &states.movement,
-        tick_events,
-        config,
-        &states.research,
+        &mut states.ai, world, &states.manufacturing, &states.missions,
+        &states.movement, tick_events, config, &states.research,
     );
     let ai_rolls = take_rolls(8);
-    apply_ai_actions_to_world(
-        &ai_actions,
-        &ai_rolls,
-        &mut states.ai,
-        &mut states.missions,
-        &mut states.manufacturing,
-        &mut states.movement,
-        &mut states.research,
-        world,
-        current_tick,
-        config,
+    integrator.apply_ai_actions(
+        &ai_actions, &ai_rolls, &mut states.ai, &mut states.missions,
+        &mut states.manufacturing, &mut states.movement, &mut states.research,
+        world, current_tick, config, false,
     );
-    for action in &ai_actions {
-        events.push(GameEventRecord::new(
-            current_tick,
-            wall_ms,
-            SYS_AI,
-            EVT_AI_ACTION,
-            ai_action_json(action, world),
-        ));
-    }
 
     // ── 7b. AI (second faction, dual-AI mode) ───────────────────────────
     if let Some(ref mut ai2) = states.ai2 {
         let ai2_actions = AISystem::advance(
-            ai2,
-            world,
-            &states.manufacturing,
-            &states.missions,
-            &states.movement,
-            tick_events,
-            config,
-            &states.research,
+            ai2, world, &states.manufacturing, &states.missions,
+            &states.movement, tick_events, config, &states.research,
         );
         let ai2_rolls = take_rolls(8);
-        apply_ai_actions_to_world(
-            &ai2_actions,
-            &ai2_rolls,
-            ai2,
-            &mut states.missions,
-            &mut states.manufacturing,
-            &mut states.movement,
-            &mut states.research,
-            world,
-            current_tick,
-            config,
+        integrator.apply_ai_actions(
+            &ai2_actions, &ai2_rolls, ai2, &mut states.missions,
+            &mut states.manufacturing, &mut states.movement, &mut states.research,
+            world, current_tick, config, true,
         );
-        for action in &ai2_actions {
-            let mut payload = ai_action_json(action, world);
-            if let Some(obj) = payload.as_object_mut() {
-                obj.insert("dual_ai".into(), serde_json::json!(true));
-            }
-            events.push(GameEventRecord::new(
-                current_tick,
-                wall_ms,
-                SYS_AI,
-                EVT_AI_ACTION,
-                payload,
-            ));
-        }
     }
 
     // ── 8. Blockade ──────────────────────────────────────────────────────
     let blockade_events = BlockadeSystem::advance(&mut states.blockade, world, tick_events);
-    for evt in &blockade_events {
-        match evt {
-            BlockadeEvent::BlockadeStarted { system, tick } => {
-                events.push(GameEventRecord::new(
-                    *tick,
-                    wall_ms,
-                    SYS_BLOCKADE,
-                    EVT_BLOCKADE_STARTED,
-                    serde_json::json!({ "system": sys_name(world, *system) }),
-                ));
-            }
-            BlockadeEvent::BlockadeEnded { system, tick } => {
-                events.push(GameEventRecord::new(
-                    *tick,
-                    wall_ms,
-                    SYS_BLOCKADE,
-                    EVT_BLOCKADE_ENDED,
-                    serde_json::json!({ "system": sys_name(world, *system) }),
-                ));
-            }
-            BlockadeEvent::TroopDestroyed {
-                system,
-                troop,
-                tick: _,
-            } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.ground_units.retain(|&k| k != *troop);
-                }
-                world.troops.remove(*troop);
-            }
-        }
-    }
+    integrator.apply_blockade_events(world, &blockade_events);
 
     // ── 9. Uprising ──────────────────────────────────────────────────────
     let uprising_rolls = take_rolls(world.systems.len());
     let empty_table = MstbTable::new(vec![]);
-    let upris1tb = world
-        .mission_tables
-        .get("UPRIS1TB")
-        .unwrap_or(&empty_table);
+    let upris1tb = world.mission_tables.get("UPRIS1TB").unwrap_or(&empty_table);
     let uprising_events = UprisingSystem::advance(
-        &mut states.uprising,
-        world,
-        tick_events,
-        &uprising_rolls,
-        upris1tb,
+        &mut states.uprising, world, tick_events, &uprising_rolls, upris1tb,
     );
-    for evt in &uprising_events {
-        match evt {
-            UprisingEvent::UprisingIncident { system, tick } => {
-                events.push(GameEventRecord::new(
-                    *tick,
-                    wall_ms,
-                    SYS_UPRISING,
-                    EVT_UPRISING_INCIDENT,
-                    serde_json::json!({ "system": sys_name(world, *system) }),
-                ));
-            }
-            UprisingEvent::UprisingBegan { system, tick } => {
-                // Capture before state for control_changed event
-                let before = world.systems.get(*system).map(|s| s.control);
-                // Flip controlling faction
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.control = match sys.control {
-                        ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
-                            ControlKind::Controlled(rebellion_core::dat::Faction::Empire)
-                        }
-                        ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => {
-                            ControlKind::Controlled(rebellion_core::dat::Faction::Alliance)
-                        }
-                        other => other,
-                    };
-                }
-                // Emit control_changed event
-                let after = world.systems.get(*system).map(|s| s.control);
-                if before != after {
-                    events.push(GameEventRecord::new(
-                        *tick,
-                        wall_ms,
-                        SYS_UPRISING,
-                        EVT_CONTROL_CHANGED,
-                        serde_json::json!({
-                            "system": sys_name(world, *system),
-                            "from": format!("{:?}", before),
-                            "to": format!("{:?}", after),
-                            "cause": "uprising",
-                        }),
-                    ));
-                }
-                events.push(GameEventRecord::new(
-                    *tick,
-                    wall_ms,
-                    SYS_UPRISING,
-                    EVT_UPRISING_BEGAN,
-                    serde_json::json!({ "system": sys_name(world, *system) }),
-                ));
-            }
-            UprisingEvent::UprisingSubdued { .. } => {
-                // No event record for subdued — it's a non-event
-            }
-        }
-    }
+    integrator.apply_uprising_events(world, &uprising_events);
 
     // ── 10. Betrayal ─────────────────────────────────────────────────────
     let betrayal_rolls = take_rolls(world.characters.len());
-    let loyalty_tb = world
-        .mission_tables
-        .get("UPRIS1TB")
-        .unwrap_or(&empty_table);
+    let loyalty_tb = world.mission_tables.get("UPRIS1TB").unwrap_or(&empty_table);
     let betrayal_events = BetrayalSystem::advance(
-        &mut states.betrayal,
-        world,
-        tick_events,
-        &betrayal_rolls,
-        loyalty_tb,
+        &mut states.betrayal, world, tick_events, &betrayal_rolls, loyalty_tb,
     );
-    for evt in &betrayal_events {
-        let BetrayalEvent::CharacterBetrayed {
-            character,
-            defected_to_alliance,
-        } = evt;
-        if let Some(c) = world.characters.get_mut(*character) {
-            c.is_alliance = *defected_to_alliance;
-            c.is_empire = !*defected_to_alliance;
-        }
-        for (_, fleet) in world.fleets.iter_mut() {
-            fleet.characters.retain(|&k| k != *character);
-        }
-        events.push(GameEventRecord::new(
-            current_tick,
-            wall_ms,
-            SYS_BETRAYAL,
-            EVT_BETRAYAL,
-            serde_json::json!({
-                "character": char_name(world, *character),
-                "defected_to_alliance": defected_to_alliance,
-            }),
-        ));
-    }
+    integrator.apply_betrayal_events(world, &betrayal_events);
 
     // ── 11. Death Star ───────────────────────────────────────────────────
     let ds_events = DeathStarSystem::advance(&mut states.death_star, world, tick_events);
-    for evt in &ds_events {
-        match evt {
-            DeathStarEvent::ConstructionCompleted { system, tick } => {
-                events.push(GameEventRecord::new(
-                    *tick,
-                    wall_ms,
-                    SYS_DEATH_STAR,
-                    EVT_DS_CONSTRUCTION,
-                    serde_json::json!({ "system": sys_name(world, *system) }),
-                ));
-            }
-            DeathStarEvent::PlanetDestroyed { system, tick } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.is_destroyed = true;
-                }
-                events.push(GameEventRecord::new(
-                    *tick,
-                    wall_ms,
-                    SYS_DEATH_STAR,
-                    EVT_DS_FIRED,
-                    serde_json::json!({ "system": sys_name(world, *system) }),
-                ));
-            }
-            DeathStarEvent::NearbyWarning { .. } => {
-                // Warning only — no event record
-            }
-        }
-    }
+    integrator.apply_death_star_events(world, &ds_events);
 
     // ── 12. Research ─────────────────────────────────────────────────────
     let research_results = ResearchSystem::advance(&mut states.research, world, tick_events);
-    for result in &research_results {
-        let ResearchResult::TechUnlocked {
-            faction_is_alliance,
-            tech_type,
-            new_level,
-        } = result;
-        // Apply level-ups (advance() is pure — caller must apply)
-        if *faction_is_alliance {
-            states.research.alliance.advance(*tech_type);
-        } else {
-            states.research.empire.advance(*tech_type);
-        }
-        events.push(GameEventRecord::new(
-            current_tick,
-            wall_ms,
-            SYS_RESEARCH,
-            EVT_RESEARCH_UNLOCKED,
-            serde_json::json!({
-                "faction_is_alliance": faction_is_alliance,
-                "tech_type": format!("{:?}", tech_type),
-                "new_level": new_level,
-            }),
-        ));
-    }
+    integrator.apply_research_results(&research_results, &mut states.research);
 
     // ── 13. Jedi training ────────────────────────────────────────────────
     let jedi_rolls = take_rolls(states.jedi.training.len().max(1));
     let jedi_events = JediSystem::advance(&mut states.jedi, world, tick_events, &jedi_rolls);
-    for evt in &jedi_events {
-        match evt {
-            JediEvent::TierAdvanced {
-                character,
-                new_tier,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.force_tier = *new_tier;
-                    c.force_experience = match new_tier {
-                        rebellion_core::world::ForceTier::None => 0,
-                        rebellion_core::world::ForceTier::Aware => 1,
-                        rebellion_core::world::ForceTier::Training => {
-                            rebellion_core::jedi::XP_TO_TRAINING
-                        }
-                        rebellion_core::world::ForceTier::Experienced => {
-                            rebellion_core::jedi::XP_TO_EXPERIENCED
-                        }
-                    };
-                }
-                events.push(GameEventRecord::new(
-                    current_tick,
-                    wall_ms,
-                    SYS_JEDI,
-                    EVT_JEDI_TIER,
-                    serde_json::json!({
-                        "character": char_name(world, *character),
-                        "new_tier": format!("{:?}", new_tier),
-                    }),
-                ));
-            }
-            JediEvent::TrainingComplete { character } => {
-                states.jedi.stop_training(*character);
-            }
-            JediEvent::JediDiscovered { character, .. } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.is_discovered_jedi = true;
-                }
-                events.push(GameEventRecord::new(
-                    current_tick,
-                    wall_ms,
-                    SYS_JEDI,
-                    EVT_JEDI_DISCOVERED,
-                    serde_json::json!({ "character": char_name(world, *character) }),
-                ));
-            }
-        }
-    }
+    integrator.apply_jedi_events(world, &jedi_events, &mut states.jedi);
 
     // ── 14. Victory check ────────────────────────────────────────────────
     if let Some(outcome) = VictorySystem::check(&states.victory, world, tick_events) {
@@ -578,235 +290,9 @@ pub fn run_simulation_tick(
         integrator.emit_campaign_snapshot(world, states.movement.len());
     }
 
-    // Merge integrator telemetry with inline events.
-    events.extend(integrator.finish());
-    events
+    integrator.finish()
 }
 
-// ---------------------------------------------------------------------------
-// Effect application helpers (extracted from main.rs, no MessageLog)
-// ---------------------------------------------------------------------------
-
-fn apply_event_actions_to_world(actions: &[EventAction], world: &mut GameWorld, tick: u64) {
-    use rebellion_core::events::SkillField;
-
-    for action in actions {
-        match action {
-            EventAction::DisplayMessage { .. } => {}
-            EventAction::ShiftPopularity {
-                system,
-                alliance_delta,
-                empire_delta,
-            } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.popularity_alliance =
-                        (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
-                    sys.popularity_empire =
-                        (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
-                }
-            }
-            EventAction::ModifyCharacterSkill {
-                character,
-                skill,
-                base_delta,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    let d = *base_delta;
-                    let apply = |v: u32, delta: i32| (v as i64 + delta as i64).max(0) as u32;
-                    match skill {
-                        SkillField::Diplomacy => c.diplomacy.base = apply(c.diplomacy.base, d),
-                        SkillField::Espionage => c.espionage.base = apply(c.espionage.base, d),
-                        SkillField::ShipDesign => {
-                            c.ship_design.base = apply(c.ship_design.base, d)
-                        }
-                        SkillField::TroopTraining => {
-                            c.troop_training.base = apply(c.troop_training.base, d)
-                        }
-                        SkillField::FacilityDesign => {
-                            c.facility_design.base = apply(c.facility_design.base, d)
-                        }
-                        SkillField::Combat => c.combat.base = apply(c.combat.base, d),
-                        SkillField::Leadership => {
-                            c.leadership.base = apply(c.leadership.base, d)
-                        }
-                        SkillField::Loyalty => c.loyalty.base = apply(c.loyalty.base, d),
-                        SkillField::JediLevel => c.jedi_level.base = apply(c.jedi_level.base, d),
-                    }
-                }
-            }
-            EventAction::RelocateCharacter { .. } => {}
-            EventAction::SetMandatoryMission {
-                character,
-                mandatory,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.on_mandatory_mission = *mandatory;
-                }
-            }
-            EventAction::ModifyForceTier {
-                character,
-                new_tier,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.force_tier = *new_tier;
-                }
-            }
-            EventAction::RemoveCharacter { character } => {
-                for (_, fleet) in world.fleets.iter_mut() {
-                    fleet.characters.retain(|&k| k != *character);
-                }
-                world.characters.remove(*character);
-            }
-            EventAction::StartJediTraining { .. } => {
-                // Handled by the StartJediTraining extraction loop in the caller.
-            }
-            EventAction::TransferCharacter {
-                character,
-                destination,
-                new_faction,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.current_system = Some(*destination);
-                    if let Some(faction) = new_faction {
-                        match faction {
-                            rebellion_core::dat::Faction::Alliance => {
-                                c.is_alliance = true;
-                                c.is_empire = false;
-                            }
-                            rebellion_core::dat::Faction::Empire => {
-                                c.is_alliance = false;
-                                c.is_empire = true;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            EventAction::TriggerEvent { .. } => {}
-            EventAction::AccumulateForceExperience { character, amount } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.force_experience += amount;
-                }
-            }
-            EventAction::CaptureCharacter {
-                character,
-                captor_faction,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.is_captive = true;
-                    c.captured_by = Some(*captor_faction);
-                    c.capture_tick = Some(tick);
-                }
-                for (_, fleet) in world.fleets.iter_mut() {
-                    fleet.characters.retain(|&k| k != *character);
-                }
-            }
-            EventAction::SetCarboniteState { character, frozen } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.on_mandatory_mission = *frozen;
-                    if *frozen {
-                        c.is_captive = true;
-                        c.capture_tick = Some(tick);
-                    } else {
-                        c.is_captive = false;
-                        c.captured_by = None;
-                        c.capture_tick = None;
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn apply_ai_actions_to_world(
-    actions: &[AIAction],
-    rolls: &[f64],
-    ai_state: &mut AIState,
-    mission_state: &mut MissionState,
-    mfg_state: &mut ManufacturingState,
-    movement_state: &mut MovementState,
-    research_state: &mut rebellion_core::research::ResearchState,
-    world: &GameWorld,
-    _tick: u64,
-    config: &rebellion_core::tuning::GameConfig,
-) {
-    // Derive faction from the AIState rather than hardcoding Empire.
-    let mission_faction = ai_state
-        .faction
-        .map(|f| f.as_mission_faction())
-        .unwrap_or(rebellion_core::missions::MissionFaction::Empire);
-
-    let mut roll_idx = 0;
-    for action in actions {
-        match action {
-            AIAction::DispatchMission {
-                kind,
-                character,
-                target_system,
-                duration_roll,
-            } => {
-                let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
-                roll_idx += 1;
-                mission_state.dispatch(
-                    *kind,
-                    mission_faction,
-                    *character,
-                    *target_system,
-                    roll,
-                );
-                ai_state.mark_busy(*character);
-            }
-            AIAction::EnqueueProduction {
-                system,
-                kind,
-                ticks,
-            } => {
-                mfg_state.enqueue(*system, QueueItem::new(*kind, *ticks, *ticks));
-            }
-            AIAction::DispatchResearch {
-                character, tech_type, ticks,
-            } => {
-                let is_alliance = ai_state.faction
-                    .map(|f| matches!(f, rebellion_core::ai::AiFaction::Alliance))
-                    .unwrap_or(false);
-                research_state.dispatch(rebellion_core::research::ResearchProject {
-                    tech_type: *tech_type,
-                    character: *character,
-                    faction_is_alliance: is_alliance,
-                    ticks_remaining: *ticks,
-                    total_ticks: *ticks,
-                });
-                ai_state.mark_busy(*character);
-            }
-            AIAction::MoveFleet {
-                fleet, to_system, ..
-            } => {
-                // Only issue a new order if the fleet isn't already in transit
-                // to the same destination. Re-issuing would reset ticks_elapsed to 0.
-                let already_moving = movement_state
-                    .get(*fleet)
-                    .map(|o| o.destination == *to_system)
-                    .unwrap_or(false);
-                if !already_moving {
-                    if let Some(f) = world.fleets.get(*fleet) {
-                        let transit =
-                            rebellion_core::movement::fleet_transit_ticks_with_config(
-                                f, world, f.location, *to_system,
-                                config.movement.distance_scale,
-                                config.movement.min_transit_ticks,
-                                config.movement.default_fighter_hyperdrive,
-                            );
-                        movement_state.order(*fleet, f.location, *to_system, transit);
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Build completion application
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
