@@ -1,0 +1,5 @@
+kind constraint
+edge applies-to blob:0cb73ee3e4aecf14a087a4c06493a544166e80ce
+edge targets-path path:crates/rebellion-core/src/effects.rs
+
+Closed enum. All new game effects must be variants here. Systems return Vec of GameEffect, never ad-hoc types. EffectPhase tags provide partial ordering for the integrator.
