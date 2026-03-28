@@ -7,8 +7,8 @@
 //! effect application + telemetry to the integrator. This keeps simulation.rs focused
 //! on tick composition while the integrator owns the mutation/telemetry contract.
 //!
-//! Current state: scaffold with name resolution helpers and the PerceptionIntegrator
-//! struct. Effect application methods will be migrated from simulation.rs incrementally.
+//! All 17 simulation sections route through PerceptionIntegrator methods for both
+//! world mutation and telemetry emission. simulation.rs is a thin tick orchestrator (~449 LOC).
 
 use std::collections::HashMap;
 

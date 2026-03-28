@@ -7,32 +7,26 @@
 use std::collections::HashMap;
 
 use crate::integrator::PerceptionIntegrator;
-use rebellion_core::ai::{AIAction, AIState, AISystem};
-use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
-use rebellion_core::betrayal::{BetrayalEvent, BetrayalState, BetrayalSystem};
-use rebellion_core::blockade::{BlockadeEvent, BlockadeState, BlockadeSystem};
+use rebellion_core::ai::{AIState, AISystem};
+use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
+use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
 use rebellion_core::combat::{CombatSide, CombatSystem};
-use rebellion_core::death_star::{DeathStarEvent, DeathStarState, DeathStarSystem};
-use rebellion_core::events::{EventAction, EventState, EventSystem};
+use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
+use rebellion_core::economy::{EconomyState, EconomySystem};
+use rebellion_core::events::{EventState, EventSystem};
 use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::game_events::*;
+use rebellion_core::game_events::GameEventRecord;
 use rebellion_core::ids::SystemKey;
-use rebellion_core::jedi::{JediEvent, JediState, JediSystem};
-use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
-use rebellion_core::missions::{MissionEffect, MissionState, MissionSystem};
+use rebellion_core::jedi::{JediState, JediSystem};
+use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem};
+use rebellion_core::missions::{MissionState, MissionSystem};
 use rebellion_core::movement::{MovementState, MovementSystem};
-use rebellion_core::research::{ResearchResult, ResearchState, ResearchSystem};
+use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::tick::{GameClock, TickEvent};
-use rebellion_core::uprising::{UprisingEvent, UprisingState, UprisingSystem};
+use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
-use rebellion_core::world::{
-    ControlKind, DefenseFacilityInstance, GameWorld, ManufacturingFacilityInstance, MstbTable,
-    TroopUnit,
-};
-
-// Payload helpers live in integrator.rs — import them here.
-use crate::integrator::{sys_name, char_name, ai_action_json};
+use rebellion_core::world::{ControlKind, GameWorld, MstbTable};
 
 /// Bundles all mutable simulation state needed for a tick.
 ///
