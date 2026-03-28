@@ -9,7 +9,7 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 393 tests, zero warnings. Knesset Ereshkigal Phase 0-4 complete: PerceptionIntegrator extraction (simulation.rs 1,658→449 LOC, 73% reduction), economy wired into interactive game, build completions applied, faction-aware AI dispatch, strong_support bit guard. All 17 simulation sections route through integrator for mutation + telemetry.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 401 tests, zero warnings. Knesset Ereshkigal Phase 0-5 complete: PerceptionIntegrator extraction (simulation.rs 1,658→449 LOC, 73% reduction), economy wired into interactive game, build completions applied, faction-aware AI dispatch, strong_support bit guard. All 17 simulation sections route through integrator for mutation + telemetry.
 
 | Area | Key Features |
 |------|-------------|
@@ -43,7 +43,7 @@ PATH="/usr/bin:$PATH" cargo check
 
 | Crate | Role | Key Deps |
 |-------|------|----------|
-| `rebellion-core` | Pure types, zero IO. `ids.rs`, `dat/`, `world/`, `effects.rs`, `economy.rs`, `repair.rs` | slotmap, serde |
+| `rebellion-core` | Pure types, zero IO. `ids.rs`, `dat/`, `world/`, `effects.rs`, `economy.rs`, `repair.rs`, `net_protocol.rs` | slotmap, serde |
 | `rebellion-data` | DAT to GameWorld loader. Uses dat-dumper as library | rebellion-core, dat-dumper |
 | `rebellion-render` | macroquad 0.4 + egui-macroquad 0.17 galaxy map | rebellion-core, macroquad |
 | `rebellion-app` | Entry point and main loop | all crates above |
@@ -103,7 +103,7 @@ docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decom
 - Knesset Kothar (2026-03-25) — Final parity sprint. 4 daborot, 9 tasks. Seeding M5-M8, 25 ship class fields, droid advisor, WASM fixes, HD assets.
 - Knesset Ma'at (2026-03-25) — Combat + asset wave. 5 daborot. Shield phase, fighter combat, ground combat + difficulty, cockpit sprites, HUD overlays.
 - [Community Disassembly Cross-Reference (2026-03-26)](docs/reports/2026-03-26-community-disassembly-cross-reference.md) — 13,036 decompiled functions vs our 5,151. 4 domain agents. Overall parity: ~85%. Biggest gap: economy tick loop.
-- [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. Phase 0-3b complete (all review findings resolved). Phase 3b (Knesset Shamash): source tree cross-ref revealed economy 17%→97% parity (16/17 functions); fixed swapped IDs, removed wrong notification model, corrected support drift + garrison + incident flags + energy threshold. Phase 4 next.
+- [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. All 6 phases COMPLETE. Phase 4: PerceptionIntegrator extraction (simulation.rs 73% reduction). Phase 5: 179 NetMessage protocol types + telemetry coverage test (10/17 required systems verified).
 
 ## External References
 
