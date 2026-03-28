@@ -402,7 +402,7 @@ def main() -> None:
     packs = packs_config["packs"]
     routing = packs_config["routing"]
     entity_map = load_entity_map()
-    existing = load_existing_selections() if not args.force else {}
+    existing = load_existing_selections()
 
     # Parse range filter
     range_min, range_max = 0, 999999

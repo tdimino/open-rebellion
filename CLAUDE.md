@@ -84,10 +84,10 @@ agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, impl
 agent_docs/modding.md -- Mod loader: TOML manifest, RFC 7396 merge patch, semver, load order, hot reload. Read when working on mod features.
 agent_docs/ghidra-re.md -- REBEXE.EXE reverse engineering COMPLETE: 5,127 decompiled functions, combat formulas, 111 GNPRTB params, C++ class hierarchy, modder taxonomy. Read when implementing combat or designing mods.
 agent_docs/systems/ai-parity-tracker.md -- Maps every original AI function to our implementation. Status: DONE/FAITHFUL/AUGMENTED/PARTIAL/MISSING. Read when modifying AI code.
-agent_docs/assets.md -- Asset pipeline: HD upscaling (Real-ESRGAN + Gemini + Vertex), 3D models, audio, 2,231 DLL BMPs. Tools: Real-ESRGAN x4plus (~/tools/realesrgan/), PyMuPDF for PDF extraction, batch-rename-references.py. 21 reference collections (518 files + 1,097 extracted pages). Read when working on visual assets or the upscale pipeline.
+agent_docs/assets.md -- Asset pipeline: HD upscaling via Vertex AI Imagen 4.0 (proven, $11 for 2,231 BMPs) + Gemini Pro with references (portraits only, under iteration). 1,320 audited reference images across 21 collections. Tools: vertex-upscale-batch.py, select-references.py, gemini-upscale.py, build-comparison-html.py. Read when working on visual assets or the upscale pipeline.
 agent_docs/game-media.md -- Game media overview: 18 DLLs, Smacker videos, WAV soundtrack. Read for high-level media inventory.
 agent_docs/dll-resource-catalog.md -- Granular DLL resource catalog: 2,441 BMPs + 3,223 data files across 11 DLLs. Per-DLL resource ID ranges, image dimensions, content descriptions. Read when working with specific DLL resources.
-agent_docs/references/INDEX.md -- Reference image catalogs: 5 files (portraits, ships, weapons, planets, scenes) listing 1,097 vision-LLM-named images. Load the relevant catalog when selecting Gemini reference images for upscaling.
+agent_docs/references/INDEX.md -- Reference image catalogs: 5 catalog files + 4 new collections (SWCCG cards, SWG TCG art, McQuarrie, Wookieepedia OT). 1,320 audited images. All non-OT portraits removed, text pages quarantined. Read when working with reference images for upscaling.
 agent_docs/seeding.md -- Game seeding pipeline: 3-system model, character stat rolling, named placement, 9 seed tables. Read when modifying initial galaxy state.
 
 docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for player/modder-facing mechanics reference.

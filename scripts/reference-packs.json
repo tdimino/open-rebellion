@@ -10,7 +10,8 @@
         "assets/references/ref-illustrated-books/characters-pages"
       ],
       "max_refs": 3,
-      "match_strategy": "character-name"
+      "match_strategy": "character-name",
+      "upscale_method": "gemini"
     },
     "portrait-mini": {
       "prompt": "Enhance this tiny 61x25 character mini-icon from a 1998 strategy game. The reference images show the painted style and texture quality to match. Sharpen facial features while preserving the EXACT compact proportions, colors, and composition from the source. Do not add background detail or change the subject.",
@@ -21,61 +22,50 @@
         "assets/references/ref-wookieepedia-portraits"
       ],
       "max_refs": 2,
-      "match_strategy": "character-name"
+      "match_strategy": "character-name",
+      "upscale_method": "gemini"
     },
     "ship-status": {
-      "prompt": "Enhance this small 122x50 ship hull profile from a 1998 strategy game. The reference images show the technical diagram style and detail quality to match. Sharpen hull outlines, preserve the EXACT silhouette, proportions, and colors from the source. Add fine detail to hull plating and panel lines. Do not add weapons, engines, or elements not present in the source.",
-      "reference_dirs": [
-        "assets/references/ref-cross-sections",
-        "assets/references/ref-capital-ships"
-      ],
-      "max_refs": 3,
-      "match_strategy": "ship-class"
+      "prompt": "Enhance this small 122x50 ship hull profile from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "ship-class",
+      "upscale_method": "vertex"
     },
     "ship-construction": {
-      "prompt": "Enhance this small 130x65 ship construction progress view from a 1998 Star Wars strategy game. Sharpen the wireframe scaffolding and hull structure. Preserve the in-progress construction aesthetic with exposed framework. Do not complete or fill in unfinished sections.",
-      "reference_dirs": [
-        "assets/references/ref-cross-sections",
-        "assets/references/ref-capital-ships"
-      ],
-      "max_refs": 2,
-      "match_strategy": "ship-class"
+      "prompt": "Enhance this small 130x65 ship construction progress view from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "ship-class",
+      "upscale_method": "vertex"
     },
     "damage-diagram": {
-      "prompt": "Enhance this small ship damage diagram from a 1998 Star Wars strategy game. Sharpen hull outlines and damage indicator overlays. Preserve the technical readout aesthetic with clean lines and status colors. Do not alter damage markings or add new elements.",
-      "reference_dirs": [
-        "assets/references/ref-damage-diagrams",
-        "assets/references/ref-cross-sections"
-      ],
-      "max_refs": 3,
-      "match_strategy": "generic"
+      "prompt": "Enhance this small ship damage diagram from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "generic",
+      "upscale_method": "vertex"
     },
     "reactor-diagram": {
-      "prompt": "Enhance this small reactor/power system diagram from a 1998 Star Wars strategy game. Sharpen technical line art, preserve schematic layout and labeling. Match the cross-section technical illustration style of the references.",
-      "reference_dirs": [
-        "assets/references/ref-cross-sections"
-      ],
-      "max_refs": 3,
-      "match_strategy": "generic"
+      "prompt": "Enhance this small reactor/power system diagram from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "generic",
+      "upscale_method": "vertex"
     },
     "facility-icon": {
-      "prompt": "Enhance this small facility status icon from a 1998 Star Wars strategy game showing a mine, shipyard, refinery, or shield generator. Sharpen structural details and preserve the pre-rendered 3D look with the original lighting and color palette.",
-      "reference_dirs": [
-        "assets/references/ref-facilities"
-      ],
-      "max_refs": 3,
-      "match_strategy": "generic"
+      "prompt": "Enhance this small facility status icon from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "generic",
+      "upscale_method": "vertex"
     },
     "event-scene": {
-      "prompt": "Enhance this 400x200 narrative event scene from a 1998 strategy game. The reference images show the painted cinematic style and detail quality to match. Preserve the EXACT composition, characters, ships, and environment from the source. Add fine texture detail while maintaining the 1998 game-art style. Do not add, remove, or reposition any elements.",
-      "reference_dirs": [
-        "assets/references/ref-mcquarrie-rotj",
-        "assets/references/ref-illustrated-books/rotj-pages",
-        "assets/references/ref-swg-tcg-art",
-        "assets/references/ref-missions"
-      ],
-      "max_refs": 3,
-      "match_strategy": "scene-subject"
+      "prompt": "Enhance this 400x200 narrative event scene from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "scene-subject",
+      "upscale_method": "vertex"
     },
     "character-panel": {
       "prompt": "Enhance this 400x200 character panel from a 1998 strategy game. The reference images show the painted art style and texture quality to match. Sharpen the character portrait and background scene while preserving the EXACT face, pose, text layout, and composition from the source. Do not alter text or change any element.",
@@ -87,33 +77,29 @@
         "assets/references/ref-characters"
       ],
       "max_refs": 3,
-      "match_strategy": "character-name"
+      "match_strategy": "character-name",
+      "upscale_method": "gemini"
     },
     "ui-chrome": {
-      "prompt": "Enhance this small UI element (button, frame, scrollbar, or panel border) from a 1998 Star Wars strategy game. Sharpen edges with clean anti-aliasing. Preserve the beveled metallic look, exact colors, and pixel-precise borders. Do not add textures, glow effects, or modernize the aesthetic.",
-      "reference_dirs": [
-        "assets/references/ref-gb-concept-art"
-      ],
-      "max_refs": 2,
-      "match_strategy": "generic"
+      "prompt": "Enhance this small UI element from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "generic",
+      "upscale_method": "vertex"
     },
     "button-sprite": {
-      "prompt": "Enhance this small button sprite from a 1998 Star Wars strategy game. This is one of three states (normal, pressed, disabled). Sharpen the beveled metallic edges and icon detail. Preserve exact dimensions, colors, and the 3D beveled button appearance. Do not change the button state or add new visual elements.",
-      "reference_dirs": [
-        "assets/references/ref-gb-concept-art"
-      ],
-      "max_refs": 2,
-      "match_strategy": "generic"
+      "prompt": "Enhance this small button sprite from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "generic",
+      "upscale_method": "vertex"
     },
     "tactical-hud": {
-      "prompt": "Enhance this tactical combat HUD element from a 1998 Star Wars strategy game. Sharpen gauges, indicators, ship silhouettes, and panel borders. Preserve the dark combat interface aesthetic with glowing status readouts. Do not add new UI elements or change the layout.",
-      "reference_dirs": [
-        "assets/references/ref-galactic-battlegrounds",
-        "assets/references/ref-gb-concept-art",
-        "assets/references/ref-swg-tcg-art"
-      ],
-      "max_refs": 2,
-      "match_strategy": "generic"
+      "prompt": "Enhance this tactical combat HUD element from a 1998 strategy game.",
+      "reference_dirs": [],
+      "max_refs": 0,
+      "match_strategy": "generic",
+      "upscale_method": "vertex"
     }
   },
   "routing": [

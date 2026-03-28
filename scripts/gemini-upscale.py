@@ -1,42 +1,29 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["google-genai", "pillow"]
+# dependencies = ["google-genai", "google-cloud-aiplatform", "pillow"]
 # ///
 """
-HD upscale DLL BMPs via Gemini Pro with vision-LLM-selected reference images.
+Hybrid HD upscaler — Gemini Pro for portraits, Vertex AI Imagen for everything else.
 
-Reads reference-selections.json (produced by select-references.py) to get the
-best 2-5 reference images for each BMP. Sends source + references + pack-
-specific prompt to Gemini 3 Pro Image for generative upscaling.
+Routes each BMP to the best upscaler based on reference-packs.json `upscale_method`:
+  - "gemini": Gemini Pro with vision-LLM-selected reference images (portraits only)
+  - "vertex": Vertex AI Imagen 4.0 non-generative super-resolution (everything else)
 
 Output: data/hd/{dll-dir}/{resource_id}.png
 
 Usage:
-    # Full run (all BMPs with selections)
-    uv run scripts/gemini-upscale.py
-
-    # Dry-run: show what would be processed
-    uv run scripts/gemini-upscale.py --dry-run
-
-    # Single pack
-    uv run scripts/gemini-upscale.py --pack portrait-major
-
-    # Single DLL + range
+    uv run scripts/gemini-upscale.py                          # all BMPs
+    uv run scripts/gemini-upscale.py --dry-run                 # preview
+    uv run scripts/gemini-upscale.py --pack portrait-major     # single pack
+    uv run scripts/gemini-upscale.py --method vertex           # force vertex for all
+    uv run scripts/gemini-upscale.py --method gemini           # force gemini for all
     uv run scripts/gemini-upscale.py --dll gokres --range 2112-2120
-
-    # Use Flash model (cheaper, lower quality)
-    uv run scripts/gemini-upscale.py --fast
-
-    # Limit concurrent requests
-    uv run scripts/gemini-upscale.py --limit 10
-
-    # Force re-upscale existing outputs
-    uv run scripts/gemini-upscale.py --force
+    uv run scripts/gemini-upscale.py --force --limit 10
 
 Prerequisites:
-    GEMINI_API_KEY in environment
-    data/reference-selections.json (run select-references.py first)
+    GEMINI_API_KEY for Gemini packs
+    gcloud auth application-default login for Vertex packs
 """
 
 import argparse
@@ -46,13 +33,7 @@ import sys
 import time
 from pathlib import Path
 
-from google import genai
-from google.genai import types
 from PIL import Image
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -76,50 +57,102 @@ DLL_OUTPUT_DIRS = {
     "tactical": "tactical-dll",
 }
 
-# Rate limit: Gemini Pro ~10 RPM for image generation
-REQUEST_DELAY = 7.0  # seconds between requests
-
-
-# ---------------------------------------------------------------------------
-# Load config
-# ---------------------------------------------------------------------------
 
 def load_packs() -> dict:
-    packs_path = SCRIPT_DIR / "reference-packs.json"
-    return json.loads(packs_path.read_text())
+    return json.loads((SCRIPT_DIR / "reference-packs.json").read_text())
 
 
 def load_selections() -> dict:
-    if not SELECTIONS_PATH.exists():
-        print(f"ERROR: {SELECTIONS_PATH} not found", file=sys.stderr)
-        print("Run select-references.py first.", file=sys.stderr)
-        sys.exit(1)
-    return json.loads(SELECTIONS_PATH.read_text())
+    if SELECTIONS_PATH.exists():
+        return json.loads(SELECTIONS_PATH.read_text())
+    return {}
+
+
+def route_bmp(dll: str, rid: int, routing: list[dict]) -> str | None:
+    for rule in routing:
+        if rule["dll"] == dll and rule["range"][0] <= rid <= rule["range"][1]:
+            return rule["pack"]
+    return None
 
 
 # ---------------------------------------------------------------------------
-# Upscale a single BMP
+# Vertex AI Imagen upscale (non-generative)
 # ---------------------------------------------------------------------------
 
-def upscale_bmp(
-    client: genai.Client,
-    model: str,
-    bmp_path: Path,
-    ref_paths: list[Path],
-    prompt: str,
-    output_path: Path,
+_vertex_model = None
+
+def upscale_vertex(bmp_path: Path, output_path: Path, factor: int = 4) -> Path | None:
+    """Upscale via Vertex AI Imagen 4.0 — pure super-resolution, no hallucination."""
+    global _vertex_model
+    try:
+        from google.cloud import aiplatform
+        from vertexai.preview.vision_models import Image as VImage, ImageGenerationModel
+    except ImportError:
+        print("ERROR: google-cloud-aiplatform not installed", file=sys.stderr)
+        return None
+
+    if _vertex_model is None:
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT", os.environ.get("GCLOUD_PROJECT"))
+        if not project:
+            import subprocess
+            result = subprocess.run(["gcloud", "config", "get-value", "project"],
+                                    capture_output=True, text=True)
+            project = result.stdout.strip()
+        if not project:
+            print("ERROR: No GCP project set", file=sys.stderr)
+            return None
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        aiplatform.init(project=project, location=location)
+        _vertex_model = ImageGenerationModel.from_pretrained("imagen-4.0-upscale-preview")
+
+    # Convert BMP to PNG for Vertex
+    img = Image.open(bmp_path)
+    if img.mode in ("P", "RGBA", "LA"):
+        img = img.convert("RGB")
+    tmp_png = output_path.parent / f"_tmp_{output_path.stem}.png"
+    tmp_png.parent.mkdir(parents=True, exist_ok=True)
+    img.save(tmp_png, "PNG")
+
+    try:
+        source = VImage.load_from_file(str(tmp_png))
+        response = _vertex_model.upscale_image(image=source, upscale_factor=f"x{factor}")
+
+        if hasattr(response, 'images') and response.images:
+            response.images[0].save(str(output_path))
+        elif hasattr(response, 'save'):
+            response.save(str(output_path))
+        elif hasattr(response, '_image_bytes'):
+            output_path.write_bytes(response._image_bytes)
+        else:
+            print(f"ERROR: Unknown response type: {type(response)}", file=sys.stderr)
+            return None
+
+        out_img = Image.open(output_path)
+        print(f"  → {output_path.name} ({out_img.size[0]}x{out_img.size[1]}) [vertex]")
+        return output_path
+    except Exception as e:
+        print(f"VERTEX ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+    finally:
+        tmp_png.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Gemini Pro upscale (with references)
+# ---------------------------------------------------------------------------
+
+def upscale_gemini(
+    client, model: str, bmp_path: Path, ref_paths: list[Path],
+    prompt: str, output_path: Path,
 ) -> Path | None:
-    """Upscale a BMP with Gemini using reference images."""
-    # Build multi-image content: prompt + source + references
+    """Upscale via Gemini Pro with reference images — for portraits only."""
+    from google.genai import types
+
     source_img = Image.open(bmp_path)
     if source_img.mode in ("P", "RGBA", "LA"):
         source_img = source_img.convert("RGB")
     src_w, src_h = source_img.size
 
-    # The source BMP is the sole authority on composition, subject, and color.
-    # References only inform texture quality and painted brush-stroke style.
-    # Never mention character/ship names — that causes Gemini to hallucinate
-    # its own idea of the subject instead of faithfully enhancing the source.
     full_prompt = (
         f"IMAGE 1 is the source — a {src_w}x{src_h} pixel sprite from a 1998 strategy game. "
         f"IMAGES 2+ are style/texture references only.\n\n"
@@ -132,41 +165,33 @@ def upscale_bmp(
     )
 
     contents: list = [full_prompt, source_img]
-
-    # Add reference images
     for ref_path in ref_paths:
         if ref_path.exists():
-            ref_img = Image.open(ref_path)
-            if ref_img.mode in ("P", "RGBA", "LA"):
-                ref_img = ref_img.convert("RGB")
-            contents.append(ref_img)
+            try:
+                ref_img = Image.open(ref_path)
+                if ref_img.mode in ("P", "RGBA", "LA"):
+                    ref_img = ref_img.convert("RGB")
+                contents.append(ref_img)
+            except Exception:
+                pass
 
     try:
         response = client.models.generate_content(
-            model=model,
-            contents=contents,
+            model=model, contents=contents,
             config=types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"],
-                temperature=0.4,
+                response_modalities=["IMAGE", "TEXT"], temperature=0.4,
             ),
         )
     except Exception as e:
-        print(f"API ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"GEMINI ERROR: {type(e).__name__}: {e}", file=sys.stderr)
         return None
 
-    # Extract image from response
     if not response.candidates:
-        print("ERROR: No candidates in response", file=sys.stderr)
         return None
-
     candidate = response.candidates[0]
     if not candidate.content or not candidate.content.parts:
         finish = getattr(candidate, "finish_reason", "unknown")
-        safety = getattr(candidate, "safety_ratings", None)
         print(f"ERROR: No content (finish_reason={finish})", file=sys.stderr)
-        if safety:
-            for rating in safety:
-                print(f"  Safety: {rating.category} = {rating.probability}", file=sys.stderr)
         return None
 
     for part in candidate.content.parts:
@@ -174,12 +199,10 @@ def upscale_bmp(
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(part.inline_data.data)
             out_img = Image.open(output_path)
-            out_w, out_h = out_img.size
             size_kb = len(part.inline_data.data) / 1024
-            print(f"  → {output_path.name} ({out_w}x{out_h}, {size_kb:.0f}KB)")
+            print(f"  → {output_path.name} ({out_img.size[0]}x{out_img.size[1]}, {size_kb:.0f}KB) [gemini]")
             return output_path
 
-    # No image — show text response
     for part in candidate.content.parts:
         if part.text:
             print(f"  Model said: {part.text[:200]}", file=sys.stderr)
@@ -191,137 +214,140 @@ def upscale_bmp(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="HD upscale DLL BMPs via Gemini with reference images")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be processed")
-    parser.add_argument("--pack", help="Only process BMPs for this pack")
-    parser.add_argument("--dll", help="Only process BMPs from this DLL")
+    parser = argparse.ArgumentParser(description="Hybrid HD upscaler — Gemini for portraits, Vertex for the rest")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--pack", help="Only process this pack")
+    parser.add_argument("--dll", help="Only process this DLL")
     parser.add_argument("--range", help="Resource ID range, e.g. 2112-2120")
-    parser.add_argument("--limit", type=int, default=0, help="Max BMPs to process")
-    parser.add_argument("--fast", action="store_true", help="Use Flash model (cheaper)")
-    parser.add_argument("--force", action="store_true", help="Re-upscale existing outputs")
-    parser.add_argument("--delay", type=float, default=REQUEST_DELAY, help="Seconds between API calls")
+    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--method", choices=["gemini", "vertex"], help="Force method for all packs")
+    parser.add_argument("--fast", action="store_true", help="Use Gemini Flash instead of Pro")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--delay", type=float, default=7.0)
+    parser.add_argument("--vertex-factor", type=int, default=4, choices=[2, 4])
     args = parser.parse_args()
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key and not args.dry_run:
-        print("ERROR: GEMINI_API_KEY not set", file=sys.stderr)
-        sys.exit(1)
 
     packs_config = load_packs()
     packs = packs_config["packs"]
     routing = packs_config["routing"]
     selections = load_selections()
 
-    model = FLASH_MODEL if args.fast else PRO_MODEL
-
-    # Parse range filter
     range_min, range_max = 0, 999999
     if args.range:
         parts = args.range.split("-")
         range_min = int(parts[0])
         range_max = int(parts[1]) if len(parts) > 1 else range_min
 
-    # Build work list from selections
-    work: list[tuple[str, dict]] = []  # (key, selection)
-    for key, sel in selections.items():
-        dll = sel["dll"]
-        rid = sel["resource_id"]
-        pack_name = sel["pack"]
+    # Build work list from ALL BMPs via routing (not just selections)
+    work: list[dict] = []
+    for dll_name, bmp_dir in DLL_DIRS.items():
+        if args.dll and dll_name != args.dll:
+            continue
+        if not bmp_dir.exists():
+            continue
+        for bmp in sorted(bmp_dir.glob("*.bmp")):
+            rid = int(bmp.stem)
+            if not (range_min <= rid <= range_max):
+                continue
+            pack_name = route_bmp(dll_name, rid, routing)
+            if not pack_name:
+                continue
+            if args.pack and pack_name != args.pack:
+                continue
 
-        if args.dll and dll != args.dll:
-            continue
-        if args.pack and pack_name != args.pack:
-            continue
-        if not (range_min <= rid <= range_max):
-            continue
-        if not sel.get("references"):
-            continue
+            pack = packs[pack_name]
+            method = args.method or pack.get("upscale_method", "vertex")
 
-        # Check if output already exists
-        out_dir = OUTPUT_BASE / DLL_OUTPUT_DIRS[dll]
-        out_path = out_dir / f"{rid}.png"
-        if out_path.exists() and not args.force:
-            continue
+            out_path = OUTPUT_BASE / DLL_OUTPUT_DIRS[dll_name] / f"{rid}.png"
+            if out_path.exists() and not args.force:
+                continue
 
-        work.append((key, sel))
+            # For gemini method, get reference selections
+            sel_key = f"{dll_name}:{rid}"
+            sel = selections.get(sel_key, {})
+            refs = sel.get("references", [])
+
+            work.append({
+                "bmp": bmp, "dll": dll_name, "rid": rid,
+                "pack_name": pack_name, "method": method,
+                "out_path": out_path, "refs": refs,
+                "entity": sel.get("entity"),
+            })
 
     if args.limit:
         work = work[:args.limit]
 
-    print(f"Model: {model}")
-    print(f"BMPs to upscale: {len(work)}")
+    # Count by method
+    gemini_count = sum(1 for w in work if w["method"] == "gemini")
+    vertex_count = sum(1 for w in work if w["method"] == "vertex")
+    print(f"BMPs to upscale: {len(work)} (gemini: {gemini_count}, vertex: {vertex_count})")
 
     if args.dry_run:
-        dist: dict[str, int] = {}
-        for _, sel in work:
-            dist[sel["pack"]] = dist.get(sel["pack"], 0) + 1
-        for pn, cnt in sorted(dist.items(), key=lambda x: -x[1]):
-            print(f"  {pn}: {cnt}")
-        # Cost estimate
-        cost_per = 0.134 if not args.fast else 0.067
-        total_cost = len(work) * cost_per
-        print(f"\nEstimated cost: ${total_cost:.2f} ({len(work)} × ${cost_per})")
+        dist: dict[str, dict] = {}
+        for w in work:
+            pn = w["pack_name"]
+            if pn not in dist:
+                dist[pn] = {"count": 0, "method": w["method"]}
+            dist[pn]["count"] += 1
+        for pn, d in sorted(dist.items(), key=lambda x: -x[1]["count"]):
+            print(f"  {pn}: {d['count']} [{d['method']}]")
+        gemini_cost = gemini_count * 0.134
+        vertex_cost = vertex_count * 0.005  # Vertex is much cheaper
+        print(f"\nEstimated cost: ${gemini_cost + vertex_cost:.2f} "
+              f"(gemini: {gemini_count}×$0.134=${gemini_cost:.2f}, "
+              f"vertex: {vertex_count}×$0.005=${vertex_cost:.2f})")
         return
 
-    client = genai.Client(api_key=api_key)
+    # Init clients as needed
+    gemini_client = None
+    if gemini_count > 0:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            print("ERROR: GEMINI_API_KEY not set (needed for portrait packs)", file=sys.stderr)
+            sys.exit(1)
+        gemini_client = genai.Client(api_key=api_key)
 
+    gemini_model = FLASH_MODEL if args.fast else PRO_MODEL
     processed = 0
     errors = 0
     t0 = time.time()
 
-    for i, (key, sel) in enumerate(work, 1):
-        dll = sel["dll"]
-        rid = sel["resource_id"]
-        pack_name = sel["pack"]
-        pack = packs[pack_name]
-        bmp_path = DLL_DIRS[dll] / f"{rid}.bmp"
-        if not bmp_path.exists():
-            print(f"  [{i}/{len(work)}] SKIP: {bmp_path} not found")
-            errors += 1
-            continue
+    for i, w in enumerate(work, 1):
+        label = w["entity"] or f"{w['dll']}/{w['rid']}"
+        ref_count = len([r for r in w["refs"] if (PROJECT_DIR / r).exists()]) if w["refs"] else 0
+        method_tag = w["method"]
+        print(f"  [{i}/{len(work)}] {label} ({w['pack_name']}, {method_tag}"
+              + (f", {ref_count} refs" if ref_count else "") + ")...", end=" ", flush=True)
 
-        out_dir = OUTPUT_BASE / DLL_OUTPUT_DIRS[dll]
-        out_path = out_dir / f"{rid}.png"
-
-        # Resolve reference paths
-        ref_paths = [PROJECT_DIR / r for r in sel["references"]]
-        ref_count = sum(1 for r in ref_paths if r.exists())
-
-        label = sel.get("entity") or f"{dll}/{rid}"
-        print(f"  [{i}/{len(work)}] {label} ({pack_name}, {ref_count} refs)...", end=" ", flush=True)
-
-        result = upscale_bmp(
-            client=client,
-            model=model,
-            bmp_path=bmp_path,
-            ref_paths=ref_paths,
-            prompt=pack["prompt"],
-            output_path=out_path,
-        )
+        if w["method"] == "vertex":
+            result = upscale_vertex(w["bmp"], w["out_path"], args.vertex_factor)
+        else:
+            pack = packs[w["pack_name"]]
+            ref_paths = [PROJECT_DIR / r for r in w["refs"]]
+            result = upscale_gemini(
+                gemini_client, gemini_model, w["bmp"], ref_paths,
+                pack["prompt"], w["out_path"],
+            )
 
         if result:
             processed += 1
         else:
             errors += 1
 
-        # Rate limit
         if i < len(work):
-            time.sleep(args.delay)
+            delay = args.delay if w["method"] == "gemini" else 13.0  # Vertex: 5 RPM quota
+            time.sleep(delay)
 
-        # Progress checkpoint every 25 BMPs
         if i % 25 == 0:
             elapsed = time.time() - t0
-            rate = i / elapsed * 60  # per minute
+            rate = i / elapsed * 60
             remaining = (len(work) - i) / (rate / 60) if rate > 0 else 0
             print(f"  --- {processed} done, {errors} errors, "
                   f"{rate:.1f}/min, ~{remaining/60:.0f}m remaining ---")
 
     elapsed = time.time() - t0
-    cost_per = 0.134 if not args.fast else 0.067
-    total_cost = processed * cost_per
-
     print(f"\nDone. {processed} upscaled, {errors} errors in {elapsed:.0f}s")
-    print(f"Estimated cost: ${total_cost:.2f}")
     print(f"Output: {OUTPUT_BASE}")
 
 
