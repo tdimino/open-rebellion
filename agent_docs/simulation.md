@@ -45,7 +45,7 @@ The caller (rebellion-app `main.rs`) applies effects to `GameWorld` after each s
 | 13 | **Jedi** | `jedi.rs` | `advance(state, world, ticks, rolls)` | XP stored in `JediTrainingRecord`, not world |
 | 14 | **Victory** | `victory.rs` | `check(state, world, ticks)` | Death Star checks supersede HQ capture |
 | 15 | **Betrayal** | `betrayal.rs` | `advance(state, world, ticks, rolls, loyalty_tb)` | `is_unable_to_betray` immunity; 50-tick cooldown |
-| 16 | **Economy** | `economy.rs` | `advance(state, world, ticks, difficulty)` | Runs BEFORE manufacturing (position 0). Support drift (GNPRTB 7686-7688, 7732-7737), collection rate (7763), garrison requirements (7761-7762). |
+| 16 | **Economy** | `economy.rs` | `advance(state, world, ticks, difficulty)` | Full 18-function strategic state rebuild (FUN_005073d0). Runs BEFORE manufacturing (position 0). Resource caps, support drift, collection rate, KDY modifier, side resolution, garrison, troop/fleet summary, incident generation. 17 GNPRTB indices. |
 | 17 | **Repair** | `repair.rs` | `advance(state, world, ticks)` | Ships at shipyard systems auto-repair using class `damage_control` rate. Framework — per-hull tracking pending ShipInstance promotion. |
 
 Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star,research,jedi,victory,betrayal}.md`

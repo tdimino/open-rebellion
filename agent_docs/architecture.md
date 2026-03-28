@@ -59,7 +59,7 @@ crates/rebellion-core/src/
 ├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI
 ├── game_events.rs    — GameEventRecord struct + 54 event type constants for JSONL telemetry
 ├── effects.rs        — GameEffect enum (36 variants), EffectPhase ordering, monoidal composition, inversion
-├── economy.rs        — Per-system economy tick: support drift, collection rate, garrison requirements (GNPRTB 7686-7688, 7732-7737, 7761-7763)
+├── economy.rs        — Full 18-function economy tick (FUN_005073d0): resource caps, support drift, collection rate, KDY modifier, troop-based side resolution, garrison, troop/fleet summary (SystemSummary), incident state (IncidentFlags), uprising visibility. 17 GNPRTB indices. ~1200 LOC.
 └── repair.rs         — Ship repair framework: RepairSystem at shipyard systems, damage_control rate
 ```
 
