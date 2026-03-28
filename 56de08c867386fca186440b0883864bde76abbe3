@@ -1,5 +1,6 @@
-kind value
+kind constraint
+supersedes 4a3cfa7ff095e0b4203a5d0a605382e31313df96
 edge applies-to tree:56de08c867386fca186440b0883864bde76abbe3
 edge targets-treepath treepath:.
 
-Effects are the only output (Knesset Ereshkigal Manifesto): systems return Vec of GameEffect via the closed enum in effects.rs. No ad-hoc result types. Effects carry EffectPhase for partial ordering. GameWorld is read-only during advance -- integrator applies mutations after all systems run.
+Two-layer types: dat/ structs mirror binary layout (import/export only); world/ structs are the runtime model. Never add rendering deps to rebellion-core -- it must remain headless-testable. Never use fieldN for a field whose meaning is known -- name it semantically.
