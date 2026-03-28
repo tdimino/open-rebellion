@@ -11,6 +11,7 @@
 //! struct. Effect application methods will be migrated from simulation.rs incrementally.
 
 use rebellion_core::ai::AIAction;
+use rebellion_core::economy::EconomyEvent;
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::*;
 use rebellion_core::ids::{CharacterKey, SystemKey};
@@ -202,5 +203,73 @@ impl PerceptionIntegrator {
             "fleets": world.fleets.len(),
             "in_transit": movement_len,
         }));
+    }
+
+    // ── Step 2: Economy section ───────────────────────────────────────────
+
+    /// Apply economy events: world mutations (support drift, control) + telemetry.
+    pub fn apply_economy_events(
+        &mut self,
+        world: &mut GameWorld,
+        economy_events: &[EconomyEvent],
+    ) {
+        for ev in economy_events {
+            match ev {
+                EconomyEvent::SupportDrifted { system, alliance_delta, empire_delta } => {
+                    if let Some(sys) = world.systems.get_mut(*system) {
+                        sys.popularity_alliance = (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
+                        sys.popularity_empire = (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
+                    }
+                    self.emit(SYS_ECONOMY, EVT_SUPPORT_DRIFT, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "alliance_delta": alliance_delta,
+                        "empire_delta": empire_delta,
+                    }));
+                }
+                EconomyEvent::CollectionRateChanged { system, new_rate } => {
+                    self.emit(SYS_ECONOMY, EVT_COLLECTION_RATE, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "rate": new_rate,
+                    }));
+                }
+                EconomyEvent::GarrisonRequirementChanged { system, new_requirement } => {
+                    self.emit(SYS_ECONOMY, EVT_GARRISON_REQUIRED, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "garrison_required": new_requirement,
+                    }));
+                }
+                EconomyEvent::IncidentTriggered { system, incident_type } => {
+                    self.emit(SYS_ECONOMY, EVT_ECONOMY_TICK, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "incident": incident_type,
+                    }));
+                }
+                EconomyEvent::ControlResolved { system, new_control } => {
+                    if let Some(sys) = world.systems.get_mut(*system) {
+                        sys.control = *new_control;
+                    }
+                    self.emit(SYS_ECONOMY, EVT_CONTROL_CHANGED, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "new_control": format!("{:?}", new_control),
+                    }));
+                }
+                EconomyEvent::EnergyOvercapped { system, allocated, capacity } => {
+                    self.emit(SYS_ECONOMY, EVT_ECONOMY_TICK, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "energy_overcap": true,
+                        "allocated": allocated,
+                        "capacity": capacity,
+                    }));
+                }
+                EconomyEvent::RawMaterialOvercapped { system, allocated, capacity } => {
+                    self.emit(SYS_ECONOMY, EVT_ECONOMY_TICK, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "raw_material_overcap": true,
+                        "allocated": allocated,
+                        "capacity": capacity,
+                    }));
+                }
+            }
+        }
     }
 }
