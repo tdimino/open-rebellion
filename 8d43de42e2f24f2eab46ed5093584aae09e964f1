@@ -1,0 +1,5 @@
+kind constraint
+edge applies-to blob:8d43de42e2f24f2eab46ed5093584aae09e964f1
+edge targets-path path:crates/rebellion-core/src/economy.rs
+
+Economy runs before manufacturing in the simulation tick. EconomySystem::advance() must execute at position 0, before ManufacturingSystem at position 1. Troop support values depend on updated resource caps (GNPRTB[7721-7727]).
