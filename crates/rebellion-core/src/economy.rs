@@ -112,6 +112,10 @@ pub struct SystemSummary {
     pub fleet_posture: FleetPosture,
     /// Fighter posture.
     pub fighter_posture: FighterPosture,
+    /// Bit 11 of original field_0x88: "strong support" flag.
+    /// When true AND Empire-controlled, troop suppression is doubled (GNPRTB[7680]).
+    /// Set when controlling faction's support > drift threshold (GNPRTB[7732]=40).
+    pub strong_support: bool,
 }
 
 /// Per-system resource and economy tracking.
@@ -281,8 +285,9 @@ impl EconomySystem {
             }
 
             // 1. Calculate and apply popular support drift.
+            // Pass previous tick's strong_support flag (bit 11 of field_0x88).
             let (alliance_delta, empire_delta) =
-                calculate_support_drift(sys, &presence, gnprtb, difficulty);
+                calculate_support_drift(sys, &presence, gnprtb, difficulty, eco.summary.strong_support);
 
             if alliance_delta.abs() > f32::EPSILON || empire_delta.abs() > f32::EPSILON {
                 events.push(EconomyEvent::SupportDrifted {
@@ -345,7 +350,7 @@ impl EconomySystem {
             eco.production_modifier = new_prod_mod;
 
             // 6. Troop/fleet summary propagation (FUN_0050a670 through FUN_0050aa50).
-            eco.summary = compute_system_summary(world, sys, &presence, eco.garrison_requirement);
+            eco.summary = compute_system_summary(world, sys, &presence, eco.garrison_requirement, gnprtb, difficulty);
 
             // 7. Incident state + uprising visibility (FUN_0050a970 + FUN_0050ac70).
             // Evaluate incident flags based on system state. Fire events on transitions.
@@ -466,6 +471,7 @@ fn calculate_support_drift(
     presence: &MilitaryPresence,
     gnprtb: &GnprtbParams,
     difficulty: u8,
+    strong_support: bool,
 ) -> (f32, f32) {
     // All computation in integer 0-100 to match original (FUN_005583c0).
     // Our popularity fields are f32 0.0-1.0; convert at boundary.
@@ -532,9 +538,10 @@ fn calculate_support_drift(
     };
 
     // Empire troop doubling via FUN_005582e0_adjust_value_for_strong_support:
-    // When side==Empire (side==2), troop count is multiplied by GNPRTB[7680] (=2).
+    // When side==Empire (side==2) AND strong_support bit (field_0x88 bit 11) is set,
+    // troop count is multiplied by GNPRTB[7680] (=2).
     // This doubles troop suppression effectiveness for the Empire.
-    let adjusted_troops = if is_empire_controlled {
+    let adjusted_troops = if is_empire_controlled && strong_support {
         let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1) as i32;
         friendly_troops as i32 * empire_mult
     } else {
@@ -653,6 +660,8 @@ fn compute_system_summary(
     sys: &crate::world::System,
     presence: &MilitaryPresence,
     garrison_requirement: u32,
+    gnprtb: &GnprtbParams,
+    difficulty: u8,
 ) -> SystemSummary {
     // FUN_0050a670: troop surplus = controlling troops - garrison requirement
     let controlling_troops = match sys.control {
@@ -684,12 +693,26 @@ fn compute_system_summary(
         empire_fighters: presence.empire_fighters,
     };
 
+    // Bit 11 of field_0x88: "strong support" — set when controlling faction's
+    // support exceeds the drift threshold. Controls Empire troop doubling in
+    // FUN_005582e0_adjust_value_for_strong_support.
+    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty) as i32;
+    let controlling_support = match sys.control {
+        ControlKind::Controlled(crate::dat::Faction::Alliance) =>
+            (sys.popularity_alliance * 100.0).round() as i32,
+        ControlKind::Controlled(crate::dat::Faction::Empire) =>
+            (sys.popularity_empire * 100.0).round() as i32,
+        _ => 0,
+    };
+    let strong_support = controlling_support > drift_threshold;
+
     SystemSummary {
         troop_surplus,
         total_controlling_troops,
         has_shipyard,
         fleet_posture,
         fighter_posture,
+        strong_support,
     }
 }
 
@@ -865,7 +888,7 @@ mod tests {
             alliance_troops: 0, empire_troops: 0,
             alliance_capships: 0, empire_capships: 0,
         };
-        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2);
+        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // Low alliance support (0.1 < 0.40 threshold), no fleet → should drift away
         assert!(a_delta < 0.0, "alliance support should decrease: {a_delta}");
         assert!(e_delta > 0.0, "empire support should increase: {e_delta}");
@@ -896,7 +919,7 @@ mod tests {
             alliance_troops: 0, empire_troops: 0,
             alliance_capships: 0, empire_capships: 0,
         };
-        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2);
+        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // Fleet present → no drift
         assert!(a_delta.abs() < f32::EPSILON, "should not drift with fleet: {a_delta}");
         assert!(e_delta.abs() < f32::EPSILON, "should not drift with fleet: {e_delta}");
@@ -933,8 +956,8 @@ mod tests {
             alliance_troops: 5, empire_troops: 0,
             alliance_capships: 0, empire_capships: 0,
         };
-        let (a_no, _) = calculate_support_drift(&sys, &no_troops, &gnprtb, 2);
-        let (a_with, _) = calculate_support_drift(&sys, &with_troops, &gnprtb, 2);
+        let (a_no, _) = calculate_support_drift(&sys, &no_troops, &gnprtb, 2, true);
+        let (a_with, _) = calculate_support_drift(&sys, &with_troops, &gnprtb, 2, true);
         // Troops should reduce drift magnitude
         assert!(
             a_with.abs() < a_no.abs(),
@@ -1578,7 +1601,7 @@ mod tests {
             alliance_troops: 2, empire_troops: 0,
             alliance_capships: 0, empire_capships: 0,
         };
-        let (a_delta_alliance, _) = calculate_support_drift(&sys_alliance, &presence_alliance, &gnprtb, 2);
+        let (a_delta_alliance, _) = calculate_support_drift(&sys_alliance, &presence_alliance, &gnprtb, 2, true);
 
         // Empire-controlled system with same setup and 2 troops
         let sys_empire = crate::world::System {
@@ -1600,7 +1623,7 @@ mod tests {
             alliance_troops: 0, empire_troops: 2,
             alliance_capships: 0, empire_capships: 0,
         };
-        let (_, e_delta_empire) = calculate_support_drift(&sys_empire, &presence_empire, &gnprtb, 2);
+        let (_, e_delta_empire) = calculate_support_drift(&sys_empire, &presence_empire, &gnprtb, 2, true);
 
         // Empire troops get doubled via GNPRTB[7680]=2, so Empire drift should be
         // less (more suppression) than Alliance drift with same troop count.
@@ -1697,7 +1720,7 @@ mod tests {
             alliance_troops: 0, empire_troops: 0,
             alliance_capships: 0, empire_capships: 0,
         };
-        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2);
+        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // At exactly threshold (40), integer comparison: 40 > 40 is false → drift occurs.
         // Original: `if (support <= GNPRTB[7732])` means 40 <= 40 passes → drift.
         assert!(a_delta != 0.0, "at threshold boundary drift should occur: {a_delta}");
@@ -1731,7 +1754,8 @@ mod tests {
             alliance_troops: 5, empire_troops: 0,
             alliance_capships: 0, empire_capships: 0,
         };
-        let summary_1v1 = compute_system_summary(&world, &sys, &presence_1v1, 0);
+        let gnprtb = stock_gnprtb();
+        let summary_1v1 = compute_system_summary(&world, &sys, &presence_1v1, 0, &gnprtb, 2);
         assert!(!summary_1v1.fleet_posture.is_contested, "1v1 fleets should NOT be contested");
 
         let presence_2v2 = MilitaryPresence {
@@ -1740,7 +1764,7 @@ mod tests {
             alliance_troops: 5, empire_troops: 0,
             alliance_capships: 0, empire_capships: 0,
         };
-        let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0);
+        let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0, &gnprtb, 2);
         assert!(summary_2v2.fleet_posture.is_contested, "2v2 fleets should be contested");
     }
 }
