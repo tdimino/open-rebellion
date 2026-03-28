@@ -7,3 +7,6 @@ edition = "2021"
 serde = { workspace = true }
 serde_json = { workspace = true }
 slotmap = { workspace = true }
+
+[dev-dependencies]
+strum = { version = "0.26", features = ["derive"] }

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 /// Each variant documents its original notification string and, where known,
 /// the registered event ID (hex).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
+#[cfg_attr(test, derive(strum::EnumIter, strum::EnumCount))]
 pub enum NetMessage {
     // -----------------------------------------------------------------------
     // Tactical combat messages (CTacticalBattleManager message router)
@@ -710,22 +710,21 @@ impl NetMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::{EnumCount, IntoEnumIterator};
 
     #[test]
-    fn variant_count_matches_plan() {
-        // Phase 5 plan specifies ~178 variants; we have 179
-        let count = count_variants();
-        assert!(
-            count >= 178,
-            "expected at least 178 NetMessage variants, got {}",
-            count
+    fn variant_count_is_183() {
+        assert_eq!(
+            NetMessage::COUNT, 183,
+            "expected exactly 183 NetMessage variants, got {}",
+            NetMessage::COUNT
         );
     }
 
     #[test]
     fn event_ids_are_unique() {
         let mut seen = std::collections::HashMap::new();
-        for msg in all_variants() {
+        for msg in NetMessage::iter() {
             if let Some(id) = msg.event_id() {
                 if let Some(prev) = seen.insert(id, msg) {
                     panic!(
@@ -739,7 +738,7 @@ mod tests {
 
     #[test]
     fn all_categories_non_empty() {
-        for msg in all_variants() {
+        for msg in NetMessage::iter() {
             assert!(
                 !msg.category().is_empty(),
                 "{:?} has empty category",
@@ -766,200 +765,5 @@ mod tests {
         );
         // Gate notification — no event ID
         assert_eq!(NetMessage::StoryDarthPickup.event_id(), None);
-    }
-
-    // -- helpers --
-
-    fn count_variants() -> usize {
-        all_variants().len()
-    }
-
-    fn all_variants() -> Vec<NetMessage> {
-        // Exhaustive list via serde: serialize every variant name
-        vec![
-            NetMessage::ShipAdd,
-            NetMessage::ShipRemove,
-            NetMessage::ShipAbstractDestroy,
-            NetMessage::ShipDestroy,
-            NetMessage::ShipPostDeathStarStatus,
-            NetMessage::NavAdd,
-            NetMessage::NavRemove,
-            NetMessage::NavPurge,
-            NetMessage::NavDelete,
-            NetMessage::ShipGroupMove,
-            NetMessage::ShipGroupNewMission,
-            NetMessage::ShipGroupNewFormation,
-            NetMessage::ShipGroupNewTargetList,
-            NetMessage::ShipFireLaserCannon,
-            NetMessage::ShipFireTurboLaser,
-            NetMessage::ShipFireIonCannon,
-            NetMessage::ShipFireTorpedo,
-            NetMessage::ShipTakeLaserHit,
-            NetMessage::ShipTakeIonHit,
-            NetMessage::ShipTakeTurboHit,
-            NetMessage::ShipTakeTorpedoHit,
-            NetMessage::ShipIonDamage,
-            NetMessage::ShipLaunch,
-            NetMessage::ShipRecover,
-            NetMessage::ShipEngineDown,
-            NetMessage::ShipWeaponDown,
-            NetMessage::ShipTractorDown,
-            NetMessage::ShipShieldHit,
-            NetMessage::ShipWeaponHit,
-            NetMessage::ShipTractorHit,
-            NetMessage::ShipEngineHit,
-            NetMessage::ShipHyperdriveHit,
-            NetMessage::ShipShieldFix,
-            NetMessage::ShipWeaponFix,
-            NetMessage::ShipTractorFix,
-            NetMessage::ShipEngineFix,
-            NetMessage::ShipHyperdriveFix,
-            NetMessage::ShipTractorLock,
-            NetMessage::ShipTractorUnlock,
-            NetMessage::ShipGravityLock,
-            NetMessage::ShipGravityUnlock,
-            NetMessage::ShipSetRecoveryShip,
-            NetMessage::ShipHyperspace,
-            NetMessage::ShipWithdraw,
-            NetMessage::ShipScuttle,
-            NetMessage::TaskForceNew,
-            NetMessage::FighterGroupNew,
-            NetMessage::ShipGroupDelete,
-            NetMessage::ShipGroupAddShip,
-            NetMessage::ShipGroupAddTarget,
-            NetMessage::ShipGroupRemoveTarget,
-            NetMessage::ShipGroupReplaceTargetList,
-            NetMessage::ShipGroupRemoveShip,
-            NetMessage::ShipGroupAddNavPoint,
-            NetMessage::ShipGroupRemoveNavPoint,
-            NetMessage::ShipGroupReplaceNavList,
-            NetMessage::ShipGroupChangeTarget,
-            NetMessage::ShipGroupTactMissChangeState,
-            NetMessage::FormationAccelerate,
-            NetMessage::CapitalShipUpdate,
-            NetMessage::FighterSquadronUpdate,
-            NetMessage::TacticalCharacterUpdate,
-            NetMessage::TacticalResultUpdate,
-            NetMessage::DeathStarUpdate,
-            NetMessage::DeathStarFire,
-            NetMessage::DeathStarWithdraw,
-            NetMessage::AllianceStartTurn,
-            NetMessage::AllianceEndTurn,
-            NetMessage::EmpireStartTurn,
-            NetMessage::EmpireEndTurn,
-            NetMessage::GameOver,
-            NetMessage::SystemTurnCompleted,
-            NetMessage::SystemPause,
-            NetMessage::SystemUnpause,
-            NetMessage::SystemSave,
-            NetMessage::SystemQuit,
-            NetMessage::SystemWaitForGameOver,
-            NetMessage::SystemGameOver,
-            NetMessage::SystemSynchronizeBegin,
-            NetMessage::SystemSynchronizeEnd,
-            NetMessage::SystemAbort,
-            NetMessage::CapShipHullDamage,
-            NetMessage::CapShipShieldRechargeAllocated,
-            NetMessage::CapShipWeaponRechargeAllocated,
-            NetMessage::FighterSquadSizeDamage,
-            NetMessage::TroopDestroyedRunningBlockade,
-            NetMessage::TroopWithdrawPercent,
-            NetMessage::SystemTroopWithdrawPercent,
-            NetMessage::CharacterLoyaltyChanged,
-            NetMessage::CharacterEnhancedLoyalty,
-            NetMessage::CharacterCombatStrength,
-            NetMessage::CharacterHyperdriveModifier,
-            NetMessage::CharacterEnhancedDiplomacy,
-            NetMessage::CharacterEnhancedEspionage,
-            NetMessage::CharacterEnhancedCombat,
-            NetMessage::CharacterForce,
-            NetMessage::CharacterForceExperience,
-            NetMessage::CharacterForceTraining,
-            NetMessage::CharacterForceUserDiscovered,
-            NetMessage::CharacterForceAware,
-            NetMessage::CharacterForcePotential,
-            NetMessage::CharacterDiscoveringForceUser,
-            NetMessage::RoleBaseDiplomacy,
-            NetMessage::RoleBaseEspionage,
-            NetMessage::RoleBaseShipyardRD,
-            NetMessage::RoleBaseTrainingFacilRD,
-            NetMessage::RoleBaseConstructionYardRD,
-            NetMessage::RoleBaseCombat,
-            NetMessage::RoleBaseLeadership,
-            NetMessage::RoleBaseLoyalty,
-            NetMessage::RoleMission,
-            NetMessage::RoleMissionSeed,
-            NetMessage::RoleOnMission,
-            NetMessage::RoleOnHiddenMission,
-            NetMessage::RoleOnMandatoryMission,
-            NetMessage::RoleCanResignFromMission,
-            NetMessage::RoleMissionResignRequest,
-            NetMessage::RoleMissionRemoveRequest,
-            NetMessage::RoleMovingBetweenMissions,
-            NetMessage::RoleParentAtMissionCompletion,
-            NetMessage::RoleLocationAtMissionCompletion,
-            NetMessage::MissionUserId,
-            NetMessage::MissionUserId2,
-            NetMessage::MissionOriginLocation,
-            NetMessage::MissionObjective,
-            NetMessage::MissionTarget,
-            NetMessage::MissionTargetLocation,
-            NetMessage::MissionLeader,
-            NetMessage::MissionLeaderSeed,
-            NetMessage::MissionReadyForNextPhase,
-            NetMessage::MissionImpliedTeam,
-            NetMessage::MissionMandatory,
-            NetMessage::MissionEspionageExtraSystem,
-            NetMessage::GameObjDestroyed,
-            NetMessage::GameObjDestroyedOnArrival,
-            NetMessage::GameObjDestroyedAutoscrap,
-            NetMessage::GameObjDestroyedSabotage,
-            NetMessage::GameObjDestroyedAssassination,
-            NetMessage::FleetBattle,
-            NetMessage::FleetBlockade,
-            NetMessage::FleetBombard,
-            NetMessage::FleetAssault,
-            NetMessage::SystemBattle,
-            NetMessage::SystemBlockade,
-            NetMessage::SystemUprising,
-            NetMessage::SystemUprisingIncident,
-            NetMessage::SystemControlBattleWon,
-            NetMessage::SystemControlUprising,
-            NetMessage::SideRecruitmentDone,
-            NetMessage::SideConstructionYardRdOrder,
-            NetMessage::SideVictoryConditions,
-            NetMessage::StoryLukeDagobahRequired,
-            NetMessage::StoryLukeDagobah,
-            NetMessage::StoryDagobahFirstTrainingDay,
-            NetMessage::StoryJediTrainingTeacher,
-            NetMessage::StoryDagobahCompleted,
-            NetMessage::StoryDarthPickup,
-            NetMessage::StoryDarthToLukeFinalBattle,
-            NetMessage::StoryDarthToEmperorFinalBattle,
-            NetMessage::StoryFinalBattleReady,
-            NetMessage::StoryLukeFinalBattleReady,
-            NetMessage::StoryFinalBattle,
-            NetMessage::StoryLukePalace,
-            NetMessage::StoryHanCapturedAtPalace,
-            NetMessage::StoryLeiaPalace,
-            NetMessage::StoryChewbaccaPalace,
-            NetMessage::StoryBountyHuntersActive,
-            NetMessage::StoryHanBountyAttack,
-            NetMessage::StoryHanCapturedByBountyHunters,
-            NetMessage::VtableSquadChanged,
-            NetMessage::VtableHullChanged,
-            NetMessage::VtableShieldChanged,
-            NetMessage::VtableWeaponChanged,
-            NetMessage::VtableLoyaltyChanged,
-            NetMessage::VtableEnhancedLoyaltyChanged,
-            NetMessage::VtableCombatStrengthChanged,
-            NetMessage::VtableHyperdriveChanged,
-            NetMessage::CombatPhaseWeaponFire,
-            NetMessage::CombatPhaseShieldAbsorb,
-            NetMessage::CombatPhaseHullDamage,
-            NetMessage::CombatPhaseFighterEngage,
-            NetMessage::CombatPhaseShieldAlt,
-            NetMessage::CombatApplyWeaponDamage,
-        ]
     }
 }
