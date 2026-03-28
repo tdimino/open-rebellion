@@ -26,6 +26,7 @@ use rebellion_core::jedi::{JediEvent, JediState};
 use rebellion_core::manufacturing::{BuildableKind, CompletionEvent, ManufacturingState, QueueItem};
 use rebellion_core::missions::{MissionEffect, MissionFaction, MissionResult, MissionState};
 use rebellion_core::movement::{ArrivalEvent, MovementState};
+use rebellion_core::repair::RepairEvent;
 use rebellion_core::research::{ResearchResult, ResearchState};
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
@@ -625,6 +626,24 @@ impl PerceptionIntegrator {
                 "faction_is_alliance": faction_is_alliance,
                 "tech_type": format!("{:?}", tech_type),
                 "new_level": new_level,
+            }));
+        }
+    }
+
+    // ── Step 12b: Repair ───────────────────────────────────────────────────
+
+    /// Apply repair events: hull restoration + telemetry.
+    pub fn apply_repair_events(&mut self, world: &mut GameWorld, events: &[RepairEvent]) {
+        for evt in events {
+            let RepairEvent::ShipRepaired { fleet, ship_index: _, hull_before: _, hull_after } = evt;
+            // Repair events are informational — the actual hull value is already
+            // updated by the pure RepairSystem. We just emit telemetry.
+            let fleet_name = world.fleets.get(*fleet)
+                .map(|f| sys_name(world, f.location))
+                .unwrap_or_else(|| "unknown".into());
+            self.emit(SYS_REPAIR, EVT_SHIP_REPAIRED, serde_json::json!({
+                "fleet_location": fleet_name,
+                "hull_after": hull_after,
             }));
         }
     }

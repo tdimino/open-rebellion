@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use crate::integrator::PerceptionIntegrator;
 use rebellion_core::ai::{AIState, AISystem};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
+use rebellion_core::repair::{RepairState, RepairSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::bombardment::BombardmentSystem;
 use rebellion_core::combat::{CombatSide, CombatSystem};
@@ -49,6 +50,7 @@ pub struct SimulationStates {
     pub victory: VictoryState,
     pub betrayal: BetrayalState,
     pub economy: EconomyState,
+    pub repair: RepairState,
     pub combat_cooldowns: HashMap<SystemKey, u64>,
 }
 
@@ -269,6 +271,10 @@ pub fn run_simulation_tick(
     let research_results = ResearchSystem::advance(&mut states.research, world, tick_events);
     integrator.apply_research_results(&research_results, &mut states.research);
 
+    // ── 12b. Ship repair ────────────────────────────────────────────────
+    let repair_events = RepairSystem::advance(&mut states.repair, world, tick_events);
+    integrator.apply_repair_events(world, &repair_events);
+
     // ── 13. Jedi training ────────────────────────────────────────────────
     let jedi_rolls = take_rolls(states.jedi.training.len().max(1));
     let jedi_events = JediSystem::advance(&mut states.jedi, world, tick_events, &jedi_rolls);
@@ -359,6 +365,7 @@ mod tests {
             victory: VictoryState::new(s1, s2),
             betrayal: BetrayalState::new(),
             economy: EconomyState::default(),
+            repair: RepairState,
             combat_cooldowns: HashMap::new(),
         };
         states
@@ -434,6 +441,7 @@ mod tests {
             victory: VictoryState::new(s1, s2),
             betrayal: BetrayalState::new(),
             economy: EconomyState::default(),
+            repair: RepairState,
             combat_cooldowns: HashMap::new(),
         };
 
