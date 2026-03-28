@@ -312,6 +312,8 @@ impl EconomySystem {
             // Formula: clamp_nonneg(100 - capships * GNPRTB[7684] - fighters * GNPRTB[7685])
             // Original only applies at systems with KDY flag (field_0x88 bit 5).
             // We apply to all controlled systems — modifier is 100 when no ships, harmless.
+            // Note: uses hull counts (ShipEntry.count per fleet), not fleet object counts.
+            // The original iterates fleet ship lists and sums individual hull entries.
             let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty) as i32;
             let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty) as i32;
             let total_capships = presence.alliance_capships as i32 + presence.empire_capships as i32;
@@ -347,7 +349,7 @@ impl EconomySystem {
 
             // 7. Incident state + uprising visibility (FUN_0050a970 + FUN_0050ac70).
             // Evaluate incident flags based on system state. Fire events on transitions.
-            let new_flags = evaluate_incident_flags(sys, &eco.summary);
+            let new_flags = evaluate_incident_flags(sys, &eco.summary, &eco);
             let old_flags = &eco.incident_flags;
             if new_flags.uprising && !old_flags.uprising {
                 events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "uprising" });
@@ -613,8 +615,8 @@ fn calculate_resource_allocation(
 fn resolve_system_control(
     sys: &crate::world::System,
     presence: &MilitaryPresence,
-    _gnprtb: &GnprtbParams,
-    _difficulty: u8,
+    gnprtb: &GnprtbParams,
+    difficulty: u8,
 ) -> ControlKind {
     if !sys.is_populated {
         return ControlKind::Uncontrolled;
@@ -628,10 +630,14 @@ fn resolve_system_control(
         (false, true) => ControlKind::Controlled(crate::dat::Faction::Empire),
         (true, true) => ControlKind::Contested,
         (false, false) => {
-            // No troops — keep existing control if system has fleets, else uncontrolled.
-            // Original checks energy vs GNPRTB[7760] threshold here but the primary
-            // signal is troop presence. Preserve existing control for stability.
-            sys.control
+            // No troops — original checks energy vs GNPRTB[7760] threshold.
+            // If system energy meets threshold, preserve existing control; else uncontrolled.
+            let threshold = gnprtb.value(GNPRTB_ENERGY_CONTROL_THRESHOLD, difficulty) as u8;
+            if sys.total_energy >= threshold {
+                sys.control
+            } else {
+                ControlKind::Uncontrolled
+            }
         }
     }
 }
@@ -698,18 +704,19 @@ fn compute_system_summary(
 /// We compute flags each tick and let the advance loop detect transitions.
 ///
 /// Flags:
-/// - uprising: system under uprising or troop deficit
+/// - uprising: system under uprising (ControlKind::Uprising only)
 /// - informant: system has negative troop surplus (garrison shortfall)
 /// - disaster: system has very low support (below 20%)
-/// - resource: system has overcapped resources
+/// - resource: facilities exceed system capacity (energy or raw material overcap)
 fn evaluate_incident_flags(
     sys: &crate::world::System,
     summary: &SystemSummary,
+    eco: &SystemEconomy,
 ) -> IncidentFlags {
     IncidentFlags {
-        // Uprising incident: system is under uprising or has severe troop deficit
-        uprising: matches!(sys.control, ControlKind::Uprising(_))
-            || summary.troop_surplus < -2,
+        // Uprising incident: system is under uprising (field_0x88 bit 2).
+        // Original checks only the uprising control state, not troop deficit.
+        uprising: matches!(sys.control, ControlKind::Uprising(_)),
         // Informant incident: garrison shortfall (mild deficit)
         informant: summary.troop_surplus < 0,
         // Disaster incident: very low popular support (below 20%)
@@ -721,8 +728,9 @@ fn evaluate_incident_flags(
             };
             controlling_support < 0.20
         },
-        // Resource incident: resource allocation issues (overcap or zero output)
-        resource: sys.total_energy == 0 || sys.raw_materials == 0,
+        // Resource incident: facilities exceed system capacity (overcap).
+        // Original checks field_0x88 bit 19 which maps to resource overcap state.
+        resource: eco.energy_overcapped || eco.raw_material_overcapped,
     }
 }
 
@@ -1485,7 +1493,34 @@ mod tests {
     }
 
     #[test]
-    fn side_resolution_no_troops_preserves_existing() {
+    fn side_resolution_no_troops_energy_above_threshold_preserves() {
+        let gnprtb = stock_gnprtb();
+        let sys = crate::world::System {
+            dat_id: DatId(0), name: "Test".into(),
+            sector: crate::ids::SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 60, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Empire),
+        };
+        let presence = MilitaryPresence {
+            alliance_fleets: 0, empire_fleets: 0,
+            alliance_fighters: 0, empire_fighters: 0,
+            alliance_troops: 0, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
+        };
+        let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
+        // No troops but energy >= GNPRTB[7760](60) — preserves existing control
+        assert_eq!(result, ControlKind::Controlled(crate::dat::Faction::Empire));
+    }
+
+    #[test]
+    fn side_resolution_no_troops_low_energy_becomes_uncontrolled() {
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
             dat_id: DatId(0), name: "Test".into(),
@@ -1507,7 +1542,198 @@ mod tests {
             alliance_capships: 0, empire_capships: 0,
         };
         let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
-        // No troops — preserves existing control
-        assert_eq!(result, ControlKind::Controlled(crate::dat::Faction::Empire));
+        // No troops and energy < GNPRTB[7760](60) — becomes uncontrolled
+        assert_eq!(result, ControlKind::Uncontrolled);
+    }
+
+    // --- Task #42: Empire troop doubling in support drift ---
+
+    #[test]
+    fn support_drift_empire_troop_doubling() {
+        let gnprtb = stock_gnprtb();
+        // Alliance-controlled system with low support and 2 troops
+        let sys_alliance = crate::world::System {
+            dat_id: DatId(0), name: "Test".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.1, popularity_empire: 0.8,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        };
+        let presence_alliance = MilitaryPresence {
+            alliance_fleets: 0, empire_fleets: 0,
+            alliance_fighters: 0, empire_fighters: 0,
+            alliance_troops: 2, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
+        };
+        let (a_delta_alliance, _) = calculate_support_drift(&sys_alliance, &presence_alliance, &gnprtb, 2);
+
+        // Empire-controlled system with same setup and 2 troops
+        let sys_empire = crate::world::System {
+            dat_id: DatId(0), name: "Test".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.8, popularity_empire: 0.1,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Empire),
+        };
+        let presence_empire = MilitaryPresence {
+            alliance_fleets: 0, empire_fleets: 0,
+            alliance_fighters: 0, empire_fighters: 0,
+            alliance_troops: 0, empire_troops: 2,
+            alliance_capships: 0, empire_capships: 0,
+        };
+        let (_, e_delta_empire) = calculate_support_drift(&sys_empire, &presence_empire, &gnprtb, 2);
+
+        // Empire troops get doubled via GNPRTB[7680]=2, so Empire drift should be
+        // less (more suppression) than Alliance drift with same troop count.
+        // Both deltas are negative (drift away from controller).
+        assert!(
+            e_delta_empire.abs() < a_delta_alliance.abs(),
+            "Empire should have less drift (more suppression) due to troop doubling: empire={e_delta_empire}, alliance={a_delta_alliance}"
+        );
+    }
+
+    // --- Task #43: Unpopulated system skipping ---
+
+    #[test]
+    fn unpopulated_system_skipped_in_advance() {
+        let gnprtb = stock_gnprtb();
+        let mut world = GameWorld::default();
+        world.gnprtb = gnprtb;
+        let _sys_key = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Unpopulated".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: false, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Uncontrolled,
+        });
+
+        let mut state = EconomyState::default();
+        let tick = vec![TickEvent { tick: 1 }];
+        let events = EconomySystem::advance(&mut state, &world, &tick, 2);
+
+        // Unpopulated system should produce zero events and no economy entry
+        assert!(events.is_empty(), "unpopulated system should produce no events: {events:?}");
+        assert!(state.per_system.is_empty(), "no economy entry for unpopulated system");
+    }
+
+    // --- Task #44: Uprising garrison doubling ---
+
+    #[test]
+    fn garrison_uprising_doubling() {
+        let gnprtb = stock_gnprtb();
+        // Controlled system: garrison = ceil((60 - 30) / 10) = 3
+        let garrison_controlled = calculate_garrison_requirement(
+            0.30,
+            &ControlKind::Controlled(crate::dat::Faction::Alliance),
+            &gnprtb,
+            2,
+        );
+        // Uprising system: garrison = 3 * GNPRTB[7682](2) = 6
+        let garrison_uprising = calculate_garrison_requirement(
+            0.30,
+            &ControlKind::Uprising(crate::dat::Faction::Alliance),
+            &gnprtb,
+            2,
+        );
+        assert_eq!(garrison_controlled, 3, "controlled garrison");
+        assert_eq!(garrison_uprising, garrison_controlled * 2, "uprising garrison should be 2x controlled");
+    }
+
+    // --- Task #45: Collection rate at zero support + drift at threshold boundary ---
+
+    #[test]
+    fn collection_rate_at_zero_support() {
+        let gnprtb = stock_gnprtb();
+        let rate = calculate_collection_rate(0.0, &gnprtb, 2);
+        // At zero support, formula: base(100) / max(0, 1) = 100
+        assert!((rate - 100.0).abs() < f32::EPSILON, "zero support should yield max rate: {rate}");
+    }
+
+    #[test]
+    fn support_drift_at_exact_threshold() {
+        let gnprtb = stock_gnprtb();
+        // Support at exactly 0.40 (threshold = 40 in integer)
+        let sys = crate::world::System {
+            dat_id: DatId(0), name: "Test".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.40, popularity_empire: 0.5,
+            is_populated: true, total_energy: 10, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        };
+        let presence = MilitaryPresence {
+            alliance_fleets: 0, empire_fleets: 0,
+            alliance_fighters: 0, empire_fighters: 0,
+            alliance_troops: 0, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
+        };
+        let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2);
+        // At exactly threshold (40), integer comparison: 40 > 40 is false → drift occurs.
+        // Original: `if (support <= GNPRTB[7732])` means 40 <= 40 passes → drift.
+        assert!(a_delta != 0.0, "at threshold boundary drift should occur: {a_delta}");
+        assert!(e_delta != 0.0, "at threshold boundary drift should occur: {e_delta}");
+    }
+
+    // --- Task #46: Fleet posture is_contested + strengthen telemetry ---
+
+    #[test]
+    fn fleet_posture_contested_requires_two_per_side() {
+        let gnprtb = stock_gnprtb();
+        let mut world = GameWorld::default();
+        world.gnprtb = gnprtb;
+
+        let sys = crate::world::System {
+            dat_id: DatId(0), name: "Test".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 60, raw_materials: 10,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+        };
+        let presence_1v1 = MilitaryPresence {
+            alliance_fleets: 1, empire_fleets: 1,
+            alliance_fighters: 0, empire_fighters: 0,
+            alliance_troops: 5, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
+        };
+        let summary_1v1 = compute_system_summary(&world, &sys, &presence_1v1, 0);
+        assert!(!summary_1v1.fleet_posture.is_contested, "1v1 fleets should NOT be contested");
+
+        let presence_2v2 = MilitaryPresence {
+            alliance_fleets: 2, empire_fleets: 2,
+            alliance_fighters: 0, empire_fighters: 0,
+            alliance_troops: 5, empire_troops: 0,
+            alliance_capships: 0, empire_capships: 0,
+        };
+        let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0);
+        assert!(summary_2v2.fleet_posture.is_contested, "2v2 fleets should be contested");
     }
 }

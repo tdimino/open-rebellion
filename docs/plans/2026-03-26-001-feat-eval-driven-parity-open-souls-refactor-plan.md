@@ -16,7 +16,7 @@ origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 | 1 | ✅ DONE | +11 | economy.rs (support drift, collection, garrison), 4 mission formula fixes + 1 stubbed |
 | 2 | ✅ DONE | +9 | DS shield generator, officer combat rating, decoy missions, ship repair framework |
 | 3 | ✅ DONE | +16 | Jabba 5-case, Emperor co-location, Leia Force, 17 RE IDs, 8 notification events |
-| 3b | PENDING | — | Knesset Shamash: source tree cross-ref, economy 17%→80%, fix swapped IDs, incident model |
+| 3b | ✅ DONE | +7 | Knesset Shamash: economy 17%→97% (16/17 functions, 30 tests), swapped IDs, incident model, GNPRTB[7760] energy threshold, all review fixes |
 | 4 | PENDING | — | PerceptionIntegrator (simulation.rs 1,400→200 LOC) |
 | 5 | PENDING | — | 179 multiplayer protocol types, telemetry coverage test |
 

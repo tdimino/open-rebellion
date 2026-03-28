@@ -11,10 +11,10 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Core-95%25-brightgreen.svg" alt="Core Parity">
-  <img src="https://img.shields.io/badge/UI-80%25-yellow.svg" alt="UI Parity">
-  <img src="https://img.shields.io/badge/Combat-60%25-orange.svg" alt="Combat Parity">
-  <img src="https://img.shields.io/badge/Tests-283%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Core-97%25-brightgreen.svg" alt="Core Parity">
+  <img src="https://img.shields.io/badge/UI-97%25-brightgreen.svg" alt="UI Parity">
+  <img src="https://img.shields.io/badge/Combat-99%25-brightgreen.svg" alt="Combat Parity">
+  <img src="https://img.shields.io/badge/Tests-396%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>

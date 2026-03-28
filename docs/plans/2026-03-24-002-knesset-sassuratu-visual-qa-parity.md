@@ -5,7 +5,7 @@ status: active
 date: 2026-03-24
 project: open-rebellion
 origin: docs/plans/2026-03-24-001-knesset-demiurge-ui-parity.md
-tags: [knesset, swarm, qa, visual-testing, parity, panels, cockpit]
+tags: [knesset, swarm, qa, visual-testing, parity, panels, cockpit, seo, geo, ghidra-site]
 ---
 
 # Knesset Sassuratu — Visual QA + UI Parity Completion
@@ -14,11 +14,13 @@ tags: [knesset, swarm, qa, visual-testing, parity, panels, cockpit]
 
 ## Purpose
 
-Two objectives for the Open Rebellion UI after the Knesset Demiurge build sprint:
+Three objectives for the Open Rebellion project after the Knesset Demiurge build sprint:
 
 1. **Visual QA**: Launch the WASM build in a browser via agent-browser, navigate every UI panel systematically, screenshot and verify that each renders correctly and is functionally interactive.
 
 2. **UI Parity Completion**: Fix every broken panel, missing wiring, visual bug, or incomplete feature found during QA. Close remaining non-combat UI gaps from the roadmap.
+
+3. **SEO/GEO Optimization**: Bring the Ghidra documentation site (`ghidra-site/`) to parity with the minoanmystery-astro SEO/GEO implementation—OG/Twitter cards, AI-crawler-explicit robots.txt, FAQ sections, source citations, and structured data. Based on the Scholiast research plan (`.subdaimon-output/scholiast-seo-geo-plan.md`).
 
 ## Architecture Decisions
 
@@ -27,6 +29,7 @@ Two objectives for the Open Rebellion UI after the Knesset Demiurge build sprint
 3. **Automated screenshots as evidence**: Every test scenario produces a timestamped screenshot in `docs/qa/screenshots/`. Defects reference screenshots by filename.
 4. **Fix in smallest scope**: Each bug fix is a single commit touching minimal files. No refactoring during fix phase.
 5. **Re-verify after fix**: Every fix is re-tested by the verification dabora before the Knesset closes.
+6. **SEO/GEO is isolated**: The Ghidra site dabora touches only `ghidra-site/` files—zero overlap with game code. Runs fully parallel with all other daborot.
 
 ---
 
@@ -69,8 +72,8 @@ The cockpit comment says: "We can't scissor/clip macroquad draw calls to the vie
 | 1 | **Bōreret** (בוררת "The Inspector") | Visual QA — screenshot and catalog every panel | sonnet | Immediately after WASM build succeeds |
 | 2 | **Rophe** (רופא "The Healer") | Bug fixes — repair each defect from QA inventory | sonnet | After Bōreret completes defect inventory |
 | 3 | **Yashar** (ישר "The Straightener") | Parity gaps — close remaining non-combat UI holes | sonnet | Parallel with Rophe (no file conflicts) |
-| 4 | **Sopher** (סופר "The Scribe") | SEO/GEO optimization for Ghidra documentation site | sonnet | Immediately (parallel — touches only ghidra-site/) |
-| 5 | **Mashbīr** (משביר "The Verifier") | Re-test — confirm every fix and parity item | sonnet | After Rophe + Yashar + Sopher complete |
+| 4 | **Kēryx** (κῆρυξ "The Herald") | SEO/GEO — Ghidra docs site optimization | sonnet | Immediately (parallel with all — isolated files) |
+| 5 | **Mashbīr** (משביר "The Verifier") | Re-test — confirm every fix, parity item, and site deploy | sonnet | After Rophe + Yashar + Kēryx complete |
 
 ### Dabora 1: Bōreret (בוררת) — The Inspector
 
@@ -330,52 +333,208 @@ Already handled by Rophe Fix 1 — Yashar skips this.
 
 ---
 
-### Dabora 4: Sopher (סופר) — The Scribe
+### Dabora 4: Kēryx (κῆρυξ) — The Herald
 
-*Etymology: from S-P-R, "to count, recount, inscribe" — the royal scribe who makes the record visible to the world. In Ugaritic administration, the sōpher maintained the tablets that allowed the palace to be found.*
+*Etymology: from Greek κῆρυξ (kēryx), "herald, crier" — the one who proclaims the name abroad. In the Eleusinian Mysteries, the kēryx was the sacred herald who announced the rites to the world. Here, Kēryx announces the Ghidra RE documentation to search engines and AI citation systems.*
 
-**Role**: Implement SEO/GEO optimization for the Ghidra documentation site (`ghidra-site/`). Runs entirely in parallel — touches NO game code files.
+**Role**: SEO and GEO optimization for the Ghidra documentation site at `ghidra-site/`. Based on the Scholiast research plan (`.subdaimon-output/scholiast-seo-geo-plan.md`), porting patterns from the minoanmystery-astro reference implementation.
 
-**Source**: `.subdaimon-output/scholiast-seo-geo-plan.md` — full implementation spec from Scholiast research.
+**Source**: `.subdaimon-output/scholiast-seo-geo-plan.md` — Sections 1–8, confidence assessments, priority matrix.
 
-**P0 Tasks** (must complete):
+**Tools**: File editing only. No build tools, no browser automation. All changes are Markdown, YAML, HTML, and plain text within `ghidra-site/`.
 
-#### SEO 1: Site Description + Meta Plugin
+#### P0 Items (High Impact, Low Effort)
+
+##### SEO-1: Expand `site_description` in `mkdocs.yml`
 **File**: `ghidra-site/mkdocs.yml`
-**Change**: Expand `site_description` to full SEO text. Add `meta` plugin to `plugins:` list. This enables per-folder `.meta.yml` defaults.
+**Change**: Replace the current terse description:
+```yaml
+# Before:
+site_description: "Reverse engineering documentation for Star Wars Rebellion (1998, LucasArts)"
 
-#### SEO 2: Open Graph + Twitter Cards
-**File**: `ghidra-site/overrides/main.html` (NEW)
-**Change**: Create custom `main.html` template override that extends `base.html` and injects OG/Twitter meta tags in `{% block extrahead %}`. Tags: `og:type`, `og:url`, `og:title`, `og:description`, `og:image`, `twitter:card`, `twitter:title`, `twitter:description`.
+# After:
+site_description: "Reverse engineering documentation for Star Wars Rebellion (1998, LucasArts). 5,127 decompiled functions from REBEXE.EXE, complete combat formula derivation, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed, AI behavior analysis."
+```
 
-#### SEO 3: robots.txt with AI Crawler Allow
-**File**: `ghidra-site/docs/robots.txt` (NEW)
-**Change**: Create `robots.txt` that explicitly allows 20+ AI crawlers (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, etc.) with `Allow: /`. Reference `llms.txt`. Add to mkdocs.yml via `extra` or static file copy.
+##### SEO-2: Create `overrides/main.html` with OG + Twitter Meta Tags
+**Files**: `ghidra-site/overrides/main.html` (NEW), `ghidra-site/mkdocs.yml` (add `custom_dir: overrides`)
+**Change**: Inject Open Graph and Twitter Card meta tags for social sharing previews. Template:
 
-#### SEO 4: Social Cards Plugin
+```html
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {# Open Graph #}
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="{{ page.canonical_url }}" />
+  <meta property="og:title" content="{{ page.title }} — Open Rebellion RE" />
+  <meta property="og:description" content="{{ page.meta.description | default(config.site_description) }}" />
+  <meta property="og:image" content="{{ config.site_url }}assets/social-card.png" />
+  <meta property="og:site_name" content="{{ config.site_name }}" />
+
+  {# Twitter Card #}
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ page.title }} — Open Rebellion RE" />
+  <meta name="twitter:description" content="{{ page.meta.description | default(config.site_description) }}" />
+  <meta name="twitter:image" content="{{ config.site_url }}assets/social-card.png" />
+
+  {# JSON-LD Structured Data #}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "{{ config.site_url }}#website",
+        "name": "{{ config.site_name }}",
+        "url": "{{ config.site_url }}",
+        "description": "{{ config.site_description }}",
+        "author": {
+          "@type": "Person",
+          "name": "Tom di Mino",
+          "url": "https://www.minoanmystery.org",
+          "sameAs": ["https://github.com/tdimino"]
+        }
+      },
+      {
+        "@type": "SoftwareSourceCode",
+        "@id": "{{ config.site_url }}#project",
+        "name": "Open Rebellion",
+        "codeRepository": "https://github.com/tdimino/open-rebellion",
+        "programmingLanguage": ["Rust", "C++"],
+        "about": "Rust reimplementation of Star Wars Rebellion (1998), informed by exhaustive Ghidra decompilation of REBEXE.EXE"
+      }
+    ]
+  }
+  </script>
+{% endblock %}
+```
+
+Also add `custom_dir: overrides` under `theme:` in `mkdocs.yml`.
+
+##### SEO-3: Enable `meta` Plugin
 **File**: `ghidra-site/mkdocs.yml`
-**Change**: Add `social` plugin with Star Wars dark theme (`background_color: "#0d0d0d"`, `color: "#ffc107"`). Requires `pip install pillow cairosvg`.
+**Change**: Add `- meta` to the `plugins:` block. This enables per-folder `.meta.yml` defaults and per-page front matter descriptions.
 
-**P1 Tasks** (if time permits):
+##### SEO-4: Create `docs/robots.txt` with AI Crawler Explicit Allow
+**Files**: `ghidra-site/docs/robots.txt` (NEW), `ghidra-site/mkdocs.yml` (add to extra files)
+**Content**:
 
-#### GEO 1: FAQ Sections
+```
+User-agent: *
+Allow: /
+
+# AI Crawlers — Allow all content
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: Claude-Web
+User-agent: ClaudeBot
+User-agent: Anthropic-AI
+User-agent: PerplexityBot
+User-agent: Google-Extended
+User-agent: Amazonbot
+User-agent: OAI-SearchBot
+User-agent: YouBot
+User-agent: PetalBot
+Allow: /
+
+# LLMs.txt Discovery
+LLMs-Txt: https://tdimino.github.io/open-rebellion/llms.txt
+
+# Sitemap
+Sitemap: https://tdimino.github.io/open-rebellion/sitemap.xml
+```
+
+Register as extra file in `mkdocs.yml` (note: mkdocs-material does not have `extra_files` — use a `hooks/` copy script or place in `docs/` root for automatic inclusion).
+
+#### P1 Items (High Impact, Medium Effort)
+
+##### GEO-1: Add FAQ Sections to `index.md` and `ai-functions.md`
 **Files**: `ghidra-site/docs/index.md`, `ghidra-site/docs/ai-functions.md`
-**Change**: Add `## Frequently Asked Questions` sections with direct-answer prose. These are the highest-ROI GEO technique per the Princeton study.
+**Change**: Append `## Frequently Asked Questions` sections with question/answer pairs. These serve dual purpose: GEO citation signals (Princeton study: FAQ structure is high-ROI for AI citation) and potential FAQPage schema.org structured data.
 
-#### GEO 2: Sources Sections in Scholar Docs
-**Files**: `ghidra-site/docs/scholar/*.md`
-**Change**: Add `## Sources` footer to each scholar doc citing the Ghidra project, REBEXE.EXE analysis, and relevant academic/community references.
+Questions for `index.md`:
+- What is REBEXE.EXE?
+- How many functions were decompiled?
+- What is the GNPRTB table?
+- What tools were used for reverse engineering?
+- How does the combat system work?
 
-#### GEO 3: Section Meta Files
-**Files**: `ghidra-site/docs/scholar/.meta.yml`, `ghidra-site/docs/combat/.meta.yml`, `ghidra-site/docs/guide/.meta.yml` (all NEW)
-**Change**: Per-folder default descriptions for search engines and AI crawlers.
+Questions for `ai-functions.md`:
+- How does the AI evaluate the galaxy?
+- How does fleet deployment work?
+- What is the garrison strength formula?
+- How does the AI choose attack targets?
+
+##### GEO-2: Add `## Sources` Sections to Scholar Docs
+**Files**: All 9 files in `ghidra-site/docs/scholar/*.md`
+**Change**: Append a `## Sources` section to each scholar document citing:
+1. Ghidra RE session date and function count
+2. TheArchitect2018 wiki cross-reference
+3. REBEXE.EXE binary details (version, MD5 if known)
+4. Any related community or academic sources
+
+Example footer:
+```markdown
+## Sources
+
+1. REBEXE.EXE decompilation — Ghidra 11.x, 2026-03-23, 5,127 functions >100 bytes
+2. TheArchitect2018, *Star Wars Rebellion Wiki* — cross-referenced 2026-03-23
+3. Star Wars Rebellion v2.0 (1998, LucasArts/Coolhand Interactive) — Windows PE 32-bit
+```
+
+##### GEO-3: Rewrite Section Intros with Quantitative Claims
+**Files**: `ghidra-site/docs/index.md`, `ghidra-site/docs/scholar/annotated-functions.md`, `ghidra-site/docs/combat/space-combat.md`
+**Change**: Ensure the first 2 paragraphs of each major page lead with specific numbers rather than building context. AI citation tools prefer prose with statistics over tables for extraction.
+
+Before: "In this document, we will examine how space combat works in the original game."
+After: "Space combat in Star Wars Rebellion resolves through a 7-phase pipeline. Phase 1 computes fleet power ratios from GNPRTB[0x05] and GNPRTB[0x06]. The full pipeline processes 111 tunable parameters across 5,127 decompiled functions."
+
+##### GEO-4: Create `docs/llms.txt`
+**File**: `ghidra-site/docs/llms.txt` (NEW)
+**Change**: Manual LLM-friendly site index (per minoanmystery-astro pattern):
+
+```markdown
+# Open Rebellion — Ghidra RE Documentation
+
+> Exhaustive reverse engineering of Star Wars Rebellion (1998, LucasArts). 5,127 decompiled functions, full combat formula derivation, C++ class hierarchy reconstruction, AI behavior analysis.
+
+## Sections
+
+- [Overview](https://tdimino.github.io/open-rebellion/): Index, what was decompiled, key findings
+- [AI Functions](https://tdimino.github.io/open-rebellion/ai-functions/): Galaxy evaluation, fleet deployment, targeting
+- [Space Combat Pipeline](https://tdimino.github.io/open-rebellion/combat/space-combat/): 7-phase pipeline, GNPRTB params
+- [Scholar Documents](https://tdimino.github.io/open-rebellion/scholar/annotated-functions/): Full annotated function index
+- [Rust Implementation Guide](https://tdimino.github.io/open-rebellion/scholar/rust-implementation-guide/): Mapping C++ to Rust
+- [Function Index (5,127)](https://tdimino.github.io/open-rebellion/indexes/function-index/): Complete decompiled function list
+- [Game Guide](https://tdimino.github.io/open-rebellion/guide/scenario/): Player-facing mechanics documentation
+```
+
+#### P2 Items (Deferred — NOT in Knesset scope unless time permits)
+
+- `social` plugin with Pillow/CairoSVG for auto-generated social cards (requires CI env check)
+- `.meta.yml` files per section (`scholar/`, `combat/`, `guide/`)
+- `FAQPage` JSON-LD schema for FAQ-bearing pages
+- `mkdocs-llmstxt-md` plugin (automated `llms.txt` generation)
+- Explicit sitemap plugin config with `changefreq`/`priority`
 
 **Ownership**:
 
 | File | Access |
 |------|--------|
-| `ghidra-site/**` | **OWN** (exclusive) |
-| All game code | NONE — do not read or touch |
+| `ghidra-site/mkdocs.yml` | **OWN** |
+| `ghidra-site/overrides/` (NEW dir) | **OWN** |
+| `ghidra-site/overrides/main.html` (NEW) | **OWN** |
+| `ghidra-site/docs/robots.txt` (NEW) | **OWN** |
+| `ghidra-site/docs/llms.txt` (NEW) | **OWN** |
+| `ghidra-site/docs/index.md` | **OWN** (append FAQ + rewrite intro) |
+| `ghidra-site/docs/ai-functions.md` | **OWN** (append FAQ + rewrite intro) |
+| `ghidra-site/docs/scholar/*.md` | **OWN** (append Sources sections) |
+| `ghidra-site/docs/combat/space-combat.md` | **OWN** (rewrite intro) |
+| All `crates/` files | NONE (no access) |
+| All `docs/qa/` files | NONE (no access) |
+
+**Zero file overlap with Daborot 1–3 and 5.** Kēryx is fully isolated.
 
 ---
 
@@ -383,7 +542,7 @@ Already handled by Rophe Fix 1 — Yashar skips this.
 
 *Etymology: from Sh-B-R, "to break" (in the hiphil: "to cause to break through, to deliver") — the one who breaks through to certainty. In Ugaritic royal inscriptions, the mashbīr is the gate-breaker who confirms the siege is over.*
 
-**Role**: Re-run all 47 test scenarios from Bōreret's protocol after Rophe + Yashar finish. Confirm all defects are resolved. Run cargo test + WASM build to verify no regressions.
+**Role**: Re-run all 47 test scenarios from Bōreret's protocol after Rophe + Yashar finish. Confirm all defects are resolved. Run cargo test + WASM build to verify no regressions. Verify Kēryx's SEO/GEO changes with `mkdocs build`.
 
 **Protocol**:
 1. Rebuild WASM: `bash scripts/build-wasm.sh`
@@ -393,15 +552,30 @@ Already handled by Rophe Fix 1 — Yashar skips this.
 5. Run `PATH="/usr/bin:$PATH" cargo test` — all 284+ tests must pass
 6. Run `PATH="/usr/bin:$PATH" cargo check` — zero warnings
 7. Build WASM one final time to confirm clean artifact
+8. Verify Ghidra site: `cd ghidra-site && mkdocs build --strict` — zero warnings
+9. Spot-check OG meta tags in built HTML: `grep "og:description" ghidra-site/site/index.html`
+10. Verify `robots.txt` present in `ghidra-site/site/robots.txt`
+11. Verify `llms.txt` present in `ghidra-site/site/llms.txt`
 
 **Output**: `docs/qa/verification-report.md`
 
 ```markdown
 ## Verification Report — Knesset Sassuratu
 
+### Game UI Verification
 | Defect ID | Status | Fix Commit | Re-test Result | Screenshot |
 |-----------|--------|------------|----------------|------------|
 | D001 | FIXED | abc1234 | PASS | fix-d001.png |
+
+### Ghidra Site SEO/GEO Verification
+| Item | Status | Evidence |
+|------|--------|----------|
+| OG meta tags in index.html | PASS/FAIL | grep output |
+| robots.txt present | PASS/FAIL | file check |
+| llms.txt present | PASS/FAIL | file check |
+| mkdocs build --strict | PASS/FAIL | exit code |
+| FAQ sections in index.md | PASS/FAIL | visual check |
+| Sources in scholar docs | PASS/FAIL | grep count |
 ```
 
 **Ownership**: READ-ONLY on all source files. Writes only to `docs/qa/`.
@@ -410,18 +584,24 @@ Already handled by Rophe Fix 1 — Yashar skips this.
 
 ## File Ownership Matrix
 
-| File | Bōreret | Rophe | Yashar | Sopher | Mashbīr |
-|------|---------|-------|--------|--------|---------|
-| `crates/rebellion-app/src/main.rs` | read | **OWN** (panel toggles, wiring) | write (save shortcut only) | — | read |
-| `crates/rebellion-render/src/lib.rs` | read | **OWN** (mouse clamping) | read | — | read |
+| File | Bōreret | Rophe | Yashar | Kēryx | Mashbīr |
+|------|---------|-------|--------|-------|---------|
+| `crates/rebellion-app/src/main.rs` | read | **OWN** | write (save shortcut) | — | read |
+| `crates/rebellion-render/src/lib.rs` | read | **OWN** | read | — | read |
 | `crates/rebellion-render/src/cockpit.rs` | read | **OWN** | read | — | read |
-| `crates/rebellion-render/src/panels/*.rs` | read | **OWN** (rendering) | write (close behavior) | — | read |
+| `crates/rebellion-render/src/panels/*.rs` | read | **OWN** | write (close behavior) | — | read |
 | `crates/rebellion-render/src/encyclopedia.rs` | read | **OWN** | read | — | read |
 | `crates/rebellion-render/src/message_log.rs` | read | **OWN** | read | — | read |
 | `crates/rebellion-render/src/*.rs` (other) | read | read | read | — | read |
 | `crates/rebellion-core/src/**` | read | read | read | — | read |
-| `ghidra-site/**` | — | — | — | **OWN** (exclusive) | read |
-| `docs/qa/**` | **OWN** (create) | read | read | — | **OWN** (verify) |
+| `ghidra-site/mkdocs.yml` | — | — | — | **OWN** | read |
+| `ghidra-site/overrides/**` | — | — | — | **OWN** | read |
+| `ghidra-site/docs/*.md` | — | — | — | **OWN** | read |
+| `ghidra-site/docs/scholar/*.md` | — | — | — | **OWN** | read |
+| `ghidra-site/docs/combat/*.md` | — | — | — | **OWN** | read |
+| `ghidra-site/docs/robots.txt` | — | — | — | **OWN** | read |
+| `ghidra-site/docs/llms.txt` | — | — | — | **OWN** | read |
+| `docs/qa/**` | **OWN** | read | read | — | **OWN** |
 | `scripts/build-wasm.sh` | exec | exec | — | — | exec |
 
 ---
@@ -433,25 +613,25 @@ Phase 1: BUILD
   bash scripts/build-wasm.sh
   python3 -m http.server 8080 -d web/   (background)
       │
-      ├──────────────────────────────────────────┐
-      ▼                                          ▼
-Phase 2: QA (Bōreret)                   Phase 2s: SEO/GEO (Sopher)
-  47 test scenarios                        ghidra-site/ optimization
-  → defect-inventory.md                    OG tags, robots.txt, FAQ, meta
-      │                                          │
-      ├──────────────────────────┐               │
-      ▼                          ▼               │
-Phase 3a: FIX (Rophe)     Phase 3b: PARITY      │
-  Pre-identified bugs +     (Yashar)             │
-  QA defect inventory       Non-combat UI gaps   │
-      │                          │               │
-      └────────────┬─────────────┘───────────────┘
+      ├────────────────────────────────────────────────────────────┐
+      ▼                                                            ▼
+Phase 2: QA (Bōreret)                              Phase 2': SEO/GEO (Kēryx)
+  47 test scenarios → defect-inventory.md             ghidra-site/ optimization
+      │                                               (FULLY PARALLEL — no deps)
+      ├──────────────────────────┐                         │
+      ▼                          ▼                         │
+Phase 3a: FIX (Rophe)     Phase 3b: PARITY (Yashar)       │
+  Pre-identified bugs +         Non-combat UI gaps         │
+  QA defect inventory           (no file conflicts)        │
+      │                          │                         │
+      └────────────┬─────────────┘─────────────────────────┘
                    ▼
 Phase 4: VERIFY (Mashbīr)
   Re-run all 47 scenarios
-  Verify ghidra-site OG tags + robots.txt
   cargo test + cargo check
   WASM rebuild
+  mkdocs build --strict
+  OG/robots/llms verification
       │
       ▼
 Phase 5: CLOSE
@@ -460,13 +640,14 @@ Phase 5: CLOSE
   Update CLAUDE.md version string if warranted
 ```
 
-Wall-clock estimate: Bōreret ~1h + Sopher ~1h (parallel) → Rophe/Yashar ~2h parallel → Mashbīr ~1h = **~4h total**
+Wall-clock estimate: Bōreret ~1h ∥ Kēryx ~1.5h → Rophe/Yashar ~2h parallel → Mashbīr ~1h = **~4h total** (Kēryx overlaps with QA phase)
 
 ---
 
 ## Acceptance Criteria
 
-1. All 47 test scenarios PASS (verified by Mashbir)
+### Game UI (Daborot 1–3, 5)
+1. All 47 test scenarios PASS (verified by Mashbīr)
 2. All pre-identified bugs (mutual exclusion, viewport clamping, save/load wiring) are fixed
 3. All P0 defects from QA inventory are resolved
 4. `PATH="/usr/bin:$PATH" cargo test` passes (284+ tests, zero failures)
@@ -475,10 +656,16 @@ Wall-clock estimate: Bōreret ~1h + Sopher ~1h (parallel) → Rophe/Yashar ~2h p
 7. Panel mutual exclusion is complete: any panel toggle closes all 8 others
 8. Mouse input in cockpit chrome area does not interact with galaxy map
 9. Every cockpit button opens its corresponding panel
-10. Ghidra site has OG/Twitter meta tags in `overrides/main.html`
-11. `robots.txt` exists with AI crawler explicit allow
-12. `meta` plugin enabled with per-folder `.meta.yml` files
-13. FAQ sections added to `index.md` and `ai-functions.md`
+
+### Ghidra Site SEO/GEO (Dabora 4)
+10. `mkdocs build --strict` passes with zero warnings
+11. Built `index.html` contains `og:title`, `og:description`, `og:image`, `twitter:card` meta tags
+12. Built `index.html` contains JSON-LD `WebSite` + `SoftwareSourceCode` structured data
+13. `robots.txt` present in built site root with AI crawler `Allow: /` directives
+14. `llms.txt` present in built site root with section index
+15. `index.md` and `ai-functions.md` each have a `## Frequently Asked Questions` section
+16. All 9 `scholar/*.md` files have a `## Sources` section
+17. Major page intros lead with quantitative claims (5,127 functions, 111 parameters, 7-phase pipeline)
 
 ## Scope Boundaries (NOT included)
 
@@ -488,3 +675,7 @@ Wall-clock estimate: Bōreret ~1h + Sopher ~1h (parallel) → Rophe/Yashar ~2h p
 - **HD asset bulk upscaling**: Visual polish — post-Knesset
 - **Mod Manager QA**: Low priority, Tab toggle only
 - **Native-only testing**: WASM is the canonical test target; egui parity assumed
+- **`social` plugin** (auto-generated social cards): Requires Pillow/CairoSVG in CI — P2
+- **Per-section `.meta.yml`**: Low-effort but low-impact — P2
+- **`FAQPage` JSON-LD schema**: Per-page injection requires custom hook — P2
+- **`mkdocs-llmstxt-md` plugin**: Young plugin (1 contributor) — manual `llms.txt` preferred

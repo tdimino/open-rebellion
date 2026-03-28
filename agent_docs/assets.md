@@ -159,22 +159,28 @@ uv run scripts/upscale-assets.py --dry-run            # Preview without processi
 
 ### Reference Image Collections (for Gemini multi-image upscaling)
 
-Gemini supports up to 14 reference images per request. Feed a relevant HD reference alongside the source BMP to guide detail reconstruction.
+1,088 usable reference images across 17 collections. **Audited 2026-03-27**: non-OT portraits removed, text-only book pages quarantined.
 
-| Collection | Path | Count | Content |
-|-----------|------|-------|---------|
-| **Wookieepedia Portraits** | `assets/references/ref-wookieepedia-portraits/` | 60 | All 60 game characters from starwars.fandom.com. `{faction}-{name}.jpg` format. |
-| **CCG Card Art** | `assets/references/ref-ccg-card-art/` | 56 | Decipher/FFG painted Star Wars CCG character cards. Same era, painted style. |
-| **Incredible Cross-Sections** | `assets/references/ref-cross-sections/` | 1 PDF | 1998 OT vehicle cutaway diagrams (Hans Jenssen/Richard Chasemore). 13MB, 36 pages. |
-| **ROTJ Illustrated Edition** | `assets/references/ref-illustrated-books/` | 1 PDF | 2021 illustrated novel — full-color OT scene paintings. 11MB. |
-| **GB Concept Art** | `assets/references/ref-gb-concept-art/` | 25 | Galactic Battlegrounds concept art from MixnMojo LucasArts Archive. Same era. |
-| **Galactic Battlegrounds** | `assets/references/ref-galactic-battlegrounds/` | 5 | Sprite sheets from Spriters Resource. |
-| **EData Characters** | `assets/references/ref-characters/` | 7 | 400x200 character panels from game EData (existing). |
-| **EData Capital Ships** | `assets/references/ref-capital-ships/` | 5 | 400x200 ship panels from game EData (existing). |
-| **EData Facilities** | `assets/references/ref-facilities/` | 9 | 400x200 facility panels from game EData (existing). |
-| **Damage Diagrams** | `assets/references/ref-damage-diagrams/` | 14 | Ship damage overlay sprites from GOKRES (existing). |
+| Collection | Count | Content |
+|-----------|-------|---------|
+| **Wookieepedia Portraits** | 11 | OT-era film stills only (49 non-OT quarantined) |
+| **CCG Card Art** | 28 | OT-era Decipher CCG painted art (28 non-OT quarantined) |
+| **Illustrated Books** | 895 | 5 book extracts: characters (189), ROTJ (91), planets (211), weapons (199), starfighters (204). 170 text pages quarantined. |
+| **Cross-Sections** | 33 | 1998 OT vehicle cutaway diagrams (Hans Jenssen/Richard Chasemore) |
+| **GB Concept Art** | 25 | Galactic Battlegrounds concept art (MixnMojo). Same era LucasArts. |
+| **Game EData** | 91 | Characters (7), ships (5), facilities (9), fighters (4), troops (8), specials (6), damage (14), missions (8), planets (9), battles (7), squadrons (14) |
 
-Full index: `assets/references/INDEX.md` — 479 images across 21 collections with DLL→reference mapping table.
+Full index: `assets/references/INDEX.md` — 1,088 images with DLL→reference mapping table.
+
+### Automated Reference Selection
+
+`scripts/select-references.py` uses Gemini Flash Lite ($0.001/BMP) to select the best 3-5 references per BMP:
+1. Routes BMP to pack via `scripts/reference-packs.json` (12 packs, 24 routing rules)
+2. Builds contact sheet of candidates, pre-filtered by entity slug when available
+3. Vision LLM picks best references (rejects text pages, non-OT content)
+4. Output: `data/reference-selections.json` (consumed by `scripts/gemini-upscale.py`)
+
+Entity mapping: `data/resource-entity-map.json` — 162 GOKRES resource IDs → character/ship names via DAT offset formulas.
 
 ### DLL Upscale Pipeline (2,231 BMPs)
 

@@ -23,6 +23,7 @@ use rebellion_core::dat::{ExplorationStatus, SectorGroup};
 use rebellion_core::ids::*;
 use rebellion_core::world::*;
 
+pub mod integrator;
 pub mod mods;
 pub mod save;
 pub mod seeds;

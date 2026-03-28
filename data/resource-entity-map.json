@@ -1,0 +1,1089 @@
+{
+  "2112": {
+    "type": "portrait",
+    "entity": "Mon Mothma",
+    "faction": "alliance",
+    "slug": "mon-mothma",
+    "char_id": 576
+  },
+  "2113": {
+    "type": "portrait",
+    "entity": "Leia Organa",
+    "faction": "alliance",
+    "slug": "leia-organa",
+    "char_id": 577
+  },
+  "2114": {
+    "type": "portrait",
+    "entity": "Luke Skywalker",
+    "faction": "alliance",
+    "slug": "luke-skywalker",
+    "char_id": 578
+  },
+  "2115": {
+    "type": "portrait",
+    "entity": "Han Solo",
+    "faction": "alliance",
+    "slug": "han-solo",
+    "char_id": 579
+  },
+  "2128": {
+    "type": "portrait",
+    "entity": "Luke Skywalker (Jedi)",
+    "faction": "alliance",
+    "slug": "luke-skywalker-jedi",
+    "char_id": 578
+  },
+  "2176": {
+    "type": "portrait",
+    "entity": "Emperor Palpatine",
+    "faction": "empire",
+    "slug": "emperor-palpatine",
+    "char_id": 640
+  },
+  "2177": {
+    "type": "portrait",
+    "entity": "Darth Vader",
+    "faction": "empire",
+    "slug": "darth-vader",
+    "char_id": 641
+  },
+  "2624": {
+    "type": "portrait",
+    "entity": "Ackbar",
+    "faction": "alliance",
+    "slug": "ackbar",
+    "char_id": 832
+  },
+  "2625": {
+    "type": "portrait",
+    "entity": "Wedge Antilles",
+    "faction": "alliance",
+    "slug": "wedge-antilles",
+    "char_id": 833
+  },
+  "2626": {
+    "type": "portrait",
+    "entity": "Lando Calrissian",
+    "faction": "alliance",
+    "slug": "lando-calrissian",
+    "char_id": 834
+  },
+  "2627": {
+    "type": "portrait",
+    "entity": "Chewbacca",
+    "faction": "alliance",
+    "slug": "chewbacca",
+    "char_id": 835
+  },
+  "2628": {
+    "type": "portrait",
+    "entity": "Jan Dodonna",
+    "faction": "alliance",
+    "slug": "jan-dodonna",
+    "char_id": 836
+  },
+  "2629": {
+    "type": "portrait",
+    "entity": "Crix Madine",
+    "faction": "alliance",
+    "slug": "crix-madine",
+    "char_id": 837
+  },
+  "2630": {
+    "type": "portrait",
+    "entity": "Carlist Rieekan",
+    "faction": "alliance",
+    "slug": "carlist-rieekan",
+    "char_id": 838
+  },
+  "2631": {
+    "type": "portrait",
+    "entity": "Afyon",
+    "faction": "alliance",
+    "slug": "afyon",
+    "char_id": 839
+  },
+  "2632": {
+    "type": "portrait",
+    "entity": "Drayson",
+    "faction": "alliance",
+    "slug": "drayson",
+    "char_id": 840
+  },
+  "2633": {
+    "type": "portrait",
+    "entity": "Borsk Fey'lya",
+    "faction": "alliance",
+    "slug": "borsk-fey-lya",
+    "char_id": 841
+  },
+  "2634": {
+    "type": "portrait",
+    "entity": "Tura Raftican",
+    "faction": "alliance",
+    "slug": "tura-raftican",
+    "char_id": 842
+  },
+  "2635": {
+    "type": "portrait",
+    "entity": "Bren Derlin",
+    "faction": "alliance",
+    "slug": "bren-derlin",
+    "char_id": 843
+  },
+  "2636": {
+    "type": "portrait",
+    "entity": "Garm Bel Iblis",
+    "faction": "alliance",
+    "slug": "garm-bel-iblis",
+    "char_id": 844
+  },
+  "2637": {
+    "type": "portrait",
+    "entity": "Talon Karrde",
+    "faction": "alliance",
+    "slug": "talon-karrde",
+    "char_id": 845
+  },
+  "2638": {
+    "type": "portrait",
+    "entity": "Narra",
+    "faction": "alliance",
+    "slug": "narra",
+    "char_id": 846
+  },
+  "2639": {
+    "type": "portrait",
+    "entity": "Huoba Neva",
+    "faction": "alliance",
+    "slug": "huoba-neva",
+    "char_id": 847
+  },
+  "2640": {
+    "type": "portrait",
+    "entity": "Page",
+    "faction": "alliance",
+    "slug": "page",
+    "char_id": 848
+  },
+  "2641": {
+    "type": "portrait",
+    "entity": "Syub Snunb",
+    "faction": "alliance",
+    "slug": "syub-snunb",
+    "char_id": 849
+  },
+  "2642": {
+    "type": "portrait",
+    "entity": "Adar Tallon",
+    "faction": "alliance",
+    "slug": "adar-tallon",
+    "char_id": 850
+  },
+  "2643": {
+    "type": "portrait",
+    "entity": "Sarin Virgilio",
+    "faction": "alliance",
+    "slug": "sarin-virgilio",
+    "char_id": 851
+  },
+  "2644": {
+    "type": "portrait",
+    "entity": "Vanden Willard",
+    "faction": "alliance",
+    "slug": "vanden-willard",
+    "char_id": 852
+  },
+  "2645": {
+    "type": "portrait",
+    "entity": "Roget Jiriss",
+    "faction": "alliance",
+    "slug": "roget-jiriss",
+    "char_id": 853
+  },
+  "2646": {
+    "type": "portrait",
+    "entity": "Kaiya Andrimetrum",
+    "faction": "alliance",
+    "slug": "kaiya-andrimetrum",
+    "char_id": 854
+  },
+  "2647": {
+    "type": "portrait",
+    "entity": "Mazer Rackus",
+    "faction": "alliance",
+    "slug": "mazer-rackus",
+    "char_id": 855
+  },
+  "2648": {
+    "type": "portrait",
+    "entity": "Orrimaarko",
+    "faction": "alliance",
+    "slug": "orrimaarko",
+    "char_id": 856
+  },
+  "2649": {
+    "type": "portrait",
+    "entity": "Ma'w'shiye",
+    "faction": "alliance",
+    "slug": "ma-w-shiye",
+    "char_id": 857
+  },
+  "2688": {
+    "type": "portrait",
+    "entity": "Jerjerrod",
+    "faction": "empire",
+    "slug": "jerjerrod",
+    "char_id": 896
+  },
+  "2689": {
+    "type": "portrait",
+    "entity": "Ozzel",
+    "faction": "empire",
+    "slug": "ozzel",
+    "char_id": 897
+  },
+  "2690": {
+    "type": "portrait",
+    "entity": "Piett",
+    "faction": "empire",
+    "slug": "piett",
+    "char_id": 898
+  },
+  "2691": {
+    "type": "portrait",
+    "entity": "Veers",
+    "faction": "empire",
+    "slug": "veers",
+    "char_id": 899
+  },
+  "2692": {
+    "type": "portrait",
+    "entity": "Brandei",
+    "faction": "empire",
+    "slug": "brandei",
+    "char_id": 900
+  },
+  "2693": {
+    "type": "portrait",
+    "entity": "Covell",
+    "faction": "empire",
+    "slug": "covell",
+    "char_id": 901
+  },
+  "2694": {
+    "type": "portrait",
+    "entity": "Dorja",
+    "faction": "empire",
+    "slug": "dorja",
+    "char_id": 902
+  },
+  "2695": {
+    "type": "portrait",
+    "entity": "Bin Essada",
+    "faction": "empire",
+    "slug": "bin-essada",
+    "char_id": 903
+  },
+  "2696": {
+    "type": "portrait",
+    "entity": "Niles Ferrier",
+    "faction": "empire",
+    "slug": "niles-ferrier",
+    "char_id": 904
+  },
+  "2697": {
+    "type": "portrait",
+    "entity": "Grammel",
+    "faction": "empire",
+    "slug": "grammel",
+    "char_id": 905
+  },
+  "2698": {
+    "type": "portrait",
+    "entity": "Griff",
+    "faction": "empire",
+    "slug": "griff",
+    "char_id": 906
+  },
+  "2699": {
+    "type": "portrait",
+    "entity": "Klev",
+    "faction": "empire",
+    "slug": "klev",
+    "char_id": 907
+  },
+  "2700": {
+    "type": "portrait",
+    "entity": "Needa",
+    "faction": "empire",
+    "slug": "needa",
+    "char_id": 908
+  },
+  "2701": {
+    "type": "portrait",
+    "entity": "Bane Nothos",
+    "faction": "empire",
+    "slug": "bane-nothos",
+    "char_id": 909
+  },
+  "2702": {
+    "type": "portrait",
+    "entity": "Orlok",
+    "faction": "empire",
+    "slug": "orlok",
+    "char_id": 910
+  },
+  "2703": {
+    "type": "portrait",
+    "entity": "Pellaeon",
+    "faction": "empire",
+    "slug": "pellaeon",
+    "char_id": 911
+  },
+  "2704": {
+    "type": "portrait",
+    "entity": "Screed",
+    "faction": "empire",
+    "slug": "screed",
+    "char_id": 912
+  },
+  "2705": {
+    "type": "portrait",
+    "entity": "Thrawn",
+    "faction": "empire",
+    "slug": "thrawn",
+    "char_id": 913
+  },
+  "2706": {
+    "type": "portrait",
+    "entity": "Zuggs",
+    "faction": "empire",
+    "slug": "zuggs",
+    "char_id": 914
+  },
+  "2707": {
+    "type": "portrait",
+    "entity": "Daala",
+    "faction": "empire",
+    "slug": "daala",
+    "char_id": 915
+  },
+  "2708": {
+    "type": "portrait",
+    "entity": "Pter Thanas",
+    "faction": "empire",
+    "slug": "pter-thanas",
+    "char_id": 916
+  },
+  "2709": {
+    "type": "portrait",
+    "entity": "Bevel Lemelisk",
+    "faction": "empire",
+    "slug": "bevel-lemelisk",
+    "char_id": 917
+  },
+  "2710": {
+    "type": "portrait",
+    "entity": "Shenir Rix",
+    "faction": "empire",
+    "slug": "shenir-rix",
+    "char_id": 918
+  },
+  "2711": {
+    "type": "portrait",
+    "entity": "Noval Garaint",
+    "faction": "empire",
+    "slug": "noval-garaint",
+    "char_id": 919
+  },
+  "2712": {
+    "type": "portrait",
+    "entity": "Garindan",
+    "faction": "empire",
+    "slug": "garindan",
+    "char_id": 920
+  },
+  "2713": {
+    "type": "portrait",
+    "entity": "Menndo",
+    "faction": "empire",
+    "slug": "menndo",
+    "char_id": 921
+  },
+  "2714": {
+    "type": "portrait",
+    "entity": "Labansat",
+    "faction": "empire",
+    "slug": "labansat",
+    "char_id": 922
+  },
+  "2715": {
+    "type": "portrait",
+    "entity": "Villar",
+    "faction": "empire",
+    "slug": "villar",
+    "char_id": 923
+  },
+  "19008": {
+    "type": "mini-icon",
+    "entity": "Ackbar",
+    "faction": "alliance",
+    "slug": "ackbar",
+    "char_id": 832
+  },
+  "19009": {
+    "type": "mini-icon",
+    "entity": "Wedge Antilles",
+    "faction": "alliance",
+    "slug": "wedge-antilles",
+    "char_id": 833
+  },
+  "19010": {
+    "type": "mini-icon",
+    "entity": "Lando Calrissian",
+    "faction": "alliance",
+    "slug": "lando-calrissian",
+    "char_id": 834
+  },
+  "19011": {
+    "type": "mini-icon",
+    "entity": "Chewbacca",
+    "faction": "alliance",
+    "slug": "chewbacca",
+    "char_id": 835
+  },
+  "19012": {
+    "type": "mini-icon",
+    "entity": "Jan Dodonna",
+    "faction": "alliance",
+    "slug": "jan-dodonna",
+    "char_id": 836
+  },
+  "19013": {
+    "type": "mini-icon",
+    "entity": "Crix Madine",
+    "faction": "alliance",
+    "slug": "crix-madine",
+    "char_id": 837
+  },
+  "19014": {
+    "type": "mini-icon",
+    "entity": "Carlist Rieekan",
+    "faction": "alliance",
+    "slug": "carlist-rieekan",
+    "char_id": 838
+  },
+  "19015": {
+    "type": "mini-icon",
+    "entity": "Afyon",
+    "faction": "alliance",
+    "slug": "afyon",
+    "char_id": 839
+  },
+  "19016": {
+    "type": "mini-icon",
+    "entity": "Drayson",
+    "faction": "alliance",
+    "slug": "drayson",
+    "char_id": 840
+  },
+  "19017": {
+    "type": "mini-icon",
+    "entity": "Borsk Fey'lya",
+    "faction": "alliance",
+    "slug": "borsk-fey-lya",
+    "char_id": 841
+  },
+  "19018": {
+    "type": "mini-icon",
+    "entity": "Tura Raftican",
+    "faction": "alliance",
+    "slug": "tura-raftican",
+    "char_id": 842
+  },
+  "19019": {
+    "type": "mini-icon",
+    "entity": "Bren Derlin",
+    "faction": "alliance",
+    "slug": "bren-derlin",
+    "char_id": 843
+  },
+  "19020": {
+    "type": "mini-icon",
+    "entity": "Garm Bel Iblis",
+    "faction": "alliance",
+    "slug": "garm-bel-iblis",
+    "char_id": 844
+  },
+  "19021": {
+    "type": "mini-icon",
+    "entity": "Talon Karrde",
+    "faction": "alliance",
+    "slug": "talon-karrde",
+    "char_id": 845
+  },
+  "19022": {
+    "type": "mini-icon",
+    "entity": "Narra",
+    "faction": "alliance",
+    "slug": "narra",
+    "char_id": 846
+  },
+  "19023": {
+    "type": "mini-icon",
+    "entity": "Huoba Neva",
+    "faction": "alliance",
+    "slug": "huoba-neva",
+    "char_id": 847
+  },
+  "19024": {
+    "type": "mini-icon",
+    "entity": "Page",
+    "faction": "alliance",
+    "slug": "page",
+    "char_id": 848
+  },
+  "19025": {
+    "type": "mini-icon",
+    "entity": "Syub Snunb",
+    "faction": "alliance",
+    "slug": "syub-snunb",
+    "char_id": 849
+  },
+  "19026": {
+    "type": "mini-icon",
+    "entity": "Adar Tallon",
+    "faction": "alliance",
+    "slug": "adar-tallon",
+    "char_id": 850
+  },
+  "19027": {
+    "type": "mini-icon",
+    "entity": "Sarin Virgilio",
+    "faction": "alliance",
+    "slug": "sarin-virgilio",
+    "char_id": 851
+  },
+  "19028": {
+    "type": "mini-icon",
+    "entity": "Vanden Willard",
+    "faction": "alliance",
+    "slug": "vanden-willard",
+    "char_id": 852
+  },
+  "19029": {
+    "type": "mini-icon",
+    "entity": "Roget Jiriss",
+    "faction": "alliance",
+    "slug": "roget-jiriss",
+    "char_id": 853
+  },
+  "19030": {
+    "type": "mini-icon",
+    "entity": "Kaiya Andrimetrum",
+    "faction": "alliance",
+    "slug": "kaiya-andrimetrum",
+    "char_id": 854
+  },
+  "19031": {
+    "type": "mini-icon",
+    "entity": "Mazer Rackus",
+    "faction": "alliance",
+    "slug": "mazer-rackus",
+    "char_id": 855
+  },
+  "19032": {
+    "type": "mini-icon",
+    "entity": "Orrimaarko",
+    "faction": "alliance",
+    "slug": "orrimaarko",
+    "char_id": 856
+  },
+  "19033": {
+    "type": "mini-icon",
+    "entity": "Ma'w'shiye",
+    "faction": "alliance",
+    "slug": "ma-w-shiye",
+    "char_id": 857
+  },
+  "19072": {
+    "type": "mini-icon",
+    "entity": "Jerjerrod",
+    "faction": "empire",
+    "slug": "jerjerrod",
+    "char_id": 896
+  },
+  "19073": {
+    "type": "mini-icon",
+    "entity": "Ozzel",
+    "faction": "empire",
+    "slug": "ozzel",
+    "char_id": 897
+  },
+  "19074": {
+    "type": "mini-icon",
+    "entity": "Piett",
+    "faction": "empire",
+    "slug": "piett",
+    "char_id": 898
+  },
+  "19075": {
+    "type": "mini-icon",
+    "entity": "Veers",
+    "faction": "empire",
+    "slug": "veers",
+    "char_id": 899
+  },
+  "19076": {
+    "type": "mini-icon",
+    "entity": "Brandei",
+    "faction": "empire",
+    "slug": "brandei",
+    "char_id": 900
+  },
+  "19077": {
+    "type": "mini-icon",
+    "entity": "Covell",
+    "faction": "empire",
+    "slug": "covell",
+    "char_id": 901
+  },
+  "19078": {
+    "type": "mini-icon",
+    "entity": "Dorja",
+    "faction": "empire",
+    "slug": "dorja",
+    "char_id": 902
+  },
+  "19079": {
+    "type": "mini-icon",
+    "entity": "Bin Essada",
+    "faction": "empire",
+    "slug": "bin-essada",
+    "char_id": 903
+  },
+  "19080": {
+    "type": "mini-icon",
+    "entity": "Niles Ferrier",
+    "faction": "empire",
+    "slug": "niles-ferrier",
+    "char_id": 904
+  },
+  "19081": {
+    "type": "mini-icon",
+    "entity": "Grammel",
+    "faction": "empire",
+    "slug": "grammel",
+    "char_id": 905
+  },
+  "19082": {
+    "type": "mini-icon",
+    "entity": "Griff",
+    "faction": "empire",
+    "slug": "griff",
+    "char_id": 906
+  },
+  "19083": {
+    "type": "mini-icon",
+    "entity": "Klev",
+    "faction": "empire",
+    "slug": "klev",
+    "char_id": 907
+  },
+  "19084": {
+    "type": "mini-icon",
+    "entity": "Needa",
+    "faction": "empire",
+    "slug": "needa",
+    "char_id": 908
+  },
+  "19085": {
+    "type": "mini-icon",
+    "entity": "Bane Nothos",
+    "faction": "empire",
+    "slug": "bane-nothos",
+    "char_id": 909
+  },
+  "19086": {
+    "type": "mini-icon",
+    "entity": "Orlok",
+    "faction": "empire",
+    "slug": "orlok",
+    "char_id": 910
+  },
+  "19087": {
+    "type": "mini-icon",
+    "entity": "Pellaeon",
+    "faction": "empire",
+    "slug": "pellaeon",
+    "char_id": 911
+  },
+  "19088": {
+    "type": "mini-icon",
+    "entity": "Screed",
+    "faction": "empire",
+    "slug": "screed",
+    "char_id": 912
+  },
+  "19089": {
+    "type": "mini-icon",
+    "entity": "Thrawn",
+    "faction": "empire",
+    "slug": "thrawn",
+    "char_id": 913
+  },
+  "19090": {
+    "type": "mini-icon",
+    "entity": "Zuggs",
+    "faction": "empire",
+    "slug": "zuggs",
+    "char_id": 914
+  },
+  "19091": {
+    "type": "mini-icon",
+    "entity": "Daala",
+    "faction": "empire",
+    "slug": "daala",
+    "char_id": 915
+  },
+  "19092": {
+    "type": "mini-icon",
+    "entity": "Pter Thanas",
+    "faction": "empire",
+    "slug": "pter-thanas",
+    "char_id": 916
+  },
+  "19093": {
+    "type": "mini-icon",
+    "entity": "Bevel Lemelisk",
+    "faction": "empire",
+    "slug": "bevel-lemelisk",
+    "char_id": 917
+  },
+  "19094": {
+    "type": "mini-icon",
+    "entity": "Shenir Rix",
+    "faction": "empire",
+    "slug": "shenir-rix",
+    "char_id": 918
+  },
+  "19095": {
+    "type": "mini-icon",
+    "entity": "Noval Garaint",
+    "faction": "empire",
+    "slug": "noval-garaint",
+    "char_id": 919
+  },
+  "19096": {
+    "type": "mini-icon",
+    "entity": "Garindan",
+    "faction": "empire",
+    "slug": "garindan",
+    "char_id": 920
+  },
+  "19097": {
+    "type": "mini-icon",
+    "entity": "Menndo",
+    "faction": "empire",
+    "slug": "menndo",
+    "char_id": 921
+  },
+  "19098": {
+    "type": "mini-icon",
+    "entity": "Labansat",
+    "faction": "empire",
+    "slug": "labansat",
+    "char_id": 922
+  },
+  "19099": {
+    "type": "mini-icon",
+    "entity": "Villar",
+    "faction": "empire",
+    "slug": "villar",
+    "char_id": 923
+  },
+  "1344": {
+    "type": "ship-status",
+    "entity": "Mon Calamari Cruiser",
+    "faction": "alliance",
+    "slug": "mon-calamari-cruiser"
+  },
+  "1345": {
+    "type": "ship-status",
+    "entity": "Bulk Cruiser",
+    "faction": "alliance",
+    "slug": "bulk-cruiser"
+  },
+  "1346": {
+    "type": "ship-status",
+    "entity": "Assault Frigate",
+    "faction": "alliance",
+    "slug": "assault-frigate"
+  },
+  "1347": {
+    "type": "ship-status",
+    "entity": "Nebulon-B Frigate",
+    "faction": "alliance",
+    "slug": "nebulon-b-frigate"
+  },
+  "1408": {
+    "type": "ship-status",
+    "entity": "Strike Cruiser",
+    "faction": "empire",
+    "slug": "strike-cruiser"
+  },
+  "1409": {
+    "type": "ship-status",
+    "entity": "Lancer Frigate",
+    "faction": "empire",
+    "slug": "lancer-frigate"
+  },
+  "1410": {
+    "type": "ship-status",
+    "entity": "Interdictor Cruiser",
+    "faction": "empire",
+    "slug": "interdictor-cruiser"
+  },
+  "1411": {
+    "type": "ship-status",
+    "entity": "Carrack Light Cruiser",
+    "faction": "empire",
+    "slug": "carrack-light-cruiser"
+  },
+  "1412": {
+    "type": "ship-status",
+    "entity": "Victory Destroyer",
+    "faction": "empire",
+    "slug": "victory-destroyer"
+  },
+  "1600": {
+    "type": "ship-status",
+    "entity": "Mon Calamari Cruiser",
+    "faction": "alliance",
+    "slug": "mon-calamari-cruiser"
+  },
+  "1601": {
+    "type": "ship-status",
+    "entity": "Bulk Cruiser",
+    "faction": "alliance",
+    "slug": "bulk-cruiser"
+  },
+  "1602": {
+    "type": "ship-status",
+    "entity": "Assault Frigate",
+    "faction": "alliance",
+    "slug": "assault-frigate"
+  },
+  "1603": {
+    "type": "ship-status",
+    "entity": "Nebulon-B Frigate",
+    "faction": "alliance",
+    "slug": "nebulon-b-frigate"
+  },
+  "1664": {
+    "type": "ship-status",
+    "entity": "Strike Cruiser",
+    "faction": "empire",
+    "slug": "strike-cruiser"
+  },
+  "1665": {
+    "type": "ship-status",
+    "entity": "Lancer Frigate",
+    "faction": "empire",
+    "slug": "lancer-frigate"
+  },
+  "1666": {
+    "type": "ship-status",
+    "entity": "Interdictor Cruiser",
+    "faction": "empire",
+    "slug": "interdictor-cruiser"
+  },
+  "1667": {
+    "type": "ship-status",
+    "entity": "Carrack Light Cruiser",
+    "faction": "empire",
+    "slug": "carrack-light-cruiser"
+  },
+  "1856": {
+    "type": "ship-status",
+    "entity": "Mon Calamari Cruiser",
+    "faction": "alliance",
+    "slug": "mon-calamari-cruiser"
+  },
+  "1857": {
+    "type": "ship-status",
+    "entity": "Bulk Cruiser",
+    "faction": "alliance",
+    "slug": "bulk-cruiser"
+  },
+  "1858": {
+    "type": "ship-status",
+    "entity": "Assault Frigate",
+    "faction": "alliance",
+    "slug": "assault-frigate"
+  },
+  "1859": {
+    "type": "ship-status",
+    "entity": "Nebulon-B Frigate",
+    "faction": "alliance",
+    "slug": "nebulon-b-frigate"
+  },
+  "1860": {
+    "type": "ship-status",
+    "entity": "Alliance Escort Carrier",
+    "faction": "alliance",
+    "slug": "alliance-escort-carrier"
+  },
+  "1861": {
+    "type": "ship-status",
+    "entity": "Corellian Corvette",
+    "faction": "alliance",
+    "slug": "corellian-corvette"
+  },
+  "1862": {
+    "type": "ship-status",
+    "entity": "Medium Transport",
+    "faction": "alliance",
+    "slug": "medium-transport"
+  },
+  "1863": {
+    "type": "ship-status",
+    "entity": "Bulk Transport",
+    "faction": "alliance",
+    "slug": "bulk-transport"
+  },
+  "1864": {
+    "type": "ship-status",
+    "entity": "Corellian Gunship",
+    "faction": "alliance",
+    "slug": "corellian-gunship"
+  },
+  "1865": {
+    "type": "ship-status",
+    "entity": "Alliance Dreadnaught",
+    "faction": "alliance",
+    "slug": "alliance-dreadnaught"
+  },
+  "1866": {
+    "type": "ship-status",
+    "entity": "CC-7700 Frigate",
+    "faction": "alliance",
+    "slug": "cc-7700-frigate"
+  },
+  "1867": {
+    "type": "ship-status",
+    "entity": "Bulwark Battlecruiser",
+    "faction": "alliance",
+    "slug": "bulwark-battlecruiser"
+  },
+  "1868": {
+    "type": "ship-status",
+    "entity": "Liberator Cruiser",
+    "faction": "alliance",
+    "slug": "liberator-cruiser"
+  },
+  "1869": {
+    "type": "ship-status",
+    "entity": "CC-9600 Frigate",
+    "faction": "alliance",
+    "slug": "cc-9600-frigate"
+  },
+  "1870": {
+    "type": "ship-status",
+    "entity": "Dauntless Cruiser",
+    "faction": "alliance",
+    "slug": "dauntless-cruiser"
+  },
+  "1920": {
+    "type": "ship-status",
+    "entity": "Strike Cruiser",
+    "faction": "empire",
+    "slug": "strike-cruiser"
+  },
+  "1921": {
+    "type": "ship-status",
+    "entity": "Lancer Frigate",
+    "faction": "empire",
+    "slug": "lancer-frigate"
+  },
+  "1922": {
+    "type": "ship-status",
+    "entity": "Interdictor Cruiser",
+    "faction": "empire",
+    "slug": "interdictor-cruiser"
+  },
+  "1923": {
+    "type": "ship-status",
+    "entity": "Carrack Light Cruiser",
+    "faction": "empire",
+    "slug": "carrack-light-cruiser"
+  },
+  "1924": {
+    "type": "ship-status",
+    "entity": "Victory Destroyer",
+    "faction": "empire",
+    "slug": "victory-destroyer"
+  },
+  "1925": {
+    "type": "ship-status",
+    "entity": "Imperial Star Destroyer",
+    "faction": "empire",
+    "slug": "imperial-star-destroyer"
+  },
+  "1926": {
+    "type": "ship-status",
+    "entity": "Super Star Destroyer",
+    "faction": "empire",
+    "slug": "super-star-destroyer"
+  },
+  "1927": {
+    "type": "ship-status",
+    "entity": "Assault Transport",
+    "faction": "empire",
+    "slug": "assault-transport"
+  },
+  "1928": {
+    "type": "ship-status",
+    "entity": "Death Star",
+    "faction": "empire",
+    "slug": "death-star"
+  },
+  "1929": {
+    "type": "ship-status",
+    "entity": "Galleon",
+    "faction": "empire",
+    "slug": "galleon"
+  },
+  "1930": {
+    "type": "ship-status",
+    "entity": "Victory II Star Destroyer",
+    "faction": "empire",
+    "slug": "victory-ii-star-destroyer"
+  },
+  "1931": {
+    "type": "ship-status",
+    "entity": "Imperial II Star Destroyer",
+    "faction": "empire",
+    "slug": "imperial-ii-star-destroyer"
+  },
+  "1932": {
+    "type": "ship-status",
+    "entity": "Star Galleon",
+    "faction": "empire",
+    "slug": "star-galleon"
+  },
+  "1933": {
+    "type": "ship-status",
+    "entity": "Imperial Escort Carrier",
+    "faction": "empire",
+    "slug": "imperial-escort-carrier"
+  },
+  "1934": {
+    "type": "ship-status",
+    "entity": "Imperial Dreadnaught",
+    "faction": "empire",
+    "slug": "imperial-dreadnaught"
+  }
+}
