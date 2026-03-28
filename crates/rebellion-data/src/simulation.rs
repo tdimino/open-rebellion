@@ -173,8 +173,8 @@ pub fn run_simulation_tick(
             states.death_star.shield_generator_active,
         );
 
-        // Apply ship damage
-        apply_space_combat_result(&space_result, world);
+        // Apply ship damage + telemetry via integrator
+        integrator.apply_space_combat(world, sys_key, &space_result);
         states.combat_cooldowns.insert(sys_key, current_tick);
         // Record battle for AI target scoring (battle repeat penalty)
         AISystem::record_battle(&mut states.ai, sys_key, current_tick);
@@ -182,61 +182,16 @@ pub fn run_simulation_tick(
             AISystem::record_battle(ai2, sys_key, current_tick);
         }
 
-        let winner_str = match space_result.winner {
-            CombatSide::Attacker => "alliance",
-            CombatSide::Defender => "empire",
-            CombatSide::Draw => "draw",
-        };
-        events.push(GameEventRecord::new(
-            current_tick,
-            wall_ms,
-            SYS_COMBAT,
-            EVT_COMBAT_SPACE,
-            serde_json::json!({
-                "system": sys_name(world, sys_key),
-                "winner": winner_str,
-            }),
-        ));
-
         // Ground combat after attacker wins space
         if space_result.winner == CombatSide::Attacker {
             let ground_rolls = take_rolls(256);
             let ground_result =
                 CombatSystem::resolve_ground(world, sys_key, true, world.difficulty_index, &ground_rolls, current_tick);
-            apply_ground_combat_result(&ground_result, world);
-
-            if !ground_result.troop_damage.is_empty() {
-                let ground_winner = match ground_result.winner {
-                    CombatSide::Attacker => "alliance",
-                    CombatSide::Defender => "empire",
-                    CombatSide::Draw => "draw",
-                };
-                events.push(GameEventRecord::new(
-                    current_tick,
-                    wall_ms,
-                    SYS_COMBAT,
-                    EVT_COMBAT_GROUND,
-                    serde_json::json!({
-                        "system": sys_name(world, sys_key),
-                        "winner": ground_winner,
-                    }),
-                ));
-            }
+            integrator.apply_ground_combat(world, &ground_result);
 
             let brd_result =
                 BombardmentSystem::resolve_bombardment(world, atk_fleet, sys_key, world.difficulty_index, current_tick);
-            if brd_result.damage > 0 {
-                events.push(GameEventRecord::new(
-                    current_tick,
-                    wall_ms,
-                    SYS_COMBAT,
-                    EVT_BOMBARDMENT,
-                    serde_json::json!({
-                        "system": sys_name(world, sys_key),
-                        "damage": brd_result.damage,
-                    }),
-                ));
-            }
+            integrator.emit_bombardment(world, sys_key, brd_result.damage);
         }
     }
 
@@ -1067,99 +1022,6 @@ fn apply_ai_actions_to_world(
 // ---------------------------------------------------------------------------
 // Build completion application
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Combat effect application (mirror of main.rs helpers)
-// ---------------------------------------------------------------------------
-
-fn apply_space_combat_result(
-    result: &rebellion_core::combat::SpaceCombatResult,
-    world: &mut GameWorld,
-) {
-    for evt in &result.ship_damage {
-        if evt.hull_after > 0 {
-            continue;
-        }
-        let fleet_key = evt.fleet;
-        let entry_idx = {
-            let fleet = match world.fleets.get(fleet_key) {
-                Some(f) => f,
-                None => continue,
-            };
-            let mut offset = 0usize;
-            let mut found = None;
-            for (i, entry) in fleet.capital_ships.iter().enumerate() {
-                if evt.ship_index < offset + entry.count as usize {
-                    found = Some(i);
-                    break;
-                }
-                offset += entry.count as usize;
-            }
-            found
-        };
-        if let Some(idx) = entry_idx {
-            if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-                if fleet.capital_ships[idx].count > 0 {
-                    fleet.capital_ships[idx].count -= 1;
-                }
-            }
-        }
-    }
-
-    for &fleet_key in &[result.attacker_fleet, result.defender_fleet] {
-        let is_empty = world
-            .fleets
-            .get(fleet_key)
-            .map(|f| {
-                f.capital_ships.iter().all(|e| e.count == 0)
-                    && f.fighters.iter().all(|e| e.count == 0)
-            })
-            .unwrap_or(true);
-        if is_empty {
-            if let Some(fleet) = world.fleets.get(fleet_key) {
-                let loc = fleet.location;
-                if let Some(sys) = world.systems.get_mut(loc) {
-                    sys.fleets.retain(|&k| k != fleet_key);
-                }
-            }
-            world.fleets.remove(fleet_key);
-        }
-    }
-}
-
-fn apply_ground_combat_result(
-    result: &rebellion_core::combat::GroundCombatResult,
-    world: &mut GameWorld,
-) {
-    let mut final_strengths: HashMap<rebellion_core::ids::TroopKey, i16> = HashMap::new();
-    for evt in &result.troop_damage {
-        final_strengths.insert(evt.troop, evt.strength_after);
-    }
-    for (&key, &strength) in &final_strengths {
-        if let Some(troop) = world.troops.get_mut(key) {
-            troop.regiment_strength = strength;
-        }
-    }
-
-    let sys_key = result.system;
-    if let Some(sys) = world.systems.get_mut(sys_key) {
-        sys.ground_units.retain(|&k| {
-            world
-                .troops
-                .get(k)
-                .map(|t| t.regiment_strength > 0)
-                .unwrap_or(false)
-        });
-    }
-    let dead: Vec<_> = final_strengths
-        .iter()
-        .filter(|(_, &s)| s <= 0)
-        .map(|(&k, _)| k)
-        .collect();
-    for key in dead {
-        world.troops.remove(key);
-    }
-}
 
 #[cfg(test)]
 mod tests {

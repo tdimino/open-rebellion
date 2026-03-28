@@ -10,11 +10,14 @@
 //! Current state: scaffold with name resolution helpers and the PerceptionIntegrator
 //! struct. Effect application methods will be migrated from simulation.rs incrementally.
 
+use std::collections::HashMap;
+
 use rebellion_core::ai::AIAction;
+use rebellion_core::combat::{CombatSide, GroundCombatResult, SpaceCombatResult};
 use rebellion_core::economy::EconomyEvent;
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::*;
-use rebellion_core::ids::{CharacterKey, SystemKey};
+use rebellion_core::ids::{CharacterKey, SystemKey, TroopKey};
 use rebellion_core::manufacturing::{BuildableKind, CompletionEvent};
 use rebellion_core::movement::ArrivalEvent;
 use rebellion_core::victory::VictoryOutcome;
@@ -316,6 +319,155 @@ impl PerceptionIntegrator {
                 "fleet_faction": if world.fleets.get(arrival.fleet).map(|f| f.is_alliance).unwrap_or(false) { "Alliance" } else { "Empire" },
             }));
         }
+    }
+
+    // ── Step 4: Combat ────────────────────────────────────────────────────
+
+    /// Apply space combat result: ship damage + fleet cleanup + telemetry.
+    pub fn apply_space_combat(
+        &mut self,
+        world: &mut GameWorld,
+        system: SystemKey,
+        result: &SpaceCombatResult,
+    ) {
+        apply_space_combat_result_inner(result, world);
+        let winner_str = match result.winner {
+            CombatSide::Attacker => "alliance",
+            CombatSide::Defender => "empire",
+            CombatSide::Draw => "draw",
+        };
+        self.emit(SYS_COMBAT, EVT_COMBAT_SPACE, serde_json::json!({
+            "system": sys_name(world, system),
+            "winner": winner_str,
+        }));
+    }
+
+    /// Apply ground combat result: troop damage + dead removal + telemetry.
+    pub fn apply_ground_combat(
+        &mut self,
+        world: &mut GameWorld,
+        result: &GroundCombatResult,
+    ) {
+        apply_ground_combat_result_inner(result, world);
+        if !result.troop_damage.is_empty() {
+            let ground_winner = match result.winner {
+                CombatSide::Attacker => "alliance",
+                CombatSide::Defender => "empire",
+                CombatSide::Draw => "draw",
+            };
+            self.emit(SYS_COMBAT, EVT_COMBAT_GROUND, serde_json::json!({
+                "system": sys_name(world, result.system),
+                "winner": ground_winner,
+            }));
+        }
+    }
+
+    /// Emit bombardment telemetry (no world mutation — bombardment applies via damage field).
+    pub fn emit_bombardment(
+        &mut self,
+        world: &GameWorld,
+        system: SystemKey,
+        damage: i32,
+    ) {
+        if damage > 0 {
+            self.emit(SYS_COMBAT, EVT_BOMBARDMENT, serde_json::json!({
+                "system": sys_name(world, system),
+                "damage": damage,
+            }));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Combat helpers (moved from simulation.rs)
+// ---------------------------------------------------------------------------
+
+fn apply_space_combat_result_inner(
+    result: &SpaceCombatResult,
+    world: &mut GameWorld,
+) {
+    for evt in &result.ship_damage {
+        if evt.hull_after > 0 {
+            continue;
+        }
+        let fleet_key = evt.fleet;
+        let entry_idx = {
+            let fleet = match world.fleets.get(fleet_key) {
+                Some(f) => f,
+                None => continue,
+            };
+            let mut offset = 0usize;
+            let mut found = None;
+            for (i, entry) in fleet.capital_ships.iter().enumerate() {
+                if evt.ship_index < offset + entry.count as usize {
+                    found = Some(i);
+                    break;
+                }
+                offset += entry.count as usize;
+            }
+            found
+        };
+        if let Some(idx) = entry_idx {
+            if let Some(fleet) = world.fleets.get_mut(fleet_key) {
+                if fleet.capital_ships[idx].count > 0 {
+                    fleet.capital_ships[idx].count -= 1;
+                }
+            }
+        }
+    }
+
+    for &fleet_key in &[result.attacker_fleet, result.defender_fleet] {
+        let is_empty = world
+            .fleets
+            .get(fleet_key)
+            .map(|f| {
+                f.capital_ships.iter().all(|e| e.count == 0)
+                    && f.fighters.iter().all(|e| e.count == 0)
+            })
+            .unwrap_or(true);
+        if is_empty {
+            if let Some(fleet) = world.fleets.get(fleet_key) {
+                let loc = fleet.location;
+                if let Some(sys) = world.systems.get_mut(loc) {
+                    sys.fleets.retain(|&k| k != fleet_key);
+                }
+            }
+            world.fleets.remove(fleet_key);
+        }
+    }
+}
+
+fn apply_ground_combat_result_inner(
+    result: &GroundCombatResult,
+    world: &mut GameWorld,
+) {
+    let mut final_strengths: HashMap<TroopKey, i16> = HashMap::new();
+    for evt in &result.troop_damage {
+        final_strengths.insert(evt.troop, evt.strength_after);
+    }
+    for (&key, &strength) in &final_strengths {
+        if let Some(troop) = world.troops.get_mut(key) {
+            troop.regiment_strength = strength;
+        }
+    }
+
+    let sys_key = result.system;
+    if let Some(sys) = world.systems.get_mut(sys_key) {
+        sys.ground_units.retain(|&k| {
+            world
+                .troops
+                .get(k)
+                .map(|t| t.regiment_strength > 0)
+                .unwrap_or(false)
+        });
+    }
+    let dead: Vec<_> = final_strengths
+        .iter()
+        .filter(|(_, &s)| s <= 0)
+        .map(|(&k, _)| k)
+        .collect();
+    for key in dead {
+        world.troops.remove(key);
     }
 }
 
