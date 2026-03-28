@@ -91,7 +91,7 @@ agent_docs/references/INDEX.md -- Reference image catalogs: 5 catalog files + 4 
 agent_docs/seeding.md -- Game seeding pipeline: 3-system model, character stat rolling, named placement, 9 seed tables. Read when modifying initial galaxy state.
 
 docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for player/modder-facing mechanics reference.
-docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md -- Knesset Ereshkigal: 6-phase eval-driven parity sprint + Open Souls functional refactor. Includes Functional Programming Manifesto (10 principles), effect algebra spec, modularity violations audit, Codex work packages. Read when planning Phase 3+ work.
+docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md -- Knesset Ereshkigal: 6-phase eval-driven parity sprint + Open Souls functional refactor. All 6 phases COMPLETE. Includes Functional Programming Manifesto (10 principles), effect algebra spec, modularity violations audit, PerceptionIntegrator architecture.
 docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decompiled functions cross-referenced against our implementation. P0-P3 gap inventory with GNPRTB parameters. Read when implementing missing game mechanics.
 
 ## Reports
