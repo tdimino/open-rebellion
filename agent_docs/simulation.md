@@ -24,7 +24,7 @@ Rules:
 - **Deterministic** — same inputs always produce same outputs
 - **No IO** — rebellion-core has zero IO deps; stays headless-testable
 
-The caller (rebellion-app `main.rs`) applies effects to `GameWorld` after each system runs.
+The `PerceptionIntegrator` (rebellion-data `integrator.rs`) applies effects to `GameWorld` and emits telemetry. `simulation.rs` orchestrates the tick; `integrator.rs` owns all mutation and telemetry.
 
 ## System Inventory
 
@@ -72,38 +72,54 @@ Additional per-tick effects (not mission-driven):
 
 Probability: MSTB table lookup (piecewise-linear) with quadratic fallback. Combined: `total_prob = agent_prob · (1 − foil_prob)`.
 
-## Integration Order (main.rs)
+## Integration Order (simulation.rs → integrator.rs)
 
 ```
-Each frame:
-  tick_events = clock.advance(dt)
-  if tick_events not empty:
-    completions   = ManufacturingSystem::advance_with_blockade(mfg, ticks, blockade.blocked())
-    arrivals      = MovementSystem::advance(movement, ticks) → update fleet.location + system.fleets
-    combat        = per-system: CombatSystem::resolve_space/ground/bombardment (5-tick cooldown)
-    reveals       = FogSystem::advance(fog, world, movement)
-    results       = MissionSystem::advance(missions, world, ticks, rolls) → apply effects
-    fired_events  = EventSystem::advance(events, world, ticks, rolls) → apply actions
-    ai_actions    = AISystem::advance(ai, world, mfg, missions, ticks) → apply
-    blockade      = BlockadeSystem::advance(blockade, world, ticks) → apply troop destruction
-    uprising      = UprisingSystem::advance(uprising, world, ticks, rolls, upris1tb) → flip factions
-    ds_events     = DeathStarSystem::advance(ds, world, ticks) → apply planet destruction
-    research      = ResearchSystem::advance(research, world, ticks) → levels auto-applied
-    jedi          = JediSystem::advance(jedi, world, ticks, rolls) → apply tier/detection
-    victory       = VictorySystem::check(victory, world, ticks) → end game
+run_simulation_tick():
+  integrator = PerceptionIntegrator::new(tick, wall_ms)
+  0. economy_events  = EconomySystem::advance()       → integrator.apply_economy_events()
+  1. completions     = ManufacturingSystem::advance()  → integrator.apply_build_completions()
+  2. arrivals        = MovementSystem::advance()       → integrator.apply_arrivals()
+  3. combat triggers → CombatSystem::resolve_*()       → integrator.apply_space_combat() / apply_ground_combat()
+  4. reveals         = FogSystem::advance()             → integrator.emit_fog_reveals()
+  5. results         = MissionSystem::advance()         → integrator.apply_mission_result()
+  5b. escapes        = MissionSystem::check_escapes()   → integrator.apply_escape_effects()
+  6. fired_events    = EventSystem::advance()           → integrator.apply_fired_events()
+  7. ai_actions      = AISystem::advance()              → integrator.apply_ai_actions()
+  8. blockade        = BlockadeSystem::advance()        → integrator.apply_blockade_events()
+  9. uprising        = UprisingSystem::advance()        → integrator.apply_uprising_events()
+  10. betrayal       = BetrayalSystem::advance()        → integrator.apply_betrayal_events()
+  11. ds_events      = DeathStarSystem::advance()       → integrator.apply_death_star_events()
+  12. research       = ResearchSystem::advance()        → integrator.apply_research_results()
+  13. jedi           = JediSystem::advance()            → integrator.apply_jedi_events()
+  14. victory        = VictorySystem::check()           → integrator.apply_victory()
+  15. snapshot       (every 250 ticks)                  → integrator.emit_campaign_snapshot()
+  return integrator.finish()
 ```
 
-Order matters: manufacturing needs blockade set from prior tick; combat needs fleet positions from movement; AI reads mission and manufacturing state that earlier systems may have modified.
+Order matters: economy runs before manufacturing (production modifiers); combat needs fleet positions from movement; AI reads mission and manufacturing state that earlier systems may have modified.
 
-## Shared Simulation Tick (v0.8.0)
+## Shared Simulation Tick (v0.8.0) + PerceptionIntegrator (v0.19.0)
 
-The effect-application logic is extracted into `rebellion-data/src/simulation.rs`:
+The tick orchestration lives in `rebellion-data/src/simulation.rs` (~449 LOC):
 
 ```rust
 pub fn run_simulation_tick(world, states, tick_events, rolls, wall_ms, config) -> Vec<GameEventRecord>
 ```
 
-Both the interactive binary (`rebellion-app`) and the headless binary (`rebellion-playtest`) call this function. `SimulationStates` bundles all 15 state types + combat cooldowns. `GameEventRecord` (in `rebellion-core/src/game_events.rs`) is the structured telemetry type — pure data, no IO. The `config` parameter (`&GameConfig` from `tuning.rs`) controls all tunable AI, movement, and production parameters — the interactive app uses defaults, the playtest binary accepts `--config <path>` for autoresearch.
+All world mutation and telemetry emission lives in `rebellion-data/src/integrator.rs` (~1,185 LOC):
+
+```rust
+pub struct PerceptionIntegrator { events: Vec<GameEventRecord>, tick: u64, wall_ms: u64 }
+impl PerceptionIntegrator {
+    pub fn apply_economy_events(&mut self, world, events) // ... 17 methods total
+    pub fn finish(self) -> Vec<GameEventRecord>
+}
+```
+
+Both the interactive binary (`rebellion-app`) and the headless binary (`rebellion-playtest`) call `run_simulation_tick`. `SimulationStates` bundles all 15 state types + combat cooldowns + economy state. `GameEventRecord` (in `rebellion-core/src/game_events.rs`) is the structured telemetry type — pure data, no IO. The `config` parameter (`&GameConfig` from `tuning.rs`) controls all tunable AI, movement, and production parameters — the interactive app uses defaults, the playtest binary accepts `--config <path>` for autoresearch.
+
+**Architecture**: simulation.rs is a thin orchestrator that calls `advance()` on each system and delegates mutation + telemetry to integrator methods. No `events.push()` calls remain in simulation.rs — `integrator.finish()` is the sole return path.
 
 ## State Ownership
 
@@ -133,19 +149,20 @@ All simulation states are created in `main.rs` and included in `SaveState` (`reb
 3. Implement `{Name}System::advance(&mut State, ..., &[TickEvent]) -> Vec<ResultEvent>`
 4. Accept RNG as caller-provided slices, not internal `rand`
 5. Add `pub mod {name};` to `crates/rebellion-core/src/lib.rs`
-6. Wire into main loop in `crates/rebellion-app/src/main.rs` at the correct position
-7. Write effect application function in `main.rs`
-8. Add the state to `SaveState` in `crates/rebellion-data/src/save.rs`, bump `SAVE_VERSION`
+6. Add `advance()` call to `run_simulation_tick()` in `crates/rebellion-data/src/simulation.rs`
+7. Add `apply_{name}_events()` method to `PerceptionIntegrator` in `crates/rebellion-data/src/integrator.rs` — this method applies world mutations AND emits telemetry
+8. Add the state to `SimulationStates` in `simulation.rs` and `SaveState` in `save.rs`, bump `SAVE_VERSION`
 9. Add unit tests — the advance() pattern makes this trivial (no IO mocks needed)
 10. Add doc file at `agent_docs/systems/{name}.md`
+11. If the interactive game also needs the system, add `advance()` + mutation to `main.rs` (mirrors the integrator pattern)
 
 ## Adding a New Mission Type
 
 1. Add variant to `MissionKind` enum in `missions.rs`
 2. Add match arm in `MissionSystem::compute_effects()` — return `Vec<MissionEffect>` for success
 3. If new effects are needed, add variant to `MissionEffect` enum
-4. Add match arm in `main.rs` `apply_mission_result()` to mutate `GameWorld`
-5. Add match arm in `main.rs` mission logging (kind_name mapping)
+4. Add match arm in `integrator.rs` `apply_mission_effects_inner()` to mutate `GameWorld`
+5. Telemetry is automatic via `apply_mission_result()` on PerceptionIntegrator
 6. Add to panel UI: `rebellion-render/src/panels/missions.rs`
 7. If the mission needs a probability table, add a `*MSTB.DAT` parser and register the table name in `world.mission_tables`
 8. Add `target_character` if the mission targets a specific character (assassination, abduction, rescue pattern)
@@ -155,6 +172,6 @@ All simulation states are created in `main.rs` and included in `SaveState` (`reb
 
 1. Add variant to `EventCondition` or `EventAction` in `events.rs`
 2. For conditions: add evaluation logic in `EventSystem::evaluate_condition()`
-3. For actions: add application logic in `main.rs` `apply_event_actions()`
+3. For actions: add application logic in `integrator.rs` `apply_event_actions_to_world_inner()`
 4. Events are data-driven — defined via `GameEvent` structs with `conditions` and `actions` vectors
 5. Event chaining: use `EventCondition::EventFired(id)` to sequence events
