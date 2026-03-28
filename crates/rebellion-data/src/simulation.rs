@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use crate::integrator::PerceptionIntegrator;
 use rebellion_core::ai::{AIAction, AIState, AISystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::betrayal::{BetrayalEvent, BetrayalState, BetrayalSystem};
@@ -163,6 +164,10 @@ pub fn run_simulation_tick(
     }
 
     let mut events = Vec::new();
+    let mut integrator = PerceptionIntegrator::new(
+        tick_events.last().unwrap().tick,
+        wall_ms,
+    );
     let mut roll_cursor = 0usize;
     let current_tick = tick_events.last().unwrap().tick;
 
@@ -432,15 +437,7 @@ pub fn run_simulation_tick(
 
     // ── 4. Fog of war ────────────────────────────────────────────────────
     let reveals = FogSystem::advance(&mut states.fog, world, &states.movement);
-    for reveal in &reveals {
-        events.push(GameEventRecord::new(
-            current_tick,
-            wall_ms,
-            SYS_FOG,
-            EVT_FOG_REVEALED,
-            serde_json::json!({ "system": sys_name(world, reveal.system) }),
-        ));
-    }
+    integrator.emit_fog_reveals(&reveals, world);
 
     // ── 5. Missions ──────────────────────────────────────────────────────
     let mission_rolls = take_rolls(states.missions.len());
@@ -851,46 +848,16 @@ pub fn run_simulation_tick(
 
     // ── 14. Victory check ────────────────────────────────────────────────
     if let Some(outcome) = VictorySystem::check(&states.victory, world, tick_events) {
-        states.victory.resolved = true;
-        events.push(GameEventRecord::new(
-            current_tick,
-            wall_ms,
-            SYS_VICTORY,
-            EVT_VICTORY,
-            serde_json::json!({ "outcome": format!("{:?}", outcome) }),
-        ));
+        integrator.apply_victory(&outcome, &mut states.victory);
     }
 
     // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────
     if current_tick % 250 == 0 && current_tick > 0 {
-        let mut alliance_systems = 0u32;
-        let mut empire_systems = 0u32;
-        let mut neutral_systems = 0u32;
-        for (_, sys) in world.systems.iter() {
-            match sys.control {
-                ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => alliance_systems += 1,
-                ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => empire_systems += 1,
-                _ => neutral_systems += 1,
-            }
-        }
-        let fleet_count = world.fleets.len() as u32;
-        let in_transit = states.movement.len() as u32;
-        events.push(GameEventRecord::new(
-            current_tick,
-            wall_ms,
-            "snapshot",
-            EVT_CAMPAIGN_SNAPSHOT,
-            serde_json::json!({
-                "tick": current_tick,
-                "alliance_systems": alliance_systems,
-                "empire_systems": empire_systems,
-                "neutral_systems": neutral_systems,
-                "fleets": fleet_count,
-                "in_transit": in_transit,
-            }),
-        ));
+        integrator.emit_campaign_snapshot(world, states.movement.len());
     }
 
+    // Merge integrator telemetry with inline events.
+    events.extend(integrator.finish());
     events
 }
 

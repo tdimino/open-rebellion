@@ -17,10 +17,59 @@ origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 | 2 | ✅ DONE | +9 | DS shield generator, officer combat rating, decoy missions, ship repair framework |
 | 3 | ✅ DONE | +16 | Jabba 5-case, Emperor co-location, Leia Force, 17 RE IDs, 8 notification events |
 | 3b | ✅ DONE | +7 | Knesset Shamash: economy 17%→97% (16/17 functions, 30 tests), swapped IDs, incident model, GNPRTB[7760] energy threshold, all review fixes |
-| 4 | PENDING | — | PerceptionIntegrator (simulation.rs 1,400→200 LOC) |
+| 3c | ✅ DONE | — | P0/P1 review fixes: collection rate formula `(100*base)/support`, f32→round(), incident flags (overcap + uprising-only), energy threshold wired |
+| 4 | IN PROGRESS | — | PerceptionIntegrator extraction (simulation.rs 1,658→~200 LOC). Step 1 done (fog/victory/snapshot). See WP-1 through WP-11. |
 | 5 | PENDING | — | 179 multiplayer protocol types, telemetry coverage test |
 
-### Follow-ons from Code Reviews (21 findings across 6 review agents, all resolved)
+### Phase 3c: Post-Review Bug Fixes (2026-03-28)
+
+**3 review agents ran on Phase 3b code. 12 findings across economy, story events, combat, effects, and simulation integration.**
+
+**P0 fixes (done):**
+- Collection rate formula missing `* 100` multiplier: was `base / support_pct` → now `(100 * base) / support_int` matching FUN_0053c8d0
+- f32 truncation at drift bracket boundaries → `.round()` at 0.20/0.30/0.40 thresholds
+
+**P0 findings (tracked as tasks):**
+- `#59` Economy system entirely missing from main.rs interactive game — support never drifts, control never resolves
+- `#60` Build completions not applied to GameWorld in main.rs — manufactured items vanish
+
+**P1 findings (tracked as tasks):**
+- `#58` Empire troop doubling missing `strong_support` bit guard (field_0x88 >> 0xb & 1)
+- `#61` RepairSystem never invoked in either simulation path
+- Incident flags fixed: resource checks overcap (not capacity), uprising checks ControlKind::Uprising only
+
+**P2 findings (tracked as tasks):**
+- `#62` Hardcoded MissionFaction::Empire in main.rs AI dispatch
+- `#63` Hardcoded transit constants in main.rs ignore GameConfig tuning
+
+**Informational:**
+- GameEffect enum has 39 variants (docs said 36) — corrected
+- Jabba mutual exclusion asymmetry: Leia + Luke can both be captured (may be intentional)
+- Shield recharge applies before absorption — parity with original needs line-level verification
+- 6 GNPRTB indices declared but unused (maintenance timing — maps to missing 17th function)
+
+### Phase 4: PerceptionIntegrator Extraction
+
+**Plans:** Nomos blueprint (`.subdaimon-output/nomos-integrator-extraction-plan.md`) + Codex ExecPlan (`docs/plans/2026-03-27-refactor-perception-integrator-extraction-plan.md`)
+
+**Work packages (tasks #47-#57):**
+| WP | Task | What | LOC Delta | Deps |
+|----|------|------|-----------|------|
+| 1 | #47 | Move payload helpers (sys_json, ai_action_json) | sim -77, int +77 | — |
+| 2 | #48 | Extract economy apply (7 event variants) | sim -78, int +85 | #47 |
+| 3 | #49 | Extract manufacturing + movement | sim -184, int +195 | #47 |
+| 4 | #50 | Extract combat (highest risk — borrow safety) | sim -120, int +125 | #47 |
+| 5 | #51 | Extract missions + escapes (14 match arms) | sim -228, int +195 | #47 |
+| 6 | #52 | Extract events + Jedi training | sim -156, int +140 | #47 |
+| 7 | #53 | Extract AI (primary + dual, 7 mut refs) | sim -157, int +100 | #47 |
+| 8 | #54 | Extract blockade + uprising + betrayal | sim -134, int +140 | #47 |
+| 9 | #55 | Extract death star + research + jedi | sim -106, int +106 | #47 |
+| 10 | #56 | Final wiring — delete events Vec | — | #48-#55 |
+| 11 | #57 | Cleanup + documentation | — | #56 |
+
+**Completed:** Step 1 (fog/victory/snapshot migrated to integrator). sim.rs 1,691→1,658.
+
+### Follow-ons from Earlier Code Reviews (21 findings, all resolved)
 
 **Implemented in commits:**
 - effects.rs: Removed dead SkillModified variant, added ControlChanged inversion, stability comment on sort

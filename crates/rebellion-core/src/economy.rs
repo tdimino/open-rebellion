@@ -510,7 +510,7 @@ fn calculate_support_drift(
         };
 
     // Convert f32 0.0-1.0 to integer 0-100 for computation
-    let support = (controlling_support_f32 * 100.0) as i32;
+    let support = (controlling_support_f32 * 100.0).round() as i32;
 
     // Only drift if support is below threshold AND no friendly fleet present.
     // Original: if (support <= GNPRTB[7732]) && (fleet1 == 0)
@@ -735,9 +735,16 @@ fn evaluate_incident_flags(
 }
 
 fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8) -> f32 {
-    let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1) as f32;
-    let support_pct = (support * 100.0).max(1.0);
-    (base / support_pct).clamp(1.0, 100.0)
+    // Original: FUN_0053c8d0_calculate_percentage(GNPRTB[7763], 100, support)
+    //         = (100 * GNPRTB[7763]) / max(support_int, 1)
+    //         = 10000 / support_int  (with stock GNPRTB[7763]=100)
+    // Result: integer percentage (100 at full support, 10000 at near-zero).
+    // Higher values = higher taxation burden on the system.
+    let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1) as i32;
+    let support_int = (support * 100.0).round() as i32;
+    let support_clamped = support_int.max(1);
+    let rate = (100 * base) / support_clamped;
+    rate.max(1) as f32
 }
 
 // ---------------------------------------------------------------------------
@@ -755,7 +762,7 @@ fn calculate_garrison_requirement(
 ) -> u32 {
     // Integer arithmetic matching FUN_005587d0_uprising_threshold + FUN_00558760_garrison_requirement.
     // Our support is f32 0.0-1.0; convert to integer 0-100.
-    let support_int = (support * 100.0) as i32;
+    let support_int = (support * 100.0).round() as i32;
     let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty) as i32; // 60
     let divisor = gnprtb.value(GNPRTB_GARRISON_DIVISOR, difficulty).abs().max(1) as i32; // 10
 
@@ -939,16 +946,16 @@ mod tests {
     fn collection_rate_high_support() {
         let gnprtb = stock_gnprtb();
         let rate = calculate_collection_rate(0.8, &gnprtb, 2);
-        // 100 / 80 = 1.25
-        assert!((rate - 1.25).abs() < 0.01, "expected ~1.25, got {rate}");
+        // (100 * 100) / 80 = 125
+        assert!((rate - 125.0).abs() < 0.01, "expected 125.0, got {rate}");
     }
 
     #[test]
     fn collection_rate_low_support() {
         let gnprtb = stock_gnprtb();
         let rate = calculate_collection_rate(0.1, &gnprtb, 2);
-        // 100 / 10 = 10.0
-        assert!((rate - 10.0).abs() < 0.1, "expected ~10.0, got {rate}");
+        // (100 * 100) / 10 = 1000
+        assert!((rate - 1000.0).abs() < 0.1, "expected 1000.0, got {rate}");
     }
 
     #[test]
@@ -1663,8 +1670,8 @@ mod tests {
     fn collection_rate_at_zero_support() {
         let gnprtb = stock_gnprtb();
         let rate = calculate_collection_rate(0.0, &gnprtb, 2);
-        // At zero support, formula: base(100) / max(0, 1) = 100
-        assert!((rate - 100.0).abs() < f32::EPSILON, "zero support should yield max rate: {rate}");
+        // At zero support: (100 * 100) / max(0, 1) = 10000
+        assert!((rate - 10000.0).abs() < f32::EPSILON, "zero support should yield max rate: {rate}");
     }
 
     #[test]
