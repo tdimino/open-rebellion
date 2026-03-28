@@ -114,7 +114,8 @@ crates/rebellion-data/src/
 ├── seeds.rs      — Game seeding: 3-system model, character stat rolling, named placement (~1200 LOC, 8 tests)
 ├── save.rs       — Save/load: bincode snapshots, save slots, version migration (v5)
 ├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
-└── simulation.rs — Shared simulation tick: SimulationStates bundle + run_simulation_tick() → Vec<GameEventRecord>
+├── simulation.rs — Tick orchestrator: SimulationStates bundle + run_simulation_tick() (~449 LOC)
+└── integrator.rs — PerceptionIntegrator: all world mutation + telemetry emission (~1,185 LOC, 17 apply methods)
 ```
 
 ## Type System: Two Layers
@@ -160,27 +161,38 @@ world types (GameWorld with SlotMap arenas)
 macroquad drawing + egui panels
 ```
 
-### Simulation Loop (rebellion-app/src/main.rs)
+### Simulation Loop (rebellion-data/src/simulation.rs → integrator.rs)
 ```
-Each frame:
+run_simulation_tick():
+  integrator = PerceptionIntegrator::new(tick, wall_ms)
+  0. EconomySystem::advance       → integrator.apply_economy_events()
+  1. ManufacturingSystem::advance  → integrator.apply_build_completions()
+  2. MovementSystem::advance       → integrator.apply_arrivals()
+  3. CombatSystem::resolve_*       → integrator.apply_space_combat() / apply_ground_combat()
+  4. FogSystem::advance            → integrator.emit_fog_reveals()
+  5. MissionSystem::advance        → integrator.apply_mission_result()
+  5b. check_escapes()              → integrator.apply_escape_effects()
+  6. EventSystem::advance          → integrator.apply_fired_events()
+  7. AISystem::advance             → integrator.apply_ai_actions()
+  8. BlockadeSystem::advance       → integrator.apply_blockade_events()
+  9. UprisingSystem::advance       → integrator.apply_uprising_events()
+  10. BetrayalSystem::advance      → integrator.apply_betrayal_events()
+  11. DeathStarSystem::advance     → integrator.apply_death_star_events()
+  12. ResearchSystem::advance      → integrator.apply_research_results()
+  13. JediSystem::advance          → integrator.apply_jedi_events()
+  14. VictorySystem::check         → integrator.apply_victory()
+  15. Campaign snapshot            → integrator.emit_campaign_snapshot()
+  return integrator.finish()
+
+Interactive game (main.rs):
   tick_events = clock.advance(dt)
   if tick_events not empty:
-    EconomySystem::advance          → EconomyEvents    → apply support drift, collection rate, garrison
-    ManufacturingSystem::advance_with_blockade → CompletionEvents (skips blockaded systems)
-    MovementSystem::advance     → ArrivalEvents    → update fleet.location + system.fleets
-    CombatSystem (per system)   → SpaceCombat/Ground/Bombardment → apply damage
-    FogSystem::advance          → RevealEvents
-    MissionSystem::advance      → MissionResults   → apply effects to GameWorld
-    EventSystem::advance        → FiredEvents       → apply actions to GameWorld
-    AISystem::advance           → AIActions         → apply to MissionState, ManufacturingState
-    BlockadeSystem::advance     → BlockadeEvents   → destroy troops, update blockade set
-    UprisingSystem::advance     → UprisingEvents   → flip controlling_faction
-    DeathStarSystem::advance    → DSEvents         → construction, planet destruction, warnings
-    ResearchSystem::advance     → ResearchResults  → advance tech levels
-    JediSystem::advance         → JediEvents       → tier advancement, detection
-    VictorySystem::check        → VictoryOutcome?  → end game if terminal condition met
-  draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays → hovered_fleet (fleet context menu detection)
-  egui_macroquad::ui: panels + context_menus + encyclopedia + system_info + message_log + status_bar
+    EconomySystem::advance → apply support drift + control resolution
+    ManufacturingSystem::advance → apply_build_completion_inner() + message log
+    MovementSystem::advance → update fleet.location + system.fleets
+    (remaining systems identical to simulation.rs pattern)
+  draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays
+  egui_macroquad::ui: panels + context_menus + encyclopedia + system_info + message_log
 ```
 
 ### Fleet Arrival Lifecycle

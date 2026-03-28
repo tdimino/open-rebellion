@@ -7,22 +7,28 @@
 //! effect application + telemetry to the integrator. This keeps simulation.rs focused
 //! on tick composition while the integrator owns the mutation/telemetry contract.
 //!
-//! Current state: scaffold with name resolution helpers and the PerceptionIntegrator
-//! struct. Effect application methods will be migrated from simulation.rs incrementally.
+//! All 17 simulation sections route through PerceptionIntegrator methods for both
+//! world mutation and telemetry emission. simulation.rs is a thin tick orchestrator (~449 LOC).
 
 use std::collections::HashMap;
 
-use rebellion_core::ai::AIAction;
+use rebellion_core::ai::{AIAction, AIState};
+use rebellion_core::betrayal::BetrayalEvent;
+use rebellion_core::blockade::BlockadeEvent;
 use rebellion_core::combat::{CombatSide, GroundCombatResult, SpaceCombatResult};
-use rebellion_core::death_star::DeathStarState;
+use rebellion_core::death_star::{DeathStarEvent, DeathStarState};
 use rebellion_core::economy::EconomyEvent;
+use rebellion_core::events::{EventAction, FiredEvent, SkillField};
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::*;
 use rebellion_core::ids::{CharacterKey, SystemKey, TroopKey};
-use rebellion_core::manufacturing::{BuildableKind, CompletionEvent};
-use rebellion_core::missions::{MissionEffect, MissionFaction, MissionResult};
-use rebellion_core::movement::ArrivalEvent;
-use rebellion_core::uprising::UprisingState;
+use rebellion_core::jedi::{JediEvent, JediState};
+use rebellion_core::manufacturing::{BuildableKind, CompletionEvent, ManufacturingState, QueueItem};
+use rebellion_core::missions::{MissionEffect, MissionFaction, MissionResult, MissionState};
+use rebellion_core::movement::{ArrivalEvent, MovementState};
+use rebellion_core::repair::RepairEvent;
+use rebellion_core::research::{ResearchResult, ResearchState};
+use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
 use rebellion_core::world::{ControlKind, Fleet, FighterEntry, GameWorld, ShipEntry, TroopUnit};
 
@@ -426,6 +432,257 @@ impl PerceptionIntegrator {
             }
         }
     }
+
+    // ── Step 6: Events + Jedi training ────────────────────────────────────
+
+    /// Apply fired events: world mutations + Jedi training extraction + telemetry.
+    pub fn apply_fired_events(
+        &mut self,
+        world: &mut GameWorld,
+        fired_events: &[FiredEvent],
+        jedi_state: &mut JediState,
+        current_tick: u64,
+    ) {
+        for fired in fired_events {
+            apply_event_actions_to_world_inner(&fired.actions, world, current_tick);
+            self.emit(SYS_EVENTS, EVT_EVENT_FIRED, serde_json::json!({
+                "event_id": fired.event_id,
+            }));
+        }
+        // Extract Jedi training starts from story events
+        for fired in fired_events {
+            for action in &fired.actions {
+                if let EventAction::StartJediTraining { character } = action {
+                    if let Some(c) = world.characters.get(*character) {
+                        jedi_state.start_training(*character, c.is_alliance, current_tick);
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Step 7: AI actions ────────────────────────────────────────────────
+
+    /// Apply AI actions: mission dispatch, production, movement + telemetry.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_ai_actions(
+        &mut self,
+        actions: &[AIAction],
+        rolls: &[f64],
+        ai_state: &mut AIState,
+        mission_state: &mut MissionState,
+        mfg_state: &mut ManufacturingState,
+        movement_state: &mut MovementState,
+        research_state: &mut ResearchState,
+        world: &GameWorld,
+        _tick: u64,
+        config: &rebellion_core::tuning::GameConfig,
+        is_dual: bool,
+    ) {
+        apply_ai_actions_inner(actions, rolls, ai_state, mission_state, mfg_state,
+            movement_state, research_state, world, _tick, config);
+        for action in actions {
+            let mut payload = ai_action_json(action, world);
+            if is_dual {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert("dual_ai".into(), serde_json::json!(true));
+                }
+            }
+            self.emit(SYS_AI, EVT_AI_ACTION, payload);
+        }
+    }
+
+    // ── Step 8: Blockade ──────────────────────────────────────────────────
+
+    /// Apply blockade events: troop destruction + telemetry.
+    pub fn apply_blockade_events(&mut self, world: &mut GameWorld, events: &[BlockadeEvent]) {
+        for evt in events {
+            match evt {
+                BlockadeEvent::BlockadeStarted { system, tick } => {
+                    self.events.push(GameEventRecord::new(
+                        *tick, self.wall_ms, SYS_BLOCKADE, EVT_BLOCKADE_STARTED,
+                        serde_json::json!({ "system": sys_name(world, *system) }),
+                    ));
+                }
+                BlockadeEvent::BlockadeEnded { system, tick } => {
+                    self.events.push(GameEventRecord::new(
+                        *tick, self.wall_ms, SYS_BLOCKADE, EVT_BLOCKADE_ENDED,
+                        serde_json::json!({ "system": sys_name(world, *system) }),
+                    ));
+                }
+                BlockadeEvent::TroopDestroyed { system, troop, .. } => {
+                    if let Some(sys) = world.systems.get_mut(*system) {
+                        sys.ground_units.retain(|&k| k != *troop);
+                    }
+                    world.troops.remove(*troop);
+                }
+            }
+        }
+    }
+
+    // ── Step 9: Uprising ──────────────────────────────────────────────────
+
+    /// Apply uprising events: control flip + telemetry.
+    pub fn apply_uprising_events(&mut self, world: &mut GameWorld, events: &[UprisingEvent]) {
+        for evt in events {
+            match evt {
+                UprisingEvent::UprisingIncident { system, tick } => {
+                    self.events.push(GameEventRecord::new(
+                        *tick, self.wall_ms, SYS_UPRISING, EVT_UPRISING_INCIDENT,
+                        serde_json::json!({ "system": sys_name(world, *system) }),
+                    ));
+                }
+                UprisingEvent::UprisingBegan { system, tick } => {
+                    let before = world.systems.get(*system).map(|s| s.control);
+                    if let Some(sys) = world.systems.get_mut(*system) {
+                        sys.control = match sys.control {
+                            ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) =>
+                                ControlKind::Controlled(rebellion_core::dat::Faction::Empire),
+                            ControlKind::Controlled(rebellion_core::dat::Faction::Empire) =>
+                                ControlKind::Controlled(rebellion_core::dat::Faction::Alliance),
+                            other => other,
+                        };
+                    }
+                    let after = world.systems.get(*system).map(|s| s.control);
+                    if before != after {
+                        self.events.push(GameEventRecord::new(
+                            *tick, self.wall_ms, SYS_UPRISING, EVT_CONTROL_CHANGED,
+                            serde_json::json!({
+                                "system": sys_name(world, *system),
+                                "from": format!("{:?}", before),
+                                "to": format!("{:?}", after),
+                                "cause": "uprising",
+                            }),
+                        ));
+                    }
+                    self.events.push(GameEventRecord::new(
+                        *tick, self.wall_ms, SYS_UPRISING, EVT_UPRISING_BEGAN,
+                        serde_json::json!({ "system": sys_name(world, *system) }),
+                    ));
+                }
+                UprisingEvent::UprisingSubdued { .. } => {}
+            }
+        }
+    }
+
+    // ── Step 10: Betrayal ─────────────────────────────────────────────────
+
+    /// Apply betrayal events: faction flip + fleet removal + telemetry.
+    pub fn apply_betrayal_events(&mut self, world: &mut GameWorld, events: &[BetrayalEvent]) {
+        for evt in events {
+            let BetrayalEvent::CharacterBetrayed { character, defected_to_alliance } = evt;
+            if let Some(c) = world.characters.get_mut(*character) {
+                c.is_alliance = *defected_to_alliance;
+                c.is_empire = !*defected_to_alliance;
+            }
+            for (_, fleet) in world.fleets.iter_mut() {
+                fleet.characters.retain(|&k| k != *character);
+            }
+            self.emit(SYS_BETRAYAL, EVT_BETRAYAL, serde_json::json!({
+                "character": char_name(world, *character),
+                "defected_to_alliance": defected_to_alliance,
+            }));
+        }
+    }
+
+    // ── Step 11: Death Star ───────────────────────────────────────────────
+
+    /// Apply death star events: planet destruction + telemetry.
+    pub fn apply_death_star_events(&mut self, world: &mut GameWorld, events: &[DeathStarEvent]) {
+        for evt in events {
+            match evt {
+                DeathStarEvent::ConstructionCompleted { system, tick } => {
+                    self.events.push(GameEventRecord::new(
+                        *tick, self.wall_ms, SYS_DEATH_STAR, EVT_DS_CONSTRUCTION,
+                        serde_json::json!({ "system": sys_name(world, *system) }),
+                    ));
+                }
+                DeathStarEvent::PlanetDestroyed { system, tick } => {
+                    if let Some(sys) = world.systems.get_mut(*system) {
+                        sys.is_destroyed = true;
+                    }
+                    self.events.push(GameEventRecord::new(
+                        *tick, self.wall_ms, SYS_DEATH_STAR, EVT_DS_FIRED,
+                        serde_json::json!({ "system": sys_name(world, *system) }),
+                    ));
+                }
+                DeathStarEvent::NearbyWarning { .. } => {}
+            }
+        }
+    }
+
+    // ── Step 12: Research ─────────────────────────────────────────────────
+
+    /// Apply research results: level-ups + telemetry.
+    pub fn apply_research_results(&mut self, results: &[ResearchResult], research_state: &mut ResearchState) {
+        for result in results {
+            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, new_level } = result;
+            if *faction_is_alliance {
+                research_state.alliance.advance(*tech_type);
+            } else {
+                research_state.empire.advance(*tech_type);
+            }
+            self.emit(SYS_RESEARCH, EVT_RESEARCH_UNLOCKED, serde_json::json!({
+                "faction_is_alliance": faction_is_alliance,
+                "tech_type": format!("{:?}", tech_type),
+                "new_level": new_level,
+            }));
+        }
+    }
+
+    // ── Step 12b: Repair ───────────────────────────────────────────────────
+
+    /// Apply repair events: hull restoration + telemetry.
+    pub fn apply_repair_events(&mut self, world: &mut GameWorld, events: &[RepairEvent]) {
+        for evt in events {
+            let RepairEvent::ShipRepaired { fleet, ship_index: _, hull_before: _, hull_after } = evt;
+            // Repair events are informational — the actual hull value is already
+            // updated by the pure RepairSystem. We just emit telemetry.
+            let fleet_name = world.fleets.get(*fleet)
+                .map(|f| sys_name(world, f.location))
+                .unwrap_or_else(|| "unknown".into());
+            self.emit(SYS_REPAIR, EVT_SHIP_REPAIRED, serde_json::json!({
+                "fleet_location": fleet_name,
+                "hull_after": hull_after,
+            }));
+        }
+    }
+
+    // ── Step 13: Jedi ─────────────────────────────────────────────────────
+
+    /// Apply jedi events: tier advancement + discovery + telemetry.
+    pub fn apply_jedi_events(&mut self, world: &mut GameWorld, events: &[JediEvent], jedi_state: &mut JediState) {
+        for evt in events {
+            match evt {
+                JediEvent::TierAdvanced { character, new_tier } => {
+                    if let Some(c) = world.characters.get_mut(*character) {
+                        c.force_tier = *new_tier;
+                        c.force_experience = match new_tier {
+                            rebellion_core::world::ForceTier::None => 0,
+                            rebellion_core::world::ForceTier::Aware => 1,
+                            rebellion_core::world::ForceTier::Training => rebellion_core::jedi::XP_TO_TRAINING,
+                            rebellion_core::world::ForceTier::Experienced => rebellion_core::jedi::XP_TO_EXPERIENCED,
+                        };
+                    }
+                    self.emit(SYS_JEDI, EVT_JEDI_TIER, serde_json::json!({
+                        "character": char_name(world, *character),
+                        "new_tier": format!("{:?}", new_tier),
+                    }));
+                }
+                JediEvent::TrainingComplete { character } => {
+                    jedi_state.stop_training(*character);
+                }
+                JediEvent::JediDiscovered { character, .. } => {
+                    if let Some(c) = world.characters.get_mut(*character) {
+                        c.is_discovered_jedi = true;
+                    }
+                    self.emit(SYS_JEDI, EVT_JEDI_DISCOVERED, serde_json::json!({
+                        "character": char_name(world, *character),
+                    }));
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +823,148 @@ fn apply_mission_effects_inner(
             }
             MissionEffect::DeathStarSabotaged { ticks_delayed } => {
                 death_star_state.add_sabotage_delay(*ticks_delayed);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Event action helper (moved from simulation.rs)
+// ---------------------------------------------------------------------------
+
+fn apply_event_actions_to_world_inner(actions: &[EventAction], world: &mut GameWorld, tick: u64) {
+    for action in actions {
+        match action {
+            EventAction::DisplayMessage { .. } => {}
+            EventAction::ShiftPopularity { system, alliance_delta, empire_delta } => {
+                if let Some(sys) = world.systems.get_mut(*system) {
+                    sys.popularity_alliance = (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
+                    sys.popularity_empire = (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
+                }
+            }
+            EventAction::ModifyCharacterSkill { character, skill, base_delta } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    let d = *base_delta;
+                    let apply = |v: u32, delta: i32| (v as i64 + delta as i64).max(0) as u32;
+                    match skill {
+                        SkillField::Diplomacy => c.diplomacy.base = apply(c.diplomacy.base, d),
+                        SkillField::Espionage => c.espionage.base = apply(c.espionage.base, d),
+                        SkillField::ShipDesign => c.ship_design.base = apply(c.ship_design.base, d),
+                        SkillField::TroopTraining => c.troop_training.base = apply(c.troop_training.base, d),
+                        SkillField::FacilityDesign => c.facility_design.base = apply(c.facility_design.base, d),
+                        SkillField::Combat => c.combat.base = apply(c.combat.base, d),
+                        SkillField::Leadership => c.leadership.base = apply(c.leadership.base, d),
+                        SkillField::Loyalty => c.loyalty.base = apply(c.loyalty.base, d),
+                        SkillField::JediLevel => c.jedi_level.base = apply(c.jedi_level.base, d),
+                    }
+                }
+            }
+            EventAction::RelocateCharacter { .. } => {}
+            EventAction::SetMandatoryMission { character, mandatory } => {
+                if let Some(c) = world.characters.get_mut(*character) { c.on_mandatory_mission = *mandatory; }
+            }
+            EventAction::ModifyForceTier { character, new_tier } => {
+                if let Some(c) = world.characters.get_mut(*character) { c.force_tier = *new_tier; }
+            }
+            EventAction::RemoveCharacter { character } => {
+                for (_, fleet) in world.fleets.iter_mut() { fleet.characters.retain(|&k| k != *character); }
+                world.characters.remove(*character);
+            }
+            EventAction::StartJediTraining { .. } => {}
+            EventAction::TransferCharacter { character, destination, new_faction } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.current_system = Some(*destination);
+                    if let Some(faction) = new_faction {
+                        match faction {
+                            rebellion_core::dat::Faction::Alliance => { c.is_alliance = true; c.is_empire = false; }
+                            rebellion_core::dat::Faction::Empire => { c.is_alliance = false; c.is_empire = true; }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            EventAction::TriggerEvent { .. } => {}
+            EventAction::AccumulateForceExperience { character, amount } => {
+                if let Some(c) = world.characters.get_mut(*character) { c.force_experience += amount; }
+            }
+            EventAction::CaptureCharacter { character, captor_faction } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.is_captive = true;
+                    c.captured_by = Some(*captor_faction);
+                    c.capture_tick = Some(tick);
+                }
+                for (_, fleet) in world.fleets.iter_mut() { fleet.characters.retain(|&k| k != *character); }
+            }
+            EventAction::SetCarboniteState { character, frozen } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.on_mandatory_mission = *frozen;
+                    if *frozen { c.is_captive = true; c.capture_tick = Some(tick); }
+                    else { c.is_captive = false; c.captured_by = None; c.capture_tick = None; }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AI action helper (moved from simulation.rs)
+// ---------------------------------------------------------------------------
+
+fn apply_ai_actions_inner(
+    actions: &[AIAction],
+    rolls: &[f64],
+    ai_state: &mut AIState,
+    mission_state: &mut MissionState,
+    mfg_state: &mut ManufacturingState,
+    movement_state: &mut MovementState,
+    research_state: &mut ResearchState,
+    world: &GameWorld,
+    _tick: u64,
+    config: &rebellion_core::tuning::GameConfig,
+) {
+    let mission_faction = ai_state
+        .faction
+        .map(|f| f.as_mission_faction())
+        .unwrap_or(MissionFaction::Empire);
+
+    let mut roll_idx = 0;
+    for action in actions {
+        match action {
+            AIAction::DispatchMission { kind, character, target_system, duration_roll } => {
+                let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
+                roll_idx += 1;
+                mission_state.dispatch(*kind, mission_faction, *character, *target_system, roll);
+                ai_state.mark_busy(*character);
+            }
+            AIAction::EnqueueProduction { system, kind, ticks } => {
+                mfg_state.enqueue(*system, QueueItem::new(*kind, *ticks, *ticks));
+            }
+            AIAction::DispatchResearch { character, tech_type, ticks } => {
+                let is_alliance = ai_state.faction
+                    .map(|f| matches!(f, rebellion_core::ai::AiFaction::Alliance))
+                    .unwrap_or(false);
+                research_state.dispatch(rebellion_core::research::ResearchProject {
+                    tech_type: *tech_type,
+                    character: *character,
+                    faction_is_alliance: is_alliance,
+                    ticks_remaining: *ticks,
+                    total_ticks: *ticks,
+                });
+                ai_state.mark_busy(*character);
+            }
+            AIAction::MoveFleet { fleet, to_system, .. } => {
+                let already_moving = movement_state.get(*fleet).map(|o| o.destination == *to_system).unwrap_or(false);
+                if !already_moving {
+                    if let Some(f) = world.fleets.get(*fleet) {
+                        let transit = rebellion_core::movement::fleet_transit_ticks_with_config(
+                            f, world, f.location, *to_system,
+                            config.movement.distance_scale,
+                            config.movement.min_transit_ticks,
+                            config.movement.default_fighter_hyperdrive,
+                        );
+                        movement_state.order(*fleet, f.location, *to_system, transit);
+                    }
+                }
             }
         }
     }

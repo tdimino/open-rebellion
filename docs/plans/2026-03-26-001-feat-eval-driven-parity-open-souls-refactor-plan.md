@@ -18,7 +18,7 @@ origin: docs/reports/2026-03-26-community-disassembly-cross-reference.md
 | 3 | ✅ DONE | +16 | Jabba 5-case, Emperor co-location, Leia Force, 17 RE IDs, 8 notification events |
 | 3b | ✅ DONE | +7 | Knesset Shamash: economy 17%→97% (16/17 functions, 30 tests), swapped IDs, incident model, GNPRTB[7760] energy threshold, all review fixes |
 | 3c | ✅ DONE | — | P0/P1 review fixes: collection rate formula `(100*base)/support`, f32→round(), incident flags (overcap + uprising-only), energy threshold wired |
-| 4 | IN PROGRESS | — | PerceptionIntegrator extraction (simulation.rs 1,658→~200 LOC). Step 1 done (fog/victory/snapshot). See WP-1 through WP-11. |
+| 4 | ✅ DONE | — | PerceptionIntegrator extraction: simulation.rs 1,658→449 LOC (73% reduction). All 17 sections migrated. P0/P1/P2 review fixes applied. 10 commits on feat/knesset-ereshkigal-phase-4. |
 | 5 | PENDING | — | 179 multiplayer protocol types, telemetry coverage test |
 
 ### Phase 3c: Post-Review Bug Fixes (2026-03-28)
