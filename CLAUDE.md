@@ -9,7 +9,7 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 396 tests, zero warnings. Knesset Ereshkigal Phase 0-3b complete: economy 17%→97% (16/17 functions, all review fixes): effect algebra, economy system, P0 formula fixes, DS shield, officer combat rating, decoy missions, ship repair, Jabba 5-case chain, Emperor co-location, Leia Force discovery, 17 RE event IDs, GNPRTB[7760] energy threshold, incident flag corrections.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 393 tests, zero warnings. Knesset Ereshkigal Phase 0-4 complete: PerceptionIntegrator extraction (simulation.rs 1,658→449 LOC, 73% reduction), economy wired into interactive game, build completions applied, faction-aware AI dispatch, strong_support bit guard. All 17 simulation sections route through integrator for mutation + telemetry.
 
 | Area | Key Features |
 |------|-------------|
