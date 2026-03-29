@@ -49,6 +49,7 @@ const ALL_SYSTEMS: &[&str] = &[
 /// fixture injections cannot reliably guarantee. These emit events in real
 /// games but are hard to trigger deterministically in a 393-tick test.
 const OPTIONAL_SYSTEMS: &[&str] = &[
+    SYS_VICTORY,   // Requires HQ capture or DS fire at enemy HQ — not guaranteed
     SYS_UPRISING,  // Needs UPRIS1TB table + specific RNG + control stability
     SYS_BETRAYAL,  // Needs UPRIS1TB table + character survival + RNG alignment
 ];
