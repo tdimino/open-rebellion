@@ -445,7 +445,8 @@ impl PerceptionIntegrator {
     ) {
         for fired in fired_events {
             apply_event_actions_to_world_inner(&fired.actions, world, current_tick);
-            self.emit(SYS_EVENTS, EVT_EVENT_FIRED, serde_json::json!({
+            let system_tag = if is_story_event(fired.event_id) { SYS_STORY } else { SYS_EVENTS };
+            self.emit(system_tag, EVT_EVENT_FIRED, serde_json::json!({
                 "event_id": fired.event_id,
             }));
         }
@@ -635,16 +636,29 @@ impl PerceptionIntegrator {
     /// Apply repair events: hull restoration + telemetry.
     pub fn apply_repair_events(&mut self, world: &mut GameWorld, events: &[RepairEvent]) {
         for evt in events {
-            let RepairEvent::ShipRepaired { fleet, ship_index: _, hull_before: _, hull_after } = evt;
-            // Repair events are informational — the actual hull value is already
-            // updated by the pure RepairSystem. We just emit telemetry.
-            let fleet_name = world.fleets.get(*fleet)
-                .map(|f| sys_name(world, f.location))
-                .unwrap_or_else(|| "unknown".into());
-            self.emit(SYS_REPAIR, EVT_SHIP_REPAIRED, serde_json::json!({
-                "fleet_location": fleet_name,
-                "hull_after": hull_after,
-            }));
+            match evt {
+                RepairEvent::ShipRepaired { fleet, hull_after, .. } => {
+                    let fleet_name = world.fleets.get(*fleet)
+                        .map(|f| sys_name(world, f.location))
+                        .unwrap_or_else(|| "unknown".into());
+                    self.emit(SYS_REPAIR, EVT_SHIP_REPAIRED, serde_json::json!({
+                        "fleet_location": fleet_name,
+                        "hull_after": hull_after,
+                    }));
+                }
+                RepairEvent::RepairCheckPerformed { system, fleet, ships_checked } => {
+                    let sys_n = sys_name(world, *system);
+                    let fleet_n = world.fleets.get(*fleet)
+                        .and_then(|f| world.characters.get(*f.characters.first()?)
+                            .map(|c| c.name.as_str()))
+                        .unwrap_or("uncrewed");
+                    self.emit(SYS_REPAIR, EVT_SHIP_REPAIR_STARTED, serde_json::json!({
+                        "system": sys_n,
+                        "fleet_commander": fleet_n,
+                        "ships_checked": ships_checked,
+                    }));
+                }
+            }
         }
     }
 
@@ -1201,4 +1215,13 @@ pub fn apply_build_completion_inner(
             }
         }
     }
+}
+
+/// Story chain event IDs from define_story_events() (0x380-0x39A).
+/// Used to tag fired events as SYS_STORY instead of SYS_EVENTS.
+fn is_story_event(event_id: u32) -> bool {
+    matches!(event_id,
+        0x210 | 0x212 | 0x220 | 0x221  // Dagobah, Bounty, Final Battle, Luke Dagobah
+        | 0x380..=0x39A                 // Notification story events
+    )
 }

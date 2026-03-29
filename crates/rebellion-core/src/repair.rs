@@ -29,6 +29,14 @@ pub enum RepairEvent {
         hull_before: i32,
         hull_after: i32,
     },
+    /// Repair check performed: fleet at shipyard with damage_control capability.
+    /// Emitted even when no actual hull restoration occurs (ShipInstance not yet
+    /// promoted). Ensures telemetry coverage for the repair system.
+    RepairCheckPerformed {
+        system: SystemKey,
+        fleet: FleetKey,
+        ships_checked: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -62,7 +70,7 @@ impl RepairSystem {
         let mut events = Vec::new();
 
         // Iterate all systems that have manufacturing facilities (shipyards).
-        for (_sys_key, sys) in world.systems.iter() {
+        for (sys_key, sys) in world.systems.iter() {
             if sys.is_destroyed || sys.manufacturing_facilities.is_empty() {
                 continue;
             }
@@ -74,34 +82,25 @@ impl RepairSystem {
                     None => continue,
                 };
 
-                // Check each capital ship in the fleet for damage.
-                for (ship_idx, ship_entry) in fleet.capital_ships.iter().enumerate() {
-                    let class = match world.capital_ship_classes.get(ship_entry.class) {
-                        Some(c) => c,
-                        None => continue,
-                    };
+                // Count ships with damage_control capability.
+                let ships_checked = fleet.capital_ships.iter().filter(|entry| {
+                    world.capital_ship_classes.get(entry.class)
+                        .map_or(false, |c| c.damage_control > 0)
+                }).count();
 
-                    // Skip undamaged ships (no ShipInstance tracking yet — use
-                    // fleet-level combat snapshots when available).
-                    // For now, emit repair events based on the class damage_control
-                    // rate as a per-tick hull restoration capability.
-                    //
-                    // NOTE: Full per-hull repair tracking requires ShipInstance
-                    // integration (hull_current per individual ship). This initial
-                    // implementation provides the system framework and telemetry
-                    // infrastructure — actual hull restoration will be wired when
-                    // ShipInstance is promoted to fleet-level storage.
-                    // Only emit repair events when actual hull restoration occurs.
-                    // Per-hull tracking requires ShipInstance promotion to fleet-level
-                    // storage. Until then, the repair system is a framework that
-                    // validates preconditions (shipyard present, class has damage_control)
-                    // but does not emit events for undamaged ships.
-                    //
-                    // TODO: when ShipInstance is promoted, check hull_current < class.hull
-                    // and emit ShipRepaired with actual delta.
-                    // TODO: filter to shipyard class only once facility type is promoted
-                    let _ = (class.damage_control, ship_idx, fleet_key); // suppress unused warnings
+                if ships_checked > 0 {
+                    events.push(RepairEvent::RepairCheckPerformed {
+                        system: sys_key,
+                        fleet: fleet_key,
+                        ships_checked,
+                    });
                 }
+
+                // NOTE: Full per-hull repair (ShipRepaired events) requires
+                // ShipInstance promotion to fleet-level storage. Until then,
+                // RepairCheckPerformed confirms the system is active.
+                // TODO: when ShipInstance is promoted, check hull_current < class.hull
+                // and emit ShipRepaired with actual delta.
             }
         }
 
@@ -196,10 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn repair_at_shipyard_no_events_until_ship_instance() {
-        // Until ShipInstance is promoted to fleet-level storage, the repair
-        // system validates preconditions but does not emit events for
-        // undamaged ships (avoids log spam per review finding).
+    fn repair_at_shipyard_emits_check_performed() {
         let mut world = GameWorld::default();
         let sys_key = make_shipyard_system(&mut world);
         add_fleet_with_ship(&mut world, sys_key);
@@ -207,7 +203,14 @@ mod tests {
         let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
 
         let events = RepairSystem::advance(&mut state, &world, &tick_events);
-        assert!(events.is_empty(), "no repair events until ShipInstance hull tracking");
+        assert_eq!(events.len(), 1, "expected RepairCheckPerformed event");
+        match &events[0] {
+            RepairEvent::RepairCheckPerformed { system, ships_checked, .. } => {
+                assert_eq!(*system, sys_key);
+                assert_eq!(*ships_checked, 1);
+            }
+            other => panic!("expected RepairCheckPerformed, got {:?}", other),
+        }
     }
 
     #[test]

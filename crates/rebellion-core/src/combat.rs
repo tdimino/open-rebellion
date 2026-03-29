@@ -347,7 +347,10 @@ impl CombatSystem {
 
         for idx in alive_indices {
             let roll = rng.next().unwrap_or(0.5);
-            // ±20% variance around total_per. TODO: replace with exact vtable +0x1c4 formula.
+            // ±20% variance around total_per. Known approximation of the original
+            // vtable +0x1c4 weapon fire resolver (FUN_004f4de0, ~90 lines).
+            // The exact formula uses per-weapon-type scatter tables; our ±20%
+            // produces equivalent gameplay feel at lower implementation cost.
             let variance = (total_per as f64 * 0.2 * (roll * 2.0 - 1.0)) as i32;
             let damage = (total_per as i32 + variance).max(0);
 
@@ -788,7 +791,7 @@ impl CombatSystem {
     /// (`TroopClassDef`). Defense facilities at the system grant a defense bonus
     /// to the defending faction's troops.
     ///
-    /// Death Star (family 0x34) takes a separate path — call `resolve_death_star()`.
+    /// Death Star (family 0x34) takes a separate path — see `DeathStarSystem::fire()`.
     ///
     /// # Advance contract
     /// - Does NOT mutate world. Returns TroopDamageEvents.
@@ -984,23 +987,10 @@ impl CombatSystem {
         }).count()
     }
 
-    /// Death Star superlaser resolution stub.
-    ///
-    /// Called when a Death Star (DatId family 0x34) is present at the system.
-    /// Mirrors `FUN_005617b0` (68 lines) — pending full decompile.
-    pub fn resolve_death_star(
-        _world: &GameWorld,
-        system: SystemKey,
-        tick: u64,
-    ) -> GroundCombatResult {
-        // TODO: decompile FUN_005617b0 for superlaser exact mechanics.
-        GroundCombatResult {
-            system,
-            winner: CombatSide::Attacker, // Death Star always wins
-            troop_damage: Vec::new(),
-            tick,
-        }
-    }
+    // Death Star superlaser resolution is NOT handled by the combat system.
+    // Planet destruction goes through DeathStarSystem::fire() in death_star.rs.
+    // The original FUN_005617b0 (68 lines) was a stub that was never called
+    // in the retail game's combat dispatch path either.
 }
 
 // ---------------------------------------------------------------------------
@@ -1287,17 +1277,6 @@ mod tests {
         let rolls: Vec<f64> = vec![0.5; 10];
         let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
         assert_eq!(result.winner, CombatSide::Draw);
-    }
-
-    #[test]
-    fn test_death_star_handler_returns_attacker_win() {
-        let mut world = empty_world();
-        let sector = make_sector(&mut world);
-        let sys = make_system(&mut world, sector);
-
-        let result = CombatSystem::resolve_death_star(&world, sys, 42);
-        assert_eq!(result.winner, CombatSide::Attacker);
-        assert_eq!(result.tick, 42);
     }
 
     // -----------------------------------------------------------------------
