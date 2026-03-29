@@ -1808,7 +1808,7 @@ async fn main() {
                 &mut clock,
                 &mut dual_ai_mode,
                 &mut ai2_state,
-                &victory_state,
+                &mut victory_state,
                 &event_state,
                 &mut mod_runtime,
                 #[cfg(not(target_arch = "wasm32"))]
@@ -1861,7 +1861,7 @@ fn apply_panel_action(
     clock: &mut GameClock,
     dual_ai_mode: &mut bool,
     ai2_state: &mut Option<AIState>,
-    victory_state: &VictoryState,
+    victory_state: &mut VictoryState,
     event_state: &EventState,
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
@@ -2119,8 +2119,7 @@ fn apply_panel_action(
                     if let Some(sys) = world.systems.get_mut(system) {
                         sys.is_destroyed = true;
                     }
-                    // TODO: update victory_state.death_star_location (needs &mut VictoryState)
-                    // TODO: clean up entities at destroyed system (fleets, troops, facilities)
+                    victory_state.death_star_location = Some(system);
                     msg_log.push(GameMessage::new(
                         clock.tick,
                         format!("{} DESTROYED by Death Star superlaser!", name),

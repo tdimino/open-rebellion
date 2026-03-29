@@ -266,6 +266,12 @@ pub fn run_simulation_tick(
     // ── 11. Death Star ───────────────────────────────────────────────────
     let ds_events = DeathStarSystem::advance(&mut states.death_star, world, tick_events);
     integrator.apply_death_star_events(world, &ds_events);
+    // Update victory state so VictorySystem::check_death_star can detect DS fire.
+    for evt in &ds_events {
+        if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { system, .. } = evt {
+            states.victory.death_star_location = Some(*system);
+        }
+    }
 
     // ── 12. Research ─────────────────────────────────────────────────────
     let research_results = ResearchSystem::advance(&mut states.research, world, tick_events);
