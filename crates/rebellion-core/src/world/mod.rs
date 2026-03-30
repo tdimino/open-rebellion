@@ -877,6 +877,10 @@ pub struct ManufacturingFacilityInstance {
     /// The class definition (from MANFACSD.DAT).
     pub class_dat_id: DatId,
     pub is_alliance: bool,
+    /// True if this facility is a shipyard (can build/repair ships).
+    /// Set during loading from the DAT `production_family` field.
+    #[serde(default)]
+    pub is_shipyard: bool,
 }
 
 /// A production facility instance (mine, refinery).
@@ -885,6 +889,10 @@ pub struct ProductionFacilityInstance {
     /// The class definition (from PROFACSD.DAT).
     pub class_dat_id: DatId,
     pub is_alliance: bool,
+    /// True if this facility is a mine (raw material extraction).
+    /// Set during loading from the DAT `production_family` field.
+    #[serde(default)]
+    pub is_mine: bool,
 }
 
 /// Class definition for a troop type — a template loaded from TROOPSD.DAT.

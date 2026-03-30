@@ -130,7 +130,7 @@ mod tests {
         });
         let mfg_key = world.manufacturing_facilities.insert(ManufacturingFacilityInstance {
             class_dat_id: DatId::new(0),
-            is_alliance: false,
+            is_alliance: false, is_shipyard: false,
         });
         let sys_key = world.systems.insert(System {
             dat_id: DatId::new(0x9000_0000),

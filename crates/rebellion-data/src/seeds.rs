@@ -845,7 +845,7 @@ fn dispatch_facility_item(
     match family {
         FAM_ALLIANCE_HQ => {
             // Alliance HQ is a manufacturing facility (construction yard class).
-            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance: true };
+            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance: true, is_shipyard: false };
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
@@ -855,12 +855,12 @@ fn dispatch_facility_item(
             world.systems[system_key].defense_facilities.push(key);
         }
         f if f >= FAM_MFG_MIN && f <= FAM_MFG_MAX => {
-            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance };
+            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance, is_shipyard: false };
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
         f if f >= FAM_PROD_MIN && f <= FAM_PROD_MAX => {
-            let inst = ProductionFacilityInstance { class_dat_id, is_alliance };
+            let inst = ProductionFacilityInstance { class_dat_id, is_alliance, is_mine: false };
             let key = world.production_facilities.insert(inst);
             world.systems[system_key].production_facilities.push(key);
         }
@@ -1359,6 +1359,7 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
                 let inst = ProductionFacilityInstance {
                     class_dat_id: mine_dat_id,
                     is_alliance: false, // Mines are neutral/faction-inherited
+                    is_mine: true,
                 };
                 let fac_key = world.production_facilities.insert(inst);
                 if let Some(sys) = world.systems.get_mut(key) {

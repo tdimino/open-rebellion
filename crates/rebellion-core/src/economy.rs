@@ -597,12 +597,10 @@ fn calculate_resource_allocation(
     let energy_output = sys.production_facilities.len() as u32;
 
     // Sum mine outputs (raw material generators).
-    // In the original, mines have a per-mine virtual output method.
-    // We count manufacturing facilities that are mines (by class type).
-    // For now, use a simple count — each mine contributes 1 raw material unit.
-    // TODO: distinguish mine facilities from non-mine manufacturing facilities
-    // once ManufacturingFacilityInstance has class-type information.
-    let raw_material_output = sys.manufacturing_facilities.len() as u32;
+    // Mines are production facilities with is_mine = true.
+    let raw_material_output = sys.production_facilities.iter()
+        .filter(|k| world.production_facilities.get(**k).map_or(false, |f| f.is_mine))
+        .count() as u32;
 
     (energy_output, raw_material_output)
 }
@@ -674,10 +672,9 @@ fn compute_system_summary(
     // FUN_0050ac00: total controlling troops
     let total_controlling_troops = controlling_troops;
 
-    // FUN_0050ace0: shipyard presence (check defense facilities for shipyard type)
-    // Original checks virtual method on facility class. We check for any defense facility.
-    // TODO: distinguish shipyard class once facility type promotion is complete.
-    let has_shipyard = !sys.defense_facilities.is_empty();
+    // FUN_0050ace0: shipyard presence (check manufacturing facilities for shipyard type).
+    let has_shipyard = sys.manufacturing_facilities.iter()
+        .any(|k| world.manufacturing_facilities.get(*k).map_or(false, |f| f.is_shipyard));
 
     // FUN_0050add0/af70/b4c0: fleet posture (3 passes)
     let fleet_posture = FleetPosture {
@@ -1197,19 +1194,19 @@ mod tests {
             manufacturing_facilities: vec![],
             production_facilities: vec![
                 world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000001), is_alliance: true,
+                    class_dat_id: DatId(0x18000001), is_alliance: true, is_mine: false,
                 }),
                 world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000002), is_alliance: true,
+                    class_dat_id: DatId(0x18000002), is_alliance: true, is_mine: false,
                 }),
                 world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000003), is_alliance: true,
+                    class_dat_id: DatId(0x18000003), is_alliance: true, is_mine: false,
                 }),
                 world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000004), is_alliance: true,
+                    class_dat_id: DatId(0x18000004), is_alliance: true, is_mine: false,
                 }),
                 world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000005), is_alliance: true,
+                    class_dat_id: DatId(0x18000005), is_alliance: true, is_mine: false,
                 }),
             ],
             is_headquarters: false, is_destroyed: false,
@@ -1252,10 +1249,10 @@ mod tests {
             manufacturing_facilities: vec![],
             production_facilities: vec![
                 world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000001), is_alliance: true,
+                    class_dat_id: DatId(0x18000001), is_alliance: true, is_mine: false,
                 }),
                 world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000002), is_alliance: true,
+                    class_dat_id: DatId(0x18000002), is_alliance: true, is_mine: false,
                 }),
             ],
             is_headquarters: false, is_destroyed: false,
@@ -1292,16 +1289,26 @@ mod tests {
             defense_facilities: vec![],
             manufacturing_facilities: vec![
                 world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x16000001), is_alliance: true,
+                    class_dat_id: DatId(0x16000001), is_alliance: true, is_shipyard: false,
                 }),
                 world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x16000002), is_alliance: true,
+                    class_dat_id: DatId(0x16000002), is_alliance: true, is_shipyard: false,
                 }),
                 world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x16000003), is_alliance: true,
+                    class_dat_id: DatId(0x16000003), is_alliance: true, is_shipyard: false,
                 }),
             ],
-            production_facilities: vec![],
+            production_facilities: vec![
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x2D000001), is_alliance: true, is_mine: true,
+                }),
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x2D000002), is_alliance: true, is_mine: true,
+                }),
+                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+                    class_dat_id: DatId(0x2D000003), is_alliance: true, is_mine: true,
+                }),
+            ],
             is_headquarters: false, is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });

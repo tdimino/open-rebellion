@@ -1642,6 +1642,7 @@ mod tests {
             crate::world::ManufacturingFacilityInstance {
                 class_dat_id: DatId(1),
                 is_alliance: false, // empire
+                is_shipyard: false,
             },
         );
 
@@ -1797,6 +1798,7 @@ mod tests {
             crate::world::ManufacturingFacilityInstance {
                 class_dat_id: DatId(1),
                 is_alliance: true, // alliance-owned → enemy from Empire's perspective
+                is_shipyard: false,
             },
         );
         let enemy_sys = world.systems.insert(System {
@@ -1853,7 +1855,7 @@ mod tests {
         let mfg_key = world.manufacturing_facilities.insert(
             crate::world::ManufacturingFacilityInstance {
                 class_dat_id: DatId(1),
-                is_alliance: true,
+                is_alliance: true, is_shipyard: false,
             },
         );
         let _ = world.systems.insert(System {
@@ -1963,7 +1965,7 @@ mod tests {
             let mfg_key = world.manufacturing_facilities.insert(
                 crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId(i),
-                    is_alliance: true,
+                    is_alliance: true, is_shipyard: false,
                 },
             );
             world.systems.insert(System {
