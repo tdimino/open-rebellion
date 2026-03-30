@@ -67,7 +67,7 @@ PATH="/usr/bin:$PATH" cargo check
 
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
 - CapitalShipClass has 25+ promoted DAT fields; FighterClass has 20+. Remaining ~15 fields are decorative/unused by combat formulas
-- Save v5 format (v3/v4 rejected) — no backward migration
+- Save v6 format (v3/v4/v5 rejected). v5→v6: espionage_rating + facility type fields. v7 planned for ShipInstance promotion (Knesset Hephaestus)
 - Droid Advisor BIN animation format partially decoded — uses frame-cycling fallback (see advisor.rs)
 - Legacy seed fallback collapses Alliance HQ to Yavin (only when 3-system model can't identify Coruscant)
 
@@ -77,7 +77,7 @@ PATH="/usr/bin:$PATH" cargo check
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
 agent_docs/simulation.md -- 15 simulation systems index, advance() pattern, integration order, "how to add" guides. Read when touching game logic.
 agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory, betrayal). Read when modifying a specific system.
-agent_docs/save-load.md -- Save format (v5), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
+agent_docs/save-load.md -- Save format (v6), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
 agent_docs/mod-runtime.md -- ModRuntime, ModConfig, enable/disable, hot reload, structured errors. Read when wiring mod features.
 agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
@@ -92,6 +92,7 @@ agent_docs/seeding.md -- Game seeding pipeline: 3-system model, character stat r
 
 docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for player/modder-facing mechanics reference.
 docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md -- Knesset Ereshkigal: 6-phase eval-driven parity sprint + Open Souls functional refactor. All 6 phases COMPLETE. Includes Functional Programming Manifesto (10 principles), effect algebra spec, modularity violations audit, PerceptionIntegrator architecture.
+docs/plans/2026-03-28-001-feat-knesset-ptah-todo-resolution-plan.md -- Knesset Ptah: 5-phase TODO resolution sprint. 12/13 TODOs resolved. Telemetry 15/17, DS victory + entity cleanup, espionage_rating, UI wiring, facility type promotion. ShipInstance deferred to Knesset Hephaestus.
 docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decompiled functions cross-referenced against our implementation. P0-P3 gap inventory with GNPRTB parameters. Read when implementing missing game mechanics.
 
 ## Reports
@@ -104,6 +105,7 @@ docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decom
 - Knesset Ma'at (2026-03-25) — Combat + asset wave. 5 daborot. Shield phase, fighter combat, ground combat + difficulty, cockpit sprites, HUD overlays.
 - [Community Disassembly Cross-Reference (2026-03-26)](docs/reports/2026-03-26-community-disassembly-cross-reference.md) — 13,036 decompiled functions vs our 5,151. 4 domain agents. Overall parity: ~85%. Biggest gap: economy tick loop.
 - [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. All 6 phases COMPLETE. Phase 4: PerceptionIntegrator extraction (simulation.rs 73% reduction). Phase 5: 179 NetMessage protocol types + telemetry coverage test (10/17 required systems verified).
+- [Knesset Ptah (2026-03-28)](docs/plans/2026-03-28-001-feat-knesset-ptah-todo-resolution-plan.md) — TODO resolution sprint. 12 of 13 TODOs resolved across 5 phases. Telemetry 15/17, DS victory fix, entity cleanup, espionage_rating, save v6, UI wiring, facility type promotion. 1 deferred (ShipInstance promotion → Knesset Hephaestus).
 
 ## External References
 
