@@ -647,14 +647,14 @@ impl PerceptionIntegrator {
                     }));
                 }
                 RepairEvent::RepairCheckPerformed { system, fleet, ships_checked } => {
-                    let sys_n = sys_name(world, *system);
-                    let fleet_n = world.fleets.get(*fleet)
+                    let system_name = sys_name(world, *system);
+                    let fleet_commander = world.fleets.get(*fleet)
                         .and_then(|f| world.characters.get(*f.characters.first()?)
                             .map(|c| c.name.as_str()))
                         .unwrap_or("uncrewed");
                     self.emit(SYS_REPAIR, EVT_SHIP_REPAIR_STARTED, serde_json::json!({
-                        "system": sys_n,
-                        "fleet_commander": fleet_n,
+                        "system": system_name,
+                        "fleet_commander": fleet_commander,
                         "ships_checked": ships_checked,
                     }));
                 }
@@ -1217,7 +1217,8 @@ pub fn apply_build_completion_inner(
     }
 }
 
-/// Story chain event IDs from define_story_events() (0x380-0x39A).
+/// Story chain event IDs: 0x210/0x212/0x220-0x221 (Dagobah, Bounty, Final Battle)
+/// and 0x380-0x39A (notification story events from define_story_events()).
 /// Used to tag fired events as SYS_STORY instead of SYS_EVENTS.
 fn is_story_event(event_id: u32) -> bool {
     matches!(event_id,

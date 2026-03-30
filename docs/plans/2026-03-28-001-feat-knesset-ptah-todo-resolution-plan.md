@@ -1,7 +1,7 @@
 ---
 title: "Knesset Ptah — TODO Resolution Sprint"
 type: feat
-status: active
+status: completed
 date: 2026-03-28
 ---
 

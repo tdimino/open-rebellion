@@ -855,12 +855,16 @@ fn dispatch_facility_item(
             world.systems[system_key].defense_facilities.push(key);
         }
         f if f >= FAM_MFG_MIN && f <= FAM_MFG_MAX => {
-            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance, is_shipyard: false };
+            // Family 0x28 = shipyard, 0x29 = training center, 0x2A = construction yard
+            let is_shipyard = f == 0x28;
+            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance, is_shipyard };
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
         f if f >= FAM_PROD_MIN && f <= FAM_PROD_MAX => {
-            let inst = ProductionFacilityInstance { class_dat_id, is_alliance, is_mine: false };
+            // Family 0x2D = mine, 0x2C = refinery
+            let is_mine = f == 0x2D;
+            let inst = ProductionFacilityInstance { class_dat_id, is_alliance, is_mine };
             let key = world.production_facilities.insert(inst);
             world.systems[system_key].production_facilities.push(key);
         }

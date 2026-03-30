@@ -1837,6 +1837,7 @@ async fn main() {
                 &mut dual_ai_mode,
                 &mut ai2_state,
                 &mut victory_state,
+                &mut blockade_state,
                 &event_state,
                 &mut mod_runtime,
                 #[cfg(not(target_arch = "wasm32"))]
@@ -1890,6 +1891,7 @@ fn apply_panel_action(
     dual_ai_mode: &mut bool,
     ai2_state: &mut Option<AIState>,
     victory_state: &mut VictoryState,
+    blockade_state: &mut BlockadeState,
     event_state: &EventState,
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
@@ -2145,6 +2147,7 @@ fn apply_panel_action(
                     victory_state.death_star_location = Some(system);
                     rebellion_core::death_star::cleanup_destroyed_system(
                         world, system, movement_state, death_star_state,
+                        mfg_state, blockade_state,
                     );
                     msg_log.push(GameMessage::new(
                         clock.tick,

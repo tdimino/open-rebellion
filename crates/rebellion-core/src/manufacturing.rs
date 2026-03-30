@@ -237,6 +237,11 @@ impl ManufacturingState {
         self.queues.entry(system).or_default()
     }
 
+    /// Remove the production queue for a system (used when system is destroyed).
+    pub fn clear_queue(&mut self, system: SystemKey) {
+        self.queues.remove(&system);
+    }
+
     /// Get the queue for a system (read-only). Returns `None` if empty.
     pub fn queue(&self, system: SystemKey) -> Option<&ProductionQueue> {
         self.queues.get(&system)

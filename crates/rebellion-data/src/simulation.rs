@@ -272,6 +272,7 @@ pub fn run_simulation_tick(
             states.victory.death_star_location = Some(*system);
             rebellion_core::death_star::cleanup_destroyed_system(
                 world, *system, &mut states.movement, &mut states.death_star,
+                &mut states.manufacturing, &mut states.blockade,
             );
         }
     }
@@ -334,7 +335,8 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-            espionage_rating: 0.0,        });
+            espionage_rating: 0.0,
+        });
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
             name: "System B".into(),
@@ -356,7 +358,8 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-            espionage_rating: 0.0,        });
+            espionage_rating: 0.0,
+        });
         let states = SimulationStates {
             clock: GameClock::new(),
             manufacturing: ManufacturingState::new(),
@@ -410,7 +413,8 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-            espionage_rating: 0.0,        });
+            espionage_rating: 0.0,
+        });
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
             name: "B".into(),
@@ -432,7 +436,8 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-            espionage_rating: 0.0,        });
+            espionage_rating: 0.0,
+        });
         let mut states = SimulationStates {
             clock: GameClock::new(),
             manufacturing: ManufacturingState::new(),

@@ -301,17 +301,22 @@ impl DeathStarSystem {
 // Destroyed system cleanup
 // ---------------------------------------------------------------------------
 
+use crate::blockade::BlockadeState;
+use crate::manufacturing::ManufacturingState;
 use crate::movement::MovementState;
 
 /// Remove all entities at a destroyed system and cancel in-transit orders.
 ///
 /// Called after Death Star fires. Matches original game behavior:
-/// characters at the system are killed, fleets destroyed, facilities removed.
+/// characters at the system are killed, fleets destroyed, facilities removed,
+/// manufacturing queues cleared, blockade lifted, in-transit orders cancelled.
 pub fn cleanup_destroyed_system(
     world: &mut GameWorld,
     system: SystemKey,
     movement: &mut MovementState,
     death_star: &mut DeathStarState,
+    manufacturing: &mut ManufacturingState,
+    blockade: &mut BlockadeState,
 ) {
     let Some(sys) = world.systems.get(system) else { return };
 
@@ -352,6 +357,12 @@ pub fn cleanup_destroyed_system(
     if death_star.under_construction.as_ref().map_or(false, |c| c.system == system) {
         death_star.under_construction = None;
     }
+
+    // Clear manufacturing queues at the destroyed system.
+    manufacturing.clear_queue(system);
+
+    // Lift any blockade at the destroyed system.
+    blockade.clear_blockade(system);
 }
 
 // ---------------------------------------------------------------------------

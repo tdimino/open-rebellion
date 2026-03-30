@@ -61,7 +61,7 @@ use rebellion_core::world::{ControlKind, GameWorld};
 pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes.
-pub const SAVE_VERSION: u32 = 5;
+pub const SAVE_VERSION: u32 = 6;
 
 /// Minimum save version we can migrate from.
 const MIN_MIGRATABLE_VERSION: u32 = 3;
@@ -345,6 +345,12 @@ mod native {
             SAVE_VERSION => {
                 bincode::deserialize(&body).context("deserializing save state")?
             }
+            5 => {
+                anyhow::bail!(
+                    "save version 5 is incompatible with this build (espionage_rating + facility type fields added). \
+                     Please start a new game."
+                );
+            }
             4 => {
                 anyhow::bail!(
                     "save version 4 is incompatible with this build (System seeding fields changed). \
@@ -494,7 +500,8 @@ mod tests {
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
             is_destroyed: false, control: ControlKind::Controlled(Faction::Alliance),
-            espionage_rating: 0.0,        });
+            espionage_rating: 0.0,
+        });
         let sys_b = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
             name: "B".into(), sector: sector_key, x: 100, y: 100,
@@ -507,7 +514,8 @@ mod tests {
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
             is_destroyed: false, control: ControlKind::Controlled(Faction::Empire),
-            espionage_rating: 0.0,        });
+            espionage_rating: 0.0,
+        });
         SaveState {
             world,
             clock: GameClock::default(),

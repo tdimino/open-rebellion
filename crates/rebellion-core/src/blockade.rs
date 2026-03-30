@@ -118,6 +118,11 @@ impl BlockadeState {
         }
     }
 
+    /// Remove blockade state for a system (used when system is destroyed).
+    pub fn clear_blockade(&mut self, system: SystemKey) {
+        self.blockaded.remove(&system);
+    }
+
     /// Returns `true` if `system` is currently blockaded.
     ///
     /// Called by `ManufacturingSystem::advance` to halt production.
