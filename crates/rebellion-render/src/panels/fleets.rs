@@ -7,7 +7,7 @@
 //! merge with another fleet at same system, go to system).
 
 use egui_macroquad::egui::{self, RichText, ScrollArea, Vec2};
-use rebellion_core::ids::{CharacterKey, FleetKey};
+use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::movement::MovementState;
 use rebellion_core::world::GameWorld;
@@ -38,6 +38,8 @@ pub struct FleetsState {
     pub expanded_fleet: Option<FleetKey>,
     /// If set, show the character assignment picker for this fleet.
     pub assigning_to: Option<FleetKey>,
+    /// If set, the context menu initiated a fleet move to this destination.
+    pub pending_move_destination: Option<SystemKey>,
 }
 
 // ---------------------------------------------------------------------------

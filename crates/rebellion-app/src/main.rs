@@ -335,7 +335,22 @@ async fn main() {
     let mut show_loyalty = false;
     let mut show_save_load = false;
     let mut save_load_panel_state = rebellion_render::SaveLoadPanelState::default();
-    let save_slots: Vec<rebellion_render::SaveSlotInfo> = vec![]; // TODO: populate from save files
+    let saves_dir = rebellion_data::save::default_saves_dir();
+    let save_slots: Vec<rebellion_render::SaveSlotInfo> = rebellion_data::save::list_saves(&saves_dir)
+        .into_iter()
+        .filter_map(|r| r.ok())
+        .map(|m| rebellion_render::SaveSlotInfo {
+            slot: m.slot,
+            name: m.name,
+            timestamp: {
+                let secs = m.timestamp_secs;
+                let h = (secs / 3600) % 24;
+                let min = (secs / 60) % 60;
+                format!("Tick {} ({:02}:{:02})", m.game_tick, h, min)
+            },
+            game_tick: m.game_tick,
+        })
+        .collect();
 
     // ── Event screen overlay ─────────────────────────────────────────────────
     let mut event_screen_state = EventScreenState::new();
@@ -1121,8 +1136,7 @@ async fn main() {
                             game_mode = GameMode::GameSetup;
                         }
                         MainMenuAction::LoadGame => {
-                            // TODO: transition to save/load screen
-                            // For now, go straight to galaxy with defaults
+                            show_save_load = true;
                             game_mode = GameMode::Galaxy;
                         }
                         MainMenuAction::Quit => {
@@ -1791,6 +1805,20 @@ async fn main() {
 
         // 5. Apply panel actions
         for action in panel_actions {
+            // Handle actions that need local UI state not available in apply_panel_action.
+            match &action {
+                PanelAction::OpenMissionTo { target, kind, .. } => {
+                    missions_panel_state.selected_target = Some(*target);
+                    missions_panel_state.selected_kind = Some(*kind);
+                    missions_panel_state.tab = rebellion_render::panels::missions::MissionsTab::Dispatch;
+                    show_missions = true;
+                }
+                PanelAction::InitiateFleetMove { destination } => {
+                    fleets_state.pending_move_destination = Some(*destination);
+                    show_fleets = true;
+                }
+                _ => {}
+            }
             apply_panel_action(
                 action,
                 &mut world,
@@ -2073,17 +2101,12 @@ fn apply_panel_action(
             ));
         }
         PanelAction::OpenMissionTo { target, kind: _, faction: _ } => {
-            // Select the target system and open missions panel.
-            // The mission panel will let the player pick character + confirm.
             map_state.selected_system = Some(target);
-            // TODO: pre-select mission kind in MissionsPanelState when
-            // the panel supports target pre-selection.
+            // Mission kind pre-selection handled at call site (needs missions_panel_state).
         }
         PanelAction::InitiateFleetMove { destination } => {
-            // Select the destination system so the player can see it,
-            // and open the fleets panel for move order dispatch.
             map_state.selected_system = Some(destination);
-            // TODO: implement fleet move selection flow in fleets panel.
+            // Fleet move flow handled at call site (needs fleets_state + show_fleets).
         }
         PanelAction::OrderBombardment { fleet, system } => {
             // Guard: both fleet and system must still exist (prevents panic in resolve).
