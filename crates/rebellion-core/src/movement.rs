@@ -233,6 +233,11 @@ impl MovementState {
         self.orders.remove(&fleet)
     }
 
+    /// Cancel all movement orders targeting the given system.
+    pub fn cancel_orders_to(&mut self, system: crate::ids::SystemKey) {
+        self.orders.retain(|_, order| order.destination != system);
+    }
+
     /// Get the active order for a fleet, if any.
     pub fn get(&self, fleet: FleetKey) -> Option<&MovementOrder> {
         self.orders.get(&fleet)
@@ -570,6 +575,7 @@ mod tests {
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
+            espionage_rating: 0.0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],

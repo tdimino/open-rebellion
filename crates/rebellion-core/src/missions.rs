@@ -208,11 +208,7 @@ impl MissionKind {
                 }
             }
 
-            // FIX #2: InciteUprising should subtract system espionage_rating.
             // Original: INCTMS_TABLE[(diplomacy - pop_support) - espionage_rating]
-            // TODO: subtract System::espionage_rating when the field is added.
-            // For now, counter_intel = 0 (matches pre-fix behavior, avoids
-            // fabricating a phantom penalty with no RE basis).
             MissionKind::InciteUprising => {
                 if let Some(sys) = system {
                     let (our_pop, enemy_pop) = match faction {
@@ -220,8 +216,8 @@ impl MissionKind {
                         MissionFaction::Empire => (sys.popularity_empire, sys.popularity_alliance),
                     };
                     let pop_delta = ((enemy_pop - our_pop) * 100.0) as i32;
-                    let _counter_intel = 0_i32; // placeholder for System::espionage_rating
-                    pop_delta + skill - _counter_intel
+                    let counter_intel = (sys.espionage_rating * 100.0) as i32;
+                    pop_delta + skill - counter_intel
                 } else {
                     skill
                 }
@@ -2027,10 +2023,7 @@ mod tests {
     }
 
     #[test]
-    fn incite_uprising_matches_diplomacy_until_espionage_rating_added() {
-        // TODO: Once System::espionage_rating is added, this test should
-        // verify that incite_input < diplomacy_input. For now, counter_intel = 0
-        // means they are equal (no fabricated penalty).
+    fn incite_uprising_equals_diplomacy_with_zero_espionage() {
         let mut world = GameWorld::default();
         let key = character_with_skills(&mut world, 0, 0, 80, 0, 0);
         let character = world.characters.get(key).unwrap();
@@ -2045,6 +2038,7 @@ mod tests {
             popularity_empire: 0.6,
             is_populated: false,
             total_energy: 0, raw_materials: 0,
+            espionage_rating: 0.0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -2058,11 +2052,49 @@ mod tests {
         let incite_input = MissionKind::InciteUprising.compute_table_input(
             character, Some(&sys), MissionFaction::Alliance, None,
         );
-        // With counter_intel = 0, they should be equal
         assert_eq!(
             incite_input, diplomacy_input,
-            "incite should equal diplomacy while counter_intel is stubbed to 0"
+            "with espionage_rating=0, incite should equal diplomacy"
         );
+    }
+
+    #[test]
+    fn incite_uprising_reduced_by_espionage_rating() {
+        let mut world = GameWorld::default();
+        let key = character_with_skills(&mut world, 0, 0, 80, 0, 0);
+        let character = world.characters.get(key).unwrap();
+
+        let sys = crate::world::System {
+            dat_id: crate::ids::DatId(0),
+            name: "Test".into(),
+            sector: SectorKey::default(),
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.3,
+            popularity_empire: 0.6,
+            is_populated: false,
+            total_energy: 0, raw_materials: 0,
+            espionage_rating: 0.25,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control: crate::world::ControlKind::Uncontrolled,
+        };
+
+        let diplomacy_input = MissionKind::Diplomacy.compute_table_input(
+            character, Some(&sys), MissionFaction::Alliance, None,
+        );
+        let incite_input = MissionKind::InciteUprising.compute_table_input(
+            character, Some(&sys), MissionFaction::Alliance, None,
+        );
+        assert!(
+            incite_input < diplomacy_input,
+            "espionage_rating=0.25 should reduce incite input below diplomacy: {} vs {}",
+            incite_input, diplomacy_input
+        );
+        // 0.25 * 100 = 25 reduction
+        assert_eq!(diplomacy_input - incite_input, 25);
     }
 
     #[test]
@@ -2120,7 +2152,7 @@ mod tests {
             x: 0, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 5, raw_materials: 5,
+            is_populated: true, total_energy: 5, raw_materials: 5, espionage_rating: 0.0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -2149,7 +2181,7 @@ mod tests {
             x: 0, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 5, raw_materials: 5,
+            is_populated: true, total_energy: 5, raw_materials: 5, espionage_rating: 0.0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![],
@@ -2178,7 +2210,7 @@ mod tests {
             x: 0, y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 5, raw_materials: 5,
+            is_populated: true, total_energy: 5, raw_materials: 5, espionage_rating: 0.0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![],

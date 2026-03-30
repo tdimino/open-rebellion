@@ -494,7 +494,7 @@ mod tests {
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
             is_destroyed: false, control: ControlKind::Controlled(Faction::Alliance),
-        });
+            espionage_rating: 0.0,        });
         let sys_b = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
             name: "B".into(), sector: sector_key, x: 100, y: 100,
@@ -507,7 +507,7 @@ mod tests {
             defense_facilities: vec![], manufacturing_facilities: vec![],
             production_facilities: vec![], is_headquarters: true,
             is_destroyed: false, control: ControlKind::Controlled(Faction::Empire),
-        });
+            espionage_rating: 0.0,        });
         SaveState {
             world,
             clock: GameClock::default(),

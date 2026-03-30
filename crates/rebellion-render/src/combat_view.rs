@@ -374,7 +374,7 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-        })
+            espionage_rating: 0.0,        })
     }
 
     fn make_result(outcome: BattleOutcome) -> CombatResult {

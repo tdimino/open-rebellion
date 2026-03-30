@@ -166,6 +166,7 @@ pub fn load_game_data_with_options(
             is_headquarters,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
+            espionage_rating: 0.0,
         };
         let key = world.systems.insert(system);
         system_key_map.insert(dat.id, key);

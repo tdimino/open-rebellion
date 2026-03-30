@@ -170,6 +170,11 @@ pub struct System {
     /// Planetary raw-material capacity used by initial facility generation.
     #[serde(default)]
     pub raw_materials: u8,
+    /// System espionage counter-intelligence rating. Subtracted from incite
+    /// uprising and espionage mission probability calculations.
+    /// Populated from SYSTEMSD.DAT field; defaults to 0 (no counter-intel).
+    #[serde(default)]
+    pub espionage_rating: f32,
     /// Fleets currently orbiting or departing from this system.
     pub fleets: Vec<FleetKey>,
     /// Ground troop units stationed on the surface.

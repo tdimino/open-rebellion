@@ -143,6 +143,7 @@ mod tests {
             is_populated: true,
             total_energy: 10,
             raw_materials: 8,
+            espionage_rating: 0.0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
@@ -233,6 +234,7 @@ mod tests {
             popularity_alliance: 0.5, popularity_empire: 0.5,
             is_populated: true,
             total_energy: 3, raw_materials: 2,
+            espionage_rating: 0.0,
             fleets: vec![], ground_units: vec![], special_forces: vec![],
             defense_facilities: vec![],
             manufacturing_facilities: vec![], // no shipyard!

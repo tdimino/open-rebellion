@@ -266,10 +266,13 @@ pub fn run_simulation_tick(
     // ── 11. Death Star ───────────────────────────────────────────────────
     let ds_events = DeathStarSystem::advance(&mut states.death_star, world, tick_events);
     integrator.apply_death_star_events(world, &ds_events);
-    // Update victory state so VictorySystem::check_death_star can detect DS fire.
+    // Update victory state and clean up destroyed systems.
     for evt in &ds_events {
         if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { system, .. } = evt {
             states.victory.death_star_location = Some(*system);
+            rebellion_core::death_star::cleanup_destroyed_system(
+                world, *system, &mut states.movement, &mut states.death_star,
+            );
         }
     }
 
@@ -331,7 +334,7 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-        });
+            espionage_rating: 0.0,        });
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
             name: "System B".into(),
@@ -353,7 +356,7 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-        });
+            espionage_rating: 0.0,        });
         let states = SimulationStates {
             clock: GameClock::new(),
             manufacturing: ManufacturingState::new(),
@@ -407,7 +410,7 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-        });
+            espionage_rating: 0.0,        });
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
             name: "B".into(),
@@ -429,7 +432,7 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
-        });
+            espionage_rating: 0.0,        });
         let mut states = SimulationStates {
             clock: GameClock::new(),
             manufacturing: ManufacturingState::new(),

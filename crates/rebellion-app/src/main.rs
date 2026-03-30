@@ -1802,7 +1802,7 @@ async fn main() {
                 &mut ai_state,
                 &mut research_state,
                 &mut jedi_state,
-                &death_star_state,
+                &mut death_star_state,
                 &mut msg_log,
                 &mut player_faction,
                 &mut clock,
@@ -1855,7 +1855,7 @@ fn apply_panel_action(
     ai_state: &mut AIState,
     research_state: &mut ResearchState,
     jedi_state: &mut JediState,
-    death_star_state: &DeathStarState,
+    death_star_state: &mut DeathStarState,
     msg_log: &mut MessageLog,
     player_faction: &mut MissionFaction,
     clock: &mut GameClock,
@@ -2120,6 +2120,9 @@ fn apply_panel_action(
                         sys.is_destroyed = true;
                     }
                     victory_state.death_star_location = Some(system);
+                    rebellion_core::death_star::cleanup_destroyed_system(
+                        world, system, movement_state, death_star_state,
+                    );
                     msg_log.push(GameMessage::new(
                         clock.tick,
                         format!("{} DESTROYED by Death Star superlaser!", name),

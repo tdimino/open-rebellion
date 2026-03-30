@@ -255,6 +255,7 @@ mod tests {
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
+            espionage_rating: 0.0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],

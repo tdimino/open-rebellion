@@ -298,6 +298,63 @@ impl DeathStarSystem {
 }
 
 // ---------------------------------------------------------------------------
+// Destroyed system cleanup
+// ---------------------------------------------------------------------------
+
+use crate::movement::MovementState;
+
+/// Remove all entities at a destroyed system and cancel in-transit orders.
+///
+/// Called after Death Star fires. Matches original game behavior:
+/// characters at the system are killed, fleets destroyed, facilities removed.
+pub fn cleanup_destroyed_system(
+    world: &mut GameWorld,
+    system: SystemKey,
+    movement: &mut MovementState,
+    death_star: &mut DeathStarState,
+) {
+    let Some(sys) = world.systems.get(system) else { return };
+
+    let fleet_keys: Vec<_> = sys.fleets.clone();
+    let troop_keys: Vec<_> = sys.ground_units.clone();
+    let sf_keys: Vec<_> = sys.special_forces.clone();
+    let def_keys: Vec<_> = sys.defense_facilities.clone();
+    let mfg_keys: Vec<_> = sys.manufacturing_facilities.clone();
+    let prod_keys: Vec<_> = sys.production_facilities.clone();
+
+    // Kill characters in fleets at this system.
+    for &fk in &fleet_keys {
+        if let Some(fleet) = world.fleets.get(fk) {
+            for &ck in &fleet.characters {
+                world.characters.remove(ck);
+            }
+        }
+        world.fleets.remove(fk);
+    }
+
+    for &tk in &troop_keys { world.troops.remove(tk); }
+    for &sk in &sf_keys { world.special_forces.remove(sk); }
+    for &dk in &def_keys { world.defense_facilities.remove(dk); }
+    for &mk in &mfg_keys { world.manufacturing_facilities.remove(mk); }
+    for &pk in &prod_keys { world.production_facilities.remove(pk); }
+
+    if let Some(sys) = world.systems.get_mut(system) {
+        sys.fleets.clear();
+        sys.ground_units.clear();
+        sys.special_forces.clear();
+        sys.defense_facilities.clear();
+        sys.manufacturing_facilities.clear();
+        sys.production_facilities.clear();
+    }
+
+    movement.cancel_orders_to(system);
+
+    if death_star.under_construction.as_ref().map_or(false, |c| c.system == system) {
+        death_star.under_construction = None;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -335,6 +392,7 @@ mod tests {
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
+            espionage_rating: 0.0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
@@ -516,6 +574,7 @@ mod tests {
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
+            espionage_rating: 0.0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],
@@ -559,6 +618,7 @@ mod tests {
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
+            espionage_rating: 0.0,
             fleets: vec![],
             ground_units: vec![],
             special_forces: vec![],

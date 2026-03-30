@@ -310,6 +310,7 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: rebellion_core::world::ControlKind::Uncontrolled,
+            espionage_rating: 0.0,
         })
     }
 
