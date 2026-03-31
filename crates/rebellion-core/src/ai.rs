@@ -354,13 +354,15 @@ impl AISystem {
         config: &GameConfig,
         actions: &mut Vec<AIAction>,
     ) {
-        // Count unrecruited characters for this faction (can_be_commander but
+        // Unrecruited characters for this faction (can_be_commander but
         // not yet flagged as belonging to the faction — proxy: opposite faction flag).
-        let unrecruited_count = world
+        let unrecruited: Vec<CharacterKey> = world
             .characters
-            .values()
-            .filter(|c| c.can_be_commander && !faction.owns_character(c))
-            .count();
+            .iter()
+            .filter(|(_, c)| c.can_be_commander && !faction.owns_character(c))
+            .map(|(k, _)| k)
+            .collect();
+        let unrecruited_count = unrecruited.len();
 
         // Find the best diplomacy target: lowest-popularity system for this faction,
         // below the popularity cap.
@@ -405,13 +407,13 @@ impl AISystem {
             }
 
             // Major characters with unrecruited allies → recruitment.
-            if character.is_major && unrecruited_count > 0 {
+            if character.is_major && !unrecruited.is_empty() {
                 if let Some(base_system) = Self::find_friendly_system(world, faction) {
                     actions.push(AIAction::DispatchMission {
                         kind: MissionKind::Recruitment,
                         character: char_key,
                         target_system: base_system,
-                        target_character: None,
+                        target_character: Some(unrecruited[0]),
                         duration_roll: 0.5,
                     });
                     continue;

@@ -13,10 +13,10 @@ Usage:
 Composite score formula (6 sub-metrics):
     score = 0.25 * economy_activity
           + 0.20 * mission_completeness
-          + 0.15 * combat_completeness
+          + 0.20 * combat_completeness
           + 0.15 * event_coverage
           + 0.15 * system_state_completeness
-          + 0.10 * repair_activity
+          + 0.05 * repair_activity
 
 Each sub-metric is normalized to [0.0, 1.0] before weighting.
 Degenerate: economy_activity < 0.3 → score = 0.0.
@@ -191,10 +191,10 @@ def evaluate(events: list[dict]) -> dict:
     weights = {
         "economy_activity": 0.25,
         "mission_completeness": 0.20,
-        "combat_completeness": 0.15,
+        "combat_completeness": 0.20,
         "event_coverage": 0.15,
         "system_state_completeness": 0.15,
-        "repair_activity": 0.10,
+        "repair_activity": 0.05,
     }
 
     score = sum(weights[k] * metrics[k] for k in weights)

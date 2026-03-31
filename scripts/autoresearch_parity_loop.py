@@ -49,6 +49,9 @@ DEFAULT_TICKS = 5000
 def run_campaign(binary: Path, seed: int, ticks: int) -> Path:
     """Run a headless campaign and return the JSONL output path."""
     output = Path(tempfile.gettempdir()) / f"parity-seed{seed}-{os.getpid()}.jsonl"
+    # Remove stale file to prevent evaluating old data on binary failure
+    if output.exists():
+        output.unlink()
     cmd = [
         str(binary), str(DATA_DIR),
         "--seed", str(seed),
@@ -58,19 +61,26 @@ def run_campaign(binary: Path, seed: int, ticks: int) -> Path:
     ]
     env = dict(os.environ)
     env["PATH"] = f"/usr/bin:{env.get('PATH', '')}"
-    subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
+    if result.returncode != 0:
+        print(f"  WARN: seed {seed} binary failed (exit {result.returncode})", file=sys.stderr)
     return output
 
 
 def evaluate(jsonl_path: Path) -> dict:
     """Run eval_parity.py and return the result dict."""
+    if not jsonl_path.exists():
+        return {"score": 0.0, "degenerate": True, "reason": "jsonl file missing (binary failed?)"}
     result = subprocess.run(
         [sys.executable, str(EVAL_SCRIPT), str(jsonl_path), "--json"],
         capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0:
         return {"score": 0.0, "degenerate": True, "reason": f"eval failed: {result.stderr[:200]}"}
-    return json.loads(result.stdout)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"score": 0.0, "degenerate": True, "reason": f"bad output: {result.stdout[:200]}"}
 
 
 def aggregate(results: list[dict]) -> float:
@@ -170,6 +180,7 @@ def git_discard():
 
 def append_tsv(path: Path, row: dict):
     """Append a row to the results TSV file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     header = "iteration\tscore\tdelta\taccepted\tmutation_time\teval_time\n"
     if not path.exists():
         path.write_text(header)
