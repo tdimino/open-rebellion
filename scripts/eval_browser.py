@@ -79,10 +79,10 @@ def check_wasm_size() -> tuple[bool, str]:
 def start_http_server() -> subprocess.Popen:
     """Start a local HTTP server for web/ directory."""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "http.server", str(SERVER_PORT)],
+        [sys.executable, "-m", "http.server", str(SERVER_PORT), "--bind", "127.0.0.1"],
         cwd=str(WEB_DIR),
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
     )
     time.sleep(1)  # let server start
     return proc

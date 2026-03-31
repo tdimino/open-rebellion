@@ -105,7 +105,7 @@ Do NOT make more than one logical change."""
 
 
 def git_commit(message: str):
-    subprocess.run(["git", "add", "-A"], cwd=str(PROJECT_DIR), capture_output=True)
+    subprocess.run(["git", "add", "-u"], cwd=str(PROJECT_DIR), capture_output=True)
     subprocess.run(["git", "commit", "-m", message], cwd=str(PROJECT_DIR), capture_output=True)
 
 
@@ -130,6 +130,16 @@ def main():
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    # Safety: refuse to start with dirty working tree
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(PROJECT_DIR),
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if dirty and not args.dry_run:
+        print("ERROR: Working tree is dirty. Commit or stash changes first.", file=sys.stderr)
+        print(dirty[:500], file=sys.stderr)
+        sys.exit(1)
 
     print(f"{'='*60}")
     print(f"AUTORESEARCH BROWSER LOOP")

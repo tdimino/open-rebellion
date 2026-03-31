@@ -29,6 +29,7 @@ import os
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -47,7 +48,7 @@ DEFAULT_TICKS = 5000
 
 def run_campaign(binary: Path, seed: int, ticks: int) -> Path:
     """Run a headless campaign and return the JSONL output path."""
-    output = Path(f"/tmp/parity-seed{seed}.jsonl")
+    output = Path(tempfile.gettempdir()) / f"parity-seed{seed}-{os.getpid()}.jsonl"
     cmd = [
         str(binary), str(DATA_DIR),
         "--seed", str(seed),
@@ -154,7 +155,7 @@ Do NOT make more than one logical change."""
 
 def git_commit(message: str):
     """Create a git commit with all changes."""
-    subprocess.run(["git", "add", "-A"], cwd=str(PROJECT_DIR), capture_output=True)
+    subprocess.run(["git", "add", "-u"], cwd=str(PROJECT_DIR), capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", message],
         cwd=str(PROJECT_DIR), capture_output=True, text=True,
@@ -194,6 +195,16 @@ def main():
 
     if not PROGRAM_MD.exists():
         print(f"Program not found: {PROGRAM_MD}", file=sys.stderr)
+        sys.exit(1)
+
+    # Safety: refuse to start with dirty working tree
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(PROJECT_DIR),
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if dirty and not args.dry_run:
+        print("ERROR: Working tree is dirty. Commit or stash changes first.", file=sys.stderr)
+        print(dirty[:500], file=sys.stderr)
         sys.exit(1)
 
     # Baseline

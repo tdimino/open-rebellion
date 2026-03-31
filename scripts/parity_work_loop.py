@@ -140,7 +140,7 @@ Confirm zero failures before finishing."""
 
 
 def git_commit(task_id: str, title: str):
-    subprocess.run(["git", "add", "-A"], cwd=str(PROJECT_DIR), capture_output=True)
+    subprocess.run(["git", "add", "-u"], cwd=str(PROJECT_DIR), capture_output=True)
     subprocess.run(
         ["git", "commit", "-m",
          f"feat: {task_id} — {title}\n\n"
@@ -175,6 +175,16 @@ def main():
     tasks = load_manifest()
     completed, failed = load_progress()
     completed_set = set(completed)
+
+    # Safety: refuse to start with dirty working tree
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(PROJECT_DIR),
+        capture_output=True, text=True,
+    ).stdout.strip()
+    if dirty and not args.dry_run:
+        print("ERROR: Working tree is dirty. Commit or stash changes first.", file=sys.stderr)
+        print(dirty[:500], file=sys.stderr)
+        sys.exit(1)
 
     print(f"{'='*60}")
     print(f"PARITY WORK LOOP")
