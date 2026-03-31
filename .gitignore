@@ -30,3 +30,53 @@ assets/references/**/*.png
 
 # Generated assets (large, reproducible)
 data/generated/
+
+# HD upscaled assets (generated, not redistributable)
+data/hd/
+data/sounds/
+
+# WASM staged data (copied by build-wasm.sh)
+web/data/
+web/open-rebellion.wasm
+
+# Staged UI assets (extracted from DLLs)
+data/base/ui/
+
+# Reference videos (decoded from Smacker, large)
+assets/references/ref-videos/
+assets/references/ref-ui-full/
+
+# Autoresearch intermediate outputs
+*.jsonl
+progress.json
+
+# Subdaimon outputs
+.subdaimon-output/
+
+# Claude Code project files
+.claude/
+
+# QA screenshots
+docs/qa/*.png
+
+# Reference books (copyrighted, large)
+assets/references/ref-illustrated-books/
+
+# Misc generated/local files
+clippy.toml
+rustfmt.toml
+AGENTS.md
+data/character-portrait-art-sources.md
+data/reference-selections.json
+playtest-dual-sample.jsonl
+docs/plans/2026-03-23-002-feat-ui-parity-execplan.md
+docs/plans/2026-03-24-001-knesset-demiurge-ui-parity.md
+docs/plans/2026-03-24-002-knesset-sassuratu-visual-qa-parity.md
+docs/qa/
+
+# Ghidra site generated files
+ghidra-site/
+
+# Stage scripts
+scripts/stage-ui-assets.py
+scripts/download-ot-portraits*.py

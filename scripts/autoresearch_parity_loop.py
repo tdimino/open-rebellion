@@ -113,22 +113,26 @@ def build_and_test() -> bool:
     env = dict(os.environ)
     env["PATH"] = f"/usr/bin:{env.get('PATH', '')}"
 
-    # Tests first (faster feedback)
-    test_result = subprocess.run(
-        ["cargo", "test", "-p", "rebellion-core", "-p", "rebellion-data"],
-        capture_output=True, text=True, env=env, timeout=120,
-    )
-    if test_result.returncode != 0:
-        print(f"  TESTS FAILED: {test_result.stderr[-200:]}")
-        return False
+    try:
+        # Tests first (faster feedback)
+        test_result = subprocess.run(
+            ["cargo", "test", "-p", "rebellion-core", "-p", "rebellion-data"],
+            capture_output=True, text=True, env=env, timeout=180,
+        )
+        if test_result.returncode != 0:
+            print(f"  TESTS FAILED: {test_result.stderr[-200:]}")
+            return False
 
-    # Build release
-    build_result = subprocess.run(
-        ["cargo", "build", "-p", "rebellion-playtest", "--release"],
-        capture_output=True, text=True, env=env, timeout=120,
-    )
-    if build_result.returncode != 0:
-        print(f"  BUILD FAILED: {build_result.stderr[-200:]}")
+        # Build release (LTO can take a while)
+        build_result = subprocess.run(
+            ["cargo", "build", "-p", "rebellion-playtest", "--release"],
+            capture_output=True, text=True, env=env, timeout=300,
+        )
+        if build_result.returncode != 0:
+            print(f"  BUILD FAILED: {build_result.stderr[-200:]}")
+            return False
+    except subprocess.TimeoutExpired:
+        print("  BUILD/TEST TIMEOUT")
         return False
 
     return True
@@ -136,11 +140,14 @@ def build_and_test() -> bool:
 
 def run_claude_mutation(program_md: Path, score: float, iteration: int) -> bool:
     """Use claude -p to generate a code mutation. Returns True if claude succeeds."""
-    prompt = f"""Read {program_md} for context.
+    program_content = program_md.read_text()
+    prompt = f"""<program>
+{program_content}
+</program>
 
 Current parity score: {score:.4f} (iteration {iteration}).
 
-Implement exactly ONE improvement from the priority list in program.md.
+Implement exactly ONE improvement from the priority list above.
 Pick the highest-priority item that hasn't been done yet.
 Make the smallest change that moves the eval score upward.
 
@@ -173,9 +180,9 @@ def git_commit(message: str):
 
 
 def git_discard():
-    """Discard all uncommitted changes."""
+    """Discard uncommitted changes to tracked files. Only cleans new files in crates/tools/."""
     subprocess.run(["git", "checkout", "--", "."], cwd=str(PROJECT_DIR), capture_output=True)
-    subprocess.run(["git", "clean", "-fd"], cwd=str(PROJECT_DIR), capture_output=True)
+    subprocess.run(["git", "clean", "-fd", "--", "crates/", "tools/"], cwd=str(PROJECT_DIR), capture_output=True)
 
 
 def append_tsv(path: Path, row: dict):

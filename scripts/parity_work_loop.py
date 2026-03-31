@@ -151,8 +151,9 @@ def git_commit(task_id: str, title: str):
 
 
 def git_discard():
+    """Discard uncommitted changes to tracked files. Only cleans new files in crates/tools/."""
     subprocess.run(["git", "checkout", "--", "."], cwd=str(PROJECT_DIR), capture_output=True)
-    subprocess.run(["git", "clean", "-fd"], cwd=str(PROJECT_DIR), capture_output=True)
+    subprocess.run(["git", "clean", "-fd", "--", "crates/", "tools/"], cwd=str(PROJECT_DIR), capture_output=True)
 
 
 def append_tsv(row: dict):
