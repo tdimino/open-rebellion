@@ -1,0 +1,128 @@
+[
+  {
+    "id": "F2",
+    "title": "Real counter-intelligence / foil defense path for covert missions",
+    "category": "F",
+    "est_loc": "140-220",
+    "blocked_by": [],
+    "files": ["crates/rebellion-core/src/missions.rs"],
+    "prompt": "In crates/rebellion-core/src/missions.rs, the foil/counter-intelligence system is stubbed. Find where `foil_prob` is called with hardcoded values (0.0, true). Replace with real defender espionage rating from the target system. The defender's counter-intelligence score should be based on: (1) espionage_rating on the target System, (2) any defending characters with espionage skill at the system. When foil succeeds, the mission should fail with a 'Foiled' outcome. Add tests for foiled missions."
+  },
+  {
+    "id": "F3",
+    "title": "Per-arc weapon fire (replace ±20% approximation)",
+    "category": "F",
+    "est_loc": "250-400",
+    "blocked_by": [],
+    "files": ["crates/rebellion-core/src/combat.rs"],
+    "prompt": "In crates/rebellion-core/src/combat.rs, phase_weapon_fire() uses a ±20% variance approximation. The original game (FUN_004f4de0, ~90 lines) fires each weapon arc separately against targets based on facing. Replace the aggregate approximation with per-arc fire: turbolaser_fore/aft/port/starboard, ion_cannon_fore/aft/port/starboard, laser_cannon_fore/aft/port/starboard. Each arc fires independently with its own damage roll. Sum damage per target. Keep the existing ShipSnap pending_damage/pending_ion_damage pattern. Update tests to verify per-arc behavior."
+  },
+  {
+    "id": "F4",
+    "title": "Death Star construction/warning exact values from GNPRTB",
+    "category": "F",
+    "est_loc": "40-80",
+    "blocked_by": ["F3"],
+    "files": ["crates/rebellion-core/src/death_star.rs"],
+    "prompt": "In crates/rebellion-core/src/death_star.rs, construction duration and nearby-warning radius are documented as approximate. Read the GNPRTB parameter values from world.gnprtb to get exact values. The construction countdown should use GNPRTB parameter for Death Star build time. The warning radius (how far away systems get alerted) should use the appropriate GNPRTB parameter. Check agent_docs/ghidra-re.md for the specific GNPRTB indices. Replace hardcoded approximations with gnprtb.value() lookups."
+  },
+  {
+    "id": "A1",
+    "title": "Port remaining 14 AI dispatch validators",
+    "category": "A",
+    "est_loc": "300-450",
+    "blocked_by": [],
+    "files": ["crates/rebellion-core/src/ai.rs"],
+    "prompt": "In crates/rebellion-core/src/ai.rs, can_dispatch() only checks 4 of 18 decoded validators (faction match, mandatory mission, no-op gates). Read agent_docs/systems/ai-parity-tracker.md for the full list of 18 validators from FUN_00508250. Implement the remaining 14: fleet capacity checks, fleet composition validation (has ships?), troop class matching, character skill thresholds, nested iteration guards, strength scoring minimums, status bit validation (not captive, not wounded, not in transit). Each validator is an AND-gate — all must pass for dispatch to proceed. Add tests for rejected invalid dispatches."
+  },
+  {
+    "id": "A2",
+    "title": "Troop deployment AI (AIAction::MoveTroops)",
+    "category": "A",
+    "est_loc": "220-340",
+    "blocked_by": [],
+    "files": ["crates/rebellion-core/src/ai.rs"],
+    "prompt": "The AI cannot build or deploy ground forces. Add AIAction::MoveTroops { troop: TroopKey, from_system: SystemKey, to_system: SystemKey } to the AIAction enum. Add evaluate_ground_forces() to AISystem that: (1) identifies systems needing garrison reinforcement (low troop count + high uprising risk), (2) identifies systems with surplus troops, (3) creates MoveTroops actions to redistribute. Wire into the main AI advance loop. The caller (integrator.rs apply_ai_actions_inner and main.rs apply_ai_actions) needs to handle MoveTroops by updating system.ground_units lists. Add tests."
+  },
+  {
+    "id": "A3",
+    "title": "Faction-specific deployment budgets in AiConfig",
+    "category": "A",
+    "est_loc": "40-80",
+    "blocked_by": [],
+    "files": ["crates/rebellion-core/src/ai.rs", "crates/rebellion-core/src/tuning.rs"],
+    "prompt": "In crates/rebellion-core/src/tuning.rs AiConfig, add faction-specific budget fields: alliance_deployment_budget and empire_deployment_budget. The original game (FUN_00506ea0) uses different evaluator objects per faction — Alliance is more conservative, Empire more aggressive. In ai.rs, use the faction-appropriate budget when calculating max_fronts and fleet deployment limits. Default values: Alliance budget = 3, Empire budget = 5 (meaning Empire opens more simultaneous attack fronts). Add to GameConfig serialization."
+  },
+  {
+    "id": "A4",
+    "title": "Strategic AI deltas (uprising prevention, resource balancing, DS escort)",
+    "category": "A",
+    "est_loc": "180-320",
+    "blocked_by": ["A1", "A2"],
+    "files": ["crates/rebellion-core/src/ai.rs"],
+    "prompt": "Close remaining AI behavior gaps: (1) Proactive uprising prevention: scan for systems with low popularity + enemy control, preemptively deploy troops before uprising fires. (2) Resource balancing: periodically (25% chance per eval) adjust energy/material allocation at systems with shortfalls. Add AIAction::AdjustResources. (3) Death Star escort: when DS is in transit, assign 1-2 escort fleets to travel with it. (4) Death Star retreat: if DS fleet is outmatched, retreat to friendly system. Add tests for each behavior."
+  },
+  {
+    "id": "U1",
+    "title": "DLL lookup tables for encyclopedia art, tactical sprites, mini-icons",
+    "category": "U",
+    "est_loc": "220-360",
+    "blocked_by": [],
+    "files": ["crates/rebellion-render/src/encyclopedia.rs", "crates/rebellion-render/src/tactical_view.rs", "crates/rebellion-render/src/panels/fleets.rs"],
+    "prompt": "Three render files use approximate mappings instead of real DLL lookup tables: (1) encyclopedia.rs uses a placeholder for star system art — should parse ENCYBMAP.DLL resource mapping to get real system art IDs. (2) tactical_view.rs uses class_to_sprite_id() with a linear approximation — should use a lookup table mapping DatId to TACTICAL.DLL resource IDs. (3) fleets.rs uses CAPSHIP_MINI_OFFSET fixed offset for GOKRES mini-icons — should use real mapping data. Read agent_docs/dll-resource-catalog.md for resource ID ranges. Create lookup tables (can be hardcoded HashMap or match expressions) based on the DLL catalog."
+  },
+  {
+    "id": "U2",
+    "title": "Native video playback for decoded WebM cutscenes",
+    "category": "U",
+    "est_loc": "280-450",
+    "blocked_by": [],
+    "files": ["crates/rebellion-render/src/video_player.rs", "crates/rebellion-app/src/main.rs"],
+    "prompt": "Create crates/rebellion-render/src/video_player.rs for native video playback. 15 decoded WebM cutscene files exist in assets/references/ref-videos/. The module should: (1) Accept a video file path and render frames to a macroquad texture. (2) Provide play/pause/skip controls. (3) Sync with game speed (pause video when game paused). (4) Fall back gracefully (skip cutscene) if video file missing or codec unavailable. Wire into main.rs for intro sequence and victory/defeat screens. On WASM, skip videos entirely (cfg gate). Consider using the 'video-rs' or 'ffmpeg-next' crate for decoding, or render pre-extracted frame sequences."
+  },
+  {
+    "id": "C1",
+    "title": "BIN-driven advisor animation (replace frame-cycling fallback)",
+    "category": "C",
+    "est_loc": "160-280",
+    "blocked_by": [],
+    "files": ["crates/rebellion-render/src/advisor.rs"],
+    "prompt": "In crates/rebellion-render/src/advisor.rs, the droid advisor (C-3PO/R2-D2 or Imperial) uses sorted frame cycling instead of BIN-driven animation. The original game has 148 animation frames controlled by BIN data files that specify frame ordering and timing. Read agent_docs/ghidra-re.md for what's known about the BIN format. If the BIN format is partially decoded, implement a parser. If not, create a reasonable approximation: group frames into idle/speaking/alert animation states with different frame rates and sequences. Keep the current frame-cycling as a fallback behind a runtime check."
+  },
+  {
+    "id": "WASM-save",
+    "title": "Save/load via IndexedDB/localStorage",
+    "category": "WASM",
+    "est_loc": "80-150",
+    "blocked_by": [],
+    "files": ["crates/rebellion-data/src/save.rs", "crates/rebellion-data/Cargo.toml"],
+    "prompt": "In crates/rebellion-data/src/save.rs, WASM stubs return errors. Replace with browser storage: (1) Add web-sys dependency with Storage feature to Cargo.toml (cfg gated to wasm32). (2) On WASM save: bincode serialize SaveState, base64 encode, store via window().local_storage().set_item('save_N', encoded). (3) On WASM load: get_item, base64 decode, bincode deserialize. (4) list_saves on WASM: scan localStorage keys matching 'save_*'. Max 10 slots. Keep native file IO unchanged. Add #[cfg(target_arch = \"wasm32\")] gates."
+  },
+  {
+    "id": "WASM-bmp",
+    "title": "BmpCache texture loading on WASM",
+    "category": "WASM",
+    "est_loc": "100-200",
+    "blocked_by": [],
+    "files": ["crates/rebellion-render/src/bmp_cache.rs"],
+    "prompt": "In crates/rebellion-render/src/bmp_cache.rs, the get() method returns None on WASM because it can't read DLL files. Fix by pre-loading BMP data during startup: (1) During a loading phase, fetch staged BMP files from web/data/ui/ via macroquad::file::load_file(). (2) Store raw bytes in a HashMap<(DllSource, u32), Vec<u8>> on the BmpCache struct. (3) In get(), on WASM, look up the byte cache first, decode to texture. Start with cockpit BMPs (~30 files) to make the UI functional. Lazy-load others on first access. Keep native DLL reading unchanged."
+  },
+  {
+    "id": "WASM-audio",
+    "title": "Audio byte loading in browser path",
+    "category": "WASM",
+    "est_loc": "50-80",
+    "blocked_by": [],
+    "files": ["crates/rebellion-app/src/audio.rs", "crates/rebellion-app/src/main.rs"],
+    "prompt": "In crates/rebellion-app/src/audio.rs, load_sfx_bytes() and load_and_play_music_bytes() methods exist (lines ~293-324) but are never called on WASM. Wire them into the WASM startup path: (1) During loading, fetch audio files from web/data/sounds/ via macroquad::file::load_file(). (2) Call load_sfx_bytes() for each SFX file and load_and_play_music_bytes() for the soundtrack. (3) Gate with #[cfg(target_arch = \"wasm32\")]. The native path continues using file-based loading."
+  },
+  {
+    "id": "Eval-oracle",
+    "title": "Golden-value oracle for eval_parity.py",
+    "category": "Eval",
+    "est_loc": "200-300",
+    "blocked_by": [],
+    "files": ["scripts/eval_parity.py", "autoresearch/parity/golden_values.json"],
+    "prompt": "Add a golden_value_accuracy sub-metric to scripts/eval_parity.py that checks behavioral accuracy against known original game values. Create autoresearch/parity/golden_values.json with 20-30 assertions in categories: (1) Seed state at tick 0 (entity counts, popularity values, fleet placements for seed 42). Run rebellion-playtest with --ticks 0 to capture tick-0 state. (2) GNPRTB parameter usage (specific indices mapped to specific formulas). (3) MSTB table lookups (difficulty + skill → probability ranges). Each assertion: {category, description, check_type, expected, tolerance}. The eval reads the JSONL, finds matching events, and scores fraction of assertions that match. Add as weight 0.20, redistributing from other sub-metrics."
+  }
+]
