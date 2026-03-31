@@ -42,7 +42,7 @@ pub fn draw_bombardment(
                 .iter()
                 .filter(|(_, f)| {
                     let owns = if is_alliance { f.is_alliance } else { !f.is_alliance };
-                    owns && !f.capital_ships.is_empty()
+                    owns && f.ship_count() > 0
                 })
                 .collect();
 
@@ -73,7 +73,7 @@ pub fn draw_bombardment(
                             .map(|s| s.name.as_str())
                             .unwrap_or("Unknown");
 
-                        let ship_count: u32 = fleet.capital_ships.iter().map(|e| e.count).sum();
+                        let ship_count: u32 = fleet.ship_count();
                         let is_selected = state.selected_fleet == Some(*fleet_key);
 
                         ui.group(|ui| {
@@ -95,10 +95,10 @@ pub fn draw_bombardment(
 
                             // Ship class breakdown when selected
                             if is_selected {
-                                for entry in &fleet.capital_ships {
-                                    if let Some(class) = world.capital_ship_classes.get(entry.class) {
+                                for (class_key, count) in fleet.ship_counts_by_class() {
+                                    if let Some(class) = world.capital_ship_classes.get(class_key) {
                                         ui.label(
-                                            RichText::new(format!("  {} ×{}", class.name, entry.count))
+                                            RichText::new(format!("  {} ×{}", class.name, count))
                                                 .color(theme::TEXT_SECONDARY)
                                                 .size(10.0),
                                         );

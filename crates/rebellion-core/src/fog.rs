@@ -177,7 +177,8 @@ impl FogSystem {
             }
             // Find max detection from fleet's ship classes.
             let max_detection = fleet.capital_ships.iter()
-                .filter_map(|entry| world.capital_ship_classes.get(entry.class))
+                .filter(|ship| ship.alive)
+                .filter_map(|ship| world.capital_ship_classes.get(ship.class))
                 .map(|c| c.detection)
                 .max()
                 .unwrap_or(0);
@@ -410,7 +411,7 @@ mod tests {
     #[test]
     fn sensor_radius_reveals_nearby_systems() {
         use crate::ids::DatId;
-        use crate::world::{CapitalShipClass, ShipEntry};
+        use crate::world::{CapitalShipClass, ShipInstance};
 
         let mut world = GameWorld::default();
         let sector = world.sectors.insert(crate::world::Sector {
@@ -477,7 +478,7 @@ mod tests {
 
         world.fleets.insert(Fleet {
             location: sys0,
-            capital_ships: vec![ShipEntry { class: ship_class, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_class, 100, true)],
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
@@ -498,7 +499,7 @@ mod tests {
     #[test]
     fn sensor_detection_zero_reveals_only_own_system() {
         use crate::ids::DatId;
-        use crate::world::{CapitalShipClass, ShipEntry};
+        use crate::world::{CapitalShipClass, ShipInstance};
 
         let mut world = GameWorld::default();
         let sector = world.sectors.insert(crate::world::Sector {
@@ -550,7 +551,7 @@ mod tests {
 
         world.fleets.insert(Fleet {
             location: sys0,
-            capital_ships: vec![ShipEntry { class: ship_class, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_class, 100, true)],
             fighters: vec![],
             characters: vec![],
             is_alliance: true,

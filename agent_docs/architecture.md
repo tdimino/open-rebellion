@@ -44,13 +44,13 @@ crates/rebellion-core/src/
 ├── events.rs         — EventCondition/Action, chaining, deterministic rng (728 LOC, 17 tests)
 ├── ai.rs             — AISystem, per-fleet targeting, deconfliction, two-pass deployment, battle penalty, config-driven (1121 LOC, 13 tests)
 ├── tuning.rs         — GameConfig: 16 externalized AI/movement/production parameters, parity/augmentation tagged (~160 LOC)
-├── movement.rs       — MovementOrder, Euclidean distance-based transit, config-aware variant (625 LOC, 19 tests)
+├── movement.rs       — MovementOrder, Euclidean distance-based transit, config-aware variant (625 LOC, 19 tests). `cancel_orders_to(system)` cancels all in-transit orders targeting a given system (used by Death Star cleanup).
 ├── fog.rs            — FogState, visibility sets, dim rendering tiers (373 LOC, 9 tests)
 ├── combat.rs         — Space combat 7-phase pipeline, ground combat, CombatPhaseFlags
 ├── bombardment.rs    — Orbital bombardment: Euclidean distance / GNPRTB[0x1400]
 ├── blockade.rs       — Fleet-presence blockade, manufacturing halt, troop destruction
 ├── uprising.rs       — Incite/subdue with UPRIS1TB/UPRIS2TB, 10-tick incident cooldown
-├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan
+├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan. `cleanup_destroyed_system()` removes all entities (fleets, troops, facilities) and cancels in-transit orders to the destroyed system.
 ├── research.rs       — 3 tech trees (Ship/Troop/Facility), MSTB difficulty lookup
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
 ├── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
@@ -112,7 +112,7 @@ crates/rebellion-app/src/
 ```
 crates/rebellion-data/src/
 ├── seeds.rs      — Game seeding: 3-system model, character stat rolling, named placement (~1200 LOC, 8 tests)
-├── save.rs       — Save/load: bincode snapshots, save slots, version migration (v5)
+├── save.rs       — Save/load: bincode snapshots, save slots, version migration (v7). v6→v7: ShipInstance promotion (bincode layout change). v3/v4/v5/v6 rejected.
 ├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
 ├── simulation.rs — Tick orchestrator: SimulationStates bundle + run_simulation_tick() (~449 LOC)
 └── integrator.rs — PerceptionIntegrator: all world mutation + telemetry emission (~1,185 LOC, 17 apply methods)
@@ -130,11 +130,13 @@ Structs that exactly match .DAT file field layout. Used only for import/export. 
 ### Layer 2: Runtime world (`rebellion-core/src/world/`)
 Rich types used by game logic, rendering, save/load. Slotmap keys for all inter-entity references.
 - `GameWorld` -- root aggregate, 11 SlotMap arenas (systems, sectors, capital_ship_classes, fighter_classes, characters, fleets, troops, special_forces, defense_facilities, manufacturing_facilities, production_facilities) + `GnprtbParams` + `mission_tables: HashMap<String, MstbTable>`
-- `System` -- position, sector ref, popularity (alliance/empire f32), asset lists (fleets, units, facilities)
+- `System` -- position, sector ref, popularity (alliance/empire f32), asset lists (fleets, units, facilities), `espionage_rating: f32` (reduces incite uprising probability)
 - `Sector` -- named region, SectorGroup, position, child system list
 - `CapitalShipClass` / `FighterClass` -- class templates, not instances
 - `Character` -- 8 `SkillPair` (base+variance), Jedi fields, role flags, major/minor
-- `Fleet` -- ships + characters at a system location
+- `Fleet` -- `capital_ships: Vec<ShipInstance>` (per-hull records: hull_current, alive, shield_weapon_packed, faction_is_alliance) + characters at a system location. Helper methods: `ship_count()`, `ship_counts_by_class()`, `is_empty()`. `ShipEntry` (aggregate class+count) was removed in Knesset Hephaestus.
+- `ManufacturingFacilityInstance` -- runtime facility record with `is_shipyard: bool` (used by economy to detect shipyard systems)
+- `ProductionFacilityInstance` -- runtime facility record with `is_mine: bool` (used by economy to count raw material sources)
 
 ## Entity Identity (Dual-Key Pattern)
 

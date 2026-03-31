@@ -224,9 +224,8 @@ pub struct Sector {
 
 /// Class definition for a capital ship — a template, not a unit instance.
 ///
-/// Instances (actual ships in a fleet) would carry a `CapitalShipKey` back to
-/// this definition. For now the model records class data; instance counts
-/// live in fleets.
+/// Individual hulls are `ShipInstance` records in `Fleet::capital_ships`, each
+/// carrying a `CapitalShipKey` back to this class definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapitalShipClass {
     pub dat_id: DatId,
@@ -569,16 +568,17 @@ pub struct SkillPair {
 /// Fleets are the primary unit of strategic movement. They orbit systems,
 /// travel hyperlanes, and carry characters in command roles.
 ///
-/// Ship and fighter slots are stored as `(class_key, count)` pairs so that
-/// multiple instances of the same class can be represented without duplicating
-/// the class record in the arena.
+/// Capital ships are stored as individual `ShipInstance` records (per-hull
+/// state with `hull_current` and `alive`). Fighter squadrons remain as
+/// aggregate `(class_key, count)` pairs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fleet {
     /// System the fleet is currently orbiting or departing from.
     pub location: SystemKey,
-    /// Capital ship class references with counts.  One entry per unique class in
-    /// this fleet; `count` indicates how many hulls of that class are present.
-    pub capital_ships: Vec<ShipEntry>,
+    /// Per-hull capital ship records. Each element is one physical hull with
+    /// its own `hull_current` and `alive` state. Replaces the old aggregate
+    /// `Vec<ShipEntry>` representation.
+    pub capital_ships: Vec<ShipInstance>,
     /// Fighter squadron class references with counts.
     pub fighters: Vec<FighterEntry>,
     /// Characters assigned to this fleet (admiral, general, etc.).
@@ -592,11 +592,32 @@ pub struct Fleet {
     pub has_death_star: bool,
 }
 
-/// One entry in a fleet's capital-ship roster: a class plus the number of hulls.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShipEntry {
-    pub class: CapitalShipKey,
-    pub count: u32,
+impl Fleet {
+    /// Total number of alive capital ships in this fleet.
+    pub fn ship_count(&self) -> u32 {
+        self.capital_ships.iter().filter(|s| s.alive).count() as u32
+    }
+
+    /// Group alive ships by class, returning `(class_key, count)` pairs.
+    /// Used by render panels for "Star Destroyer ×3" display.
+    pub fn ship_counts_by_class(&self) -> Vec<(CapitalShipKey, u32)> {
+        let mut counts: Vec<(CapitalShipKey, u32)> = Vec::new();
+        for ship in &self.capital_ships {
+            if !ship.alive { continue; }
+            if let Some(entry) = counts.iter_mut().find(|(k, _)| *k == ship.class) {
+                entry.1 += 1;
+            } else {
+                counts.push((ship.class, 1));
+            }
+        }
+        counts
+    }
+
+    /// True if this fleet has no alive capital ships and no fighter squadrons.
+    pub fn is_empty(&self) -> bool {
+        !self.capital_ships.iter().any(|s| s.alive)
+            && self.fighters.iter().all(|e| e.count == 0)
+    }
 }
 
 /// One entry in a fleet's fighter roster: a class plus the number of squadrons.
@@ -606,10 +627,11 @@ pub struct FighterEntry {
     pub count: u32,
 }
 
-/// A single hull of a capital ship — runtime per-hull combat state.
+/// A single hull of a capital ship — the primary ship record in Fleet.
 ///
-/// Distinct from `ShipEntry` which is a (class, count) summary for fleets.
-/// `ShipInstance` is the unit-level record used by the combat resolver.
+/// Each element in `Fleet::capital_ships` is one physical hull with its own
+/// health and alive state. This is the unit-level record used by combat,
+/// repair, and all fleet logic.
 ///
 /// Mirrors the C++ entity object fields confirmed by Ghidra:
 /// - `hull_current` → offset +0x60 (int)
@@ -626,11 +648,24 @@ pub struct ShipInstance {
     pub shield_weapon_packed: u8,
     /// True while hull_current > 0 and the ship has not been destroyed.
     pub alive: bool,
-    /// True = Rebel Alliance; false = Empire.
-    pub faction_is_alliance: bool,
 }
 
 impl ShipInstance {
+    /// Create a new ship at full hull strength.
+    pub fn new(class: CapitalShipKey, hull: i32, _is_alliance: bool) -> Self {
+        ShipInstance {
+            class,
+            hull_current: hull,
+            shield_weapon_packed: 0,
+            alive: true,
+        }
+    }
+
+    /// Create `count` instances of the same class at full hull.
+    pub fn make(class: CapitalShipKey, hull: i32, is_alliance: bool, count: u32) -> Vec<Self> {
+        (0..count).map(|_| Self::new(class, hull, is_alliance)).collect()
+    }
+
     /// Shield recharge allocation nibble (bits 0-3).
     pub fn shield_nibble(&self) -> u8 {
         self.shield_weapon_packed & 0x0f

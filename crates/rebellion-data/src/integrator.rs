@@ -30,7 +30,7 @@ use rebellion_core::repair::RepairEvent;
 use rebellion_core::research::{ResearchResult, ResearchState};
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
-use rebellion_core::world::{ControlKind, Fleet, FighterEntry, GameWorld, ShipEntry, TroopUnit};
+use rebellion_core::world::{ControlKind, Fleet, FighterEntry, GameWorld, ShipInstance, TroopUnit};
 
 // ---------------------------------------------------------------------------
 // Name resolution helpers (shared with simulation.rs)
@@ -52,15 +52,6 @@ pub fn char_name(world: &GameWorld, key: CharacterKey) -> String {
         .get(key)
         .map(|c| c.name.clone())
         .unwrap_or_else(|| format!("{:?}", key))
-}
-
-/// Build a JSON-friendly system reference with both name and key.
-#[allow(dead_code)]
-pub fn sys_json(world: &GameWorld, key: SystemKey) -> serde_json::Value {
-    serde_json::json!({
-        "key": format!("{:?}", key),
-        "name": sys_name(world, key),
-    })
 }
 
 /// Format an AIAction as a structured JSON payload with readable names.
@@ -637,13 +628,21 @@ impl PerceptionIntegrator {
     pub fn apply_repair_events(&mut self, world: &mut GameWorld, events: &[RepairEvent]) {
         for evt in events {
             match evt {
-                RepairEvent::ShipRepaired { fleet, hull_after, .. } => {
+                RepairEvent::ShipRepaired { fleet, ship_index, hull_before, hull_after } => {
+                    // Apply hull restoration to the ShipInstance.
+                    if let Some(f) = world.fleets.get_mut(*fleet) {
+                        if let Some(ship) = f.capital_ships.get_mut(*ship_index) {
+                            ship.hull_current = *hull_after;
+                        }
+                    }
                     let fleet_name = world.fleets.get(*fleet)
                         .map(|f| sys_name(world, f.location))
                         .unwrap_or_else(|| "unknown".into());
                     self.emit(SYS_REPAIR, EVT_SHIP_REPAIRED, serde_json::json!({
                         "fleet_location": fleet_name,
+                        "hull_before": hull_before,
                         "hull_after": hull_after,
+                        "delta": hull_after - hull_before,
                     }));
                 }
                 RepairEvent::RepairCheckPerformed { system, fleet, ships_checked } => {
@@ -988,48 +987,38 @@ fn apply_ai_actions_inner(
 // Combat helpers (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
-fn apply_space_combat_result_inner(
+pub fn apply_space_combat_result_inner(
     result: &SpaceCombatResult,
     world: &mut GameWorld,
 ) {
+    // Apply hull damage to individual ship instances.
     for evt in &result.ship_damage {
-        if evt.hull_after > 0 {
-            continue;
-        }
         let fleet_key = evt.fleet;
-        let entry_idx = {
-            let fleet = match world.fleets.get(fleet_key) {
-                Some(f) => f,
-                None => continue,
-            };
-            let mut offset = 0usize;
-            let mut found = None;
-            for (i, entry) in fleet.capital_ships.iter().enumerate() {
-                if evt.ship_index < offset + entry.count as usize {
-                    found = Some(i);
+        if let Some(fleet) = world.fleets.get_mut(fleet_key) {
+            // ship_index maps 1:1 to alive ships at snapshot time.
+            // Find the nth alive ship.
+            let mut alive_idx = 0;
+            for ship in fleet.capital_ships.iter_mut() {
+                if !ship.alive { continue; }
+                if alive_idx == evt.ship_index {
+                    ship.hull_current = evt.hull_after;
+                    if evt.hull_after <= 0 {
+                        ship.alive = false;
+                    }
                     break;
                 }
-                offset += entry.count as usize;
-            }
-            found
-        };
-        if let Some(idx) = entry_idx {
-            if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-                if fleet.capital_ships[idx].count > 0 {
-                    fleet.capital_ships[idx].count -= 1;
-                }
+                alive_idx += 1;
             }
         }
     }
 
+    // Remove dead ships and empty fleets.
     for &fleet_key in &[result.attacker_fleet, result.defender_fleet] {
-        let is_empty = world
-            .fleets
-            .get(fleet_key)
-            .map(|f| {
-                f.capital_ships.iter().all(|e| e.count == 0)
-                    && f.fighters.iter().all(|e| e.count == 0)
-            })
+        if let Some(fleet) = world.fleets.get_mut(fleet_key) {
+            fleet.capital_ships.retain(|s| s.alive);
+        }
+        let is_empty = world.fleets.get(fleet_key)
+            .map(|f| f.is_empty())
             .unwrap_or(true);
         if is_empty {
             if let Some(fleet) = world.fleets.get(fleet_key) {
@@ -1043,7 +1032,7 @@ fn apply_space_combat_result_inner(
     }
 }
 
-fn apply_ground_combat_result_inner(
+pub fn apply_ground_combat_result_inner(
     result: &GroundCombatResult,
     world: &mut GameWorld,
 ) {
@@ -1110,16 +1099,18 @@ pub fn apply_build_completion_inner(
 
             if let Some(fk) = fleet_key {
                 if let Some(fleet) = world.fleets.get_mut(fk) {
-                    if let Some(entry) = fleet.capital_ships.iter_mut().find(|e| e.class == *class_key) {
-                        entry.count += 1;
-                    } else {
-                        fleet.capital_ships.push(ShipEntry { class: *class_key, count: 1 });
-                    }
+                    let hull = world.capital_ship_classes.get(*class_key)
+                        .map(|c| c.hull as i32)
+                        .unwrap_or(100);
+                    fleet.capital_ships.push(ShipInstance::new(*class_key, hull, is_alliance));
                 }
             } else {
+                let hull = world.capital_ship_classes.get(*class_key)
+                    .map(|c| c.hull as i32)
+                    .unwrap_or(100);
                 let fleet = Fleet {
                     location: sys_key,
-                    capital_ships: vec![ShipEntry { class: *class_key, count: 1 }],
+                    capital_ships: vec![ShipInstance::new(*class_key, hull, is_alliance)],
                     fighters: vec![],
                     characters: vec![],
                     is_alliance,

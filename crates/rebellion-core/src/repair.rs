@@ -30,8 +30,7 @@ pub enum RepairEvent {
         hull_after: i32,
     },
     /// Repair check performed: fleet at shipyard with damage_control capability.
-    /// Emitted even when no actual hull restoration occurs (ShipInstance not yet
-    /// promoted). Ensures telemetry coverage for the repair system.
+    /// Emitted alongside any ShipRepaired events for telemetry coverage.
     RepairCheckPerformed {
         system: SystemKey,
         fleet: FleetKey,
@@ -82,11 +81,28 @@ impl RepairSystem {
                     None => continue,
                 };
 
-                // Count ships with damage_control capability.
-                let ships_checked = fleet.capital_ships.iter().filter(|entry| {
-                    world.capital_ship_classes.get(entry.class)
-                        .map_or(false, |c| c.damage_control > 0)
-                }).count();
+                // Repair damaged ships using the class damage_control rate.
+                let mut ships_checked = 0;
+                for (ship_index, ship) in fleet.capital_ships.iter().enumerate() {
+                    if !ship.alive { continue; }
+                    let class = match world.capital_ship_classes.get(ship.class) {
+                        Some(c) if c.damage_control > 0 => c,
+                        _ => continue,
+                    };
+                    ships_checked += 1;
+
+                    let hull_max = class.hull as i32;
+                    if ship.hull_current < hull_max {
+                        let hull_before = ship.hull_current;
+                        let hull_after = (hull_before + class.damage_control as i32).min(hull_max);
+                        events.push(RepairEvent::ShipRepaired {
+                            fleet: fleet_key,
+                            ship_index,
+                            hull_before,
+                            hull_after,
+                        });
+                    }
+                }
 
                 if ships_checked > 0 {
                     events.push(RepairEvent::RepairCheckPerformed {
@@ -95,12 +111,6 @@ impl RepairSystem {
                         ships_checked,
                     });
                 }
-
-                // NOTE: Full per-hull repair (ShipRepaired events) requires
-                // ShipInstance promotion to fleet-level storage. Until then,
-                // RepairCheckPerformed confirms the system is active.
-                // TODO: when ShipInstance is promoted, check hull_current < class.hull
-                // and emit ShipRepaired with actual delta.
             }
         }
 
@@ -185,7 +195,7 @@ mod tests {
         });
         let fleet_key = world.fleets.insert(Fleet {
             location: sys_key,
-            capital_ships: vec![ShipEntry { class: class_key, count: 3 }],
+            capital_ships: ShipInstance::make(class_key, 200, false, 3),
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -208,7 +218,7 @@ mod tests {
         match &events[0] {
             RepairEvent::RepairCheckPerformed { system, ships_checked, .. } => {
                 assert_eq!(*system, sys_key);
-                assert_eq!(*ships_checked, 1);
+                assert_eq!(*ships_checked, 3);
             }
             other => panic!("expected RepairCheckPerformed, got {:?}", other),
         }
@@ -272,5 +282,43 @@ mod tests {
 
         let events = RepairSystem::advance(&mut state, &world, &tick_events);
         assert!(events.is_empty(), "no repair at destroyed system");
+    }
+
+    #[test]
+    fn damaged_ship_emits_ship_repaired() {
+        let mut world = GameWorld::default();
+        let sys_key = make_shipyard_system(&mut world);
+        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
+        // Damage the first ship: hull 200 → 150
+        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
+        let mut state = RepairState;
+        let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
+
+        let events = RepairSystem::advance(&mut state, &world, &tick_events);
+        let repaired: Vec<_> = events.iter().filter(|e| matches!(e, RepairEvent::ShipRepaired { .. })).collect();
+        assert_eq!(repaired.len(), 1, "one damaged ship should emit ShipRepaired");
+        match repaired[0] {
+            RepairEvent::ShipRepaired { fleet, ship_index, hull_before, hull_after } => {
+                assert_eq!(*fleet, fleet_key);
+                assert_eq!(*ship_index, 0);
+                assert_eq!(*hull_before, 150);
+                // damage_control=10, so hull_after = min(150+10, 200) = 160
+                assert_eq!(*hull_after, 160);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn full_hull_ship_no_repair_event() {
+        let mut world = GameWorld::default();
+        let sys_key = make_shipyard_system(&mut world);
+        add_fleet_with_ship(&mut world, sys_key);
+        let mut state = RepairState;
+        let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
+
+        let events = RepairSystem::advance(&mut state, &world, &tick_events);
+        let repaired: Vec<_> = events.iter().filter(|e| matches!(e, RepairEvent::ShipRepaired { .. })).collect();
+        assert!(repaired.is_empty(), "full-hull ships should not emit ShipRepaired");
     }
 }

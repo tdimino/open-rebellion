@@ -317,7 +317,7 @@ impl EconomySystem {
             // Formula: clamp_nonneg(100 - capships * GNPRTB[7684] - fighters * GNPRTB[7685])
             // Original only applies at systems with KDY flag (field_0x88 bit 5).
             // We apply to all controlled systems — modifier is 100 when no ships, harmless.
-            // Note: uses hull counts (ShipEntry.count per fleet), not fleet object counts.
+            // Note: uses alive ship counts per fleet, not fleet object counts.
             // The original iterates fleet ship lists and sums individual hull entries.
             let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty) as i32;
             let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty) as i32;
@@ -404,7 +404,7 @@ struct MilitaryPresence {
     empire_fighters: u32,
     alliance_troops: u32,
     empire_troops: u32,
-    /// Total capital ship hulls (sum of ShipEntry.count across all fleets).
+    /// Total alive capital ship hulls (count of alive ShipInstances across all fleets).
     /// Used by KDY production modifier (FUN_0050a480).
     alliance_capships: u32,
     empire_capships: u32,
@@ -424,7 +424,7 @@ fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> Mil
 
     for &fleet_key in &sys.fleets {
         if let Some(fleet) = world.fleets.get(fleet_key) {
-            let capship_count: u32 = fleet.capital_ships.iter().map(|s| s.count).sum();
+            let capship_count: u32 = fleet.ship_count();
             let fighter_count: u32 = fleet.fighters.iter().map(|f| f.count).sum();
             if fleet.is_alliance {
                 presence.alliance_fleets += 1;
@@ -1091,9 +1091,9 @@ mod tests {
         // System with fleet presence (capships reduce production)
         let fleet_key = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
-            capital_ships: vec![
-                crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 3 },
-            ],
+            capital_ships: crate::world::ShipInstance::make(
+                crate::ids::CapitalShipKey::default(), 100, true, 3,
+            ),
             fighters: vec![
                 crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 4 },
             ],
@@ -1138,9 +1138,9 @@ mod tests {
         // System with massive fleet presence
         let fleet_key = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
-            capital_ships: vec![
-                crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 10 },
-            ],
+            capital_ships: crate::world::ShipInstance::make(
+                crate::ids::CapitalShipKey::default(), 100, true, 10,
+            ),
             fighters: vec![
                 crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 30 },
             ],
@@ -1454,13 +1454,13 @@ mod tests {
         });
         let fleet1 = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
-            capital_ships: vec![crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 2 }],
+            capital_ships: crate::world::ShipInstance::make(crate::ids::CapitalShipKey::default(), 100, true, 2),
             fighters: vec![crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 5 }],
             characters: vec![], is_alliance: true, has_death_star: false,
         });
         let fleet2 = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
-            capital_ships: vec![crate::world::ShipEntry { class: crate::ids::CapitalShipKey::default(), count: 3 }],
+            capital_ships: crate::world::ShipInstance::make(crate::ids::CapitalShipKey::default(), 100, false, 3),
             fighters: vec![], characters: vec![], is_alliance: false, has_death_star: false,
         });
         let sys_key = world.systems.insert(crate::world::System {

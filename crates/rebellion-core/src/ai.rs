@@ -763,8 +763,7 @@ impl AISystem {
             .fleets
             .values()
             .filter(|f| f.is_alliance == is_alliance)
-            .flat_map(|f| &f.capital_ships)
-            .map(|e| e.count as usize)
+            .map(|f| f.ship_count() as usize)
             .sum();
         let our_fighter_count: usize = world
             .fleets
@@ -993,8 +992,8 @@ impl AISystem {
             .filter_map(|&fk| world.fleets.get(fk))
             .filter(|f| f.is_alliance == is_alliance)
             .flat_map(|f| &f.capital_ships)
-            .filter_map(|entry| world.capital_ship_classes.get(entry.class))
-            .map(|c| c.hull * 1) // each ship hull contributes
+            .filter(|ship| ship.alive)
+            .map(|ship| ship.hull_current.max(0) as u32)
             .sum();
 
         // Troop strength from friendly ground units

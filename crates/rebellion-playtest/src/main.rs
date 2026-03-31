@@ -113,7 +113,7 @@ fn dispatch_command(
             world.fleets.iter().map(|(_, f)| {
                 let sys = world.systems.get(f.location).map(|s| s.name.as_str()).unwrap_or("?");
                 let side = if f.is_alliance { "Alliance" } else { "Empire" };
-                let ships = f.capital_ships.iter().map(|e| e.count as usize).sum::<usize>()
+                let ships = f.ship_count() as usize
                     + f.fighters.iter().map(|e| e.count as usize).sum::<usize>();
                 format!("{} fleet at {} — {} ships", side, sys, ships)
             }).collect::<Vec<_>>().join("\n")

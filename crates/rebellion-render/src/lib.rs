@@ -655,7 +655,7 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                                     let faction_color = if fleet.is_alliance { theme::ALLIANCE_BLUE } else { theme::EMPIRE_RED };
                                     let faction_tag = if fleet.is_alliance { "A" } else { "E" };
 
-                                    let ship_count: u32 = fleet.capital_ships.iter().map(|e| e.count).sum();
+                                    let ship_count: u32 = fleet.ship_count();
                                     let fighter_count: u32 = fleet.fighters.iter().map(|e| e.count).sum();
 
                                     ui.horizontal(|ui| {
@@ -669,9 +669,9 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                                     });
 
                                     // Ship class breakdown
-                                    for entry in &fleet.capital_ships {
-                                        if let Some(class) = world.capital_ship_classes.get(entry.class) {
-                                            ui.label(egui::RichText::new(format!("  {} ×{}", class.name, entry.count)).color(theme::TEXT_SECONDARY).size(10.0));
+                                    for (class_key, count) in fleet.ship_counts_by_class() {
+                                        if let Some(class) = world.capital_ship_classes.get(class_key) {
+                                            ui.label(egui::RichText::new(format!("  {} ×{}", class.name, count)).color(theme::TEXT_SECONDARY).size(10.0));
                                         }
                                     }
 
@@ -894,7 +894,7 @@ pub fn draw_fleet_context_menu(
             ui.separator();
 
             // ── Composition ─────────────────────────────────────────────
-            let ship_count: u32 = fleet.capital_ships.iter().map(|e| e.count).sum();
+            let ship_count: u32 = fleet.ship_count();
             let fighter_count: u32 = fleet.fighters.iter().map(|e| e.count).sum();
 
             if ship_count > 0 {

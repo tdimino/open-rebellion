@@ -22,6 +22,7 @@ use rebellion_core::missions::{
     MissionEffect, MissionFaction, MissionKind, MissionState, MissionSystem,
 };
 use rebellion_core::movement::{MovementState, MovementSystem};
+use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::uprising::{UprisingState, UprisingSystem};
@@ -274,6 +275,7 @@ async fn main() {
     let mut research_state = ResearchState::new();
     let mut jedi_state = JediState::new();
     let mut betrayal_state = BetrayalState::new();
+    let mut repair_state = RepairState::default();
     let mut economy_state = EconomyState::default();
     // Find HQ systems for victory detection
     let alliance_hq = world.systems.iter()
@@ -944,6 +946,18 @@ async fn main() {
                 }
             }
 
+            // ── Repair ──────────────────────────────────────────────────────
+            let repair_events = RepairSystem::advance(&mut repair_state, &world, &tick_events);
+            for evt in &repair_events {
+                if let RepairEvent::ShipRepaired { fleet, ship_index, hull_after, .. } = evt {
+                    if let Some(f) = world.fleets.get_mut(*fleet) {
+                        if let Some(ship) = f.capital_ships.get_mut(*ship_index) {
+                            ship.hull_current = *hull_after;
+                        }
+                    }
+                }
+            }
+
             // ── Uprising ─────────────────────────────────────────────────────
             let uprising_rolls: Vec<f64> = (0..world.systems.len())
                 .map(|_| sim_rng.gen::<f64>()).collect();
@@ -1596,7 +1610,7 @@ async fn main() {
                                 session.attacker_fleet,
                                 session.defender_fleet,
                                 session.system,
-                                2,
+                                world.difficulty_index,
                                 &combat_rolls,
                                 session.start_tick,
                                 death_star_state.shield_generator_active,
@@ -1961,14 +1975,8 @@ fn apply_panel_action(
                 let had_ds = source.has_death_star;
 
                 let dest = world.fleets.get_mut(fleet_a).unwrap();
-                // Merge capital ships
-                for entry in ships {
-                    if let Some(existing) = dest.capital_ships.iter_mut().find(|e| e.class == entry.class) {
-                        existing.count += entry.count;
-                    } else {
-                        dest.capital_ships.push(entry);
-                    }
-                }
+                // Merge capital ships — per-hull instances, just extend
+                dest.capital_ships.extend(ships);
                 // Merge fighters
                 for entry in fighters {
                     if let Some(existing) = dest.fighters.iter_mut().find(|e| e.class == entry.class) {
@@ -2303,7 +2311,7 @@ fn apply_panel_action(
                     .map(|s| s.name.clone())
                     .unwrap_or_else(|| "unknown".into());
                 let faction = if fleet.is_alliance { "Alliance" } else { "Empire" };
-                let ship_count = fleet.capital_ships.iter().map(|e| e.count as usize).sum::<usize>()
+                let ship_count = fleet.ship_count() as usize
                     + fleet.fighters.iter().map(|e| e.count as usize).sum::<usize>();
                 msg_log.push(GameMessage::new(
                     clock.tick,
@@ -2766,102 +2774,20 @@ fn apply_event_actions(
 // Combat effect application helpers
 // ---------------------------------------------------------------------------
 
-/// Apply a `SpaceCombatResult` to `GameWorld`.
-///
-/// Maps destroyed hull snapshots (hull_after == 0) back to fleet `capital_ships`
-/// counts. Since `ShipDamageEvent.ship_index` is the per-hull expansion index
-/// (not a class index), we convert: the first `entry.count` indices map to
-/// entry[0], the next `entry.count` to entry[1], and so on.
-/// Ships reduced to hull=0 decrement their entry count.
-/// Entries reaching count=0 are removed; fleets with no ships are removed from
-/// their system's fleet list.
+/// Delegate to integrator's shared implementation.
 fn apply_space_combat_result(
     result: &rebellion_core::combat::SpaceCombatResult,
     world: &mut GameWorld,
 ) {
-    for evt in &result.ship_damage {
-        if evt.hull_after > 0 { continue; } // still alive — no removal needed
-
-        let fleet_key = evt.fleet;
-        // Determine which entry this ship_index falls into.
-        let entry_idx = {
-            let fleet = match world.fleets.get(fleet_key) {
-                Some(f) => f,
-                None => continue,
-            };
-            let mut offset = 0usize;
-            let mut found = None;
-            for (i, entry) in fleet.capital_ships.iter().enumerate() {
-                if evt.ship_index < offset + entry.count as usize {
-                    found = Some(i);
-                    break;
-                }
-                offset += entry.count as usize;
-            }
-            found
-        };
-        if let Some(idx) = entry_idx {
-            if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-                if fleet.capital_ships[idx].count > 0 {
-                    fleet.capital_ships[idx].count -= 1;
-                }
-            }
-        }
-    }
-
-    // Remove empty fleets from system fleet lists.
-    for &fleet_key in &[result.attacker_fleet, result.defender_fleet] {
-        let is_empty = world.fleets.get(fleet_key)
-            .map(|f| f.capital_ships.iter().all(|e| e.count == 0)
-                && f.fighters.iter().all(|e| e.count == 0))
-            .unwrap_or(true);
-        if is_empty {
-            if let Some(fleet) = world.fleets.get(fleet_key) {
-                let loc = fleet.location;
-                if let Some(sys) = world.systems.get_mut(loc) {
-                    sys.fleets.retain(|&k| k != fleet_key);
-                }
-            }
-            world.fleets.remove(fleet_key);
-        }
-    }
+    rebellion_data::integrator::apply_space_combat_result_inner(result, world);
 }
 
-/// Apply a `GroundCombatResult` to `GameWorld`.
-///
-/// Updates `TroopUnit.regiment_strength` for all damaged units.
-/// Units reaching strength ≤ 0 are removed from the system's ground_units list.
+/// Delegate to integrator's shared implementation.
 fn apply_ground_combat_result(
     result: &rebellion_core::combat::GroundCombatResult,
     world: &mut GameWorld,
 ) {
-    // Apply the last recorded strength for each troop.
-    let mut final_strengths: std::collections::HashMap<rebellion_core::ids::TroopKey, i16> =
-        std::collections::HashMap::new();
-    for evt in &result.troop_damage {
-        final_strengths.insert(evt.troop, evt.strength_after);
-    }
-    for (&key, &strength) in &final_strengths {
-        if let Some(troop) = world.troops.get_mut(key) {
-            troop.regiment_strength = strength;
-        }
-    }
-
-    // Remove destroyed troops from system.
-    let sys_key = result.system;
-    if let Some(sys) = world.systems.get_mut(sys_key) {
-        sys.ground_units.retain(|&k| {
-            world.troops.get(k).map(|t| t.regiment_strength > 0).unwrap_or(false)
-        });
-    }
-    // Remove destroyed troops from the world arena.
-    let dead: Vec<_> = final_strengths.iter()
-        .filter(|(_, &s)| s <= 0)
-        .map(|(&k, _)| k)
-        .collect();
-    for key in dead {
-        world.troops.remove(key);
-    }
+    rebellion_data::integrator::apply_ground_combat_result_inner(result, world);
 }
 
 /// Apply tactical combat session results to GameWorld.
@@ -2878,44 +2804,36 @@ fn apply_tactical_results(
         (session.attacker_fleet, true),
         (session.defender_fleet, false),
     ] {
-        // Count destroyed ships per class entry index.
-        let mut destroyed_by_entry: std::collections::HashMap<usize, u32> =
-            std::collections::HashMap::new();
-
+        // Mark destroyed ships by fleet_ship_index (1:1 with alive ships).
+        // Collect destroyed indices from tactical session results.
+        let mut destroyed_indices: Vec<usize> = Vec::new();
         for ship in &session.ships {
             if ship.is_attacker != is_attacker { continue; }
-            // Skip ships that successfully retreated — they survive.
             if ship.retreated { continue; }
             if !ship.alive {
-                // fleet_ship_index is the flat index; find which ShipEntry it belongs to.
-                if let Some(fleet) = world.fleets.get(fleet_key) {
-                    let mut offset = 0usize;
-                    for (i, entry) in fleet.capital_ships.iter().enumerate() {
-                        if ship.fleet_ship_index < offset + entry.count as usize {
-                            *destroyed_by_entry.entry(i).or_insert(0) += 1;
-                            break;
-                        }
-                        offset += entry.count as usize;
-                    }
-                }
+                destroyed_indices.push(ship.fleet_ship_index);
             }
         }
 
-        // Apply reductions.
+        // Apply hull damage: mark destroyed ships as dead.
         if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-            for (&entry_idx, &lost) in &destroyed_by_entry {
-                if entry_idx < fleet.capital_ships.len() {
-                    fleet.capital_ships[entry_idx].count =
-                        fleet.capital_ships[entry_idx].count.saturating_sub(lost);
+            // fleet_ship_index maps 1:1 to alive ships at session start.
+            let mut alive_idx = 0;
+            for ship_inst in fleet.capital_ships.iter_mut() {
+                if !ship_inst.alive { continue; }
+                if destroyed_indices.contains(&alive_idx) {
+                    ship_inst.alive = false;
+                    ship_inst.hull_current = 0;
                 }
+                alive_idx += 1;
             }
+            fleet.capital_ships.retain(|s| s.alive);
         }
 
         // Apply fighter squadron losses.
         for fighter in &session.fighters {
             if fighter.is_attacker != is_attacker { continue; }
             if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-                // Find the matching fighter entry by class key.
                 for entry in &mut fleet.fighters {
                     if entry.class == fighter.class_key {
                         entry.count = fighter.squad_count;
@@ -2927,8 +2845,7 @@ fn apply_tactical_results(
 
         // Remove empty fleets.
         let is_empty = world.fleets.get(fleet_key)
-            .map(|f| f.capital_ships.iter().all(|e| e.count == 0)
-                && f.fighters.iter().all(|e| e.count == 0))
+            .map(|f| f.is_empty())
             .unwrap_or(true);
         if is_empty {
             if let Some(fleet) = world.fleets.get(fleet_key) {

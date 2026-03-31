@@ -285,14 +285,10 @@ impl BattleSession {
         let fleet = &world.fleets[fleet_key];
         let mut ship_idx = 0;
 
-        for entry in &fleet.capital_ships {
-            let class = &world.capital_ship_classes[entry.class];
-            // Map ship class to a tactical sprite ID.
-            // The original game maps class DatId to specific TACTICAL.DLL resource IDs.
-            // For now, use a simple offset from the base sprite range.
+        for ship in fleet.capital_ships.iter().filter(|s| s.alive) {
+            let class = &world.capital_ship_classes[ship.class];
             let sprite_id = Self::class_to_sprite_id(class.dat_id.index());
 
-            // Sum weapon counts across all arcs for total firepower.
             let turbolaser_total = (class.turbolaser_fore + class.turbolaser_aft
                 + class.turbolaser_port + class.turbolaser_starboard) as i32;
             let ion_cannon_total = (class.ion_cannon_fore + class.ion_cannon_aft
@@ -300,31 +296,29 @@ impl BattleSession {
             let laser_cannon_total = (class.laser_cannon_fore + class.laser_cannon_aft
                 + class.laser_cannon_port + class.laser_cannon_starboard) as i32;
 
-            for _ in 0..entry.count {
-                ships.push(TacticalShip {
-                    class_key: entry.class,
-                    name: class.name.clone(),
-                    x: 0.0,
-                    y: 0.0,
-                    hull_current: class.hull as i32,
-                    hull_max: class.hull as i32,
-                    shield: class.shield_strength as i32,
-                    shield_max: class.shield_strength as i32,
-                    is_attacker,
-                    alive: true,
-                    selected: false,
-                    fleet_ship_index: ship_idx,
-                    sprite_id,
-                    turbolaser_power: turbolaser_total,
-                    ion_cannon_power: ion_cannon_total,
-                    laser_cannon_power: laser_cannon_total,
-                    focus_target: None,
-                    retreating: false,
-                    retreat_progress: 0.0,
-                    retreated: false,
-                });
-                ship_idx += 1;
-            }
+            ships.push(TacticalShip {
+                class_key: ship.class,
+                name: class.name.clone(),
+                x: 0.0,
+                y: 0.0,
+                hull_current: ship.hull_current,
+                hull_max: class.hull as i32,
+                shield: class.shield_strength as i32,
+                shield_max: class.shield_strength as i32,
+                is_attacker,
+                alive: true,
+                selected: false,
+                fleet_ship_index: ship_idx,
+                sprite_id,
+                turbolaser_power: turbolaser_total,
+                ion_cannon_power: ion_cannon_total,
+                laser_cannon_power: laser_cannon_total,
+                focus_target: None,
+                retreating: false,
+                retreat_progress: 0.0,
+                retreated: false,
+            });
+            ship_idx += 1;
         }
 
         for entry in &fleet.fighters {

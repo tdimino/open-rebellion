@@ -115,7 +115,8 @@ pub fn fleet_transit_ticks_with_config(
         fleet
             .capital_ships
             .iter()
-            .filter_map(|entry| world.capital_ship_classes.get(entry.class))
+            .filter(|ship| ship.alive)
+            .filter_map(|ship| world.capital_ship_classes.get(ship.class))
             .map(|class| class.hyperdrive)
             .min()
             .unwrap_or(1)
@@ -502,7 +503,7 @@ mod tests {
     use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::DatId;
     use crate::world::{
-        CapitalShipClass, Character, Fleet, ForceTier, GameWorld, Sector, ShipEntry,
+        CapitalShipClass, Character, Fleet, ForceTier, GameWorld, Sector, ShipInstance,
         SkillPair, System,
     };
 
@@ -610,7 +611,7 @@ mod tests {
         let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
         let fleet = Fleet {
             location: origin,
-            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
@@ -626,7 +627,7 @@ mod tests {
         let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
         let fleet = Fleet {
             location: origin,
-            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
@@ -643,7 +644,7 @@ mod tests {
         let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
         let fleet = Fleet {
             location: origin,
-            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
             fighters: vec![],
             characters: vec![],
             is_alliance: true,
@@ -677,8 +678,8 @@ mod tests {
         let fleet = Fleet {
             location: origin,
             capital_ships: vec![
-                ShipEntry { class: fast_key, count: 1 },
-                ShipEntry { class: slow_key, count: 1 },
+                ShipInstance::new(fast_key, 100, true),
+                ShipInstance::new(slow_key, 100, true),
             ],
             fighters: vec![],
             characters: vec![],
@@ -697,7 +698,7 @@ mod tests {
         let han_key = world.characters.insert(test_character("Han Solo", 5));
         let fleet = Fleet {
             location: origin,
-            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
             fighters: vec![],
             characters: vec![han_key],
             is_alliance: true,
@@ -715,7 +716,7 @@ mod tests {
         let char_key = world.characters.insert(test_character("Regular", 0));
         let fleet = Fleet {
             location: origin,
-            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
             fighters: vec![],
             characters: vec![char_key],
             is_alliance: true,
@@ -734,7 +735,7 @@ mod tests {
         let han_key = world.characters.insert(test_character("Han Solo", 100));
         let fleet = Fleet {
             location: origin,
-            capital_ships: vec![ShipEntry { class: ship_key, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
             fighters: vec![],
             characters: vec![han_key],
             is_alliance: true,

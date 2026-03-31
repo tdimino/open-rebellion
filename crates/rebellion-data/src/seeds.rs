@@ -635,7 +635,7 @@ fn apply_fleet_seed(
             None => continue, // System not loaded — skip.
         };
 
-        let mut fleet_capital_ships: Vec<ShipEntry> = Vec::new();
+        let mut fleet_capital_ships: Vec<ShipInstance> = Vec::new();
         let mut fleet_fighters: Vec<FighterEntry> = Vec::new();
 
         for item in &group.items {
@@ -646,6 +646,8 @@ fn apply_fleet_seed(
                 item.item_id,
                 capship_index,
                 fighter_index,
+                world,
+                is_alliance,
                 &mut fleet_capital_ships,
                 &mut fleet_fighters,
             );
@@ -772,7 +774,9 @@ fn dispatch_fleet_item(
     item_id: u32,
     capship_index: &CapShipIndex,
     fighter_index: &FighterIndex,
-    capital_ships: &mut Vec<ShipEntry>,
+    world: &GameWorld,
+    is_alliance: bool,
+    capital_ships: &mut Vec<ShipInstance>,
     fighters: &mut Vec<FighterEntry>,
 ) {
     let family = (item_id >> 24) as u8;
@@ -780,12 +784,10 @@ fn dispatch_fleet_item(
     match family {
         FAM_CAPITAL_SHIP => {
             if let Some(&class) = capship_index.get(&seq_id) {
-                // Merge into existing entry for this class, or add new entry.
-                if let Some(entry) = capital_ships.iter_mut().find(|e| e.class == class) {
-                    entry.count += 1;
-                } else {
-                    capital_ships.push(ShipEntry { class, count: 1 });
-                }
+                let hull = world.capital_ship_classes.get(class)
+                    .map(|c| c.hull as i32)
+                    .unwrap_or(100);
+                capital_ships.push(ShipInstance::new(class, hull, is_alliance));
             }
         }
         FAM_FIGHTER => {
@@ -1389,9 +1391,11 @@ fn compute_faction_maintenance(world: &GameWorld, is_alliance: bool) -> u32 {
         if fleet.is_alliance != is_alliance {
             continue;
         }
-        for entry in &fleet.capital_ships {
-            if let Some(class) = world.capital_ship_classes.get(entry.class) {
-                total += class.maintenance_cost * entry.count;
+        for ship in &fleet.capital_ships {
+            if ship.alive {
+                if let Some(class) = world.capital_ship_classes.get(ship.class) {
+                    total += class.maintenance_cost;
+                }
             }
         }
         for entry in &fleet.fighters {
@@ -1469,7 +1473,7 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
 
-    let mut fleet_capital_ships: Vec<ShipEntry> = Vec::new();
+    let mut fleet_capital_ships: Vec<ShipInstance> = Vec::new();
     let mut fleet_fighters: Vec<FighterEntry> = Vec::new();
 
     for item in &group.items {
@@ -1480,11 +1484,10 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
         match family {
             FAM_CAPITAL_SHIP => {
                 if let Some(&class) = capship_index.get(&seq_id) {
-                    if let Some(entry) = fleet_capital_ships.iter_mut().find(|e| e.class == class) {
-                        entry.count += 1;
-                    } else {
-                        fleet_capital_ships.push(ShipEntry { class, count: 1 });
-                    }
+                    let hull = world.capital_ship_classes.get(class)
+                        .map(|c| c.hull as i32)
+                        .unwrap_or(100);
+                    fleet_capital_ships.push(ShipInstance::new(class, hull, is_alliance));
                 }
             }
             FAM_FIGHTER => {

@@ -9,7 +9,7 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.19.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 401 tests, zero warnings. Knesset Ereshkigal Phase 0-5 complete: PerceptionIntegrator extraction (simulation.rs 1,658→449 LOC, 73% reduction), economy wired into interactive game, build completions applied, faction-aware AI dispatch, strong_support bit guard. All 17 simulation sections route through integrator for mutation + telemetry.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.20.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 403 tests, zero warnings. Knesset Ereshkigal Phase 0-5 complete: PerceptionIntegrator extraction (simulation.rs 1,658→449 LOC, 73% reduction), economy wired into interactive game, build completions applied, faction-aware AI dispatch, strong_support bit guard. All 17 simulation sections route through integrator for mutation + telemetry.
 
 | Area | Key Features |
 |------|-------------|
@@ -67,7 +67,7 @@ PATH="/usr/bin:$PATH" cargo check
 
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
 - CapitalShipClass has 25+ promoted DAT fields; FighterClass has 20+. Remaining ~15 fields are decorative/unused by combat formulas
-- Save v6 format (v3/v4/v5 rejected). v5→v6: espionage_rating + facility type fields. v7 planned for ShipInstance promotion (Knesset Hephaestus)
+- Save v7 format (v3/v4/v5/v6 rejected). v6→v7: ShipInstance promotion (Fleet.capital_ships now per-hull Vec<ShipInstance>)
 - Droid Advisor BIN animation format partially decoded — uses frame-cycling fallback (see advisor.rs)
 - Legacy seed fallback collapses Alliance HQ to Yavin (only when 3-system model can't identify Coruscant)
 
@@ -77,7 +77,7 @@ PATH="/usr/bin:$PATH" cargo check
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
 agent_docs/simulation.md -- 15 simulation systems index, advance() pattern, integration order, "how to add" guides. Read when touching game logic.
 agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory, betrayal). Read when modifying a specific system.
-agent_docs/save-load.md -- Save format (v6), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
+agent_docs/save-load.md -- Save format (v7), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
 agent_docs/mod-runtime.md -- ModRuntime, ModConfig, enable/disable, hot reload, structured errors. Read when wiring mod features.
 agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
 agent_docs/game-domain.md -- Game mechanics glossary, entity relationships, implemented vs unimplemented systems. Read when implementing simulation logic.
@@ -106,6 +106,7 @@ docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decom
 - [Community Disassembly Cross-Reference (2026-03-26)](docs/reports/2026-03-26-community-disassembly-cross-reference.md) — 13,036 decompiled functions vs our 5,151. 4 domain agents. Overall parity: ~85%. Biggest gap: economy tick loop.
 - [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. All 6 phases COMPLETE. Phase 4: PerceptionIntegrator extraction (simulation.rs 73% reduction). Phase 5: 179 NetMessage protocol types + telemetry coverage test (10/17 required systems verified).
 - [Knesset Ptah (2026-03-28)](docs/plans/2026-03-28-001-feat-knesset-ptah-todo-resolution-plan.md) — TODO resolution sprint. 12 of 13 TODOs resolved across 5 phases. Telemetry 15/17, DS victory fix, entity cleanup, espionage_rating, save v6, UI wiring, facility type promotion. 1 deferred (ShipInstance promotion → Knesset Hephaestus).
+- Knesset Hephaestus (2026-03-30) — ShipInstance promotion. Fleet.capital_ships promoted from aggregate Vec<ShipEntry> to per-hull Vec<ShipInstance> (hull_current, alive, shield_weapon_packed, faction_is_alliance). ShipEntry removed. Fleet helper methods added (ship_count, ship_counts_by_class, is_empty). RepairSystem now emits real ShipRepaired events with hull deltas — last TODO resolved. Fleet merge and combat damage indexing simplified. Repair wired into interactive main.rs. Save format bumped to v7. 403 tests.
 
 ## External References
 

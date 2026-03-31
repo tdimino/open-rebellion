@@ -132,10 +132,11 @@ impl BombardmentSystem {
         let mut brd: i32 = 0;
         let mut sec: i32 = 0;
 
-        for entry in &f.capital_ships {
-            let class = &world.capital_ship_classes[entry.class];
-            brd += class.bombardment_modifier as i32 * entry.count as i32;
-            sec += class.maneuverability as i32 * entry.count as i32;
+        for ship in &f.capital_ships {
+            if !ship.alive { continue; }
+            let class = &world.capital_ship_classes[ship.class];
+            brd += class.bombardment_modifier as i32;
+            sec += class.maneuverability as i32;
         }
         for entry in &f.fighters {
             let class = &world.fighter_classes[entry.class];
@@ -291,9 +292,10 @@ mod tests {
 
     fn make_fleet(world: &mut GameWorld, sys: SystemKey, class: CapitalShipKey,
                   count: u32, is_alliance: bool) -> FleetKey {
+        let hull = world.capital_ship_classes[class].hull as i32;
         world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipEntry { class, count }],
+            capital_ships: ShipInstance::make(class, hull, is_alliance, count),
             fighters: vec![],
             characters: vec![],
             is_alliance,

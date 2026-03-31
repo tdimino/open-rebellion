@@ -259,19 +259,16 @@ impl CombatSystem {
 
     /// Build mutable hull snapshots for one fleet.
     ///
-    /// Each `ShipEntry { class, count }` is expanded into `count` individual `ShipSnap`
-    /// records. Combat operates on individual hulls, not class-count summaries.
+    /// Each `ShipInstance` maps 1:1 to a `ShipSnap` record.
+    /// Combat operates on individual hulls via ShipSnap.
     fn snapshot_fleet(world: &GameWorld, fleet: FleetKey) -> (Vec<ShipSnap>, Vec<u32>) {
         let f = &world.fleets[fleet];
         let is_ds_fleet = f.has_death_star;
-        let mut ships = Vec::new();
-        for entry in &f.capital_ships {
-            let class = &world.capital_ship_classes[entry.class];
-            // Death Star ships identified by family byte 0x34 on the class DatId,
-            // or by the fleet's has_death_star flag (simpler, already tracked).
+        let ships = f.capital_ships.iter().filter(|ship| ship.alive).map(|ship| {
+            let class = &world.capital_ship_classes[ship.class];
             let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
-            let snap = ShipSnap {
-                hull_current: class.hull as i32,
+            ShipSnap {
+                hull_current: ship.hull_current,
                 hull_max:     class.hull as i32,
                 shield_current: class.shield_strength as i32,
                 shield_max:     class.shield_strength as i32,
@@ -281,11 +278,8 @@ impl CombatSystem {
                 weapon_nibble: 0x0f,
                 alive: true,
                 is_death_star: is_ds_ship,
-            };
-            for _ in 0..entry.count {
-                ships.push(snap.clone());
             }
-        }
+        }).collect();
         let fighters = f.fighters.iter().map(|e| e.count).collect();
         (ships, fighters)
     }
@@ -308,12 +302,13 @@ impl CombatSystem {
     ) {
         let fleet = &world.fleets[firing_fleet];
         // Compute total fire split by weapon type: ion cannons tracked separately.
+        // Each ShipInstance maps 1:1 to a ShipSnap, so zip directly.
+        let alive_ships = fleet.capital_ships.iter().filter(|s| s.alive);
         let (total_fire, total_ion): (u32, u32) = firing.iter()
-            .zip(fleet.capital_ships.iter().flat_map(|e| {
-                std::iter::repeat(e.class).take(e.count as usize)
-            }))
+            .zip(alive_ships)
             .filter(|(snap, _)| snap.alive)
-            .fold((0u32, 0u32), |(acc_fire, acc_ion), (snap, class_key)| {
+            .fold((0u32, 0u32), |(acc_fire, acc_ion), (snap, ship)| {
+                let class_key = ship.class;
                 let class = &world.capital_ship_classes[class_key];
                 let non_ion = class.turbolaser_fore
                     + class.turbolaser_aft
@@ -457,18 +452,17 @@ impl CombatSystem {
         ship_snaps: &[ShipSnap],
     ) -> u32 {
         let fleet = &world.fleets[fleet_key];
-        let mut capacity: u32 = 0;
-        let mut snap_idx = 0;
-        for entry in &fleet.capital_ships {
-            let class = &world.capital_ship_classes[entry.class];
-            for _ in 0..entry.count {
-                if snap_idx < ship_snaps.len() && ship_snaps[snap_idx].alive {
-                    capacity += class.fighter_capacity;
-                }
-                snap_idx += 1;
-            }
-        }
-        capacity
+        // ShipSnap array is 1:1 with alive ships in capital_ships.
+        let alive_ships = fleet.capital_ships.iter().filter(|s| s.alive);
+        alive_ships
+            .zip(ship_snaps.iter())
+            .filter(|(_, snap)| snap.alive)
+            .map(|(ship, _)| {
+                world.capital_ship_classes.get(ship.class)
+                    .map(|c| c.fighter_capacity)
+                    .unwrap_or(0)
+            })
+            .sum()
     }
 
     /// Launch fighters from carrier ships, capping deployed squadrons to
@@ -1136,9 +1130,10 @@ mod tests {
 
     fn make_fleet(world: &mut GameWorld, sys: SystemKey, class: CapitalShipKey,
                   count: u32, is_alliance: bool) -> FleetKey {
+        let hull = world.capital_ship_classes[class].hull as i32;
         let key = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipEntry { class, count }],
+            capital_ships: ShipInstance::make(class, hull, is_alliance, count),
             fighters: vec![],
             characters: vec![],
             is_alliance,
@@ -1579,9 +1574,10 @@ mod tests {
         fighter_squads: u32,
         is_alliance: bool,
     ) -> FleetKey {
+        let hull = world.capital_ship_classes[ship_class].hull as i32;
         let key = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipEntry { class: ship_class, count: ship_count }],
+            capital_ships: ShipInstance::make(ship_class, hull, is_alliance, ship_count),
             fighters: vec![FighterEntry { class: fighter_class, count: fighter_squads }],
             characters: vec![],
             is_alliance,
@@ -2052,7 +2048,7 @@ mod tests {
         let ds_class = make_ds_class(&mut world, 5000);
         let ds_fleet = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipEntry { class: ds_class, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ds_class, world.capital_ship_classes[ds_class].hull as i32, false)],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2090,7 +2086,7 @@ mod tests {
         let ds_class = make_ds_class(&mut world, 5000);
         let ds_fleet = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipEntry { class: ds_class, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ds_class, world.capital_ship_classes[ds_class].hull as i32, false)],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2145,7 +2141,7 @@ mod tests {
         let ds_class = make_ds_class(&mut world, 5000);
         let ds_fleet = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipEntry { class: ds_class, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ds_class, world.capital_ship_classes[ds_class].hull as i32, false)],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2171,7 +2167,7 @@ mod tests {
         let ds_class2 = make_ds_class(&mut world2, 5000);
         let ds_fleet2 = world2.fleets.insert(Fleet {
             location: sys2,
-            capital_ships: vec![ShipEntry { class: ds_class2, count: 1 }],
+            capital_ships: vec![ShipInstance::new(ds_class2, world2.capital_ship_classes[ds_class2].hull as i32, false)],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2271,7 +2267,7 @@ mod tests {
         let atk_class = make_class(&mut world2, 100, 10);
         let fleet = world2.fleets.insert(Fleet {
             location: sys2,
-            capital_ships: vec![ShipEntry { class: atk_class, count: 1 }],
+            capital_ships: vec![ShipInstance::new(atk_class, world2.capital_ship_classes[atk_class].hull as i32, true)],
             fighters: vec![],
             characters: vec![officer],
             is_alliance: true,

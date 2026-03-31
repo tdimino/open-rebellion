@@ -231,7 +231,7 @@ fn draw_character_detail(
             if let Some(sys) = world.systems.get(fleet.location) {
                 location_name = Some(sys.name.clone());
             }
-            let ship_count: u32 = fleet.capital_ships.iter().map(|e| e.count).sum();
+            let ship_count: u32 = fleet.ship_count();
             let tag = if fleet.is_alliance { "Alliance" } else { "Empire" };
             fleet_info = Some(format!("{} fleet ({} ships)", tag, ship_count));
             break;

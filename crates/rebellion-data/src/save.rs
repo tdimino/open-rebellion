@@ -1,6 +1,6 @@
 //! Save / load for the full game state.
 //!
-//! # Format (v5)
+//! # Format (v7)
 //!
 //! Binary `bincode` encoding. A save file is:
 //!
@@ -61,7 +61,7 @@ use rebellion_core::world::{ControlKind, GameWorld};
 pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes.
-pub const SAVE_VERSION: u32 = 6;
+pub const SAVE_VERSION: u32 = 7;
 
 /// Minimum save version we can migrate from.
 const MIN_MIGRATABLE_VERSION: u32 = 3;
@@ -344,6 +344,12 @@ mod native {
         let state: SaveState = match version {
             SAVE_VERSION => {
                 bincode::deserialize(&body).context("deserializing save state")?
+            }
+            6 => {
+                anyhow::bail!(
+                    "save version 6 is incompatible with this build (Fleet.capital_ships changed from ShipEntry to ShipInstance). \
+                     Please start a new game."
+                );
             }
             5 => {
                 anyhow::bail!(

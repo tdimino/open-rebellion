@@ -112,7 +112,7 @@ fn draw_empire_view(
                     .size(11.0),
             );
 
-            let ship_count: u32 = fleet.capital_ships.iter().map(|e| e.count).sum();
+            let ship_count: u32 = fleet.ship_count();
             ui.label(
                 RichText::new(format!("Escort: {} capital ships", ship_count))
                     .color(theme::TEXT_SECONDARY)

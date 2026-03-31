@@ -88,7 +88,7 @@ pub fn draw_fleets(
                         .map(|s| s.name.as_str())
                         .unwrap_or("Unknown");
 
-                    let ship_count: u32 = fleet.capital_ships.iter().map(|e| e.count).sum();
+                    let ship_count: u32 = fleet.ship_count();
                     let fighter_count: u32 = fleet.fighters.iter().map(|e| e.count).sum();
                     let is_expanded = state.expanded_fleet == Some(fleet_key);
 
@@ -129,17 +129,17 @@ pub fn draw_fleets(
                     if is_expanded {
                         ui.indent("fleet_detail", |ui| {
                             // ── Capital ships ────────────────────────────
-                            if !fleet.capital_ships.is_empty() {
+                            if fleet.ship_count() > 0 {
                                 ui.label(
                                     RichText::new("CAPITAL SHIPS")
                                         .color(theme::GOLD_DIM)
                                         .size(10.0)
                                         .strong(),
                                 );
-                                for entry in &fleet.capital_ships {
+                                for (class_key, count) in fleet.ship_counts_by_class() {
                                     let (class_name, dat_id_raw) = world
                                         .capital_ship_classes
-                                        .get(entry.class)
+                                        .get(class_key)
                                         .map(|c| (c.name.as_str(), c.dat_id.raw()))
                                         .unwrap_or(("Unknown", 0));
                                     ui.horizontal(|ui| {
@@ -154,7 +154,7 @@ pub fn draw_fleets(
                                             )));
                                         }
                                         ui.label(
-                                            RichText::new(format!("{} ×{}", class_name, entry.count))
+                                            RichText::new(format!("{} ×{}", class_name, count))
                                                 .color(theme::TEXT_PRIMARY)
                                                 .size(11.0),
                                         );
@@ -310,7 +310,7 @@ pub fn draw_fleets(
                                             && movement_state.get(*fk).is_none()
                                     })
                                     .map(|(fk, f)| {
-                                        let sc: u32 = f.capital_ships.iter().map(|e| e.count).sum();
+                                        let sc: u32 = f.ship_count();
                                         (*fk, sc)
                                     })
                                     .collect()
