@@ -2039,9 +2039,10 @@ fn apply_panel_action(
             faction,
             character,
             target,
+            target_character,
             duration_roll,
         } => {
-            mission_state.dispatch(kind, faction, character, target, duration_roll);
+            mission_state.dispatch(kind, faction, character, target, target_character, duration_roll);
             let char_name = world
                 .characters
                 .get(character)
@@ -2880,6 +2881,7 @@ fn apply_ai_actions(
                 kind,
                 character,
                 target_system,
+                target_character,
                 duration_roll,
             } => {
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
@@ -2890,6 +2892,7 @@ fn apply_ai_actions(
                     ai_faction.as_mission_faction(),
                     *character,
                     *target_system,
+                    *target_character,
                     roll,
                 );
                 ai_state.mark_busy(*character);

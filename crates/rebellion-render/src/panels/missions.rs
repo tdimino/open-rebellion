@@ -33,6 +33,8 @@ pub struct MissionsPanelState {
     pub selected_commander: Option<CharacterKey>,
     pub selected_kind: Option<MissionKind>,
     pub selected_target: Option<SystemKey>,
+    /// Target character for character-targeted missions (Assassination, Abduction, Recruitment).
+    pub selected_target_character: Option<CharacterKey>,
 
     /// Pre-supplied [0,1) roll used if the player dispatches.
     /// Refreshed each frame so consecutive dispatches get different durations.
@@ -364,12 +366,14 @@ fn draw_dispatch_tab(
                     faction: player_faction,
                     character,
                     target,
+                    target_character: panel_state.selected_target_character,
                     duration_roll: panel_state.pending_duration_roll,
                 });
                 // Reset form after dispatch.
                 panel_state.selected_commander = None;
                 panel_state.selected_kind = None;
                 panel_state.selected_target = None;
+                panel_state.selected_target_character = None;
             }
         }
     });

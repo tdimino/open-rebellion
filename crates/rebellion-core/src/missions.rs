@@ -432,19 +432,22 @@ impl MissionState {
         faction: MissionFaction,
         character: CharacterKey,
         target_system: SystemKey,
+        target_character: Option<CharacterKey>,
         duration_roll: f64,
     ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let duration = kind.sample_duration(duration_roll);
-        self.missions.push_back(ActiveMission::new(
+        let mut mission = ActiveMission::new(
             id,
             kind,
             faction,
             character,
             target_system,
             duration,
-        ));
+        );
+        mission.target_character = target_character;
+        self.missions.push_back(mission);
         id
     }
 
@@ -458,6 +461,7 @@ impl MissionState {
         faction: MissionFaction,
         character: CharacterKey,
         target_system: SystemKey,
+        target_character: Option<CharacterKey>,
         duration_roll: f64,
         world: &GameWorld,
     ) -> Option<u64> {
@@ -466,7 +470,7 @@ impl MissionState {
                 return None;
             }
         }
-        Some(self.dispatch(kind, faction, character, target_system, duration_roll))
+        Some(self.dispatch(kind, faction, character, target_system, target_character, duration_roll))
     }
 
     /// Cancel a mission by id. Returns the mission if found, None otherwise.
@@ -1117,6 +1121,7 @@ mod tests {
             MissionFaction::Alliance,
             character,
             system,
+            None,
             0.5,
         );
         assert_eq!(state.len(), 1);
@@ -1135,6 +1140,7 @@ mod tests {
             MissionFaction::Alliance,
             character,
             system,
+            None,
             0.5,
         );
         let removed = state.cancel(id);
@@ -1201,6 +1207,7 @@ mod tests {
             MissionFaction::Alliance,
             character,
             system,
+            None,
             0.5,
         );
         let world = minimal_world();
@@ -1219,6 +1226,7 @@ mod tests {
             MissionFaction::Alliance,
             character,
             system,
+            None,
             0.0,
         );
         let initial = state.missions()[0].ticks_remaining;
@@ -1955,6 +1963,7 @@ mod tests {
             MissionFaction::Alliance,
             character,
             system,
+            None,
             0.5,
             &world,
         );

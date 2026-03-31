@@ -943,10 +943,10 @@ fn apply_ai_actions_inner(
     let mut roll_idx = 0;
     for action in actions {
         match action {
-            AIAction::DispatchMission { kind, character, target_system, duration_roll } => {
+            AIAction::DispatchMission { kind, character, target_system, target_character, duration_roll } => {
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
                 roll_idx += 1;
-                mission_state.dispatch(*kind, mission_faction, *character, *target_system, roll);
+                mission_state.dispatch(*kind, mission_faction, *character, *target_system, *target_character, roll);
                 ai_state.mark_busy(*character);
             }
             AIAction::EnqueueProduction { system, kind, ticks } => {

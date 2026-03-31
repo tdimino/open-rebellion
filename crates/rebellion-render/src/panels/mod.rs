@@ -86,6 +86,7 @@ pub enum PanelAction {
         faction: MissionFaction,
         character: CharacterKey,
         target: SystemKey,
+        target_character: Option<CharacterKey>,
         duration_roll: f64,
     },
     /// Cancel a mission that is currently in progress.

@@ -211,6 +211,8 @@ pub enum AIAction {
         kind: MissionKind,
         character: CharacterKey,
         target_system: SystemKey,
+        /// Target character for character-targeted missions (Assassination, Abduction, Recruitment).
+        target_character: Option<CharacterKey>,
         /// Suggested duration roll (0..1) for `MissionState::dispatch`.
         duration_roll: f64,
     },
@@ -395,6 +397,7 @@ impl AISystem {
                         kind: MissionKind::Diplomacy,
                         character: char_key,
                         target_system: target,
+                        target_character: None,
                         duration_roll: 0.5,
                     });
                     continue;
@@ -408,6 +411,7 @@ impl AISystem {
                         kind: MissionKind::Recruitment,
                         character: char_key,
                         target_system: base_system,
+                        target_character: None,
                         duration_roll: 0.5,
                     });
                     continue;
@@ -421,6 +425,7 @@ impl AISystem {
                         kind: MissionKind::Diplomacy,
                         character: char_key,
                         target_system: target,
+                        target_character: None,
                         duration_roll: 0.5,
                     });
                 }
@@ -558,6 +563,7 @@ impl AISystem {
                 kind: MissionKind::Sabotage,
                 character: char_key,
                 target_system: *target_sys,
+                target_character: None,
                 duration_roll: 0.5,
             });
             op_idx += 1;
@@ -603,7 +609,7 @@ impl AISystem {
             .map(|(k, _)| k);
 
         if let Some(target_sys) = assassination_base {
-            for _ in &enemy_major_chars {
+            for &target_char in &enemy_major_chars {
                 if ops_queued >= config.ai.max_covert_ops_per_eval || op_idx >= operatives.len() {
                     break;
                 }
@@ -618,6 +624,7 @@ impl AISystem {
                     kind: MissionKind::Assassination,
                     character: char_key,
                     target_system: target_sys,
+                    target_character: Some(target_char),
                     duration_roll: 0.5,
                 });
                 op_idx += 1;
@@ -651,6 +658,7 @@ impl AISystem {
                 kind: MissionKind::Espionage,
                 character: char_key,
                 target_system: *target_sys,
+                target_character: None,
                 duration_roll: 0.5,
             });
             op_idx += 1;
