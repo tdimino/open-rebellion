@@ -11,7 +11,7 @@
     "min_transit_ticks": 10
   },
   "production": {
-    "capship_threshold": 5,
+    "capship_threshold": 6,
     "fighter_ratio": 3
   },
   "scoring": {

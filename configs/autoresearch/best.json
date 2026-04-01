@@ -47,7 +47,7 @@
   },
   "production": {
     "capship_threshold": {
-      "value": 5,
+      "value": 6,
       "min": 2,
       "max": 10,
       "step": 1
