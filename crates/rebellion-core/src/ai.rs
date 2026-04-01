@@ -298,6 +298,7 @@ impl AISystem {
         // Run each heuristic module.
         Self::evaluate_officers(state, world, faction, config, &mut actions);
         Self::evaluate_espionage(state, world, faction, config, &mut actions);
+        Self::evaluate_rescue(state, world, faction, config, &mut actions);
         Self::evaluate_research(state, world, research_state, faction, &mut actions);
         Self::evaluate_production(world, mfg_state, faction, config, &mut actions);
         Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, config, &mut actions);
@@ -367,6 +368,8 @@ impl AISystem {
         // Find the best diplomacy target: lowest-popularity system for this faction,
         // below the popularity cap.
         let diplomacy_target = Self::find_diplomacy_target(world, faction, config.ai.diplomacy_target_popularity_cap);
+        let incite_target = Self::find_incite_target(world, faction);
+        let mut incite_dispatched = false;
 
         for (char_key, character) in world.characters.iter() {
             if !Self::can_dispatch(state, faction, char_key, character) {
@@ -392,8 +395,23 @@ impl AISystem {
                 continue;
             }
 
-            // High-diplomacy characters: send on diplomacy missions.
+            // High-diplomacy characters: alternate between diplomacy and incite uprising.
+            // First eligible diplomat → incite uprising on enemy turf.
+            // Remaining diplomats → standard diplomacy on low-popularity systems.
             if diplomacy_score > config.ai.diplomacy_skill_threshold {
+                if !incite_dispatched {
+                    if let Some(target) = incite_target {
+                        actions.push(AIAction::DispatchMission {
+                            kind: MissionKind::InciteUprising,
+                            character: char_key,
+                            target_system: target,
+                            target_character: None,
+                            duration_roll: 0.5,
+                        });
+                        incite_dispatched = true;
+                        continue;
+                    }
+                }
                 if let Some(target) = diplomacy_target {
                     actions.push(AIAction::DispatchMission {
                         kind: MissionKind::Diplomacy,
@@ -468,12 +486,41 @@ impl AISystem {
             .map(|(k, _)| k)
     }
 
+    /// Find an enemy-controlled system suitable for inciting uprising.
+    /// Targets systems where the enemy has high popularity (firmly controlled).
+    fn find_incite_target(world: &GameWorld, faction: AiFaction) -> Option<SystemKey> {
+        world
+            .systems
+            .iter()
+            .filter(|(_, s)| {
+                let enemy_pop = match faction {
+                    AiFaction::Alliance => s.popularity_empire,
+                    AiFaction::Empire => s.popularity_alliance,
+                };
+                enemy_pop > 0.5
+            })
+            .max_by(|(_, a), (_, b)| {
+                let enemy_a = match faction {
+                    AiFaction::Alliance => a.popularity_empire,
+                    AiFaction::Empire => a.popularity_alliance,
+                };
+                let enemy_b = match faction {
+                    AiFaction::Alliance => b.popularity_empire,
+                    AiFaction::Empire => b.popularity_alliance,
+                };
+                enemy_a
+                    .partial_cmp(&enemy_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(k, _)| k)
+    }
+
     // -----------------------------------------------------------------------
     // Espionage heuristics
     // -----------------------------------------------------------------------
 
-    /// Dispatch covert operatives on Sabotage, Assassination, and Espionage
-    /// missions against the enemy faction.
+    /// Dispatch covert operatives on Sabotage, Assassination, Abduction, and
+    /// Espionage missions against the enemy faction.
     ///
     /// Priority order (each pass picks the best available character for the
     /// best available target):
@@ -634,6 +681,30 @@ impl AISystem {
             }
         }
 
+        // ── Priority 2b: Abduction of enemy major characters ─────────────────
+        // Uses remaining operatives with espionage skill to capture enemy leaders.
+        if let Some(target_sys) = assassination_base {
+            for &target_char in &enemy_major_chars {
+                if ops_queued >= config.ai.max_covert_ops_per_eval || op_idx >= operatives.len() {
+                    break;
+                }
+                let (char_key, esp_score) = operatives[op_idx];
+                if !Self::expected_success(world, MissionKind::Abduction, esp_score, config.ai.covert_min_success_prob) {
+                    op_idx += 1;
+                    continue;
+                }
+                actions.push(AIAction::DispatchMission {
+                    kind: MissionKind::Abduction,
+                    character: char_key,
+                    target_system: target_sys,
+                    target_character: Some(target_char),
+                    duration_roll: 0.5,
+                });
+                op_idx += 1;
+                ops_queued += 1;
+            }
+        }
+
         // ── Priority 3: Intelligence gathering on unexplored enemy systems ────
         let unexplored_targets: Vec<SystemKey> = world
             .systems
@@ -689,6 +760,73 @@ impl AISystem {
         };
 
         prob_pct / 100.0 >= min_prob
+    }
+
+    // -----------------------------------------------------------------------
+    // Rescue heuristics
+    // -----------------------------------------------------------------------
+
+    /// Dispatch a rescue mission to free captive allies.
+    ///
+    /// Scans for characters held captive by the enemy, then finds an available
+    /// character with sufficient combat skill to mount a rescue.
+    fn evaluate_rescue(
+        state: &AIState,
+        world: &GameWorld,
+        faction: AiFaction,
+        config: &GameConfig,
+        actions: &mut Vec<AIAction>,
+    ) {
+        // Find captive allies (our characters held by the enemy).
+        let captives: Vec<(CharacterKey, SystemKey)> = world
+            .characters
+            .iter()
+            .filter_map(|(key, c)| {
+                if c.is_captive && faction.owns_character(c) {
+                    c.current_system.map(|sys| (key, sys))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if captives.is_empty() {
+            return;
+        }
+
+        // Find the best available rescue operative (highest combat skill).
+        let mut best: Option<(CharacterKey, u32)> = None;
+        for (char_key, character) in world.characters.iter() {
+            if !Self::can_dispatch(state, faction, char_key, character) {
+                continue;
+            }
+            let combat_score = character.combat.base + character.combat.variance / 2;
+            if combat_score < 30 {
+                continue;
+            }
+            if !Self::expected_success(
+                world,
+                MissionKind::Rescue,
+                combat_score,
+                config.ai.covert_min_success_prob,
+            ) {
+                continue;
+            }
+            if best.map_or(true, |(_, prev)| combat_score > prev) {
+                best = Some((char_key, combat_score));
+            }
+        }
+
+        if let Some((rescuer, _)) = best {
+            let (captive_key, captive_system) = captives[0];
+            actions.push(AIAction::DispatchMission {
+                kind: MissionKind::Rescue,
+                character: rescuer,
+                target_system: captive_system,
+                target_character: Some(captive_key),
+                duration_roll: 0.5,
+            });
+        }
     }
 
     // -----------------------------------------------------------------------
