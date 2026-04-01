@@ -828,13 +828,14 @@ fn apply_mission_effects_inner(
                 }
                 world.characters.remove(*character);
             }
-            MissionEffect::CharacterCaptured { character, captured_by, .. } => {
+            MissionEffect::CharacterCaptured { character, captured_by, at_system } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.is_captive = true;
                     c.captured_by = Some(match captured_by {
                         MissionFaction::Alliance => rebellion_core::dat::Faction::Alliance,
                         MissionFaction::Empire => rebellion_core::dat::Faction::Empire,
                     });
+                    c.current_system = Some(*at_system);
                 }
                 for (_, fleet) in world.fleets.iter_mut() {
                     fleet.characters.retain(|&k| k != *character);
