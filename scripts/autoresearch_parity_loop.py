@@ -138,24 +138,44 @@ def build_and_test() -> bool:
     return True
 
 
-def run_claude_mutation(program_md: Path, score: float, iteration: int) -> bool:
+def get_live_sub_metrics(binary: Path, seed: int, ticks: int) -> str:
+    """Run one eval and format sub-metrics for prompt injection."""
+    jsonl = run_campaign(binary, seed, ticks)
+    result = evaluate(jsonl)
+    lines = []
+    for key in ("economy_activity", "mission_completeness", "combat_completeness",
+                "event_coverage", "system_state_completeness", "repair_activity"):
+        val = result.get(key, 0.0)
+        status = "DONE" if val >= 0.99 else f"{val:.3f}"
+        lines.append(f"  {key}: {status}")
+    return "\n".join(lines)
+
+
+def run_claude_mutation(program_md: Path, score: float, iteration: int, sub_metrics: str) -> bool:
     """Use claude -p to generate a code mutation. Returns True if claude succeeds."""
     program_content = program_md.read_text()
-    prompt = f"""<program>
+    prompt = f"""You are an autoresearch agent improving simulation parity for Open Rebellion.
+
+<program>
 {program_content}
 </program>
 
 Current parity score: {score:.4f} (iteration {iteration}).
+Live sub-metric breakdown:
+{sub_metrics}
 
 Implement exactly ONE improvement from the priority list above.
-Pick the highest-priority item that hasn't been done yet.
+Pick the highest-priority item whose sub-metric is still below 1.0.
 Make the smallest change that moves the eval score upward.
 
-After making the change, verify with:
-  PATH="/usr/bin:$PATH" cargo test -p rebellion-core -p rebellion-data
+After making the change:
+1. Run: PATH="/usr/bin:$PATH" cargo test -p rebellion-core -p rebellion-data
+2. Build: PATH="/usr/bin:$PATH" cargo build -p rebellion-playtest --release
+3. Eval: ./target/release/rebellion-playtest data/base --seed 42 --ticks 5000 --dual-ai --output /tmp/parity-check.jsonl && python3 scripts/eval_parity.py /tmp/parity-check.jsonl --json
+4. Confirm the targeted sub-metric improved. If not, debug before finishing.
 
-Do NOT modify tuning.rs, config JSON, or eval scripts.
-Do NOT make more than one logical change."""
+FORBIDDEN — do NOT modify: scripts/eval_parity.py, scripts/autoresearch_parity_loop.py, crates/rebellion-core/src/tuning.rs, configs/.
+Do NOT create new files or modules. Do NOT make more than one logical change."""
 
     env = dict(os.environ)
     # Use subscription, not API key
@@ -173,6 +193,7 @@ Do NOT make more than one logical change."""
 def git_commit(message: str):
     """Create a git commit with all changes."""
     subprocess.run(["git", "add", "-u"], cwd=str(PROJECT_DIR), capture_output=True)
+    subprocess.run(["git", "add", "crates/", "tools/"], cwd=str(PROJECT_DIR), capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", message],
         cwd=str(PROJECT_DIR), capture_output=True, text=True,
@@ -256,9 +277,13 @@ def main():
         print(f"{'─'*60}")
         print(f"Iteration {iteration}/{args.iterations} (incumbent: {incumbent_score:.4f})")
 
+        # Get live sub-metrics for prompt context
+        sub_metrics = get_live_sub_metrics(binary, args.seeds[0], args.ticks)
+        print(f"  Sub-metrics:\n{sub_metrics}")
+
         # Mutate via claude -p
         t0 = time.time()
-        success = run_claude_mutation(PROGRAM_MD, incumbent_score, iteration)
+        success = run_claude_mutation(PROGRAM_MD, incumbent_score, iteration, sub_metrics)
         mutation_time = time.time() - t0
 
         if not success:
