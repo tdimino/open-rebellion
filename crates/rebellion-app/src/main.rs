@@ -882,7 +882,7 @@ async fn main() {
                 &mut mfg_state,
                 &mut movement_state,
                 &mut research_state,
-                &world,
+                &mut world,
                 &mut msg_log,
                 tick_events.last().map(|e| e.tick).unwrap_or(0),
                 #[cfg(not(target_arch = "wasm32"))]
@@ -913,7 +913,7 @@ async fn main() {
                     &mut mfg_state,
                     &mut movement_state,
                     &mut research_state,
-                    &world,
+                    &mut world,
                     &mut msg_log,
                     tick_events.last().map(|e| e.tick).unwrap_or(0),
                     #[cfg(not(target_arch = "wasm32"))]
@@ -2868,7 +2868,7 @@ fn apply_ai_actions(
     mfg_state: &mut ManufacturingState,
     movement_state: &mut MovementState,
     research_state: &mut ResearchState,
-    world: &GameWorld,
+    world: &mut GameWorld,
     log: &mut MessageLog,
     tick: u64,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
@@ -2973,6 +2973,22 @@ fn apply_ai_actions(
                     tick,
                     format!("{} assigned to {:?} research ({} ticks)", char_name, tech_type, ticks),
                     MessageCategory::Ai,
+                ));
+            }
+            AIAction::MoveTroops { troop, from_system, to_system } => {
+                if let Some(src) = world.systems.get_mut(*from_system) {
+                    src.ground_units.retain(|&k| k != *troop);
+                }
+                if let Some(dst) = world.systems.get_mut(*to_system) {
+                    dst.ground_units.push(*troop);
+                }
+                let to_name = world.systems.get(*to_system)
+                    .map(|s| s.name.as_str()).unwrap_or("unknown");
+                log.push(GameMessage::at_system(
+                    tick,
+                    format!("Troops redeployed to {}", to_name),
+                    MessageCategory::Ai,
+                    *to_system,
                 ));
             }
         }

@@ -103,6 +103,13 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
                 "ticks": ticks,
             })
         }
+        AIAction::MoveTroops { from_system, to_system, .. } => {
+            serde_json::json!({
+                "type": "MoveTroops",
+                "from": sys_name(world, *from_system),
+                "to": sys_name(world, *to_system),
+            })
+        }
     }
 }
 
@@ -490,7 +497,7 @@ impl PerceptionIntegrator {
         mfg_state: &mut ManufacturingState,
         movement_state: &mut MovementState,
         research_state: &mut ResearchState,
-        world: &GameWorld,
+        world: &mut GameWorld,
         _tick: u64,
         config: &rebellion_core::tuning::GameConfig,
         is_dual: bool,
@@ -975,7 +982,7 @@ fn apply_ai_actions_inner(
     mfg_state: &mut ManufacturingState,
     movement_state: &mut MovementState,
     research_state: &mut ResearchState,
-    world: &GameWorld,
+    world: &mut GameWorld,
     _tick: u64,
     config: &rebellion_core::tuning::GameConfig,
 ) {
@@ -1021,6 +1028,15 @@ fn apply_ai_actions_inner(
                         );
                         movement_state.order(*fleet, f.location, *to_system, transit);
                     }
+                }
+            }
+            AIAction::MoveTroops { troop, from_system, to_system } => {
+                // Remove from source system and add to destination.
+                if let Some(src) = world.systems.get_mut(*from_system) {
+                    src.ground_units.retain(|&k| k != *troop);
+                }
+                if let Some(dst) = world.systems.get_mut(*to_system) {
+                    dst.ground_units.push(*troop);
                 }
             }
         }

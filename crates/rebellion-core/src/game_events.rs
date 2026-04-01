@@ -127,6 +127,7 @@ pub const EVT_SIDE_CHANGE: &str = "side_change";
 pub const EVT_EMPEROR_ARRIVAL: &str = "emperor_arrival";
 pub const EVT_JABBA_PRISONERS: &str = "jabba_prisoners";
 pub const EVT_HAN_RESCUE: &str = "han_rescue";
+pub const EVT_TROOP_MOVED: &str = "troop_moved";
 
 #[cfg(test)]
 mod tests {
@@ -221,6 +222,7 @@ mod tests {
             EVT_EMPEROR_ARRIVAL,
             EVT_JABBA_PRISONERS,
             EVT_HAN_RESCUE,
+            EVT_TROOP_MOVED,
             // Heartbeat events
             EVT_UPRISING_CHECK,
             EVT_BETRAYAL_CHECK,

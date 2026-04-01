@@ -238,6 +238,13 @@ pub enum AIAction {
         tech_type: TechType,
         ticks: u32,
     },
+
+    /// Relocate a troop unit from one friendly system to another.
+    MoveTroops {
+        troop: TroopKey,
+        from_system: SystemKey,
+        to_system: SystemKey,
+    },
 }
 
 /// Why the AI is moving a fleet.
@@ -302,6 +309,7 @@ impl AISystem {
         Self::evaluate_research(state, world, research_state, faction, &mut actions);
         Self::evaluate_production(world, mfg_state, faction, config, &mut actions);
         Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, config, &mut actions);
+        Self::evaluate_troop_deployment(world, faction, &mut actions);
 
         actions
     }
@@ -1279,6 +1287,80 @@ impl AISystem {
             + proximity * config.ai.weight_proximity
             + deconfliction * config.ai.weight_deconfliction
             + freshness * config.ai.weight_freshness
+    }
+
+    /// Redistribute troops from oversupplied to undersupplied friendly systems.
+    ///
+    /// Scans all controlled systems: those with > 3 friendly troops are donors,
+    /// those with < 1 are receivers (prioritizing HQ). Moves one troop per
+    /// donor-receiver pair per evaluation cycle.
+    fn evaluate_troop_deployment(
+        world: &GameWorld,
+        faction: AiFaction,
+        actions: &mut Vec<AIAction>,
+    ) {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+        let our_faction = if is_alliance {
+            crate::dat::Faction::Alliance
+        } else {
+            crate::dat::Faction::Empire
+        };
+
+        // Collect garrison counts per controlled system.
+        let mut donors: Vec<(SystemKey, Vec<TroopKey>)> = Vec::new();
+        let mut receivers: Vec<(SystemKey, bool)> = Vec::new(); // (system, is_hq)
+
+        for (sys_key, system) in world.systems.iter() {
+            if !system.control.is_controlled_by(our_faction) {
+                continue;
+            }
+
+            let friendly_troops: Vec<TroopKey> = system
+                .ground_units
+                .iter()
+                .filter(|tk| {
+                    world
+                        .troops
+                        .get(**tk)
+                        .map(|t| t.is_alliance == is_alliance)
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
+
+            let count = friendly_troops.len();
+            if count > 3 {
+                donors.push((sys_key, friendly_troops));
+            } else if count < 1 {
+                let is_hq = system.is_headquarters;
+                receivers.push((sys_key, is_hq));
+            }
+        }
+
+        if donors.is_empty() || receivers.is_empty() {
+            return;
+        }
+
+        // Prioritize: HQ systems first, then others.
+        receivers.sort_by_key(|(_, is_hq)| if *is_hq { 0 } else { 1 });
+
+        // Move one troop per donor-receiver pair.
+        let mut receiver_idx = 0;
+        for (donor_sys, friendly_troops) in &donors {
+            if receiver_idx >= receivers.len() {
+                break;
+            }
+            // Take the last friendly troop from the donor.
+            if let Some(&troop_key) = friendly_troops.last() {
+                let (recv_sys, _) = receivers[receiver_idx];
+                actions.push(AIAction::MoveTroops {
+                    troop: troop_key,
+                    from_system: *donor_sys,
+                    to_system: recv_sys,
+                });
+                receiver_idx += 1;
+            }
+        }
     }
 
     /// Two-pass fleet deployment — ports the original game's distributed targeting.
