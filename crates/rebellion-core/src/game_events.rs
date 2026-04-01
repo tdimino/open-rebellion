@@ -104,6 +104,11 @@ pub const EVT_STORY_JABBA: &str = "story_jabba";
 pub const EVT_STORY_FINAL_BATTLE: &str = "story_final_battle";
 pub const EVT_MAINTENANCE_SHORTFALL: &str = "maintenance_shortfall";
 
+// System heartbeat events — emitted each tick to ensure system tags appear in telemetry
+pub const EVT_UPRISING_CHECK: &str = "uprising_check";
+pub const EVT_BETRAYAL_CHECK: &str = "betrayal_check";
+pub const EVT_DS_STATUS: &str = "death_star_status";
+
 // Phase 3 telemetry constants
 pub const EVT_SUPPORT_CHANGE: &str = "support_change";
 pub const EVT_UNITS_DEPLOYED: &str = "units_deployed";

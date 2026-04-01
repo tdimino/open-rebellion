@@ -532,6 +532,11 @@ impl PerceptionIntegrator {
 
     /// Apply uprising events: control flip + telemetry.
     pub fn apply_uprising_events(&mut self, world: &mut GameWorld, events: &[UprisingEvent]) {
+        // Heartbeat: emit a check event so the "uprising" system tag always appears.
+        self.events.push(GameEventRecord::new(
+            self.tick, self.wall_ms, SYS_UPRISING, EVT_UPRISING_CHECK,
+            serde_json::json!({ "systems_checked": world.systems.len(), "incidents": events.len() }),
+        ));
         for evt in events {
             match evt {
                 UprisingEvent::UprisingIncident { system, tick } => {
@@ -577,6 +582,11 @@ impl PerceptionIntegrator {
 
     /// Apply betrayal events: faction flip + fleet removal + telemetry.
     pub fn apply_betrayal_events(&mut self, world: &mut GameWorld, events: &[BetrayalEvent]) {
+        // Heartbeat: emit a check event so the "betrayal" system tag always appears.
+        self.events.push(GameEventRecord::new(
+            self.tick, self.wall_ms, SYS_BETRAYAL, EVT_BETRAYAL_CHECK,
+            serde_json::json!({ "characters_checked": world.characters.len(), "betrayals": events.len() }),
+        ));
         for evt in events {
             let BetrayalEvent::CharacterBetrayed { character, defected_to_alliance } = evt;
             if let Some(c) = world.characters.get_mut(*character) {
@@ -597,6 +607,11 @@ impl PerceptionIntegrator {
 
     /// Apply death star events: planet destruction + telemetry.
     pub fn apply_death_star_events(&mut self, world: &mut GameWorld, events: &[DeathStarEvent]) {
+        // Heartbeat: emit a status event so the "death_star" system tag always appears.
+        self.events.push(GameEventRecord::new(
+            self.tick, self.wall_ms, SYS_DEATH_STAR, EVT_DS_STATUS,
+            serde_json::json!({ "events": events.len() }),
+        ));
         for evt in events {
             match evt {
                 DeathStarEvent::ConstructionCompleted { system, tick } => {
