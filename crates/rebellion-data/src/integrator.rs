@@ -17,7 +17,7 @@ use rebellion_core::betrayal::BetrayalEvent;
 use rebellion_core::blockade::BlockadeEvent;
 use rebellion_core::combat::{CombatSide, GroundCombatResult, SpaceCombatResult};
 use rebellion_core::death_star::{DeathStarEvent, DeathStarState};
-use rebellion_core::economy::EconomyEvent;
+use rebellion_core::economy::{EconomyEvent, EconomyState};
 use rebellion_core::events::{EventAction, FiredEvent, SkillField};
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::*;
@@ -189,6 +189,7 @@ impl PerceptionIntegrator {
         &mut self,
         world: &GameWorld,
         movement_len: usize,
+        economy: &EconomyState,
     ) {
         let mut alliance_systems = 0u32;
         let mut empire_systems = 0u32;
@@ -200,6 +201,21 @@ impl PerceptionIntegrator {
                 _ => neutral_systems += 1,
             }
         }
+
+        // Build per-system economy data for parity eval
+        let mut systems_map = serde_json::Map::new();
+        for (key, sys) in world.systems.iter() {
+            if let Some(econ) = economy.per_system.get(&key) {
+                systems_map.insert(sys.name.clone(), serde_json::json!({
+                    "production_modifier": econ.production_modifier,
+                    "troop_surplus": econ.summary.troop_surplus,
+                    "has_shipyard": econ.summary.has_shipyard,
+                    "fleet_posture": format!("{:?}", econ.summary.fleet_posture),
+                    "collection_rate": econ.collection_rate,
+                }));
+            }
+        }
+
         self.emit("snapshot", EVT_CAMPAIGN_SNAPSHOT, serde_json::json!({
             "tick": self.tick,
             "alliance_systems": alliance_systems,
@@ -207,6 +223,7 @@ impl PerceptionIntegrator {
             "neutral_systems": neutral_systems,
             "fleets": world.fleets.len(),
             "in_transit": movement_len,
+            "systems": systems_map,
         }));
     }
 

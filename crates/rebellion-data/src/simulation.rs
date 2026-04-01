@@ -304,7 +304,7 @@ pub fn run_simulation_tick(
 
     // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────
     if current_tick % 250 == 0 && current_tick > 0 {
-        integrator.emit_campaign_snapshot(world, states.movement.len());
+        integrator.emit_campaign_snapshot(world, states.movement.len(), &states.economy);
     }
 
     integrator.finish()
