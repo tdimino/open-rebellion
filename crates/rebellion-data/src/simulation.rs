@@ -177,15 +177,22 @@ pub fn run_simulation_tick(
             AISystem::record_battle(ai2, sys_key, current_tick);
         }
 
-        // Ground combat after attacker wins space
-        if space_result.winner == CombatSide::Attacker {
+        // Ground combat + bombardment after either side wins space combat.
+        // Alliance is always coded as attacker, Empire as defender in the trigger above.
+        // The space combat winner gets to follow up with ground assault + orbital bombardment.
+        let winner_info = match space_result.winner {
+            CombatSide::Attacker => Some((atk_fleet, true)),   // Alliance won
+            CombatSide::Defender => Some((def_fleet, false)),   // Empire won
+            CombatSide::Draw => None,
+        };
+        if let Some((winner_fleet, winner_is_alliance)) = winner_info {
             let ground_rolls = take_rolls(256);
             let ground_result =
-                CombatSystem::resolve_ground(world, sys_key, true, world.difficulty_index, &ground_rolls, current_tick);
+                CombatSystem::resolve_ground(world, sys_key, winner_is_alliance, world.difficulty_index, &ground_rolls, current_tick);
             integrator.apply_ground_combat(world, &ground_result);
 
             let brd_result =
-                BombardmentSystem::resolve_bombardment(world, atk_fleet, sys_key, world.difficulty_index, current_tick);
+                BombardmentSystem::resolve_bombardment(world, winner_fleet, sys_key, world.difficulty_index, current_tick);
             integrator.emit_bombardment(world, sys_key, brd_result.damage);
         }
     }
