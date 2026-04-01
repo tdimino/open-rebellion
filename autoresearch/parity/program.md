@@ -4,7 +4,7 @@ You are implementing missing game mechanics in Open Rebellion, a Rust reimplemen
 
 ## Current Parity Score
 
-Baseline: 0.6426 (average across 3 seeds)
+Baseline: 0.6093 (average across 3 seeds, weights: eco=0.25 mis=0.20 com=0.20 evt=0.15 sys=0.15 rep=0.05)
 
 ## Eval Sub-Metrics (what to improve)
 
