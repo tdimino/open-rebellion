@@ -172,6 +172,14 @@ impl PerceptionIntegrator {
         }
     }
 
+    /// Heartbeat: emit a check event so the "victory" system tag always appears.
+    pub fn emit_victory_check(&mut self, victory_state: &rebellion_core::victory::VictoryState) {
+        self.events.push(GameEventRecord::new(
+            self.tick, self.wall_ms, SYS_VICTORY, EVT_VICTORY_CHECK,
+            serde_json::json!({ "resolved": victory_state.resolved }),
+        ));
+    }
+
     /// Emit victory telemetry and mark victory resolved.
     pub fn apply_victory(
         &mut self,
@@ -696,6 +704,11 @@ impl PerceptionIntegrator {
 
     /// Apply jedi events: tier advancement + discovery + telemetry.
     pub fn apply_jedi_events(&mut self, world: &mut GameWorld, events: &[JediEvent], jedi_state: &mut JediState) {
+        // Heartbeat: emit a check event so the "jedi" system tag always appears.
+        self.events.push(GameEventRecord::new(
+            self.tick, self.wall_ms, SYS_JEDI, EVT_JEDI_CHECK,
+            serde_json::json!({ "training": jedi_state.training.len(), "events": events.len() }),
+        ));
         for evt in events {
             match evt {
                 JediEvent::TierAdvanced { character, new_tier } => {

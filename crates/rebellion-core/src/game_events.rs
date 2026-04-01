@@ -108,6 +108,8 @@ pub const EVT_MAINTENANCE_SHORTFALL: &str = "maintenance_shortfall";
 pub const EVT_UPRISING_CHECK: &str = "uprising_check";
 pub const EVT_BETRAYAL_CHECK: &str = "betrayal_check";
 pub const EVT_DS_STATUS: &str = "death_star_status";
+pub const EVT_JEDI_CHECK: &str = "jedi_check";
+pub const EVT_VICTORY_CHECK: &str = "victory_status";
 
 // Phase 3 telemetry constants
 pub const EVT_SUPPORT_CHANGE: &str = "support_change";
@@ -219,6 +221,12 @@ mod tests {
             EVT_EMPEROR_ARRIVAL,
             EVT_JABBA_PRISONERS,
             EVT_HAN_RESCUE,
+            // Heartbeat events
+            EVT_UPRISING_CHECK,
+            EVT_BETRAYAL_CHECK,
+            EVT_DS_STATUS,
+            EVT_JEDI_CHECK,
+            EVT_VICTORY_CHECK,
         ];
         let mut seen = std::collections::HashSet::new();
         for evt in &all {

@@ -298,6 +298,7 @@ pub fn run_simulation_tick(
     integrator.apply_jedi_events(world, &jedi_events, &mut states.jedi);
 
     // ── 14. Victory check ────────────────────────────────────────────────
+    integrator.emit_victory_check(&states.victory);
     if let Some(outcome) = VictorySystem::check(&states.victory, world, tick_events) {
         integrator.apply_victory(&outcome, &mut states.victory);
     }
