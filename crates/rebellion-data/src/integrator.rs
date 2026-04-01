@@ -366,17 +366,16 @@ impl PerceptionIntegrator {
         result: &GroundCombatResult,
     ) {
         apply_ground_combat_result_inner(result, world);
-        if !result.troop_damage.is_empty() {
-            let ground_winner = match result.winner {
-                CombatSide::Attacker => "alliance",
-                CombatSide::Defender => "empire",
-                CombatSide::Draw => "draw",
-            };
-            self.emit(SYS_COMBAT, EVT_COMBAT_GROUND, serde_json::json!({
-                "system": sys_name(world, result.system),
-                "winner": ground_winner,
-            }));
-        }
+        let ground_winner = match result.winner {
+            CombatSide::Attacker => "alliance",
+            CombatSide::Defender => "empire",
+            CombatSide::Draw => "draw",
+        };
+        self.emit(SYS_COMBAT, EVT_COMBAT_GROUND, serde_json::json!({
+            "system": sys_name(world, result.system),
+            "winner": ground_winner,
+            "engagements": result.troop_damage.len(),
+        }));
     }
 
     /// Emit bombardment telemetry (no world mutation — bombardment applies via damage field).
