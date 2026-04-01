@@ -182,12 +182,16 @@ Do NOT create new files or modules. Do NOT make more than one logical change."""
     env.pop("ANTHROPIC_API_KEY", None)
     env["PATH"] = f"/usr/bin:{env.get('PATH', '')}"
 
-    result = subprocess.run(
-        ["claude", "-p", prompt, "--dangerously-skip-permissions", "--max-turns", "20"],
-        capture_output=True, text=True, env=env, timeout=600,
-        cwd=str(PROJECT_DIR),
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--dangerously-skip-permissions", "--max-turns", "20"],
+            capture_output=True, text=True, env=env, timeout=1800,
+            cwd=str(PROJECT_DIR),
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        print("  claude -p TIMEOUT (30min)")
+        return False
 
 
 def git_commit(message: str):
@@ -273,7 +277,8 @@ def main():
     incumbent_score = baseline_score
     improvements = 0
 
-    for iteration in range(1, args.iterations + 1):
+    try:
+     for iteration in range(1, args.iterations + 1):
         print(f"{'─'*60}")
         print(f"Iteration {iteration}/{args.iterations} (incumbent: {incumbent_score:.4f})")
 
@@ -333,6 +338,10 @@ def main():
             "delta": delta, "accepted": accepted,
             "mutation_time": mutation_time, "eval_time": eval_time,
         })
+
+    except KeyboardInterrupt:
+        print("\n  INTERRUPTED — discarding any in-progress changes")
+        git_discard()
 
     # Final report
     print(f"\n{'='*60}")
