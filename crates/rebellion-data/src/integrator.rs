@@ -1082,6 +1082,31 @@ pub fn apply_space_combat_result_inner(
             .map(|f| f.is_empty())
             .unwrap_or(true);
         if is_empty {
+            // Capture losing fleet's characters (parity: officers captured on fleet destruction).
+            let is_loser = match result.winner {
+                CombatSide::Attacker => fleet_key == result.defender_fleet,
+                CombatSide::Defender => fleet_key == result.attacker_fleet,
+                CombatSide::Draw => false,
+            };
+            if is_loser {
+                let capture_data = world.fleets.get(fleet_key).map(|f| {
+                    let captor = if f.is_alliance {
+                        rebellion_core::dat::Faction::Empire
+                    } else {
+                        rebellion_core::dat::Faction::Alliance
+                    };
+                    (f.characters.clone(), captor, f.location)
+                });
+                if let Some((chars, captor, loc)) = capture_data {
+                    for ck in chars {
+                        if let Some(c) = world.characters.get_mut(ck) {
+                            c.is_captive = true;
+                            c.captured_by = Some(captor);
+                            c.current_system = Some(loc);
+                        }
+                    }
+                }
+            }
             if let Some(fleet) = world.fleets.get(fleet_key) {
                 let loc = fleet.location;
                 if let Some(sys) = world.systems.get_mut(loc) {

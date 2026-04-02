@@ -47,7 +47,7 @@ use crate::world::{Character, ControlKind, GameWorld};
 // ---------------------------------------------------------------------------
 
 /// How many game-days between full AI re-evaluations.
-pub const AI_TICK_INTERVAL: u64 = 7;
+pub const AI_TICK_INTERVAL: u64 = 5;
 
 /// Diplomacy skill threshold above which a minor character is considered a
 /// viable diplomat (rebellion2: `officer.GetSkillValue(Diplomacy) > 60`).
@@ -640,6 +640,21 @@ impl AISystem {
             })
             .collect();
 
+        // Abduction targets: ALL enemy characters, sorted by lowest combat defense
+        // (weakest first) to maximize capture probability.
+        let mut abduction_targets: Vec<(CharacterKey, u32)> = world
+            .characters
+            .iter()
+            .filter_map(|(key, c)| {
+                if faction.owns_character(c) || c.is_captive {
+                    return None;
+                }
+                let defense = c.combat.base + c.combat.variance / 2;
+                Some((key, defense))
+            })
+            .collect();
+        abduction_targets.sort_by(|a, b| a.1.cmp(&b.1));
+
         // For assassination we need a system to target — use any enemy system as the
         // "location" proxy (the actual character is tracked by CharacterKey in effects).
         // Pick the best-populated enemy system as target anchor.
@@ -671,8 +686,10 @@ impl AISystem {
                     break;
                 }
                 let (char_key, _) = operatives[op_idx];
-                let char = &world.characters[char_key];
-                let combat_score = char.combat.base + char.combat.variance / 2;
+                let combat_score = match world.characters.get(char_key) {
+                    Some(c) => c.combat.base + c.combat.variance / 2,
+                    None => { op_idx += 1; continue; }
+                };
                 if !Self::expected_success(world, MissionKind::Assassination, combat_score, config.ai.covert_min_success_prob) {
                     op_idx += 1;
                     continue;
@@ -692,7 +709,7 @@ impl AISystem {
         // ── Priority 2b: Abduction of enemy major characters ─────────────────
         // Uses remaining operatives with espionage skill to capture enemy leaders.
         if let Some(target_sys) = assassination_base {
-            for &target_char in &enemy_major_chars {
+            for &(target_char, _) in &abduction_targets {
                 if ops_queued >= config.ai.max_covert_ops_per_eval || op_idx >= operatives.len() {
                     break;
                 }
@@ -802,38 +819,39 @@ impl AISystem {
             return;
         }
 
-        // Find the best available rescue operative (highest combat skill).
-        let mut best: Option<(CharacterKey, u32)> = None;
-        for (char_key, character) in world.characters.iter() {
-            if !Self::can_dispatch(state, faction, char_key, character) {
-                continue;
-            }
-            let combat_score = character.combat.base + character.combat.variance / 2;
-            if combat_score < 30 {
-                continue;
-            }
-            if !Self::expected_success(
-                world,
-                MissionKind::Rescue,
-                combat_score,
-                config.ai.covert_min_success_prob,
-            ) {
-                continue;
-            }
-            if best.map_or(true, |(_, prev)| combat_score > prev) {
-                best = Some((char_key, combat_score));
-            }
-        }
+        // Find available rescue operatives (combat >= 30), sorted best-first.
+        let mut operatives: Vec<(CharacterKey, u32)> = world
+            .characters
+            .iter()
+            .filter_map(|(char_key, character)| {
+                if !Self::can_dispatch(state, faction, char_key, character) {
+                    return None;
+                }
+                let combat_score = character.combat.base + character.combat.variance / 2;
+                if combat_score < 30 {
+                    return None;
+                }
+                Some((char_key, combat_score))
+            })
+            .collect();
 
-        if let Some((rescuer, _)) = best {
-            let (captive_key, captive_system) = captives[0];
-            actions.push(AIAction::DispatchMission {
-                kind: MissionKind::Rescue,
-                character: rescuer,
-                target_system: captive_system,
-                target_character: Some(captive_key),
-                duration_roll: 0.5,
-            });
+        // Best operatives first.
+        operatives.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Dispatch one rescue per captive, consuming operatives.
+        let mut op_iter = operatives.into_iter();
+        for (captive_key, captive_system) in &captives {
+            if let Some((rescuer, _)) = op_iter.next() {
+                actions.push(AIAction::DispatchMission {
+                    kind: MissionKind::Rescue,
+                    character: rescuer,
+                    target_system: *captive_system,
+                    target_character: Some(*captive_key),
+                    duration_roll: 0.5,
+                });
+            } else {
+                break; // No more operatives available.
+            }
         }
     }
 
@@ -1703,7 +1721,7 @@ mod tests {
     fn should_not_evaluate_before_interval() {
         let mut state = AIState::new(AiFaction::Empire);
         state.last_eval_tick = 0;
-        // 3 days elapsed — interval is 7
+        // 3 days elapsed — interval is 5
         assert!(!state.should_evaluate(3, AI_TICK_INTERVAL));
     }
 
@@ -1711,8 +1729,8 @@ mod tests {
     fn should_evaluate_after_interval() {
         let mut state = AIState::new(AiFaction::Empire);
         state.last_eval_tick = 0;
-        assert!(state.should_evaluate(7, AI_TICK_INTERVAL));
-        assert!(state.should_evaluate(14, AI_TICK_INTERVAL));
+        assert!(state.should_evaluate(5, AI_TICK_INTERVAL));
+        assert!(state.should_evaluate(10, AI_TICK_INTERVAL));
     }
 
     #[test]
