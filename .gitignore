@@ -80,3 +80,6 @@ ghidra-site/
 # Stage scripts
 scripts/stage-ui-assets.py
 scripts/download-ot-portraits*.py
+
+# autoresearch lab
+.lab/
