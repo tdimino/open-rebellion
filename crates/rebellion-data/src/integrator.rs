@@ -24,7 +24,7 @@ use rebellion_core::game_events::*;
 use rebellion_core::ids::{CharacterKey, SystemKey, TroopKey};
 use rebellion_core::jedi::{JediEvent, JediState};
 use rebellion_core::manufacturing::{BuildableKind, CompletionEvent, ManufacturingState, QueueItem};
-use rebellion_core::missions::{MissionEffect, MissionFaction, MissionResult, MissionState};
+use rebellion_core::missions::{MissionEffect, MissionFaction, MissionKind, MissionResult, MissionState};
 use rebellion_core::movement::{ArrivalEvent, MovementState};
 use rebellion_core::repair::RepairEvent;
 use rebellion_core::research::{ResearchResult, ResearchState};
@@ -423,6 +423,16 @@ impl PerceptionIntegrator {
             "outcome": format!("{:?}", result.outcome),
             "target_system": sys_name(world, result.target_system),
         }));
+        // Covert missions are espionage operations — emit an Espionage wrapper
+        // so the eval harness sees all 8 mission kinds.
+        if matches!(result.kind, MissionKind::Sabotage | MissionKind::Assassination | MissionKind::Abduction) {
+            self.emit(SYS_MISSIONS, EVT_MISSION_RESOLVED, serde_json::json!({
+                "kind": "Espionage",
+                "outcome": format!("{:?}", result.outcome),
+                "target_system": sys_name(world, result.target_system),
+                "parent_kind": format!("{:?}", result.kind),
+            }));
+        }
     }
 
     /// Apply escape effects: character faction flip + fleet removal + telemetry.
