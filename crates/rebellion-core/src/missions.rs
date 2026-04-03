@@ -107,6 +107,24 @@ pub enum MissionKind {
 }
 
 impl MissionKind {
+    /// Whether this mission kind is covert and subject to enemy counter-intelligence.
+    ///
+    /// Covert missions (espionage, sabotage, assassination, abduction, rescue,
+    /// Death Star sabotage) can be foiled by enemy operatives at the target system.
+    /// Non-covert missions (diplomacy, recruitment, uprising) are visible operations
+    /// that succeed or fail on their own merit without foil risk.
+    pub fn is_covert(self) -> bool {
+        matches!(
+            self,
+            MissionKind::Sabotage
+                | MissionKind::Assassination
+                | MissionKind::Espionage
+                | MissionKind::Rescue
+                | MissionKind::Abduction
+                | MissionKind::DeathStarSabotage
+        )
+    }
+
     /// DAT file stem for this kind's *MSTB probability table.
     ///
     /// This is the key used to look up `world.mission_tables`. `None` for
@@ -673,6 +691,62 @@ pub fn foil_prob(defense_score: f64, own_system: bool) -> f64 {
     quadratic_prob(defense_score, -0.001999, 0.8879, 84.61).max(0.0).min(100.0)
 }
 
+/// Compute the counter-intelligence defense score at a target system.
+///
+/// Sums the espionage skill of all enemy characters present at the system.
+/// The enemy faction is the opposite of whoever dispatched the mission.
+/// A higher score means stronger counter-intelligence, raising the foil probability.
+///
+/// From the original game: enemy operatives stationed at a system can detect
+/// and block covert missions. The system's `espionage_rating` provides a
+/// baseline; stationed characters add their espionage skill on top.
+pub fn compute_defense_score(
+    world: &GameWorld,
+    target_system: SystemKey,
+    mission_faction: MissionFaction,
+) -> f64 {
+    let sys = match world.systems.get(target_system) {
+        Some(s) => s,
+        None => return 0.0,
+    };
+
+    // Baseline from the system's own counter-intelligence rating.
+    let mut score = sys.espionage_rating as f64;
+
+    // Add espionage skill of enemy characters stationed at this system.
+    for (_key, character) in world.characters.iter() {
+        if character.current_system != Some(target_system) {
+            continue;
+        }
+        // Only count characters belonging to the opposing faction.
+        let is_enemy = match mission_faction {
+            MissionFaction::Alliance => character.is_empire,
+            MissionFaction::Empire => character.is_alliance,
+        };
+        if is_enemy {
+            // Use base espionage skill (expected value of the pair).
+            score += character.espionage.base as f64;
+        }
+    }
+
+    score
+}
+
+/// Whether the target system is controlled by the mission's faction.
+///
+/// Missions in friendly systems face no counter-intelligence threat.
+pub fn is_own_system(world: &GameWorld, target_system: SystemKey, faction: MissionFaction) -> bool {
+    let sys = match world.systems.get(target_system) {
+        Some(s) => s,
+        None => return false,
+    };
+    match sys.control.faction() {
+        Some(crate::dat::Faction::Alliance) => faction == MissionFaction::Alliance,
+        Some(crate::dat::Faction::Empire) => faction == MissionFaction::Empire,
+        _ => false,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MissionSystem
 // ---------------------------------------------------------------------------
@@ -789,8 +863,12 @@ impl MissionSystem {
             };
         }
 
+        // Compute counter-intelligence inputs for covert missions.
+        let defense_score = compute_defense_score(world, mission.target_system, mission.faction);
+        let own_system = is_own_system(world, mission.target_system, mission.faction);
+
         let (outcome, effects) =
-            Self::determine_outcome(mission, character, table_input, tick, roll, &world.mission_tables);
+            Self::determine_outcome(mission, character, table_input, tick, roll, &world.mission_tables, defense_score, own_system);
 
         MissionResult {
             mission_id: mission.id,
@@ -810,6 +888,10 @@ impl MissionSystem {
     /// falls back to quadratic coefficients otherwise. The `table_input` is
     /// a composite value computed from character skill + game context per the
     /// original REBEXE.EXE formulas (see `MissionKind::compute_table_input`).
+    ///
+    /// For covert missions, `defense_score` and `own_system` determine the
+    /// foil probability from enemy counter-intelligence. Non-covert missions
+    /// ignore the foil path entirely.
     fn determine_outcome(
         mission: &ActiveMission,
         character: Option<&Character>,
@@ -817,6 +899,8 @@ impl MissionSystem {
         _tick: u64,
         roll: f64,
         mission_tables: &HashMap<String, MstbTable>,
+        defense_score: f64,
+        own_system: bool,
     ) -> (MissionOutcome, Vec<MissionEffect>) {
         // Autoscrap always succeeds — no character or probability check needed.
         if mission.kind == MissionKind::Autoscrap {
@@ -831,12 +915,9 @@ impl MissionSystem {
         // Priority 2: quadratic fallback using raw skill_score (rebellion2 Mission.cs).
         let agent_prob = if let Some(key) = mission.kind.mstb_key() {
             if let Some(table) = mission_tables.get(key) {
-                // Use composite input from compute_table_input() — factors in popularity,
-                // resistance, and other game-state context per REBEXE.EXE sub_55ae50 etc.
                 let raw = table.lookup(table_input) as f64;
                 clamp_prob(raw, mission.kind.min_success_prob(), mission.kind.max_success_prob())
             } else {
-                // Table not loaded yet — fall back to quadratic with raw skill score.
                 let (a, b, c) = mission.kind.coefficients();
                 let raw = quadratic_prob(skill_score as f64, a, b, c);
                 clamp_prob(raw, mission.kind.min_success_prob(), mission.kind.max_success_prob())
@@ -845,17 +926,30 @@ impl MissionSystem {
             100.0 // No MSTB key → always succeeds (only Autoscrap, handled above)
         };
 
-        // Foil probability: 0 until counter-espionage defense score is tracked.
-        // This is consistent with rebellion2's own-system behavior and is a safe
-        // stub until the defense score system is implemented.
-        let foil = foil_prob(0.0, true);
-        let success_prob = total_success_prob(agent_prob, foil);
+        // Counter-intelligence foil check for covert missions.
+        // From Mission.cs FoilProbability: quadratic formula on defense_score.
+        // Non-covert missions (diplomacy, recruitment, uprising) are never foiled.
+        let foil_pct = if mission.kind.is_covert() {
+            foil_prob(defense_score, own_system)
+        } else {
+            0.0
+        };
+        let success_prob = total_success_prob(agent_prob, foil_pct);
 
         if roll * 100.0 <= success_prob {
             let effects = Self::build_effects(mission);
             (MissionOutcome::Success, effects)
+        } else if mission.kind.is_covert() && foil_pct > 0.0 {
+            // The mission was foiled by enemy counter-intelligence.
+            // Distinguish from plain failure: if the agent would have succeeded
+            // without foil interference (roll <= agent_prob), it was specifically
+            // the counter-intel that blocked it.
+            if roll * 100.0 <= agent_prob {
+                (MissionOutcome::Foiled, Vec::new())
+            } else {
+                (MissionOutcome::Failure, Vec::new())
+            }
         } else {
-            // No foil detection until counter-intelligence is implemented.
             (MissionOutcome::Failure, Vec::new())
         }
     }
@@ -1102,6 +1196,47 @@ mod tests {
             let (min, max) = MissionKind::Diplomacy.tick_range();
             assert!(d >= min && d <= max, "duration {d} out of [{min}, {max}]");
         }
+    }
+
+    // --- is_covert classification ---
+
+    #[test]
+    fn covert_missions_classified_correctly() {
+        assert!(MissionKind::Sabotage.is_covert());
+        assert!(MissionKind::Assassination.is_covert());
+        assert!(MissionKind::Espionage.is_covert());
+        assert!(MissionKind::Rescue.is_covert());
+        assert!(MissionKind::Abduction.is_covert());
+        assert!(MissionKind::DeathStarSabotage.is_covert());
+    }
+
+    #[test]
+    fn non_covert_missions_classified_correctly() {
+        assert!(!MissionKind::Diplomacy.is_covert());
+        assert!(!MissionKind::Recruitment.is_covert());
+        assert!(!MissionKind::InciteUprising.is_covert());
+        assert!(!MissionKind::SubdueUprising.is_covert());
+        assert!(!MissionKind::Autoscrap.is_covert());
+    }
+
+    // --- Counter-intelligence integration ---
+
+    #[test]
+    fn defense_score_zero_with_no_enemies() {
+        let world = GameWorld::default();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let sys_key = sys_sm.insert(());
+        // System not in world → score is 0.
+        let score = compute_defense_score(&world, sys_key, MissionFaction::Alliance);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn own_system_returns_false_for_missing_system() {
+        let world = GameWorld::default();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let sys_key = sys_sm.insert(());
+        assert!(!is_own_system(&world, sys_key, MissionFaction::Alliance));
     }
 
     // --- MissionState tests ---
