@@ -426,9 +426,74 @@ pub use native::{
 // ---------------------------------------------------------------------------
 
 #[cfg(target_arch = "wasm32")]
-pub mod wasm_stubs {
+pub mod wasm_impl {
     use super::*;
     use std::path::{Path, PathBuf};
+
+    /// Base64 encode (standard alphabet, no padding).
+    fn b64_encode(data: &[u8]) -> String {
+        const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+        for chunk in data.chunks(3) {
+            let b0 = chunk[0] as u32;
+            let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+            let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+            let triple = (b0 << 16) | (b1 << 8) | b2;
+            out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+            out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+            if chunk.len() > 1 { out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char); }
+            if chunk.len() > 2 { out.push(CHARS[(triple & 0x3F) as usize] as char); }
+        }
+        out
+    }
+
+    /// Base64 decode (standard alphabet, tolerates missing padding).
+    fn b64_decode(s: &str) -> anyhow::Result<Vec<u8>> {
+        fn val(c: u8) -> anyhow::Result<u8> {
+            match c {
+                b'A'..=b'Z' => Ok(c - b'A'),
+                b'a'..=b'z' => Ok(c - b'a' + 26),
+                b'0'..=b'9' => Ok(c - b'0' + 52),
+                b'+' => Ok(62),
+                b'/' => Ok(63),
+                b'=' => Ok(0),
+                _ => anyhow::bail!("invalid base64 character: {}", c as char),
+            }
+        }
+        let bytes: Vec<u8> = s.bytes().filter(|b| *b != b'\n' && *b != b'\r').collect();
+        let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+        for chunk in bytes.chunks(4) {
+            if chunk.len() < 2 { break; }
+            let a = val(chunk[0])? as u32;
+            let b = val(chunk[1])? as u32;
+            let c = if chunk.len() > 2 { val(chunk[2])? as u32 } else { 0 };
+            let d = if chunk.len() > 3 { val(chunk[3])? as u32 } else { 0 };
+            let triple = (a << 18) | (b << 12) | (c << 6) | d;
+            out.push((triple >> 16) as u8);
+            if chunk.len() > 2 && chunk[2] != b'=' { out.push((triple >> 8) as u8); }
+            if chunk.len() > 3 && chunk[3] != b'=' { out.push(triple as u8); }
+        }
+        Ok(out)
+    }
+
+    /// Get the browser's localStorage.
+    fn local_storage() -> anyhow::Result<web_sys::Storage> {
+        let window = web_sys::window().ok_or_else(|| anyhow::anyhow!("no global window"))?;
+        window
+            .local_storage()
+            .map_err(|_| anyhow::anyhow!("localStorage access denied"))?
+            .ok_or_else(|| anyhow::anyhow!("localStorage not available"))
+    }
+
+    /// localStorage key for a save slot.
+    fn slot_key(slot: usize) -> String {
+        format!("rebellion_save_{}", slot)
+    }
+
+    /// localStorage key for save metadata (name + tick).
+    fn meta_key(slot: usize) -> String {
+        format!("rebellion_meta_{}", slot)
+    }
 
     pub fn default_saves_dir() -> PathBuf {
         PathBuf::from("saves")
@@ -436,41 +501,105 @@ pub mod wasm_stubs {
 
     pub fn save_slot(
         _saves_dir: &Path,
-        _slot: usize,
-        _name: &str,
-        _state: &SaveState,
+        slot: usize,
+        name: &str,
+        state: &SaveState,
         _active_mods: &[(String, String)],
     ) -> anyhow::Result<()> {
-        anyhow::bail!("save/load is not supported in the browser build")
+        let storage = local_storage()?;
+        let encoded = bincode::serialize(state)?;
+        let b64 = b64_encode(&encoded);
+
+        storage
+            .set_item(&slot_key(slot), &b64)
+            .map_err(|_| anyhow::anyhow!("localStorage.setItem failed (quota exceeded?)"))?;
+
+        // Store metadata separately (lightweight, for list_saves).
+        let meta = format!("{}|{}", name, state.clock.tick);
+        storage
+            .set_item(&meta_key(slot), &meta)
+            .map_err(|_| anyhow::anyhow!("localStorage.setItem failed for metadata"))?;
+
+        Ok(())
     }
 
     pub fn save_slot_no_mods(
-        _saves_dir: &Path,
-        _slot: usize,
-        _name: &str,
-        _state: &SaveState,
+        saves_dir: &Path,
+        slot: usize,
+        name: &str,
+        state: &SaveState,
     ) -> anyhow::Result<()> {
-        anyhow::bail!("save/load is not supported in the browser build")
+        save_slot(saves_dir, slot, name, state, &[])
     }
 
     pub fn load_slot(
         _saves_dir: &Path,
-        _slot: usize,
+        slot: usize,
     ) -> anyhow::Result<(SaveMeta, SaveState)> {
-        anyhow::bail!("save/load is not supported in the browser build")
+        let storage = local_storage()?;
+
+        let b64 = storage
+            .get_item(&slot_key(slot))
+            .map_err(|_| anyhow::anyhow!("localStorage.getItem failed"))?
+            .ok_or_else(|| anyhow::anyhow!("no save in slot {}", slot))?;
+
+        let bytes = b64_decode(&b64)?;
+        let state: SaveState = bincode::deserialize(&bytes)?;
+
+        // Read metadata.
+        let meta_str = storage
+            .get_item(&meta_key(slot))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let (name, _tick) = meta_str.split_once('|').unwrap_or(("Unnamed", "0"));
+
+        let meta = SaveMeta {
+            slot,
+            name: name.to_string(),
+            timestamp_secs: 0, // no reliable clock in WASM
+            game_tick: state.clock.tick,
+            mod_names: vec![],
+            mod_hash: 0,
+        };
+
+        Ok((meta, state))
     }
 
     pub fn list_saves(_saves_dir: &Path) -> Vec<anyhow::Result<SaveMeta>> {
-        Vec::new()
+        let storage = match local_storage() {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        (0..MAX_SAVE_SLOTS)
+            .filter_map(|slot| {
+                // Check if metadata exists for this slot.
+                let meta_str = storage.get_item(&meta_key(slot)).ok()??;
+                let (name, tick_str) = meta_str.split_once('|').unwrap_or(("Unnamed", "0"));
+                let tick: u64 = tick_str.parse().unwrap_or(0);
+                Some(Ok(SaveMeta {
+                    slot,
+                    name: name.to_string(),
+                    timestamp_secs: 0,
+                    game_tick: tick,
+                    mod_names: vec![],
+                    mod_hash: 0,
+                }))
+            })
+            .collect()
     }
 
-    pub fn delete_slot(_saves_dir: &Path, _slot: usize) -> anyhow::Result<()> {
-        anyhow::bail!("save/load is not supported in the browser build")
+    pub fn delete_slot(_saves_dir: &Path, slot: usize) -> anyhow::Result<()> {
+        let storage = local_storage()?;
+        let _ = storage.remove_item(&slot_key(slot));
+        let _ = storage.remove_item(&meta_key(slot));
+        Ok(())
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm_stubs::{
+pub use wasm_impl::{
     default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods,
 };
 

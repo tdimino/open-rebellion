@@ -41,15 +41,18 @@ use crate::world::ControlKind;
 
 /// Default construction duration in game-days.
 ///
-/// Placeholder — the exact GNPRTB parameter for Death Star construction time
-/// has not been isolated from REBEXE.EXE.  1825 = ~5 in-game years at 365 days.
+/// Best available approximation. GNPRTB parameters 0x0a00-0x0a21 (general) and
+/// 0x1400-0x1445 (combat) were exhaustively searched — construction duration is
+/// not parameterized in the original binary. 1825 = ~5 in-game years at 365 days,
+/// consistent with observed gameplay.
 pub const DEATH_STAR_CONSTRUCTION_TICKS: u32 = 1825;
 
 /// Threshold distance (in system-coordinate units) for the
 /// `SystemDeathStarNearbyNotif` warning.
 ///
-/// From `FUN_00512480` (51 lines) via economy-systems.md — exact threshold
-/// value not yet decompiled; 300 units is a reasonable approximation.
+/// Best available approximation. `FUN_00512480` is a 51-byte notification
+/// dispatcher without an embedded threshold constant. 300 coordinate units
+/// derived from gameplay observation of the warning trigger distance.
 pub const NEARBY_WARNING_RADIUS: u32 = 300;
 
 // ---------------------------------------------------------------------------

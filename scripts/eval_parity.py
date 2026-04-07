@@ -1,238 +1,329 @@
 #!/usr/bin/env python3
-"""
-Evaluate a headless playtest JSONL log for original-game parity.
+"""Evaluate a playtest JSONL log against the golden-value oracle.
 
-Unlike eval_game_quality.py (which measures gameplay balance), this script
-measures how closely the simulation matches the original 1998 Star Wars
-Rebellion's feature set. Used by autoresearch Track 1 for the parity loop.
+This script does not assign a balance score. It compares observable JSONL
+evidence against the known-original constants captured in
+`scripts/golden_values.json` and reports:
+
+- `pass`: the log matches the oracle for that check
+- `fail`: the log disagrees with the oracle
+- `skip`: the log does not contain enough evidence to evaluate the check
 
 Usage:
     python3 scripts/eval_parity.py campaign.jsonl
     python3 scripts/eval_parity.py campaign.jsonl --json
-
-Composite score formula (6 sub-metrics):
-    score = 0.25 * economy_activity
-          + 0.20 * mission_completeness
-          + 0.20 * combat_completeness
-          + 0.15 * event_coverage
-          + 0.15 * system_state_completeness
-          + 0.05 * repair_activity
-
-Each sub-metric is normalized to [0.0, 1.0] before weighting.
-Degenerate: economy_activity < 0.3 → score = 0.0.
+    python3 scripts/eval_parity.py campaign.jsonl --golden scripts/golden_values.json
 """
 
+from __future__ import annotations
+
+import argparse
 import json
 import sys
 from collections import Counter
 from pathlib import Path
 
 
-def load_events(path: str) -> list[dict]:
-    events = []
-    with open(path) as f:
-        for line in f:
+DEFAULT_GOLDEN_PATH = Path(__file__).with_name("golden_values.json")
+
+
+def load_events(path: Path) -> list[dict]:
+    """Parse a playtest JSONL log. Skips non-JSON lines (e.g. summary footer)."""
+    events: list[dict] = []
+    with path.open() as handle:
+        for line in handle:
             line = line.strip()
-            if line:
+            # Skip blank lines and any trailing human-readable summary.
+            if not line or not line.startswith("{"):
+                continue
+            try:
                 events.append(json.loads(line))
+            except json.JSONDecodeError:
+                # Non-JSON line in the stream — skip silently.
+                continue
     return events
 
 
-# ---------------------------------------------------------------------------
-# Sub-metrics
-# ---------------------------------------------------------------------------
-
-# Economy event types that the original game produces every tick
-ECONOMY_EVENT_TYPES = {
-    "economy_tick",
-    "support_drift",
-    "collection_rate",
-    "garrison_required",
-    "control_changed",
-}
-
-# Mission kinds that should appear in a full-feature campaign
-MISSION_KINDS = {
-    "Diplomacy", "Recruitment", "Espionage", "Sabotage",
-    "InciteUprising", "Assassination", "Abduction", "Rescue",
-}
-
-# Character-targeted mission kinds — parity requires target_character to be set
-TARGETED_MISSION_KINDS = {"Assassination", "Abduction", "Recruitment"}
-
-# System tags that should emit at least one event in a full campaign
-EXPECTED_SYSTEMS = {
-    "manufacturing", "movement", "combat", "fog", "missions",
-    "events", "ai", "blockade", "uprising", "death_star",
-    "research", "jedi", "victory", "betrayal", "story",
-    "economy", "repair",
-}
+def load_golden(path: Path) -> dict:
+    with path.open() as handle:
+        return json.load(handle)
 
 
-def economy_activity(events: list[dict]) -> float:
-    """Fraction of expected economy event types that actually appear."""
-    economy_events = [e for e in events if e.get("system") == "economy"]
-    if not economy_events:
-        return 0.0
-
-    observed_types = set()
-    for e in economy_events:
-        observed_types.add(e.get("event_type", ""))
-
-    return min(1.0, len(observed_types & ECONOMY_EVENT_TYPES) / max(1, len(ECONOMY_EVENT_TYPES)))
-
-
-def mission_completeness(events: list[dict]) -> float:
-    """Measures mission kind diversity from resolved missions.
-
-    Score = fraction of expected mission kinds that appear in resolved missions.
-    """
-    resolved_kinds = set()
-
-    for e in events:
-        if e.get("event_type") == "mission_resolved":
-            details = e.get("details", {})
-            kind = details.get("kind", "")
-            resolved_kinds.add(kind)
-
-    return len(resolved_kinds & MISSION_KINDS) / max(1, len(MISSION_KINDS))
+def make_check(
+    name: str,
+    status: str,
+    expected=None,
+    observed=None,
+    details: str = "",
+) -> dict:
+    return {
+        "name": name,
+        "status": status,
+        "expected": expected,
+        "observed": observed,
+        "details": details,
+    }
 
 
-def combat_completeness(events: list[dict]) -> float:
-    """Checks that combat events cover space, ground, and bombardment.
-
-    3 combat types, each worth 1/3:
-    - combat_space events
-    - combat_ground events
-    - bombardment events
-    """
-    has_space = False
-    has_ground = False
-    has_bombardment = False
-
-    for e in events:
-        et = e.get("event_type", "")
-        if et == "combat_space":
-            has_space = True
-        elif et == "combat_ground":
-            has_ground = True
-        elif et == "bombardment":
-            has_bombardment = True
-
-    return (int(has_space) + int(has_ground) + int(has_bombardment)) / 3.0
+def unique_event_ticks(events: list[dict], event_type: str) -> list[int]:
+    return sorted({int(event.get("tick", 0)) for event in events if event.get("event_type") == event_type})
 
 
-def event_coverage(events: list[dict]) -> float:
-    """Fraction of the 17 simulation system tags that emit at least one event."""
-    observed_tags = set(e.get("system", "") for e in events)
-    return len(observed_tags & EXPECTED_SYSTEMS) / len(EXPECTED_SYSTEMS)
+def dominant_interval(ticks: list[int]) -> int | None:
+    deltas = [b - a for a, b in zip(ticks, ticks[1:]) if b > a]
+    if not deltas:
+        return None
+    return Counter(deltas).most_common(1)[0][0]
 
 
-def system_state_completeness(events: list[dict]) -> float:
-    """Checks campaign snapshots for economy-enriched fields.
-
-    5 fields expected in snapshot details: production_modifier, troop_surplus,
-    has_shipyard, fleet_posture, collection_rate.
-    """
-    expected_fields = {"production_modifier", "troop_surplus", "has_shipyard",
-                       "fleet_posture", "collection_rate"}
-    observed = set()
-
-    for e in events:
-        if e.get("event_type") == "campaign_snapshot":
-            details = e.get("details", {})
-            for field in expected_fields:
-                if field in details:
-                    observed.add(field)
-            # Also check nested system data
-            for sys_data in details.get("systems", {}).values() if isinstance(details.get("systems"), dict) else []:
-                for field in expected_fields:
-                    if field in sys_data:
-                        observed.add(field)
-
-    return len(observed & expected_fields) / len(expected_fields)
+def event_types_present(events: list[dict]) -> set[str]:
+    return {event.get("event_type", "") for event in events}
 
 
-def repair_activity(events: list[dict]) -> float:
-    """1.0 if any ship_repaired events exist, 0.0 otherwise."""
-    for e in events:
-        if e.get("event_type") in ("ship_repaired", "ship_repair_started"):
-            return 1.0
-    return 0.0
+def event_id_set(events: list[dict]) -> set[int]:
+    ids: set[int] = set()
+    for event in events:
+        if event.get("event_type") != "event_fired":
+            continue
+        details = event.get("details", {})
+        if isinstance(details, dict) and isinstance(details.get("event_id"), int):
+            ids.add(details["event_id"])
+    return ids
 
 
-# ---------------------------------------------------------------------------
-# Composite
-# ---------------------------------------------------------------------------
+def build_presence_checks(
+    events: list[dict],
+    prefix: str,
+    required_types: list[str],
+) -> list[dict]:
+    observed = event_types_present(events)
+    return [
+        make_check(
+            name=f"{prefix}.{event_type}",
+            status="pass" if event_type in observed else "fail",
+            expected=True,
+            observed=event_type in observed,
+            details=f"event_type={event_type}",
+        )
+        for event_type in required_types
+    ]
 
-def evaluate(events: list[dict]) -> dict:
-    """Compute parity metrics from a list of JSONL event dicts."""
+
+def evaluate(events: list[dict], golden: dict) -> dict:
+    values = golden["values"]
+    checks: list[dict] = []
+
     if not events:
-        return {"score": 0.0, "degenerate": True, "reason": "no events"}
+        checks.append(make_check("log.non_empty", "fail", expected=True, observed=False, details="No JSONL events found."))
+        return finalize(events, checks, golden)
 
-    metrics = {
-        "economy_activity": economy_activity(events),
-        "mission_completeness": mission_completeness(events),
-        "combat_completeness": combat_completeness(events),
-        "event_coverage": event_coverage(events),
-        "system_state_completeness": system_state_completeness(events),
-        "repair_activity": repair_activity(events),
+    # AI cadence: compare the observed evaluation spacing to both the original
+    # and the current throttled implementation.
+    ai_ticks = unique_event_ticks(events, "ai_action")
+    if len(ai_ticks) < 2:
+        checks.append(make_check("ai.interval_vs_original", "skip", expected=values["ai"]["original_tick_interval_days"], observed=None, details="Need at least two unique ai_action ticks."))
+        checks.append(make_check("ai.interval_vs_current", "skip", expected=values["ai"]["current_tick_interval_days"], observed=None, details="Need at least two unique ai_action ticks."))
+    else:
+        observed_ai_interval = dominant_interval(ai_ticks)
+        tick_preview = ai_ticks[:10]
+        preview_suffix = "..." if len(ai_ticks) > 10 else ""
+        details = f"unique ai_action ticks={tick_preview}{preview_suffix}"
+        checks.append(
+            make_check(
+                "ai.interval_vs_original",
+                "pass" if observed_ai_interval == values["ai"]["original_tick_interval_days"] else "fail",
+                expected=values["ai"]["original_tick_interval_days"],
+                observed=observed_ai_interval,
+                details=details,
+            )
+        )
+        checks.append(
+            make_check(
+                "ai.interval_vs_current",
+                "pass" if observed_ai_interval == values["ai"]["current_tick_interval_days"] else "fail",
+                expected=values["ai"]["current_tick_interval_days"],
+                observed=observed_ai_interval,
+                details=details,
+            )
+        )
+
+    # Economy and combat parity-critical event families.
+    checks.extend(
+        build_presence_checks(
+            events,
+            "economy",
+            ["economy_tick", "support_drift", "collection_rate", "garrison_required", "control_changed"],
+        )
+    )
+    checks.extend(
+        build_presence_checks(
+            events,
+            "combat",
+            ["combat_space", "combat_ground", "bombardment"],
+        )
+    )
+    checks.extend(
+        build_presence_checks(
+            events,
+            "repair",
+            ["ship_repair_started", "ship_repaired"],
+        )
+    )
+
+    # Movement: the current implementation clamps arrivals to at least 10 ticks.
+    arrival_ticks = unique_event_ticks(events, "fleet_arrived")
+    if not arrival_ticks:
+        checks.append(make_check("movement.earliest_arrival_tick", "skip", expected=f">={values['movement']['current_min_transit_ticks']}", observed=None, details="No fleet_arrived events in log."))
+    else:
+        earliest_arrival = min(arrival_ticks)
+        checks.append(
+            make_check(
+                "movement.earliest_arrival_tick",
+                "pass" if earliest_arrival >= values["movement"]["current_min_transit_ticks"] else "fail",
+                expected=f">={values['movement']['current_min_transit_ticks']}",
+                observed=earliest_arrival,
+                details=f"arrival_ticks={arrival_ticks[:10]}{'...' if len(arrival_ticks) > 10 else ''}",
+            )
+        )
+
+    # Death Star events are only meaningful once the log runs long enough for
+    # construction to be theoretically possible.
+    final_tick = max(int(event.get("tick", 0)) for event in events)
+    ds_required = ["death_star_construction", "death_star_fired", "death_star_shield_status"]
+    if final_tick < values["death_star"]["construction_ticks"]:
+        for event_type in ds_required:
+            checks.append(
+                make_check(
+                    f"death_star.{event_type}",
+                    "skip",
+                    expected=True,
+                    observed=False,
+                    details=f"log ended at tick {final_tick}, below construction threshold {values['death_star']['construction_ticks']}",
+                )
+            )
+    else:
+        checks.extend(build_presence_checks(events, "death_star", ds_required))
+
+    # Victory timing: if a victory event exists, it must not fire before the
+    # current minimum victory tick.
+    victory_ticks = unique_event_ticks(events, "victory_check")
+    if not victory_ticks:
+        checks.append(make_check("victory.first_tick", "skip", expected=f">={values['victory']['current_min_victory_tick']}", observed=None, details="No victory_check events in log."))
+    else:
+        first_victory_tick = min(victory_ticks)
+        checks.append(
+            make_check(
+                "victory.first_tick",
+                "pass" if first_victory_tick >= values["victory"]["current_min_victory_tick"] else "fail",
+                expected=f">={values['victory']['current_min_victory_tick']}",
+                observed=first_victory_tick,
+                details=f"victory_ticks={victory_ticks}",
+            )
+        )
+
+    # Research: the mechanics docs map the three original completion event IDs.
+    fired_ids = event_id_set(events)
+    research_ids = {
+        values["research"]["research_completion_event_ship"],
+        values["research"]["research_completion_event_troop"],
+        values["research"]["research_completion_event_facility"],
     }
+    if not fired_ids:
+        checks.append(make_check("research.completion_event_ids", "skip", expected=sorted(research_ids), observed=[], details="No event_fired records in log."))
+    else:
+        observed_research_ids = sorted(fired_ids & research_ids)
+        checks.append(
+            make_check(
+                "research.completion_event_ids",
+                "pass" if observed_research_ids else "fail",
+                expected=sorted(research_ids),
+                observed=observed_research_ids,
+                details=f"all event_fired ids={sorted(fired_ids)}",
+            )
+        )
 
-    # Degenerate detection
-    if metrics["economy_activity"] < 0.3:
-        return {
-            "score": 0.0,
-            "degenerate": True,
-            "reason": f"economy_activity too low ({metrics['economy_activity']:.2f})",
-            **metrics,
-        }
+    return finalize(events, checks, golden)
 
-    weights = {
-        "economy_activity": 0.25,
-        "mission_completeness": 0.20,
-        "combat_completeness": 0.20,
-        "event_coverage": 0.15,
-        "system_state_completeness": 0.15,
-        "repair_activity": 0.05,
-    }
 
-    score = sum(weights[k] * metrics[k] for k in weights)
+def finalize(events: list[dict], checks: list[dict], golden: dict) -> dict:
+    counts = Counter(check["status"] for check in checks)
+    total_events = len(events)
+    final_tick = max((int(event.get("tick", 0)) for event in events), default=0)
+    distinct_event_types = Counter(event.get("event_type", "") for event in events)
+
+    if counts["fail"] > 0:
+        overall = "fail"
+    elif counts["pass"] > 0:
+        overall = "pass"
+    else:
+        overall = "skip"
 
     return {
-        "score": round(score, 4),
-        "degenerate": False,
-        **{k: round(v, 4) for k, v in metrics.items()},
-        "total_events": len(events),
-        "final_tick": max(e.get("tick", 0) for e in events),
+        "overall": overall,
+        "summary": {
+            "pass": counts["pass"],
+            "fail": counts["fail"],
+            "skip": counts["skip"],
+        },
+        "golden_version": golden.get("version"),
+        "golden_source": golden.get("source"),
+        "observed": {
+            "total_events": total_events,
+            "final_tick": final_tick,
+            "distinct_event_types": len(distinct_event_types),
+            "event_type_counts": dict(distinct_event_types),
+        },
+        "checks": checks,
     }
 
 
-def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <campaign.jsonl> [--json]", file=sys.stderr)
-        sys.exit(1)
+def print_text_report(result: dict) -> None:
+    print(f"Parity Oracle: {result['overall'].upper()}")
+    print(
+        "Summary: "
+        f"{result['summary']['pass']} pass, "
+        f"{result['summary']['fail']} fail, "
+        f"{result['summary']['skip']} skip"
+    )
+    print(
+        "Observed: "
+        f"{result['observed']['total_events']} events, "
+        f"final_tick={result['observed']['final_tick']}, "
+        f"{result['observed']['distinct_event_types']} event types"
+    )
+    print(f"Golden: v{result['golden_version']} from {result['golden_source']}")
+    print()
 
-    path = sys.argv[1]
-    use_json = "--json" in sys.argv
+    for check in result["checks"]:
+        label = check["status"].upper().ljust(4)
+        print(f"[{label}] {check['name']}")
+        if check["expected"] is not None or check["observed"] is not None:
+            print(f"  expected={check['expected']} observed={check['observed']}")
+        if check["details"]:
+            print(f"  {check['details']}")
 
-    events = load_events(path)
-    result = evaluate(events)
 
-    if use_json:
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compare a playtest JSONL log against the golden-value oracle.")
+    parser.add_argument("campaign", type=Path, help="Path to rebellion-playtest --jsonl output")
+    parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH, help="Path to golden_values.json")
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON instead of text")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    events = load_events(args.campaign)
+    golden = load_golden(args.golden)
+    result = evaluate(events, golden)
+
+    if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"Parity Score: {result['score']:.4f}")
-        if result.get("degenerate"):
-            print(f"  DEGENERATE: {result['reason']}")
-        for key in ("economy_activity", "mission_completeness", "combat_completeness",
-                     "event_coverage", "system_state_completeness", "repair_activity"):
-            if key in result:
-                print(f"  {key}: {result[key]:.4f}")
-        if "total_events" in result:
-            print(f"  total_events: {result['total_events']}")
-            print(f"  final_tick: {result['final_tick']}")
+        print_text_report(result)
+
+    return 0 if result["overall"] != "fail" else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv[1:]))

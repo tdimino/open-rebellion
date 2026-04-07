@@ -78,6 +78,16 @@ pub struct AiConfig {
 
     /// Minimum popularity threshold for Alliance covert target selection. **Augmentation.**
     pub covert_target_popularity_threshold: f32,
+
+    /// Alliance deployment budget — fraction of max_attack_fronts the Alliance uses.
+    /// **Parity** (FUN_00506ea0: Alliance evaluator at +0xc4 on global struct).
+    /// Alliance is more conservative, opening fewer attack fronts.
+    pub alliance_deploy_budget: f64,
+
+    /// Empire deployment budget — fraction of max_attack_fronts the Empire uses.
+    /// **Parity** (FUN_00506ea0: Empire evaluator at +0xc8 on global struct).
+    /// Empire is more aggressive, opening more attack fronts.
+    pub empire_deploy_budget: f64,
 }
 
 impl Default for AiConfig {
@@ -98,6 +108,8 @@ impl Default for AiConfig {
             weight_deconfliction: 0.25,
             weight_freshness: 0.15,
             covert_target_popularity_threshold: 0.3,
+            alliance_deploy_budget: 0.6,
+            empire_deploy_budget: 0.8,
         }
     }
 }

@@ -96,11 +96,30 @@
 //! ```
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use quad_snd::{AudioContext, Sound};
 
 pub use rebellion_render::audio::{AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine};
+
+#[cfg(target_arch = "wasm32")]
+const AUDIO_PREFIX: &str = "web/data";
+#[cfg(not(target_arch = "wasm32"))]
+const AUDIO_PREFIX: &str = "data";
+
+fn audio_base_path(path: &Path) -> PathBuf {
+    let prefix = Path::new(AUDIO_PREFIX);
+
+    if path.starts_with(prefix) {
+        return path.to_path_buf();
+    }
+
+    if let Ok(relative) = path.strip_prefix("data") {
+        return prefix.join(relative);
+    }
+
+    prefix.join(path)
+}
 
 // ---------------------------------------------------------------------------
 // File name conventions
@@ -215,7 +234,7 @@ impl AudioEngine {
 
     /// Pre-load all SFX from `sounds_dir/sfx/`.  Missing files are silently skipped.
     pub fn load_sfx(&mut self, sounds_dir: &Path) {
-        let sfx_dir = sounds_dir.join("sfx");
+        let sfx_dir = audio_base_path(sounds_dir).join("sfx");
         let kinds = [
             SfxKind::MissionSuccess,
             SfxKind::MissionFail,
@@ -247,7 +266,7 @@ impl AudioEngine {
     /// - `sounds_dir/voice/alliance/{id}-voicefxa.wav`
     /// - `sounds_dir/voice/empire/{id}-voicefxe.wav`
     pub fn load_voice(&mut self, sounds_dir: &Path) {
-        let voice_dir = sounds_dir.join("voice");
+        let voice_dir = audio_base_path(sounds_dir).join("voice");
         let lines = [
             VoiceLine::AllianceMissionSuccess,
             VoiceLine::AllianceMissionFail,
@@ -380,7 +399,7 @@ impl AudioEngine {
 
         self.stop_music();
 
-        let path = sounds_dir.join("music").join(music_file(track));
+        let path = audio_base_path(sounds_dir).join("music").join(music_file(track));
         if !path.exists() {
             return;
         }

@@ -3,7 +3,7 @@ title: "AI Parity Tracker"
 description: "Comprehensive mapping of original REBEXE.EXE AI functions to Open Rebellion implementation status"
 category: "agent-docs"
 created: 2026-03-21
-updated: 2026-03-23
+updated: 2026-04-06
 tags: [ai, parity, ghidra, fleet-deployment]
 ---
 
@@ -11,7 +11,7 @@ tags: [ai, parity, ghidra, fleet-deployment]
 
 Maps every decompiled AI function from the original REBEXE.EXE to our Rust implementation. Each row documents: original behavior, our implementation, status, and whether we deviate/augment.
 
-Updated 2026-03-23 with full Ghidra RE of all previously-unknown functions. Cross-referenced against TheArchitect2018's wiki.
+Updated 2026-04-06 after Knesset Resheph. Cross-referenced against Ghidra RE, the community disassembly report, and the current Rust implementation.
 
 ## Status Key
 
@@ -29,9 +29,9 @@ Updated 2026-03-23 with full Ghidra RE of all previously-unknown functions. Cros
 |---|---|---|---|---|---|---|
 | 1 | `FUN_00519d00` | 252 | Galaxy-wide system bucketing into 7 categories | `evaluate_galaxy_state()` ai.rs | DONE | 7 buckets + control_ratio + aggression scaling |
 | 2 | `FUN_00537180` | 381 | Primary system-level entity deployment | `evaluate_fleet_deployment()` ai.rs | AUGMENTED | Per-fleet scoring (weakness×proximity×deconfliction×freshness). Original was per-system iteration with capacity check only. **Our model is superior** — original has no weighted scoring. |
-| 3 | `FUN_005385f0` | 252 | Secondary deployment pass (redistribution) | Pass 2 in `evaluate_fleet_deployment()` ai.rs | AUGMENTED | Original calls FUN_0052e970 (capacity check) + FUN_00506ea0 (faction evaluator). Our aggression-scaled redistribution is more nuanced. |
+| 3 | `FUN_005385f0` | 252 | Secondary deployment pass (redistribution) | Pass 2 in `evaluate_fleet_deployment()` ai.rs | AUGMENTED | Original calls FUN_0052e970 (capacity check) + FUN_00506ea0 (faction evaluator). Our redistribution keeps the stronger aggression model but now honors faction-specific deploy budgets (Alliance 0.6, Empire 0.8). |
 | 4 | `FUN_00502020` | 897 | Garrison strength assessment (ships+troops+fac) | `system_strength()` ai.rs | DONE | Simplified but correct formula |
-| 5 | `FUN_00508250` | 139 | Action validation (18 AND-chained checks) | `can_dispatch()` ai.rs | PARTIAL | 6 of 18 checks implemented. See Dispatch Validators section for full decode of all 18. |
+| 5 | `FUN_00508250` | 139 | Action validation (18 AND-chained checks) | `can_dispatch()` + `can_dispatch_to_system()` + `can_dispatch_fleet()` ai.rs | PARTIAL | 10 of 18 checks are now represented in full or approximate form. Resheph added system-strength, loyalty, faction, and empty-fleet gates. |
 | 6 | `FUN_00520580` | 9 | Movement order issuance (2-field struct setter) | `AIAction::MoveFleet` + simulation.rs | DONE | Original is just a command setter — `*(this) = cmd_type; *(this+4) = param`. |
 
 ## AI Sub-Functions (All Decoded 2026-03-23)
@@ -44,10 +44,11 @@ Updated 2026-03-23 with full Ghidra RE of all previously-unknown functions. Cros
 | `FUN_005039d0` | — | Facility iteration | `sys.defense_facilities.len()` | DONE | — |
 | `FUN_00504c40` | — | Troop iteration | `sys.ground_units.iter()` | DONE | — |
 | `FUN_0052e970` | 53 | **Secondary pass capacity check** | `score_attack_target()` | AUGMENTED | **Not a scoring function.** Checks if entity (family 0x10-0x3f) fits deployment budget (`this+0x58 - this+0x5c`). Calls FUN_0053b870 (reads +0x4c = capacity). Dispatches cmd 0xf3 if room. **Our 4-factor model is superior.** |
-| `FUN_00506ea0` | 13 | Faction-specific evaluator pointer | Faction asymmetry in attack targeting | AUGMENTED | Returns evaluator from global `DAT_006b2bb0`: Alliance at +0xc4, Empire at +0xc8. Different deployment budgets per faction. **TODO**: Add faction-specific budget thresholds to AiConfig. |
+| `FUN_00506ea0` | 13 | Faction-specific evaluator pointer | `AiConfig::{alliance_deploy_budget, empire_deploy_budget}` + `evaluate_fleet_deployment()` | DONE | Returns evaluator from global `DAT_006b2bb0`: Alliance at +0xc4, Empire at +0xc8. Rust now mirrors this with faction-specific deployment budgets. |
 | `FUN_00508660` | 304 | Entity dispatch (10+ type handlers) | `evaluate_officers()` + `evaluate_production()` + `evaluate_research()` | DONE | Routes by family byte: chars (0x08-0x0f), troops (0x10-0x13), facilities (0x1c-0x1f), ships (0x20-0x2f). Our split into 3 functions is cleaner. |
 | `FUN_005202d0` | 39 | System pre-validation wrapper | `can_dispatch()` | DONE | Exception-handling wrapper around FUN_00520580 + FUN_0051fcb0. |
 | `FUN_004927c0` | 2098 | Master turn processing | `AISystem::advance()` | DONE | **Event-driven via message 0x1f0 (day tick).** AI evaluates every game-day, not on an interval. Our AI_TICK_INTERVAL=7 is an augmentation. |
+| `FUN_00519d20` | — | Uprising prevention / endangered-system stabilization | `evaluate_uprising_prevention()` | AUGMENTED | Cross-reference gap is now closed. Rust sends diplomats to low-support controlled systems instead of waiting for an uprising flip. |
 | `FUN_0053b870` | 7 | Entity capacity reader | Not separate — inlined | DONE | Returns `*(entity + 0x4c)` — the entity's capacity/count field. |
 | `FUN_0050ac80` | 49 | Character placement handler | Part of `evaluate_officers()` | DONE | Faction-conditioned placement with priority checking. |
 | `FUN_0050a1b0` | 28 | Faction-conditioned entity placement | Part of `evaluate_officers()` | DONE | Checks faction match before placing entity. |
@@ -60,26 +61,26 @@ All 18 sub-functions decompiled 2026-03-23 via Ghidra MCP. Each returns bool; al
 
 | # | Address | Lines | Decoded Purpose | Our Status |
 |---|---------|-------|----------------|------------|
-| 1 | `FUN_0051ebb0` | 7 | **Always returns 1** (no-op gate) | N/A — skip |
+| 1 | `FUN_0051ebb0` | 7 | **Always returns 1** (no-op gate) | DONE (elided) |
 | 2 | `FUN_0050ad60` | 13 | Capacity check: `this+0x5c < this+0x64` → validate overflow | MISSING |
 | 3 | `FUN_0050ad80` | 139 | Fleet entity count vs capacity at `+0x5c` (most complex validator) | MISSING |
 | 4 | `FUN_0050b0b0` | 65 | Entity count via vtable+0x1c8 vs budget at `+0x64` | MISSING |
-| 5 | `FUN_0050b230` | 36 | Faction check (+0x24>>6&3) + status bits (+0x88>>11) + multi-param scoring | PARTIAL (faction check done) |
-| 6 | `FUN_0050b2c0` | 27 | Faction check + loyalty scoring via FUN_00559c10 | MISSING |
+| 5 | `FUN_0050b230` | 36 | Faction check (+0x24>>6&3) + status bits (+0x88>>11) + multi-param scoring | PARTIAL (faction gate ported) |
+| 6 | `FUN_0050b2c0` | 27 | Faction check + loyalty scoring via FUN_00559c10 | DONE (loyalty threshold approximation) |
 | 7 | `FUN_0050b310` | 73 | Ship type compatibility: fleet count + facility count + bit5 of +0x88 | MISSING |
 | 8 | `FUN_0050b610` | 77 | Troop deployment: +0x88 bit0, troop class via FUN_0055a080 | MISSING |
-| 9 | `FUN_0050b5a0` | 33 | Faction + status bits (+0x88 bits 0,2,11) + scoring | PARTIAL (faction done) |
-| 10 | `FUN_0050b500` | 42 | Fleet composition: troop count - allocation at +0x80 | MISSING |
-| 11 | `FUN_0050ba90` | 26 | Troop iterator + boolean availability | MISSING |
-| 12 | `FUN_0050bb70` | 15 | Ship capacity check via FUN_00528040 | MISSING |
+| 9 | `FUN_0050b5a0` | 33 | Faction + status bits (+0x88 bits 0,2,11) + scoring | PARTIAL (faction gate ported) |
+| 10 | `FUN_0050b500` | 42 | Fleet composition: troop count - allocation at +0x80 | PARTIAL (always true in the current model; per-fleet troop allocation is not modeled) |
+| 11 | `FUN_0050ba90` | 26 | Troop iterator + boolean availability | PARTIAL (covered indirectly by current troop-availability checks, not a dedicated port) |
+| 12 | `FUN_0050bb70` | 15 | Ship capacity check via FUN_00528040 | DONE (empty fleets rejected) |
 | 13 | `FUN_0050bc60` | 87 | Character iteration (family 4) + faction match + counting | DONE (faction match) |
 | 14 | `FUN_0050be00` | 99 | Character iteration (family 4) + mandatory mission check | DONE (on_mandatory_mission) |
 | 15 | `FUN_0050c350` | 95 | Fleet/facility nested iteration + per-entity FUN_0050c580 check | MISSING |
-| 16 | `FUN_0050b8e0` | 89 | System-level strength scoring: both factions via FUN_00509710 | MISSING |
-| 17 | `FUN_0050b800` | 34 | Status bits (+0x88 bits 0,2) + position check (+0x7c ≥ 0) | MISSING |
-| 18 | `FUN_0050bb00` | 28 | Faction + status bits + position → deployment flag | MISSING |
+| 16 | `FUN_0050b8e0` | 89 | System-level strength scoring: both factions via FUN_00509710 | DONE (simplified fleet-strength threshold) |
+| 17 | `FUN_0050b800` | 34 | Status bits (+0x88 bits 0,2) + position check (+0x7c ≥ 0) | PARTIAL (approximated by current location/system-validity checks) |
+| 18 | `FUN_0050bb00` | 28 | Faction + status bits + position → deployment flag | PARTIAL (approximated by current location/faction dispatch gates) |
 
-**Summary**: 4 of 18 checks implemented (2 no-ops + faction match + mandatory mission). 14 remaining are mostly capacity/composition checks. Many reference entity offsets (+0x58, +0x5c, +0x64, +0x80, +0x88) that map to internal allocation budgets and status bitfields not yet modeled in our Rust types.
+**Summary**: 10 of 18 checks are now represented after Knesset Resheph, counting both direct ports and documented approximations. The remaining 8 are the low-level capacity/composition/status gates that still rely on internal allocation fields (`+0x58`, `+0x5c`, `+0x64`, `+0x80`, `+0x88`) we do not model directly in Rust.
 
 ## AI Behavioral Properties (All Resolved)
 
@@ -88,14 +89,21 @@ All 18 sub-functions decompiled 2026-03-23 via Ghidra MCP. Each returns bool; al
 | Map visibility | Omniscient (no fog param in any AI fn) | Omniscient (no FogState param) | FAITHFUL | — |
 | Evaluation frequency | **Every game-day** (event 0x1f0 triggers per-day) | Every 7 ticks (`AI_TICK_INTERVAL`) | AUGMENTED | Keep throttled — per-tick with 200 systems is expensive. Config flag `ai.tick_interval` exists. |
 | Target selection scope | **Binary capacity check** (FUN_0052e970: fits budget?) | Per-fleet scoring (4 weighted factors) | AUGMENTED | **Our model is superior.** Original has no scoring — just checks if entity fits deployment budget. Keep our 4-factor model. |
-| Deployment passes | Two-pass with faction-specific budgets | Two-pass with aggression scaling | AUGMENTED | Original uses different evaluator objects per faction (FUN_00506ea0). Our aggression model is more dynamic. |
+| Deployment passes | Two-pass with faction-specific budgets | Two-pass with aggression scaling and faction-specific budgets | AUGMENTED | Rust now mirrors the original Alliance/Empire budget split while keeping the stronger aggression model. |
 | Garrison scoring inputs | Ships + troops + facilities via vtable dispatch | Ships + troops + facilities (simplified) | DONE | — |
 | Faction ownership encoding | 2-bit field at entity+0x24 bits 6-7 | `ControlKind` enum (4 states) | AUGMENTED | We add Contested + Uprising states (original has 3). |
 | Fleet movement model | **FUN_00520580 is just a struct setter** (not transit calc) | Euclidean distance-based | AUGMENTED | Transit calc is elsewhere in event chain. Our model is intentional upgrade. |
 | Character assignment | Family-byte routing (FUN_00508660): chars, troops, facilities, ships each have specific handlers | Role-based (Jedi, diplomat, espionage) + production priority | AUGMENTED | Original routes by entity type. Our skill-based dispatch is cleaner. |
 | Production priority | Implicit in entity handler routing order | Capital ships > fighters > yards > troops > defenses | AUGMENTED | Original doesn't have explicit priority — it handles whatever entity type the iterator yields. |
-| Faction-specific budgets | **Alliance +0xc4, Empire +0xc8** on evaluator object — different deployment budget thresholds | Same budget for both | PARTIAL | **TODO**: Add faction-specific deployment budgets to AiConfig. |
+| Faction-specific budgets | **Alliance +0xc4, Empire +0xc8** on evaluator object — different deployment budget thresholds | `alliance_deploy_budget=0.6`, `empire_deploy_budget=0.8` | DONE | `AiConfig` now mirrors the original asymmetric thresholds. |
 | Mission probability | Composite input formulas per mission type (wiki: sub_55ae50 etc.) | Composite input (ported 2026-03-23) | DONE | Diplomacy, recruitment, subdue, DS sabotage formulas ported from TheArchitect2018 wiki. |
+
+## Strategic AI Behaviors Added In Resheph
+
+| Behavior | Our Code | Status | Notes |
+|---|---|---|---|
+| Uprising prevention | `evaluate_uprising_prevention()` | AUGMENTED | Sends diplomats to low-support systems we already control, closing the "AI waits for uprisings" gap called out in the cross-reference report. |
+| Death Star escort | `evaluate_ds_escort()` | AUGMENTED | Routes the nearest available fleet to the Death Star's current system so the superweapon no longer travels unsupported. |
 
 ## Augmentations (Beyond Original — Justified Improvements)
 
@@ -123,5 +131,6 @@ All 18 sub-functions decompiled 2026-03-23 via Ghidra MCP. Each returns bool; al
 ## Sources
 
 - Ghidra RE: 23 functions decompiled 2026-03-23 via GhidraMCP HTTP bridge
+- Community disassembly cross-reference: `docs/reports/2026-03-26-community-disassembly-cross-reference.md`
 - TheArchitect2018 wiki: mission probability formulas (sub_55ae50, sub_55aed0, sub_55ae90, sub_55af50, sub_55b0a0, sub_55cfb0)
 - Codex researcher comparison report (2026-03-23)

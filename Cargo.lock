@@ -1392,6 +1392,8 @@ dependencies = [
  "slotmap",
  "tempfile",
  "toml",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

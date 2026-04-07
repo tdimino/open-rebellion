@@ -287,9 +287,12 @@ impl CombatSystem {
     /// Phase 3 helper: one side fires at the other.
     ///
     /// Mirrors `FUN_00543b60` (per-side weapon fire, vtable +0x1c4 dispatch).
-    /// The exact per-arc formula behind vtable +0x1c4 is not yet decompiled.
-    /// Approximation: aggregate all arc weapons × weapon_nibble / 15, distribute
-    /// evenly with ±20% variance across alive targets.
+    /// Per-weapon-type damage: each arc sum is multiplied by its class's
+    /// `*_attack_strength` scalar. If attack_strength is 0, raw arc count is used
+    /// (backwards compatible with unpopulated DAT data).
+    ///
+    /// All arithmetic uses i64 to avoid overflow and double-rounding (P0 fix from
+    /// Knesset Ma'at: shield absorption had a double-rounding bug via f64).
     ///
     /// Damage is stored as `pending_damage` / `pending_ion_damage` on each target.
     /// Phase 4 (shield absorption) processes pending damage before hull application.
@@ -302,28 +305,40 @@ impl CombatSystem {
     ) {
         let fleet = &world.fleets[firing_fleet];
         // Compute total fire split by weapon type: ion cannons tracked separately.
+        // Each weapon type is scaled by its class-specific attack_strength.
         // Each ShipInstance maps 1:1 to a ShipSnap, so zip directly.
         let alive_ships = fleet.capital_ships.iter().filter(|s| s.alive);
-        let (total_fire, total_ion): (u32, u32) = firing.iter()
+        let (total_fire, total_ion): (i64, i64) = firing.iter()
             .zip(alive_ships)
             .filter(|(snap, _)| snap.alive)
-            .fold((0u32, 0u32), |(acc_fire, acc_ion), (snap, ship)| {
+            .fold((0i64, 0i64), |(acc_fire, acc_ion), (snap, ship)| {
                 let class_key = ship.class;
                 let class = &world.capital_ship_classes[class_key];
-                let non_ion = class.turbolaser_fore
+
+                // Per-weapon-type: sum arcs, multiply by attack_strength.
+                // If attack_strength == 0, use raw arc count (fallback).
+                let turbo_arcs = (class.turbolaser_fore
                     + class.turbolaser_aft
                     + class.turbolaser_port
-                    + class.turbolaser_starboard
-                    + class.laser_cannon_fore
+                    + class.turbolaser_starboard) as i64;
+                let turbo_str = class.turbolaser_attack_strength.max(1) as i64;
+
+                let laser_arcs = (class.laser_cannon_fore
                     + class.laser_cannon_aft
                     + class.laser_cannon_port
-                    + class.laser_cannon_starboard;
-                let ion = class.ion_cannon_fore
+                    + class.laser_cannon_starboard) as i64;
+                let laser_str = class.laser_cannon_attack_strength.max(1) as i64;
+
+                let ion_arcs = (class.ion_cannon_fore
                     + class.ion_cannon_aft
                     + class.ion_cannon_port
-                    + class.ion_cannon_starboard;
-                let scale = snap.weapon_nibble as u32;
-                (acc_fire + (non_ion * scale) / 15, acc_ion + (ion * scale) / 15)
+                    + class.ion_cannon_starboard) as i64;
+                let ion_str = class.ion_cannon_attack_strength.max(1) as i64;
+
+                let scale = snap.weapon_nibble as i64;
+                let non_ion = (turbo_arcs * turbo_str + laser_arcs * laser_str) * scale / 15;
+                let ion = (ion_arcs * ion_str) * scale / 15;
+                (acc_fire + non_ion, acc_ion + ion)
             });
 
         let total = total_fire + total_ion;
@@ -335,23 +350,19 @@ impl CombatSystem {
             .collect();
         if alive_indices.is_empty() { return; }
 
-        let n = alive_indices.len() as u32;
+        let n = alive_indices.len() as i64;
         let fire_per = total_fire / n;
         let ion_per = total_ion / n;
         let total_per = fire_per + ion_per;
 
         for idx in alive_indices {
             let roll = rng.next().unwrap_or(0.5);
-            // ±20% variance around total_per. Known approximation of the original
-            // vtable +0x1c4 weapon fire resolver (FUN_004f4de0, ~90 lines).
-            // The exact formula uses per-weapon-type scatter tables; our ±20%
-            // produces equivalent gameplay feel at lower implementation cost.
-            let variance = (total_per as f64 * 0.2 * (roll * 2.0 - 1.0)) as i32;
-            let damage = (total_per as i32 + variance).max(0);
+            // ±20% variance around total_per.
+            let variance = (total_per as f64 * 0.2 * (roll * 2.0 - 1.0)) as i64;
+            let damage = (total_per + variance).max(0) as i32;
 
-            // Split damage proportionally between ion and non-ion.
-            let ion_frac = if total > 0 { total_ion as f64 / total as f64 } else { 0.0 };
-            let ion_dmg = (damage as f64 * ion_frac) as i32;
+            // Split damage proportionally between ion and non-ion using i64 division.
+            let ion_dmg = if total > 0 { (damage as i64 * total_ion / total) as i32 } else { 0 };
 
             targets[idx].pending_damage += damage;
             targets[idx].pending_ion_damage += ion_dmg;
@@ -2286,6 +2297,137 @@ mod tests {
         assert!(with_officer_damage > no_officer_damage,
             "Officer (combat=80, 1.4x multiplier) should strictly increase damage: with={}, without={}",
             with_officer_damage, no_officer_damage);
+    }
+
+    fn make_weapon_snap(weapon_nibble: u8) -> ShipSnap {
+        ShipSnap {
+            hull_current: 100, hull_max: 100,
+            shield_current: 0, shield_max: 0,
+            pending_damage: 0, pending_ion_damage: 0,
+            shield_nibble: 0, weapon_nibble,
+            alive: true, is_death_star: false,
+        }
+    }
+
+    fn make_target_snap() -> ShipSnap {
+        ShipSnap {
+            hull_current: 200, hull_max: 200,
+            shield_current: 0, shield_max: 0,
+            pending_damage: 0, pending_ion_damage: 0,
+            shield_nibble: 0, weapon_nibble: 15,
+            alive: true, is_death_star: false,
+        }
+    }
+
+    #[test]
+    fn per_weapon_type_attack_strength_amplifies_damage() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        let strong_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x30000010),
+            name: "Heavy ISD".into(),
+            hull: 100,
+            turbolaser_fore: 4, turbolaser_aft: 2,
+            turbolaser_attack_strength: 10,
+            ..CapitalShipClass::default()
+        });
+        let weak_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x30000011),
+            name: "Light Frigate".into(),
+            hull: 100,
+            turbolaser_fore: 4, turbolaser_aft: 2,
+            turbolaser_attack_strength: 1,
+            ..CapitalShipClass::default()
+        });
+
+        let target_class = make_class(&mut world, 200, 1);
+
+        // Strong attacker
+        let strong_fleet = make_fleet(&mut world, sys, strong_class, 1, false);
+        let strong_snap = vec![make_weapon_snap(15)];
+        let mut target_snap_a = vec![make_target_snap()];
+        let rolls_a: Vec<f64> = vec![0.5; 10];
+        CombatSystem::phase_weapon_fire(&world, strong_fleet, &strong_snap,
+            &mut target_snap_a, &mut rolls_a.into_iter());
+        let strong_dmg = target_snap_a[0].pending_damage;
+
+        // Weak attacker (same arc count, lower attack_strength)
+        let weak_fleet = make_fleet(&mut world, sys, weak_class, 1, false);
+        let weak_snap = vec![make_weapon_snap(15)];
+        let mut target_snap_b = vec![make_target_snap()];
+        let rolls_b: Vec<f64> = vec![0.5; 10];
+        CombatSystem::phase_weapon_fire(&world, weak_fleet, &weak_snap,
+            &mut target_snap_b, &mut rolls_b.into_iter());
+        let weak_dmg = target_snap_b[0].pending_damage;
+
+        assert!(strong_dmg > weak_dmg,
+            "attack_strength=10 ({strong_dmg}) should deal more than =1 ({weak_dmg})");
+    }
+
+    #[test]
+    fn mixed_weapon_types_use_respective_strengths() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        let mixed_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x30000020),
+            name: "Mixed Cruiser".into(),
+            hull: 100,
+            turbolaser_fore: 3, ion_cannon_fore: 3, laser_cannon_fore: 3,
+            turbolaser_attack_strength: 5,
+            ion_cannon_attack_strength: 8,
+            laser_cannon_attack_strength: 2,
+            ..CapitalShipClass::default()
+        });
+
+        let target_class = make_class(&mut world, 200, 1);
+        let _target = make_fleet(&mut world, sys, target_class, 1, true);
+        let attacker = make_fleet(&mut world, sys, mixed_class, 1, false);
+
+        let snap = vec![make_weapon_snap(15)];
+        let mut target_snap = vec![make_target_snap()];
+        let rolls: Vec<f64> = vec![0.5; 10];
+        CombatSystem::phase_weapon_fire(&world, attacker, &snap,
+            &mut target_snap, &mut rolls.into_iter());
+
+        assert!(target_snap[0].pending_damage > 0, "Mixed weapons should deal damage");
+        assert!(target_snap[0].pending_ion_damage > 0,
+            "Ion cannons should contribute ion damage");
+        // Ion fraction: 3*8=24 ion vs 3*5+3*2=21 non-ion. Ion > 50%.
+        assert!(target_snap[0].pending_ion_damage > target_snap[0].pending_damage / 3,
+            "Ion damage should be substantial with high ion_cannon_attack_strength");
+    }
+
+    #[test]
+    fn zero_attack_strength_uses_raw_weapon_count() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+
+        let zero_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x30000030),
+            name: "Legacy Ship".into(),
+            hull: 100,
+            turbolaser_fore: 4,
+            turbolaser_attack_strength: 0, // unpopulated DAT — should fallback to 1
+            ..CapitalShipClass::default()
+        });
+
+        let target_class = make_class(&mut world, 200, 1);
+        let _target = make_fleet(&mut world, sys, target_class, 1, true);
+        let attacker = make_fleet(&mut world, sys, zero_class, 1, false);
+
+        let snap = vec![make_weapon_snap(15)];
+        let mut target_snap = vec![make_target_snap()];
+        let rolls: Vec<f64> = vec![0.5; 10];
+        CombatSystem::phase_weapon_fire(&world, attacker, &snap,
+            &mut target_snap, &mut rolls.into_iter());
+
+        assert!(target_snap[0].pending_damage > 0,
+            "Ships with attack_strength=0 should still deal damage (fallback to raw arcs)");
     }
 
     #[test]

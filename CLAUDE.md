@@ -3,7 +3,7 @@ title: "Open Rebellion"
 description: "Project instructions and build configuration for the Open Rebellion Rust reimplementation"
 category: "reference"
 created: 2026-03-11
-updated: 2026-03-27
+updated: 2026-04-06
 tags: [claude-code, build, conventions, workspace]
 ---
 
@@ -107,6 +107,7 @@ docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decom
 - [Knesset Ereshkigal Plan (2026-03-26)](docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md) — Eval-driven parity sprint + Open Souls refactor. All 6 phases COMPLETE. Phase 4: PerceptionIntegrator extraction (simulation.rs 73% reduction). Phase 5: 179 NetMessage protocol types + telemetry coverage test (10/17 required systems verified).
 - [Knesset Ptah (2026-03-28)](docs/plans/2026-03-28-001-feat-knesset-ptah-todo-resolution-plan.md) — TODO resolution sprint. 12 of 13 TODOs resolved across 5 phases. Telemetry 15/17, DS victory fix, entity cleanup, espionage_rating, save v6, UI wiring, facility type promotion. 1 deferred (ShipInstance promotion → Knesset Hephaestus).
 - Knesset Hephaestus (2026-03-30) — ShipInstance promotion. Fleet.capital_ships promoted from aggregate Vec<ShipEntry> to per-hull Vec<ShipInstance> (hull_current, alive, shield_weapon_packed, faction_is_alliance). ShipEntry removed. Fleet helper methods added (ship_count, ship_counts_by_class, is_empty). RepairSystem now emits real ShipRepaired events with hull deltas — last TODO resolved. Fleet merge and combat damage indexing simplified. Repair wired into interactive main.rs. Save format bumped to v7. 403 tests.
+- [Knesset Resheph (2026-04-03)](docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md) — Final parity sprint. 10 shipped tasks across combat, AI, WASM, UI, and eval: per-weapon fire strength, 10/18 dispatch validators, faction deploy budgets, uprising prevention, Death Star escort, browser localStorage saves, WASM asset/audio path fixes, DLL resource IDs, and the golden-value parity oracle.
 
 ## External References
 

@@ -1,0 +1,1736 @@
+{
+  "version": 1,
+  "source": "community-disassembly-cross-reference + ghidra-re",
+  "values": {
+    "gnprtb": {
+      "difficulty_columns": [
+        "development",
+        "alliance_sp_easy",
+        "alliance_sp_medium",
+        "alliance_sp_hard",
+        "empire_sp_easy",
+        "empire_sp_medium",
+        "empire_sp_hard",
+        "multiplayer"
+      ],
+      "mapped_binding_counts": {
+        "general": 34,
+        "combat": 77,
+        "total": 111,
+        "general_unique_parameter_ids": 28,
+        "combat_unique_parameter_ids": 37
+      },
+      "general": {
+        "0x0a00": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Space Travel Time: Base",
+          "difficulty_values": [
+            80,
+            80,
+            80,
+            80,
+            80,
+            80,
+            80,
+            80
+          ]
+        },
+        "0x0a01": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "General param 1",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a02": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "General param 2",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a03": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 3",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "0x0a04": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 4",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a05": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 5",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a06": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 6",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a07": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 7",
+          "difficulty_values": [
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29
+          ]
+        },
+        "0x0a08": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 8",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a09": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 9",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a0a": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 10",
+          "difficulty_values": [
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29
+          ]
+        },
+        "0x0a0b": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 11",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a0c": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 12",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a0d": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 13",
+          "difficulty_values": [
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29
+          ]
+        },
+        "0x0a0e": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 14",
+          "difficulty_values": [
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100
+          ]
+        },
+        "0x0a0f": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 15",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a10": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 16",
+          "difficulty_values": [
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29,
+            29
+          ]
+        },
+        "0x0a11": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 17",
+          "difficulty_values": [
+            25,
+            25,
+            25,
+            25,
+            25,
+            25,
+            25,
+            25
+          ]
+        },
+        "0x0a12": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 18",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a13": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 19",
+          "difficulty_values": [
+            60,
+            60,
+            60,
+            60,
+            60,
+            60,
+            60,
+            60
+          ]
+        },
+        "0x0a14": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 20",
+          "difficulty_values": [
+            80,
+            80,
+            80,
+            80,
+            80,
+            80,
+            80,
+            80
+          ]
+        },
+        "0x0a15": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 21",
+          "difficulty_values": [
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100
+          ]
+        },
+        "0x0a16": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 22",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x0a17": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 23",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "0x0a18": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 24",
+          "difficulty_values": [
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100
+          ]
+        },
+        "0x0a19": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 25",
+          "difficulty_values": [
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000,
+            1000
+          ]
+        },
+        "0x0a20": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 26",
+          "difficulty_values": [
+            -5,
+            -5,
+            -5,
+            -5,
+            -5,
+            -5,
+            -5,
+            -5
+          ]
+        },
+        "0x0a21": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "General param 27",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "combat": {
+        "0x1400": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Bombardment divisor / combat difficulty input",
+          "difficulty_values": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "0x1401": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 1",
+          "difficulty_values": [
+            -2,
+            -2,
+            -2,
+            -2,
+            -2,
+            -2,
+            -2,
+            -2
+          ]
+        },
+        "0x1402": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 2",
+          "difficulty_values": [
+            90,
+            90,
+            90,
+            90,
+            90,
+            90,
+            90,
+            90
+          ]
+        },
+        "0x1403": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 3",
+          "difficulty_values": [
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10
+          ]
+        },
+        "0x1404": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 4",
+          "difficulty_values": [
+            101,
+            101,
+            101,
+            101,
+            101,
+            101,
+            101,
+            101
+          ]
+        },
+        "0x1405": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 5",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "0x1406": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 6",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "0x1407": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 7",
+          "difficulty_values": [
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10
+          ]
+        },
+        "0x1408": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 8",
+          "difficulty_values": [
+            101,
+            101,
+            101,
+            101,
+            101,
+            101,
+            101,
+            101
+          ]
+        },
+        "0x1409": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 9",
+          "difficulty_values": [
+            50,
+            50,
+            50,
+            50,
+            50,
+            50,
+            50,
+            50
+          ]
+        },
+        "0x140a": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 10",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x140b": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 11",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x140c": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 12",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x140d": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 13",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x140e": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 14",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x140f": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 15",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x1410": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 16",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x1411": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 17",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "0x1412": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 18",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x1413": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 19",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x1414": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 20",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x1415": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 21",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "0x1416": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 22",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x1417": {
+          "binding_modes": [
+            "base"
+          ],
+          "description": "Combat param 23",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "0x1420": {
+          "binding_modes": [
+            "base",
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 24",
+          "difficulty_values": [
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10
+          ]
+        },
+        "0x1421": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 25",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1422": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 26",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1423": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 27",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1430": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 28",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1431": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 29",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1432": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 30",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1440": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 31",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1441": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 32",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1442": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 33",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1443": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 34",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1444": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 35",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        },
+        "0x1445": {
+          "binding_modes": [
+            "alliance",
+            "empire"
+          ],
+          "description": "Combat param 36",
+          "difficulty_values": null,
+          "note": "Mapped by RE binding function, but no matching parameter_id entry exists in data/base/json/GNPRTB.json."
+        }
+      },
+      "missing_from_gnprtb_json": [
+        "0x1421",
+        "0x1422",
+        "0x1423",
+        "0x1430",
+        "0x1431",
+        "0x1432",
+        "0x1440",
+        "0x1441",
+        "0x1442",
+        "0x1443",
+        "0x1444",
+        "0x1445"
+      ],
+      "community_discovered": {
+        "3076": {
+          "description": "Seat of power bonus (Empire)",
+          "difficulty_values": [
+            50,
+            50,
+            50,
+            50,
+            50,
+            50,
+            50,
+            50
+          ]
+        },
+        "3081": {
+          "description": "Luke Force increment base",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "3082": {
+          "description": "Leia Force parameter",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "3588": {
+          "description": "Decoy penalty multiplier",
+          "difficulty_values": [
+            35,
+            35,
+            35,
+            35,
+            35,
+            35,
+            35,
+            35
+          ]
+        },
+        "7680": {
+          "description": "Empire troop multiplier / garrison halving divisor",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "7682": {
+          "description": "Uprising garrison multiplier",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "7684": {
+          "description": "KDY capital ship penalty",
+          "difficulty_values": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "7685": {
+          "description": "KDY fighter penalty",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "7686": {
+          "description": "Fleet influence on support drift",
+          "difficulty_values": [
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10
+          ]
+        },
+        "7687": {
+          "description": "Fighter influence on support drift",
+          "difficulty_values": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "7688": {
+          "description": "Troop influence on support drift",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "7691": {
+          "description": "Empire-controlled transition delta",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "7693": {
+          "description": "Support favors controller delta",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "7694": {
+          "description": "Maintenance check rate (controlled)",
+          "difficulty_values": [
+            30,
+            30,
+            30,
+            30,
+            30,
+            30,
+            30,
+            30
+          ]
+        },
+        "7695": {
+          "description": "Support opposes controller delta",
+          "difficulty_values": [
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1
+          ]
+        },
+        "7696": {
+          "description": "Maintenance check rate (neutral)",
+          "difficulty_values": [
+            30,
+            30,
+            30,
+            30,
+            30,
+            30,
+            30,
+            30
+          ]
+        },
+        "7697": {
+          "description": "Controlled-systems support delta",
+          "difficulty_values": [
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1,
+            -1
+          ]
+        },
+        "7711": {
+          "description": "Energy minimum bound",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "7712": {
+          "description": "Energy maximum bound",
+          "difficulty_values": [
+            15,
+            15,
+            15,
+            15,
+            15,
+            15,
+            15,
+            15
+          ]
+        },
+        "7713": {
+          "description": "Raw-material minimum bound",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "7714": {
+          "description": "Raw-material maximum bound",
+          "difficulty_values": [
+            15,
+            15,
+            15,
+            15,
+            15,
+            15,
+            15,
+            15
+          ]
+        },
+        "7721": {
+          "description": "Core energy base",
+          "difficulty_values": [
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10
+          ]
+        },
+        "7722": {
+          "description": "Core energy random bonus max",
+          "difficulty_values": [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "7723": {
+          "description": "Core raw-material base",
+          "difficulty_values": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "7724": {
+          "description": "Core raw-material secondary bound",
+          "difficulty_values": [
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9
+          ]
+        },
+        "7725": {
+          "description": "Rim energy base offset",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "7726": {
+          "description": "Rim energy first random max",
+          "difficulty_values": [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "7727": {
+          "description": "Rim energy second random max",
+          "difficulty_values": [
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9
+          ]
+        },
+        "7728": {
+          "description": "Procedural facility base offset",
+          "difficulty_values": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "7729": {
+          "description": "Procedural facility upper bound",
+          "difficulty_values": [
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14
+          ]
+        },
+        "7730": {
+          "description": "Population percentage A",
+          "difficulty_values": [
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100
+          ]
+        },
+        "7731": {
+          "description": "Population percentage B",
+          "difficulty_values": [
+            31,
+            31,
+            31,
+            31,
+            31,
+            31,
+            31,
+            31
+          ]
+        },
+        "7732": {
+          "description": "Support drift threshold",
+          "difficulty_values": [
+            40,
+            40,
+            40,
+            40,
+            40,
+            40,
+            40,
+            40
+          ]
+        },
+        "7733": {
+          "description": "Support drift base (mid bracket)",
+          "difficulty_values": [
+            25,
+            25,
+            25,
+            25,
+            25,
+            25,
+            25,
+            25
+          ]
+        },
+        "7734": {
+          "description": "Support drift threshold 2",
+          "difficulty_values": [
+            30,
+            30,
+            30,
+            30,
+            30,
+            30,
+            30,
+            30
+          ]
+        },
+        "7735": {
+          "description": "Support drift base (low-mid bracket)",
+          "difficulty_values": [
+            50,
+            50,
+            50,
+            50,
+            50,
+            50,
+            50,
+            50
+          ]
+        },
+        "7736": {
+          "description": "Support drift threshold 1",
+          "difficulty_values": [
+            20,
+            20,
+            20,
+            20,
+            20,
+            20,
+            20,
+            20
+          ]
+        },
+        "7737": {
+          "description": "Support drift base (low bracket)",
+          "difficulty_values": [
+            75,
+            75,
+            75,
+            75,
+            75,
+            75,
+            75,
+            75
+          ]
+        },
+        "7760": {
+          "description": "Energy control threshold",
+          "difficulty_values": [
+            60,
+            60,
+            60,
+            60,
+            60,
+            60,
+            60,
+            60
+          ]
+        },
+        "7761": {
+          "description": "Garrison threshold",
+          "difficulty_values": [
+            60,
+            60,
+            60,
+            60,
+            60,
+            60,
+            60,
+            60
+          ]
+        },
+        "7762": {
+          "description": "Garrison divisor",
+          "difficulty_values": [
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10,
+            -10
+          ]
+        },
+        "7763": {
+          "description": "Collection rate base",
+          "difficulty_values": [
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100,
+            100
+          ]
+        },
+        "7764": {
+          "description": "Neutral spread",
+          "difficulty_values": [
+            18,
+            18,
+            18,
+            18,
+            18,
+            18,
+            18,
+            18
+          ]
+        },
+        "7765": {
+          "description": "Neutral spread secondary term",
+          "difficulty_values": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "7766": {
+          "description": "Mine multiplier A",
+          "difficulty_values": [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "7767": {
+          "description": "Mine multiplier B",
+          "difficulty_values": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        }
+      }
+    },
+    "combat": {
+      "space_phase_count": 7,
+      "shield_absorption_multiplier_ion": 2,
+      "shield_recharge_nibble_max": 15,
+      "weapon_recharge_nibble_max": 15,
+      "bombardment_divisor_param_id": 5120,
+      "bombardment_divisor_value": 5,
+      "bombardment_min_damage": 1,
+      "ground_combat_strength_loss_fraction": 0.25,
+      "ground_combat_min_damage": 1,
+      "ground_troop_family_min": 20,
+      "ground_troop_family_max": 27,
+      "death_star_family": 52,
+      "death_star_shield_generator_family": 37,
+      "description": "Combat constants from FUN_00544130, FUN_00556430, and FUN_00560d50."
+    },
+    "economy": {
+      "tick_pipeline_steps": 18,
+      "support_drift_threshold": 40,
+      "support_drift_threshold_1": 20,
+      "support_drift_threshold_2": 30,
+      "support_drift_base_mid": 25,
+      "support_drift_base_low_mid": 50,
+      "support_drift_base_low": 75,
+      "support_drift_fleet_influence": 10,
+      "support_drift_fighter_influence": 5,
+      "support_drift_troop_influence": 2,
+      "empire_troop_multiplier": 2,
+      "uprising_garrison_multiplier": 2,
+      "garrison_threshold": 60,
+      "garrison_divisor": -10,
+      "collection_rate_base": 100,
+      "energy_control_threshold": 60,
+      "kdy_capship_penalty": 5,
+      "kdy_fighter_penalty": 2,
+      "maintenance_rate_controlled": 30,
+      "maintenance_rate_neutral": 30,
+      "support_delta_empire_transition": 0,
+      "support_delta_favors_controller": 1,
+      "support_delta_opposes_controller": -1,
+      "support_delta_controlled_systems": -1,
+      "resource_min_energy": 0,
+      "resource_max_energy": 15,
+      "resource_min_raw_material": 0,
+      "resource_max_raw_material": 15,
+      "core_energy_base": 10,
+      "core_energy_random_bonus_max": 4,
+      "rim_energy_base_offset": 1,
+      "rim_energy_random_bonus_a_max": 4,
+      "rim_energy_random_bonus_b_max": 9,
+      "population_percentage_a": 100,
+      "population_percentage_b": 31,
+      "neutral_spread": 18,
+      "mine_multiplier_a": 4,
+      "mine_multiplier_b": 2,
+      "description": "Economy tick constants from FUN_005073d0, FUN_005583c0, FUN_00558390, and FUN_0050a480."
+    },
+    "research": {
+      "tech_tree_count": 3,
+      "research_min_ticks": 10,
+      "research_default_ticks": 30,
+      "research_max_level": 15,
+      "research_completion_event_ship": 293,
+      "research_completion_event_troop": 294,
+      "research_completion_event_facility": 295,
+      "description": "Research constants from mechanics docs and event mapping."
+    },
+    "death_star": {
+      "construction_ticks": 1825,
+      "nearby_warning_radius": 300,
+      "shield_generator_family": 37,
+      "death_star_family": 52,
+      "description": "Best-available approximation from docs/mechanics/death-star.md and RE notes."
+    },
+    "ai": {
+      "original_tick_interval_days": 1,
+      "current_tick_interval_days": 7,
+      "original_trigger_event_id": 496,
+      "strategic_bucket_count": 7,
+      "pipeline_function_count": 6,
+      "validator_subfunction_count": 18,
+      "original_system_count": 200,
+      "description": "Original AI evaluates every game-day (event 0x1f0); current implementation is throttled to AiConfig::default() tick_interval = 7."
+    },
+    "movement": {
+      "current_distance_scale": 2,
+      "current_min_transit_ticks": 10,
+      "current_default_fighter_hyperdrive": 60,
+      "original_base_ticks_per_hop": 30,
+      "original_default_ticks_per_hop": 20,
+      "original_min_ticks_per_hop": 5,
+      "han_hyperdrive_modifier": 50,
+      "advance_intel_progress_fraction": 0.5,
+      "description": "Original point-to-point movement plus current augmented distance-scale model."
+    },
+    "victory": {
+      "terminal_condition_count": 3,
+      "current_min_victory_tick": 200,
+      "hq_capture_min_attacker_fleets": 1,
+      "hq_capture_required_defender_fleets": 0,
+      "death_star_priority_order": 1,
+      "description": "Three terminal states: HQ capture, Death Star fire, Death Star destroyed."
+    }
+  }
+}

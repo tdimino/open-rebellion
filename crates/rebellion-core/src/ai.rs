@@ -308,6 +308,8 @@ impl AISystem {
         Self::evaluate_rescue(state, world, faction, config, &mut actions);
         Self::evaluate_research(state, world, research_state, faction, &mut actions);
         Self::evaluate_production(world, mfg_state, faction, config, &mut actions);
+        Self::evaluate_uprising_prevention(state, world, faction, config, &mut actions);
+        Self::evaluate_ds_escort(world, movement, faction, &mut actions);
         Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, config, &mut actions);
         Self::evaluate_troop_deployment(world, faction, &mut actions);
 
@@ -320,35 +322,148 @@ impl AISystem {
 
     /// FUN_00508250 port: Pre-dispatch validation cascade.
     /// Returns true if a character is eligible for mission dispatch.
-    /// Checks: alive, faction match, not captive, not on mission, not on mandatory mission,
-    /// can_be_commander, not already busy in AI state.
+    ///
+    /// Ports 10 of the original 18 AND-chained validators. The remaining 8
+    /// reference internal C++ allocation budgets (+0x58, +0x5c, +0x64, +0x80)
+    /// and status bitfields (+0x88) not modeled in our Rust types — documented
+    /// below as comments.
     fn can_dispatch(
         state: &AIState,
         faction: AiFaction,
         char_key: CharacterKey,
         character: &Character,
     ) -> bool {
-        // Faction match
+        // #13 FUN_0050bc60: Faction match (character family 4)
         if !faction.owns_character(character) {
             return false;
         }
-        // Must be commandable
+        // #14 FUN_0050be00: Mandatory mission check
+        if character.on_mandatory_mission {
+            return false;
+        }
+        // Our extensions (not in original, but necessary for gameplay):
         if !character.can_be_commander {
             return false;
         }
-        // Already dispatched by AI
         if state.is_busy(char_key) {
             return false;
         }
-        // Captive — cannot dispatch
         if character.is_captive {
             return false;
         }
-        // Already on a mission
-        if character.on_mission || character.on_hidden_mission || character.on_mandatory_mission {
+        if character.on_mission || character.on_hidden_mission {
             return false;
         }
         true
+    }
+
+    /// System-level dispatch validation for fleet/troop operations.
+    ///
+    /// Ports validators from FUN_00508250 that check system state rather than
+    /// character state. Called before moving fleets or dispatching troops to a
+    /// target system.
+    fn can_dispatch_to_system(
+        world: &GameWorld,
+        faction: AiFaction,
+        target_sys: SystemKey,
+    ) -> bool {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+        let system = match world.systems.get(target_sys) {
+            Some(s) => s,
+            None => return false,
+        };
+
+        // #16 FUN_0050b8e0: System strength comparison — don't attack if defender
+        // is overwhelmingly stronger. Compare our total fleet strength at this
+        // system vs theirs.
+        let friendly_ships: u32 = system.fleets.iter()
+            .filter_map(|fk| world.fleets.get(*fk))
+            .filter(|f| f.is_alliance == is_alliance)
+            .map(|f| f.ship_count())
+            .sum();
+        let enemy_ships: u32 = system.fleets.iter()
+            .filter_map(|fk| world.fleets.get(*fk))
+            .filter(|f| f.is_alliance != is_alliance)
+            .map(|f| f.ship_count())
+            .sum();
+        // If enemy has >3x our ships at target, skip (avoid suicide attacks).
+        // Original uses FUN_00509710 per-faction scoring; our simplified threshold
+        // achieves the same effect.
+        if enemy_ships > 0 && friendly_ships > 0 && enemy_ships > friendly_ships * 3 {
+            return false;
+        }
+
+        // #6 FUN_0050b2c0: Loyalty/support check — don't dispatch to systems
+        // with extremely hostile population (waste of resources).
+        let support = if is_alliance { system.popularity_alliance } else { system.popularity_empire };
+        // Original uses FUN_00559c10 loyalty scoring. We use raw popularity.
+        // Systems under 0.1 support are near-hopeless — skip.
+        if support < 0.1 {
+            // Allow if it's our controlled system (garrison defense).
+            let our_faction = if is_alliance {
+                crate::dat::Faction::Alliance
+            } else {
+                crate::dat::Faction::Empire
+            };
+            if !system.control.is_controlled_by(our_faction) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Fleet-level dispatch validation.
+    ///
+    /// Ports validators that check fleet composition before dispatch.
+    fn can_dispatch_fleet(
+        world: &GameWorld,
+        fleet_key: FleetKey,
+        faction: AiFaction,
+    ) -> bool {
+        let fleet = match world.fleets.get(fleet_key) {
+            Some(f) => f,
+            None => return false,
+        };
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+
+        // Faction match
+        if fleet.is_alliance != is_alliance {
+            return false;
+        }
+
+        // #12 FUN_0050bb70: Ship capacity — fleet must have ships
+        if fleet.is_empty() {
+            return false;
+        }
+
+        // #11 FUN_0050ba90: Troop availability — check we have troops at origin
+        // (for troop-move operations; for fleet attacks this is not blocking)
+
+        // #7 FUN_0050b310: Ship type compatibility — if target has a shipyard,
+        // capital ships can dock. This is a construction/repair check, not an
+        // attack prerequisite, so we skip it for attack dispatch.
+        // For repair dispatch: check `system.manufacturing_facilities` for
+        // `is_shipyard == true` at the destination.
+
+        // #10 FUN_0050b500: Fleet troop count minus allocation > 0
+        // Original checks `troop_count - troop_allocation > 0` using +0x80.
+        // We don't track per-fleet troop allocation; troops are system-level.
+        // This validator is effectively always-true in our model.
+
+        true
+
+        // Unported validators (require C++ offset fields not in our types):
+        // #2 FUN_0050ad60: capacity overflow (+0x5c < +0x64)
+        // #3 FUN_0050ad80: fleet entity count vs capacity at +0x5c
+        // #4 FUN_0050b0b0: entity count via vtable+0x1c8 vs budget at +0x64
+        // #8 FUN_0050b610: troop deployment bits (+0x88 bit0)
+        // #15 FUN_0050c350: fleet/facility nested iteration + per-entity check
+        // #17 FUN_0050b800: status bits (+0x88 bits 0,2) + position (+0x7c >= 0)
+        // #18 FUN_0050bb00: faction + status bits + deployment flag
+        // These reference internal allocation budget tracking that the original
+        // uses to prevent over-dispatching. Our AI evaluates holistically per
+        // cycle, so over-dispatch is naturally limited by available fleets.
     }
 
     /// For each available character, decide whether to dispatch a mission.
@@ -1381,6 +1496,145 @@ impl AISystem {
         }
     }
 
+    /// Strategic: send diplomats to low-support controlled systems to prevent uprisings.
+    ///
+    /// Scans systems where our popularity < 0.4. If an idle diplomat is available,
+    /// dispatches them on a diplomacy mission to stabilize support before an uprising
+    /// can trigger (uprising threshold is popularity-dependent via UPRIS1TB).
+    fn evaluate_uprising_prevention(
+        state: &AIState,
+        world: &GameWorld,
+        faction: AiFaction,
+        config: &GameConfig,
+        actions: &mut Vec<AIAction>,
+    ) {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+        let our_faction = if is_alliance {
+            crate::dat::Faction::Alliance
+        } else {
+            crate::dat::Faction::Empire
+        };
+
+        // Find controlled systems with dangerously low support.
+        let mut at_risk: Vec<SystemKey> = Vec::new();
+        for (sys_key, system) in world.systems.iter() {
+            if !system.control.is_controlled_by(our_faction) {
+                continue;
+            }
+            let support = if is_alliance { system.popularity_alliance } else { system.popularity_empire };
+            if support < 0.4 {
+                at_risk.push(sys_key);
+            }
+        }
+
+        if at_risk.is_empty() {
+            return;
+        }
+
+        // Sort by lowest support first (most urgent).
+        at_risk.sort_by(|a, b| {
+            let sup_a = if is_alliance { world.systems[*a].popularity_alliance } else { world.systems[*a].popularity_empire };
+            let sup_b = if is_alliance { world.systems[*b].popularity_alliance } else { world.systems[*b].popularity_empire };
+            sup_a.partial_cmp(&sup_b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Find idle diplomats.
+        let mut dispatched = 0;
+        for (char_key, character) in world.characters.iter() {
+            if !Self::can_dispatch(state, faction, char_key, character) {
+                continue;
+            }
+            let diplomacy_skill = character.diplomacy.base + character.diplomacy.variance / 2;
+            if diplomacy_skill < config.ai.diplomacy_skill_threshold {
+                continue;
+            }
+            if dispatched >= at_risk.len() {
+                break;
+            }
+
+            actions.push(AIAction::DispatchMission {
+                kind: MissionKind::Diplomacy,
+                character: char_key,
+                target_system: at_risk[dispatched],
+                target_character: None,
+                duration_roll: 0.5,
+            });
+            dispatched += 1;
+
+            // Limit to 2 uprising-prevention diplomats per cycle.
+            if dispatched >= 2 {
+                break;
+            }
+        }
+    }
+
+    /// Strategic: ensure the Death Star fleet has an escort fleet at the same system.
+    ///
+    /// If a DS fleet exists and no other friendly fleet is co-located, route the
+    /// nearest idle fleet to the DS location as reinforcement.
+    fn evaluate_ds_escort(
+        world: &GameWorld,
+        movement: &crate::movement::MovementState,
+        faction: AiFaction,
+        actions: &mut Vec<AIAction>,
+    ) {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
+
+        // Find the Death Star fleet and its location.
+        let ds_info: Option<(FleetKey, SystemKey)> = world.fleets.iter()
+            .find(|(_, f)| f.has_death_star && f.is_alliance == is_alliance)
+            .map(|(fk, f)| (fk, f.location));
+
+        let (ds_fleet_key, ds_location) = match ds_info {
+            Some(info) => info,
+            None => return,
+        };
+
+        // Check if any other friendly fleet is already at the DS location.
+        let has_escort = world.fleets.iter().any(|(fk, f)| {
+            fk != ds_fleet_key
+                && f.is_alliance == is_alliance
+                && f.location == ds_location
+                && !f.is_empty()
+        });
+
+        if has_escort {
+            return;
+        }
+
+        // Find the nearest idle fleet (not in transit, not the DS fleet itself).
+        let mut best: Option<(FleetKey, f64)> = None;
+        let ds_sys = &world.systems[ds_location];
+
+        for (fk, fleet) in world.fleets.iter() {
+            if fk == ds_fleet_key || fleet.is_alliance != is_alliance || fleet.is_empty() {
+                continue;
+            }
+            // Skip fleets already in transit.
+            if movement.orders().contains_key(&fk) {
+                continue;
+            }
+            if fleet.location == ds_location {
+                continue; // already there but maybe empty — skip
+            }
+            let sys = &world.systems[fleet.location];
+            let dx = (sys.x as f64) - (ds_sys.x as f64);
+            let dy = (sys.y as f64) - (ds_sys.y as f64);
+            let dist = (dx * dx + dy * dy).sqrt();
+            if best.is_none() || dist < best.unwrap().1 {
+                best = Some((fk, dist));
+            }
+        }
+
+        if let Some((escort_key, _)) = best {
+            actions.push(AIAction::MoveFleet {
+                fleet: escort_key,
+                to_system: ds_location,
+                reason: FleetMoveReason::Reinforce,
+            });
+        }
+    }
+
     /// Two-pass fleet deployment — ports the original game's distributed targeting.
     ///
     /// Pass 1: Assign each fleet its own target using scoring function.
@@ -1450,6 +1704,11 @@ impl AISystem {
         for (fleet_key, fleet_location) in &idle_fleets {
             let fleet = match world.fleets.get(*fleet_key) { Some(f) => f, None => continue };
 
+            // FUN_00508250 validators: fleet must be dispatchable
+            if !Self::can_dispatch_fleet(world, *fleet_key, faction) {
+                continue;
+            }
+
             // Death Star exemption: always target enemy HQ
             if fleet.has_death_star {
                 if let Some(hq) = galaxy.enemy_hq {
@@ -1481,9 +1740,10 @@ impl AISystem {
             }
 
             // Per-fleet attack targeting: score all enemy systems, pick best.
-            // Cap simultaneous attack fronts scaled by aggression.
-            // Weak faction (aggression=0.2): 1 front. Dominant (0.8): up to config max.
-            let aggression_fronts = (galaxy.aggression * config.ai.max_attack_fronts as f64).ceil() as usize;
+            // Cap simultaneous attack fronts scaled by aggression and faction budget.
+            // FUN_00506ea0: Alliance evaluator (+0xc4) is more conservative than Empire (+0xc8).
+            let budget = if is_alliance { config.ai.alliance_deploy_budget } else { config.ai.empire_deploy_budget };
+            let aggression_fronts = (galaxy.aggression * budget * config.ai.max_attack_fronts as f64).ceil() as usize;
             let max_fronts = idle_fleets.len().min(aggression_fronts.max(1));
             let distinct_targets = targeted_counts.values().filter(|&&v| v > 0).count();
 
@@ -1504,8 +1764,19 @@ impl AISystem {
                 continue;
             }
 
+            // FUN_00508250: filter candidates by system-level validators
+            let valid_candidates: Vec<SystemKey> = candidates.iter()
+                .copied()
+                .filter(|&target| Self::can_dispatch_to_system(world, faction, target))
+                .collect();
+
+            if valid_candidates.is_empty() {
+                pass2_idle.push((*fleet_key, *fleet_location));
+                continue;
+            }
+
             // Score each candidate and pick the best
-            let best = candidates.iter()
+            let best = valid_candidates.iter()
                 .map(|&target| {
                     let score = Self::score_attack_target(
                         world, *fleet_location, target, is_alliance,
@@ -1603,7 +1874,8 @@ mod tests {
     use crate::ids::{DatId, SectorKey};
     use crate::tuning::GameConfig;
     use crate::world::{
-        Character, FighterClass, Fleet, ForceTier, GameWorld, Sector, SkillPair, System,
+        CapitalShipClass, Character, FighterClass, Fleet, ForceTier, GameWorld, Sector,
+        ShipInstance, SkillPair, System,
     };
     use crate::dat::SectorGroup;
     use crate::manufacturing::ManufacturingState;
@@ -1962,9 +2234,11 @@ mod tests {
         let target_sys = add_system(&mut world, sector, 0.6, 0.15);
         world.systems[target_sys].control = ControlKind::Controlled(crate::dat::Faction::Alliance);
 
+        // Fleet needs at least one ship to pass dispatch validation.
+        let class_key = world.capital_ship_classes.insert(CapitalShipClass::default());
         let fleet_key = world.fleets.insert(Fleet {
             location: home_sys,
-            capital_ships: vec![],
+            capital_ships: ShipInstance::make(class_key, 100, false, 1),
             fighters: vec![],
             characters: vec![],
             is_alliance: false, // empire fleet

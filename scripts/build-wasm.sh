@@ -21,6 +21,31 @@ fi
 cp "$WASM_SRC" "$ROOT/web/open-rebellion.wasm"
 echo "Copied open-rebellion.wasm → web/"
 
+# ── wasm-opt: shrink and optimize final artifact ──────────────────────────
+# Recovers the size overhead from web-sys/wasm-bindgen etc.
+# Install via `brew install binaryen` or the binaryen release binaries.
+if command -v wasm-opt >/dev/null 2>&1; then
+    BYTES_BEFORE=$(wc -c < "$ROOT/web/open-rebellion.wasm" | tr -d ' ')
+    # Feature flags for modern Rust-generated WASM. Rust's LLVM backend
+    # emits these by default since ~1.60.
+    wasm-opt -O3 --strip-debug \
+        --enable-nontrapping-float-to-int \
+        --enable-bulk-memory \
+        --enable-bulk-memory-opt \
+        --enable-mutable-globals \
+        --enable-sign-ext \
+        --enable-reference-types \
+        --enable-multivalue \
+        -o "$ROOT/web/open-rebellion.wasm" \
+        "$ROOT/web/open-rebellion.wasm"
+    BYTES_AFTER=$(wc -c < "$ROOT/web/open-rebellion.wasm" | tr -d ' ')
+    SAVED=$((BYTES_BEFORE - BYTES_AFTER))
+    PCT=$(( (SAVED * 100) / BYTES_BEFORE ))
+    echo "wasm-opt -O3: ${BYTES_BEFORE} → ${BYTES_AFTER} bytes (saved ${SAVED}, ${PCT}%)"
+else
+    echo "WARNING: wasm-opt not found. Install binaryen for a smaller release build."
+fi
+
 # gl.js comes from macroquad/miniquad. Must be vendored in repo.
 if [ ! -f "$ROOT/web/gl.js" ]; then
     echo "ERROR: web/gl.js not found. It should be committed in the repo."

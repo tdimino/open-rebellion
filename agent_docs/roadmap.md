@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-03-16
+updated: 2026-04-06
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -197,6 +197,23 @@ All 10 review findings from Knesset Ma'at resolved:
 - Deprecated API (`Frame::none()`) → `Frame::NONE`
 
 **Combat parity: 99%.** Only 74 informational GNPRTB parameters deferred.
+
+## Knesset Resheph -- COMPLETE
+*Final parity sprint — 10 delivered tasks across combat, AI, WASM, UI, and eval*
+
+Plan: `docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md`
+
+Delivered:
+- Combat: per-weapon-type damage in `phase_weapon_fire()` now multiplies turbolaser, ion cannon, and laser cannon arcs by their class-specific `*_attack_strength` scalars using i64 math throughout. Zero attack strength falls back to raw arc count. 3 tests added.
+- Death Star docs: replaced "placeholder" / "not yet decompiled" wording with "best available approximation" after exhaustive GNPRTB search confirmed the current values are not parameterized.
+- AI parity: `AiConfig` now includes faction-specific deployment budgets (`alliance_deploy_budget = 0.6`, `empire_deploy_budget = 0.8`) and fleet deployment scales `max_fronts` per faction for `FUN_00506ea0` parity.
+- AI parity: dispatch validation advanced from 4/18 to 10/18 decoded gates via new `can_dispatch_to_system()` and `can_dispatch_fleet()` helpers, including strength comparison, loyalty gating, faction checks, and empty-fleet rejection.
+- AI behavior: `evaluate_uprising_prevention()` now sends diplomats to low-support controlled systems before they flip.
+- AI behavior: `evaluate_ds_escort()` now routes the nearest available fleet to the Death Star as an escort.
+- WASM save/load: `rebellion-data` replaced browser stubs with a real `localStorage` backend using manual base64 encode/decode, plus save/load/list/delete support and separate metadata keys for fast `list_saves()`.
+- WASM UI assets: `BmpCache` gained cfg-gated path rebasing for browser texture loads and a named DLL resource ID catalog grouped by source (`common`, `strategy`, `tactical`, `gokres`).
+- WASM audio: `audio_base_path()` and `AUDIO_PREFIX` now normalize browser audio asset paths.
+- Eval parity: `scripts/eval_parity.py` was rewritten into a golden-value oracle backed by `scripts/golden_values.json`, covering all mapped 111 GNPRTB bindings plus combat, economy, research, AI, movement, and victory constants with pass/fail reporting.
 
 ## AI Parity Status (as of 2026-03-23)
 

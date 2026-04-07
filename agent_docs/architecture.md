@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-03-21
+updated: 2026-04-06
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -15,7 +15,7 @@ tags: [architecture, crate-graph, entity-identity, simulation]
 rebellion-app (quad-snd, rand_xoshiro)
 ├── rebellion-render (macroquad 0.4, egui-macroquad 0.17, image, nucleo-matcher)
 │   └── rebellion-core
-├── rebellion-data (notify [native only])
+├── rebellion-data (notify [native only], web-sys + wasm-bindgen [wasm32 only])
 │   ├── rebellion-core
 │   └── dat-dumper (library mode)
 └── rebellion-core (slotmap 1.0, serde 1)
@@ -75,7 +75,7 @@ crates/rebellion-render/src/
 ├── fog.rs              — Dim overlays for unexplored/unseen systems
 ├── audio.rs            — AudioVolumeState, SfxKind, MusicTrack, draw_audio_controls (egui widget)
 ├── encyclopedia.rs     — 4-tab entity browser with BMP texture cache from EData/
-├── bmp_cache.rs        — DllSource enum, BMP/PNG texture cache with HD fallback, WASM stubs
+├── bmp_cache.rs        — DllSource enum, BMP/PNG texture cache with HD fallback, WASM path rebasing, named DLL resource ID catalog
 ├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport
 ├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
@@ -104,7 +104,7 @@ crates/rebellion-render/src/
 ```
 crates/rebellion-app/src/
 ├── main.rs   — Entry point, simulation loop, effect application helpers (323 LOC)
-└── audio.rs  — quad-snd AudioEngine: load, play_sfx, play_music, volume sync
+└── audio.rs  — quad-snd AudioEngine: load, play_sfx, play_music, volume sync, WASM audio base-path resolution
 ```
 
 ## Data Modules (rebellion-data)
@@ -112,7 +112,7 @@ crates/rebellion-app/src/
 ```
 crates/rebellion-data/src/
 ├── seeds.rs      — Game seeding: 3-system model, character stat rolling, named placement (~1200 LOC, 8 tests)
-├── save.rs       — Save/load: bincode snapshots, save slots, version migration (v7). v6→v7: ShipInstance promotion (bincode layout change). v3/v4/v5/v6 rejected.
+├── save.rs       — Save/load: bincode snapshots, save slots, version migration (v7). Native uses filesystem saves; WASM uses `web_sys::Storage` localStorage with base64 payloads and separate metadata keys for fast slot listing. v6→v7: ShipInstance promotion (bincode layout change). v3/v4/v5/v6 rejected.
 ├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
 ├── simulation.rs — Tick orchestrator: SimulationStates bundle + run_simulation_tick() (~449 LOC)
 └── integrator.rs — PerceptionIntegrator: all world mutation + telemetry emission (~1,185 LOC, 17 apply methods)
@@ -195,6 +195,33 @@ Interactive game (main.rs):
     (remaining systems identical to simulation.rs pattern)
   draw_galaxy_map → draw_fog_overlay → draw_fleet_overlays
   egui_macroquad::ui: panels + context_menus + encyclopedia + system_info + message_log
+```
+
+### Save/Load Flow
+```
+egui save/load panel
+    | rebellion-data::save::{save_slot, load_slot, list_saves, delete_slot}
+    v
+SaveState + SaveMeta
+    | native: filesystem `saves/slotNN.sav`
+    | wasm32: `web_sys::Storage` localStorage
+    |         - payload stored as base64 snapshot
+    |         - metadata stored under separate keys for fast `list_saves()`
+    v
+Interactive session restores GameWorld + simulation state bundle
+```
+
+### Parity Eval Flow
+```
+rebellion-playtest --jsonl / campaign snapshot output
+    | scripts/eval_parity.py
+    | loads scripts/golden_values.json
+    v
+Golden-value oracle
+    - 111 mapped GNPRTB bindings
+    - combat/economy/research/AI/movement/victory constants
+    v
+Pass/fail parity report
 ```
 
 ### Fleet Arrival Lifecycle

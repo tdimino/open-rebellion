@@ -83,3 +83,7 @@ scripts/download-ot-portraits*.py
 
 # autoresearch lab
 .lab/
+
+# Python bytecode
+__pycache__/
+*.pyc
