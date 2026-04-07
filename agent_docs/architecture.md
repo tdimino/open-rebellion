@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-04-06
+updated: 2026-04-07
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -13,7 +13,7 @@ tags: [architecture, crate-graph, entity-identity, simulation]
 
 ```
 rebellion-app (quad-snd, rand_xoshiro)
-├── rebellion-render (macroquad 0.4, egui-macroquad 0.17, image, nucleo-matcher)
+├── rebellion-render (macroquad 0.4, egui-macroquad 0.17, image, nucleo-matcher, quad-snd)
 │   └── rebellion-core
 ├── rebellion-data (notify [native only], web-sys + wasm-bindgen [wasm32 only])
 │   ├── rebellion-core
@@ -69,6 +69,7 @@ crates/rebellion-core/src/
 crates/rebellion-render/src/
 ├── lib.rs              — Galaxy map (pan/zoom/click), system info panel, context menus (system + fleet)
 ├── main_menu.rs        — Title screen with New Game / Load Game / Quit
+├── video_player.rs     — Native cutscene playback from decoded PNG frame sequences + WAV sidecars; wasm32 stub returns finished immediately
 ├── theme.rs            — Star Wars egui theme: dark space bg, gold/amber accents, Liberation Sans font
 ├── message_log.rs      — Scrollable egui event feed, 7 color-coded categories (380 LOC)
 ├── fleet_movement.rs   — Diamond fleet icons, dashed route lines, ETA labels, fleet hover detection
@@ -80,7 +81,7 @@ crates/rebellion-render/src/
 ├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
 ├── combat_view.rs      — Combat results integration into message log
-├── advisor.rs          — Animated droid advisors (C-3PO/R2-D2 or Imperial), priority message queue, frame cycling
+├── advisor.rs          — Animated droid advisors (C-3PO/R2-D2 or Imperial), priority message queue, BIN-driven frame sequencing with BMP modulo fallback
 ├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
     ├── mod.rs           — PanelAction enum (31 variants, including context menu + combat actions)
@@ -105,6 +106,8 @@ crates/rebellion-render/src/
 crates/rebellion-app/src/
 ├── main.rs   — Entry point, simulation loop, effect application helpers (323 LOC)
 └── audio.rs  — quad-snd AudioEngine: load, play_sfx, play_music, volume sync, WASM audio base-path resolution
+
+Decoded cutscene assets are intentionally kept out of git. `scripts/decode-cutscenes.sh` expands `assets/references/ref-videos/*.webm` into `assets/references/cutscene-frames/<name>/frame-*.png`, `metadata.json`, and sibling `<name>.wav` files for the native `VideoPlayer`.
 ```
 
 ## Data Modules (rebellion-data)

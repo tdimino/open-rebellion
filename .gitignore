@@ -44,6 +44,7 @@ data/base/ui/
 
 # Reference videos (decoded from Smacker, large)
 assets/references/ref-videos/
+assets/references/cutscene-frames/
 assets/references/ref-ui-full/
 
 # Autoresearch intermediate outputs

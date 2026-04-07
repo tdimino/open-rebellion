@@ -100,7 +100,6 @@ Delivered:
 
 Remaining:
 - HD asset pack bulk execution
-- Video playback (Smacker → WebM)
 - Distribution: itch.io (web), Homebrew (macOS), GitHub Releases
 
 ## AI Overhaul -- COMPLETE
@@ -159,8 +158,20 @@ Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 - Phase 7: Entity Portraits (GOKRES.DLL 61 portraits + 57 ship status views)
 
 ### Remaining UI
-- Phase 2.3: Droid Advisor System (148 animation frames + BIN data)
 - Phase 7: HD Visual Polish (upscaled BMPs beyond original art)
+
+### Knesset Kothar wa Khasis — COMPLETE (2026-04-07)
+*U2 + C1 — the two final deferred tasks from Knesset Resheph*
+
+Delivered:
+- **U2 — Native video playback for decoded WebM cutscenes**: new `crates/rebellion-render/src/video_player.rs` with `VideoPlayer::open/advance/current_frame/is_finished/stop`. Runtime path is PNG frame sequences + WAV sidecars (no ffmpeg/libvpx/gstreamer runtime deps). `scripts/decode-cutscenes.sh` is a one-time local ffmpeg decode that produces `assets/references/cutscene-frames/<name>/frame-*.png` + `metadata.json` + `<name>.wav` (ignored by git). `GameMode::Cutscene` added to `rebellion-app/src/main.rs`, plays `000.webm` on startup before MainMenu and `201.webm`/`202.webm` on victory/defeat. ESC/SPACE skip handling. Graceful `VideoError::NotDecoded` path logs a skip message and proceeds when decoded assets are missing. WASM build unaffected via a cfg-gated no-op stub. New dep: `quad-snd` on rebellion-render (player owns its own audio context).
+- **C1 — BIN-driven advisor animation**: `parse_advisor_bin()` in `rebellion-render/src/advisor.rs` parses the `u16 frame_count + u16 frame_id[]` format with `BinError::{TruncatedHeader, TruncatedFrames, LengthMismatch}` real-error rejection. `AdvisorState` now carries `bin_sequences`, `current_sequence`, and `frame_cursor`; the rewritten `update(dt)` walks authored sequences on their `default_interval` and picks the next sequence from idle/normal/critical bands (contiguous thirds of the sorted valid BIN list) based on current `AdvisorPriority`. BIN frame IDs map into the sorted BMP pool via modulo — commented as honest best-effort because the real DLL resource-index table is still undocumented. Falls back to the legacy sorted-frame cycling if zero BINs parse successfully, so the droid never freezes. 3 new parser/state tests added.
+
+Known gaps left for future work:
+- Only ~24% of advisor BINs (183 of ~752 per faction) match the simple `u16 count + u16 ids` shape. The other ~76% declare inconsistent lengths and are silently skipped — the game almost certainly uses one or more additional header variants (timing bytes, loop counts, control flags) that have not been decoded. The 24% that do parse now drive authored sequence length/variation; the rest fall through to the legacy path.
+- Victory/defeat cutscenes return directly to `MainMenu` rather than chaining through the existing egui victory modal.
+- Cutscene audio plays at fixed volume through the player's own quad-snd context rather than through `AudioVolumeState`.
+- Task #132 report in `docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md` tracks these.
 
 ### Game Seeding Parity — CRITICAL GAP (~12% parity)
 

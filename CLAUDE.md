@@ -3,19 +3,21 @@ title: "Open Rebellion"
 description: "Project instructions and build configuration for the Open Rebellion Rust reimplementation"
 category: "reference"
 created: 2026-03-11
-updated: 2026-04-06
+updated: 2026-04-07
 tags: [claude-code, build, conventions, workspace]
 ---
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.20.0 — **Core 97%** | **UI 97%** | **Combat 99%** | **Overall ~97%**. 403 tests, zero warnings. Knesset Ereshkigal Phase 0-5 complete: PerceptionIntegrator extraction (simulation.rs 1,658→449 LOC, 73% reduction), economy wired into interactive game, build completions applied, faction-aware AI dispatch, strong_support bit guard. All 17 simulation sections route through integrator for mutation + telemetry.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.20.0 — **Core 97%** | **UI 98%** | **Combat 99%** | **Overall ~98%**. 417 tests, zero warnings. All 17 simulation sections route through `PerceptionIntegrator` for mutation + telemetry (simulation.rs 1,658→449 LOC since Knesset Ereshkigal); economy runs before manufacturing, build completions land in-world, AI dispatch is faction-aware.
+
+Native cutscenes are optional. Run `bash scripts/decode-cutscenes.sh` once to expand `assets/references/ref-videos/*.webm` into ignored PNG frame sequences + WAV sidecars under `assets/references/cutscene-frames/`. If those decoded assets are missing, the app logs a skip message and continues without crashing.
 
 | Area | Key Features |
 |------|-------------|
 | **Simulation** | 15 systems, 11 mission types, dual-AI with config-driven targeting, ControlKind state machine, deterministic RNG seeding (3-system model, procedural control buckets, maintenance-budget units) |
 | **Combat** | 7-phase pipeline: per-arc weapon fire, shield absorption (Phase 4), fighter launch/dogfight/recall, per-unit ground combat (TroopClassDef + facility bonus), difficulty modifiers, 25+ ship class DAT fields |
-| **UI** | 9 panels, cockpit BMP sprites (3-state), galaxy overlays (facilities/sectors/blockades), tactical combat view, event screen overlays (61 BMPs), droid advisor (animated), GOKRES portraits + mini-icons |
+| **UI** | 13 egui panels, cockpit BMP sprites (3-state), galaxy overlays (facilities/sectors/blockades), tactical combat view, event screen overlays (61 BMPs), droid advisor (BIN-driven sequencing), GOKRES portraits + mini-icons, native cutscene playback |
 | **Infrastructure** | BmpCache (HD PNG fallback), quad-snd audio (285 voice lines + soundtrack), REPL/CLI/JSONL telemetry, ModRuntime, WASM build with 2,231 staged BMPs |
 
 ## Build
@@ -68,7 +70,7 @@ PATH="/usr/bin:$PATH" cargo check
 - dat-dumper lives in `tools/` but is a library dependency of rebellion-data
 - CapitalShipClass has 25+ promoted DAT fields; FighterClass has 20+. Remaining ~15 fields are decorative/unused by combat formulas
 - Save v7 format (v3/v4/v5/v6 rejected). v6→v7: ShipInstance promotion (Fleet.capital_ships now per-hull Vec<ShipInstance>)
-- Droid Advisor BIN animation format partially decoded — uses frame-cycling fallback (see advisor.rs)
+- Droid Advisor BIN format simple variant (`u16 count + u16 ids`) decoded — covers ~24% of files; the remaining ~76% declare inconsistent lengths and indicate one or more undocumented header variants. The unparsed files fall back to legacy sorted-frame cycling (see advisor.rs)
 - Legacy seed fallback collapses Alliance HQ to Yavin (only when 3-system model can't identify Coruscant)
 
 ## Agent Docs
@@ -90,7 +92,7 @@ agent_docs/dll-resource-catalog.md -- Granular DLL resource catalog: 2,441 BMPs 
 agent_docs/references/INDEX.md -- Reference image catalogs: 5 catalog files + 4 new collections (SWCCG cards, SWG TCG art, McQuarrie, Wookieepedia OT). 1,320 audited images. All non-OT portraits removed, text pages quarantined. Read when working with reference images for upscaling.
 agent_docs/seeding.md -- Game seeding pipeline: 3-system model, character stat rolling, named placement, 9 seed tables. Read when modifying initial galaxy state.
 
-docs/mechanics/ -- Game mechanics wiki with 19 system docs + INDEX. Read for player/modder-facing mechanics reference.
+docs/mechanics/ -- Game mechanics wiki with 20 system docs + INDEX. Read for player/modder-facing mechanics reference.
 docs/plans/2026-03-26-001-feat-eval-driven-parity-open-souls-refactor-plan.md -- Knesset Ereshkigal: 6-phase eval-driven parity sprint + Open Souls functional refactor. All 6 phases COMPLETE. Includes Functional Programming Manifesto (10 principles), effect algebra spec, modularity violations audit, PerceptionIntegrator architecture.
 docs/plans/2026-03-28-001-feat-knesset-ptah-todo-resolution-plan.md -- Knesset Ptah: 5-phase TODO resolution sprint. 12/13 TODOs resolved. Telemetry 15/17, DS victory + entity cleanup, espionage_rating, UI wiring, facility type promotion. ShipInstance deferred to Knesset Hephaestus.
 docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decompiled functions cross-referenced against our implementation. P0-P3 gap inventory with GNPRTB parameters. Read when implementing missing game mechanics.
@@ -108,6 +110,7 @@ docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decom
 - [Knesset Ptah (2026-03-28)](docs/plans/2026-03-28-001-feat-knesset-ptah-todo-resolution-plan.md) — TODO resolution sprint. 12 of 13 TODOs resolved across 5 phases. Telemetry 15/17, DS victory fix, entity cleanup, espionage_rating, save v6, UI wiring, facility type promotion. 1 deferred (ShipInstance promotion → Knesset Hephaestus).
 - Knesset Hephaestus (2026-03-30) — ShipInstance promotion. Fleet.capital_ships promoted from aggregate Vec<ShipEntry> to per-hull Vec<ShipInstance> (hull_current, alive, shield_weapon_packed, faction_is_alliance). ShipEntry removed. Fleet helper methods added (ship_count, ship_counts_by_class, is_empty). RepairSystem now emits real ShipRepaired events with hull deltas — last TODO resolved. Fleet merge and combat damage indexing simplified. Repair wired into interactive main.rs. Save format bumped to v7. 403 tests.
 - [Knesset Resheph (2026-04-03)](docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md) — Final parity sprint. 10 shipped tasks across combat, AI, WASM, UI, and eval: per-weapon fire strength, 10/18 dispatch validators, faction deploy budgets, uprising prevention, Death Star escort, browser localStorage saves, WASM asset/audio path fixes, DLL resource IDs, and the golden-value parity oracle.
+- Knesset Kothar wa Khasis (2026-04-07) — Resheph deferrals closed. **U2**: native cutscene playback (`crates/rebellion-render/src/video_player.rs`) via PNG-frame + WAV sidecar streaming, no ffmpeg/libvpx runtime deps. `scripts/decode-cutscenes.sh` is the one-time local decode (atomic temp-dir rename on success). New `GameMode::Cutscene` plays `000.webm` on startup and `201.webm`/`202.webm` on victory/defeat with ESC/SPACE skip; missing decoded assets log a skip and continue. WASM build untouched via cfg-gated stub. New dep: `quad-snd` on rebellion-render. **C1**: `parse_advisor_bin()` decodes the simple `u16 count + u16 frame_id[]` format with real-error rejection; `AdvisorState` walks authored sequences from idle/normal/critical bands and falls back to legacy cycling when BINs are absent or malformed. ~24% of advisor BINs (183 of ~752 per faction) match the simple format — the rest declare inconsistent lengths and are logged at load time as a per-faction summary (valid / parse-failed / empty / io-failed), indicating one or more undocumented header variants. 417 tests passing across the workspace (322 core + 50 data + 42 render + 3 doc).
 
 ## External References
 

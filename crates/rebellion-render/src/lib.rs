@@ -8,14 +8,15 @@ pub mod combat_view;
 pub mod encyclopedia;
 pub mod event_screen;
 pub mod fleet_movement;
-pub mod ground_combat;
 pub mod fog;
+pub mod ground_combat;
 pub mod main_menu;
 pub mod message_log;
 pub mod panels;
 pub mod tactical_view;
 pub mod theme;
 pub mod victory_screen;
+pub mod video_player;
 
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -27,41 +28,46 @@ use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::GameWorld;
 
 pub use advisor::{
-    draw_advisor, advisor_greet, advisor_mission_result, advisor_combat_result,
-    advisor_uprising, advisor_death_star, advisor_manufacturing_complete,
-    AdvisorFaction, AdvisorMessage, AdvisorPriority, AdvisorState,
+    advisor_combat_result, advisor_death_star, advisor_greet, advisor_manufacturing_complete,
+    advisor_mission_result, advisor_uprising, draw_advisor, AdvisorFaction, AdvisorMessage,
+    AdvisorPriority, AdvisorState,
 };
-pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine};
+pub use audio::{
+    draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine,
+};
 pub use bmp_cache::{BmpCache, DllSource};
 pub use cockpit::{
-    draw_cockpit_chrome, draw_cockpit_egui_layer,
-    CockpitButton, CockpitFaction, CockpitState, CockpitViewport,
+    draw_cockpit_chrome, draw_cockpit_egui_layer, CockpitButton, CockpitFaction, CockpitState,
+    CockpitViewport,
 };
 pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
+pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
 pub use event_screen::{
     draw_event_screen, show_event_screen, show_event_screen_raw, update_event_screen,
     EventScreenState,
 };
-pub use ground_combat::{draw_ground_combat, GroundAction, GroundCombatState, GroundWinner};
-pub use tactical_view::{draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState};
-pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
-pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
 pub use fleet_movement::{draw_fleet_overlays, hovered_fleet};
 pub use fog::draw_fog_overlay;
+pub use ground_combat::{draw_ground_combat, GroundAction, GroundCombatState, GroundWinner};
 pub use main_menu::{draw_main_menu, MainMenuAction};
-pub use message_log::{draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState};
-pub use panels::{
-    draw_fleets, draw_manufacturing, draw_missions, draw_mod_manager,
-    draw_officers, draw_save_load,
-    FleetsState, ManufacturingPanelState, MissionsPanelState,
-    ModInfo, ModManagerAction, ModManagerState,
-    OfficersState, SaveLoadPanelState, SaveSlotInfo,
-    PanelAction,
+pub use message_log::{
+    draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState,
 };
 pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
+pub use panels::{
+    draw_fleets, draw_manufacturing, draw_missions, draw_mod_manager, draw_officers,
+    draw_save_load, FleetsState, ManufacturingPanelState, MissionsPanelState, ModInfo,
+    ModManagerAction, ModManagerState, OfficersState, PanelAction, SaveLoadPanelState,
+    SaveSlotInfo,
+};
+pub use tactical_view::{
+    draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
+};
+pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
+pub use video_player::{VideoError, VideoPlayer};
 
 #[cfg(debug_assertions)]
-pub use panels::command_palette::{CommandPaletteState, draw_command_palette};
+pub use panels::command_palette::{draw_command_palette, CommandPaletteState};
 
 /// Computed camera parameters for overlay rendering.
 ///
@@ -392,19 +398,37 @@ pub fn draw_facility_icons(world: &GameWorld, cam: &CameraView) {
         if has_prod {
             // Yellow: resource production
             let ix = base_x + col as f32 * gap;
-            draw_rectangle(ix, base_y, icon_size, icon_size, Color::new(0.9, 0.8, 0.1, 0.85));
+            draw_rectangle(
+                ix,
+                base_y,
+                icon_size,
+                icon_size,
+                Color::new(0.9, 0.8, 0.1, 0.85),
+            );
             col += 1;
         }
         if has_mfg {
             // Cyan: manufacturing (shipyards)
             let ix = base_x + col as f32 * gap;
-            draw_rectangle(ix, base_y, icon_size, icon_size, Color::new(0.2, 0.8, 0.9, 0.85));
+            draw_rectangle(
+                ix,
+                base_y,
+                icon_size,
+                icon_size,
+                Color::new(0.2, 0.8, 0.9, 0.85),
+            );
             col += 1;
         }
         if has_def {
             // Orange: defense installations
             let ix = base_x + col as f32 * gap;
-            draw_rectangle(ix, base_y, icon_size, icon_size, Color::new(0.9, 0.5, 0.1, 0.85));
+            draw_rectangle(
+                ix,
+                base_y,
+                icon_size,
+                icon_size,
+                Color::new(0.9, 0.5, 0.1, 0.85),
+            );
         }
     }
 }
@@ -419,7 +443,11 @@ fn convex_hull(mut pts: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
     }
 
     // Sort by x then y.
-    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+    pts.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap()
+            .then(a.1.partial_cmp(&b.1).unwrap())
+    });
     pts.dedup_by(|a, b| (a.0 - b.0).abs() < 0.5 && (a.1 - b.1).abs() < 0.5);
 
     if pts.len() < 3 {
@@ -444,7 +472,8 @@ fn convex_hull(mut pts: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
     // Build upper hull.
     let lower_len = hull.len() + 1;
     for &p in pts.iter().rev() {
-        while hull.len() >= lower_len && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0 {
+        while hull.len() >= lower_len && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0
+        {
             hull.pop();
         }
         hull.push(p);
@@ -457,12 +486,9 @@ fn convex_hull(mut pts: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
 /// Dim sector-specific color from the SectorGroup.
 fn sector_boundary_color(group: rebellion_core::dat::SectorGroup) -> Color {
     match group {
-        rebellion_core::dat::SectorGroup::Core =>
-            Color::new(0.7, 0.6, 0.2, 0.25), // warm gold — galactic core
-        rebellion_core::dat::SectorGroup::RimInner =>
-            Color::new(0.3, 0.5, 0.7, 0.22), // cool blue — inner rim
-        rebellion_core::dat::SectorGroup::RimOuter =>
-            Color::new(0.4, 0.3, 0.6, 0.20), // purple-grey — outer rim
+        rebellion_core::dat::SectorGroup::Core => Color::new(0.7, 0.6, 0.2, 0.25), // warm gold — galactic core
+        rebellion_core::dat::SectorGroup::RimInner => Color::new(0.3, 0.5, 0.7, 0.22), // cool blue — inner rim
+        rebellion_core::dat::SectorGroup::RimOuter => Color::new(0.4, 0.3, 0.6, 0.20), // purple-grey — outer rim
     }
 }
 
@@ -585,17 +611,31 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         // ── Header ───────────────────────────────────────────
                         let name_color = match system.control {
-                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => theme::ALLIANCE_BLUE,
-                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => theme::EMPIRE_RED,
+                            rebellion_core::world::ControlKind::Controlled(
+                                rebellion_core::dat::Faction::Alliance,
+                            ) => theme::ALLIANCE_BLUE,
+                            rebellion_core::world::ControlKind::Controlled(
+                                rebellion_core::dat::Faction::Empire,
+                            ) => theme::EMPIRE_RED,
                             _ => theme::TEXT_PRIMARY,
                         };
                         ui.heading(egui::RichText::new(&system.name).color(name_color));
 
                         if system.is_headquarters {
-                            ui.label(egui::RichText::new("HEADQUARTERS").color(theme::GOLD).size(10.0).strong());
+                            ui.label(
+                                egui::RichText::new("HEADQUARTERS")
+                                    .color(theme::GOLD)
+                                    .size(10.0)
+                                    .strong(),
+                            );
                         }
                         if system.is_destroyed {
-                            ui.label(egui::RichText::new("DESTROYED").color(theme::DANGER_RED).size(10.0).strong());
+                            ui.label(
+                                egui::RichText::new("DESTROYED")
+                                    .color(theme::DANGER_RED)
+                                    .size(10.0)
+                                    .strong(),
+                            );
                         }
 
                         // Sector + region
@@ -605,20 +645,33 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                                 rebellion_core::dat::SectorGroup::RimInner => "Inner Rim",
                                 rebellion_core::dat::SectorGroup::RimOuter => "Outer Rim",
                             };
-                            ui.label(egui::RichText::new(format!("{} — {}", sector.name, region)).color(theme::TEXT_SECONDARY).size(11.0));
+                            ui.label(
+                                egui::RichText::new(format!("{} — {}", sector.name, region))
+                                    .color(theme::TEXT_SECONDARY)
+                                    .size(11.0),
+                            );
                         }
 
                         ui.separator();
 
                         // ── Popularity bars ──────────────────────────────────
-                        ui.label(egui::RichText::new("SUPPORT").color(theme::GOLD_DIM).size(10.0).strong());
+                        ui.label(
+                            egui::RichText::new("SUPPORT")
+                                .color(theme::GOLD_DIM)
+                                .size(10.0)
+                                .strong(),
+                        );
 
                         let alliance_pct = system.popularity_alliance;
                         let empire_pct = system.popularity_empire;
 
                         // Alliance bar
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Alliance").color(theme::ALLIANCE_BLUE).size(11.0));
+                            ui.label(
+                                egui::RichText::new("Alliance")
+                                    .color(theme::ALLIANCE_BLUE)
+                                    .size(11.0),
+                            );
                             let bar = egui::ProgressBar::new(alliance_pct)
                                 .text(format!("{:.0}%", alliance_pct * 100.0))
                                 .fill(theme::ALLIANCE_BLUE);
@@ -627,7 +680,11 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
 
                         // Empire bar
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Empire  ").color(theme::EMPIRE_RED).size(11.0));
+                            ui.label(
+                                egui::RichText::new("Empire  ")
+                                    .color(theme::EMPIRE_RED)
+                                    .size(11.0),
+                            );
                             let bar = egui::ProgressBar::new(empire_pct)
                                 .text(format!("{:.0}%", empire_pct * 100.0))
                                 .fill(theme::EMPIRE_RED);
@@ -637,48 +694,96 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                         // Control status
                         let control_str = match system.control {
                             rebellion_core::world::ControlKind::Uncontrolled => "Neutral",
-                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => "Alliance Controlled",
-                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => "Empire Controlled",
-                            rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Neutral) => "Neutral",
+                            rebellion_core::world::ControlKind::Controlled(
+                                rebellion_core::dat::Faction::Alliance,
+                            ) => "Alliance Controlled",
+                            rebellion_core::world::ControlKind::Controlled(
+                                rebellion_core::dat::Faction::Empire,
+                            ) => "Empire Controlled",
+                            rebellion_core::world::ControlKind::Controlled(
+                                rebellion_core::dat::Faction::Neutral,
+                            ) => "Neutral",
                             rebellion_core::world::ControlKind::Contested => "Contested",
                             rebellion_core::world::ControlKind::Uprising(_) => "Uprising",
                         };
-                        ui.label(egui::RichText::new(control_str).color(theme::TEXT_SECONDARY).size(10.0));
+                        ui.label(
+                            egui::RichText::new(control_str)
+                                .color(theme::TEXT_SECONDARY)
+                                .size(10.0),
+                        );
 
                         ui.separator();
 
                         // ── Fleets ───────────────────────────────────────────
                         if !system.fleets.is_empty() {
-                            ui.label(egui::RichText::new("FLEETS").color(theme::GOLD_DIM).size(10.0).strong());
+                            ui.label(
+                                egui::RichText::new("FLEETS")
+                                    .color(theme::GOLD_DIM)
+                                    .size(10.0)
+                                    .strong(),
+                            );
                             for &fleet_key in &system.fleets {
                                 if let Some(fleet) = world.fleets.get(fleet_key) {
-                                    let faction_color = if fleet.is_alliance { theme::ALLIANCE_BLUE } else { theme::EMPIRE_RED };
+                                    let faction_color = if fleet.is_alliance {
+                                        theme::ALLIANCE_BLUE
+                                    } else {
+                                        theme::EMPIRE_RED
+                                    };
                                     let faction_tag = if fleet.is_alliance { "A" } else { "E" };
 
                                     let ship_count: u32 = fleet.ship_count();
-                                    let fighter_count: u32 = fleet.fighters.iter().map(|e| e.count).sum();
+                                    let fighter_count: u32 =
+                                        fleet.fighters.iter().map(|e| e.count).sum();
 
                                     ui.horizontal(|ui| {
-                                        ui.label(egui::RichText::new(format!("[{}]", faction_tag)).color(faction_color).size(11.0).strong());
+                                        ui.label(
+                                            egui::RichText::new(format!("[{}]", faction_tag))
+                                                .color(faction_color)
+                                                .size(11.0)
+                                                .strong(),
+                                        );
 
                                         let mut parts = Vec::new();
-                                        if ship_count > 0 { parts.push(format!("{} ships", ship_count)); }
-                                        if fighter_count > 0 { parts.push(format!("{} sqns", fighter_count)); }
-                                        if fleet.has_death_star { parts.push("Death Star".to_string()); }
-                                        ui.label(egui::RichText::new(parts.join(", ")).color(theme::TEXT_PRIMARY).size(11.0));
+                                        if ship_count > 0 {
+                                            parts.push(format!("{} ships", ship_count));
+                                        }
+                                        if fighter_count > 0 {
+                                            parts.push(format!("{} sqns", fighter_count));
+                                        }
+                                        if fleet.has_death_star {
+                                            parts.push("Death Star".to_string());
+                                        }
+                                        ui.label(
+                                            egui::RichText::new(parts.join(", "))
+                                                .color(theme::TEXT_PRIMARY)
+                                                .size(11.0),
+                                        );
                                     });
 
                                     // Ship class breakdown
                                     for (class_key, count) in fleet.ship_counts_by_class() {
-                                        if let Some(class) = world.capital_ship_classes.get(class_key) {
-                                            ui.label(egui::RichText::new(format!("  {} ×{}", class.name, count)).color(theme::TEXT_SECONDARY).size(10.0));
+                                        if let Some(class) =
+                                            world.capital_ship_classes.get(class_key)
+                                        {
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "  {} ×{}",
+                                                    class.name, count
+                                                ))
+                                                .color(theme::TEXT_SECONDARY)
+                                                .size(10.0),
+                                            );
                                         }
                                     }
 
                                     // Commander
                                     for &char_key in &fleet.characters {
                                         if let Some(c) = world.characters.get(char_key) {
-                                            ui.label(egui::RichText::new(format!("  Cmd: {}", c.name)).color(theme::GOLD_DIM).size(10.0));
+                                            ui.label(
+                                                egui::RichText::new(format!("  Cmd: {}", c.name))
+                                                    .color(theme::GOLD_DIM)
+                                                    .size(10.0),
+                                            );
                                         }
                                     }
                                 }
@@ -688,17 +793,47 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
 
                         // ── Ground Units ─────────────────────────────────────
                         if !system.ground_units.is_empty() {
-                            let alliance_troops = system.ground_units.iter()
-                                .filter(|k| world.troops.get(**k).map(|t| t.is_alliance).unwrap_or(false))
+                            let alliance_troops = system
+                                .ground_units
+                                .iter()
+                                .filter(|k| {
+                                    world
+                                        .troops
+                                        .get(**k)
+                                        .map(|t| t.is_alliance)
+                                        .unwrap_or(false)
+                                })
                                 .count();
                             let empire_troops = system.ground_units.len() - alliance_troops;
 
-                            ui.label(egui::RichText::new(format!("GROUND FORCES ({})", system.ground_units.len())).color(theme::GOLD_DIM).size(10.0).strong());
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "GROUND FORCES ({})",
+                                    system.ground_units.len()
+                                ))
+                                .color(theme::GOLD_DIM)
+                                .size(10.0)
+                                .strong(),
+                            );
                             if alliance_troops > 0 {
-                                ui.label(egui::RichText::new(format!("  Alliance: {} regiments", alliance_troops)).color(theme::ALLIANCE_BLUE).size(10.0));
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "  Alliance: {} regiments",
+                                        alliance_troops
+                                    ))
+                                    .color(theme::ALLIANCE_BLUE)
+                                    .size(10.0),
+                                );
                             }
                             if empire_troops > 0 {
-                                ui.label(egui::RichText::new(format!("  Empire: {} regiments", empire_troops)).color(theme::EMPIRE_RED).size(10.0));
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "  Empire: {} regiments",
+                                        empire_troops
+                                    ))
+                                    .color(theme::EMPIRE_RED)
+                                    .size(10.0),
+                                );
                             }
                             ui.add_space(4.0);
                         }
@@ -708,23 +843,53 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                             + system.manufacturing_facilities.len()
                             + system.production_facilities.len();
                         if total_fac > 0 {
-                            ui.label(egui::RichText::new(format!("FACILITIES ({})", total_fac)).color(theme::GOLD_DIM).size(10.0).strong());
+                            ui.label(
+                                egui::RichText::new(format!("FACILITIES ({})", total_fac))
+                                    .color(theme::GOLD_DIM)
+                                    .size(10.0)
+                                    .strong(),
+                            );
 
                             if !system.defense_facilities.is_empty() {
-                                ui.label(egui::RichText::new(format!("  Defense: {}", system.defense_facilities.len())).color(theme::TEXT_SECONDARY).size(10.0));
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "  Defense: {}",
+                                        system.defense_facilities.len()
+                                    ))
+                                    .color(theme::TEXT_SECONDARY)
+                                    .size(10.0),
+                                );
                             }
                             if !system.manufacturing_facilities.is_empty() {
-                                ui.label(egui::RichText::new(format!("  Shipyards: {}", system.manufacturing_facilities.len())).color(theme::TEXT_SECONDARY).size(10.0));
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "  Shipyards: {}",
+                                        system.manufacturing_facilities.len()
+                                    ))
+                                    .color(theme::TEXT_SECONDARY)
+                                    .size(10.0),
+                                );
                             }
                             if !system.production_facilities.is_empty() {
-                                ui.label(egui::RichText::new(format!("  Production: {}", system.production_facilities.len())).color(theme::TEXT_SECONDARY).size(10.0));
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "  Production: {}",
+                                        system.production_facilities.len()
+                                    ))
+                                    .color(theme::TEXT_SECONDARY)
+                                    .size(10.0),
+                                );
                             }
                             ui.add_space(4.0);
                         }
 
                         // ── Coordinates (small, at bottom) ───────────────────
                         ui.separator();
-                        ui.label(egui::RichText::new(format!("({}, {})", system.x, system.y)).color(theme::TEXT_DISABLED).size(9.0));
+                        ui.label(
+                            egui::RichText::new(format!("({}, {})", system.x, system.y))
+                                .color(theme::TEXT_DISABLED)
+                                .size(9.0),
+                        );
                     });
                 });
         }
@@ -762,29 +927,56 @@ pub fn draw_system_context_menu(
         .show(ctx, |ui| {
             // ── Header ──────────────────────────────────────────────────
             let name_color = match system.control {
-                rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => theme::ALLIANCE_BLUE,
-                rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => theme::EMPIRE_RED,
+                rebellion_core::world::ControlKind::Controlled(
+                    rebellion_core::dat::Faction::Alliance,
+                ) => theme::ALLIANCE_BLUE,
+                rebellion_core::world::ControlKind::Controlled(
+                    rebellion_core::dat::Faction::Empire,
+                ) => theme::EMPIRE_RED,
                 _ => theme::TEXT_PRIMARY,
             };
-            ui.label(egui::RichText::new(&system.name).color(name_color).strong().size(14.0));
+            ui.label(
+                egui::RichText::new(&system.name)
+                    .color(name_color)
+                    .strong()
+                    .size(14.0),
+            );
 
             // Control status
             let control_str = match system.control {
                 rebellion_core::world::ControlKind::Uncontrolled => "Neutral",
-                rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => "Alliance",
-                rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => "Empire",
-                rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Neutral) => "Neutral",
+                rebellion_core::world::ControlKind::Controlled(
+                    rebellion_core::dat::Faction::Alliance,
+                ) => "Alliance",
+                rebellion_core::world::ControlKind::Controlled(
+                    rebellion_core::dat::Faction::Empire,
+                ) => "Empire",
+                rebellion_core::world::ControlKind::Controlled(
+                    rebellion_core::dat::Faction::Neutral,
+                ) => "Neutral",
                 rebellion_core::world::ControlKind::Contested => "Contested",
                 rebellion_core::world::ControlKind::Uprising(_) => "Uprising",
             };
-            ui.label(egui::RichText::new(control_str).color(theme::TEXT_SECONDARY).size(10.0));
+            ui.label(
+                egui::RichText::new(control_str)
+                    .color(theme::TEXT_SECONDARY)
+                    .size(10.0),
+            );
 
             ui.separator();
 
             // ── Popularity snapshot ──────────────────────────────────────
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(format!("A: {:.0}%", system.popularity_alliance * 100.0)).color(theme::ALLIANCE_BLUE).size(10.0));
-                ui.label(egui::RichText::new(format!("E: {:.0}%", system.popularity_empire * 100.0)).color(theme::EMPIRE_RED).size(10.0));
+                ui.label(
+                    egui::RichText::new(format!("A: {:.0}%", system.popularity_alliance * 100.0))
+                        .color(theme::ALLIANCE_BLUE)
+                        .size(10.0),
+                );
+                ui.label(
+                    egui::RichText::new(format!("E: {:.0}%", system.popularity_empire * 100.0))
+                        .color(theme::EMPIRE_RED)
+                        .size(10.0),
+                );
             });
 
             // ── Garrison summary ────────────────────────────────────────
@@ -797,13 +989,25 @@ pub fn draw_system_context_menu(
             if fleet_count > 0 || troop_count > 0 || fac_count > 0 {
                 ui.horizontal(|ui| {
                     if fleet_count > 0 {
-                        ui.label(egui::RichText::new(format!("{} fleets", fleet_count)).color(theme::TEXT_SECONDARY).size(10.0));
+                        ui.label(
+                            egui::RichText::new(format!("{} fleets", fleet_count))
+                                .color(theme::TEXT_SECONDARY)
+                                .size(10.0),
+                        );
                     }
                     if troop_count > 0 {
-                        ui.label(egui::RichText::new(format!("{} troops", troop_count)).color(theme::TEXT_SECONDARY).size(10.0));
+                        ui.label(
+                            egui::RichText::new(format!("{} troops", troop_count))
+                                .color(theme::TEXT_SECONDARY)
+                                .size(10.0),
+                        );
                     }
                     if fac_count > 0 {
-                        ui.label(egui::RichText::new(format!("{} facilities", fac_count)).color(theme::TEXT_SECONDARY).size(10.0));
+                        ui.label(
+                            egui::RichText::new(format!("{} facilities", fac_count))
+                                .color(theme::TEXT_SECONDARY)
+                                .size(10.0),
+                        );
                     }
                 });
             }
@@ -811,11 +1015,25 @@ pub fn draw_system_context_menu(
             ui.separator();
 
             // ── Quick actions ───────────────────────────────────────────
-            if ui.button(egui::RichText::new("View Details").color(theme::GOLD).size(11.0)).clicked() {
+            if ui
+                .button(
+                    egui::RichText::new("View Details")
+                        .color(theme::GOLD)
+                        .size(11.0),
+                )
+                .clicked()
+            {
                 action = Some(PanelAction::FocusFleetSystem(sys_key));
                 keep_open = false;
             }
-            if ui.button(egui::RichText::new("Send Diplomat").color(theme::TEXT_PRIMARY).size(11.0)).clicked() {
+            if ui
+                .button(
+                    egui::RichText::new("Send Diplomat")
+                        .color(theme::TEXT_PRIMARY)
+                        .size(11.0),
+                )
+                .clicked()
+            {
                 action = Some(PanelAction::OpenMissionTo {
                     target: sys_key,
                     kind: rebellion_core::missions::MissionKind::Diplomacy,
@@ -823,7 +1041,14 @@ pub fn draw_system_context_menu(
                 });
                 keep_open = false;
             }
-            if ui.button(egui::RichText::new("Send Spy").color(theme::TEXT_PRIMARY).size(11.0)).clicked() {
+            if ui
+                .button(
+                    egui::RichText::new("Send Spy")
+                        .color(theme::TEXT_PRIMARY)
+                        .size(11.0),
+                )
+                .clicked()
+            {
                 action = Some(PanelAction::OpenMissionTo {
                     target: sys_key,
                     kind: rebellion_core::missions::MissionKind::Espionage,
@@ -831,13 +1056,29 @@ pub fn draw_system_context_menu(
                 });
                 keep_open = false;
             }
-            if ui.button(egui::RichText::new("Move Fleet Here").color(theme::TEXT_PRIMARY).size(11.0)).clicked() {
-                action = Some(PanelAction::InitiateFleetMove { destination: sys_key });
+            if ui
+                .button(
+                    egui::RichText::new("Move Fleet Here")
+                        .color(theme::TEXT_PRIMARY)
+                        .size(11.0),
+                )
+                .clicked()
+            {
+                action = Some(PanelAction::InitiateFleetMove {
+                    destination: sys_key,
+                });
                 keep_open = false;
             }
 
             ui.add_space(2.0);
-            if ui.small_button(egui::RichText::new("Close").color(theme::TEXT_DISABLED).size(10.0)).clicked() {
+            if ui
+                .small_button(
+                    egui::RichText::new("Close")
+                        .color(theme::TEXT_DISABLED)
+                        .size(10.0),
+                )
+                .clicked()
+            {
                 keep_open = false;
             }
         });
@@ -874,20 +1115,44 @@ pub fn draw_fleet_context_menu(
         .max_width(220.0)
         .show(ctx, |ui| {
             // ── Header ──────────────────────────────────────────────────
-            let faction_color = if fleet.is_alliance { theme::ALLIANCE_BLUE } else { theme::EMPIRE_RED };
-            let faction_tag = if fleet.is_alliance { "Alliance" } else { "Empire" };
-            ui.label(egui::RichText::new(format!("{} Fleet", faction_tag)).color(faction_color).strong().size(13.0));
+            let faction_color = if fleet.is_alliance {
+                theme::ALLIANCE_BLUE
+            } else {
+                theme::EMPIRE_RED
+            };
+            let faction_tag = if fleet.is_alliance {
+                "Alliance"
+            } else {
+                "Empire"
+            };
+            ui.label(
+                egui::RichText::new(format!("{} Fleet", faction_tag))
+                    .color(faction_color)
+                    .strong()
+                    .size(13.0),
+            );
 
             // Location
             if let Some(sys) = world.systems.get(fleet.location) {
-                ui.label(egui::RichText::new(format!("at {}", sys.name)).color(theme::TEXT_SECONDARY).size(10.0));
+                ui.label(
+                    egui::RichText::new(format!("at {}", sys.name))
+                        .color(theme::TEXT_SECONDARY)
+                        .size(10.0),
+                );
             }
 
             // Transit status
             if let Some(order) = movement_state.get(fleet_key) {
                 if let Some(dest) = world.systems.get(order.destination) {
-                    ui.label(egui::RichText::new(format!("→ {} ({}d)", dest.name, order.ticks_remaining()))
-                        .color(theme::WARNING_AMBER).size(10.0));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "→ {} ({}d)",
+                            dest.name,
+                            order.ticks_remaining()
+                        ))
+                        .color(theme::WARNING_AMBER)
+                        .size(10.0),
+                    );
                 }
             }
 
@@ -898,37 +1163,72 @@ pub fn draw_fleet_context_menu(
             let fighter_count: u32 = fleet.fighters.iter().map(|e| e.count).sum();
 
             if ship_count > 0 {
-                ui.label(egui::RichText::new(format!("{} capital ships", ship_count)).color(theme::TEXT_PRIMARY).size(11.0));
+                ui.label(
+                    egui::RichText::new(format!("{} capital ships", ship_count))
+                        .color(theme::TEXT_PRIMARY)
+                        .size(11.0),
+                );
             }
             if fighter_count > 0 {
-                ui.label(egui::RichText::new(format!("{} fighter sqns", fighter_count)).color(theme::TEXT_PRIMARY).size(11.0));
+                ui.label(
+                    egui::RichText::new(format!("{} fighter sqns", fighter_count))
+                        .color(theme::TEXT_PRIMARY)
+                        .size(11.0),
+                );
             }
             if fleet.has_death_star {
-                ui.label(egui::RichText::new("DEATH STAR").color(theme::DANGER_RED).size(11.0).strong());
+                ui.label(
+                    egui::RichText::new("DEATH STAR")
+                        .color(theme::DANGER_RED)
+                        .size(11.0)
+                        .strong(),
+                );
             }
 
             // Commander
             for &char_key in &fleet.characters {
                 if let Some(c) = world.characters.get(char_key) {
-                    ui.label(egui::RichText::new(format!("Cmd: {}", c.name)).color(theme::GOLD_DIM).size(10.0));
+                    ui.label(
+                        egui::RichText::new(format!("Cmd: {}", c.name))
+                            .color(theme::GOLD_DIM)
+                            .size(10.0),
+                    );
                 }
             }
 
             ui.separator();
 
             // ── Quick actions ───────────────────────────────────────────
-            if ui.button(egui::RichText::new("View in Fleet Panel").color(theme::GOLD).size(11.0)).clicked() {
+            if ui
+                .button(
+                    egui::RichText::new("View in Fleet Panel")
+                        .color(theme::GOLD)
+                        .size(11.0),
+                )
+                .clicked()
+            {
                 action = Some(PanelAction::FocusFleetSystem(fleet.location));
                 keep_open = false;
             }
 
             // Transit status
             if movement_state.get(fleet_key).is_some() {
-                ui.label(egui::RichText::new("In transit").color(theme::WARNING_AMBER).size(10.0));
+                ui.label(
+                    egui::RichText::new("In transit")
+                        .color(theme::WARNING_AMBER)
+                        .size(10.0),
+                );
             }
 
             ui.add_space(2.0);
-            if ui.small_button(egui::RichText::new("Close").color(theme::TEXT_DISABLED).size(10.0)).clicked() {
+            if ui
+                .small_button(
+                    egui::RichText::new("Close")
+                        .color(theme::TEXT_DISABLED)
+                        .size(10.0),
+                )
+                .clicked()
+            {
                 keep_open = false;
             }
         });
