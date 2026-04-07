@@ -1,0 +1,5 @@
+kind context
+edge applies-to blob:b845f22cc563830dbc7faf56854ed49a00d4441a
+edge targets-path path:crates/rebellion-render/src/video_player.rs
+
+Track B research (2026-04-07): VideoPlayer owns its own AudioContext (line 88-92 native::AudioTrack). load_audio_track at line 323 hardcodes volume:1.0 in PlaySoundParams. To respect AudioVolumeState we need either (a) constructor accepting initial volume + setter that calls Sound::set_volume, or (b) borrow AudioVolumeState into VideoPlayer::open. wasm_stub at line 404-431 returns Ok(VideoPlayer) from open() which immediately reports finished — non-fatal. resolve_decoded_assets at line 222 expects assets/references/cutscene-frames/<stem>/ layout. Decoded assets are NOT yet present (assets/references/cutscene-frames/ does not exist) — script must be run.
