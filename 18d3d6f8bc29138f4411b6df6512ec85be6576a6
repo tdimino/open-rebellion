@@ -1,0 +1,5 @@
+kind context
+edge applies-to blob:18d3d6f8bc29138f4411b6df6512ec85be6576a6
+edge targets-path path:crates/rebellion-render/src/advisor.rs
+
+Track B research (2026-04-07): parse_advisor_bin only handles 'u16 count + u16 ids' (~24% of files). 752 BIN/Alliance, 753 BIN/Empire — filenames embed numeric resource IDs (00200..00951). BMP filenames also embed IDs (02001..02999). The missing piece for BIN frame_id->BMP mapping is *not* a separate DLL resource table — it is the BMP filename's leading numeric ID. Currently sync_frames_from_sequence uses modulo over sorted BMP pool (advisor.rs:467-478). load_faction_frames stores BMPs in load order, not by resource ID. AdvisorState owns no AudioVolumeState reference. sequence_band_for_priority bins sorted-thirds for low/normal/high/critical (advisor.rs:422-445).
