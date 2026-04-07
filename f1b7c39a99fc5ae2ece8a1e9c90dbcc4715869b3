@@ -1,0 +1,5 @@
+kind context
+edge applies-to blob:f1b7c39a99fc5ae2ece8a1e9c90dbcc4715869b3
+edge targets-path path:crates/rebellion-core/src/story_events.rs
+
+Track A research (2026-04-07): 4 chains + Force-discovery events live here. Jabba = 5-case switch already partially modeled (0x380 sense, 0x381 plan, 0x382 chewie joins, 0x383 rescue, 0x384 self-escape, 0x385 Leia-captured, 0x386 chewie-captured, 0x399 luke-captured, 0x39A complete). Final Battle Emperor co-location uses CharactersCoLocated{vec![luke,vader,emperor]} guarded by emperor.is_some(). EVT_LEIA_FORCE = 0x363 (NOT 0x362 as cross-ref report says). define_story_events(state,&world) called from rebellion-app/src/main.rs:376. No heritage-known/paternity flag exists on Character. Notification events 0x100/0x105/0x106/0x107/0x128/0x153/0x154/0x155/0x160/0x200/0x230/0x231/0x300/0x304/0x305/0x306/0x361/0x386 have constants in events.rs:84-101 but most lack EventCondition expressivity to be condition-driven — they need to be emitted from specific systems (movement,manufacturing,economy,victory) into the integrator.
