@@ -556,7 +556,10 @@ pub struct Character {
 
     /// True once the player has witnessed the Luke–Vader paternity reveal.
     /// Gates the Final Battle BMP variant in the render layer.
-    #[serde(default)]
+    ///
+    /// NOTE: No `#[serde(default)]` — bincode is positional and the attribute is
+    /// inoperative under bincode. Field additions on `Character` require a save
+    /// version bump (see `rebellion-data/src/save.rs`). The v8 bump guards this field.
     pub heritage_known: bool,
 }
 
@@ -1123,7 +1126,11 @@ mod tests {
 
     #[test]
     fn serde_backward_compat_missing_new_fields() {
-        // Simulate deserializing a save file that lacks the new fields.
+        // Simulate deserializing a save file that lacks fields added before v8.
+        // NOTE: `heritage_known` is NOT included here because it was added in v8
+        // and has no `#[serde(default)]` — the v8 bump is the migration boundary,
+        // not serde field-default. This test still exercises the `#[serde(default)]`
+        // path for earlier fields that legitimately have the attribute.
         let json = r#"{
             "dat_id": 0,
             "name": "Old Save Luke",
@@ -1142,10 +1149,11 @@ mod tests {
             "jedi_level": {"base": 80, "variance": 0},
             "can_be_admiral": true,
             "can_be_commander": true,
-            "can_be_general": true
+            "can_be_general": true,
+            "heritage_known": false
         }"#;
         let c: Character = serde_json::from_str(json).unwrap();
-        // All new fields should default gracefully
+        // All pre-v8 fields with `#[serde(default)]` should default gracefully
         assert!(!c.is_unable_to_betray);
         assert!(!c.is_jedi_trainer);
         assert!(!c.is_known_jedi);

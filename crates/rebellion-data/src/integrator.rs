@@ -980,24 +980,12 @@ fn apply_event_actions_to_world_inner(actions: &[EventAction], world: &mut GameW
                     else { c.is_captive = false; c.captured_by = None; c.capture_tick = None; }
                 }
             }
-            EventAction::SpawnSpecialForce { at_character } => {
-                // Resolve the system where the character is located.
-                // The SpecialForceUnit type will be wired by Dabora 3 (story chains).
-                // For now, log the spawn intent for telemetry.
-                let target_system = world.characters.get(*at_character)
-                    .and_then(|c| c.current_system)
-                    .or_else(|| {
-                        world.characters.get(*at_character)
-                            .and_then(|c| c.current_fleet)
-                            .and_then(|fk| world.fleets.get(fk).map(|f| f.location))
-                    });
-                if target_system.is_none() {
-                    eprintln!(
-                        "[event] SpawnSpecialForce: could not resolve system for character {:?}; skipping spawn",
-                        at_character
-                    );
-                }
-                // TODO(dabora-3): Create SpecialForceUnit and insert into world.special_forces arena.
+            EventAction::SpawnSpecialForce { .. } => {
+                // TODO(dabora-3): Wire SpecialForceUnit type + arena, then resolve target
+                // system via character.current_system OR the movement order destination
+                // (MovementState is not available here — must be passed in), and create
+                // the unit. Until Dabora 3 lands, this is a hard no-op — no code path
+                // currently emits SpawnSpecialForce, so this is unreachable.
             }
         }
     }
@@ -1326,4 +1314,3 @@ pub fn apply_build_completion_inner(
     }
 }
 
-// is_story_event() deleted in Knesset Shamash-Bet: replaced by SystemTag field on GameEvent.

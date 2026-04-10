@@ -1294,43 +1294,12 @@ mod tests {
     }
 
     fn character_with_diplomacy(world: &mut GameWorld, diplomacy: u32) -> CharacterKey {
-        let zero = skill_pair(0);
         world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Test".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
             diplomacy: skill_pair(diplomacy),
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
-            loyalty: zero,
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         })
     }
 
@@ -1510,43 +1479,12 @@ mod tests {
         let mut world = minimal_world();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let system = sys_sm.insert(());
-        let zero = skill_pair(0);
         let character = world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Leader".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: zero,
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
             leadership: skill_pair(80),
-            loyalty: zero,
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         });
 
         let mut state = MissionState::new();
@@ -1653,43 +1591,12 @@ mod tests {
         let mut world = minimal_world();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let system = sys_sm.insert(());
-        let zero = skill_pair(0);
         let character = world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Spy".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: zero,
             espionage: skill_pair(80), // high espionage
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
-            loyalty: zero,
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         });
 
         let mut state = MissionState::new();
@@ -1710,43 +1617,12 @@ mod tests {
         let mut world = minimal_world();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let system = sys_sm.insert(());
-        let zero = skill_pair(0);
         let character = world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Agitator".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
             diplomacy: skill_pair(70),
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
-            loyalty: zero,
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         });
 
         let mut state = MissionState::new();
@@ -1769,43 +1645,12 @@ mod tests {
         let mut world = minimal_world();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let system = sys_sm.insert(());
-        let zero = skill_pair(0);
         let character = world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Diplomat".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
             diplomacy: skill_pair(50), // score = 50 → threshold delta = 0 → table midpoint
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
-            loyalty: zero,
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         });
 
         // Install a minimal DIPLMSTB table: two entries, threshold 0 = value 99.
@@ -1836,43 +1681,12 @@ mod tests {
         let mut world = minimal_world();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let system = sys_sm.insert(());
-        let zero = skill_pair(0);
         let character = world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Intel".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: zero,
             espionage: skill_pair(75),
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
-            loyalty: zero,
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         });
 
         let mut state = MissionState::new();
@@ -1936,43 +1750,14 @@ mod tests {
         use crate::world::{MstbEntry, MstbTable};
 
         let mut world = minimal_world();
-        let zero = skill_pair(0);
         let _char_key = world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Captive".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: zero,
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
             loyalty: skill_pair(50), // loyalty base = 50
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
             captured_by: Some(Faction::Empire),
             capture_tick: Some(10),
             is_captive: true,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         });
 
         // ESCAPETB: loyalty 50 → 80% escape probability
@@ -2000,43 +1785,12 @@ mod tests {
         use crate::world::{MstbEntry, MstbTable};
 
         let mut world = minimal_world();
-        let zero = skill_pair(0);
         world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Free".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: zero,
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
             loyalty: skill_pair(90),
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false, // NOT captive
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            // is_captive defaults to false
+            ..Default::default()
         });
 
         let table = MstbTable::new(vec![
@@ -2062,43 +1816,14 @@ mod tests {
         let mut world = minimal_world();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let system = sys_sm.insert(());
-        let zero = skill_pair(0);
         let character = world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Mandatory".into(),
             is_alliance: true,
-            is_empire: false,
             is_major: true,
             diplomacy: skill_pair(80),
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
-            loyalty: zero,
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
             on_mandatory_mission: true, // <-- mandatory
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         });
 
         let mut state = MissionState::new();
@@ -2126,41 +1851,15 @@ mod tests {
         loyalty: u32,
     ) -> CharacterKey {
         world.characters.insert(Character {
-            dat_id: crate::ids::DatId(0),
             name: "Agent".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
             diplomacy: skill_pair(diplomacy),
             espionage: skill_pair(espionage),
-            ship_design: skill_pair(0),
-            troop_training: skill_pair(0),
-            facility_design: skill_pair(0),
             combat: skill_pair(combat),
             leadership: skill_pair(leadership),
             loyalty: skill_pair(loyalty),
-            jedi_probability: 0,
-            jedi_level: skill_pair(0),
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            heritage_known: false,
+            ..Default::default()
         })
     }
 

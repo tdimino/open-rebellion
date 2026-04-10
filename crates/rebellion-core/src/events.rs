@@ -107,6 +107,9 @@ pub const EVT_JABBA_CAPTURES_CHEWIE: u32 = 0x387; // 903 — Chewie captured at 
 
 /// Identifies which telemetry subsystem a fired event belongs to.
 /// Set explicitly at `state.define()` time instead of pattern-matching on event IDs.
+///
+/// NO `Default` impl — every construction site must choose a variant explicitly.
+/// This ensures misrouting is a compile error, not a silent runtime drop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SystemTag {
     /// Generic event system (`SYS_EVENTS`).
@@ -115,12 +118,6 @@ pub enum SystemTag {
     Story,
     /// State-transition notification events.
     Notification,
-}
-
-impl Default for SystemTag {
-    fn default() -> Self {
-        SystemTag::Events
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +390,9 @@ pub struct GameEvent {
 
     /// Telemetry routing tag. Set at define-time; the integrator reads this
     /// instead of pattern-matching on `event_id`.
-    #[serde(default)]
+    ///
+    /// NO `#[serde(default)]` — bincode is positional; forcing every construction
+    /// site to set this explicitly catches misrouting at compile time.
     pub system_tag: SystemTag,
 }
 
