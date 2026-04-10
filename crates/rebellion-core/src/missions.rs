@@ -1330,6 +1330,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         })
     }
 
@@ -1545,6 +1546,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         let mut state = MissionState::new();
@@ -1687,6 +1689,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         let mut state = MissionState::new();
@@ -1743,6 +1746,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         let mut state = MissionState::new();
@@ -1801,6 +1805,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         // Install a minimal DIPLMSTB table: two entries, threshold 0 = value 99.
@@ -1867,6 +1872,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         let mut state = MissionState::new();
@@ -1966,6 +1972,7 @@ mod tests {
             is_captive: true,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         // ESCAPETB: loyalty 50 → 80% escape probability
@@ -2029,6 +2036,7 @@ mod tests {
             is_captive: false, // NOT captive
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         let table = MstbTable::new(vec![
@@ -2090,6 +2098,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         });
 
         let mut state = MissionState::new();
@@ -2151,6 +2160,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         })
     }
 

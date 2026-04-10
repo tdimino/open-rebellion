@@ -102,6 +102,28 @@ pub const EVT_SIDE_CHANGE: u32 = 0x386; // 902 — character changes faction
 pub const EVT_JABBA_CAPTURES_CHEWIE: u32 = 0x387; // 903 — Chewie captured at Jabba's palace
 
 // ---------------------------------------------------------------------------
+// SystemTag — telemetry routing
+// ---------------------------------------------------------------------------
+
+/// Identifies which telemetry subsystem a fired event belongs to.
+/// Set explicitly at `state.define()` time instead of pattern-matching on event IDs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SystemTag {
+    /// Generic event system (`SYS_EVENTS`).
+    Events,
+    /// Story chain events (`SYS_STORY`).
+    Story,
+    /// State-transition notification events.
+    Notification,
+}
+
+impl Default for SystemTag {
+    fn default() -> Self {
+        SystemTag::Events
+    }
+}
+
+// ---------------------------------------------------------------------------
 // EventCondition
 // ---------------------------------------------------------------------------
 
@@ -310,6 +332,14 @@ pub enum EventAction {
         character: CharacterKey,
         frozen: bool,
     },
+
+    /// Spawn a special force unit (e.g., Bounty Hunters) at the system
+    /// where `at_character` is currently located. The integrator resolves
+    /// the system at fire time; if the character is in transit, it falls
+    /// back to the movement order's destination.
+    SpawnSpecialForce {
+        at_character: CharacterKey,
+    },
 }
 
 /// Which skill pair `ModifyCharacterSkill` targets.
@@ -360,6 +390,11 @@ pub struct GameEvent {
     /// disable without removing (used after one-shot events fire, or to
     /// support conditional mod enable/disable).
     pub enabled: bool,
+
+    /// Telemetry routing tag. Set at define-time; the integrator reads this
+    /// instead of pattern-matching on `event_id`.
+    #[serde(default)]
+    pub system_tag: SystemTag,
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +456,8 @@ pub struct FiredEvent {
     pub tick: u64,
     /// The actions to execute. Cloned from the event definition.
     pub actions: Vec<EventAction>,
+    /// Telemetry routing tag (copied from the event definition).
+    pub system_tag: SystemTag,
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +527,7 @@ impl EventSystem {
                     event_name: ev.name.clone(),
                     tick: current_tick,
                     actions: ev.actions.clone(),
+                    system_tag: ev.system_tag,
                 });
 
                 if !is_repeatable {
@@ -551,7 +589,8 @@ fn evaluate_condition(
         }
 
         EventCondition::Random { probability } => {
-            let roll = rng_rolls.get(*rng_cursor).copied().unwrap_or(1.0);
+            let roll = rng_rolls.get(*rng_cursor).copied()
+                .expect("event_rolls budget exhausted: more Random conditions than pre-generated rolls");
             *rng_cursor += 1;
             roll < *probability
         }
@@ -685,42 +724,12 @@ mod tests {
 
     /// Create a test character with sensible defaults. Override fields after creation.
     fn make_character(name: &str, force_tier: ForceTier) -> Character {
-        let sp = SkillPair { base: 0, variance: 0 };
         Character {
-            dat_id: crate::ids::DatId::new(0),
             name: name.into(),
             is_alliance: true,
-            is_empire: false,
             is_major: true,
-            diplomacy: sp,
-            espionage: sp,
-            ship_design: sp,
-            troop_training: sp,
-            facility_design: sp,
-            combat: sp,
-            leadership: sp,
-            loyalty: sp,
-            jedi_probability: 0,
-            jedi_level: sp,
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
             force_tier,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
+            ..Default::default()
         }
     }
 
@@ -736,6 +745,7 @@ mod tests {
             actions,
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Events,
         }
     }
 
@@ -751,6 +761,7 @@ mod tests {
             actions,
             is_repeatable: true,
             enabled: true,
+            system_tag: SystemTag::Events,
         }
     }
 
@@ -900,7 +911,8 @@ mod tests {
     }
 
     #[test]
-    fn random_no_roll_available_does_not_fire() {
+    #[should_panic(expected = "event_rolls budget exhausted")]
+    fn random_no_roll_available_panics() {
         let world = make_world();
         let mut state = EventState::new();
         state.define(repeatable_event(
@@ -909,9 +921,9 @@ mod tests {
             vec![],
         ));
 
-        // No rolls provided — defaults to 1.0 which is not < 1.0 → no fire.
-        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
-        assert!(fired.is_empty());
+        // No rolls provided — panics instead of silently defaulting to 1.0.
+        // This protects autoresearch from silent Random never-fires.
+        let _fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
     }
 
     // --- EventFired condition ---
@@ -1000,6 +1012,7 @@ mod tests {
             actions: vec![],
             is_repeatable: true,
             enabled: false,
+            system_tag: SystemTag::Events,
         });
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);

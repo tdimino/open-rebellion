@@ -336,10 +336,8 @@ mod tests {
 
     fn add_jedi_character(world: &mut GameWorld, jedi_probability: u32, force_xp: u32, force_tier: ForceTier) -> CharacterKey {
         world.characters.insert(Character {
-            dat_id: DatId(0),
             name: "Test Jedi".into(),
             is_alliance: true,
-            is_empire: false,
             is_major: true,
             diplomacy: SkillPair { base: 50, variance: 0 },
             espionage: SkillPair { base: 50, variance: 0 },
@@ -351,25 +349,10 @@ mod tests {
             loyalty: SkillPair { base: 80, variance: 0 },
             jedi_probability,
             jedi_level: SkillPair { base: 5, variance: 0 },
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
             force_tier,
             force_experience: force_xp,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
+            ..Default::default()
         })
     }
 

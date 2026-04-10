@@ -576,7 +576,7 @@ async fn main() {
             toggle_panel!(KeyCode::B, show_bombardment);
             toggle_panel!(KeyCode::D, show_death_star);
             toggle_panel!(KeyCode::L, show_loyalty);
-            if is_key_pressed(KeyCode::S) {
+            if is_key_pressed(KeyCode::S) && !matches!(game_mode, GameMode::Cutscene) {
                 show_save_load = !show_save_load;
             }
             if is_key_pressed(KeyCode::E) {
@@ -2009,7 +2009,9 @@ async fn main() {
                                 enc_state.open = !enc_state.open;
                             }
                             CockpitButton::SaveLoad => {
-                                show_save_load = !show_save_load;
+                                if !matches!(game_mode, GameMode::Cutscene) {
+                                    show_save_load = !show_save_load;
+                                }
                             }
                             CockpitButton::SpeedDown => {
                                 let next = match clock.speed {
@@ -3403,6 +3405,10 @@ fn apply_event_actions(
                         c.capture_tick = None;
                     }
                 }
+            }
+            EventAction::SpawnSpecialForce { .. } => {
+                // Handled by the integrator in headless mode.
+                // Interactive mode: no-op until SpecialForceUnit type is wired.
             }
         }
     }

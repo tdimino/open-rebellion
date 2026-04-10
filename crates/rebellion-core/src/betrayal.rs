@@ -140,42 +140,11 @@ mod tests {
     }
 
     fn default_test_character(name: &str, loyalty_base: u32) -> Character {
-        let zero = skill_pair(0);
         Character {
-            dat_id: DatId::new(0),
             name: name.into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: zero,
-            espionage: zero,
-            ship_design: zero,
-            troop_training: zero,
-            facility_design: zero,
-            combat: zero,
-            leadership: zero,
             loyalty: skill_pair(loyalty_base),
-            jedi_probability: 0,
-            jedi_level: zero,
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
+            ..Default::default()
         }
     }
 

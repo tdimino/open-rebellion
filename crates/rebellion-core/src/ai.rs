@@ -1972,6 +1972,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         })
     }
 
@@ -2306,6 +2307,7 @@ mod tests {
             is_captive: false,
             current_system: None,
             current_fleet: None,
+            heritage_known: false,
         })
     }
 

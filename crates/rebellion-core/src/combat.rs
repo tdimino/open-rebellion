@@ -2259,21 +2259,10 @@ mod tests {
             dat_id: DatId::new(0x08000001),
             name: "Admiral Ackbar".into(),
             is_alliance: true,
-            is_empire: false,
             is_major: true,
-            diplomacy: sp, espionage: sp, ship_design: sp,
-            troop_training: sp, facility_design: sp,
             combat: SkillPair { base: 80, variance: 0 },
-            leadership: sp, loyalty: sp,
-            jedi_probability: 0, jedi_level: sp,
-            can_be_admiral: true, can_be_commander: false, can_be_general: false,
-            force_tier: ForceTier::None, force_experience: 0,
-            is_discovered_jedi: false, is_unable_to_betray: false,
-            is_jedi_trainer: false, is_known_jedi: false,
-            hyperdrive_modifier: 0, enhanced_loyalty: 0,
-            on_mission: false, on_hidden_mission: false, on_mandatory_mission: false,
-            captured_by: None, capture_tick: None, is_captive: false,
-            current_system: None, current_fleet: None,
+            can_be_admiral: true,
+            ..Default::default()
         });
         let atk_class = make_class(&mut world2, 100, 10);
         let fleet = world2.fleets.insert(Fleet {

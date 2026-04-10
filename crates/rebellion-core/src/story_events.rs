@@ -54,6 +54,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             }],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // Force Training milestone — fires when Luke reaches Training
@@ -72,6 +73,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             }],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // -------------------------------------------------------------------
@@ -96,6 +98,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 }],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Yoda teacher assignment (0x392)
@@ -111,6 +114,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 }],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
         }
 
@@ -138,6 +142,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             ],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // First training day (0x391) — fires after Dagobah starts
@@ -161,6 +166,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             ],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // EVT_DAGOBAH_COMPLETED (0x210): Luke completes training
@@ -187,6 +193,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             ],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // -------------------------------------------------------------------
@@ -215,6 +222,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 ],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Vader en route (0x394)
@@ -230,6 +238,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 }],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Vader reports to Emperor (0x395) — alternate branch
@@ -249,6 +258,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 }],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Final Battle ready (0x396) — requires either path
@@ -266,6 +276,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 }],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // EVT_FINAL_BATTLE (0x220) — requires chain completion + co-location
@@ -316,6 +327,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     actions: final_actions,
                     is_repeatable: false,
                     enabled: true,
+                    system_tag: SystemTag::Story,
                 });
             }
         }
@@ -348,6 +360,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 ],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
         }
 
@@ -374,6 +387,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 ],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
         }
 
@@ -404,6 +418,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 }],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Case 1: Han self-escape (0x384) — low probability, after time in carbonite
@@ -435,6 +450,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 ],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Case 3: Luke captured at palace (0x399) — if rescue hasn't happened
@@ -462,6 +478,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 ],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
         }
     }
@@ -489,6 +506,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             }],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // EVT_BOUNTY_ATTACK (0x212) — now requires BountyHuntersActive gate
@@ -512,6 +530,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             ],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // Han Carbonite aftermath (0x398)
@@ -532,6 +551,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             ],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // -------------------------------------------------------------------
@@ -555,6 +575,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 }],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Event 0x382: Chewbacca joins rescue team
@@ -574,6 +595,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     }],
                     is_repeatable: false,
                     enabled: true,
+                    system_tag: SystemTag::Story,
                 });
             }
 
@@ -601,6 +623,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     ],
                     is_repeatable: false,
                     enabled: true,
+                    system_tag: SystemTag::Story,
                 });
 
                 // Palace rescue complete (0x39A) — all rescued, unfreeze Han (Task 7)
@@ -622,6 +645,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     ],
                     is_repeatable: false,
                     enabled: true,
+                    system_tag: SystemTag::Story,
                 });
             }
 
@@ -649,6 +673,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 ],
                 is_repeatable: false,
                 enabled: true,
+                system_tag: SystemTag::Story,
             });
 
             // Case 5: Jabba captures Chewbacca during rescue attempt (0x386)
@@ -675,6 +700,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     ],
                     is_repeatable: false,
                     enabled: true,
+                    system_tag: SystemTag::Story,
                 });
             }
         }
@@ -719,45 +745,13 @@ mod tests {
     }
 
     fn make_character(name: &str, force_tier: ForceTier, is_alliance: bool) -> Character {
-        let sp = SkillPair {
-            base: 0,
-            variance: 0,
-        };
         Character {
-            dat_id: crate::ids::DatId::new(0),
             name: name.into(),
             is_alliance,
             is_empire: !is_alliance,
             is_major: true,
-            diplomacy: sp,
-            espionage: sp,
-            ship_design: sp,
-            troop_training: sp,
-            facility_design: sp,
-            combat: sp,
-            leadership: sp,
-            loyalty: sp,
-            jedi_probability: 0,
-            jedi_level: sp,
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
             force_tier,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
+            ..Default::default()
         }
     }
 
@@ -906,6 +900,7 @@ mod tests {
             actions: vec![],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
@@ -923,6 +918,7 @@ mod tests {
             actions: vec![],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         let fired2 = EventSystem::advance(&mut state2, &world, &tick(1), &[]);
@@ -944,6 +940,7 @@ mod tests {
             actions: vec![],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         // Han not captive — should not fire
@@ -960,6 +957,7 @@ mod tests {
             actions: vec![],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         let fired2 = EventSystem::advance(&mut state2, &world, &tick(1), &[]);
@@ -979,6 +977,7 @@ mod tests {
             actions: vec![],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
@@ -993,6 +992,7 @@ mod tests {
             actions: vec![],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
         state2.define(GameEvent {
             id: 3,
@@ -1001,6 +1001,7 @@ mod tests {
             actions: vec![],
             is_repeatable: false,
             enabled: true,
+            system_tag: SystemTag::Story,
         });
 
         let fired2 = EventSystem::advance(&mut state2, &world, &tick(1), &[]);
@@ -1398,5 +1399,43 @@ mod tests {
             fired.iter().any(|f| f.event_id == EVT_EMPEROR_ARRIVAL),
             "Emperor Arrival should fire at tick 90 with 110 Empire systems"
         );
+    }
+
+    /// CI guard: notification events must NEVER use EventCondition::Random.
+    ///
+    /// The original game generates these on state transitions (bit-difference
+    /// comparison against galaxy state), not random per-tick probability.
+    /// See the Phase 3b (Knesset Shamash) comment above define_story_events.
+    #[test]
+    fn notification_events_never_use_random() {
+        let banned_ids: &[u32] = &[
+            EVT_SUPPORT_CHANGE,            // 0x100
+            EVT_INFORMANT_INTEL,           // 0x153
+            EVT_NATURAL_DISASTER,          // 0x154
+            EVT_RESOURCE_DISCOVERY,        // 0x155
+            EVT_MANUFACTURING_IDLE,        // 0x160
+            EVT_MAINTENANCE_SHORTFALL_EVENT, // 0x304
+            EVT_SABOTEUR_DETECTED,         // 0x305
+            EVT_TRAITOR_REVEALED,          // 0x361
+        ];
+
+        let world = make_world_with_characters();
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        for event in state.events() {
+            if banned_ids.contains(&event.id) {
+                for cond in &event.conditions {
+                    assert!(
+                        !matches!(cond, EventCondition::Random { .. }),
+                        "Event 0x{:x} ({}) must not use EventCondition::Random — \
+                         notification events fire on state transitions, not random rolls. \
+                         See story_events.rs Phase 3b comment.",
+                        event.id,
+                        event.name
+                    );
+                }
+            }
+        }
     }
 }

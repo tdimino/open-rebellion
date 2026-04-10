@@ -551,6 +551,55 @@ pub struct Character {
     /// Fleet this character is currently assigned to.
     #[serde(default)]
     pub current_fleet: Option<FleetKey>,
+
+    // ── Story state ────────────────────────────────────────────────────
+
+    /// True once the player has witnessed the Luke–Vader paternity reveal.
+    /// Gates the Final Battle BMP variant in the render layer.
+    #[serde(default)]
+    pub heritage_known: bool,
+}
+
+impl Default for Character {
+    fn default() -> Self {
+        Self {
+            dat_id: DatId::new(0),
+            name: String::new(),
+            is_alliance: false,
+            is_empire: false,
+            is_major: false,
+            diplomacy: SkillPair { base: 0, variance: 0 },
+            espionage: SkillPair { base: 0, variance: 0 },
+            ship_design: SkillPair { base: 0, variance: 0 },
+            troop_training: SkillPair { base: 0, variance: 0 },
+            facility_design: SkillPair { base: 0, variance: 0 },
+            combat: SkillPair { base: 0, variance: 0 },
+            leadership: SkillPair { base: 0, variance: 0 },
+            loyalty: SkillPair { base: 0, variance: 0 },
+            jedi_probability: 0,
+            jedi_level: SkillPair { base: 0, variance: 0 },
+            can_be_admiral: false,
+            can_be_commander: false,
+            can_be_general: false,
+            force_tier: ForceTier::None,
+            force_experience: 0,
+            is_discovered_jedi: false,
+            is_unable_to_betray: false,
+            is_jedi_trainer: false,
+            is_known_jedi: false,
+            hyperdrive_modifier: 0,
+            enhanced_loyalty: 0,
+            on_mission: false,
+            on_hidden_mission: false,
+            on_mandatory_mission: false,
+            captured_by: None,
+            capture_tick: None,
+            is_captive: false,
+            current_system: None,
+            current_fleet: None,
+            heritage_known: false,
+        }
+    }
 }
 
 /// A base value paired with a random variance for character skill generation.
@@ -1003,43 +1052,11 @@ fn default_difficulty_index() -> u8 { 2 }
 mod tests {
     use super::*;
 
-    /// Helper: create a minimal Character with all fields at their Default values.
+    /// Helper: create a minimal Character for tests.
     fn default_character() -> Character {
         Character {
-            dat_id: DatId::new(0),
             name: "Test".into(),
-            is_alliance: false,
-            is_empire: false,
-            is_major: false,
-            diplomacy: SkillPair { base: 0, variance: 0 },
-            espionage: SkillPair { base: 0, variance: 0 },
-            ship_design: SkillPair { base: 0, variance: 0 },
-            troop_training: SkillPair { base: 0, variance: 0 },
-            facility_design: SkillPair { base: 0, variance: 0 },
-            combat: SkillPair { base: 0, variance: 0 },
-            leadership: SkillPair { base: 0, variance: 0 },
-            loyalty: SkillPair { base: 0, variance: 0 },
-            jedi_probability: 0,
-            jedi_level: SkillPair { base: 0, variance: 0 },
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
+            ..Default::default()
         }
     }
 
@@ -1140,5 +1157,6 @@ mod tests {
         assert!(c.current_system.is_none());
         assert!(c.current_fleet.is_none());
         assert_eq!(c.force_tier, ForceTier::None);
+        assert!(!c.heritage_known);
     }
 }

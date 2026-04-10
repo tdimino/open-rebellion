@@ -21,6 +21,20 @@ use crate::victory::VictoryOutcome;
 use crate::world::{ControlKind, ForceTier};
 
 // ---------------------------------------------------------------------------
+// Message category tag (rebellion-core side, no render deps)
+// ---------------------------------------------------------------------------
+
+/// Identifies the message category for story-related display messages.
+/// The render layer maps this to its own `MessageCategory` color table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MessageCategoryTag {
+    Event,
+    Story,
+    Combat,
+    Diplomacy,
+}
+
+// ---------------------------------------------------------------------------
 // Effect phase ordering
 // ---------------------------------------------------------------------------
 
@@ -210,6 +224,14 @@ pub enum GameEffect {
     UprisingIncident {
         system: SystemKey,
     },
+    SpecialForceSpawned {
+        at_system: SystemKey,
+        is_alliance: bool,
+    },
+    StoryMessageDisplayed {
+        text: String,
+        category: MessageCategoryTag,
+    },
     // SkillModified intentionally deferred — needs a SkillKind discriminant
     // to identify which of the 8 skill pairs changed. Will be added when
     // the PerceptionIntegrator applies skill effects.
@@ -278,7 +300,9 @@ impl GameEffect {
             | Self::JediDiscovered { .. }
             | Self::EventFired { .. }
             | Self::CharacterBetrayed { .. }
-            | Self::UprisingIncident { .. } => EffectPhase::Command,
+            | Self::UprisingIncident { .. }
+            | Self::SpecialForceSpawned { .. }
+            | Self::StoryMessageDisplayed { .. } => EffectPhase::Command,
 
             Self::DeathStarConstructionProgress { .. }
             | Self::PlanetDestroyed { .. }

@@ -1,6 +1,6 @@
 //! Save / load for the full game state.
 //!
-//! # Format (v7)
+//! # Format (v8)
 //!
 //! Binary `bincode` encoding. A save file is:
 //!
@@ -41,6 +41,7 @@ use rebellion_core::ai::AIState;
 use rebellion_core::betrayal::BetrayalState;
 use rebellion_core::blockade::BlockadeState;
 use rebellion_core::death_star::DeathStarState;
+use rebellion_core::economy::EconomyState;
 use rebellion_core::events::EventState;
 use rebellion_core::fog::FogState;
 use rebellion_core::jedi::JediState;
@@ -61,7 +62,9 @@ use rebellion_core::world::{ControlKind, GameWorld};
 pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes.
-pub const SAVE_VERSION: u32 = 7;
+///
+/// v8: Character gained `heritage_known`, SaveState gained `economy`.
+pub const SAVE_VERSION: u32 = 8;
 
 /// Minimum save version we can migrate from.
 const MIN_MIGRATABLE_VERSION: u32 = 3;
@@ -123,6 +126,8 @@ pub struct SaveState {
     pub jedi: JediState,
     pub victory: VictoryState,
     pub betrayal: BetrayalState,
+    // ── v8: economy state (closes incident re-fire on reload bug) ────────
+    pub economy: EconomyState,
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +350,12 @@ mod native {
             SAVE_VERSION => {
                 bincode::deserialize(&body).context("deserializing save state")?
             }
+            7 => {
+                anyhow::bail!(
+                    "save version 7 is incompatible with this build (Character gained `heritage_known`; SaveState gained `economy`). \
+                     Please start a new game."
+                );
+            }
             6 => {
                 anyhow::bail!(
                     "save version 6 is incompatible with this build (Fleet.capital_ships changed from ShipEntry to ShipInstance). \
@@ -486,13 +497,19 @@ pub mod wasm_impl {
     }
 
     /// localStorage key for a save slot.
+    ///
+    /// Prefix is bumped per save format version so that stale browser entries
+    /// from older builds get rejected cleanly instead of attempting an
+    /// inoperable bincode deserialize.
     fn slot_key(slot: usize) -> String {
-        format!("rebellion_save_{}", slot)
+        format!("rebellion_save_v8_{}", slot)
     }
 
     /// localStorage key for save metadata (name + tick).
+    ///
+    /// Prefix is bumped per save format version (see [`slot_key`]).
     fn meta_key(slot: usize) -> String {
-        format!("rebellion_meta_{}", slot)
+        format!("rebellion_meta_v8_{}", slot)
     }
 
     pub fn default_saves_dir() -> PathBuf {
@@ -669,6 +686,7 @@ mod tests {
             jedi: JediState::new(),
             victory: rebellion_core::victory::VictoryState::new(sys_a, sys_b),
             betrayal: BetrayalState::new(),
+            economy: EconomyState::default(),
         }
     }
 

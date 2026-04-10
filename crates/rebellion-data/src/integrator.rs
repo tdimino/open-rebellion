@@ -18,7 +18,7 @@ use rebellion_core::blockade::BlockadeEvent;
 use rebellion_core::combat::{CombatSide, GroundCombatResult, SpaceCombatResult};
 use rebellion_core::death_star::{DeathStarEvent, DeathStarState};
 use rebellion_core::economy::{EconomyEvent, EconomyState};
-use rebellion_core::events::{EventAction, FiredEvent, SkillField};
+use rebellion_core::events::{EventAction, FiredEvent, SkillField, SystemTag};
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::*;
 use rebellion_core::ids::{CharacterKey, SystemKey, TroopKey};
@@ -477,7 +477,10 @@ impl PerceptionIntegrator {
     ) {
         for fired in fired_events {
             apply_event_actions_to_world_inner(&fired.actions, world, current_tick);
-            let system_tag = if is_story_event(fired.event_id) { SYS_STORY } else { SYS_EVENTS };
+            let system_tag = match fired.system_tag {
+                SystemTag::Story => SYS_STORY,
+                SystemTag::Events | SystemTag::Notification => SYS_EVENTS,
+            };
             self.emit(system_tag, EVT_EVENT_FIRED, serde_json::json!({
                 "event_id": fired.event_id,
             }));
@@ -977,6 +980,25 @@ fn apply_event_actions_to_world_inner(actions: &[EventAction], world: &mut GameW
                     else { c.is_captive = false; c.captured_by = None; c.capture_tick = None; }
                 }
             }
+            EventAction::SpawnSpecialForce { at_character } => {
+                // Resolve the system where the character is located.
+                // The SpecialForceUnit type will be wired by Dabora 3 (story chains).
+                // For now, log the spawn intent for telemetry.
+                let target_system = world.characters.get(*at_character)
+                    .and_then(|c| c.current_system)
+                    .or_else(|| {
+                        world.characters.get(*at_character)
+                            .and_then(|c| c.current_fleet)
+                            .and_then(|fk| world.fleets.get(fk).map(|f| f.location))
+                    });
+                if target_system.is_none() {
+                    eprintln!(
+                        "[event] SpawnSpecialForce: could not resolve system for character {:?}; skipping spawn",
+                        at_character
+                    );
+                }
+                // TODO(dabora-3): Create SpecialForceUnit and insert into world.special_forces arena.
+            }
         }
     }
 }
@@ -1304,12 +1326,4 @@ pub fn apply_build_completion_inner(
     }
 }
 
-/// Story chain event IDs: 0x210/0x212/0x220-0x221 (Dagobah, Bounty, Final Battle)
-/// and 0x380-0x39A (notification story events from define_story_events()).
-/// Used to tag fired events as SYS_STORY instead of SYS_EVENTS.
-fn is_story_event(event_id: u32) -> bool {
-    matches!(event_id,
-        0x210 | 0x212 | 0x220 | 0x221  // Dagobah, Bounty, Final Battle, Luke Dagobah
-        | 0x380..=0x39A                 // Notification story events
-    )
-}
+// is_story_event() deleted in Knesset Shamash-Bet: replaced by SystemTag field on GameEvent.

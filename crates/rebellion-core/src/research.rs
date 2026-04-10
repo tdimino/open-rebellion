@@ -355,40 +355,15 @@ mod tests {
 
     fn make_char_key(world: &mut GameWorld) -> CharacterKey {
         world.characters.insert(Character {
-            dat_id: DatId(0),
             name: "Researcher".into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: SkillPair { base: 0, variance: 0 },
-            espionage: SkillPair { base: 0, variance: 0 },
             ship_design: SkillPair { base: 60, variance: 0 },
             troop_training: SkillPair { base: 50, variance: 0 },
             facility_design: SkillPair { base: 50, variance: 0 },
-            combat: SkillPair { base: 0, variance: 0 },
             leadership: SkillPair { base: 30, variance: 0 },
             loyalty: SkillPair { base: 70, variance: 0 },
-            jedi_probability: 0,
-            jedi_level: SkillPair { base: 0, variance: 0 },
-            can_be_admiral: false,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: crate::world::ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
+            ..Default::default()
         })
     }
 

@@ -513,40 +513,10 @@ mod tests {
 
     fn test_character(name: &str, hyperdrive_modifier: i16) -> Character {
         Character {
-            dat_id: DatId::new(0),
             name: name.into(),
             is_alliance: true,
-            is_empire: false,
-            is_major: false,
-            diplomacy: zero_skill(),
-            espionage: zero_skill(),
-            ship_design: zero_skill(),
-            troop_training: zero_skill(),
-            facility_design: zero_skill(),
-            combat: zero_skill(),
-            leadership: zero_skill(),
-            loyalty: zero_skill(),
-            jedi_probability: 0,
-            jedi_level: zero_skill(),
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
             hyperdrive_modifier,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
+            ..Default::default()
         }
     }
 
