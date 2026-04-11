@@ -214,6 +214,99 @@ pub fn run_simulation_tick(
         if let Some(ref mut ai2) = states.ai2 {
             ai2.mark_available(result.character);
         }
+        // Knesset Shamash-Bet #R11: emit `EVT_CHARACTER_KILLED` telemetry for
+        // mission-side assassinations. The integrator's `MissionEffect::CharacterKilled`
+        // arm now marks `is_killed = true` instead of deleting from the arena,
+        // so next-tick reactive story events can resolve the character.
+        for effect in &result.effects {
+            if let rebellion_core::missions::MissionEffect::CharacterKilled { character, .. } = effect {
+                let (name, dat_id) = world
+                    .characters
+                    .get(*character)
+                    .map(|c| (c.name.clone(), c.dat_id.raw()))
+                    .unwrap_or_else(|| (String::from("<unknown>"), 0));
+                integrator.emit(
+                    rebellion_core::game_events::SYS_STORY,
+                    rebellion_core::game_events::EVT_CHARACTER_KILLED,
+                    serde_json::json!({
+                        "name": name,
+                        "dat_id": dat_id,
+                        "cause": "assassination",
+                    }),
+                );
+            }
+        }
+
+        // Knesset Shamash-Bet #R6/#R7/#R8: mission-side notification events.
+        //
+        // These are state-transition telemetry markers on the outcome of the
+        // mission, NOT `Random`-gated EventSystem entries. The CI guard
+        // `notification_events_never_use_random` protects the corresponding
+        // story-event IDs from being misused.
+        match result.outcome {
+            rebellion_core::missions::MissionOutcome::Success => {
+                // #R6: Successful espionage yields informant intel.
+                if matches!(result.kind, rebellion_core::missions::MissionKind::Espionage) {
+                    let char_name = world
+                        .characters
+                        .get(result.character)
+                        .map(|c| c.name.clone())
+                        .unwrap_or_else(|| String::from("<unknown>"));
+                    let sys_name = world
+                        .systems
+                        .get(result.target_system)
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| String::from("<unknown>"));
+                    integrator.emit(
+                        rebellion_core::game_events::SYS_STORY,
+                        rebellion_core::game_events::EVT_INFORMANT_INTEL,
+                        serde_json::json!({
+                            "character": char_name,
+                            "system": sys_name,
+                        }),
+                    );
+                }
+            }
+            rebellion_core::missions::MissionOutcome::Foiled => {
+                // #R7: Counter-intelligence foiled a covert mission → saboteur detected.
+                let char_name = world
+                    .characters
+                    .get(result.character)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| String::from("<unknown>"));
+                integrator.emit(
+                    rebellion_core::game_events::SYS_STORY,
+                    rebellion_core::game_events::EVT_SABOTEUR_DETECTED,
+                    serde_json::json!({
+                        "character": char_name,
+                        "mission_kind": format!("{:?}", result.kind),
+                    }),
+                );
+            }
+            rebellion_core::missions::MissionOutcome::Failure => {
+                // #R8: Mission failure on combat/assassination → character health hit.
+                if matches!(
+                    result.kind,
+                    rebellion_core::missions::MissionKind::Assassination
+                        | rebellion_core::missions::MissionKind::Abduction
+                        | rebellion_core::missions::MissionKind::Rescue
+                ) {
+                    let char_name = world
+                        .characters
+                        .get(result.character)
+                        .map(|c| c.name.clone())
+                        .unwrap_or_else(|| String::from("<unknown>"));
+                    integrator.emit(
+                        rebellion_core::game_events::SYS_STORY,
+                        rebellion_core::game_events::EVT_CHARACTER_HEALTH,
+                        serde_json::json!({
+                            "character": char_name,
+                            "mission_kind": format!("{:?}", result.kind),
+                        }),
+                    );
+                }
+            }
+        }
     }
 
     // ── 5b. Character escapes ────────────────────────────────────────────
@@ -283,13 +376,49 @@ pub fn run_simulation_tick(
     let ds_events = DeathStarSystem::advance(&mut states.death_star, world, tick_events);
     integrator.apply_death_star_events(world, &ds_events);
     // Update victory state and clean up destroyed systems.
+    //
+    // Knesset Shamash-Bet #R11: `cleanup_destroyed_system` now drains an
+    // out-parameter `Vec<GameEffect>` — we turn each `GameEffect::CharacterKilled`
+    // into an `EVT_CHARACTER_KILLED` telemetry record (DI-H2 payload uses
+    // `name` / `dat_id` rather than `CharacterKey`). Character-death story
+    // events are strictly next-tick reactive.
     for evt in &ds_events {
         if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { system, .. } = evt {
             states.victory.death_star_location = Some(*system);
+            let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
             rebellion_core::death_star::cleanup_destroyed_system(
-                world, *system, &mut states.movement, &mut states.death_star,
-                &mut states.manufacturing, &mut states.blockade,
+                world,
+                *system,
+                &mut states.movement,
+                &mut states.death_star,
+                &mut states.manufacturing,
+                &mut states.blockade,
+                &mut cleanup_effects,
             );
+            let dest_sys_name = world
+                .systems
+                .get(*system)
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| String::from("<unknown>"));
+            for effect in cleanup_effects.drain(..) {
+                if let rebellion_core::effects::GameEffect::CharacterKilled { character } = effect {
+                    let (name, dat_id) = world
+                        .characters
+                        .get(character)
+                        .map(|c| (c.name.clone(), c.dat_id.raw()))
+                        .unwrap_or_else(|| (String::from("<unknown>"), 0));
+                    integrator.emit(
+                        rebellion_core::game_events::SYS_STORY,
+                        rebellion_core::game_events::EVT_CHARACTER_KILLED,
+                        serde_json::json!({
+                            "name": name,
+                            "dat_id": dat_id,
+                            "cause": "death_star",
+                            "system": dest_sys_name,
+                        }),
+                    );
+                }
+            }
         }
     }
 

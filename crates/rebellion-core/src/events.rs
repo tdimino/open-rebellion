@@ -228,6 +228,30 @@ pub enum EventCondition {
     CharactersCoLocated {
         characters: Vec<CharacterKey>,
     },
+
+    /// Character has an active movement order — evaluated via `current_fleet`
+    /// membership. Returns `true` when the character is assigned to any fleet
+    /// (a proxy for "in transit or deployed"), allowing the integrator to
+    /// resolve the target system from the fleet's location or movement order.
+    ///
+    /// This is the SF-#7 precondition for `EVT_BOUNTY_ATTACK` so that
+    /// `SpawnSpecialForce` never fires with an unresolvable character position.
+    /// It is intentionally `GameWorld`-only (no MovementState) — the integrator
+    /// applies the full resolution (fleet location OR movement destination)
+    /// when executing the resulting `SpawnSpecialForce` action.
+    CharacterHasActiveMovementOrder {
+        character: CharacterKey,
+    },
+
+    /// Character has been killed (`Character::is_killed == true`).
+    ///
+    /// Used by next-tick reactive story events (`EVT_CHARACTER_KILLED`, 0x306).
+    /// Uniqueness for death-triggered events comes from the `is_killed` flag
+    /// combined with `is_repeatable: false` — no per-character `fired_ids`
+    /// suffixing required (DI-M3).
+    CharacterIsKilled {
+        character: CharacterKey,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +360,20 @@ pub enum EventAction {
     /// back to the movement order's destination.
     SpawnSpecialForce {
         at_character: CharacterKey,
+    },
+
+    /// Flip `Character::heritage_known` to `true` on the target character.
+    ///
+    /// Applied by `0x396 "Final Battle Imminent"` — the event whose
+    /// narration already introduces the Luke–Vader paternity reveal ("father
+    /// and son"). Triggers the `EVENT_EMPEROR_AND_VADER_VS_KNIGHT_LUKE` BMP
+    /// branch in `event_screen::event_id_to_resource` on subsequent
+    /// Final Battle overlays (see `#R4` in the Knesset Shamash-Bet plan).
+    ///
+    /// Does NOT create a new story event — this replaces the deleted
+    /// `0x222 EVT_FINAL_BATTLE_KNOWN` split per SIMP-H5 + ARCH-#9 + SF-#11.
+    SetHeritageKnown {
+        character: CharacterKey,
     },
 }
 
@@ -687,6 +725,24 @@ fn evaluate_condition(
                 })
             })
         }
+
+        EventCondition::CharacterHasActiveMovementOrder { character } => {
+            // Proxy check: the character is assigned to a fleet. The integrator
+            // resolves the real target system (fleet location or in-flight
+            // movement destination) when it executes `SpawnSpecialForce`.
+            // This keeps event-condition evaluation pure over `GameWorld`.
+            world
+                .characters
+                .get(*character)
+                .map(|c| c.current_fleet.is_some())
+                .unwrap_or(false)
+        }
+
+        EventCondition::CharacterIsKilled { character } => world
+            .characters
+            .get(*character)
+            .map(|c| c.is_killed)
+            .unwrap_or(false),
     }
 }
 

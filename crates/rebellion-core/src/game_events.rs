@@ -121,6 +121,7 @@ pub const EVT_NATURAL_DISASTER: &str = "natural_disaster";
 pub const EVT_MANUFACTURING_IDLE: &str = "manufacturing_idle";
 pub const EVT_SABOTEUR_DETECTED: &str = "saboteur_detected";
 pub const EVT_CHARACTER_KILLED: &str = "character_killed";
+pub const EVT_CHARACTER_HEALTH: &str = "character_health";
 pub const EVT_TRAITOR_REVEALED: &str = "traitor_revealed";
 pub const EVT_LEIA_FORCE: &str = "leia_force_discovery";
 pub const EVT_SIDE_CHANGE: &str = "side_change";
@@ -216,6 +217,7 @@ mod tests {
             EVT_MANUFACTURING_IDLE,
             EVT_SABOTEUR_DETECTED,
             EVT_CHARACTER_KILLED,
+            EVT_CHARACTER_HEALTH,
             EVT_TRAITOR_REVEALED,
             EVT_LEIA_FORCE,
             EVT_SIDE_CHANGE,

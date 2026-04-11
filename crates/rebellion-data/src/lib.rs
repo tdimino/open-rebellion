@@ -525,6 +525,7 @@ fn convert_character(dat: &CharacterEntry, is_major: bool, name: String) -> Char
         current_system: None,
         current_fleet: None,
         heritage_known: false,
+        is_killed: false,
     }
 }
 

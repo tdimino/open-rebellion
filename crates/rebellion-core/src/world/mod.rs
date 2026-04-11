@@ -561,6 +561,18 @@ pub struct Character {
     /// inoperative under bincode. Field additions on `Character` require a save
     /// version bump (see `rebellion-data/src/save.rs`). The v8 bump guards this field.
     pub heritage_known: bool,
+
+    /// True once this character has been killed (Death Star cleanup, assassination).
+    /// Drives `EVT_CHARACTER_KILLED` story events on the next tick and provides
+    /// built-in uniqueness for death-triggered events (DI-M3 in Knesset Shamash-Bet).
+    ///
+    /// Killed characters remain in the arena so that their `dat_id` / `name` can
+    /// still be looked up by next-tick story events; they are removed from all
+    /// fleet rosters immediately at death time.
+    ///
+    /// NOTE: Like `heritage_known`, this field lands under the v8 save bump — no
+    /// `#[serde(default)]` under bincode.
+    pub is_killed: bool,
 }
 
 impl Default for Character {
@@ -601,6 +613,7 @@ impl Default for Character {
             current_system: None,
             current_fleet: None,
             heritage_known: false,
+            is_killed: false,
         }
     }
 }
@@ -1127,10 +1140,11 @@ mod tests {
     #[test]
     fn serde_backward_compat_missing_new_fields() {
         // Simulate deserializing a save file that lacks fields added before v8.
-        // NOTE: `heritage_known` is NOT included here because it was added in v8
-        // and has no `#[serde(default)]` — the v8 bump is the migration boundary,
-        // not serde field-default. This test still exercises the `#[serde(default)]`
-        // path for earlier fields that legitimately have the attribute.
+        // NOTE: `heritage_known` and `is_killed` are required here because they
+        // were added in v8 and have no `#[serde(default)]` — the v8 bump is the
+        // migration boundary, not serde field-default. This test still exercises
+        // the `#[serde(default)]` path for earlier fields that legitimately have
+        // the attribute.
         let json = r#"{
             "dat_id": 0,
             "name": "Old Save Luke",
@@ -1150,7 +1164,8 @@ mod tests {
             "can_be_admiral": true,
             "can_be_commander": true,
             "can_be_general": true,
-            "heritage_known": false
+            "heritage_known": false,
+            "is_killed": false
         }"#;
         let c: Character = serde_json::from_str(json).unwrap();
         // All pre-v8 fields with `#[serde(default)]` should default gracefully
@@ -1166,5 +1181,6 @@ mod tests {
         assert!(c.current_fleet.is_none());
         assert_eq!(c.force_tier, ForceTier::None);
         assert!(!c.heritage_known);
+        assert!(!c.is_killed);
     }
 }

@@ -959,10 +959,20 @@ fn apply_mission_effects_inner(
                 }
             }
             MissionEffect::CharacterKilled { character, .. } => {
+                // Knesset Shamash-Bet #R11: mark `is_killed = true` instead of
+                // removing from the arena so next-tick reactive story events
+                // (`EVT_CHARACTER_KILLED` 0x306) can still resolve the character
+                // by `dat_id` / `name`. Character is removed from all fleet
+                // rosters immediately. Uniqueness comes from the `is_killed`
+                // flag combined with `is_repeatable: false` (DI-M3).
                 for (_, fleet) in world.fleets.iter_mut() {
                     fleet.characters.retain(|&k| k != *character);
                 }
-                world.characters.remove(*character);
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.is_killed = true;
+                    c.on_mission = false;
+                    c.on_mandatory_mission = false;
+                }
             }
             MissionEffect::CharacterCaptured { character, captured_by, at_system } => {
                 if let Some(c) = world.characters.get_mut(*character) {
@@ -1214,6 +1224,20 @@ pub fn apply_event_action_to_world(
                             character,
                         );
                     }
+                }
+            }
+            EventAction::SetHeritageKnown { character } => {
+                // Dabora 3 #R4: flip heritage_known when 0x396 "Final Battle
+                // Imminent" fires (or any future event whose narration
+                // introduces the Luke-Vader paternity reveal). The render
+                // layer branches on this flag in
+                // `event_id_to_resource()` to pick between the
+                // "Student Luke" / "Knight Luke" / "Emperor + Vader vs
+                // Knight Luke" BMP variants for 0x220 EVT_FINAL_BATTLE.
+                // This is the render-layer approach (SIMP-H5 + ARCH-#9
+                // + SF-#11 triple-collapse) — we do NOT create 0x222.
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.heritage_known = true;
                 }
             }
         }

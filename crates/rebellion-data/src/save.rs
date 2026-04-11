@@ -63,7 +63,7 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 
 /// Current save format version. Increment when `SaveState` layout changes.
 ///
-/// v8: Character gained `heritage_known`, SaveState gained `economy`.
+/// v8: Character gained `heritage_known` + `is_killed`, SaveState gained `economy`.
 pub const SAVE_VERSION: u32 = 8;
 
 /// Minimum save version we can migrate from.

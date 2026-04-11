@@ -2789,6 +2789,11 @@ fn apply_panel_action(
                         sys.is_destroyed = true;
                     }
                     victory_state.death_star_location = Some(system);
+                    // Drain the telemetry out-param into the message log so
+                    // interactive play surfaces the killed characters
+                    // immediately; the run_simulation_tick flow does the same
+                    // via the `PerceptionIntegrator`.
+                    let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
                     rebellion_core::death_star::cleanup_destroyed_system(
                         world,
                         system,
@@ -2796,7 +2801,19 @@ fn apply_panel_action(
                         death_star_state,
                         mfg_state,
                         blockade_state,
+                        &mut cleanup_effects,
                     );
+                    for effect in cleanup_effects.drain(..) {
+                        if let rebellion_core::effects::GameEffect::CharacterKilled { character } = effect {
+                            if let Some(c) = world.characters.get(character) {
+                                msg_log.push(GameMessage::new(
+                                    clock.tick,
+                                    format!("{} has been killed.", c.name),
+                                    MessageCategory::Event,
+                                ));
+                            }
+                        }
+                    }
                     msg_log.push(GameMessage::new(
                         clock.tick,
                         format!("{} DESTROYED by Death Star superlaser!", name),
@@ -3390,6 +3407,7 @@ fn apply_mission_result(
 // `rebellion_data::integrator::apply_event_action_to_world` (pub #[inline]).
 // `DisplayMessage` now routes through `GameEffect::StoryMessageDisplayed`
 // and is drained into `msg_log` at the interactive tick call site.
+// SetHeritageKnown (Dabora 3 #R4) is handled in the canonical function.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

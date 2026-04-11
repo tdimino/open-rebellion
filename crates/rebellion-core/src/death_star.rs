@@ -305,14 +305,26 @@ impl DeathStarSystem {
 // ---------------------------------------------------------------------------
 
 use crate::blockade::BlockadeState;
+use crate::effects::GameEffect;
 use crate::manufacturing::ManufacturingState;
 use crate::movement::MovementState;
 
 /// Remove all entities at a destroyed system and cancel in-transit orders.
 ///
 /// Called after Death Star fires. Matches original game behavior:
-/// characters at the system are killed, fleets destroyed, facilities removed,
+/// characters at the system are killed (marked `is_killed`, removed from
+/// fleet rosters, but kept in the arena so next-tick story events can still
+/// resolve them by `dat_id` / `name`), fleets destroyed, facilities removed,
 /// manufacturing queues cleared, blockade lifted, in-transit orders cancelled.
+///
+/// Emits one `GameEffect::CharacterKilled` per killed character into the
+/// caller-supplied `effects` buffer. The caller (`simulation.rs`) drains the
+/// buffer into telemetry as `EVT_CHARACTER_KILLED` records. Character-death
+/// story events are STRICTLY next-tick reactive: Events run at step 6 and
+/// Death Star cleanup runs at step 11 of the tick, so the `is_killed` flag
+/// is only visible to `EventSystem::advance` on the following tick.
+///
+/// (Knesset Shamash-Bet #R11 / ARCH-CRITICAL-#1.)
 pub fn cleanup_destroyed_system(
     world: &mut GameWorld,
     system: SystemKey,
@@ -320,6 +332,7 @@ pub fn cleanup_destroyed_system(
     death_star: &mut DeathStarState,
     manufacturing: &mut ManufacturingState,
     blockade: &mut BlockadeState,
+    effects: &mut Vec<GameEffect>,
 ) {
     let Some(sys) = world.systems.get(system) else { return };
 
@@ -330,14 +343,34 @@ pub fn cleanup_destroyed_system(
     let mfg_keys: Vec<_> = sys.manufacturing_facilities.clone();
     let prod_keys: Vec<_> = sys.production_facilities.clone();
 
-    // Kill characters in fleets at this system.
+    // Kill characters in fleets at this system. We mark them `is_killed = true`
+    // and remove them from the fleet roster, but keep the character record in
+    // the arena so next-tick reactive story events can still look up name/dat_id.
+    // Uniqueness for death-triggered events comes from the `is_killed` flag
+    // combined with `is_repeatable: false` (DI-M3).
+    let mut killed_characters: Vec<crate::ids::CharacterKey> = Vec::new();
     for &fk in &fleet_keys {
         if let Some(fleet) = world.fleets.get(fk) {
             for &ck in &fleet.characters {
-                world.characters.remove(ck);
+                // Skip already-killed (shouldn't happen, but idempotent).
+                if let Some(c) = world.characters.get(ck) {
+                    if c.is_killed {
+                        continue;
+                    }
+                }
+                killed_characters.push(ck);
             }
         }
         world.fleets.remove(fk);
+    }
+
+    // Apply `is_killed` and emit effects AFTER the fleet loop so we don't
+    // borrow `world.characters` while `world.fleets` is still in scope.
+    for ck in &killed_characters {
+        if let Some(c) = world.characters.get_mut(*ck) {
+            c.is_killed = true;
+        }
+        effects.push(GameEffect::CharacterKilled { character: *ck });
     }
 
     for &tk in &troop_keys { world.troops.remove(tk); }
