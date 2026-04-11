@@ -1,0 +1,5 @@
+kind decision
+edge applies-to blob:c7292381d4b091015262ea1c8fd45133112045fa
+edge targets-path path:crates/rebellion-core/src/economy.rs
+
+Knesset Shamash-Bet Dabora 2: added SupportTier + last_support_tier cache + maintenance cooldown counters to EconomyState. Notification events (K1 SupportChanged, K2 NaturalDisaster, K3 ResourceDiscovered, K4 MaintenanceShortfall) emit via EconomyEvent variants routed through integrator's apply_economy_events. No new world state — all additions live on SystemEconomy and EconomyState which are sim state (saved in v8 #F2).
