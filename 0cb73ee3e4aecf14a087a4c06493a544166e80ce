@@ -1,0 +1,5 @@
+kind context
+edge applies-to blob:0cb73ee3e4aecf14a087a4c06493a544166e80ce
+edge targets-path path:crates/rebellion-core/src/effects.rs
+
+Knesset Shamash-Bet Dabora 2: resurrected GameEffect::SpecialForceSpawned + GameEffect::StoryMessageDisplayed (deleted as dead code in Dabora 1 cleanup cb6821f). Both now have real producers in apply_event_action_to_world. New MessageCategoryTag enum (Event only variant — others added on demand). Both variants tagged EffectPhase::Command.
