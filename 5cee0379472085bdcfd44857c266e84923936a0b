@@ -1,0 +1,5 @@
+kind decision
+edge applies-to blob:5cee0379472085bdcfd44857c266e84923936a0b
+edge targets-path path:crates/rebellion-data/src/integrator.rs
+
+Knesset Shamash-Bet Dabora 2: (#F7) apply_event_actions_to_world_inner promoted to pub fn apply_event_action_to_world (pub #[inline]), gains &mut Vec<GameEffect> effects_out and &MovementState params. (#A2) SpawnSpecialForce resolves at_system via character.current_system → fleet.characters+movement.orders().destination. (#A3) DisplayMessage routes through GameEffect::StoryMessageDisplayed. main.rs duplicate deleted. PerceptionIntegrator gained story_effects Vec with drain_story_effects().
