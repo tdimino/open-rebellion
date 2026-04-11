@@ -356,49 +356,28 @@ impl ManufacturingSystem {
         // The last tick number in this batch (used as the completion timestamp).
         let final_tick = tick_events.last().unwrap().tick;
 
-        // K6 intra-tick scratch: snapshot pre-advance queue length for each
-        // non-blockaded system. Blockaded systems don't advance, so they
-        // can't transition — skipping them here is correct.
-        let mut pre_lengths: HashMap<SystemKey, usize> = HashMap::new();
-        for (system_key, queue) in state.queues.iter() {
-            if blocked_systems.contains(system_key) {
-                continue;
-            }
-            pre_lengths.insert(*system_key, queue.len());
-        }
-
+        // K6 intra-tick detection: capture `pre_len` inside the iter loop
+        // itself — no scratch HashMap, no per-tick allocation. A system that
+        // started non-empty and ends empty is "newly idle" (SIMP-H4).
         let mut completions = Vec::new();
+        let mut newly_idle = Vec::new();
 
         for (system_key, queue) in state.queues.iter_mut() {
-            // Skip blockaded systems — manufacturing halted
+            // Skip blockaded systems — manufacturing halted and they can't
+            // transition idle while blocked.
             if blocked_systems.contains(system_key) {
                 continue;
             }
-            let finished = queue.advance_ticks(tick_count);
-            for kind in finished {
+            let pre_len = queue.len();
+            for kind in queue.advance_ticks(tick_count) {
                 completions.push(CompletionEvent {
                     system: *system_key,
                     tick: final_tick,
                     kind,
                 });
             }
-        }
-
-        // K6: detect pre-non-empty → post-empty transitions. `pre_lengths`
-        // already excludes blockaded systems; now filter on "was non-empty,
-        // is now empty".
-        let mut newly_idle = Vec::new();
-        for (system_key, pre_len) in pre_lengths.into_iter() {
-            if pre_len == 0 {
-                continue;
-            }
-            let post_len = state
-                .queues
-                .get(&system_key)
-                .map(|q| q.len())
-                .unwrap_or(0);
-            if post_len == 0 {
-                newly_idle.push(system_key);
+            if pre_len > 0 && queue.is_empty() {
+                newly_idle.push(*system_key);
             }
         }
 

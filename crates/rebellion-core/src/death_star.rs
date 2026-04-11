@@ -344,33 +344,30 @@ pub fn cleanup_destroyed_system(
     let prod_keys: Vec<_> = sys.production_facilities.clone();
 
     // Kill characters in fleets at this system. We mark them `is_killed = true`
-    // and remove them from the fleet roster, but keep the character record in
-    // the arena so next-tick reactive story events can still look up name/dat_id.
-    // Uniqueness for death-triggered events comes from the `is_killed` flag
-    // combined with `is_repeatable: false` (DI-M3).
-    let mut killed_characters: Vec<crate::ids::CharacterKey> = Vec::new();
+    // but keep the character record in the arena so next-tick reactive story
+    // events can still look up name/dat_id. Uniqueness for death-triggered
+    // events comes from the `is_killed` flag combined with `is_repeatable: false`
+    // (DI-M3).
+    //
+    // Split borrows through distinct struct fields permit `world.fleets.get()`
+    // and `world.characters.get_mut()` simultaneously — we clone the fleet's
+    // character list to release the fleets borrow, then mutate characters and
+    // push effects inline.
     for &fk in &fleet_keys {
-        if let Some(fleet) = world.fleets.get(fk) {
-            for &ck in &fleet.characters {
-                // Skip already-killed (shouldn't happen, but idempotent).
-                if let Some(c) = world.characters.get(ck) {
-                    if c.is_killed {
-                        continue;
-                    }
+        let chars: Vec<crate::ids::CharacterKey> = world
+            .fleets
+            .get(fk)
+            .map(|fleet| fleet.characters.clone())
+            .unwrap_or_default();
+        for ck in chars {
+            if let Some(c) = world.characters.get_mut(ck) {
+                if !c.is_killed {
+                    c.is_killed = true;
+                    effects.push(GameEffect::CharacterKilled { character: ck });
                 }
-                killed_characters.push(ck);
             }
         }
         world.fleets.remove(fk);
-    }
-
-    // Apply `is_killed` and emit effects AFTER the fleet loop so we don't
-    // borrow `world.characters` while `world.fleets` is still in scope.
-    for ck in &killed_characters {
-        if let Some(c) = world.characters.get_mut(*ck) {
-            c.is_killed = true;
-        }
-        effects.push(GameEffect::CharacterKilled { character: *ck });
     }
 
     for &tk in &troop_keys { world.troops.remove(tk); }
