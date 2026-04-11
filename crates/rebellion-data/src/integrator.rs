@@ -129,6 +129,15 @@ pub struct PerceptionIntegrator {
     events: Vec<GameEventRecord>,
     tick: u64,
     wall_ms: u64,
+    /// Effect queue for cross-system story/message routing. Populated by
+    /// `apply_event_action_to_world` (see Knesset Shamash-Bet Dabora 2
+    /// #F7/#A3) when an `EventAction::DisplayMessage` fires or when a
+    /// `SpawnSpecialForce` action resolves to a target system. The
+    /// interactive `main.rs` drains this with `drain_story_effects()`
+    /// after the tick completes and routes each effect into its
+    /// MessageLog / special-forces arena. Headless `simulation.rs`
+    /// leaves the queue alone and `finish()` discards it.
+    story_effects: Vec<rebellion_core::effects::GameEffect>,
 }
 
 impl PerceptionIntegrator {
@@ -138,7 +147,18 @@ impl PerceptionIntegrator {
             events: Vec::new(),
             tick,
             wall_ms,
+            story_effects: Vec::new(),
         }
+    }
+
+    /// Drain the queued story/message effects so the interactive main loop
+    /// can route `StoryMessageDisplayed` records into its `MessageLog` and
+    /// `SpecialForceSpawned` records into its (eventual) special-forces
+    /// arena. Called by `main.rs` after `apply_fired_events`. The headless
+    /// `simulation.rs` path ignores this queue and lets `finish()` discard
+    /// whatever remains.
+    pub fn drain_story_effects(&mut self) -> Vec<rebellion_core::effects::GameEffect> {
+        std::mem::take(&mut self.story_effects)
     }
 
     /// Current tick number.
@@ -188,15 +208,31 @@ impl PerceptionIntegrator {
     }
 
     /// Emit victory telemetry and mark victory resolved.
+    ///
+    /// Emits the primary `EVT_VICTORY` record for every terminal condition
+    /// and, for HQ-capture outcomes specifically, the Dabora 2 #A1
+    /// `EVT_HQ_CAPTURED` (0x128) notification on the victory subsystem
+    /// so story-chain consumers can key off the capture event without
+    /// pattern-matching on the Debug-formatted outcome string.
     pub fn apply_victory(
         &mut self,
         outcome: &VictoryOutcome,
         victory_state: &mut rebellion_core::victory::VictoryState,
+        world: &GameWorld,
     ) {
         victory_state.resolved = true;
         self.emit(SYS_VICTORY, EVT_VICTORY, serde_json::json!({
             "outcome": format!("{:?}", outcome),
         }));
+        // A1: EVT_HQ_CAPTURED (0x128). Payload uses the HQ system's name
+        // (human-readable) rather than a stale slotmap key (DI-H2).
+        if let VictoryOutcome::HqCaptured { winner, loser, hq_system } = outcome {
+            self.emit(SYS_VICTORY, EVT_HQ_CAPTURED, serde_json::json!({
+                "winner": format!("{:?}", winner),
+                "loser": format!("{:?}", loser),
+                "hq_system": sys_name(world, *hq_system),
+            }));
+        }
     }
 
     /// Emit campaign snapshot telemetry (no world mutations, read-only).
@@ -306,6 +342,35 @@ impl PerceptionIntegrator {
                         "capacity": capacity,
                     }));
                 }
+                // ── Knesset Shamash-Bet Dabora 2 notification events ────────
+                EconomyEvent::SupportChanged { system, from, to } => {
+                    // K1: EVT_SUPPORT_CHANGE (0x100).
+                    self.emit(SYS_ECONOMY, EVT_SUPPORT_CHANGE, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "from": format!("{:?}", from),
+                        "to": format!("{:?}", to),
+                    }));
+                }
+                EconomyEvent::NaturalDisaster { system } => {
+                    // K2: EVT_NATURAL_DISASTER (0x154).
+                    self.emit(SYS_ECONOMY, EVT_NATURAL_DISASTER, serde_json::json!({
+                        "system": sys_name(world, *system),
+                    }));
+                }
+                EconomyEvent::ResourceDiscovered { system, new_output } => {
+                    // K3: EVT_RESOURCE_DISCOVERY (0x155).
+                    self.emit(SYS_ECONOMY, EVT_RESOURCE_DISCOVERY, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "new_output": new_output,
+                    }));
+                }
+                EconomyEvent::MaintenanceShortfall { faction_is_alliance, deficit_system_count } => {
+                    // K4: EVT_MAINTENANCE_SHORTFALL_EVENT (0x304).
+                    self.emit(SYS_ECONOMY, EVT_MAINTENANCE_SHORTFALL, serde_json::json!({
+                        "faction": if *faction_is_alliance { "Alliance" } else { "Empire" },
+                        "deficit_systems": deficit_system_count,
+                    }));
+                }
             }
         }
     }
@@ -313,6 +378,12 @@ impl PerceptionIntegrator {
     // ── Step 3: Manufacturing + Movement ──────────────────────────────────
 
     /// Apply build completions: add manufactured items to GameWorld + emit telemetry.
+    ///
+    /// Emits two telemetry records per completion — `EVT_BUILD_COMPLETE`
+    /// (the "construction finished" signal used by the manufacturing panel
+    /// and test harnesses) and `EVT_UNITS_DEPLOYED` (0x107, Knesset
+    /// Shamash-Bet Dabora 2 #K5 — the "new forces in the field" signal
+    /// that strategic AIs and story events listen for).
     pub fn apply_build_completions(
         &mut self,
         world: &mut GameWorld,
@@ -323,6 +394,26 @@ impl PerceptionIntegrator {
             self.emit(SYS_MANUFACTURING, EVT_BUILD_COMPLETE, serde_json::json!({
                 "system": sys_name(world, c.system),
                 "kind": format!("{:?}", c.kind),
+            }));
+            // K5: EVT_UNITS_DEPLOYED (0x107).
+            self.emit(SYS_MANUFACTURING, EVT_UNITS_DEPLOYED, serde_json::json!({
+                "system": sys_name(world, c.system),
+                "kind": format!("{:?}", c.kind),
+            }));
+        }
+    }
+
+    /// Emit `EVT_MANUFACTURING_IDLE` (0x160, K6) for systems whose queue
+    /// transitioned from non-empty to empty this tick. No world mutation —
+    /// the queue is already drained by `ManufacturingSystem::advance_tracked`.
+    pub fn apply_manufacturing_idle(
+        &mut self,
+        world: &GameWorld,
+        newly_idle: &[rebellion_core::ids::SystemKey],
+    ) {
+        for &system in newly_idle {
+            self.emit(SYS_MANUFACTURING, EVT_MANUFACTURING_IDLE, serde_json::json!({
+                "system": sys_name(world, system),
             }));
         }
     }
@@ -468,15 +559,29 @@ impl PerceptionIntegrator {
     // ── Step 6: Events + Jedi training ────────────────────────────────────
 
     /// Apply fired events: world mutations + Jedi training extraction + telemetry.
+    ///
+    /// Per Dabora 2 #F7 the `movement` parameter is required so
+    /// `EventAction::SpawnSpecialForce` can resolve in-transit characters
+    /// via `MovementState::orders()`. Story/message effects push into the
+    /// integrator's `story_effects` queue; callers that want to route them
+    /// into a render-layer MessageLog should call `drain_story_effects()`
+    /// after this returns (simulation.rs ignores the queue).
     pub fn apply_fired_events(
         &mut self,
         world: &mut GameWorld,
         fired_events: &[FiredEvent],
         jedi_state: &mut JediState,
         current_tick: u64,
+        movement: &MovementState,
     ) {
         for fired in fired_events {
-            apply_event_actions_to_world_inner(&fired.actions, world, current_tick);
+            apply_event_action_to_world(
+                &fired.actions,
+                world,
+                &mut self.story_effects,
+                current_tick,
+                movement,
+            );
             let system_tag = match fired.system_tag {
                 SystemTag::Story => SYS_STORY,
                 SystemTag::Events | SystemTag::Notification => SYS_EVENTS,
@@ -493,6 +598,24 @@ impl PerceptionIntegrator {
                         jedi_state.start_training(*character, c.is_alliance, current_tick);
                     }
                 }
+            }
+        }
+        // Flush SpecialForceSpawned telemetry. The effect queue also
+        // serves as the channel into main.rs's special-forces arena
+        // (drained post-tick); we emit telemetry eagerly here so the
+        // headless playtest still sees the event without needing to
+        // drain — story_effects is monotonically append-only during
+        // the tick.
+        for eff in &self.story_effects {
+            if let rebellion_core::effects::GameEffect::SpecialForceSpawned { at_system, is_alliance } = eff {
+                self.events.push(GameEventRecord::new(
+                    self.tick, self.wall_ms, SYS_STORY, EVT_EVENT_FIRED,
+                    serde_json::json!({
+                        "effect": "special_force_spawned",
+                        "system": sys_name(world, *at_system),
+                        "is_alliance": is_alliance,
+                    }),
+                ));
             }
         }
     }
@@ -907,13 +1030,49 @@ fn apply_mission_effects_inner(
 }
 
 // ---------------------------------------------------------------------------
-// Event action helper (moved from simulation.rs)
+// Event action helper (formerly `apply_event_actions_to_world_inner`)
 // ---------------------------------------------------------------------------
 
-fn apply_event_actions_to_world_inner(actions: &[EventAction], world: &mut GameWorld, tick: u64) {
+/// Apply a slice of `EventAction`s to the world, producing any ancillary
+/// `GameEffect`s via `effects_out`.
+///
+/// Made `pub #[inline]` in Knesset Shamash-Bet Dabora 2 (#F7) as the single
+/// source of truth — `main.rs` no longer carries a duplicate helper. The
+/// compiler's exhaustive match over the closed `EventAction` enum now
+/// enforces coverage parity for free.
+///
+/// The `effects_out` sink receives two kinds of records:
+/// - `GameEffect::StoryMessageDisplayed` for every `EventAction::DisplayMessage`
+///   so interactive `main.rs` can drain them into `MessageLog` post-tick.
+///   The headless playtest simply discards the effect queue.
+/// - `GameEffect::SpecialForceSpawned` for every `EventAction::SpawnSpecialForce`
+///   after resolving `at_character.current_system` (or its in-transit
+///   movement destination via `MovementState::orders`). Resolution failure
+///   logs at `warn!` level and drops the action — callers must gate the
+///   originating event on `CharacterAtSystem OR CharacterHasActiveMovementOrder`
+///   to guarantee resolution success (SF-#7).
+#[inline]
+pub fn apply_event_action_to_world(
+    actions: &[EventAction],
+    world: &mut GameWorld,
+    effects_out: &mut Vec<rebellion_core::effects::GameEffect>,
+    tick: u64,
+    movement: &MovementState,
+) {
+    use rebellion_core::effects::{GameEffect, MessageCategoryTag};
+
     for action in actions {
         match action {
-            EventAction::DisplayMessage { .. } => {}
+            EventAction::DisplayMessage { text } => {
+                // #F7 + #A3: route story messages through the effect layer
+                // instead of dropping them (the old integrator no-op) or
+                // pushing directly to a render-layer MessageLog (the old
+                // main.rs duplicate). Interactive mode drains these post-tick.
+                effects_out.push(GameEffect::StoryMessageDisplayed {
+                    text: text.clone(),
+                    category: MessageCategoryTag::Event,
+                });
+            }
             EventAction::ShiftPopularity { system, alliance_delta, empire_delta } => {
                 if let Some(sys) = world.systems.get_mut(*system) {
                     sys.popularity_alliance = (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
@@ -980,12 +1139,82 @@ fn apply_event_actions_to_world_inner(actions: &[EventAction], world: &mut GameW
                     else { c.is_captive = false; c.captured_by = None; c.capture_tick = None; }
                 }
             }
-            EventAction::SpawnSpecialForce { .. } => {
-                // TODO(dabora-3): Wire SpecialForceUnit type + arena, then resolve target
-                // system via character.current_system OR the movement order destination
-                // (MovementState is not available here — must be passed in), and create
-                // the unit. Until Dabora 3 lands, this is a hard no-op — no code path
-                // currently emits SpawnSpecialForce, so this is unreachable.
+            EventAction::SpawnSpecialForce { at_character } => {
+                // #A2: Resolve the system where the special force lands.
+                //
+                // The character's `current_system` is the authoritative location
+                // when the character is stationary (on a garrison or mission).
+                // For in-transit characters we fall back to the destination of
+                // the first fleet carrying them — via `MovementState::orders()`.
+                //
+                // The bounty-hunter chain (EVT_BOUNTY_ATTACK) is gated at the
+                // `state.define()` site on `CharacterAtSystem OR CharacterHasActiveMovementOrder`
+                // so this fallback should always succeed (SF-#7). We `warn!`
+                // instead of panic on the unexpected case.
+                let character = *at_character;
+                let resolved: Option<(rebellion_core::ids::SystemKey, bool)> = world
+                    .characters
+                    .get(character)
+                    .and_then(|c| {
+                        // Primary: the character's cached current_system.
+                        if let Some(sys) = c.current_system {
+                            return Some((sys, c.is_alliance));
+                        }
+                        // Fallback: find any fleet that carries the character
+                        // AND is currently under a movement order, return the
+                        // order's destination.
+                        let is_alliance = c.is_alliance;
+                        for (fleet_key, fleet) in world.fleets.iter() {
+                            if fleet.characters.contains(&character) {
+                                if let Some(order) = movement.get(fleet_key) {
+                                    return Some((order.destination, is_alliance));
+                                }
+                                // The character is on a stationary fleet — use
+                                // the fleet's location field.
+                                return Some((fleet.location, is_alliance));
+                            }
+                        }
+                        None
+                    });
+                match resolved {
+                    Some((at_system, is_alliance)) => {
+                        // Special force lands at the character's system.
+                        // Hardcode `is_alliance: false` to match the
+                        // Bounty Hunters parity citation from the
+                        // community cross-reference — the resolved
+                        // `is_alliance` is currently ignored for
+                        // spawned hunters, but passed through here so
+                        // future Alliance-side spawns can reuse this
+                        // same integrator arm. Default behavior
+                        // (bounty hunters) is Imperial.
+                        let _ = is_alliance;
+                        effects_out.push(GameEffect::SpecialForceSpawned {
+                            at_system,
+                            is_alliance: false,
+                        });
+                        // NOTE: full SpecialForceUnit arena wiring still
+                        // deferred to Dabora 3 — the effect captures the
+                        // intent + telemetry, but no unit is actually
+                        // placed in `world.special_forces` yet. See
+                        // `apply_dabora2_story_effects` below.
+                    }
+                    None => {
+                        // Structured warn: the event chain must gate
+                        // SpawnSpecialForce on CharacterAtSystem OR
+                        // CharacterHasActiveMovementOrder (SF-#7). If we
+                        // reach this branch, the guard is missing — log
+                        // and drop the action rather than spawning at
+                        // an arbitrary fallback system.
+                        eprintln!(
+                            "[shamash-bet] SpawnSpecialForce at character {:?} \
+                             could not resolve a target system — character has \
+                             no current_system and is not on any movement-ordered \
+                             fleet. Event chain should have gated this action with \
+                             CharacterAtSystem OR CharacterHasActiveMovementOrder.",
+                            character,
+                        );
+                    }
+                }
             }
         }
     }

@@ -14,7 +14,7 @@ use rebellion_core::combat::{CombatSide, CombatSystem};
 use rebellion_core::dat::Faction;
 use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
-use rebellion_core::events::{EventAction, EventState, EventSystem, SkillField};
+use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fog::{FogState, FogSystem};
 use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
@@ -599,6 +599,11 @@ async fn main() {
         };
 
         if !tick_events.is_empty() {
+            // Used by the Dabora 2 notification paths that need to timestamp
+            // message-log entries. `current_tick` is re-bound further down for
+            // the rest of the tick loop; this earlier binding is read-only.
+            let economy_tick = tick_events.last().map(|e| e.tick).unwrap_or(0);
+
             // ── Economy (runs BEFORE manufacturing — affects production) ──────
             let economy_events = EconomySystem::advance(
                 &mut economy_state,
@@ -628,17 +633,68 @@ async fn main() {
                             sys.control = *new_control;
                         }
                     }
-                    _ => {} // Telemetry-only events (collection rate, garrison, incidents, overcaps)
+                    // Knesset Shamash-Bet Dabora 2 notification events —
+                    // surface them in the interactive message log.
+                    EconomyEvent::NaturalDisaster { system } => {
+                        let name = world
+                            .systems
+                            .get(*system)
+                            .map(|s| s.name.clone())
+                            .unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(
+                            economy_tick,
+                            format!("Natural disaster strikes {}", name),
+                            MessageCategory::Event,
+                            *system,
+                        ));
+                    }
+                    EconomyEvent::ResourceDiscovered { system, new_output } => {
+                        let name = world
+                            .systems
+                            .get(*system)
+                            .map(|s| s.name.clone())
+                            .unwrap_or_else(|| "unknown".into());
+                        msg_log.push(GameMessage::at_system(
+                            economy_tick,
+                            format!(
+                                "New resources discovered at {} ({} units)",
+                                name, new_output
+                            ),
+                            MessageCategory::Event,
+                            *system,
+                        ));
+                    }
+                    EconomyEvent::MaintenanceShortfall {
+                        faction_is_alliance,
+                        deficit_system_count,
+                    } => {
+                        let faction_str = if *faction_is_alliance {
+                            "Alliance"
+                        } else {
+                            "Empire"
+                        };
+                        msg_log.push(GameMessage::new(
+                            economy_tick,
+                            format!(
+                                "{} reports maintenance shortfall across {} systems",
+                                faction_str, deficit_system_count
+                            ),
+                            MessageCategory::Event,
+                        ));
+                    }
+                    _ => {} // Telemetry-only events (collection rate, garrison, incidents, support change tier)
                 }
             }
 
             // ── Manufacturing (blockaded systems are skipped) ─────────────────
-            let completions = ManufacturingSystem::advance_with_blockade(
+            // Use advance_tracked so we also pick up K6 EVT_MANUFACTURING_IDLE
+            // transitions for the interactive message log.
+            let mfg_advance = ManufacturingSystem::advance_tracked(
                 &mut mfg_state,
                 &tick_events,
                 blockade_state.blockaded_systems(),
             );
-            for completion in &completions {
+            for completion in &mfg_advance.completions {
                 // Apply the built item to the game world (ships, facilities, troops).
                 rebellion_data::integrator::apply_build_completion_inner(completion, &mut world);
                 let sys_name = world
@@ -655,6 +711,21 @@ async fn main() {
                 advisor_manufacturing_complete(&mut advisor_state, &sys_name);
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::BuildComplete, &audio_vol);
+            }
+            // K6 EVT_MANUFACTURING_IDLE (0x160) — surface idle transitions
+            // in the player-facing message log.
+            for &system in &mfg_advance.newly_idle {
+                let sys_name_str = world
+                    .systems
+                    .get(system)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "unknown".into());
+                msg_log.push(GameMessage::at_system(
+                    economy_tick,
+                    format!("Manufacturing queue idle at {}", sys_name_str),
+                    MessageCategory::Manufacturing,
+                    system,
+                ));
             }
 
             // ── Movement ────────────────────────────────────────────────────
@@ -937,12 +1008,55 @@ async fn main() {
             let fired_events =
                 EventSystem::advance(&mut event_state, &world, &tick_events, &event_rolls);
 
+            // #F7 + #A3: call the pub'd integrator helper. DisplayMessage
+            // routes through `GameEffect::StoryMessageDisplayed` and
+            // `SpawnSpecialForce` resolves via `current_system` + fallback
+            // to `MovementState::orders()`. The effect buffer drains into
+            // `msg_log` immediately below.
+            let mut story_effects_out: Vec<rebellion_core::effects::GameEffect> = Vec::new();
             for fired in &fired_events {
-                apply_event_actions(&fired.actions, &mut world, &mut msg_log, fired.tick);
+                rebellion_data::integrator::apply_event_action_to_world(
+                    &fired.actions,
+                    &mut world,
+                    &mut story_effects_out,
+                    fired.tick,
+                    &movement_state,
+                );
+            }
+            // Drain StoryMessageDisplayed + SpecialForceSpawned effects into
+            // the interactive message log. Dabora 3 will add SpecialForceUnit
+            // arena wiring; for now we surface a plain-text notification so
+            // the chain is visible.
+            for eff in story_effects_out {
+                use rebellion_core::effects::GameEffect;
+                match eff {
+                    GameEffect::StoryMessageDisplayed { text, .. } => {
+                        msg_log.push(GameMessage::new(
+                            current_tick,
+                            text,
+                            MessageCategory::Event,
+                        ));
+                    }
+                    GameEffect::SpecialForceSpawned { at_system, is_alliance } => {
+                        let name = world
+                            .systems
+                            .get(at_system)
+                            .map(|s| s.name.clone())
+                            .unwrap_or_else(|| "unknown".into());
+                        let side = if is_alliance { "Alliance" } else { "Imperial" };
+                        msg_log.push(GameMessage::at_system(
+                            current_tick,
+                            format!("{} special force lands at {}", side, name),
+                            MessageCategory::Event,
+                            at_system,
+                        ));
+                    }
+                    _ => {}
+                }
             }
 
-            // Apply Jedi training from story events (outside apply_event_actions
-            // because it needs jedi_state which is not passed to that function)
+            // Apply Jedi training from story events (outside the event-action
+            // helper because it needs jedi_state which is not in scope there).
             for fired in &fired_events {
                 for action in &fired.actions {
                     if let EventAction::StartJediTraining { character } = action {
@@ -3270,149 +3384,13 @@ fn apply_mission_result(
     }
 }
 
-fn apply_event_actions(
-    actions: &[EventAction],
-    world: &mut GameWorld,
-    log: &mut MessageLog,
-    tick: u64,
-) {
-    for action in actions {
-        match action {
-            EventAction::DisplayMessage { text } => {
-                log.push(GameMessage::new(tick, text.clone(), MessageCategory::Event));
-            }
-            EventAction::ShiftPopularity {
-                system,
-                alliance_delta,
-                empire_delta,
-            } => {
-                if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.popularity_alliance =
-                        (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
-                    sys.popularity_empire = (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
-                }
-            }
-            EventAction::ModifyCharacterSkill {
-                character,
-                skill,
-                base_delta,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    let d = *base_delta;
-                    let apply = |v: u32, delta: i32| (v as i64 + delta as i64).max(0) as u32;
-                    match skill {
-                        SkillField::Diplomacy => c.diplomacy.base = apply(c.diplomacy.base, d),
-                        SkillField::Espionage => c.espionage.base = apply(c.espionage.base, d),
-                        SkillField::ShipDesign => c.ship_design.base = apply(c.ship_design.base, d),
-                        SkillField::TroopTraining => {
-                            c.troop_training.base = apply(c.troop_training.base, d)
-                        }
-                        SkillField::FacilityDesign => {
-                            c.facility_design.base = apply(c.facility_design.base, d)
-                        }
-                        SkillField::Combat => c.combat.base = apply(c.combat.base, d),
-                        SkillField::Leadership => c.leadership.base = apply(c.leadership.base, d),
-                        SkillField::Loyalty => c.loyalty.base = apply(c.loyalty.base, d),
-                        SkillField::JediLevel => c.jedi_level.base = apply(c.jedi_level.base, d),
-                    }
-                }
-            }
-            EventAction::RelocateCharacter { .. } => {
-                // Deferred: character location tracking lands with full character system.
-            }
-            // v0.5.0 story event actions — full implementation in Pidray's integration pass
-            EventAction::SetMandatoryMission {
-                character,
-                mandatory,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.on_mandatory_mission = *mandatory;
-                }
-            }
-            EventAction::ModifyForceTier {
-                character,
-                new_tier,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.force_tier = *new_tier;
-                }
-            }
-            EventAction::RemoveCharacter { character } => {
-                for (_, fleet) in world.fleets.iter_mut() {
-                    fleet.characters.retain(|&k| k != *character);
-                }
-                world.characters.remove(*character);
-            }
-            EventAction::StartJediTraining { .. } => {
-                // Handled by the StartJediTraining extraction loop above (needs jedi_state).
-                // Do NOT add logic here — it would double-enroll characters.
-            }
-            EventAction::TransferCharacter {
-                character,
-                destination,
-                new_faction,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.current_system = Some(*destination);
-                    if let Some(faction) = new_faction {
-                        match faction {
-                            Faction::Alliance => {
-                                c.is_alliance = true;
-                                c.is_empire = false;
-                            }
-                            Faction::Empire => {
-                                c.is_alliance = false;
-                                c.is_empire = true;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            EventAction::TriggerEvent { .. } => {
-                // Event chaining handled internally by EventSystem
-            }
-            EventAction::AccumulateForceExperience { character, amount } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.force_experience += amount;
-                }
-            }
-            EventAction::CaptureCharacter {
-                character,
-                captor_faction,
-            } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.is_captive = true;
-                    c.captured_by = Some(*captor_faction);
-                    c.capture_tick = Some(tick);
-                }
-                // Remove from fleets
-                for (_, fleet) in world.fleets.iter_mut() {
-                    fleet.characters.retain(|&k| k != *character);
-                }
-            }
-            EventAction::SetCarboniteState { character, frozen } => {
-                if let Some(c) = world.characters.get_mut(*character) {
-                    c.on_mandatory_mission = *frozen;
-                    if *frozen {
-                        // Carbonite freeze = captive state + mandatory mission lock
-                        c.is_captive = true;
-                        c.capture_tick = Some(tick);
-                    } else {
-                        // Thaw = clear all captivity
-                        c.is_captive = false;
-                        c.captured_by = None;
-                        c.capture_tick = None;
-                    }
-                }
-            }
-            EventAction::SpawnSpecialForce { .. } => {
-                // Handled by the integrator in headless mode.
-                // Interactive mode: no-op until SpecialForceUnit type is wired.
-            }
-        }
-    }
-}
+// ---------------------------------------------------------------------------
+// Knesset Shamash-Bet Dabora 2 (#F7): the old `apply_event_actions` duplicate
+// was deleted here. The canonical implementation lives in
+// `rebellion_data::integrator::apply_event_action_to_world` (pub #[inline]).
+// `DisplayMessage` now routes through `GameEffect::StoryMessageDisplayed`
+// and is drained into `msg_log` at the interactive tick call site.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Combat effect application helpers

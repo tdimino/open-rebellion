@@ -1731,6 +1731,57 @@
       "hq_capture_required_defender_fleets": 0,
       "death_star_priority_order": 1,
       "description": "Three terminal states: HQ capture, Death Star fire, Death Star destroyed."
+    },
+    "story_events": {
+      "baseline": {
+        "seed": 42,
+        "ticks": 5000,
+        "playtest_command": "cargo run -p rebellion-playtest -- --seed 42 --ticks 5000 --jsonl data/base",
+        "regenerated_at": "2026-04-11 (Knesset Shamash-Bet Dabora 2)"
+      },
+      "support_change": {
+        "min": 500,
+        "max": 6000,
+        "baseline_observed": 1930,
+        "description": "K1 EVT_SUPPORT_CHANGE (0x100) fires on controlling-faction support-tier transitions. Bounds widened to cover AI-driven redistribution variance across seeds."
+      },
+      "natural_disaster": {
+        "min": 100,
+        "max": 3000,
+        "baseline_observed": 914,
+        "description": "K2 EVT_NATURAL_DISASTER (0x154) fires on transitions to sub-20% support. Bounds account for variable garrison/support equilibrium across seeds."
+      },
+      "resource_discovery": {
+        "min": 0,
+        "max": 50,
+        "baseline_observed": 0,
+        "description": "K3 EVT_RESOURCE_DISCOVERY (0x155) fires when a new mine comes online. Zero in baseline because the seeded galaxy has stable facilities for the whole run; max=50 allows for Dabora 3 story-driven discoveries."
+      },
+      "maintenance_shortfall": {
+        "min": 0,
+        "max": 40,
+        "baseline_observed": 1,
+        "description": "K4 EVT_MAINTENANCE_SHORTFALL_EVENT (0x304) fires on per-faction 30-tick polled deficit. Low cardinality is expected — the AI typically resolves deficits between polls."
+      },
+      "units_deployed": {
+        "min": 500,
+        "max": 8000,
+        "baseline_observed": 2350,
+        "description": "K5 EVT_UNITS_DEPLOYED (0x107) fires on every manufacturing completion (one-for-one with manufacturing_complete)."
+      },
+      "manufacturing_idle": {
+        "min": 100,
+        "max": 3500,
+        "baseline_observed": 890,
+        "description": "K6 EVT_MANUFACTURING_IDLE (0x160) fires on queue empty transitions. Bounds track tick count + AI reordering cadence."
+      },
+      "hq_captured": {
+        "min": 0,
+        "max": 1,
+        "baseline_observed": 0,
+        "description": "A1 EVT_HQ_CAPTURED (0x128) fires from apply_victory on VictoryOutcome::HqCaptured. Max=1 because the game terminates on the first capture."
+      },
+      "description": "Knesset Shamash-Bet Dabora 2 notification-event baseline. Bounds are {min, max} per DI-M4 — NOT {expected, tolerance} — because rare events have tolerance==0 and common events have enough variance that a point expectation is meaningless."
     }
   }
 }

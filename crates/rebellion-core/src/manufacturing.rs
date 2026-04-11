@@ -259,7 +259,7 @@ impl ManufacturingState {
 }
 
 // ---------------------------------------------------------------------------
-// CompletionEvent
+// CompletionEvent + ManufacturingAdvance
 // ---------------------------------------------------------------------------
 
 /// Emitted when an item finishes construction.
@@ -274,6 +274,19 @@ pub struct CompletionEvent {
     pub tick: u64,
     /// What was built.
     pub kind: BuildableKind,
+}
+
+/// Wraps the two outputs of `ManufacturingSystem::advance_tracked` so the
+/// integrator can emit both `EVT_BUILD_COMPLETE`/`EVT_UNITS_DEPLOYED` (K5)
+/// and `EVT_MANUFACTURING_IDLE` (K6) without extra world-state plumbing.
+///
+/// `newly_idle` is the set of system keys whose production queue
+/// transitioned from non-empty to empty during this advance call. Detection
+/// is intra-tick (pre/post length compare — no persistent "was_empty" bit).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ManufacturingAdvance {
+    pub completions: Vec<CompletionEvent>,
+    pub newly_idle: Vec<SystemKey>,
 }
 
 // ---------------------------------------------------------------------------
@@ -298,30 +311,61 @@ impl ManufacturingSystem {
     ///
     /// Returns a `Vec<CompletionEvent>` — one entry per completed item,
     /// across all systems. Empty if no items completed this frame.
+    ///
+    /// Back-compat wrapper around [`advance_tracked`] that discards the
+    /// `newly_idle` slot. New callers should use `advance_tracked` directly
+    /// so they can route `EVT_MANUFACTURING_IDLE` (K6) telemetry.
     pub fn advance(
         state: &mut ManufacturingState,
         tick_events: &[TickEvent],
     ) -> Vec<CompletionEvent> {
-        Self::advance_with_blockade(state, tick_events, &HashSet::new())
+        Self::advance_tracked(state, tick_events, &HashSet::new()).completions
     }
 
     /// Like `advance`, but skips systems in `blocked_systems`.
     ///
-    /// Called by the main loop with `BlockadeState::blockaded_systems()` to
-    /// halt manufacturing at blockaded systems.
+    /// Called by legacy paths that only care about completions. New paths
+    /// should prefer `advance_tracked` so idle-transition telemetry is
+    /// routed through `EVT_MANUFACTURING_IDLE` (K6).
     pub fn advance_with_blockade(
         state: &mut ManufacturingState,
         tick_events: &[TickEvent],
         blocked_systems: &HashSet<SystemKey>,
     ) -> Vec<CompletionEvent> {
+        Self::advance_tracked(state, tick_events, blocked_systems).completions
+    }
+
+    /// Advance with full tracking: completions **and** K6 idle transitions.
+    ///
+    /// The `newly_idle` vec contains system keys whose queue transitioned
+    /// from non-empty (1+ items before advance) to empty (0 items after
+    /// advance). Detection is purely intra-tick — pre/post length compare
+    /// against a local snapshot. No persistent `was_empty` bit on world
+    /// state (SIMP-H4).
+    pub fn advance_tracked(
+        state: &mut ManufacturingState,
+        tick_events: &[TickEvent],
+        blocked_systems: &HashSet<SystemKey>,
+    ) -> ManufacturingAdvance {
         if tick_events.is_empty() {
-            return Vec::new();
+            return ManufacturingAdvance::default();
         }
 
         // Batch all ticks that fired this frame into a single advance.
         let tick_count = tick_events.len() as u32;
         // The last tick number in this batch (used as the completion timestamp).
         let final_tick = tick_events.last().unwrap().tick;
+
+        // K6 intra-tick scratch: snapshot pre-advance queue length for each
+        // non-blockaded system. Blockaded systems don't advance, so they
+        // can't transition — skipping them here is correct.
+        let mut pre_lengths: HashMap<SystemKey, usize> = HashMap::new();
+        for (system_key, queue) in state.queues.iter() {
+            if blocked_systems.contains(system_key) {
+                continue;
+            }
+            pre_lengths.insert(*system_key, queue.len());
+        }
 
         let mut completions = Vec::new();
 
@@ -340,7 +384,28 @@ impl ManufacturingSystem {
             }
         }
 
-        completions
+        // K6: detect pre-non-empty → post-empty transitions. `pre_lengths`
+        // already excludes blockaded systems; now filter on "was non-empty,
+        // is now empty".
+        let mut newly_idle = Vec::new();
+        for (system_key, pre_len) in pre_lengths.into_iter() {
+            if pre_len == 0 {
+                continue;
+            }
+            let post_len = state
+                .queues
+                .get(&system_key)
+                .map(|q| q.len())
+                .unwrap_or(0);
+            if post_len == 0 {
+                newly_idle.push(system_key);
+            }
+        }
+
+        ManufacturingAdvance {
+            completions,
+            newly_idle,
+        }
     }
 }
 
@@ -542,5 +607,65 @@ mod tests {
 
         let completions = ManufacturingSystem::advance(&mut state, &tick_events);
         assert_eq!(completions.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Knesset Shamash-Bet Dabora 2 #K6 — EVT_MANUFACTURING_IDLE (0x160)
+    // intra-tick transition idempotency. Part of the #K7 parameterized
+    // idempotency suite (the economy K1–K4 tests live in economy.rs).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn k6_manufacturing_idle_fires_on_empty_transition_only() {
+        let system = mock_system_key();
+        let mut state = ManufacturingState::new();
+        state.enqueue(system, cap_ship_item(2));
+
+        // First advance: 2 ticks drain the single item, completions=1,
+        // and the queue transitions from non-empty → empty → fires K6.
+        let tick_events = vec![TickEvent { tick: 1 }, TickEvent { tick: 2 }];
+        let advance = ManufacturingSystem::advance_tracked(
+            &mut state,
+            &tick_events,
+            &HashSet::new(),
+        );
+        assert_eq!(advance.completions.len(), 1);
+        assert_eq!(advance.newly_idle, vec![system], "K6: queue empty transition fires once");
+
+        // Second advance: queue is already empty — pre/post length match,
+        // transition detection must NOT emit again.
+        let tick_events2 = vec![TickEvent { tick: 3 }];
+        let advance2 = ManufacturingSystem::advance_tracked(
+            &mut state,
+            &tick_events2,
+            &HashSet::new(),
+        );
+        assert!(advance2.completions.is_empty());
+        assert!(advance2.newly_idle.is_empty(), "K6: already-empty queue must not re-fire");
+    }
+
+    #[test]
+    fn k6_manufacturing_idle_skips_blockaded_systems() {
+        let keys = mock_system_keys(2);
+        let (sys_a, sys_b) = (keys[0], keys[1]);
+        let mut state = ManufacturingState::new();
+        state.enqueue(sys_a, cap_ship_item(2));
+        state.enqueue(sys_b, cap_ship_item(2));
+
+        // Blockade sys_a — it must NOT advance, so no idle transition.
+        let mut blocked = HashSet::new();
+        blocked.insert(sys_a);
+
+        let tick_events = vec![TickEvent { tick: 1 }, TickEvent { tick: 2 }];
+        let advance = ManufacturingSystem::advance_tracked(
+            &mut state,
+            &tick_events,
+            &blocked,
+        );
+        assert_eq!(advance.completions.len(), 1, "only sys_b should complete");
+        assert_eq!(advance.completions[0].system, sys_b);
+        assert_eq!(advance.newly_idle, vec![sys_b], "only sys_b transitions to idle");
+        assert!(!advance.newly_idle.contains(&sys_a),
+            "K6: blockaded systems must never appear in newly_idle");
     }
 }

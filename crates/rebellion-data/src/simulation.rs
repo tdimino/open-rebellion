@@ -107,12 +107,15 @@ pub fn run_simulation_tick(
     integrator.apply_economy_events(world, &economy_events);
 
     // ── 1. Manufacturing ─────────────────────────────────────────────────
-    let completions = ManufacturingSystem::advance_with_blockade(
+    // Use advance_tracked so the K6 EVT_MANUFACTURING_IDLE telemetry is
+    // emitted for any system whose queue transitioned empty this tick.
+    let mfg_advance = ManufacturingSystem::advance_tracked(
         &mut states.manufacturing,
         tick_events,
         states.blockade.blockaded_systems(),
     );
-    integrator.apply_build_completions(world, &completions);
+    integrator.apply_build_completions(world, &mfg_advance.completions);
+    integrator.apply_manufacturing_idle(world, &mfg_advance.newly_idle);
 
     // ── 2. Movement ──────────────────────────────────────────────────────
     let arrivals = MovementSystem::advance(&mut states.movement, tick_events);
@@ -221,7 +224,13 @@ pub fn run_simulation_tick(
     // ── 6. Events ────────────────────────────────────────────────────────
     let event_rolls: Vec<f32> = take_rolls(16).iter().map(|&r| r as f32).collect();
     let fired_events = EventSystem::advance(&mut states.events, world, tick_events, &event_rolls);
-    integrator.apply_fired_events(world, &fired_events, &mut states.jedi, current_tick);
+    integrator.apply_fired_events(
+        world,
+        &fired_events,
+        &mut states.jedi,
+        current_tick,
+        &states.movement,
+    );
 
     // ── 7. AI ────────────────────────────────────────────────────────────
     let ai_actions = AISystem::advance(
@@ -300,7 +309,7 @@ pub fn run_simulation_tick(
     // ── 14. Victory check ────────────────────────────────────────────────
     integrator.emit_victory_check(&states.victory);
     if let Some(outcome) = VictorySystem::check(&states.victory, world, tick_events) {
-        integrator.apply_victory(&outcome, &mut states.victory);
+        integrator.apply_victory(&outcome, &mut states.victory, world);
     }
 
     // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────

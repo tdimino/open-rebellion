@@ -42,10 +42,27 @@ pub enum EffectPhase {
     Diplomacy = 4,
     /// Fog reveals, blockade changes, intelligence
     Intelligence = 5,
-    /// AI actions, research, Jedi, events, betrayal, uprising
+    /// AI actions, research, Jedi, events, betrayal, uprising, story effects
     Command = 6,
     /// Death Star, victory checks, campaign snapshots
     Endgame = 7,
+}
+
+// ---------------------------------------------------------------------------
+// MessageCategoryTag — layer-free message routing
+// ---------------------------------------------------------------------------
+
+/// Layer-free tag identifying the UI category a `StoryMessageDisplayed` effect
+/// should route into. The render layer (`rebellion-render::MessageCategory`)
+/// owns the actual color table; this enum stays in `rebellion-core` because
+/// core cannot depend on render types.
+///
+/// Only the variants that actually have a producer in this sprint are defined.
+/// Additional variants may be added when new story/event paths light up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MessageCategoryTag {
+    /// Story beat / scripted event narration (gold/amber in render layer).
+    Event,
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +227,30 @@ pub enum GameEffect {
     UprisingIncident {
         system: SystemKey,
     },
+    /// A special-force unit was spawned at a system. Resurrected for
+    /// Knesset Shamash-Bet Dabora 2 as the effect-layer output for
+    /// `EventAction::SpawnSpecialForce`. The integrator resolves the
+    /// system at fire time by looking up `at_character.current_system`
+    /// (falling back to the character's in-transit movement destination).
+    ///
+    /// Note: `SpecialForceUnit` construction is still a stub — the full
+    /// arena/type wiring lands in Dabora 3 (story chains). This effect
+    /// captures the intent + telemetry; the apply arm currently emits
+    /// the `EVT_SPECIAL_FORCE_SPAWNED` telemetry record and logs at
+    /// `info!` level without creating a new unit instance.
+    SpecialForceSpawned {
+        at_system: SystemKey,
+        is_alliance: bool,
+    },
+    /// A story/event message should be shown to the player. Emitted by
+    /// `EventAction::DisplayMessage` in the pub'd integrator helper
+    /// `apply_event_action_to_world`. Interactive main.rs drains these
+    /// post-tick into its `MessageLog`; the headless simulation drops them
+    /// silently. Resurrected for Knesset Shamash-Bet Dabora 2 (#F7/#A3).
+    StoryMessageDisplayed {
+        text: String,
+        category: MessageCategoryTag,
+    },
     // SkillModified intentionally deferred — needs a SkillKind discriminant
     // to identify which of the 8 skill pairs changed. Will be added when
     // the PerceptionIntegrator applies skill effects.
@@ -278,7 +319,9 @@ impl GameEffect {
             | Self::JediDiscovered { .. }
             | Self::EventFired { .. }
             | Self::CharacterBetrayed { .. }
-            | Self::UprisingIncident { .. } => EffectPhase::Command,
+            | Self::UprisingIncident { .. }
+            | Self::SpecialForceSpawned { .. }
+            | Self::StoryMessageDisplayed { .. } => EffectPhase::Command,
 
             Self::DeathStarConstructionProgress { .. }
             | Self::PlanetDestroyed { .. }
@@ -462,6 +505,21 @@ mod tests {
         };
         let json = serde_json::to_string(&effect).expect("serialize");
         let _: GameEffect = serde_json::from_str(&json).expect("deserialize roundtrip");
+    }
+
+    #[test]
+    fn story_message_and_special_force_are_command_phase() {
+        let msg = GameEffect::StoryMessageDisplayed {
+            text: "Han has been captured!".into(),
+            category: MessageCategoryTag::Event,
+        };
+        assert_eq!(msg.phase(), EffectPhase::Command);
+
+        let spawn = GameEffect::SpecialForceSpawned {
+            at_system: SystemKey::default(),
+            is_alliance: false,
+        };
+        assert_eq!(spawn.phase(), EffectPhase::Command);
     }
 
     #[test]

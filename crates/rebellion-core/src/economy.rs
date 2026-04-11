@@ -118,6 +118,44 @@ pub struct SystemSummary {
     pub strong_support: bool,
 }
 
+/// Discrete bands of the controlling faction's popular support.
+/// Used to detect `EVT_SUPPORT_CHANGE` (0x100) transitions without inventing
+/// new `GameWorld` state — the previous band is cached on `SystemEconomy`.
+///
+/// Matches the GNPRTB support thresholds already in use:
+///   Critical: support ≤ 20 (GNPRTB[7736])
+///   Low:      21–30          (GNPRTB[7734])
+///   Moderate: 31–40          (GNPRTB[7732])
+///   High:     41–60          (GNPRTB[7761] — garrison stable band)
+///   Secure:   > 60           (no drift, garrison = 0)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum SupportTier {
+    #[default]
+    Critical = 0,
+    Low = 1,
+    Moderate = 2,
+    High = 3,
+    Secure = 4,
+}
+
+impl SupportTier {
+    /// Compute the tier from integer support (0-100).
+    pub fn from_support_int(support_int: i32) -> Self {
+        if support_int <= 20 {
+            Self::Critical
+        } else if support_int <= 30 {
+            Self::Low
+        } else if support_int <= 40 {
+            Self::Moderate
+        } else if support_int <= 60 {
+            Self::High
+        } else {
+            Self::Secure
+        }
+    }
+}
+
 /// Per-system resource and economy tracking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemEconomy {
@@ -144,6 +182,16 @@ pub struct SystemEconomy {
     pub incident_flags: IncidentFlags,
     /// System is visibly under uprising. FUN_0050ac70.
     pub uprising_visible: bool,
+    /// Previous-tick support band for the controlling faction. Drives
+    /// `EVT_SUPPORT_CHANGE` (0x100) transition detection. Persists across
+    /// save/load because it lives in `EconomyState` (see #F2) — not on
+    /// `world::System`. No `#[serde(default)]`: v8 is the migration
+    /// boundary (see Dabora 1 cleanup — bincode is positional).
+    pub last_support_tier: SupportTier,
+    /// True once the controlling faction has established this system in
+    /// a prior tick. Suppresses `EVT_RESOURCE_DISCOVERY` (0x155) on the
+    /// very first eval — the galaxy seed itself is not a "discovery".
+    pub resource_discovery_armed: bool,
 }
 
 impl Default for SystemEconomy {
@@ -159,14 +207,29 @@ impl Default for SystemEconomy {
             summary: SystemSummary::default(),
             incident_flags: IncidentFlags::default(),
             uprising_visible: false,
+            last_support_tier: SupportTier::default(),
+            resource_discovery_armed: false,
         }
     }
 }
 
 /// Economy state across all systems.
+///
+/// Simulation state (not world state). Saved via `SaveState::economy`
+/// since Dabora 1 (#F2) to close the incident re-fire bug. The two
+/// `*_maintenance_cooldown` counters implement the per-faction 30-tick
+/// `EVT_MAINTENANCE_SHORTFALL_EVENT` (0x304) timer from the plan's #K4
+/// — they decrement each tick in `EconomySystem::advance` and emit +
+/// reset to `GNPRTB[7694]` when they reach zero **and** at least one
+/// controlled system has a garrison deficit.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EconomyState {
     pub per_system: HashMap<SystemKey, SystemEconomy>,
+    /// Ticks until the next Alliance maintenance-shortfall check fires.
+    /// Initialized lazily to `GNPRTB[7694]` (30) on the first tick.
+    pub alliance_maintenance_cooldown: u32,
+    /// Ticks until the next Empire maintenance-shortfall check fires.
+    pub empire_maintenance_cooldown: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +277,35 @@ pub enum EconomyEvent {
         allocated: u32,
         capacity: u32,
     },
+    // ── Knesset Shamash-Bet notification events (Dabora 2) ──────────────
+    /// K1: `EVT_SUPPORT_CHANGE` (0x100) — controlling faction's popular
+    /// support crossed a tier boundary (see `SupportTier`).
+    SupportChanged {
+        system: SystemKey,
+        from: SupportTier,
+        to: SupportTier,
+    },
+    /// K2: `EVT_NATURAL_DISASTER` (0x154) — disaster incident bit flipped
+    /// `false → true`. Emitted once per transition (clear-before-emit —
+    /// eco.incident_flags is updated after the transition check).
+    NaturalDisaster {
+        system: SystemKey,
+    },
+    /// K3: `EVT_RESOURCE_DISCOVERY` (0x155) — a new mine came online at
+    /// a previously-seeded system. Detected as a positive delta on
+    /// `eco.raw_material_allocated` (after the `resource_discovery_armed`
+    /// gate disarms the seed tick).
+    ResourceDiscovered {
+        system: SystemKey,
+        new_output: u32,
+    },
+    /// K4: `EVT_MAINTENANCE_SHORTFALL_EVENT` (0x304) — the per-faction
+    /// 30-tick timer fired AND the faction has at least one controlled
+    /// system with a garrison deficit.
+    MaintenanceShortfall {
+        faction_is_alliance: bool,
+        deficit_system_count: u32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +332,12 @@ impl EconomySystem {
         let gnprtb = &world.gnprtb;
         let mut events = Vec::new();
 
+        // Per-faction maintenance-shortfall deficit tally (K4 intra-tick scratch).
+        // Counted during the per-system loop and checked against the 30-tick
+        // cooldown at the end of `advance`.
+        let mut alliance_deficit_systems: u32 = 0;
+        let mut empire_deficit_systems: u32 = 0;
+
         // Collect system keys first to avoid borrow issues.
         let system_keys: Vec<SystemKey> = world.systems.keys().collect();
 
@@ -260,6 +358,7 @@ impl EconomySystem {
             // 0a. Resource capacity enforcement (FUN_00509ed0 + FUN_00509ef0 + FUN_0050a220).
             // Sum facility/mine outputs and cap at system limits.
             let eco = state.per_system.entry(sys_key).or_default();
+            let prev_raw_allocated = eco.raw_material_allocated;
             let (energy_alloc, raw_alloc) = calculate_resource_allocation(world, sys);
             let energy_cap = sys.total_energy as u32;
             let raw_cap = sys.raw_materials as u32;
@@ -268,6 +367,19 @@ impl EconomySystem {
             eco.energy_overcapped = energy_alloc > energy_cap;
             eco.raw_material_allocated = raw_alloc.min(raw_cap);
             eco.raw_material_overcapped = raw_alloc > raw_cap;
+
+            // K3: EVT_RESOURCE_DISCOVERY (0x155).
+            // Fire when a new mine comes online (capped raw material output
+            // strictly increases). Suppress on the first armed pass — the
+            // galaxy seed itself is not a "discovery".
+            let new_raw = eco.raw_material_allocated;
+            if eco.resource_discovery_armed && new_raw > prev_raw_allocated {
+                events.push(EconomyEvent::ResourceDiscovered {
+                    system: sys_key,
+                    new_output: new_raw,
+                });
+            }
+            eco.resource_discovery_armed = true;
 
             if eco.energy_overcapped {
                 events.push(EconomyEvent::EnergyOvercapped {
@@ -354,6 +466,11 @@ impl EconomySystem {
 
             // 7. Incident state + uprising visibility (FUN_0050a970 + FUN_0050ac70).
             // Evaluate incident flags based on system state. Fire events on transitions.
+            //
+            // K2 (EVT_NATURAL_DISASTER 0x154): clear-before-emit ordering —
+            // transition is detected against the PREVIOUS tick's flag, then
+            // the flag is updated. This prevents panic-reemission if the
+            // downstream handler flips state back (SF-#8).
             let new_flags = evaluate_incident_flags(sys, &eco.summary, &eco);
             let old_flags = &eco.incident_flags;
             if new_flags.uprising && !old_flags.uprising {
@@ -362,16 +479,61 @@ impl EconomySystem {
             if new_flags.informant && !old_flags.informant {
                 events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "informant" });
             }
+            // K2: direct EVT_NATURAL_DISASTER emission (replaces the umbrella
+            // IncidentTriggered "disaster" branch — the umbrella is kept for
+            // the "resource" overcap case because that telemetry label already
+            // meant "too many facilities for the grid", not "new resources found").
             if new_flags.disaster && !old_flags.disaster {
-                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "disaster" });
+                events.push(EconomyEvent::NaturalDisaster { system: sys_key });
             }
             if new_flags.resource && !old_flags.resource {
+                // NOTE: this is the legacy "grid overcap" incident, not K3.
+                // K3 (EVT_RESOURCE_DISCOVERY) fires above on positive
+                // raw_material_allocated deltas.
                 events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "resource" });
             }
             eco.incident_flags = new_flags;
 
             // Uprising visibility flag
             eco.uprising_visible = matches!(sys.control, ControlKind::Uprising(_));
+
+            // K4 pre-tally: track per-faction controlled systems with a
+            // garrison deficit. The actual emission happens after the loop
+            // when the 30-tick cooldown fires.
+            if eco.summary.troop_surplus < 0 {
+                match sys.control {
+                    ControlKind::Controlled(crate::dat::Faction::Alliance) => {
+                        alliance_deficit_systems += 1;
+                    }
+                    ControlKind::Controlled(crate::dat::Faction::Empire) => {
+                        empire_deficit_systems += 1;
+                    }
+                    _ => {}
+                }
+            }
+
+            // K1: EVT_SUPPORT_CHANGE (0x100).
+            // Compare previous tier (cached in eco) against the freshly-
+            // computed current tier. Emit on any transition; update the
+            // cache unconditionally so the next tick sees the new band.
+            let current_support_int = match sys.control {
+                ControlKind::Controlled(crate::dat::Faction::Alliance) =>
+                    (sys.popularity_alliance * 100.0).round() as i32,
+                ControlKind::Controlled(crate::dat::Faction::Empire) =>
+                    (sys.popularity_empire * 100.0).round() as i32,
+                _ => -1, // Sentinel: uncontrolled/contested has no tier
+            };
+            if current_support_int >= 0 {
+                let new_tier = SupportTier::from_support_int(current_support_int);
+                if new_tier != eco.last_support_tier {
+                    events.push(EconomyEvent::SupportChanged {
+                        system: sys_key,
+                        from: eco.last_support_tier,
+                        to: new_tier,
+                    });
+                    eco.last_support_tier = new_tier;
+                }
+            }
 
             if (new_rate - old_rate).abs() > 0.01 {
                 events.push(EconomyEvent::CollectionRateChanged {
@@ -386,6 +548,49 @@ impl EconomySystem {
                     new_requirement: new_garrison,
                 });
             }
+        }
+
+        // K4: EVT_MAINTENANCE_SHORTFALL_EVENT (0x304) per-faction 30-tick
+        // timer. Ticks elapsed this frame = tick_events.len(). If any of
+        // our counters reach zero AND the faction has at least one
+        // deficit system, emit and reset to GNPRTB[7694] (30).
+        let elapsed = tick_events.len() as u32;
+        let maintenance_rate =
+            gnprtb.value(GNPRTB_MAINTENANCE_RATE_CONTROLLED, difficulty).max(1) as u32;
+
+        // Initialize lazily on first tick — `EconomyState::default()`
+        // leaves cooldowns at 0, which is the "fire immediately on
+        // first eval" state. Arm to one full cycle so the first
+        // emission happens after `maintenance_rate` ticks.
+        if state.alliance_maintenance_cooldown == 0 && elapsed > 0
+            && alliance_deficit_systems == 0
+        {
+            state.alliance_maintenance_cooldown = maintenance_rate;
+        }
+        if state.empire_maintenance_cooldown == 0 && elapsed > 0
+            && empire_deficit_systems == 0
+        {
+            state.empire_maintenance_cooldown = maintenance_rate;
+        }
+
+        state.alliance_maintenance_cooldown =
+            state.alliance_maintenance_cooldown.saturating_sub(elapsed);
+        state.empire_maintenance_cooldown =
+            state.empire_maintenance_cooldown.saturating_sub(elapsed);
+
+        if state.alliance_maintenance_cooldown == 0 && alliance_deficit_systems > 0 {
+            events.push(EconomyEvent::MaintenanceShortfall {
+                faction_is_alliance: true,
+                deficit_system_count: alliance_deficit_systems,
+            });
+            state.alliance_maintenance_cooldown = maintenance_rate;
+        }
+        if state.empire_maintenance_cooldown == 0 && empire_deficit_systems > 0 {
+            events.push(EconomyEvent::MaintenanceShortfall {
+                faction_is_alliance: false,
+                deficit_system_count: empire_deficit_systems,
+            });
+            state.empire_maintenance_cooldown = maintenance_rate;
         }
 
         events
@@ -1354,18 +1559,22 @@ mod tests {
         });
 
         let mut state = EconomyState::default();
-        // First tick: should fire disaster incident (transition from false to true)
+        // First tick: should fire the natural disaster notification
+        // (transition from false to true). Knesset Shamash-Bet Dabora 2
+        // #K2 renamed the umbrella `IncidentTriggered { "disaster" }` to
+        // a dedicated `NaturalDisaster` variant so the integrator can
+        // route it to `EVT_NATURAL_DISASTER` (0x154) telemetry.
         let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
         assert!(
-            events1.iter().any(|e| matches!(e, EconomyEvent::IncidentTriggered { incident_type: "disaster", .. })),
-            "Should fire disaster incident on first tick when support < 20%"
+            events1.iter().any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
+            "Should fire NaturalDisaster on first tick when support < 20%"
         );
 
-        // Second tick: should NOT fire again (no transition — flags already set)
+        // Second tick: should NOT re-fire (no transition — flag already set)
         let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
         assert!(
-            !events2.iter().any(|e| matches!(e, EconomyEvent::IncidentTriggered { incident_type: "disaster", .. })),
-            "Should NOT re-fire disaster incident when flags unchanged"
+            !events2.iter().any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
+            "Should NOT re-fire NaturalDisaster when flags unchanged"
         );
     }
 
@@ -1796,5 +2005,160 @@ mod tests {
         };
         let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0, &gnprtb, 2);
         assert!(summary_2v2.fleet_posture.is_contested, "2v2 fleets should be contested");
+    }
+
+    // -----------------------------------------------------------------------
+    // Knesset Shamash-Bet Dabora 2 #K7: parameterized notification
+    // idempotency test. Single test covers all 4 state-transition events
+    // (K1 SupportChanged, K2 NaturalDisaster, K3 ResourceDiscovered,
+    // K4 MaintenanceShortfall) — each must fire exactly ONCE per
+    // transition, not once per tick.
+    //
+    // Per SIMP-L1 the plan explicitly merges six would-be idempotency
+    // tests into this one parameterized fixture.
+    // -----------------------------------------------------------------------
+
+    /// Helper: build a minimally-seeded world with one system controlled
+    /// by the given faction at the given support level.
+    fn make_singleton_world(
+        support_alliance: f32,
+        support_empire: f32,
+        control: ControlKind,
+        is_populated: bool,
+    ) -> (GameWorld, SystemKey) {
+        let mut world = GameWorld::default();
+        world.gnprtb = stock_gnprtb();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0), name: "S".into(),
+            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: DatId(0), name: "Test".into(), sector: sector_key,
+            x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: support_alliance,
+            popularity_empire: support_empire,
+            is_populated, total_energy: 10, raw_materials: 10,
+            espionage_rating: 0.0,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false, is_destroyed: false,
+            control,
+        });
+        (world, sys_key)
+    }
+
+    #[test]
+    fn k1_support_change_fires_only_on_tier_transition() {
+        // Start in the Low band (0.25). First eval: default tier is
+        // Critical → Low is a transition, emit once. Second eval (no
+        // state change): no emission.
+        let (world, _sys) = make_singleton_world(
+            0.25, 0.75,
+            ControlKind::Controlled(crate::dat::Faction::Alliance),
+            true,
+        );
+        let mut state = EconomyState::default();
+        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::SupportChanged { .. })).count();
+        assert_eq!(count1, 1, "K1: first tick should emit exactly one SupportChanged");
+
+        let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
+        let count2 = events2.iter().filter(|e| matches!(e, EconomyEvent::SupportChanged { .. })).count();
+        assert_eq!(count2, 0, "K1: unchanged-tier second tick must not re-fire");
+    }
+
+    #[test]
+    fn k2_natural_disaster_fires_only_on_flag_transition() {
+        // Support at 0.10 → disaster flag true. First tick: transition
+        // from false (default) → emit once. Second tick: no re-fire.
+        let (world, _sys) = make_singleton_world(
+            0.10, 0.90,
+            ControlKind::Controlled(crate::dat::Faction::Alliance),
+            true,
+        );
+        let mut state = EconomyState::default();
+        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })).count();
+        assert_eq!(count1, 1, "K2: first tick should emit exactly one NaturalDisaster");
+
+        let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
+        let count2 = events2.iter().filter(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })).count();
+        assert_eq!(count2, 0, "K2: clear-before-emit ordering must prevent re-fire");
+    }
+
+    #[test]
+    fn k3_resource_discovery_fires_on_positive_delta_not_on_seed() {
+        // First tick (armed=false at start): no emission because the
+        // seeded mine count isn't a "discovery". Second tick (now
+        // armed): still no emission because nothing changed.
+        let (mut world, sys_key) = make_singleton_world(
+            0.5, 0.5,
+            ControlKind::Controlled(crate::dat::Faction::Alliance),
+            true,
+        );
+        let mut state = EconomyState::default();
+        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. })).count();
+        assert_eq!(count1, 0, "K3: seed tick must NOT emit ResourceDiscovered (not armed)");
+
+        // Seed a new mine. Second tick should detect the positive delta.
+        let mine = world.production_facilities.insert(crate::world::ProductionFacilityInstance {
+            class_dat_id: DatId(0x22000001), is_mine: true, is_alliance: true,
+        });
+        world.systems[sys_key].production_facilities.push(mine);
+
+        let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
+        let count2 = events2.iter().filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. })).count();
+        assert_eq!(count2, 1, "K3: new mine should trigger exactly one ResourceDiscovered");
+
+        // Third tick (no change): should not re-fire.
+        let events3 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 3 }], 2);
+        let count3 = events3.iter().filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. })).count();
+        assert_eq!(count3, 0, "K3: stable resource count must not re-fire");
+    }
+
+    #[test]
+    fn k4_maintenance_shortfall_fires_on_30_tick_cooldown() {
+        // Garrison deficit condition (low support, no troops).
+        // Cooldown is 30 ticks (GNPRTB[7694]). First eval: the cooldown
+        // starts at 0 (EconomyState::default()), so the initial deficit
+        // fires immediately and then arms the 30-tick cooldown. The
+        // idempotency contract is that subsequent ticks within the
+        // cooldown window do NOT re-fire, and the next fire only
+        // happens after the full 30 ticks elapse.
+        let (world, _sys) = make_singleton_world(
+            0.3, 0.7,
+            ControlKind::Controlled(crate::dat::Faction::Alliance),
+            true,
+        );
+        let mut state = EconomyState::default();
+        // Tick 1: default cooldown=0, deficit present → immediate fire,
+        // cooldown armed to 30.
+        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
+        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
+        assert_eq!(count1, 1, "K4: first tick with deficit should emit exactly once");
+        assert_eq!(state.alliance_maintenance_cooldown, 30,
+            "K4: cooldown should be armed to 30 after fire");
+
+        // Burn 29 ticks — cooldown 30 → 1, no fire.
+        let batch29: Vec<TickEvent> = (2..=30).map(|n| TickEvent { tick: n }).collect();
+        let events_batch = EconomySystem::advance(&mut state, &world, &batch29, 2);
+        let count_batch = events_batch.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
+        assert_eq!(count_batch, 0, "K4: partial-cooldown batch must not re-fire");
+        assert_eq!(state.alliance_maintenance_cooldown, 1,
+            "K4: cooldown should have one tick left after 29-tick batch");
+
+        // One more tick drops the counter to 0 and fires again.
+        let events_fire = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 31 }], 2);
+        let count_fire = events_fire.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
+        assert_eq!(count_fire, 1, "K4: cooldown expiry should re-emit exactly once");
+
+        // Immediately after firing, the cooldown resets — next tick
+        // must not re-fire.
+        let events_next = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 32 }], 2);
+        let count_next = events_next.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
+        assert_eq!(count_next, 0, "K4: reset cooldown must not re-emit immediately");
     }
 }

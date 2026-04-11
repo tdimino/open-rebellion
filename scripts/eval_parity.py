@@ -221,6 +221,69 @@ def evaluate(events: list[dict], golden: dict) -> dict:
             )
         )
 
+    # Knesset Shamash-Bet Dabora 2 story_events section.
+    # Checks the {min, max} bounds for each notification-event counter.
+    # Rare events (hq_captured, resource_discovery) naturally skew toward 0,
+    # so a zero count below min triggers a skip rather than a fail.
+    if "story_events" in values:
+        story_cfg = values["story_events"]
+        event_type_counts: Counter = Counter(
+            event.get("event_type", "") for event in events
+        )
+        for event_type in (
+            "support_change",
+            "natural_disaster",
+            "resource_discovery",
+            "maintenance_shortfall",
+            "units_deployed",
+            "manufacturing_idle",
+            "hq_captured",
+        ):
+            if event_type not in story_cfg:
+                continue
+            bounds = story_cfg[event_type]
+            if not isinstance(bounds, dict):
+                continue
+            min_val = bounds.get("min")
+            max_val = bounds.get("max")
+            observed = event_type_counts.get(event_type, 0)
+            if min_val is None or max_val is None:
+                continue
+            if observed < min_val or observed > max_val:
+                # Dedicated zero-observed skip for rare events that legit
+                # have no producer path in a given run (e.g. hq_captured
+                # when the game doesn't terminate).
+                if observed == 0 and min_val == 0:
+                    checks.append(
+                        make_check(
+                            f"story_events.{event_type}",
+                            "skip",
+                            expected=f"{min_val}..={max_val}",
+                            observed=observed,
+                            details=f"no {event_type} fired in run (within min bound)",
+                        )
+                    )
+                else:
+                    checks.append(
+                        make_check(
+                            f"story_events.{event_type}",
+                            "fail",
+                            expected=f"{min_val}..={max_val}",
+                            observed=observed,
+                            details=f"{event_type} count outside bounds",
+                        )
+                    )
+            else:
+                checks.append(
+                    make_check(
+                        f"story_events.{event_type}",
+                        "pass",
+                        expected=f"{min_val}..={max_val}",
+                        observed=observed,
+                        details="within bounds",
+                    )
+                )
+
     # Research: the mechanics docs map the three original completion event IDs.
     fired_ids = event_id_set(events)
     research_ids = {
