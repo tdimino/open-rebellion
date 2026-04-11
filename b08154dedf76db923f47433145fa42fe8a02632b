@@ -1,0 +1,5 @@
+kind decision
+edge applies-to blob:b08154dedf76db923f47433145fa42fe8a02632b
+edge targets-path path:crates/rebellion-core/src/manufacturing.rs
+
+Knesset Shamash-Bet Dabora 2 #K5+K6: added ManufacturingAdvance struct + advance_tracked() method. Returns both completions and newly_idle (systems that transitioned from non-empty to empty queue). Pre/post length compared via intra-tick HashMap snapshot — no persistent was_empty bit. advance_with_blockade kept as back-compat wrapper that discards newly_idle.
