@@ -7,9 +7,27 @@
 //! `assets/references/ref-ui/07-droid-advisors/{alliance,empire}/`. The original
 //! game also ships ~1,400 BIN control files with frame ordering data; we now
 //! parse those BIN sequences and let them drive frame order/sequence length.
-//! The BIN frame IDs still do not map directly to BMP filenames without the
-//! DLL-internal resource table, so BIN→BMP lookup remains an explicit
-//! best-effort modulo mapping over the sorted BMP frame pool.
+//!
+//! # BIN format variants (cascading decoder)
+//!
+//! Hex analysis of the ~1,500 BIN files reveals four distinct binary formats.
+//! The cascading decoder (`parse_advisor_bin_cascade`) tries each in priority
+//! order and returns the first successful parse:
+//!
+//! | Format | Layout (LE u16s)                       | Size  | Pct  | Description |
+//! |--------|----------------------------------------|-------|------|-------------|
+//! | v1     | `count \| id[0] \| … \| id[count-1]`  | 2+2N  | ~12% | Explicit frame ID list (original simple format) |
+//! | v2     | `count \| base \| 0 \| 0`              | 8     | ~45% | Sequential range: `[base..base+count)` |
+//! | v3     | `0 \| ref_id \| 9 \| count \| base`    | 10    | ~38% | Referenced sequential range with BMP resource base |
+//! | v4     | `0 \| ref_id \| bmp_id`                | 6     | ~4%  | Single-frame BMP reference |
+//!
+//! v1/v2 frame IDs target an internal DLL resource index (1301-range) and still
+//! use modulo mapping over the sorted BMP pool. v3/v4 `base`/`bmp_id` values
+//! are literal BMP resource IDs (2001+ range) and can be looked up directly via
+//! the `bmp_resource_ids` map when available.
+//!
+//! Remaining ~1% of files (2-byte stubs, 4-byte zero-prefix stubs) are too
+//! small to carry useful animation data and are silently skipped.
 //!
 //! # Advisor triggers
 //!
@@ -18,7 +36,7 @@
 //! Death Star events, uprisings).  Each trigger includes a message and priority;
 //! higher-priority messages preempt lower ones.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -101,6 +119,19 @@ impl AdvisorMessage {
 
 const DEFAULT_FRAME_INTERVAL: f32 = 0.15;
 
+/// Which BIN format variant was used to parse a sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinFormat {
+    /// v1: `u16 count + count * u16 frame_ids` — explicit list.
+    V1Explicit,
+    /// v2: `u16 count + u16 base + u16 0 + u16 0` — sequential range (8 bytes).
+    V2Range,
+    /// v3: `u16 0 + u16 ref_id + u16 9 + u16 count + u16 base` — BMP-mapped range (10 bytes).
+    V3BmpRange,
+    /// v4: `u16 0 + u16 ref_id + u16 bmp_id` — single BMP frame (6 bytes).
+    V4BmpSingle,
+}
+
 /// Parsed animation control data from an advisor BIN file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinSequence {
@@ -108,6 +139,12 @@ pub struct BinSequence {
     pub frame_ids: Vec<u16>,
     /// Fallback interval used when replaying this sequence.
     pub default_interval: f32,
+    /// Which format variant produced this sequence.
+    pub format: BinFormat,
+    /// Whether `frame_ids` are literal BMP resource IDs (v3/v4) rather than
+    /// DLL-internal indices (v1/v2). When true, the frame IDs can be looked
+    /// up directly in the `bmp_resource_id_map` instead of using modulo.
+    pub bmp_mapped: bool,
 }
 
 /// Reasons an advisor BIN file could not be parsed as a frame sequence.
@@ -127,13 +164,20 @@ pub enum BinError {
         actual_len: usize,
         expected_len: usize,
     },
+    /// File is too small to carry useful animation data (e.g. 2-byte stubs).
+    TooSmall { actual_len: usize },
+    /// No format variant matched the file's structure.
+    NoFormatMatch { actual_len: usize },
 }
 
-/// Parse an advisor BIN control file.
+/// Parse an advisor BIN control file using the original v1 format only.
 ///
-/// Format:
+/// v1 format:
 /// - `u16 frame_count` (little-endian)
 /// - `u16 frame_id[frame_count]` (little-endian)
+///
+/// Kept for backwards compatibility and tests. Prefer `parse_advisor_bin_cascade`
+/// for production use.
 pub fn parse_advisor_bin(bytes: &[u8]) -> Result<BinSequence, BinError> {
     if bytes.len() < 2 {
         return Err(BinError::TruncatedHeader {
@@ -167,7 +211,100 @@ pub fn parse_advisor_bin(bytes: &[u8]) -> Result<BinSequence, BinError> {
     Ok(BinSequence {
         frame_ids,
         default_interval: DEFAULT_FRAME_INTERVAL,
+        format: BinFormat::V1Explicit,
+        bmp_mapped: false,
     })
+}
+
+/// Cascading decoder that tries all four BIN format variants in order.
+///
+/// Returns `(BinSequence, BinFormat)` on success. The priority order is:
+/// 1. **v3** (10 bytes, `0 | ref | 9 | count | base`) — BMP-mapped range
+/// 2. **v4** (6 bytes, `0 | ref | bmp_id`) — BMP-mapped single frame
+/// 3. **v2** (8 bytes, `count | base | 0 | 0`) — sequential range
+/// 4. **v1** (variable, `count | ids…`) — explicit frame list
+///
+/// v3 and v4 are tried before v2/v1 because the zero-prefix discriminator
+/// (`w0 == 0`) prevents ambiguity with v1/v2 (which require `w0 > 0`).
+pub fn parse_advisor_bin_cascade(bytes: &[u8]) -> Result<BinSequence, BinError> {
+    let len = bytes.len();
+
+    // Reject stubs that cannot carry useful data.
+    if len < 4 {
+        return Err(BinError::TooSmall { actual_len: len });
+    }
+
+    let w0 = u16::from_le_bytes([bytes[0], bytes[1]]);
+
+    // --- Zero-prefix formats (v3, v4) ---
+    if w0 == 0 {
+        // v3: 10 bytes = (0, ref_id, 9, count, base_bmp_id)
+        if len == 10 {
+            let w2 = u16::from_le_bytes([bytes[4], bytes[5]]);
+            if w2 == 9 {
+                let count = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
+                let base = u16::from_le_bytes([bytes[8], bytes[9]]);
+                let frame_ids: Vec<u16> = (0..count).map(|i| base + i as u16).collect();
+                return Ok(BinSequence {
+                    frame_ids,
+                    default_interval: DEFAULT_FRAME_INTERVAL,
+                    format: BinFormat::V3BmpRange,
+                    bmp_mapped: true,
+                });
+            }
+        }
+
+        // v4: 6 bytes = (0, ref_id, bmp_id)
+        if len == 6 {
+            let bmp_id = u16::from_le_bytes([bytes[4], bytes[5]]);
+            return Ok(BinSequence {
+                frame_ids: vec![bmp_id],
+                default_interval: DEFAULT_FRAME_INTERVAL,
+                format: BinFormat::V4BmpSingle,
+                bmp_mapped: true,
+            });
+        }
+
+        // 4-byte zero-prefix stubs (0, some_id) — too small for useful animation.
+        return Err(BinError::TooSmall { actual_len: len });
+    }
+
+    // --- Nonzero-prefix formats (v2, v1) ---
+    let count = w0 as usize;
+
+    // v2: exactly 8 bytes = (count, base, 0, 0) where count > 0.
+    // Discriminator: the last two u16 words are both zero.
+    if len == 8 && count > 0 {
+        let w2 = u16::from_le_bytes([bytes[4], bytes[5]]);
+        let w3 = u16::from_le_bytes([bytes[6], bytes[7]]);
+        if w2 == 0 && w3 == 0 {
+            let base = u16::from_le_bytes([bytes[2], bytes[3]]);
+            let frame_ids: Vec<u16> = (0..count).map(|i| base + i as u16).collect();
+            return Ok(BinSequence {
+                frame_ids,
+                default_interval: DEFAULT_FRAME_INTERVAL,
+                format: BinFormat::V2Range,
+                bmp_mapped: false,
+            });
+        }
+    }
+
+    // v1: variable length = 2 + count * 2, explicit frame ID list.
+    let expected_len = 2 + count * 2;
+    if len == expected_len && count > 0 {
+        let mut frame_ids = Vec::with_capacity(count);
+        for chunk in bytes[2..].chunks_exact(2) {
+            frame_ids.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        return Ok(BinSequence {
+            frame_ids,
+            default_interval: DEFAULT_FRAME_INTERVAL,
+            format: BinFormat::V1Explicit,
+            bmp_mapped: false,
+        });
+    }
+
+    Err(BinError::NoFormatMatch { actual_len: len })
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +343,10 @@ pub struct AdvisorState {
     primary_frame_pool_len: usize,
     /// Number of frames in the secondary BMP pool.
     secondary_frame_pool_len: usize,
+    /// Maps BMP resource ID → index in `primary_textures` for direct lookup.
+    /// Populated from BMP filenames (e.g. `02001-alsprite.bmp` → resource ID 2001).
+    /// Used by v3/v4 BIN sequences whose `bmp_mapped` flag is true.
+    bmp_resource_id_map: HashMap<u16, usize>,
 
     // Loaded textures (lazy-initialized)
     frames_loaded: bool,
@@ -234,6 +375,7 @@ impl AdvisorState {
             frame_cursor: 0,
             primary_frame_pool_len: 0,
             secondary_frame_pool_len: 0,
+            bmp_resource_id_map: HashMap::new(),
             frames_loaded: false,
             primary_textures: Vec::new(),
             secondary_textures: Vec::new(),
@@ -247,6 +389,7 @@ impl AdvisorState {
         self.primary_textures.clear();
         self.secondary_textures.clear();
         self.bin_sequences.clear();
+        self.bmp_resource_id_map.clear();
         self.primary_frame_pool_len = 0;
         self.secondary_frame_pool_len = 0;
         self.current_sequence = 0;
@@ -467,13 +610,27 @@ impl AdvisorState {
 
         let frame_id = sequence.frame_ids[self.frame_cursor.min(sequence.frame_ids.len() - 1)];
 
-        // Best-effort BIN→BMP mapping: authored frame IDs appear to target an
-        // unknown DLL resource table, so we modulo into the sorted BMP pools.
-        if self.primary_frame_pool_len > 0 {
-            self.primary_frame = frame_id as usize % self.primary_frame_pool_len;
-        }
-        if self.secondary_frame_pool_len > 0 {
-            self.secondary_frame = frame_id as usize % self.secondary_frame_pool_len;
+        if sequence.bmp_mapped {
+            // v3/v4: frame IDs are literal BMP resource IDs — use the direct
+            // lookup map built during load. Falls back to modulo if the exact
+            // resource ID is not found (which can happen when the BMP set is
+            // incomplete or the BIN references frames beyond the extracted set).
+            if let Some(&idx) = self.bmp_resource_id_map.get(&frame_id) {
+                self.primary_frame = idx;
+            } else if self.primary_frame_pool_len > 0 {
+                self.primary_frame = frame_id as usize % self.primary_frame_pool_len;
+            }
+            // v3/v4 sequences do not drive R2-D2 independently; keep secondary
+            // on its existing frame.
+        } else {
+            // v1/v2: frame IDs target an internal DLL resource index.
+            // Best-effort modulo into the sorted BMP pools.
+            if self.primary_frame_pool_len > 0 {
+                self.primary_frame = frame_id as usize % self.primary_frame_pool_len;
+            }
+            if self.secondary_frame_pool_len > 0 {
+                self.secondary_frame = frame_id as usize % self.secondary_frame_pool_len;
+            }
         }
     }
 }
@@ -482,16 +639,25 @@ impl AdvisorState {
 // Frame loading (native only)
 // ---------------------------------------------------------------------------
 
+/// Result of loading a faction's sprite directory.
+struct FactionFrames {
+    primary: Vec<TextureHandle>,
+    secondary: Vec<TextureHandle>,
+    bin_sequences: Vec<BinSequence>,
+    /// Maps BMP resource ID (from filename) → index in `primary`.
+    bmp_resource_id_map: HashMap<u16, usize>,
+}
+
 /// Load BMP frames from a faction's sprite directory.
 ///
-/// Returns `(primary_frames, secondary_frames, bin_sequences)`. For Alliance,
-/// secondary contains R2-D2 (47×69); for Empire, secondary is empty.
+/// Returns primary frames, secondary frames (R2-D2 for Alliance), parsed BIN
+/// sequences from the cascading decoder, and a BMP resource ID lookup map.
 #[cfg(not(target_arch = "wasm32"))]
 fn load_faction_frames(
     ctx: &egui::Context,
     sprite_dir: &Path,
     faction: AdvisorFaction,
-) -> (Vec<TextureHandle>, Vec<TextureHandle>, Vec<BinSequence>) {
+) -> FactionFrames {
     let subdir = match faction {
         AdvisorFaction::Alliance => "alliance",
         AdvisorFaction::Empire => "empire",
@@ -499,7 +665,12 @@ fn load_faction_frames(
     let faction_dir = sprite_dir.join(subdir);
 
     if !faction_dir.exists() {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return FactionFrames {
+            primary: Vec::new(),
+            secondary: Vec::new(),
+            bin_sequences: Vec::new(),
+            bmp_resource_id_map: HashMap::new(),
+        };
     }
 
     // Collect all BMP files, sorted by name (ascending resource ID).
@@ -517,6 +688,7 @@ fn load_faction_frames(
 
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
+    let mut bmp_resource_id_map: HashMap<u16, usize> = HashMap::new();
     let mut bin_files: Vec<PathBuf> = std::fs::read_dir(&faction_dir)
         .into_iter()
         .flatten()
@@ -529,7 +701,7 @@ fn load_faction_frames(
         .collect();
     bin_files.sort();
 
-    for (idx, bmp_path) in bmp_files.iter().enumerate() {
+    for bmp_path in bmp_files.iter() {
         let bytes = match std::fs::read(bmp_path) {
             Ok(b) => b,
             Err(_) => continue,
@@ -544,6 +716,14 @@ fn load_faction_frames(
         let color_image =
             egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
 
+        // Extract resource ID from filename (e.g. "02001-alsprite.bmp" → 2001).
+        let resource_id: Option<u16> = bmp_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.split('-').next())
+            .and_then(|s| s.parse::<u16>().ok());
+
+        let idx = primary.len(); // index BEFORE pushing (secondary frames don't count)
         let label = format!("advisor_{}_{}", subdir, idx);
         let handle = ctx.load_texture(&label, color_image, TextureOptions::default());
 
@@ -552,21 +732,26 @@ fn load_faction_frames(
         if faction == AdvisorFaction::Alliance && w == 47 && h == 69 {
             secondary.push(handle);
         } else {
+            if let Some(rid) = resource_id {
+                bmp_resource_id_map.insert(rid, primary.len());
+            }
             primary.push(handle);
         }
     }
 
-    // Walk every BIN file with explicit accounting so we can log how many
-    // were rejected. The simple `u16 count + u16 frame_ids[]` format only
-    // covers ~24% of advisor BINs in practice; the rest declare inconsistent
-    // lengths and are almost certainly an undocumented header variant.
-    // We surface a single per-faction summary so the silent rejection rate
-    // is visible during development without flooding the log per file.
+    // Walk every BIN file through the cascading decoder. Track per-format
+    // counts for the load-time summary.
     let total_bins = bin_files.len();
     let mut bin_sequences: Vec<BinSequence> = Vec::new();
+    let mut valid_v1 = 0usize;
+    let mut valid_v2 = 0usize;
+    let mut valid_v3 = 0usize;
+    let mut valid_v4 = 0usize;
     let mut empty = 0usize;
     let mut io_failures = 0usize;
     let mut parse_failures = 0usize;
+    let mut bmp_mapped_count = 0usize;
+
     for bin_path in bin_files {
         let bytes = match std::fs::read(&bin_path) {
             Ok(b) => b,
@@ -575,24 +760,51 @@ fn load_faction_frames(
                 continue;
             }
         };
-        match parse_advisor_bin(&bytes) {
-            Ok(sequence) if !sequence.frame_ids.is_empty() => bin_sequences.push(sequence),
+        match parse_advisor_bin_cascade(&bytes) {
+            Ok(sequence) if !sequence.frame_ids.is_empty() => {
+                match sequence.format {
+                    BinFormat::V1Explicit => valid_v1 += 1,
+                    BinFormat::V2Range => valid_v2 += 1,
+                    BinFormat::V3BmpRange => valid_v3 += 1,
+                    BinFormat::V4BmpSingle => valid_v4 += 1,
+                }
+                if sequence.bmp_mapped {
+                    bmp_mapped_count += 1;
+                }
+                bin_sequences.push(sequence);
+            }
             Ok(_) => empty += 1,
             Err(_) => parse_failures += 1,
         }
     }
     if total_bins > 0 {
+        let valid_total = valid_v1 + valid_v2 + valid_v3 + valid_v4;
+        let pct = 100 * valid_total / total_bins;
         eprintln!(
-            "[advisor] {} BIN files: {} valid, {} parse-failed, {} empty, {} io-failed",
+            "[advisor] {} BIN files: {}/{} valid ({}%) \
+             [v1={}, v2={}, v3={}, v4={}], \
+             {} bmp-mapped, {} parse-failed, {} empty, {} io-failed",
             subdir,
-            bin_sequences.len(),
+            valid_total,
+            total_bins,
+            pct,
+            valid_v1,
+            valid_v2,
+            valid_v3,
+            valid_v4,
+            bmp_mapped_count,
             parse_failures,
             empty,
             io_failures,
         );
     }
 
-    (primary, secondary, bin_sequences)
+    FactionFrames {
+        primary,
+        secondary,
+        bin_sequences,
+        bmp_resource_id_map,
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -600,8 +812,13 @@ fn load_faction_frames(
     _ctx: &egui::Context,
     _sprite_dir: &Path,
     _faction: AdvisorFaction,
-) -> (Vec<TextureHandle>, Vec<TextureHandle>, Vec<BinSequence>) {
-    (Vec::new(), Vec::new(), Vec::new())
+) -> FactionFrames {
+    FactionFrames {
+        primary: Vec::new(),
+        secondary: Vec::new(),
+        bin_sequences: Vec::new(),
+        bmp_resource_id_map: HashMap::new(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -617,12 +834,13 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
     // Lazy-load frames on first draw (needs egui context for texture registration).
     if !state.frames_loaded {
         if let Some(ref dir) = state.sprite_dir {
-            let (primary, secondary, bin_sequences) = load_faction_frames(ctx, dir, state.faction);
-            state.primary_frame_pool_len = primary.len();
-            state.secondary_frame_pool_len = secondary.len();
-            state.primary_textures = primary;
-            state.secondary_textures = secondary;
-            state.bin_sequences = bin_sequences;
+            let frames = load_faction_frames(ctx, dir, state.faction);
+            state.primary_frame_pool_len = frames.primary.len();
+            state.secondary_frame_pool_len = frames.secondary.len();
+            state.primary_textures = frames.primary;
+            state.secondary_textures = frames.secondary;
+            state.bin_sequences = frames.bin_sequences;
+            state.bmp_resource_id_map = frames.bmp_resource_id_map;
             if state.bin_sequences.is_empty() {
                 state.primary_frame = 0;
                 state.secondary_frame = 0;
@@ -840,12 +1058,19 @@ pub fn advisor_manufacturing_complete(state: &mut AdvisorState, item_name: &str)
 mod tests {
     use super::*;
 
+    /// Helper to build a v1-style (non-BMP-mapped) sequence for state tests.
     fn sequence(frame_ids: &[u16], default_interval: f32) -> BinSequence {
         BinSequence {
             frame_ids: frame_ids.to_vec(),
             default_interval,
+            format: BinFormat::V1Explicit,
+            bmp_mapped: false,
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Message queue tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn advisor_message_queue_fifo() {
@@ -907,13 +1132,19 @@ mod tests {
         assert_eq!(state.secondary_frame, 1);
     }
 
+    // -----------------------------------------------------------------------
+    // v1 parser tests (original parse_advisor_bin)
+    // -----------------------------------------------------------------------
+
     #[test]
     fn parse_advisor_bin_happy_path() {
         let bytes = [0x03, 0x00, 0x15, 0x05, 0x16, 0x05, 0x17, 0x05];
-        let sequence = parse_advisor_bin(&bytes).unwrap();
+        let seq = parse_advisor_bin(&bytes).unwrap();
 
-        assert_eq!(sequence.frame_ids, vec![1301, 1302, 1303]);
-        assert_eq!(sequence.default_interval, DEFAULT_FRAME_INTERVAL);
+        assert_eq!(seq.frame_ids, vec![1301, 1302, 1303]);
+        assert_eq!(seq.default_interval, DEFAULT_FRAME_INTERVAL);
+        assert_eq!(seq.format, BinFormat::V1Explicit);
+        assert!(!seq.bmp_mapped);
     }
 
     #[test]
@@ -945,6 +1176,174 @@ mod tests {
             }
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Cascading decoder tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cascade_v1_explicit_frame_list() {
+        // (count=3, 1301, 1302, 1303) — classic v1 with non-zero trailing words.
+        let bytes = [0x03, 0x00, 0x15, 0x05, 0x16, 0x05, 0x17, 0x05];
+        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
+
+        assert_eq!(seq.format, BinFormat::V1Explicit);
+        assert_eq!(seq.frame_ids, vec![1301, 1302, 1303]);
+        assert!(!seq.bmp_mapped);
+    }
+
+    #[test]
+    fn cascade_v2_sequential_range() {
+        // (count=4, base=4001, 0, 0) — dominant 8-byte pattern.
+        let bytes: [u8; 8] = [0x04, 0x00, 0xA1, 0x0F, 0x00, 0x00, 0x00, 0x00];
+        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
+
+        assert_eq!(seq.format, BinFormat::V2Range);
+        assert_eq!(seq.frame_ids, vec![4001, 4002, 4003, 4004]);
+        assert!(!seq.bmp_mapped);
+    }
+
+    #[test]
+    fn cascade_v2_distinguishes_from_v1_with_trailing_zeros() {
+        // 8 bytes: (3, 951, 0, 0) — v1 would say [951, 0, 0] but v2 says [951, 952, 953].
+        // The cascading decoder should pick v2 because w2==0 && w3==0.
+        let bytes: [u8; 8] = [0x03, 0x00, 0xB7, 0x03, 0x00, 0x00, 0x00, 0x00];
+        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
+
+        assert_eq!(seq.format, BinFormat::V2Range);
+        assert_eq!(seq.frame_ids, vec![951, 952, 953]);
+        assert!(!seq.bmp_mapped);
+    }
+
+    #[test]
+    fn cascade_v3_bmp_range() {
+        // (0, ref=1291, 9, count=16, base=19610) — 10-byte BMP-mapped range.
+        let bytes: [u8; 10] = [
+            0x00, 0x00, // w0 = 0
+            0x0B, 0x05, // w1 = 1291 (ref_id)
+            0x09, 0x00, // w2 = 9
+            0x10, 0x00, // w3 = 16 (count)
+            0x9A, 0x4C, // w4 = 19610 (base)
+        ];
+        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
+
+        assert_eq!(seq.format, BinFormat::V3BmpRange);
+        assert!(seq.bmp_mapped);
+        assert_eq!(seq.frame_ids.len(), 16);
+        assert_eq!(seq.frame_ids[0], 19610);
+        assert_eq!(seq.frame_ids[15], 19625);
+    }
+
+    #[test]
+    fn cascade_v4_bmp_single() {
+        // (0, ref=2001, bmp_id=10501) — 6-byte single-frame BMP reference.
+        let bytes: [u8; 6] = [
+            0x00, 0x00, // w0 = 0
+            0xD1, 0x07, // w1 = 2001 (ref_id)
+            0x05, 0x29, // w2 = 10501 (bmp_id)
+        ];
+        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
+
+        assert_eq!(seq.format, BinFormat::V4BmpSingle);
+        assert!(seq.bmp_mapped);
+        assert_eq!(seq.frame_ids, vec![10501]);
+    }
+
+    #[test]
+    fn cascade_rejects_2_byte_stubs() {
+        let bytes = [0x03, 0x0D];
+        let err = parse_advisor_bin_cascade(&bytes).unwrap_err();
+        assert_eq!(err, BinError::TooSmall { actual_len: 2 });
+    }
+
+    #[test]
+    fn cascade_rejects_4_byte_zero_prefix_stubs() {
+        // (0, 3331) — 4-byte zero-prefix stub, too small for v3/v4.
+        let bytes: [u8; 4] = [0x00, 0x00, 0x03, 0x0D];
+        let err = parse_advisor_bin_cascade(&bytes).unwrap_err();
+        assert_eq!(err, BinError::TooSmall { actual_len: 4 });
+    }
+
+    #[test]
+    fn cascade_v2_with_large_count() {
+        // (count=20, base=4401, 0, 0) — the 30-file cluster.
+        let bytes: [u8; 8] = [0x14, 0x00, 0x31, 0x11, 0x00, 0x00, 0x00, 0x00];
+        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
+
+        assert_eq!(seq.format, BinFormat::V2Range);
+        assert_eq!(seq.frame_ids.len(), 20);
+        assert_eq!(seq.frame_ids[0], 4401);
+        assert_eq!(seq.frame_ids[19], 4420);
+    }
+
+    #[test]
+    fn cascade_v1_single_frame() {
+        // (count=1, frame=1306) — 4-byte v1 with count=1.
+        let bytes: [u8; 4] = [0x01, 0x00, 0x1A, 0x05];
+        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
+
+        assert_eq!(seq.format, BinFormat::V1Explicit);
+        assert_eq!(seq.frame_ids, vec![1306]);
+        assert!(!seq.bmp_mapped);
+    }
+
+    // -----------------------------------------------------------------------
+    // BMP-mapped frame sync tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn bmp_mapped_sequence_uses_direct_lookup() {
+        let mut state = AdvisorState::new(AdvisorFaction::Alliance);
+        state.primary_frame_pool_len = 10;
+        state.secondary_frame_pool_len = 0;
+
+        // Simulate a BMP resource ID map: 2001->0, 2002->1, 2003->2.
+        state.bmp_resource_id_map.insert(2001, 0);
+        state.bmp_resource_id_map.insert(2002, 1);
+        state.bmp_resource_id_map.insert(2003, 2);
+
+        state.bin_sequences = vec![BinSequence {
+            frame_ids: vec![2001, 2002, 2003],
+            default_interval: 0.1,
+            format: BinFormat::V3BmpRange,
+            bmp_mapped: true,
+        }];
+        state.set_sequence(0, true);
+
+        // Initial frame should resolve to index 0 (resource 2001).
+        assert_eq!(state.primary_frame, 0);
+
+        // Advance one frame -> resource 2002 -> index 1.
+        state.update(0.1);
+        assert_eq!(state.primary_frame, 1);
+
+        // Advance again -> resource 2003 -> index 2.
+        state.update(0.1);
+        assert_eq!(state.primary_frame, 2);
+    }
+
+    #[test]
+    fn bmp_mapped_falls_back_to_modulo_on_missing_id() {
+        let mut state = AdvisorState::new(AdvisorFaction::Empire);
+        state.primary_frame_pool_len = 5;
+        state.secondary_frame_pool_len = 0;
+        // Map is empty — no BMP resource IDs registered.
+
+        state.bin_sequences = vec![BinSequence {
+            frame_ids: vec![9999],
+            default_interval: 0.1,
+            format: BinFormat::V3BmpRange,
+            bmp_mapped: true,
+        }];
+        state.set_sequence(0, true);
+
+        // 9999 not in map -> falls back to 9999 % 5 = 4.
+        assert_eq!(state.primary_frame, 4);
+    }
+
+    // -----------------------------------------------------------------------
+    // BIN state animation tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn bin_state_advances_and_wraps_for_normal_priority() {
@@ -1006,6 +1405,10 @@ mod tests {
         assert_eq!(state.frame_cursor, 0);
         assert_eq!(state.primary_frame, 0);
     }
+
+    // -----------------------------------------------------------------------
+    // Convenience trigger tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn advisor_greet_alliance() {
