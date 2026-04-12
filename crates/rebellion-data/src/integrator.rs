@@ -1065,7 +1065,7 @@ fn apply_mission_effects_inner(
 ///   after resolving `at_character.current_system` (or its in-transit
 ///   movement destination via `MovementState::orders`). Resolution failure
 ///   logs at `warn!` level and drops the action — callers must gate the
-///   originating event on `CharacterAtSystem OR CharacterHasActiveMovementOrder`
+///   originating event on `CharacterAtSystem OR CharacterAssignedToFleet`
 ///   to guarantee resolution success (SF-#7).
 #[inline]
 pub fn apply_event_action_to_world(
@@ -1164,7 +1164,7 @@ pub fn apply_event_action_to_world(
                 // the first fleet carrying them — via `MovementState::orders()`.
                 //
                 // The bounty-hunter chain (EVT_BOUNTY_ATTACK) is gated at the
-                // `state.define()` site on `CharacterAtSystem OR CharacterHasActiveMovementOrder`
+                // `state.define()` site on `CharacterAtSystem OR CharacterAssignedToFleet`
                 // so this fallback should always succeed (SF-#7). We `warn!`
                 // instead of panic on the unexpected case.
                 let character = *at_character;
@@ -1217,7 +1217,7 @@ pub fn apply_event_action_to_world(
                     None => {
                         // Structured warn: the event chain must gate
                         // SpawnSpecialForce on CharacterAtSystem OR
-                        // CharacterHasActiveMovementOrder (SF-#7). If we
+                        // CharacterAssignedToFleet (SF-#7). If we
                         // reach this branch, the guard is missing — log
                         // and drop the action rather than spawning at
                         // an arbitrary fallback system.
@@ -1226,7 +1226,7 @@ pub fn apply_event_action_to_world(
                              could not resolve a target system — character has \
                              no current_system and is not on any movement-ordered \
                              fleet. Event chain should have gated this action with \
-                             CharacterAtSystem OR CharacterHasActiveMovementOrder.",
+                             CharacterAtSystem OR CharacterAssignedToFleet.",
                             character,
                         );
                     }
@@ -1234,16 +1234,27 @@ pub fn apply_event_action_to_world(
             }
             EventAction::SetHeritageKnown { character } => {
                 // Dabora 3 #R4: flip heritage_known when 0x396 "Final Battle
-                // Imminent" fires (or any future event whose narration
-                // introduces the Luke-Vader paternity reveal). The render
-                // layer branches on this flag in
-                // `event_id_to_resource()` to pick between the
-                // "Student Luke" / "Knight Luke" / "Emperor + Vader vs
-                // Knight Luke" BMP variants for 0x220 EVT_FINAL_BATTLE.
-                // This is the render-layer approach (SIMP-H5 + ARCH-#9
-                // + SF-#11 triple-collapse) — we do NOT create 0x222.
+                // Imminent" fires. The render layer branches on this flag
+                // in `event_id_to_resource()` to pick between the "Student
+                // Luke" / "Knight Luke" / "Emperor + Vader vs Knight Luke"
+                // BMP variants for 0x220 EVT_FINAL_BATTLE (SIMP-H5 +
+                // ARCH-#9 + SF-#11 triple-collapse — we do NOT create
+                // 0x222).
+                //
+                // Fail loudly on missing character: a silently-dropped flip
+                // shows the wrong cutscene, which is a story-continuity bug
+                // that's extremely hard to diagnose after the fact. Matches
+                // the `SpawnSpecialForce` structured-warn pattern above.
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.heritage_known = true;
+                } else {
+                    eprintln!(
+                        "[shamash-bet] SetHeritageKnown target character {:?} \
+                         not found in arena — heritage_known flip dropped. \
+                         Final Battle cutscene variant will not reflect the \
+                         paternity reveal.",
+                        character,
+                    );
                 }
             }
         }

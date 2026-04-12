@@ -216,17 +216,23 @@ pub fn run_simulation_tick(
         }
         // Knesset Shamash-Bet #R11: emit `EVT_CHARACTER_KILLED` telemetry for
         // mission-side assassinations. The integrator's `MissionEffect::CharacterKilled`
-        // arm now marks `is_killed = true` instead of deleting from the arena,
-        // so next-tick reactive story events can resolve the character.
+        // arm marks `is_killed = true` via `mark_killed()` instead of deleting
+        // from the arena, so the lookup below ALWAYS succeeds under correct
+        // invariants — the `<unknown>` fallback is a real invariant break and
+        // panics in debug builds.
         for effect in &result.effects {
             if let rebellion_core::missions::MissionEffect::CharacterKilled { character, .. } = effect {
+                debug_assert!(
+                    world.characters.contains_key(*character),
+                    "EVT_CHARACTER_KILLED target missing from arena — R11 invariant break"
+                );
                 let (name, dat_id) = world
                     .characters
                     .get(*character)
                     .map(|c| (c.name.clone(), c.dat_id.raw()))
                     .unwrap_or_else(|| (String::from("<unknown>"), 0));
                 integrator.emit(
-                    rebellion_core::game_events::SYS_STORY,
+                    rebellion_core::game_events::SYS_MISSIONS,
                     rebellion_core::game_events::EVT_CHARACTER_KILLED,
                     serde_json::json!({
                         "name": name,
@@ -258,7 +264,7 @@ pub fn run_simulation_tick(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| String::from("<unknown>"));
                     integrator.emit(
-                        rebellion_core::game_events::SYS_STORY,
+                        rebellion_core::game_events::SYS_MISSIONS,
                         rebellion_core::game_events::EVT_INFORMANT_INTEL,
                         serde_json::json!({
                             "character": char_name,
@@ -275,7 +281,7 @@ pub fn run_simulation_tick(
                     .map(|c| c.name.clone())
                     .unwrap_or_else(|| String::from("<unknown>"));
                 integrator.emit(
-                    rebellion_core::game_events::SYS_STORY,
+                    rebellion_core::game_events::SYS_MISSIONS,
                     rebellion_core::game_events::EVT_SABOTEUR_DETECTED,
                     serde_json::json!({
                         "character": char_name,
@@ -297,7 +303,7 @@ pub fn run_simulation_tick(
                         .map(|c| c.name.clone())
                         .unwrap_or_else(|| String::from("<unknown>"));
                     integrator.emit(
-                        rebellion_core::game_events::SYS_STORY,
+                        rebellion_core::game_events::SYS_MISSIONS,
                         rebellion_core::game_events::EVT_CHARACTER_HEALTH,
                         serde_json::json!({
                             "character": char_name,
@@ -408,7 +414,7 @@ pub fn run_simulation_tick(
                         .map(|c| (c.name.clone(), c.dat_id.raw()))
                         .unwrap_or_else(|| (String::from("<unknown>"), 0));
                     integrator.emit(
-                        rebellion_core::game_events::SYS_STORY,
+                        rebellion_core::game_events::SYS_MISSIONS,
                         rebellion_core::game_events::EVT_CHARACTER_KILLED,
                         serde_json::json!({
                             "name": name,

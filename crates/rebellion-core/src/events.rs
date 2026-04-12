@@ -229,17 +229,22 @@ pub enum EventCondition {
         characters: Vec<CharacterKey>,
     },
 
-    /// Character has an active movement order — evaluated via `current_fleet`
-    /// membership. Returns `true` when the character is assigned to any fleet
-    /// (a proxy for "in transit or deployed"), allowing the integrator to
-    /// resolve the target system from the fleet's location or movement order.
+    /// Character is currently assigned to a fleet (`current_fleet.is_some()`).
     ///
-    /// This is the SF-#7 precondition for `EVT_BOUNTY_ATTACK` so that
-    /// `SpawnSpecialForce` never fires with an unresolvable character position.
-    /// It is intentionally `GameWorld`-only (no MovementState) — the integrator
-    /// applies the full resolution (fleet location OR movement destination)
-    /// when executing the resulting `SpawnSpecialForce` action.
-    CharacterHasActiveMovementOrder {
+    /// Returns `true` for any character on a fleet roster — stationary OR
+    /// in transit — because the integrator resolves the final target system
+    /// from either the fleet's location OR its active movement order. This
+    /// is the SF-#7 precondition for `EVT_BOUNTY_ATTACK` so that
+    /// `SpawnSpecialForce` always has a resolvable landing system.
+    ///
+    /// Named `AssignedToFleet` (not `HasActiveMovementOrder`) because it
+    /// does NOT inspect `MovementState`: a character on a parked fleet still
+    /// passes. If you need to distinguish "in transit" from "docked", add a
+    /// separate condition that takes `MovementState` as input.
+    ///
+    /// Knesset Shamash-Bet review Fix B: renamed from
+    /// `CharacterHasActiveMovementOrder`, which was a semantic lie.
+    CharacterAssignedToFleet {
         character: CharacterKey,
     },
 
@@ -735,23 +740,42 @@ fn evaluate_condition(
             })
         }
 
-        EventCondition::CharacterHasActiveMovementOrder { character } => {
-            // Proxy check: the character is assigned to a fleet. The integrator
-            // resolves the real target system (fleet location or in-flight
-            // movement destination) when it executes `SpawnSpecialForce`.
-            // This keeps event-condition evaluation pure over `GameWorld`.
+        EventCondition::CharacterAssignedToFleet { character } => {
+            // True when the character is on any fleet's roster — stationary
+            // OR in transit. The integrator resolves the final landing
+            // system from either the fleet location or the active movement
+            // order when executing `SpawnSpecialForce`, so both are valid.
+            //
+            // Knesset Shamash-Bet Fix A/#R11: a killed character's
+            // `current_fleet` is cleared by `mark_killed()`, so this
+            // condition correctly rejects dead characters without needing
+            // an explicit `is_killed` check.
             world
                 .characters
                 .get(*character)
-                .map(|c| c.current_fleet.is_some())
+                .map(|c| !c.is_killed && c.current_fleet.is_some())
                 .unwrap_or(false)
         }
 
-        EventCondition::CharacterIsKilled { character } => world
-            .characters
-            .get(*character)
-            .map(|c| c.is_killed)
-            .unwrap_or(false),
+        EventCondition::CharacterIsKilled { character } => {
+            // Invariant: reactive death-triggered events reference a
+            // character that is either alive or newly-killed-in-arena.
+            // Under R11 semantics, a missing character row is a real
+            // invariant break (save-migration race, accidental deletion),
+            // not a "dead" state. Panic in debug so regressions surface
+            // immediately; in release, silently treat as "not killed" so
+            // players don't hit crashes on edge-case data.
+            debug_assert!(
+                world.characters.contains_key(*character),
+                "CharacterIsKilled referenced a character missing from the arena — \
+                 invariant break: killed characters must stay in the arena"
+            );
+            world
+                .characters
+                .get(*character)
+                .map(|c| c.is_killed)
+                .unwrap_or(false)
+        }
     }
 }
 
@@ -1571,6 +1595,135 @@ mod tests {
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(fired.len(), 1, "Character with current_system should count as co-located");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Knesset Shamash-Bet Fix B — honest conditions + debug_asserts
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn character_assigned_to_fleet_true_when_on_any_fleet() {
+        use crate::dat::{ExplorationStatus, Faction};
+
+        let mut world = make_world();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Tatooine".into(),
+            sector: sector_key, x: 0, y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 0, raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(Faction::Alliance),
+        });
+
+        // Parked fleet (no MovementState order) — character still counts
+        // as "assigned" because the integrator can resolve at the fleet's
+        // static location.
+        let han_key = {
+            let mut han = make_character("Han", ForceTier::None);
+            han.current_fleet = None; // will be set after fleet insert
+            world.characters.insert(han)
+        };
+        let fleet_key = world.fleets.insert(crate::world::Fleet {
+            location: sys_key,
+            capital_ships: vec![], fighters: vec![],
+            characters: vec![han_key],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        world.characters.get_mut(han_key).unwrap().current_fleet = Some(fleet_key);
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharacterAssignedToFleet { character: han_key }],
+            vec![],
+        ));
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert_eq!(fired.len(), 1, "character on parked fleet must pass");
+    }
+
+    #[test]
+    fn character_assigned_to_fleet_false_when_killed() {
+        // mark_killed clears current_fleet, so this honors Fix A without
+        // needing an explicit is_killed check inside the condition.
+        let mut world = make_world();
+        let mut han = make_character("Han", ForceTier::None);
+        // Seed a bogus fleet handle via an actual fleet insert.
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId::new(0),
+            name: "S".into(),
+            sector: sector_key, x: 0, y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.0, popularity_empire: 0.0,
+            is_populated: false, total_energy: 0, raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
+        });
+        let fleet_key = world.fleets.insert(crate::world::Fleet {
+            location: sys_key,
+            capital_ships: vec![], fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        han.current_fleet = Some(fleet_key);
+        let han_key = world.characters.insert(han);
+        // Kill and re-check — mark_killed clears current_fleet.
+        world.characters.get_mut(han_key).unwrap().mark_killed();
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharacterAssignedToFleet { character: han_key }],
+            vec![],
+        ));
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert!(fired.is_empty(), "killed character must not be 'assigned'");
+    }
+
+    #[test]
+    #[should_panic(expected = "invariant break")]
+    fn character_is_killed_panics_on_missing_character_in_debug() {
+        // R11 invariant: killed characters remain in the arena. A missing
+        // character row when CharacterIsKilled is evaluated is a real bug
+        // (save-migration race, accidental delete) and must fire loudly in
+        // debug builds so regressions surface immediately. Release builds
+        // fall through to "not killed" to avoid crashing on edge-case data.
+        let world = make_world();
+        // Fabricate a stale key: insert then remove.
+        let mut world = world;
+        let ghost = world.characters.insert(make_character("Ghost", ForceTier::None));
+        world.characters.remove(ghost);
+
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharacterIsKilled { character: ghost }],
+            vec![],
+        ));
+        let _ = EventSystem::advance(&mut state, &world, &tick(1), &[]);
     }
 
     #[test]
