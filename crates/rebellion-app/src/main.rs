@@ -58,7 +58,7 @@ use rebellion_render::{
 #[derive(Debug, Clone, PartialEq)]
 enum GameMode {
     /// Full-screen prerendered cutscene playback.
-    Cutscene,
+    Cutscene { kind: CutsceneKind },
     /// Title screen: New Game / Load Game / Quit.
     MainMenu,
     /// Campaign configuration: galaxy size, difficulty, faction.
@@ -69,11 +69,47 @@ enum GameMode {
     TacticalCombat,
     /// Ground combat phase after space combat.
     GroundCombat,
+    /// Victory/defeat modal overlay on the frozen galaxy map.
+    VictoryModal { alliance_won: bool },
+}
+
+/// Which cutscene is playing — determines post-cutscene transition.
+#[derive(Debug, Clone, PartialEq)]
+enum CutsceneKind {
+    /// Game intro (000.webm) → MainMenu.
+    Intro,
+    /// Victory sequence (201.webm) → MainMenu.
+    Victory,
+    /// Defeat sequence (202.webm) → MainMenu.
+    Defeat,
+    /// In-game story cutscene (101–108.webm) → resume Galaxy.
+    Story(u32),
 }
 
 const INTRO_CUTSCENE: &str = "assets/references/ref-videos/000.webm";
 const VICTORY_CUTSCENE: &str = "assets/references/ref-videos/201.webm";
 const DEFEAT_CUTSCENE: &str = "assets/references/ref-videos/202.webm";
+
+/// Map a story event ID to its cutscene file number (101–108), if any.
+/// Returns `None` for events that don't trigger a cutscene.
+fn story_event_to_cutscene(event_id: u32) -> Option<u32> {
+    match event_id {
+        0x221 => Some(101), // Luke departs for Dagobah
+        0x210 => Some(102), // Luke completes Dagobah training
+        0x212 => Some(103), // Bounty hunters capture Han
+        0x383 => Some(104), // Palace rescue success
+        0x220 => Some(105), // Luke vs Vader final confrontation
+        0x393 => Some(106), // Vader dispatched
+        0x396 => Some(107), // Father and son confrontation
+        0x397 => Some(108), // Empire dispatches bounty hunters
+        _ => None,
+    }
+}
+
+/// Build the cutscene asset path for a story cutscene number.
+fn story_cutscene_path(number: u32) -> String {
+    format!("assets/references/ref-videos/{}.webm", number)
+}
 
 fn window_conf() -> Conf {
     Conf {
@@ -486,7 +522,7 @@ async fn main() {
         &mut audio_engine,
     );
     if cutscene_player.is_some() {
-        game_mode = GameMode::Cutscene;
+        game_mode = GameMode::Cutscene { kind: CutsceneKind::Intro };
     }
 
     // ── Apply Star Wars theme ────────────────────────────────────────────
@@ -513,7 +549,7 @@ async fn main() {
         update_event_screen(&mut event_screen_state, dt);
 
         // ── Global keyboard shortcuts ───────────────────────────────────────
-        if game_mode == GameMode::Cutscene {
+        if matches!(game_mode, GameMode::Cutscene { .. }) {
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Space) {
                 if let Some(player) = cutscene_player.as_mut() {
                     player.stop();
@@ -576,7 +612,7 @@ async fn main() {
             toggle_panel!(KeyCode::B, show_bombardment);
             toggle_panel!(KeyCode::D, show_death_star);
             toggle_panel!(KeyCode::L, show_loyalty);
-            if is_key_pressed(KeyCode::S) && !matches!(game_mode, GameMode::Cutscene) {
+            if is_key_pressed(KeyCode::S) && !matches!(game_mode, GameMode::Cutscene { .. } | GameMode::VictoryModal { .. }) {
                 show_save_load = !show_save_load;
             }
             if is_key_pressed(KeyCode::E) {
@@ -1133,6 +1169,27 @@ async fn main() {
                 }
             }
 
+            // ── Story cutscene triggers (C1–C8) ─────────────────────────────
+            // When a story event fires that maps to a cutscene file (101–108),
+            // launch the cutscene. Only the first matching event triggers a
+            // cutscene per tick. Story cutscenes return to Galaxy when done.
+            for fired in &fired_events {
+                if let Some(number) = story_event_to_cutscene(fired.event_id) {
+                    let path_str = story_cutscene_path(number);
+                    cutscene_player = open_cutscene(
+                        Path::new(&path_str),
+                        &mut msg_log,
+                        current_tick,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        &mut audio_engine,
+                    );
+                    if cutscene_player.is_some() {
+                        game_mode = GameMode::Cutscene { kind: CutsceneKind::Story(number) };
+                        break;
+                    }
+                }
+            }
+
             // ── AI ──────────────────────────────────────────────────────────
             let ai_actions = AISystem::advance(
                 &mut ai_state,
@@ -1592,11 +1649,13 @@ async fn main() {
                 };
                 msg_log.push(GameMessage::new(current_tick, msg, MessageCategory::Event));
 
-                let cutscene_path = if player_won_victory(&outcome, player_faction) {
+                let player_won = player_won_victory(&outcome, player_faction);
+                let cutscene_path = if player_won {
                     Path::new(VICTORY_CUTSCENE)
                 } else {
                     Path::new(DEFEAT_CUTSCENE)
                 };
+                let kind = if player_won { CutsceneKind::Victory } else { CutsceneKind::Defeat };
                 cutscene_player = open_cutscene(
                     cutscene_path,
                     &mut msg_log,
@@ -1605,7 +1664,7 @@ async fn main() {
                     &mut audio_engine,
                 );
                 game_mode = if cutscene_player.is_some() {
-                    GameMode::Cutscene
+                    GameMode::Cutscene { kind }
                 } else {
                     GameMode::MainMenu
                 };
@@ -1617,8 +1676,13 @@ async fn main() {
         let mut panel_actions: Vec<PanelAction> = Vec::new();
 
         match game_mode {
-            GameMode::Cutscene => {
+            GameMode::Cutscene { ref kind } => {
                 clear_background(BLACK);
+
+                let next_mode = match kind {
+                    CutsceneKind::Intro | CutsceneKind::Victory | CutsceneKind::Defeat => GameMode::MainMenu,
+                    CutsceneKind::Story(_) => GameMode::Galaxy,
+                };
 
                 if let Some(player) = cutscene_player.as_mut() {
                     player.advance(dt);
@@ -1638,10 +1702,10 @@ async fn main() {
 
                     if player.is_finished() {
                         cutscene_player = None;
-                        game_mode = GameMode::MainMenu;
+                        game_mode = next_mode;
                     }
                 } else {
-                    game_mode = GameMode::MainMenu;
+                    game_mode = next_mode;
                 }
             }
 
@@ -2129,7 +2193,7 @@ async fn main() {
                                 enc_state.open = !enc_state.open;
                             }
                             CockpitButton::SaveLoad => {
-                                if !matches!(game_mode, GameMode::Cutscene) {
+                                if !matches!(game_mode, GameMode::Cutscene { .. } | GameMode::VictoryModal { .. }) {
                                     show_save_load = !show_save_load;
                                 }
                             }
@@ -2431,6 +2495,45 @@ async fn main() {
                 } else {
                     game_mode = GameMode::Galaxy;
                 }
+            }
+
+            GameMode::VictoryModal { alliance_won } => {
+                // Frozen galaxy backdrop with modal overlay.
+                clear_background(Color::new(0.02, 0.02, 0.06, 1.0));
+                egui_macroquad::ui(|ctx| {
+                    use egui_macroquad::egui as egui;
+                    let title = if alliance_won { "Alliance Victory!" } else { "Imperial Victory!" };
+                    let body = if alliance_won {
+                        "The Rebel Alliance has triumphed. Freedom is restored to the galaxy."
+                    } else {
+                        "The Galactic Empire has crushed the Rebellion. Order reigns supreme."
+                    };
+                    egui::Area::new(egui::Id::new("victory_modal"))
+                        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                        .order(egui::Order::Foreground)
+                        .show(ctx, |ui| {
+                            egui::Frame::new()
+                                .fill(egui::Color32::from_rgba_unmultiplied(10, 15, 30, 230))
+                                .inner_margin(egui::Margin::same(32))
+                                .show(ui, |ui| {
+                                    ui.set_width(400.0);
+                                    ui.vertical_centered(|ui| {
+                                        ui.label(egui::RichText::new(title)
+                                            .size(24.0)
+                                            .color(egui::Color32::from_rgb(230, 200, 100)));
+                                        ui.add_space(16.0);
+                                        ui.label(egui::RichText::new(body)
+                                            .size(14.0)
+                                            .color(egui::Color32::from_rgb(200, 195, 185)));
+                                        ui.add_space(24.0);
+                                        if ui.button("Continue").clicked() {
+                                            game_mode = GameMode::MainMenu;
+                                        }
+                                    });
+                                });
+                        });
+                });
+                egui_macroquad::draw();
             }
         }
 
