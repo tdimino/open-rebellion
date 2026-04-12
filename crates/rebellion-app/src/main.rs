@@ -1416,27 +1416,28 @@ async fn main() {
                             *system,
                         ));
                     }
-                    rebellion_core::death_star::DeathStarEvent::PlanetDestroyed {
-                        system,
-                        tick,
-                    } => {
-                        if let Some(sys) = world.systems.get_mut(*system) {
-                            sys.is_destroyed = true;
-                        }
-                        let name = world
-                            .systems
-                            .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("{} destroyed by Death Star!", name),
-                            MessageCategory::Event,
-                            *system,
-                        ));
-                        advisor_death_star(
-                            &mut advisor_state,
-                            &format!("{} has been destroyed by the Death Star!", name),
+                    rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. } => {
+                        // Knesset Shamash-Bet Fix D (CRITICAL C3):
+                        // `DeathStarSystem::advance()` NEVER emits
+                        // `PlanetDestroyed` in the current codebase — only
+                        // `DeathStarSystem::fire()` does, and that path goes
+                        // through `PanelAction::FireDeathStar` which already
+                        // calls `cleanup_destroyed_system` with the effects
+                        // buffer for EVT_CHARACTER_KILLED telemetry.
+                        //
+                        // This branch was pre-existing dead code that marked
+                        // `is_destroyed = true` but forgot to call
+                        // `cleanup_destroyed_system`, leaking entities under
+                        // R11. If a future refactor wires automatic DS
+                        // firing into `advance()`, the `unreachable!` will
+                        // fire loudly and force the implementer to handle
+                        // cleanup + telemetry correctly instead of silently
+                        // re-introducing the leak.
+                        unreachable!(
+                            "DeathStarSystem::advance does not emit PlanetDestroyed — \
+                             use DeathStarSystem::fire via PanelAction::FireDeathStar \
+                             so cleanup_destroyed_system is called with the effects \
+                             out-param (Knesset Shamash-Bet Fix D / CRITICAL C3)"
                         );
                     }
                     rebellion_core::death_star::DeathStarEvent::NearbyWarning { system, tick } => {
