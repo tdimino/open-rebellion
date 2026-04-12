@@ -206,7 +206,7 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
     clear_background(Color::new(0.03, 0.02, 0.01, 1.0));
 
     let sw = screen_width();
-    let sh = screen_height();
+    let _sh = screen_height();
     let mut action = GroundAction::None;
 
     // Draw regiment bars.

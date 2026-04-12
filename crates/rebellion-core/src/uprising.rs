@@ -7,7 +7,7 @@
 //! 2. **Fires UprisingIncident** (`0x152`) as a precursor warning when loyalty
 //!    is trending low but hasn't triggered a full uprising yet.
 //! 3. **Fires Uprising** (`0x14b`) + **ControlKindUprising** (`0x151`) when an
-//!    uprising begins — flipping `controlling_faction` on the system.
+//!    uprising begins — transitioning `control` to `ControlKind::Uprising` on the system.
 //! 4. **Subdues uprisings** via the Subdue Uprising mission using UPRIS2TB
 //!    (4 entries) for probability lookup.
 //!
@@ -18,7 +18,7 @@
 //! ```
 //! RNG rolls are caller-supplied (`&[f64]`) for determinism and testability.
 //! The caller applies `UprisingEvent::UprisingBegan` by updating
-//! `System::controlling_faction` in `GameWorld`.
+//! `System::control` (ControlKind) in `GameWorld`.
 //!
 //! # Probability Tables
 //!
@@ -77,7 +77,7 @@ pub enum UprisingEvent {
     /// An uprising has begun. The system's controlling faction flips.
     ///
     /// Corresponds to `Uprising` (event `0x14b`) + `ControlKindUprising`
-    /// (`0x151`). The caller must update `System::controlling_faction`.
+    /// (`0x151`). The caller must update `System::control` (ControlKind).
     UprisingBegan { system: SystemKey, tick: u64 },
 
     /// An uprising has been subdued (Subdue Uprising mission succeeded).

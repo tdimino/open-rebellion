@@ -4,7 +4,7 @@
 //! active research projects, assignable characters, and progress bars.
 //! Returns `PanelAction::DispatchResearch` / `CancelResearch`.
 
-use egui_macroquad::egui::{self, Color32, ProgressBar, RichText, ScrollArea};
+use egui_macroquad::egui::{self, ProgressBar, RichText, ScrollArea};
 use rebellion_core::ids::CharacterKey;
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::research::{ResearchState, TechType, RESEARCH_MAX_LEVEL};

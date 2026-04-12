@@ -229,7 +229,7 @@ impl BlockadeSystem {
     /// A system is blockaded if it has at least one hostile fleet AND zero
     /// defending fleets.
     ///
-    /// "Hostile" is relative to the system's `controlling_faction`. A neutral
+    /// "Hostile" is relative to the system's `control` (ControlKind). A neutral
     /// system cannot be blockaded (no faction to defend it).
     fn system_is_blockaded(world: &GameWorld, sys: &crate::world::System) -> bool {
         use crate::dat::Faction;

@@ -328,7 +328,7 @@ pub fn load_game_data_with_options(
     // tables after seeding parameters are available.
     seeds::apply_seeds(gdata_path, &mut world, &system_key_map, seed_options)?;
 
-    // ── 8b. Derive controlling_faction from seeded assets (fallback only) ──
+    // ── 8b. Derive control (ControlKind) from seeded assets (fallback only) ──
     // For systems that still have no explicit control after the M5 procedural
     // bucket assignment, infer control from asset ownership. Systems already
     // assigned control by the seed pipeline (special systems, bucket assignment)
