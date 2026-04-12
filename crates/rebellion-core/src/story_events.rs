@@ -261,7 +261,9 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 system_tag: SystemTag::Story,
             });
 
-            // Final Battle ready (0x396) — requires either path
+            // Final Battle ready (0x396) — requires either path.
+            // "father and son" narration reveals heritage; SetHeritageKnown
+            // flips Luke's flag so the render layer picks the correct BMP.
             state.define(GameEvent {
                 id: 0x396,
                 name: "Final Battle Imminent".into(),
@@ -270,10 +272,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     // If 0x395 fires first, 0x394 can still fire later to gate this.
                     EventCondition::EventFired { id: 0x394 },
                 ],
-                actions: vec![EventAction::DisplayMessage {
-                    text: "The final confrontation between father and son is imminent..."
-                        .into(),
-                }],
+                actions: vec![
+                    EventAction::SetHeritageKnown { character: luke },
+                    EventAction::DisplayMessage {
+                        text: "The final confrontation between father and son is imminent..."
+                            .into(),
+                    },
+                ],
                 is_repeatable: false,
                 enabled: true,
                 system_tag: SystemTag::Story,
@@ -509,7 +514,9 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             system_tag: SystemTag::Story,
         });
 
-        // EVT_BOUNTY_ATTACK (0x212) — now requires BountyHuntersActive gate
+        // EVT_BOUNTY_ATTACK (0x212) — now requires BountyHuntersActive gate.
+        // SF-#7: CharacterAssignedToFleet ensures integrator can resolve a
+        // landing system for SpawnSpecialForce (Han must be on a fleet).
         state.define(GameEvent {
             id: EVT_BOUNTY_ATTACK,
             name: "Bounty Hunter Attack".into(),
@@ -517,9 +524,11 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 EventCondition::EventFired { id: 0x397 },
                 EventCondition::TickAtLeast { tick: 100 },
                 EventCondition::CharacterExists { character: han },
+                EventCondition::CharacterAssignedToFleet { character: han },
                 EventCondition::Random { probability: 0.15 },
             ],
             actions: vec![
+                EventAction::SpawnSpecialForce { at_character: han },
                 EventAction::SetMandatoryMission {
                     character: han,
                     mandatory: true,
@@ -647,6 +656,19 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     enabled: true,
                     system_tag: SystemTag::Story,
                 });
+
+                // EVT_HAN_RESCUE (0x200) — telemetry twin of 0x383.
+                // Fires same-tick via EventFired chaining. No actions (silent);
+                // exists so the original game's distinct event ID emits to telemetry.
+                state.define(GameEvent {
+                    id: EVT_HAN_RESCUE,
+                    name: "Han Rescue".into(),
+                    conditions: vec![EventCondition::EventFired { id: 0x383 }],
+                    actions: vec![],
+                    is_repeatable: false,
+                    enabled: true,
+                    system_tag: SystemTag::Story,
+                });
             }
 
             // Case 4: Jabba captures Leia during rescue attempt (0x385)
@@ -704,6 +726,75 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 });
             }
         }
+
+        // EVT_JABBA_PRISONERS (0x231) — consolidator for any palace capture.
+        // Three OR-branch variants: one per capture ID (0x385 Leia, 0x387 Chewie,
+        // 0x399 Luke). Uses define_or_branch() to register multiple entries with
+        // the same event ID. Self-guard ensures exactly one fires even if two
+        // captures land in the same tick.
+        for &trigger_id in &[0x385, EVT_JABBA_CAPTURES_CHEWIE, 0x399] {
+            state.define_or_branch(GameEvent {
+                id: EVT_JABBA_PRISONERS,
+                name: "Jabba's Prisoners".into(),
+                conditions: vec![
+                    EventCondition::EventFired { id: trigger_id },
+                    EventCondition::EventNotFired { id: EVT_JABBA_PRISONERS },
+                ],
+                actions: vec![],
+                is_repeatable: false,
+                enabled: true,
+                system_tag: SystemTag::Story,
+            });
+        }
+
+        // -------------------------------------------------------------------
+        // Carbonite escape countdown — 5 tick-gated events track elapsed time
+        // without rescue. Each chains off its predecessor. If self-escape
+        // (0x384) or rescue (0x383) fires at any point, EventNotFired guards
+        // halt the chain. After all 5 stages pass, EVT_HAN_PERMANENT_FREEZE
+        // fires as the terminal state.
+        // -------------------------------------------------------------------
+        const CARBONITE_STAGES: [(u32, u32, u64); 5] = [
+            (EVT_HAN_CARBONITE_FAIL_1, 0x398,                  145),
+            (EVT_HAN_CARBONITE_FAIL_2, EVT_HAN_CARBONITE_FAIL_1, 160),
+            (EVT_HAN_CARBONITE_FAIL_3, EVT_HAN_CARBONITE_FAIL_2, 175),
+            (EVT_HAN_CARBONITE_FAIL_4, EVT_HAN_CARBONITE_FAIL_3, 190),
+            (EVT_HAN_CARBONITE_FAIL_5, EVT_HAN_CARBONITE_FAIL_4, 205),
+        ];
+        for (i, &(id, predecessor, tick_min)) in CARBONITE_STAGES.iter().enumerate() {
+            state.define(GameEvent {
+                id,
+                name: format!("Carbonite Escape Fails ({})", i + 1),
+                conditions: vec![
+                    EventCondition::EventFired { id: predecessor },
+                    EventCondition::TickAtLeast { tick: tick_min },
+                    EventCondition::EventNotFired { id: 0x383 },
+                    EventCondition::EventNotFired { id: 0x384 },
+                ],
+                actions: vec![],
+                is_repeatable: false,
+                enabled: true,
+                system_tag: SystemTag::Story,
+            });
+        }
+
+        // EVT_HAN_PERMANENT_FREEZE (0x39B) — terminal state.
+        // Han has been frozen too long; rescue is no longer possible.
+        state.define(GameEvent {
+            id: EVT_HAN_PERMANENT_FREEZE,
+            name: "Han Solo Permanently Frozen".into(),
+            conditions: vec![
+                EventCondition::EventFired { id: EVT_HAN_CARBONITE_FAIL_5 },
+                EventCondition::CharacterIsCaptive { character: han },
+                EventCondition::EventNotFired { id: 0x383 }, // rescue not completed
+            ],
+            actions: vec![EventAction::DisplayMessage {
+                text: "Han Solo's carbonite prison has become permanent. He can no longer be rescued.".into(),
+            }],
+            is_repeatable: false,
+            enabled: true,
+            system_tag: SystemTag::Story,
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -738,7 +829,7 @@ mod tests {
     use crate::world::ControlKind;
     use crate::events::{EventState, EventSystem};
     use crate::tick::TickEvent;
-    use crate::world::{Character, ForceTier, SkillPair};
+    use crate::world::{Character, Fleet, ForceTier, SkillPair};
 
     fn tick(n: u64) -> Vec<TickEvent> {
         vec![TickEvent { tick: n }]
@@ -778,6 +869,45 @@ mod tests {
             .characters
             .insert(make_character("Chewbacca", ForceTier::None, true));
         world
+    }
+
+    /// Assign Han Solo to a fleet so `CharacterAssignedToFleet` passes.
+    /// Creates a system and fleet if the world doesn't already have one.
+    fn assign_han_to_fleet(world: &mut GameWorld) {
+        let han_key = find_character(world, "Han").expect("Han must exist");
+        let sys_key = if let Some((k, _)) = world.systems.iter().next() {
+            k
+        } else {
+            let sector_key = world.sectors.insert(crate::world::Sector {
+                dat_id: crate::ids::DatId::new(0),
+                name: "HanSector".into(),
+                group: crate::dat::SectorGroup::Core,
+                x: 0, y: 0, systems: vec![],
+            });
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(0),
+                name: "HanSystem".into(),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.5, popularity_empire: 0.5,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                espionage_rating: 0.0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Uncontrolled,
+            })
+        };
+        let fleet_key = world.fleets.insert(Fleet {
+            location: sys_key,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![han_key],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        world.characters.get_mut(han_key).unwrap().current_fleet = Some(fleet_key);
     }
 
     #[test]
@@ -1122,6 +1252,7 @@ mod tests {
             });
         }
 
+        assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
 
         // Bounty Attack should NOT fire at tick 100 without gate (gate fires at 80)
@@ -1187,6 +1318,7 @@ mod tests {
             });
         }
 
+        assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
 
         // Fire bounty hunter gate (tick 80)
@@ -1240,6 +1372,19 @@ mod tests {
             "Palace rescue complete should chain-fire same pass as 0x383"
         );
 
+        // EVT_HAN_RESCUE (0x200) — telemetry twin chains off 0x383 same pass
+        assert!(
+            fired2.iter().any(|f| f.event_id == EVT_HAN_RESCUE),
+            "EVT_HAN_RESCUE should chain-fire same pass as 0x383"
+        );
+
+        // EVT_HAN_RESCUE is one-shot — must not re-fire on subsequent ticks
+        let fired3 = EventSystem::advance(&mut state, &world, &tick(102), &[]);
+        assert!(
+            !fired3.iter().any(|f| f.event_id == EVT_HAN_RESCUE),
+            "EVT_HAN_RESCUE should not fire again (is_repeatable: false)"
+        );
+
         // Luke capture (0x399) should NOT fire after rescue (0x39A) completed
         let fired4 = EventSystem::advance(&mut state, &world, &tick(115), &[]);
         assert!(
@@ -1249,7 +1394,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Phase 3 tests: Jabba 5-case outcomes, Emperor, Leia Force, notifications
+    // Phase 3 tests: Jabba 5-case outcomes, Emperor, Leia Force
     // -----------------------------------------------------------------------
 
     #[test]
@@ -1281,6 +1426,7 @@ mod tests {
             });
         }
 
+        assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
 
         // Fire bounty gate + attack
@@ -1293,6 +1439,388 @@ mod tests {
             fired.iter().any(|f| f.event_id == 0x384),
             "Han self-escape should fire at tick 135 with low roll. Events: {:?}",
             fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn evt_jabba_prisoners_fires_on_luke_capture() {
+        let mut world = make_world_with_characters();
+        let mut state = EventState::new();
+
+        // 60 Empire systems for bounty hunter gate
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..60 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                espionage_rating: 0.0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+        assign_han_to_fleet(&mut world);
+        define_story_events(&mut state, &world);
+
+        // Fire bounty gate (80) + attack (100)
+        EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+
+        // Skip tick 101 (so 0x380 hasn't fired yet), jump to 115.
+        // At tick 115: 0x380 fires, then 0x399 (before 0x383 in source order)
+        // fires if random passes, blocking rescue.
+        // rolls: [0]=0.05 for 0x399 (< 0.20), [1]=0.99 for 0x385, [2]=0.99 for 0x387
+        let fired = EventSystem::advance(&mut state, &world, &tick(115), &[0.05, 0.99, 0.99]);
+
+        assert!(
+            fired.iter().any(|f| f.event_id == 0x399),
+            "Luke should be captured at tick 115. Fired: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
+            "EVT_JABBA_PRISONERS should chain-fire same pass as 0x399"
+        );
+        // Self-guard: only one consolidator fires even though 3 variants are registered
+        assert_eq!(
+            fired.iter().filter(|f| f.event_id == EVT_JABBA_PRISONERS).count(),
+            1,
+            "Self-guard should prevent duplicate consolidator fires"
+        );
+    }
+
+    #[test]
+    fn evt_jabba_prisoners_self_guard_prevents_refire() {
+        let mut world = make_world_with_characters();
+        let mut state = EventState::new();
+
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..60 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                espionage_rating: 0.0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+        assign_han_to_fleet(&mut world);
+        define_story_events(&mut state, &world);
+
+        // Fire bounty + capture Luke
+        EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+        let fired = EventSystem::advance(&mut state, &world, &tick(115), &[0.05, 0.99, 0.99]);
+        assert!(fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS));
+
+        // Next tick — consolidator must not re-fire
+        // Provide rolls for remaining enabled Random events (0x385, 0x387)
+        let fired2 = EventSystem::advance(&mut state, &world, &tick(116), &[0.99, 0.99]);
+        assert!(
+            !fired2.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
+            "EVT_JABBA_PRISONERS should not fire again (self-guard + is_repeatable: false)"
+        );
+    }
+
+    #[test]
+    fn evt_jabba_prisoners_fires_on_leia_capture_only() {
+        // Regression: define_or_branch required so the 0x385 trigger variant
+        // survives alongside the 0x399 variant (define() replaces same-ID).
+        // World: Han + Leia only (no Luke, so rescue 0x383 can't fire —
+        // it requires luke.is_some()). Leia capture can proceed.
+        let mut world = GameWorld::default();
+        world.characters.insert(make_character("Han Solo", ForceTier::None, true));
+        world.characters.insert(make_character("Princess Leia", ForceTier::None, true));
+
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..60 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                espionage_rating: 0.0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+        assign_han_to_fleet(&mut world);
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // Fire bounty gate (80) + attack (100)
+        EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+
+        // At tick 108: Leia captured (0x385, roll 0.05 < 0.15).
+        // No Luke → no 0x380/0x383 rescue chain.
+        let fired = EventSystem::advance(&mut state, &world, &tick(108), &[0.05]);
+        assert!(
+            fired.iter().any(|f| f.event_id == 0x385),
+            "Leia should be captured. Events: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
+            "EVT_JABBA_PRISONERS should fire on Leia capture alone (regression: define_or_branch)"
+        );
+    }
+
+    #[test]
+    fn evt_jabba_prisoners_two_captures_same_tick_one_consolidator() {
+        // When two captures fire in the same tick, exactly one consolidator fires.
+        // At tick 115: 0x399 (Luke, source-order before rescue) fires first,
+        // blocking 0x383. Then 0x385 (Leia) also fires (rescue blocked).
+        // Self-guard ensures only 1 EVT_JABBA_PRISONERS despite 2 captures.
+        let mut world = make_world_with_characters();
+        let mut state = EventState::new();
+
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..60 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                espionage_rating: 0.0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+        assign_han_to_fleet(&mut world);
+        define_story_events(&mut state, &world);
+
+        EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+
+        // rolls: 0x399 passes (0.05 < 0.20), 0x385 passes (0.05 < 0.15),
+        // 0x387 fails (0.99 > 0.12)
+        let fired = EventSystem::advance(&mut state, &world, &tick(115), &[0.05, 0.05, 0.99]);
+
+        let captures: Vec<_> = fired.iter()
+            .filter(|f| f.event_id == 0x399 || f.event_id == 0x385)
+            .collect();
+        assert!(
+            captures.len() >= 2,
+            "Both Luke (0x399) and Leia (0x385) should be captured. Fired: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            fired.iter().filter(|f| f.event_id == EVT_JABBA_PRISONERS).count(),
+            1,
+            "Self-guard: exactly one consolidator despite two captures"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // R3: EVT_HAN_PERMANENT_FREEZE (0x39B) — carbonite countdown tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: create a world with 60 Empire systems and run bounty gate + attack.
+    /// Returns the world and state ready for fail-chain testing.
+    fn setup_bounty_chain(include_luke: bool) -> (GameWorld, EventState) {
+        let mut world = GameWorld::default();
+        let mut han = make_character("Han Solo", ForceTier::None, true);
+        han.is_captive = false;
+        world.characters.insert(han);
+        if include_luke {
+            world.characters.insert(make_character("Luke Skywalker", ForceTier::Aware, true));
+            world.characters.insert(make_character("Princess Leia", ForceTier::None, true));
+            world.characters.insert(make_character("Chewbacca", ForceTier::None, true));
+        }
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..60 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                espionage_rating: 0.0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+        assign_han_to_fleet(&mut world);
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // Fire bounty gate (80) + attack (100) → 0x398 carbonite chains
+        EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+
+        // Simulate integrator: mark Han as captive (SetCarboniteState sets is_captive)
+        let han_key = find_character(&world, "Han").unwrap();
+        world.characters.get_mut(han_key).unwrap().is_captive = true;
+
+        (world, state)
+    }
+
+    #[test]
+    fn evt_permanent_freeze_fires_after_countdown() {
+        // Without Luke, 0x384 (self-escape) isn't defined and rescue can't succeed.
+        // The fail chain fires deterministically. At tick 205, all 5 fail stages
+        // chain in a single pass (all tick thresholds met), then 0x39B fires.
+        let (world, mut state) = setup_bounty_chain(false);
+
+        // At tick 205: entire fail chain + permanent freeze chains in one pass
+        let fired = EventSystem::advance(&mut state, &world, &tick(205), &[]);
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_HAN_CARBONITE_FAIL_1),
+            "FAIL_1 should fire. Events: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_HAN_CARBONITE_FAIL_5),
+            "FAIL_5 should fire"
+        );
+        assert!(
+            fired.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            "EVT_HAN_PERMANENT_FREEZE should chain off FAIL_5"
+        );
+    }
+
+    #[test]
+    fn evt_permanent_freeze_blocked_by_self_escape() {
+        // Han + Luke (no Leia, so rescue 0x383 can't fire — it's inside the
+        // Leia block). Self-escape (0x384) lives in the Luke+Han block.
+        let mut world = GameWorld::default();
+        world.characters.insert(make_character("Han Solo", ForceTier::None, true));
+        world.characters.insert(make_character("Luke Skywalker", ForceTier::Aware, true));
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        for i in 0..60 {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{}", i),
+                sector: sector_key, x: 0, y: 0,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3, popularity_empire: 0.7,
+                is_populated: true, total_energy: 0, raw_materials: 0,
+                espionage_rating: 0.0,
+                fleets: vec![], ground_units: vec![], special_forces: vec![],
+                defense_facilities: vec![], manufacturing_facilities: vec![],
+                production_facilities: vec![], is_headquarters: false,
+                is_destroyed: false,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+            });
+        }
+        assign_han_to_fleet(&mut world);
+        let mut state = EventState::new();
+        define_story_events(&mut state, &world);
+
+        // Fire bounty gate + attack
+        EventSystem::advance(&mut state, &world, &tick(80), &[]);
+        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+
+        // At tick 135: 0x380 fires first, then 0x384 (self-escape, roll 0.01 < 0.10).
+        // 0x399 also evaluable but its Random(0.20) gets roll 0.99 → fails.
+        let fired = EventSystem::advance(&mut state, &world, &tick(135), &[0.01, 0.99]);
+        assert!(
+            fired.iter().any(|f| f.event_id == 0x384),
+            "Han self-escape should fire. Events: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+
+        // At tick 205: fail chain should NOT fire (self-escape already fired)
+        let fired2 = EventSystem::advance(&mut state, &world, &tick(205), &[]);
+        assert!(
+            !fired2.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            "Permanent freeze should be blocked by self-escape"
+        );
+    }
+
+    #[test]
+    fn evt_permanent_freeze_blocked_by_rescue() {
+        // With Luke + Leia, rescue (0x383) can fire. Once it does,
+        // EventNotFired(0x383) guards halt the fail chain.
+        let (world, mut state) = setup_bounty_chain(true);
+
+        // tick 101: 0x380 fires, then 0x383 chains (rescue succeeds)
+        let fired = EventSystem::advance(&mut state, &world, &tick(101), &[]);
+        assert!(
+            fired.iter().any(|f| f.event_id == 0x383),
+            "Rescue should fire. Events: {:?}",
+            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+        );
+
+        // At tick 205: fail chain should NOT fire (rescue already fired)
+        let fired2 = EventSystem::advance(&mut state, &world, &tick(205), &[]);
+        assert!(
+            !fired2.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            "Permanent freeze should be blocked by rescue"
+        );
+    }
+
+    #[test]
+    fn evt_permanent_freeze_does_not_refire() {
+        let (world, mut state) = setup_bounty_chain(false);
+
+        // Fire the full chain at tick 205
+        let fired = EventSystem::advance(&mut state, &world, &tick(205), &[]);
+        assert!(fired.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE));
+
+        // Next tick: should not fire again (is_repeatable: false)
+        let fired2 = EventSystem::advance(&mut state, &world, &tick(206), &[]);
+        assert!(
+            !fired2.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            "Permanent freeze should not fire again (one-shot)"
         );
     }
 

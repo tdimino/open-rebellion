@@ -1071,6 +1071,11 @@ async fn main() {
             // Show a full-screen BMP overlay for scripted story moments.
             // Only trigger if no overlay is already active (highest-priority event wins).
             if !event_screen_state.is_active() {
+                // #R4: resolve Luke's heritage_known for render-layer BMP branching
+                let heritage_known = world.characters.values()
+                    .find(|c| c.name.contains("Luke"))
+                    .map_or(false, |c| c.heritage_known);
+
                 for fired in &fired_events {
                     use rebellion_core::events::{
                         EVT_BOUNTY_ATTACK, EVT_CHARACTER_FORCE, EVT_DAGOBAH_COMPLETED,
@@ -1122,6 +1127,7 @@ async fn main() {
                             fired.event_id,
                             title,
                             description,
+                            heritage_known,
                         );
                         break; // One overlay at a time
                     }

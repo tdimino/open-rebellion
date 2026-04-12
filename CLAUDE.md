@@ -3,13 +3,13 @@ title: "Open Rebellion"
 description: "Project instructions and build configuration for the Open Rebellion Rust reimplementation"
 category: "reference"
 created: 2026-03-11
-updated: 2026-04-07
+updated: 2026-04-12
 tags: [claude-code, build, conventions, workspace]
 ---
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.20.0 — **Core 97%** | **UI 98%** | **Combat 99%** | **Overall ~98%**. 417 tests, zero warnings. All 17 simulation sections route through `PerceptionIntegrator` for mutation + telemetry (simulation.rs 1,658→449 LOC since Knesset Ereshkigal); economy runs before manufacturing, build completions land in-world, AI dispatch is faction-aware.
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.21.0 — **Core 97%** | **UI 98%** | **Combat 99%** | **Overall ~98%**. 447 tests, zero warnings. All 17 simulation sections route through `PerceptionIntegrator` for mutation + telemetry (simulation.rs 1,658→449 LOC since Knesset Ereshkigal); economy runs before manufacturing, build completions land in-world, AI dispatch is faction-aware.
 
 Native cutscenes are optional. Run `bash scripts/decode-cutscenes.sh` once to expand `assets/references/ref-videos/*.webm` into ignored PNG frame sequences + WAV sidecars under `assets/references/cutscene-frames/`. If those decoded assets are missing, the app logs a skip message and continues without crashing.
 
@@ -78,7 +78,7 @@ PATH="/usr/bin:$PATH" cargo check
 @agent_docs/architecture.md -- Crate graph, type system layers, entity identity, data flow, render architecture. Read when adding entity types or crates.
 @agent_docs/roadmap.md -- Phase breakdown with status, what's next, what's blocked. Read when planning work.
 agent_docs/simulation.md -- 15 simulation systems index, advance() pattern, integration order, "how to add" guides. Read when touching game logic.
-agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory, betrayal). Read when modifying a specific system.
+agent_docs/systems/*.md -- Per-system detail docs (combat, blockade, uprising, death-star, research, jedi, victory, betrayal, story-events). Read when modifying a specific system.
 agent_docs/save-load.md -- Save format (v7), migration framework, mod metadata hash, WASM stubs. Read when touching save/load.
 agent_docs/mod-runtime.md -- ModRuntime, ModConfig, enable/disable, hot reload, structured errors. Read when wiring mod features.
 agent_docs/dat-formats.md -- DAT binary format reference, all 3 structural patterns, file inventory, codec API. Read when parsing new DAT files.
@@ -111,6 +111,7 @@ docs/reports/2026-03-26-community-disassembly-cross-reference.md -- 13,036 decom
 - Knesset Hephaestus (2026-03-30) — ShipInstance promotion. Fleet.capital_ships promoted from aggregate Vec<ShipEntry> to per-hull Vec<ShipInstance> (hull_current, alive, shield_weapon_packed, faction_is_alliance). ShipEntry removed. Fleet helper methods added (ship_count, ship_counts_by_class, is_empty). RepairSystem now emits real ShipRepaired events with hull deltas — last TODO resolved. Fleet merge and combat damage indexing simplified. Repair wired into interactive main.rs. Save format bumped to v7. 403 tests.
 - [Knesset Resheph (2026-04-03)](docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md) — Final parity sprint. 10 shipped tasks across combat, AI, WASM, UI, and eval: per-weapon fire strength, 10/18 dispatch validators, faction deploy budgets, uprising prevention, Death Star escort, browser localStorage saves, WASM asset/audio path fixes, DLL resource IDs, and the golden-value parity oracle.
 - Knesset Kothar wa Khasis (2026-04-07) — Resheph deferrals closed. **U2**: native cutscene playback (`crates/rebellion-render/src/video_player.rs`) via PNG-frame + WAV sidecar streaming, no ffmpeg/libvpx runtime deps. `scripts/decode-cutscenes.sh` is the one-time local decode (atomic temp-dir rename on success). New `GameMode::Cutscene` plays `000.webm` on startup and `201.webm`/`202.webm` on victory/defeat with ESC/SPACE skip; missing decoded assets log a skip and continue. WASM build untouched via cfg-gated stub. New dep: `quad-snd` on rebellion-render. **C1**: `parse_advisor_bin()` decodes the simple `u16 count + u16 frame_id[]` format with real-error rejection; `AdvisorState` walks authored sequences from idle/normal/critical bands and falls back to legacy cycling when BINs are absent or malformed. ~24% of advisor BINs (183 of ~752 per faction) match the simple format — the rest declare inconsistent lengths and are logged at load time as a per-faction summary (valid / parse-failed / empty / io-failed), indicating one or more undocumented header variants. 417 tests passing across the workspace (322 core + 50 data + 42 render + 3 doc).
+- Knesset Shamash-Bet Dabora 3 (2026-04-12) — Story events + betrayal telemetry sprint. 8 R-tasks shipped: **R1** EVT_HAN_RESCUE (0x200) telemetry twin via EventFired chaining; **R2** EVT_JABBA_PRISONERS (0x231) consolidator with 3 OR-branch variants and self-guard; **R3** EVT_HAN_PERMANENT_FREEZE (0x39B) 5-stage carbonite countdown using existing primitives only; **R4** Final Battle heritage gate via render layer (single 0x220, heritage_known BMP branching in event_screen.rs); **R5** Bounty Hunters real SpawnSpecialForce + CharacterAssignedToFleet precondition; **R9/R10** EVT_TRAITOR_REVEALED before faction flip + EVT_SIDE_CHANGE after in integrator; **R13** stale comment cleanup. 447 tests (348 core + 50 data + 46 render + 3 doc), zero warnings.
 
 ## External References
 

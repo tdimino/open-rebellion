@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-04-07
+updated: 2026-04-12
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -41,7 +41,7 @@ crates/rebellion-core/src/
 ├── tick.rs           — GameClock, GameSpeed, TickEvent (280 LOC, 13 tests)
 ├── manufacturing.rs  — ProductionQueue, ManufacturingState, blockade-aware advance (520 LOC, 13 tests)
 ├── missions.rs       — 9 mission types, MSTB probability tables, 6 MissionEffect variants (880 LOC, 14 tests)
-├── events.rs         — EventCondition/Action, chaining, deterministic rng (728 LOC, 17 tests)
+├── events.rs         — EventCondition (16 variants)/Action (10 variants), chaining, deterministic rng, 7 carbonite fail + permanent freeze constants (~780 LOC, 17 tests)
 ├── ai.rs             — AISystem, per-fleet targeting, deconfliction, two-pass deployment, battle penalty, config-driven (1121 LOC, 13 tests)
 ├── tuning.rs         — GameConfig: 16 externalized AI/movement/production parameters, parity/augmentation tagged (~160 LOC)
 ├── movement.rs       — MovementOrder, Euclidean distance-based transit, config-aware variant (625 LOC, 19 tests). `cancel_orders_to(system)` cancels all in-transit orders targeting a given system (used by Death Star cleanup).
@@ -55,9 +55,9 @@ crates/rebellion-core/src/
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
 ├── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
 ├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
-├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba) + 8 notification events, CharactersCoLocated condition
+├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba), 5-case palace outcomes, 5-stage carbonite countdown, telemetry twins (0x200, 0x231), CharactersCoLocated condition. Notification events removed (Phase 3b — belong in economy tick).
 ├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI
-├── game_events.rs    — GameEventRecord struct + 54 event type constants for JSONL telemetry
+├── game_events.rs    — GameEventRecord struct + 57 event type constants for JSONL telemetry
 ├── effects.rs        — GameEffect enum (39 variants), EffectPhase ordering, monoidal composition, inversion
 ├── economy.rs        — Full 18-function economy tick (FUN_005073d0): resource caps, support drift, collection rate, KDY modifier, troop-based side resolution, garrison, troop/fleet summary (SystemSummary), incident state (IncidentFlags), uprising visibility. 17 GNPRTB indices. ~1200 LOC.
 └── repair.rs         — Ship repair framework: RepairSystem at shipyard systems, damage_control rate
@@ -81,6 +81,7 @@ crates/rebellion-render/src/
 ├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
 ├── combat_view.rs      — Combat results integration into message log
+├── event_screen.rs     — Full-screen event overlays for story events. event_id_to_resource() maps story IDs to STRATEGY.DLL BMP offsets with heritage_known branching for Final Battle variants.
 ├── advisor.rs          — Animated droid advisors (C-3PO/R2-D2 or Imperial), priority message queue, BIN-driven frame sequencing with BMP modulo fallback
 ├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
@@ -118,7 +119,7 @@ crates/rebellion-data/src/
 ├── save.rs       — Save/load: bincode snapshots, save slots, version migration (v7). Native uses filesystem saves; WASM uses `web_sys::Storage` localStorage with base64 payloads and separate metadata keys for fast slot listing. v6→v7: ShipInstance promotion (bincode layout change). v3/v4/v5/v6 rejected.
 ├── mods.rs       — Mod loader + ModRuntime: TOML manifest, RFC 7396 merge patch, semver, hot reload
 ├── simulation.rs — Tick orchestrator: SimulationStates bundle + run_simulation_tick() (~449 LOC)
-└── integrator.rs — PerceptionIntegrator: all world mutation + telemetry emission (~1,185 LOC, 17 apply methods)
+└── integrator.rs — PerceptionIntegrator: all world mutation + telemetry emission (~1,200 LOC, 17 apply methods). Betrayal emits reveal-before-flip (EVT_TRAITOR_REVEALED) + side-change-after-flip (EVT_SIDE_CHANGE).
 ```
 
 ## Type System: Two Layers

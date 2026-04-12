@@ -226,6 +226,22 @@ Delivered:
 - WASM audio: `audio_base_path()` and `AUDIO_PREFIX` now normalize browser audio asset paths.
 - Eval parity: `scripts/eval_parity.py` was rewritten into a golden-value oracle backed by `scripts/golden_values.json`, covering all mapped 111 GNPRTB bindings plus combat, economy, research, AI, movement, and victory constants with pass/fail reporting.
 
+## Knesset Shamash-Bet Dabora 3 -- COMPLETE
+*Story events + betrayal telemetry sprint — 8 R-tasks delivered*
+
+Plan: `docs/plans/2026-04-08-001-feat-knesset-shamash-bet-story-events-cutscene-plan.md`
+
+Delivered:
+- R1: EVT_HAN_RESCUE (0x200) — telemetry twin of 0x383, fires same-tick via EventFired chaining. Silent (no actions). +19 lines.
+- R2: EVT_JABBA_PRISONERS (0x231) — consolidator for palace captures. Three OR-branch variants (one per capture ID: 0x385 Leia, 0x387 Chewie, 0x399 Luke). Self-guard via EventNotFired ensures exactly one fires per game. +36 lines.
+- R3: EVT_HAN_PERMANENT_FREEZE (0x39B) — 5-stage carbonite escape countdown (FAIL_1 through FAIL_5, ticks 145→205) using existing primitives only (EventFired + TickAtLeast + EventNotFired + CharacterIsCaptive). Terminal state when countdown completes without rescue or self-escape. 7 new constants in events.rs. +81 lines.
+- R4: Final Battle heritage gate — single 0x220 EVT_FINAL_BATTLE (no event split). 0x396 action flips `heritage_known` via SetHeritageKnown. Render layer branches BMP in `event_screen.rs`: offset 24 (Vader vs Student Luke) when unknown, offset 32 (Emperor & Vader vs Knight Luke) when known. +heritage_known parameter on event_id_to_resource + show_event_screen.
+- R5: Bounty Hunters real spawn — EVT_BOUNTY_ATTACK (0x212) now includes SpawnSpecialForce { at_character: han } + CharacterAssignedToFleet precondition (SF-#7). Test helper assign_han_to_fleet() added; 10 existing tests updated with fleet setup.
+- R9: EVT_TRAITOR_REVEALED (0x361) — emitted BEFORE faction flip in integrator with original_faction payload.
+- R10: EVT_SIDE_CHANGE (0x386) — emitted AFTER faction flip with DI-H2-compliant payload (char_name, not CharacterKey).
+- R13: Stale "notifications" removed from section comment.
+- 446 tests (347 core + 50 data + 46 render + 3 doc), zero warnings.
+
 ## AI Parity Status (as of 2026-03-23)
 
 Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchitect2018 wiki cross-reference. **All "BY DESIGN" guesses resolved.** See `agent_docs/systems/ai-parity-tracker.md` for full matrix.

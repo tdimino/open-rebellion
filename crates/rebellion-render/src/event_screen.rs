@@ -64,7 +64,15 @@ const STRATEGY_EVENT_BASE: u32 = 6208;
 /// | 40–47  | Mon Mothma |
 /// | 48–55  | Jabba the Hutt |
 /// | 56–60  | Boba Fett / Bounty Hunters |
-pub fn event_id_to_resource(story_event_id: u32) -> Option<u32> {
+/// Map a story-event ID to a STRATEGY.DLL resource ID.
+///
+/// `heritage_known` controls the Final Battle BMP variant:
+/// - `false` → Vader vs Student Luke (offset 24, resource 6232)
+/// - `true`  → Emperor & Vader vs Knight Luke (offset 32, resource 6240)
+///
+/// The caller resolves `heritage_known` from `Character::heritage_known`
+/// on Luke Skywalker (or `false` if Luke doesn't exist).
+pub fn event_id_to_resource(story_event_id: u32, heritage_known: bool) -> Option<u32> {
     // Constants from rebellion_core::events
     const EVT_CHARACTER_FORCE:  u32 = 0x1e1; // Luke's Force potential noticed
     const EVT_FORCE_TRAINING:   u32 = 0x1e5; // Luke begins Force training
@@ -85,7 +93,9 @@ pub fn event_id_to_resource(story_event_id: u32) -> Option<u32> {
         EVT_FORCE_TRAINING    => 2,  // Luke — training begins
         EVT_LUKE_DAGOBAH      => 4,  // Luke — departs for Dagobah
         EVT_DAGOBAH_COMPLETED => 6,  // Luke — training complete
-        EVT_FINAL_BATTLE      => 32, // Emperor Palpatine — final battle
+        // #R4 heritage gate: single event 0x220, render picks BMP variant
+        EVT_FINAL_BATTLE if heritage_known => 32, // Emperor & Vader vs Knight Luke
+        EVT_FINAL_BATTLE      => 24, // Vader vs Student Luke
         EVT_BOUNTY_ATTACK     => 16, // Han Solo — captured
         EVT_LEIA_PLAN         => 8,  // Princess Leia — rescue plan
         EVT_LEIA_RESCUE       => 10, // Princess Leia — rescue mission
@@ -160,8 +170,9 @@ pub fn show_event_screen(
     story_event_id: u32,
     title: impl Into<String>,
     description: impl Into<String>,
+    heritage_known: bool,
 ) {
-    let resource_id = event_id_to_resource(story_event_id);
+    let resource_id = event_id_to_resource(story_event_id, heritage_known);
     state.active = Some(ActiveOverlay {
         resource_id,
         title: title.into(),
@@ -336,4 +347,41 @@ pub fn draw_event_screen(
     }
 
     dismissed
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn final_battle_heritage_unknown_returns_vader_vs_student() {
+        // heritage_known = false → offset 24 → resource 6232
+        let res = event_id_to_resource(0x220, false);
+        assert_eq!(res, Some(STRATEGY_EVENT_BASE + 24));
+    }
+
+    #[test]
+    fn final_battle_heritage_known_returns_emperor_vs_knight() {
+        // heritage_known = true → offset 32 → resource 6240
+        let res = event_id_to_resource(0x220, true);
+        assert_eq!(res, Some(STRATEGY_EVENT_BASE + 32));
+    }
+
+    #[test]
+    fn non_final_battle_ignores_heritage() {
+        // Other events should return the same resource regardless of heritage_known
+        let bounty_false = event_id_to_resource(0x212, false);
+        let bounty_true = event_id_to_resource(0x212, true);
+        assert_eq!(bounty_false, bounty_true);
+    }
+
+    #[test]
+    fn unknown_event_returns_none() {
+        assert_eq!(event_id_to_resource(0xFFFF, false), None);
+        assert_eq!(event_id_to_resource(0xFFFF, true), None);
+    }
 }

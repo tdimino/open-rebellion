@@ -100,6 +100,12 @@ pub const EVT_TRAITOR_REVEALED: u32 = 0x361; // 865 — traitor revealed
 pub const EVT_LEIA_FORCE: u32 = 0x363; // 867 — Leia-specific Force discovery (distinct from 0x362 generic)
 pub const EVT_SIDE_CHANGE: u32 = 0x386; // 902 — character changes faction
 pub const EVT_JABBA_CAPTURES_CHEWIE: u32 = 0x387; // 903 — Chewie captured at Jabba's palace
+pub const EVT_HAN_PERMANENT_FREEZE: u32 = 0x39B; // 923 — Han permanently frozen in carbonite
+pub const EVT_HAN_CARBONITE_FAIL_1: u32 = 0x39C; // 924 — escape countdown stage 1
+pub const EVT_HAN_CARBONITE_FAIL_2: u32 = 0x39D; // 925 — escape countdown stage 2
+pub const EVT_HAN_CARBONITE_FAIL_3: u32 = 0x39E; // 926 — escape countdown stage 3
+pub const EVT_HAN_CARBONITE_FAIL_4: u32 = 0x39F; // 927 — escape countdown stage 4
+pub const EVT_HAN_CARBONITE_FAIL_5: u32 = 0x3A0; // 928 — escape countdown stage 5 (terminal)
 
 // ---------------------------------------------------------------------------
 // SystemTag — telemetry routing
@@ -468,6 +474,14 @@ impl EventState {
         } else {
             self.events.push(event);
         }
+    }
+
+    /// Add an event without replacement. Allows multiple entries with the same
+    /// id — used for OR-branch patterns where each entry has a different trigger
+    /// condition but the same output event ID. The single-pass evaluator fires
+    /// the first matching entry; `EventNotFired` self-guards prevent duplicates.
+    pub fn define_or_branch(&mut self, event: GameEvent) {
+        self.events.push(event);
     }
 
     /// Whether event `id` has ever been fired.

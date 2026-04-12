@@ -740,6 +740,16 @@ impl PerceptionIntegrator {
         ));
         for evt in events {
             let BetrayalEvent::CharacterBetrayed { character, defected_to_alliance } = evt;
+
+            // #R9: reveal-before-flip — emit EVT_TRAITOR_REVEALED while the
+            // character still belongs to the original faction.
+            self.emit(SYS_BETRAYAL, EVT_TRAITOR_REVEALED, serde_json::json!({
+                "character": char_name(world, *character),
+                "original_faction": if world.characters.get(*character)
+                    .map_or(false, |c| c.is_alliance) { "alliance" } else { "empire" },
+            }));
+
+            // Apply the faction flip.
             if let Some(c) = world.characters.get_mut(*character) {
                 c.is_alliance = *defected_to_alliance;
                 c.is_empire = !*defected_to_alliance;
@@ -747,7 +757,10 @@ impl PerceptionIntegrator {
             for (_, fleet) in world.fleets.iter_mut() {
                 fleet.characters.retain(|&k| k != *character);
             }
-            self.emit(SYS_BETRAYAL, EVT_BETRAYAL, serde_json::json!({
+
+            // #R10: emit EVT_SIDE_CHANGE after the flip with DI-H2 payload.
+            // Replaces the former EVT_BETRAYAL emit (identical payload, same timing).
+            self.emit(SYS_BETRAYAL, EVT_SIDE_CHANGE, serde_json::json!({
                 "character": char_name(world, *character),
                 "defected_to_alliance": defected_to_alliance,
             }));
