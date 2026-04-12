@@ -227,17 +227,11 @@ pub enum GameEffect {
     UprisingIncident {
         system: SystemKey,
     },
-    /// A special-force unit was spawned at a system. Resurrected for
-    /// Knesset Shamash-Bet Dabora 2 as the effect-layer output for
-    /// `EventAction::SpawnSpecialForce`. The integrator resolves the
-    /// system at fire time by looking up `at_character.current_system`
-    /// (falling back to the character's in-transit movement destination).
-    ///
-    /// Note: `SpecialForceUnit` construction is still a stub — the full
-    /// arena/type wiring lands in Dabora 3 (story chains). This effect
-    /// captures the intent + telemetry; the apply arm currently emits
-    /// the `EVT_SPECIAL_FORCE_SPAWNED` telemetry record and logs at
-    /// `info!` level without creating a new unit instance.
+    /// A special-force unit was spawned at a system. The integrator
+    /// resolves the system at fire time by looking up
+    /// `at_character.current_system` (falling back to the character's
+    /// in-transit movement destination) and creates a `SpecialForceUnit`
+    /// in the world arena.
     SpecialForceSpawned {
         at_system: SystemKey,
         is_alliance: bool,

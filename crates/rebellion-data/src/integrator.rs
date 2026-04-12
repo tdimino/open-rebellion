@@ -30,7 +30,8 @@ use rebellion_core::repair::RepairEvent;
 use rebellion_core::research::{ResearchResult, ResearchState};
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
-use rebellion_core::world::{ControlKind, Fleet, FighterEntry, GameWorld, ShipInstance, TroopUnit};
+use rebellion_core::ids::DatId;
+use rebellion_core::world::{ControlKind, Fleet, FighterEntry, GameWorld, ShipInstance, SpecialForceUnit, TroopUnit};
 
 // ---------------------------------------------------------------------------
 // Name resolution helpers (shared with simulation.rs)
@@ -523,6 +524,43 @@ impl PerceptionIntegrator {
                 "target_system": sys_name(world, result.target_system),
                 "parent_kind": format!("{:?}", result.kind),
             }));
+        }
+        // R6/R7/R8/R11: Per-effect telemetry emissions.
+        for effect in &result.effects {
+            match effect {
+                // R6: EVT_INFORMANT_INTEL — Espionage resolved with intel.
+                MissionEffect::SystemIntelligenceGathered { system, faction } => {
+                    self.emit(SYS_MISSIONS, EVT_INFORMANT_INTEL, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "faction": format!("{:?}", faction),
+                    }));
+                }
+                // R7: EVT_SABOTEUR_DETECTED — enemy sabotage on a system.
+                MissionEffect::FacilitySabotaged { system, .. } => {
+                    self.emit(SYS_MISSIONS, EVT_SABOTEUR_DETECTED, serde_json::json!({
+                        "system": sys_name(world, *system),
+                        "mission_faction": format!("{:?}", result.faction),
+                    }));
+                }
+                // R8: EVT_CHARACTER_HEALTH — character captured (health status change).
+                MissionEffect::CharacterCaptured { character, captured_by, at_system } => {
+                    self.emit(SYS_MISSIONS, EVT_CHARACTER_HEALTH, serde_json::json!({
+                        "character": char_name(world, *character),
+                        "status": "captured",
+                        "captured_by": format!("{:?}", captured_by),
+                        "system": sys_name(world, *at_system),
+                    }));
+                }
+                // R11: EVT_CHARACTER_KILLED — assassination kill.
+                MissionEffect::CharacterKilled { character, faction } => {
+                    self.emit(SYS_MISSIONS, EVT_CHARACTER_KILLED, serde_json::json!({
+                        "character": char_name(world, *character),
+                        "cause": "assassination",
+                        "faction": format!("{:?}", faction),
+                    }));
+                }
+                _ => {}
+            }
         }
     }
 
@@ -1210,22 +1248,23 @@ pub fn apply_event_action_to_world(
                         // Special force lands at the character's system.
                         // Hardcode `is_alliance: false` to match the
                         // Bounty Hunters parity citation from the
-                        // community cross-reference — the resolved
-                        // `is_alliance` is currently ignored for
-                        // spawned hunters, but passed through here so
-                        // future Alliance-side spawns can reuse this
-                        // same integrator arm. Default behavior
-                        // (bounty hunters) is Imperial.
+                        // community cross-reference.
                         let _ = is_alliance;
+                        let spawn_alliance = false;
+                        // A2: Create SpecialForceUnit in world arena and
+                        // push key onto the target system's roster.
+                        // DatId(0) = event-spawned (not from SPECFCSD.DAT).
+                        let sf_key = world.special_forces.insert(SpecialForceUnit {
+                            class_dat_id: DatId::new(0),
+                            is_alliance: spawn_alliance,
+                        });
+                        if let Some(sys) = world.systems.get_mut(at_system) {
+                            sys.special_forces.push(sf_key);
+                        }
                         effects_out.push(GameEffect::SpecialForceSpawned {
                             at_system,
-                            is_alliance: false,
+                            is_alliance: spawn_alliance,
                         });
-                        // NOTE: full SpecialForceUnit arena wiring still
-                        // deferred to Dabora 3 — the effect captures the
-                        // intent + telemetry, but no unit is actually
-                        // placed in `world.special_forces` yet. See
-                        // `apply_dabora2_story_effects` below.
                     }
                     None => {
                         // Structured warn: the event chain must gate

@@ -205,6 +205,34 @@ impl CombatSystem {
             Self::phase_weapon_fire(world, defender, &def_ships, &mut atk_ships, &mut rng);
         }
 
+        // R12: Emperor Palpatine combat modifier (FUN_00542050).
+        // When the Emperor is co-located with an engagement, his faction's
+        // weapon fire damage is multiplied by 1.5×. Applied after Phase 3
+        // (weapon fire computes pending_damage) and before Phase 4 (shields
+        // absorb it). Only Imperial-side bonus — the Emperor is always Empire.
+        let emperor_in_fleet = |fk: FleetKey| -> bool {
+            let fleet = &world.fleets[fk];
+            fleet.characters.iter().any(|&ck| {
+                world.characters.get(ck).map_or(false, |c| {
+                    !c.is_alliance && (c.name.contains("Palpatine") || c.name.contains("Emperor"))
+                })
+            })
+        };
+        if emperor_in_fleet(attacker) {
+            // Emperor is attacking — scale damage dealt to defenders.
+            for snap in def_ships.iter_mut() {
+                snap.pending_damage = (snap.pending_damage as f64 * 1.5) as i32;
+                snap.pending_ion_damage = (snap.pending_ion_damage as f64 * 1.5) as i32;
+            }
+        }
+        if emperor_in_fleet(defender) {
+            // Emperor is defending — scale damage dealt to attackers.
+            for snap in atk_ships.iter_mut() {
+                snap.pending_damage = (snap.pending_damage as f64 * 1.5) as i32;
+                snap.pending_ion_damage = (snap.pending_ion_damage as f64 * 1.5) as i32;
+            }
+        }
+
         // NOW arm subsequent phases after weapon fire completes.
         if any_armed {
             flags.set(CombatPhaseFlags::PHASES_ENABLED);

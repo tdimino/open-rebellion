@@ -1024,9 +1024,8 @@ async fn main() {
                 );
             }
             // Drain StoryMessageDisplayed + SpecialForceSpawned effects into
-            // the interactive message log. Dabora 3 will add SpecialForceUnit
-            // arena wiring; for now we surface a plain-text notification so
-            // the chain is visible.
+            // the interactive message log. SpecialForceUnit arena wiring is
+            // handled in apply_event_action_to_world; here we just log.
             for eff in story_effects_out {
                 use rebellion_core::effects::GameEffect;
                 match eff {
