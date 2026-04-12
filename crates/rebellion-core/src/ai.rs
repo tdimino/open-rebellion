@@ -37,7 +37,7 @@ use crate::ids::{
 use crate::tuning::GameConfig;
 use crate::manufacturing::{BuildableKind, ManufacturingState};
 use crate::missions::{MissionFaction, MissionKind, MissionState};
-use crate::research::{ResearchProject, ResearchState, ResearchSystem, TechType};
+use crate::research::{ResearchState, ResearchSystem, TechType};
 use crate::dat::ExplorationStatus;
 use crate::tick::TickEvent;
 use crate::world::{Character, ControlKind, GameWorld};
@@ -544,7 +544,6 @@ impl AISystem {
             .filter(|(_, c)| c.can_be_commander && !faction.owns_character(c))
             .map(|(k, _)| k)
             .collect();
-        let unrecruited_count = unrecruited.len();
 
         // Find the best diplomacy target: lowest-popularity system for this faction,
         // below the popularity cap.
@@ -566,7 +565,8 @@ impl AISystem {
 
             let diplomacy_score =
                 character.diplomacy.base + character.diplomacy.variance / 2;
-            let combat_score =
+            // Scaffolding for fleet admiral assignment (high combat → fleet officer).
+            let _combat_score =
                 character.combat.base + character.combat.variance / 2;
 
             // Jedi-potential characters should not be wasted on diplomacy
@@ -972,7 +972,7 @@ impl AISystem {
         state: &AIState,
         world: &GameWorld,
         faction: AiFaction,
-        config: &GameConfig,
+        _config: &GameConfig,
         actions: &mut Vec<AIAction>,
     ) {
         // Find captive allies (our characters held by the enemy).
