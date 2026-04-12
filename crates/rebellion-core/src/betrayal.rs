@@ -82,6 +82,11 @@ impl BetrayalSystem {
         let mut roll_iter = rng_rolls.iter().copied();
 
         for (ck, character) in world.characters.iter() {
+            // Knesset Shamash-Bet #R11: killed characters remain in the arena
+            // for reactive story events but cannot defect.
+            if character.is_killed {
+                continue;
+            }
             // Immune characters never betray.
             if character.is_unable_to_betray {
                 continue;
@@ -245,5 +250,22 @@ mod tests {
             &mut state, &world, &tick51, &[0.1], &table,
         );
         assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn killed_character_does_not_betray() {
+        // Knesset Shamash-Bet #R11: killed characters stay in the arena for
+        // reactive story events but cannot defect.
+        let mut state = BetrayalState::new();
+        let mut world = GameWorld::default();
+        // Disloyal enough to trigger on the first roll — but dead.
+        let mut c = default_test_character("DeadTraitor", 10);
+        c.mark_killed();
+        world.characters.insert(c);
+        let table = test_loyalty_table();
+        let events = BetrayalSystem::advance(
+            &mut state, &world, &ticks(1), &[0.0], &table,
+        );
+        assert!(events.is_empty(), "dead characters cannot defect");
     }
 }

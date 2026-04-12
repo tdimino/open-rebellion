@@ -192,10 +192,20 @@ impl JediSystem {
 
         for record in &mut state.training {
             let Some(character) = world.characters.get(record.character) else {
-                // Character was removed from the world (killed/captured).
+                // Character record missing from the arena entirely (save
+                // migration race, accidental remove, etc.) — abort training.
                 completed.push(record.character);
                 continue;
             };
+            // Knesset Shamash-Bet #R11: killed characters remain in the arena
+            // for reactive story events but must not accumulate XP or advance
+            // tiers. Abort the training record on detection. (Prior to R11,
+            // killed characters were removed from the arena and caught by the
+            // `let Some(...) else` arm above.)
+            if character.is_killed {
+                completed.push(record.character);
+                continue;
+            }
 
             // ── Experience accumulation ───────────────────────────────────────
             // Use accumulated_xp from the training record (persists across ticks)
@@ -521,5 +531,31 @@ mod tests {
         assert_eq!(JediSystem::tier_for_xp(XP_TO_EXPERIENCED - 1), ForceTier::Training);
         assert_eq!(JediSystem::tier_for_xp(XP_TO_EXPERIENCED), ForceTier::Experienced);
         assert_eq!(JediSystem::tier_for_xp(u32::MAX), ForceTier::Experienced);
+    }
+
+    #[test]
+    fn killed_trainee_completes_training_record() {
+        // Knesset Shamash-Bet #R11: killed characters stay in the arena for
+        // reactive story events but must not accumulate XP or advance tiers.
+        // The trainee should be removed from `state.training` on the next
+        // advance after being marked killed.
+        let mut world = GameWorld::default();
+        let key = add_jedi_character(&mut world, 100, 0, ForceTier::Aware);
+        let mut state = JediState::new();
+        state.start_training(key, true, 0);
+        assert!(state.is_training(key));
+
+        // Kill the trainee.
+        world.characters.get_mut(key).unwrap().mark_killed();
+
+        // Advance one tick — the system should notice is_killed and drop the
+        // record without emitting TierAdvanced.
+        let events = JediSystem::advance(&mut state, &world, &ticks(1), &[0.5]);
+        let tier_events: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, JediEvent::TierAdvanced { .. }))
+            .collect();
+        assert!(tier_events.is_empty(), "killed trainee must not advance tiers");
+        assert!(!state.is_training(key), "killed trainee must be removed from training");
     }
 }

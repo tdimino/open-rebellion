@@ -960,18 +960,24 @@ fn apply_mission_effects_inner(
             }
             MissionEffect::CharacterKilled { character, .. } => {
                 // Knesset Shamash-Bet #R11: mark `is_killed = true` instead of
-                // removing from the arena so next-tick reactive story events
+                // removing from the arena so reactive story events
                 // (`EVT_CHARACTER_KILLED` 0x306) can still resolve the character
                 // by `dat_id` / `name`. Character is removed from all fleet
                 // rosters immediately. Uniqueness comes from the `is_killed`
                 // flag combined with `is_repeatable: false` (DI-M3).
+                //
+                // Reactivity note: mission kills fire same-tick (assassination
+                // at step 5, EventSystem at step 6 — same-tick is the correct
+                // player-facing behavior). Death Star kills fire next-tick
+                // (cleanup at step 11 is after events at step 6). Both routes
+                // go through `Character::mark_killed()` so systems that iterate
+                // `world.characters` see a consistent "dead" shape regardless
+                // of which path produced the death.
                 for (_, fleet) in world.fleets.iter_mut() {
                     fleet.characters.retain(|&k| k != *character);
                 }
                 if let Some(c) = world.characters.get_mut(*character) {
-                    c.is_killed = true;
-                    c.on_mission = false;
-                    c.on_mandatory_mission = false;
+                    c.mark_killed();
                 }
             }
             MissionEffect::CharacterCaptured { character, captured_by, at_system } => {

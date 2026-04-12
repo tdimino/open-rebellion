@@ -704,8 +704,17 @@ fn evaluate_condition(
             if characters.len() < 2 {
                 return true; // vacuously true for 0-1 characters
             }
-            // Check if all characters exist
-            if characters.iter().any(|c| !world.characters.contains_key(*c)) {
+            // Check if all characters exist AND are alive. Knesset Shamash-Bet
+            // #R11: killed characters remain in the arena for reactive story
+            // events but cannot satisfy co-location — `mark_killed()` clears
+            // `current_system` and `current_fleet` anyway, so this explicit
+            // check is defense-in-depth.
+            if characters.iter().any(|c| {
+                world
+                    .characters
+                    .get(*c)
+                    .map_or(true, |ch| ch.is_killed)
+            }) {
                 return false;
             }
             // Find any system where all characters are present.
@@ -1562,5 +1571,74 @@ mod tests {
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(fired.len(), 1, "Character with current_system should count as co-located");
+    }
+
+    #[test]
+    fn characters_co_located_rejects_killed_character() {
+        // Knesset Shamash-Bet #R11: killed characters stay in the arena for
+        // reactive story events but cannot satisfy co-location. `mark_killed()`
+        // clears current_system + current_fleet, so the fleet-roster and
+        // current_system paths both fail — plus we explicitly short-circuit
+        // at the top of the condition as defense-in-depth.
+        use crate::dat::{ExplorationStatus, Faction};
+
+        let mut world = make_world();
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Test".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0, y: 0, systems: vec![],
+        });
+        let sys_key = world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Destroyed".into(),
+            sector: sector_key, x: 0, y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5, popularity_empire: 0.5,
+            is_populated: true, total_energy: 0, raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            defense_facilities: vec![], manufacturing_facilities: vec![],
+            production_facilities: vec![], is_headquarters: false,
+            is_destroyed: true,
+            control: ControlKind::Uncontrolled,
+        });
+
+        let mut luke = make_character("Luke", ForceTier::Experienced);
+        luke.current_system = Some(sys_key);
+        let luke_key = world.characters.insert(luke);
+
+        let mut vader = make_character("Vader", ForceTier::Experienced);
+        vader.current_system = Some(sys_key);
+        let vader_key = world.characters.insert(vader);
+
+        // Both alive first — co-located event fires.
+        let mut state = EventState::new();
+        state.define(event(
+            1,
+            vec![EventCondition::CharactersCoLocated {
+                characters: vec![luke_key, vader_key],
+            }],
+            vec![],
+        ));
+        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
+        assert_eq!(fired.len(), 1, "alive + co-located should fire");
+
+        // Kill Luke; redefine the event (consolidator reset) and re-check —
+        // must not fire because one of the characters is now dead.
+        world.characters.get_mut(luke_key).unwrap().mark_killed();
+        let mut state2 = EventState::new();
+        state2.define(event(
+            2,
+            vec![EventCondition::CharactersCoLocated {
+                characters: vec![luke_key, vader_key],
+            }],
+            vec![],
+        ));
+        let fired2 = EventSystem::advance(&mut state2, &world, &tick(2), &[]);
+        assert!(
+            fired2.is_empty(),
+            "dead Luke must not satisfy co-located even at a destroyed system"
+        );
     }
 }

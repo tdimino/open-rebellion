@@ -333,6 +333,11 @@ impl AISystem {
         char_key: CharacterKey,
         character: &Character,
     ) -> bool {
+        // Knesset Shamash-Bet #R11: killed characters stay in the arena for
+        // reactive story events but must be invisible to dispatch logic.
+        if character.is_killed {
+            return false;
+        }
         // #13 FUN_0050bc60: Faction match (character family 4)
         if !faction.owns_character(character) {
             return false;
@@ -2515,5 +2520,26 @@ mod tests {
         let third = AISystem::advance(&mut state, &world, &mfg, &missions, &crate::movement::MovementState::new(), &[TickEvent { tick: 14 }], &GameConfig::default(), &crate::research::ResearchState::new());
         assert_eq!(state.last_eval_tick, 14);
         let _ = third; // just checking it ran
+    }
+
+    // -----------------------------------------------------------------------
+    // Knesset Shamash-Bet #R11 — killed characters are invisible to dispatch
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn can_dispatch_rejects_killed_character() {
+        let mut world = empty_world();
+        let ck = add_character(&mut world, /*alliance*/ false, /*major*/ true, 50);
+        let character = world.characters.get(ck).unwrap();
+        let state = AIState::new(AiFaction::Empire);
+        assert!(AISystem::can_dispatch(&state, AiFaction::Empire, ck, character));
+
+        // Kill and re-check.
+        world.characters.get_mut(ck).unwrap().mark_killed();
+        let character = world.characters.get(ck).unwrap();
+        assert!(
+            !AISystem::can_dispatch(&state, AiFaction::Empire, ck, character),
+            "killed character must not pass dispatch gate"
+        );
     }
 }

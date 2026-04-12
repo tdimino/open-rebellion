@@ -362,7 +362,7 @@ pub fn cleanup_destroyed_system(
         for ck in chars {
             if let Some(c) = world.characters.get_mut(ck) {
                 if !c.is_killed {
-                    c.is_killed = true;
+                    c.mark_killed();
                     effects.push(GameEffect::CharacterKilled { character: ck });
                 }
             }

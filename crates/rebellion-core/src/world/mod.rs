@@ -575,6 +575,35 @@ pub struct Character {
     pub is_killed: bool,
 }
 
+impl Character {
+    /// Mark this character as killed and clear all "alive" state so that
+    /// other systems filter it out correctly.
+    ///
+    /// Clears `current_system`, `current_fleet`, `on_mission`,
+    /// `on_hidden_mission`, `on_mandatory_mission`, and captivity state, but
+    /// leaves the character record in the arena so that `dat_id` / `name`
+    /// remain resolvable by next-tick reactive story events.
+    ///
+    /// Call from both `cleanup_destroyed_system` (Death Star kills) and the
+    /// `MissionEffect::CharacterKilled` integrator arm (assassinations).
+    /// Idempotent — calling twice is a no-op.
+    ///
+    /// Systems that iterate over `world.characters` should short-circuit on
+    /// `is_killed == true` rather than relying on the arena-absent invariant
+    /// that existed before Knesset Shamash-Bet #R11.
+    pub fn mark_killed(&mut self) {
+        self.is_killed = true;
+        self.current_system = None;
+        self.current_fleet = None;
+        self.on_mission = false;
+        self.on_hidden_mission = false;
+        self.on_mandatory_mission = false;
+        self.is_captive = false;
+        self.captured_by = None;
+        self.capture_tick = None;
+    }
+}
+
 impl Default for Character {
     fn default() -> Self {
         Self {
@@ -1182,5 +1211,98 @@ mod tests {
         assert_eq!(c.force_tier, ForceTier::None);
         assert!(!c.heritage_known);
         assert!(!c.is_killed);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Knesset Shamash-Bet #R11 — Character::mark_killed()
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn mark_killed_sets_is_killed_and_clears_alive_state() {
+        // We need concrete slotmap keys that mark_killed can write to. Insert
+        // throwaway values into live slotmaps and use the returned keys.
+        let mut world = GameWorld::default();
+        let sector_key = world.sectors.insert(Sector {
+            dat_id: DatId::new(0),
+            name: "Sec".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let dummy_sys = world.systems.insert(System {
+            dat_id: DatId::new(0),
+            name: "Sys".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
+        });
+        let dummy_fleet = world.fleets.insert(Fleet {
+            location: dummy_sys,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+
+        let mut c = default_character();
+        c.current_system = Some(dummy_sys);
+        c.current_fleet = Some(dummy_fleet);
+        c.on_mission = true;
+        c.on_hidden_mission = true;
+        c.on_mandatory_mission = true;
+        c.is_captive = true;
+        c.captured_by = Some(Faction::Empire);
+        c.capture_tick = Some(42);
+
+        c.mark_killed();
+
+        assert!(c.is_killed, "is_killed must be set");
+        assert_eq!(c.current_system, None, "current_system must be cleared");
+        assert_eq!(c.current_fleet, None, "current_fleet must be cleared");
+        assert!(!c.on_mission, "on_mission must be cleared");
+        assert!(!c.on_hidden_mission, "on_hidden_mission must be cleared");
+        assert!(!c.on_mandatory_mission, "on_mandatory_mission must be cleared");
+        assert!(!c.is_captive, "is_captive must be cleared");
+        assert_eq!(c.captured_by, None, "captured_by must be cleared");
+        assert_eq!(c.capture_tick, None, "capture_tick must be cleared");
+    }
+
+    #[test]
+    fn mark_killed_is_idempotent() {
+        let mut c = default_character();
+        c.mark_killed();
+        let snapshot_is_killed = c.is_killed;
+        c.mark_killed();
+        assert_eq!(c.is_killed, snapshot_is_killed);
+    }
+
+    #[test]
+    fn mark_killed_preserves_name_and_dat_id() {
+        // Reactive story events must still resolve name + dat_id after death
+        // (DI-M3 in the Knesset Shamash-Bet plan).
+        let mut c = default_character();
+        c.name = "Luke".into();
+        c.dat_id = DatId::new(0x42);
+        c.mark_killed();
+        assert_eq!(c.name, "Luke");
+        assert_eq!(c.dat_id.raw(), 0x42);
     }
 }
