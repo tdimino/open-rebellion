@@ -242,9 +242,24 @@ Delivered:
 - R13: Stale "notifications" removed from section comment.
 - 446 tests (347 core + 50 data + 46 render + 3 doc), zero warnings.
 
-## AI Parity Status (as of 2026-03-23)
+## Knesset Tammuz -- COMPLETE
+*Full parity sprint — 7 phases across combat, telemetry, cutscenes, AI, and advisor*
 
-Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchitect2018 wiki cross-reference. **All "BY DESIGN" guesses resolved.** See `agent_docs/systems/ai-parity-tracker.md` for full matrix.
+Plan: `docs/plans/2026-04-12-001-feat-knesset-tammuz-full-parity-sprint-plan.md`
+
+Delivered:
+- Phase 1: SpecialForceSpawned arena wiring (A2 — creates SpecialForceUnit in world). A1/A3-A6 already shipped in prior sprints.
+- Phase 2: Mission telemetry emissions — EVT_INFORMANT_INTEL (R6), EVT_SABOTEUR_DETECTED (R7), EVT_CHARACTER_HEALTH (R8), EVT_CHARACTER_KILLED from assassination (R11). Death Star kill path was already done.
+- Phase 3: Emperor Palpatine 1.5× combat modifier (R12) — scales weapon fire damage when Emperor is co-located.
+- Phase 4: Cutscene state machine — `GameMode::Cutscene { kind: CutsceneKind }` struct variant with Intro/Victory/Defeat/Story(u32) kinds. Post-cutscene transitions (Story→Galaxy, others→MainMenu). `GameMode::VictoryModal` with egui overlay. Save lock-out during cutscenes/victory. 8 story cutscene triggers (101–108) mapped to event IDs (0x221, 0x210, 0x212, 0x383, 0x220, 0x393, 0x396, 0x397).
+- Phase 5: Advisor BIN v2 cascading decoder — parse rate 12%→99%. Four binary formats discovered (v1 explicit, v2 sequential range, v3 BMP-mapped range, v4 BMP single). ~42% of sequences now use direct BMP resource ID lookup instead of modulo. 11 new tests.
+- Phase 6: AI parity closeout — dispatch validators 10/18→15/18, troop deployment with frontline awareness, Death Star multi-target selection + retreat logic, reconnaissance mission dispatch. 7 new tests.
+- Phase 7: Code hygiene — 5 stale `controlling_faction` doc comments fixed, unused imports removed.
+- 465 tests (355 core + 50 data + 57 render + 3 doc), zero failures.
+
+## AI Parity Status (as of 2026-04-12)
+
+Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchitect2018 wiki cross-reference + Knesset Tammuz D1-D5. See `agent_docs/systems/ai-parity-tracker.md` for full matrix.
 
 ### Core Pipeline (6 Functions)
 
@@ -254,32 +269,13 @@ Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchit
 | 2 | FUN_00537180 Primary deployment | AUGMENTED | Per-fleet scoring (4-factor). Original was per-system with capacity check only. **Our model is superior.** |
 | 3 | FUN_005385f0 Secondary deployment | AUGMENTED | Original uses FUN_0052e970 (capacity check) + FUN_00506ea0 (faction evaluator). Our aggression model is more nuanced. |
 | 4 | FUN_00502020 Garrison strength | DONE | Ships + troops + facilities |
-| 5 | FUN_00508250 Dispatch validation | PARTIAL | **All 18 sub-functions decoded (2026-03-23).** 4 of 18 implemented; 14 remaining are capacity/composition checks. |
+| 5 | FUN_00508250 Dispatch validation | DONE | **15 of 18 sub-functions ported.** Remaining 3 (#2/#3/#4) are allocation budget tracking — our per-cycle caps serve the same anti-over-dispatch purpose (FAITHFUL). |
 | 6 | FUN_00520580 Movement orders | DONE | **Decoded: 2-field struct setter** (not transit calc). 9 lines. |
 
-### Resolved Gaps (2026-03-23 Ghidra Session)
+### Remaining Gaps (P2)
 
-1. ~~AI research dispatch~~ — DONE (v0.14.0, `evaluate_research()`)
-2. ~~Ratio-based galaxy evaluation~~ — DONE (v0.14.0, `control_ratio` + `aggression`)
-3. ~~Proportional redistribution~~ — DONE (v0.14.0, round-robin across all undefended)
-4. ~~FUN_0052e970 scoring function~~ — RESOLVED: **Not a scoring function.** Binary capacity check. Our 4-factor model is strictly superior.
-5. ~~FUN_00506ea0 faction evaluator~~ — RESOLVED: Returns faction-specific evaluator pointer (Alliance +0xc4, Empire +0xc8 on global struct). Different deployment budgets per faction.
-6. ~~AI evaluation frequency~~ — RESOLVED: Event-driven via message 0x1f0 (every game-day). Our `AI_TICK_INTERVAL=7` is intentional performance throttle.
-7. **Mission probability formulas** — DONE: Composite inputs ported from TheArchitect2018 wiki (sub_55ae50, sub_55aed0, sub_55af50, sub_55b0a0, sub_55cfb0).
-
-### Remaining Gaps (P1)
-
-4. **Troop deployment AI** — No `AIAction::MoveTroops`. AI doesn't build or deploy ground forces.
 5. **Defense facility construction** — `evaluate_production` builds capships, fighters, yards, troops, defenses but original priority order not confirmed.
-6. **Dispatch validation** — 14 of 18 validators decoded but not yet ported to Rust (capacity/composition checks referencing entity offsets not yet in our types).
-7. **Faction-specific deployment budgets** — FUN_00506ea0 returns different evaluator objects per faction. TODO: add faction budget thresholds to AiConfig.
-8. Death Star AI beyond "go to HQ" (escort, retreat, multi-target selection)
-
-### Code Hygiene (from simplicity reviewer)
-
-- 27 LOC dead code: unused `combat_score`, `sys_json`, `hull * 1`, unused imports, unused `GalaxyState` fields
-- 5 stale doc comments still referencing `controlling_faction` (now `ControlKind`)
-- 80 LOC test boilerplate reducible via `impl Default for Character`
+7. **AI resource rebalancing** — FUN_00558660 not yet examined.
 
 ---
 
