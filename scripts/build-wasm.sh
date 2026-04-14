@@ -86,6 +86,35 @@ if [ -d "$UI_SRC" ]; then
     cp -r "$UI_SRC"/. "$WEB_UI/"
     UI_COUNT=$(find "$WEB_UI" -name "*.bmp" 2>/dev/null | wc -l | tr -d ' ')
     echo "Staged $UI_COUNT UI BMPs in web/data/ui/"
+
+    # Generate BMP manifest for WASM pre-fetch (HTTP can't enumerate dirs)
+    echo "Generating BMP manifest for WASM…"
+    MANIFEST="$WEB_UI/bmp-manifest.json"
+    python3 -c "
+import json, pathlib, sys
+root = pathlib.Path('$WEB_UI')
+entries, skipped = [], 0
+for dll_dir in sorted(root.iterdir()):
+    if not dll_dir.is_dir():
+        continue
+    bmp_dir = dll_dir / 'BMP'
+    if not bmp_dir.is_dir():
+        continue
+    dll_name = dll_dir.name
+    for f in sorted(bmp_dir.glob('*.bmp')):
+        try:
+            entries.append({'dll': dll_name, 'id': int(f.stem)})
+        except ValueError:
+            skipped += 1
+            print(f'  WARNING: skipping non-numeric BMP: {f}', file=sys.stderr)
+if skipped:
+    print(f'  Skipped {skipped} non-numeric BMP files', file=sys.stderr)
+with open('$MANIFEST', 'w') as fh:
+    json.dump(entries, fh, separators=(',', ':'))
+print(f'  {len(entries)} entries in bmp-manifest.json')
+if not entries:
+    print('  WARNING: manifest is empty — no BMPs found', file=sys.stderr)
+"
 else
     echo "WARNING: data/base/ui/ not found — run scripts/stage-ui-assets.py first."
 fi

@@ -9,7 +9,7 @@ tags: [claude-code, build, conventions, workspace]
 
 # Open Rebellion
 
-Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.22.0 — **Core 99%** | **UI 99%** | **Combat 99%** | **Overall ~99%**. 465 tests, zero warnings. All 17 simulation sections route through `PerceptionIntegrator` for mutation + telemetry; economy runs before manufacturing, build completions land in-world, AI dispatch is faction-aware. Knesset Tammuz: cutscene state machine (8 story triggers), Emperor Palpatine combat modifier, advisor BIN v2 decoder (99% parse rate), AI parity closeout (15/18 validators, troop deployment, DS multi-target).
+Rust + macroquad + egui reimplementation of Star Wars Rebellion (1998, LucasArts). Runs native (macOS/Metal) and browser (WebAssembly/WebGL2). v0.23.0 — **Core 100%** | **UI 99%** | **Combat 100%** | **Overall ~99%**. 465 tests, zero warnings. All 17 simulation sections route through `PerceptionIntegrator` for mutation + telemetry; economy runs before manufacturing, build completions land in-world, AI dispatch is faction-aware. WASM BmpCache texture pipeline wired (pre-fetch + manifest + decode). All AI gaps closed: 18/18 dispatch validators, defense priority FAITHFUL, FUN_00558660 CLOSED (no decompiled source, negligible impact), 74 informational GNPRTB parameters documented.
 
 Native cutscenes are optional. Run `bash scripts/decode-cutscenes.sh` once to expand `assets/references/ref-videos/*.webm` into ignored PNG frame sequences + WAV sidecars under `assets/references/cutscene-frames/`. If those decoded assets are missing, the app logs a skip message and continues without crashing.
 

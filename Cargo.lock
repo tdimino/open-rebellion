@@ -1362,6 +1362,7 @@ dependencies = [
  "rebellion-core",
  "rebellion-data",
  "rebellion-render",
+ "serde",
  "serde_json",
 ]
 

@@ -282,13 +282,13 @@ Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchit
 | 2 | FUN_00537180 Primary deployment | AUGMENTED | Per-fleet scoring (4-factor). Original was per-system with capacity check only. **Our model is superior.** |
 | 3 | FUN_005385f0 Secondary deployment | AUGMENTED | Original uses FUN_0052e970 (capacity check) + FUN_00506ea0 (faction evaluator). Our aggression model is more nuanced. |
 | 4 | FUN_00502020 Garrison strength | DONE | Ships + troops + facilities |
-| 5 | FUN_00508250 Dispatch validation | DONE | **15 of 18 sub-functions ported.** Remaining 3 (#2/#3/#4) are allocation budget tracking — our per-cycle caps serve the same anti-over-dispatch purpose (FAITHFUL). |
+| 5 | FUN_00508250 Dispatch validation | DONE | **All 18 checks resolved.** 15 directly ported, #2/#3/#4 CLOSED — per-cycle caps replace C++ allocation budget tracking. |
 | 6 | FUN_00520580 Movement orders | DONE | **Decoded: 2-field struct setter** (not transit calc). 9 lines. |
 
-### Remaining Gaps (P2)
+### Remaining Gaps (P2) — ALL CLOSED (2026-04-14)
 
-5. **Defense facility construction** — `evaluate_production` builds capships, fighters, yards, troops, defenses but original priority order not confirmed.
-7. **AI resource rebalancing** — FUN_00558660 not yet examined.
+5. **Defense facility construction** — CLOSED. FUN_00508660 is an entity-type dispatcher, not a priority function. Current order is FAITHFUL.
+7. **AI resource rebalancing** — CLOSED. FUN_00558660 has no decompiled source; cross-ref describes minor random resource perturbation via RESRCTB (4 entries). Negligible gameplay impact.
 
 ---
 

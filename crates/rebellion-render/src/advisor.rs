@@ -774,12 +774,32 @@ fn load_faction_frames(
                 bin_sequences.push(sequence);
             }
             Ok(_) => empty += 1,
-            Err(_) => parse_failures += 1,
+            Err(e) => {
+                parse_failures += 1;
+                // Log first few failures with error details for diagnostic purposes.
+                // The ~1% that fail are typically 2-4 byte stubs with no decodable
+                // frame data — they fall back to legacy sorted-frame cycling.
+                if parse_failures <= 3 {
+                    eprintln!(
+                        "[advisor] {}: parse failed: {:?} (first {} bytes: {:02x?})",
+                        bin_path.file_name().unwrap_or_default().to_string_lossy(),
+                        e,
+                        bytes.len().min(8),
+                        &bytes[..bytes.len().min(8)],
+                    );
+                }
+            }
         }
     }
     if total_bins > 0 {
         let valid_total = valid_v1 + valid_v2 + valid_v3 + valid_v4;
         let pct = 100 * valid_total / total_bins;
+        if parse_failures > 3 {
+            eprintln!(
+                "[advisor] ... and {} more parse failures suppressed",
+                parse_failures - 3
+            );
+        }
         eprintln!(
             "[advisor] {} BIN files: {}/{} valid ({}%) \
              [v1={}, v2={}, v3={}, v4={}], \

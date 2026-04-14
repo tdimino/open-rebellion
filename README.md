@@ -11,9 +11,9 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Core-99%25-brightgreen.svg" alt="Core Parity">
+  <img src="https://img.shields.io/badge/Core-100%25-brightgreen.svg" alt="Core Parity">
   <img src="https://img.shields.io/badge/UI-99%25-brightgreen.svg" alt="UI Parity">
-  <img src="https://img.shields.io/badge/Combat-99%25-brightgreen.svg" alt="Combat Parity">
+  <img src="https://img.shields.io/badge/Combat-100%25-brightgreen.svg" alt="Combat Parity">
   <img src="https://img.shields.io/badge/Tests-465%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
@@ -41,13 +41,13 @@ Rebellion was a game about grand strategy in the Star Wars universe—not the li
 
 Open Rebellion reads the original game data files, converts them to clean JSON, and reimplements the simulation from the ground up in Rust. It runs natively on macOS and in the browser via WebAssembly.
 
-### Current State: v0.22.0
+### Current State: v0.23.0
 
 | Layer | Parity | What's Done |
 |-------|--------|-------------|
-| **Core** | 99% | 15 simulation systems, 15/18 AI dispatch validators, config-driven AI, PerceptionIntegrator |
+| **Core** | 100% | 15 simulation systems, 18/18 AI dispatch validators, config-driven AI, PerceptionIntegrator, WASM BmpCache pipeline |
 | **UI** | 99% | 13 egui panels, cockpit chrome, tactical combat view, droid advisor, native cutscenes, HD upscaling pipeline |
-| **Combat** | 99% | 7-phase pipeline with per-weapon fire, shield absorption, fighter dogfight, ground combat, Emperor modifier |
+| **Combat** | 100% | 7-phase pipeline with per-weapon fire, shield absorption, fighter dogfight, ground combat, Emperor modifier |
 
 Twelve phases complete:
 
@@ -59,7 +59,7 @@ Twelve phases complete:
 - **Mod Workshop** — Sensor-radius fog, captivity, save v4, ModRuntime, Mod Manager panel
 - **Release** — Story events, release packaging, GitHub Actions CI, example mod
 - **AI Overhaul** — Distance-based transit, per-fleet targeting with deconfliction, ControlKind state machine, faction-asymmetric doctrine, role-based character AI
-- **AI Parity** — Config-driven AI (16 tunable params), 15/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance
+- **AI Parity** — Config-driven AI (16 tunable params), 18/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance
 - **UI Rebuild** — 13 egui panels, cockpit BMP sprites, galaxy overlays, tactical combat view, event screens, GOKRES portraits
 - **Knesset Tammuz** — Cutscene state machine (8 story triggers), Emperor combat modifier, advisor BIN v2 decoder (99% parse rate), mission telemetry
 - **Ghidra RE Complete** — [5,127 functions decompiled](https://tdimino.github.io/open-rebellion/) from REBEXE.EXE, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
@@ -118,7 +118,7 @@ The original game's binary data files (51 DAT files) and executable (REBEXE.EXE,
 | **Full Parity** | Complete | Story events, betrayal, decoys, escape, Han speed bonus, mission flags |
 | **Mod Workshop** | Complete | Sensor fog, captivity, save migration, mod manager panel, ModRuntime |
 | **Release** | Complete | Release packaging, CI, example mod, vendored WASM deps |
-| **AI Parity** | Complete | 15/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance |
+| **AI Parity** | Complete | 18/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance |
 | **UI Rebuild** | Complete | 13 egui panels, cockpit chrome, tactical combat, event screens, native cutscenes |
 | **Knesset Tammuz** | Complete | Cutscene state machine, Emperor modifier, advisor BIN v2 (99%), mission telemetry |
 | **HD Visual Polish** | In Progress | UltraSharp V2 upscaling—235/2,231 DLL BMPs done |

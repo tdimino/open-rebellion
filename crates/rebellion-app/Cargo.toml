@@ -16,5 +16,6 @@ egui-macroquad = "0.17"
 quad-snd = "0.2"
 rand = "0.8"
 rand_xoshiro = "0.6"
+serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

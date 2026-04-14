@@ -36,6 +36,8 @@ pub use audio::{
     draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine,
 };
 pub use bmp_cache::{BmpCache, DllSource};
+#[cfg(target_arch = "wasm32")]
+pub use bmp_cache::set_bmp_cache;
 pub use cockpit::{
     draw_cockpit_chrome, draw_cockpit_egui_layer, CockpitButton, CockpitFaction, CockpitState,
     CockpitViewport,

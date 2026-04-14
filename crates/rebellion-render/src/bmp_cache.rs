@@ -13,7 +13,7 @@
 //! {base_path}/{dll-name}-dll/BMP/{resource_id}.bmp
 //! ```
 //! e.g. `data/base/ui/strategy-dll/BMP/10553.bmp` on native and
-//! `web/data/base/ui/strategy-dll/BMP/10553.bmp` on WASM
+//! `web/data/ui/strategy-dll/BMP/10553.bmp` on WASM (staged by `build-wasm.sh`)
 //!
 //! HD override PNGs (optional) live at:
 //! ```text
@@ -23,8 +23,14 @@
 //!
 //! # WASM
 //!
-//! On `wasm32` targets filesystem access is unavailable; all loads return
-//! `None` (the caller should render a placeholder).
+//! On `wasm32` targets, BMP bytes are pre-fetched via HTTP during the loading
+//! screen and stored in a static `WASM_BMP_CACHE`.  The WASM `load_texture()`
+//! reads from this cache, decodes via `image::load_from_memory()`, and
+//! registers the result as an egui texture — identical to the native path
+//! minus filesystem I/O.
+//!
+//! Call [`set_bmp_cache()`] from the app's WASM loading screen after fetching
+//! all BMP bytes, before the game loop starts.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -40,6 +46,43 @@ const DATA_PREFIX: &str = "data/base";
 const HD_PREFIX: &str = "web/data/hd";
 #[cfg(not(target_arch = "wasm32"))]
 const HD_PREFIX: &str = "data/hd";
+
+// ---------------------------------------------------------------------------
+// WASM BMP byte cache (mirrors WASM_FILE_CACHE in rebellion-data/src/lib.rs)
+// ---------------------------------------------------------------------------
+
+/// Static cache of pre-fetched BMP/PNG bytes for WASM builds.
+///
+/// Keys are `"{dll-dir-name}/{resource_id}"` — e.g. `"strategy-dll/10553"`.
+/// Values are the raw file bytes (BMP or PNG).
+#[cfg(target_arch = "wasm32")]
+static WASM_BMP_CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, Vec<u8>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// Pre-load BMP/PNG bytes for WASM.  Call from the loading screen after
+/// fetching UI assets via HTTP, before the game loop starts.
+///
+/// The map key format is `"{dll-dir-name}/{resource_id}"` — e.g.
+/// `"strategy-dll/10553"` for a BMP, or `"hd/strategy-dll/10553"` for an
+/// HD PNG override.
+#[cfg(target_arch = "wasm32")]
+pub fn set_bmp_cache(cache: HashMap<String, Vec<u8>>) {
+    *WASM_BMP_CACHE.lock().unwrap() = cache;
+}
+
+/// Look up pre-fetched bytes for a single BMP/PNG resource on WASM.
+#[cfg(target_arch = "wasm32")]
+fn get_bmp_bytes(dll_dir: &str, resource_id: u32) -> Option<Vec<u8>> {
+    let key = format!("{}/{}", dll_dir, resource_id);
+    WASM_BMP_CACHE.lock().unwrap().get(&key).cloned()
+}
+
+/// Look up pre-fetched HD PNG override bytes on WASM.
+#[cfg(target_arch = "wasm32")]
+fn get_hd_bytes(dll_dir: &str, resource_id: u32) -> Option<Vec<u8>> {
+    let key = format!("hd/{}/{}", dll_dir, resource_id);
+    WASM_BMP_CACHE.lock().unwrap().get(&key).cloned()
+}
 
 // ---------------------------------------------------------------------------
 // DllSource
@@ -820,11 +863,37 @@ impl BmpCache {
     #[cfg(target_arch = "wasm32")]
     fn load_texture(
         &self,
-        _ctx: &egui::Context,
-        _source: DllSource,
-        _resource_id: u32,
+        ctx: &egui::Context,
+        source: DllSource,
+        resource_id: u32,
     ) -> Option<TextureHandle> {
-        None
+        let dll_dir = source.dll_dir_name();
+
+        // 1. Check HD PNG override first.
+        let bytes = get_hd_bytes(dll_dir, resource_id)
+            .or_else(|| get_bmp_bytes(dll_dir, resource_id))?;
+
+        // 2. Decode and register as egui texture (same as native path).
+        let img = match image::load_from_memory(&bytes) {
+            Ok(i) => i,
+            Err(e) => {
+                eprintln!("[bmp_cache] WASM decode failed for {}/{}: {}", dll_dir, resource_id, e);
+                return None;
+            }
+        };
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+            [w as usize, h as usize],
+            rgba.as_raw(),
+        );
+
+        Some(ctx.load_texture(
+            &format!("{}_{}", source.texture_prefix(), resource_id),
+            color_image,
+            TextureOptions::default(),
+        ))
     }
 }
 
