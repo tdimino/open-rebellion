@@ -157,8 +157,21 @@ Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 - Phase 6: Audio Integration (quad-snd soundtrack, 285 voice lines, SFX, context music)
 - Phase 7: Entity Portraits (GOKRES.DLL 61 portraits + 57 ship status views)
 
-### Remaining UI
-- Phase 7: HD Visual Polish (upscaled BMPs beyond original art)
+### Remaining UI — HD Visual Polish (IN PROGRESS)
+
+8-model shootout completed (2026-04-14). **UltraSharp V2** (DAT2, Spandrel+MPS) won all 5 categories (portraits, ships, sprites, UI, events). Batch pipeline built. 235/2,231 DLL BMPs upscaled so far.
+
+```bash
+python3 scripts/local-upscale-batch.py          # Resume bulk upscale (skips existing)
+python3 scripts/model-shootout.py --html-only    # Regenerate comparison at data/hd/shootout/comparison.html
+```
+
+| Item | Status |
+|------|--------|
+| Model shootout (8 models × 20 BMPs) | COMPLETE — UltraSharp V2 winner |
+| Batch pipeline (`local-upscale-batch.py`) | COMPLETE |
+| DLL BMP upscaling (2,231 total) | 235/2,231 (10.5%) |
+| EData encyclopedia images (~330) | NOT STARTED |
 
 ### Knesset Kothar wa Khasis — COMPLETE (2026-04-07)
 *U2 + C1 — the two final deferred tasks from Knesset Resheph*

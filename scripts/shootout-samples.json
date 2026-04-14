@@ -1,0 +1,162 @@
+[
+  {
+    "category": "portrait",
+    "dll": "gokres-dll",
+    "resource_id": 2112,
+    "width": 80,
+    "height": 80,
+    "path": "data/base/ui/gokres-dll/BMP/2112.bmp"
+  },
+  {
+    "category": "portrait",
+    "dll": "gokres-dll",
+    "resource_id": 2632,
+    "width": 80,
+    "height": 80,
+    "path": "data/base/ui/gokres-dll/BMP/2632.bmp"
+  },
+  {
+    "category": "portrait",
+    "dll": "gokres-dll",
+    "resource_id": 2647,
+    "width": 80,
+    "height": 80,
+    "path": "data/base/ui/gokres-dll/BMP/2647.bmp"
+  },
+  {
+    "category": "portrait",
+    "dll": "gokres-dll",
+    "resource_id": 2700,
+    "width": 80,
+    "height": 80,
+    "path": "data/base/ui/gokres-dll/BMP/2700.bmp"
+  },
+  {
+    "category": "ship",
+    "dll": "gokres-dll",
+    "resource_id": 1,
+    "width": 122,
+    "height": 50,
+    "path": "data/base/ui/gokres-dll/BMP/1.bmp"
+  },
+  {
+    "category": "ship",
+    "dll": "gokres-dll",
+    "resource_id": 1154,
+    "width": 122,
+    "height": 50,
+    "path": "data/base/ui/gokres-dll/BMP/1154.bmp"
+  },
+  {
+    "category": "ship",
+    "dll": "gokres-dll",
+    "resource_id": 1922,
+    "width": 122,
+    "height": 50,
+    "path": "data/base/ui/gokres-dll/BMP/1922.bmp"
+  },
+  {
+    "category": "ship",
+    "dll": "gokres-dll",
+    "resource_id": 5953,
+    "width": 122,
+    "height": 50,
+    "path": "data/base/ui/gokres-dll/BMP/5953.bmp"
+  },
+  {
+    "category": "sprite",
+    "dll": "common-dll",
+    "resource_id": 10007,
+    "width": 62,
+    "height": 55,
+    "path": "data/base/ui/common-dll/BMP/10007.bmp"
+  },
+  {
+    "category": "sprite",
+    "dll": "common-dll",
+    "resource_id": 11007,
+    "width": 62,
+    "height": 55,
+    "path": "data/base/ui/common-dll/BMP/11007.bmp"
+  },
+  {
+    "category": "sprite",
+    "dll": "common-dll",
+    "resource_id": 11015,
+    "width": 62,
+    "height": 55,
+    "path": "data/base/ui/common-dll/BMP/11015.bmp"
+  },
+  {
+    "category": "sprite",
+    "dll": "common-dll",
+    "resource_id": 11038,
+    "width": 62,
+    "height": 55,
+    "path": "data/base/ui/common-dll/BMP/11038.bmp"
+  },
+  {
+    "category": "event",
+    "dll": "strategy-dll",
+    "resource_id": 1000,
+    "width": 400,
+    "height": 200,
+    "path": "data/base/ui/strategy-dll/BMP/1000.bmp"
+  },
+  {
+    "category": "event",
+    "dll": "strategy-dll",
+    "resource_id": 1036,
+    "width": 400,
+    "height": 200,
+    "path": "data/base/ui/strategy-dll/BMP/1036.bmp"
+  },
+  {
+    "category": "event",
+    "dll": "strategy-dll",
+    "resource_id": 1070,
+    "width": 400,
+    "height": 200,
+    "path": "data/base/ui/strategy-dll/BMP/1070.bmp"
+  },
+  {
+    "category": "event",
+    "dll": "strategy-dll",
+    "resource_id": 6740,
+    "width": 400,
+    "height": 200,
+    "path": "data/base/ui/strategy-dll/BMP/6740.bmp"
+  },
+  {
+    "category": "ui",
+    "dll": "strategy-dll",
+    "resource_id": 10514,
+    "width": 32,
+    "height": 31,
+    "path": "data/base/ui/strategy-dll/BMP/10514.bmp"
+  },
+  {
+    "category": "ui",
+    "dll": "strategy-dll",
+    "resource_id": 10832,
+    "width": 36,
+    "height": 41,
+    "path": "data/base/ui/strategy-dll/BMP/10832.bmp"
+  },
+  {
+    "category": "ui",
+    "dll": "strategy-dll",
+    "resource_id": 10936,
+    "width": 51,
+    "height": 35,
+    "path": "data/base/ui/strategy-dll/BMP/10936.bmp"
+  },
+  {
+    "category": "ui",
+    "dll": "strategy-dll",
+    "resource_id": 10334,
+    "width": 36,
+    "height": 33,
+    "path": "data/base/ui/strategy-dll/BMP/10334.bmp"
+  }
+]

@@ -3,7 +3,7 @@ title: "Asset Pipeline"
 description: "HD upscaling, 3D model generation, and encyclopedia content pipelines"
 category: "agent-docs"
 created: 2026-03-13
-updated: 2026-03-26
+updated: 2026-04-14
 tags: [asset-pipeline, upscaling, 3d-models, audio, references]
 ---
 
@@ -37,40 +37,54 @@ Original BMPs from game's installed directories:
 
 ### Upscaling Tools
 
-**Primary: Real-ESRGAN x4plus** (INSTALLED — industry standard for game textures)
+**Primary: UltraSharp V2 via Spandrel + MPS** (WINNER — 8-model shootout, 2026-04-14)
 
 ```bash
-# Must run from its own directory (finds models/ relative to binary):
+# Batch all DLLs (resumes automatically, skips existing)
+python3 scripts/local-upscale-batch.py
+
+# Single DLL
+python3 scripts/local-upscale-batch.py --dll gokres-dll
+
+# Dry run (count only)
+python3 scripts/local-upscale-batch.py --dry-run
+```
+
+DAT2 architecture, loaded via Spandrel 0.4.2 + PyTorch 2.7.1 MPS. ~0.5s/image on M4 Max. **$0 cost.**
+Won across all 5 asset categories (portraits, ships, sprites, UI, events) in an 8-model shootout
+comparing Real-ESRGAN, PBRify, UltraSharp, GTAV_dither, FSDedither Riven, Vertex AI, Topaz CGI,
+and palette reconstruction + PBRify. Comparison at `data/hd/shootout/comparison.html`.
+
+Model: `~/tools/upscale-models/4x-UltraSharpV2.pth` (134MB, DAT2, Kim2091, CC-BY-NC-SA-4.0)
+Script: `scripts/local-upscale-batch.py` — MPS memory management (`empty_cache` every 50 images)
+
+**Available models** (all at `~/tools/upscale-models/`, all loadable via Spandrel):
+
+| Model | Architecture | Size | Best For |
+|-------|-------------|------|----------|
+| 4x-UltraSharpV2.pth | DAT2 | 134MB | **All categories** (shootout winner) |
+| 4x-PBRify_UpscalerV4.pth | DAT2 | 134MB | Game textures (runner-up) |
+| 4x-FSDedither-Riven.pth | ESRGAN | 64MB | Ordered-dithered art (fastest: 4.5s/20) |
+| 4xTextures_GTAV_rgt-s_dither.pth | RGT | 130MB | Dithered+JPEG game textures |
+
+**Fallback: Real-ESRGAN x4plus** (ncnn-vulkan, no Python deps)
+
+```bash
 cd ~/tools/realesrgan && ./realesrgan-ncnn-vulkan -i input.png -o output.png -n realesrgan-x4plus -s 4 -f png
-
-# Batch: entire directory
-cd ~/tools/realesrgan && ./realesrgan-ncnn-vulkan -i /tmp/common-png -o data/hd/common-dll -n realesrgan-x4plus -s 4 -f png
-
-# Binary: ~/tools/realesrgan/realesrgan-ncnn-vulkan (26MB, universal arm64+x86_64)
-# Models: ~/tools/realesrgan/models/ (realesrgan-x4plus 32MB, realesrgan-x4plus-anime 8.5MB, realesr-animevideov3 1.2MB)
-# Source: xinntao/Real-ESRGAN v0.2.5.0 portable macOS release
 ```
 
-Universal binary (x86_64 + arm64). Native Apple Silicon via Vulkan/MoltenVK. Tested on M4 Max — processes 2,231 images in ~75 minutes. **$0 cost.** Same tool used by the Jedi Knight Neural Upscale Texture Pack (same-era Star Wars game mod).
-
-**Secondary: waifu2x-ncnn-vulkan** (INSTALLED — geometric art only)
+**Shootout script** for re-running comparisons with new models:
 
 ```bash
-~/.local/bin/waifu2x -i input.png -o output.png -n 1 -s 4 -f png
+python3 scripts/model-shootout.py --local-only       # All local models on 20 test BMPs
+python3 scripts/model-shootout.py --models 3,5        # Specific models by ID
+python3 scripts/model-shootout.py --html-only         # Regenerate comparison HTML
 ```
 
-Good for clean geometric widgets and line-heavy diagrams. Inferior to Real-ESRGAN for textured game art.
+Test samples: `scripts/shootout-samples.json` (20 BMPs, 4 per category)
 
-**Legacy: PBRify/UltraSharp .pth models** (NOT USABLE via CLI)
-
-```
-~/tools/upscale-models/4x-PBRify_UpscalerV4.pth  (PyTorch format — requires chaiNNer GUI, not ncnn CLI)
-~/tools/upscale-models/4x-UltraSharpV2.pth        (same limitation)
-```
-
-These `.pth` files are PyTorch format and cannot be used with Upscayl's ncnn backend directly. Use Upscayl's built-in models (`remacri-4x`, `ultrasharp-4x`) instead, but test results were poor on 1998 game art. **Real-ESRGAN x4plus is the recommended tool.**
-
-**Important**: All source BMPs are 256-color indexed palette. Convert to PNG (RGBA) before upscaling: `Image.open(bmp).convert("RGBA").save(out, "PNG")`. The `/tmp/{dll}-png/` trees are rebuilt from `data/base/ui/{dll-dir}/BMP/` each session.
+**Important**: All source BMPs are 256-color indexed palette. `local-upscale-batch.py` handles
+conversion to RGB automatically via `Image.open(bmp).convert("RGB")`.
 
 ### Gemini Generative Upscale (Method A — TESTED)
 
@@ -121,17 +135,20 @@ GOOGLE_CLOUD_PROJECT=dream-daimon uv run scripts/vertex-upscale.py --input-dir o
 **Best for:** Portraits, fighters, sprites — anything where fidelity > detail invention.
 **Quota:** 5 requests/minute default. Request increase for batch processing.
 
-### Upscaling Strategy (Per Category)
+### Upscaling Strategy
 
-**Proven: Vertex AI Imagen 4.0** for all non-portrait categories. Pure super-resolution, zero hallucination, zero reference contamination. $0.005/image. Batch script: `scripts/vertex-upscale-batch.py`.
-
-**Under iteration: Gemini Pro + references** for portraits only. Character identity requires reference images (SWCCG cards), but references contaminate non-portrait categories. Parked until prompt engineering resolves reference bleed. Scripts: `scripts/select-references.py` + `scripts/gemini-upscale.py`.
+**Winner: UltraSharp V2 (local, free)** for all categories. Selected via 8-model shootout (2026-04-14) across portraits, ships, sprites, UI elements, and event scenes. UltraSharp V2 preserves the original 1998 pre-rendered CGI aesthetic better than any other model tested—it sharpens without photorealizing, maintains the baked-lighting look, and handles the 256-color indexed palette without introducing dithering artifacts. Single model, single script, no per-category routing needed.
 
 | Category | Method | Status |
 |----------|--------|--------|
-| Ships, damage, reactors, facilities | Vertex AI Imagen 4x | PROVEN — 20 dry-run samples approved |
-| Events, UI chrome, buttons, tactical | Vertex AI Imagen 4x | PROVEN — 9 dry-run samples approved |
-| Portraits (major, mini, panels) | Gemini Pro + refs | ITERATING — reference contamination issue |
+| All DLL BMPs (2,231) | UltraSharp V2 via Spandrel+MPS | IN PROGRESS — 235/2,231 done |
+
+**Other tools available** (tested, still installed, usable if needed):
+- **Vertex AI Imagen 4.0**: Non-generative super-resolution, zero hallucination. $0.005/img, 5 RPM quota. Requires `gcloud auth`. Script: `scripts/vertex-upscale.py`. Good fallback for any images where UltraSharp produces artifacts.
+- **Topaz Gigapixel CGI**: $0.05/img via Replicate API (`topazlabs/image-upscale`, `enhance_model="CGI"`). Matched UltraSharp quality but at cost.
+- **Gemini Pro + references**: Generative upscale with reference images for character identity. Stalled on reference contamination. Scripts: `scripts/gemini-upscale.py`, `scripts/select-references.py`. Could revisit for portraits if UltraSharp isn't faithful enough to specific characters.
+- **Real-ESRGAN x4plus**: Free ncnn-vulkan CLI at `~/tools/realesrgan/`. Fast but slightly softer output than UltraSharp on this art style.
+- **FSDedither Riven**: Fastest local model (4.5s/20 images). Purpose-built for ordered-dithered game textures. Worth revisiting if any BMPs show persistent dithering artifacts after UltraSharp.
 
 ### Scale Factors
 
@@ -481,18 +498,7 @@ See `agent_docs/dll-resource-catalog.md` for complete resource ID ranges, dimens
 
 ### Upscaling Strategy
 
-| Category | BMPs | Method | Why |
-|----------|------|--------|-----|
-| Briefing sprites | 38 | Vertex AI Imagen | Advisor frames — must be consistent |
-| Droid advisor frames | 148 (74+74) | Vertex AI Imagen | Animation consistency critical |
-| Buttons/controls | 33 | Vertex AI Imagen | Pixel-perfect state alignment |
-| Status panels | 580 | Vertex AI Imagen | Entity recognition must be preserved |
-| Event screens | 83 | Gemini edit | Narrative scenes, generative detail |
-| Character panels | 134 (73+61) | Gemini edit | 400x200, benefits from detail |
-| Combat HUD | 154 | Vertex AI Imagen | Small elements, preserve exactly |
-| Tactical ship sprites | 130 | Vertex AI Imagen | 3D renders, faithful enlargement |
-| Core UI widgets | 321 | Vertex AI Imagen | Scrollbars, checkboxes, buttons |
-| Galaxy map chrome | 1,042 | Mixed | Background: Gemini edit. Icons: Vertex |
+**Superseded by shootout results (2026-04-14).** UltraSharp V2 via Spandrel+MPS is now the single method for all categories. Run `python3 scripts/local-upscale-batch.py` to process all DLLs.
 
 **All game DLLs fully extracted.** Including 285 voice WAV files (153 Alliance + 132 Empire).
 
