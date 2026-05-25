@@ -1,0 +1,22 @@
+[package]
+name = "rebellion-web"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bindings exposing rebellion-core to a JavaScript/TypeScript web UI"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[features]
+default = ["console_error_panic_hook"]
+
+[profile.release]
+opt-level = "s"
+lto = true
