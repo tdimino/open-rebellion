@@ -72,17 +72,17 @@ impl CockpitButton {
     /// IDs are from the original game's COMMON.DLL button library (11001–11215).
     /// Mapping derived from resource extraction order: 9 main strategy-view
     /// control buttons occupy the first 27 IDs in groups of 3.
-    fn sprite(self) -> ButtonSprite {
+    fn sprite(self) -> (DllSource, ButtonSprite) {
         match self {
-            CockpitButton::Officers      => ButtonSprite::from_base(11001),
-            CockpitButton::Fleets        => ButtonSprite::from_base(11004),
-            CockpitButton::Manufacturing => ButtonSprite::from_base(11007),
-            CockpitButton::Missions      => ButtonSprite::from_base(11010),
-            CockpitButton::Research      => ButtonSprite::from_base(11013),
-            CockpitButton::Encyclopedia  => ButtonSprite::from_base(11016),
-            CockpitButton::SaveLoad      => ButtonSprite::from_base(11019),
-            CockpitButton::SpeedDown     => ButtonSprite::from_base(11022),
-            CockpitButton::SpeedUp       => ButtonSprite::from_base(11025),
+            CockpitButton::Officers      => (DllSource::Common, ButtonSprite::from_base(11001)),
+            CockpitButton::Fleets        => (DllSource::Common, ButtonSprite::from_base(11004)),
+            CockpitButton::Manufacturing => (DllSource::Common, ButtonSprite::from_base(11007)),
+            CockpitButton::Missions      => (DllSource::Common, ButtonSprite::from_base(11010)),
+            CockpitButton::Research      => (DllSource::Common, ButtonSprite::from_base(11013)),
+            CockpitButton::Encyclopedia  => (DllSource::Strategy, ButtonSprite::from_base(11016)),
+            CockpitButton::SaveLoad      => (DllSource::Strategy, ButtonSprite::from_base(11019)),
+            CockpitButton::SpeedDown     => (DllSource::Strategy, ButtonSprite::from_base(11022)),
+            CockpitButton::SpeedUp       => (DllSource::Strategy, ButtonSprite::from_base(11025)),
         }
     }
 }
@@ -319,13 +319,13 @@ pub fn draw_cockpit_egui_layer(
                                   label: &str,
                                   key: &str,
                                   active: bool,
-                                  sprite: ButtonSprite,
+                                  sprite: (DllSource, ButtonSprite),
                                   cache: &mut BmpCache|
                     -> bool {
                     // Pick which resource ID to show based on state.
-                    let res_id = if active { sprite.pressed } else { sprite.normal };
+                    let res_id = if active { sprite.1.pressed } else { sprite.1.normal };
 
-                    if let Some(tex) = cache.get(ctx, DllSource::Common, res_id) {
+                    if let Some(tex) = cache.get(ctx, sprite.0, res_id) {
                         // Sprite available — render as an image button.
                         // Original button dimensions are ~52×32 pixels; we preserve
                         // that aspect ratio and add a highlight tint when active.
