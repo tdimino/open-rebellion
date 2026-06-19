@@ -856,6 +856,7 @@ impl BmpCache {
         if bmp_file.exists() {
             load_image_as_texture(ctx, source, resource_id, &bmp_file)
         } else {
+            eprintln!("[bmp_cache] WARNING: BMP not found at {:?}", bmp_file);
             None
         }
     }
@@ -921,11 +922,23 @@ fn load_image_as_texture(
     resource_id: u32,
     path: &Path,
 ) -> Option<TextureHandle> {
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[bmp_cache] ERROR: Failed to read {:?}: {}", path, e);
+            return None;
+        }
+    };
 
     // `image` crate auto-detects format from magic bytes — handles both BMP
     // (which may be palette-indexed) and PNG.
-    let img = image::load_from_memory(&bytes).ok()?;
+    let img = match image::load_from_memory(&bytes) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("[bmp_cache] ERROR: Failed to decode image from {:?}: {}", path, e);
+            return None;
+        }
+    };
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
 
