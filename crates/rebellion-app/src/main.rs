@@ -2189,7 +2189,7 @@ async fn main() {
                     }
 
                     // System info panel (right side)
-                    draw_system_info_panel(ctx, &world, &map_state);
+                    draw_system_info_panel(ctx, &world, &mut map_state, &mut bmp_cache);
 
                     // Context menus (floating, triggered by right-click)
                     if let Some(action) =

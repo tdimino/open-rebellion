@@ -603,7 +603,7 @@ pub fn draw_blockade_indicators(world: &GameWorld, blockade: &BlockadeState, cam
 ///
 /// Shows details for the currently selected system. Call inside
 /// `egui_macroquad::ui(|ctx| { ... })`.
-pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &GalaxyMapState) {
+pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &GalaxyMapState, cache: &mut bmp_cache::BmpCache) {
     if let Some(sys_key) = state.selected_system {
         if let Some(system) = world.systems.get(sys_key) {
             egui::SidePanel::right("system_info")
@@ -767,14 +767,22 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                                         if let Some(class) =
                                             world.capital_ship_classes.get(class_key)
                                         {
-                                            ui.label(
-                                                egui::RichText::new(format!(
-                                                    "  {} ×{}",
-                                                    class.name, count
-                                                ))
-                                                .color(theme::TEXT_SECONDARY)
-                                                .size(10.0),
-                                            );
+                                            let tex_id = (class.dat_id.0 % 192) + 1;
+                                            ui.horizontal(|ui| {
+                                                if let Some(tex) = cache.get(ctx, DllSource::EData, tex_id as u32) {
+                                                    ui.image((tex.id(), egui::vec2(60.0, 30.0)));
+                                                } else {
+                                                    ui.add_space(60.0);
+                                                }
+                                                ui.label(
+                                                    egui::RichText::new(format!(
+                                                        "  {} ×{}",
+                                                        class.name, count
+                                                    ))
+                                                    .color(theme::TEXT_SECONDARY)
+                                                    .size(10.0),
+                                                );
+                                            });
                                         }
                                     }
 
@@ -786,6 +794,27 @@ pub fn draw_system_info_panel(ctx: &egui::Context, world: &GameWorld, state: &Ga
                                                     .color(theme::GOLD_DIM)
                                                     .size(10.0),
                                             );
+                                        }
+                                    }
+
+                                    // Fighter breakdown
+                                    for f in &fleet.fighters {
+                                        if f.count > 0 {
+                                            if let Some(class) = world.fighter_classes.get(f.class) {
+                                                let tex_id = (class.dat_id.0 % 192) + 1;
+                                                ui.horizontal(|ui| {
+                                                    if let Some(tex) = cache.get(ctx, DllSource::EData, tex_id as u32) {
+                                                        ui.image((tex.id(), egui::vec2(60.0, 30.0)));
+                                                    } else {
+                                                        ui.add_space(60.0);
+                                                    }
+                                                    ui.label(
+                                                        egui::RichText::new(format!("  {} ×{} sqn", class.name, f.count))
+                                                            .color(theme::TEXT_SECONDARY)
+                                                            .size(10.0),
+                                                    );
+                                                });
+                                            }
                                         }
                                     }
                                 }

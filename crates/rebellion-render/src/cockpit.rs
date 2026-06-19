@@ -206,7 +206,7 @@ impl CockpitState {
 pub fn draw_cockpit_chrome(
     state: &CockpitState,
     cache: &mut BmpCache,
-    ctx: &egui::Context,
+    _ctx: &egui::Context,
 ) -> CockpitViewport {
     let sw = screen_width();
     let sh = screen_height();
@@ -254,11 +254,17 @@ pub fn draw_cockpit_chrome(
     // (We can't scissor/clip macroquad draw calls to the viewport without
     // a render target, so we just draw it across the map area.)
     let vp = state.galaxy_viewport();
-    if let Some(tex) = cache.get(ctx, DllSource::Strategy, 900) {
-        let size = egui::vec2(vp.width, vp.height);
-        // The texture is registered in egui; we draw it via egui's painter
-        // in a transparent overlay pass inside draw_cockpit_egui_layer.
-        let _ = (tex, size); // consumed in the egui layer below
+    if let Some(tex) = cache.get_mq(DllSource::Strategy, 900) {
+        macroquad::prelude::draw_texture_ex(
+            &tex,
+            vp.x,
+            vp.y,
+            macroquad::prelude::WHITE,
+            macroquad::prelude::DrawTextureParams {
+                dest_size: Some(macroquad::prelude::vec2(vp.width, vp.height)),
+                ..Default::default()
+            },
+        );
     }
 
     vp
