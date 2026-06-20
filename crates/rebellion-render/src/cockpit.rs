@@ -72,17 +72,17 @@ impl CockpitButton {
     /// IDs are from the original game's COMMON.DLL button library (11001–11215).
     /// Mapping derived from resource extraction order: 9 main strategy-view
     /// control buttons occupy the first 27 IDs in groups of 3.
-    fn sprite(self) -> ButtonSprite {
+    fn sprite(self) -> (DllSource, ButtonSprite) {
         match self {
-            CockpitButton::Officers      => ButtonSprite::from_base(11001),
-            CockpitButton::Fleets        => ButtonSprite::from_base(11004),
-            CockpitButton::Manufacturing => ButtonSprite::from_base(11007),
-            CockpitButton::Missions      => ButtonSprite::from_base(11010),
-            CockpitButton::Research      => ButtonSprite::from_base(11013),
-            CockpitButton::Encyclopedia  => ButtonSprite::from_base(11016),
-            CockpitButton::SaveLoad      => ButtonSprite::from_base(11019),
-            CockpitButton::SpeedDown     => ButtonSprite::from_base(11022),
-            CockpitButton::SpeedUp       => ButtonSprite::from_base(11025),
+            CockpitButton::Officers      => (DllSource::Common, ButtonSprite::from_base(11001)),
+            CockpitButton::Fleets        => (DllSource::Common, ButtonSprite::from_base(11004)),
+            CockpitButton::Manufacturing => (DllSource::Common, ButtonSprite::from_base(11007)),
+            CockpitButton::Missions      => (DllSource::Common, ButtonSprite::from_base(11010)),
+            CockpitButton::Research      => (DllSource::Common, ButtonSprite::from_base(11013)),
+            CockpitButton::Encyclopedia  => (DllSource::Strategy, ButtonSprite::from_base(11016)),
+            CockpitButton::SaveLoad      => (DllSource::Strategy, ButtonSprite::from_base(11019)),
+            CockpitButton::SpeedDown     => (DllSource::Strategy, ButtonSprite::from_base(11022)),
+            CockpitButton::SpeedUp       => (DllSource::Strategy, ButtonSprite::from_base(11025)),
         }
     }
 }
@@ -206,7 +206,7 @@ impl CockpitState {
 pub fn draw_cockpit_chrome(
     state: &CockpitState,
     cache: &mut BmpCache,
-    ctx: &egui::Context,
+    _ctx: &egui::Context,
 ) -> CockpitViewport {
     let sw = screen_width();
     let sh = screen_height();
@@ -254,11 +254,17 @@ pub fn draw_cockpit_chrome(
     // (We can't scissor/clip macroquad draw calls to the viewport without
     // a render target, so we just draw it across the map area.)
     let vp = state.galaxy_viewport();
-    if let Some(tex) = cache.get(ctx, DllSource::Strategy, 900) {
-        let size = egui::vec2(vp.width, vp.height);
-        // The texture is registered in egui; we draw it via egui's painter
-        // in a transparent overlay pass inside draw_cockpit_egui_layer.
-        let _ = (tex, size); // consumed in the egui layer below
+    if let Some(tex) = cache.get_mq(DllSource::Strategy, 900) {
+        macroquad::prelude::draw_texture_ex(
+            &tex,
+            vp.x,
+            vp.y,
+            macroquad::prelude::WHITE,
+            macroquad::prelude::DrawTextureParams {
+                dest_size: Some(macroquad::prelude::vec2(vp.width, vp.height)),
+                ..Default::default()
+            },
+        );
     }
 
     vp
@@ -319,13 +325,13 @@ pub fn draw_cockpit_egui_layer(
                                   label: &str,
                                   key: &str,
                                   active: bool,
-                                  sprite: ButtonSprite,
+                                  sprite: (DllSource, ButtonSprite),
                                   cache: &mut BmpCache|
                     -> bool {
                     // Pick which resource ID to show based on state.
-                    let res_id = if active { sprite.pressed } else { sprite.normal };
+                    let res_id = if active { sprite.1.pressed } else { sprite.1.normal };
 
-                    if let Some(tex) = cache.get(ctx, DllSource::Common, res_id) {
+                    if let Some(tex) = cache.get(ctx, sprite.0, res_id) {
                         // Sprite available — render as an image button.
                         // Original button dimensions are ~52×32 pixels; we preserve
                         // that aspect ratio and add a highlight tint when active.

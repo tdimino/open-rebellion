@@ -102,6 +102,8 @@ pub enum DllSource {
     Tactical,
     /// `GOKRES.DLL` — entity status sprites, character portraits, ship icons
     Gokres,
+    /// `EData` — planet assets and system backgrounds
+    EData,
 }
 
 impl DllSource {
@@ -114,6 +116,7 @@ impl DllSource {
             DllSource::Common   => "common-dll",
             DllSource::Tactical => "tactical-dll",
             DllSource::Gokres   => "gokres-dll",
+            DllSource::EData    => "EData",
         }
     }
 
@@ -124,6 +127,7 @@ impl DllSource {
             DllSource::Common   => "common",
             DllSource::Tactical => "tactical",
             DllSource::Gokres   => "gokres",
+            DllSource::EData    => "edata",
         }
     }
 }
@@ -756,8 +760,10 @@ pub struct BmpCache {
     base_path: Option<PathBuf>,
     /// Optional HD PNG override directory.  If `Some`, checked before `base_path`.
     hd_path: Option<PathBuf>,
-    /// Cached textures.  `None` value means "attempted load, file not found".
+    /// Cached textures for egui.
     textures: HashMap<(DllSource, u32), Option<TextureHandle>>,
+    /// Cached textures for macroquad native rendering.
+    mq_textures: HashMap<(DllSource, u32), Option<macroquad::prelude::Texture2D>>,
 }
 
 impl BmpCache {
@@ -767,6 +773,7 @@ impl BmpCache {
             base_path: None,
             hd_path: None,
             textures: HashMap::new(),
+            mq_textures: HashMap::new(),
         }
     }
 
@@ -798,11 +805,33 @@ impl BmpCache {
         let key = (source, resource_id);
 
         if !self.textures.contains_key(&key) {
+            eprintln!("[bmp_cache] REQUEST: {:?} id {}", source, resource_id);
             let handle = self.load_texture(ctx, source, resource_id);
+            if handle.is_some() {
+                eprintln!("[bmp_cache] SUCCESS: {:?} id {}", source, resource_id);
+            } else {
+                eprintln!("[bmp_cache] FAILED: {:?} id {}", source, resource_id);
+            }
             self.textures.insert(key, handle);
         }
 
         self.textures.get(&key)?.as_ref()
+    }
+
+    /// Retrieve a macroquad Texture2D by source DLL and resource ID.
+    pub fn get_mq(
+        &mut self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<macroquad::prelude::Texture2D> {
+        let key = (source, resource_id);
+
+        if !self.mq_textures.contains_key(&key) {
+            let tex = self.load_mq_texture(source, resource_id);
+            self.mq_textures.insert(key, tex);
+        }
+
+        self.mq_textures.get(&key)?.clone()
     }
 
     /// Bulk-load all resources in `[start, end]` (inclusive) for one DLL.
@@ -848,14 +877,54 @@ impl BmpCache {
 
         // 2. Fall back to original staged BMP.
         let base = self.base_path.as_deref()?;
-        let bmp_file = rebase_path_prefix(base, "data/base", DATA_PREFIX)
-            .join(source.dll_dir_name())
-            .join("BMP")
-            .join(format!("{}.bmp", resource_id));
+        let base_dir = rebase_path_prefix(base, "data/base", DATA_PREFIX);
+        let bmp_file = if source == DllSource::EData {
+            let root = base_dir.parent().unwrap_or(&base_dir);
+            root.join(source.dll_dir_name()).join(format!("EDATA.{:03}", resource_id))
+        } else {
+            base_dir.join(source.dll_dir_name()).join("BMP").join(format!("{}.bmp", resource_id))
+        };
 
         if bmp_file.exists() {
             load_image_as_texture(ctx, source, resource_id, &bmp_file)
         } else {
+            eprintln!("[bmp_cache] WARNING: BMP not found at {:?}", bmp_file);
+            None
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_mq_texture(
+        &self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<macroquad::prelude::Texture2D> {
+        // 1. Check HD PNG override first.
+        if let Some(hd_dir) = &self.hd_path {
+            let hd_file = rebase_path_prefix(hd_dir, "data/hd", HD_PREFIX)
+                .join(source.dll_dir_name())
+                .join(format!("{}.png", resource_id));
+            if hd_file.exists() {
+                if let Some(tex) = load_image_as_mq_texture(&hd_file) {
+                    return Some(tex);
+                }
+            }
+        }
+
+        // 2. Fall back to standard BMP.
+        let base = self.base_path.as_deref()?;
+        let base_dir = rebase_path_prefix(base, "data/base", DATA_PREFIX);
+        let bmp_file = if source == DllSource::EData {
+            let root = base_dir.parent().unwrap_or(&base_dir);
+            root.join(source.dll_dir_name()).join(format!("EDATA.{:03}", resource_id))
+        } else {
+            base_dir.join(source.dll_dir_name()).join("BMP").join(format!("{}.bmp", resource_id))
+        };
+
+        if bmp_file.exists() {
+            load_image_as_mq_texture(&bmp_file)
+        } else {
+            eprintln!("[bmp_cache] WARNING: MQ BMP not found at {:?}", bmp_file);
             None
         }
     }
@@ -895,6 +964,16 @@ impl BmpCache {
             TextureOptions::default(),
         ))
     }
+
+    #[cfg(target_arch = "wasm32")]
+    fn load_mq_texture(
+        &self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<macroquad::prelude::Texture2D> {
+        // Not implemented for WASM yet
+        None
+    }
 }
 
 impl Default for BmpCache {
@@ -921,11 +1000,23 @@ fn load_image_as_texture(
     resource_id: u32,
     path: &Path,
 ) -> Option<TextureHandle> {
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[bmp_cache] ERROR: Failed to read {:?}: {}", path, e);
+            return None;
+        }
+    };
 
     // `image` crate auto-detects format from magic bytes — handles both BMP
     // (which may be palette-indexed) and PNG.
-    let img = image::load_from_memory(&bytes).ok()?;
+    let img = match image::load_from_memory(&bytes) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("[bmp_cache] ERROR: Failed to decode image from {:?}: {}", path, e);
+            return None;
+        }
+    };
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
 
@@ -941,4 +1032,30 @@ fn load_image_as_texture(
     );
 
     Some(handle)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_image_as_mq_texture(path: &Path) -> Option<macroquad::prelude::Texture2D> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[bmp_cache] ERROR: Failed to read {:?}: {}", path, e);
+            return None;
+        }
+    };
+
+    let img = match image::load_from_memory(&bytes) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("[bmp_cache] ERROR: Failed to decode image from {:?}: {}", path, e);
+            return None;
+        }
+    };
+    let rgba = img.to_rgba8();
+    let width = rgba.width() as u16;
+    let height = rgba.height() as u16;
+
+    let tex = macroquad::prelude::Texture2D::from_rgba8(width, height, rgba.as_raw());
+    tex.set_filter(macroquad::prelude::FilterMode::Linear);
+    Some(tex)
 }
