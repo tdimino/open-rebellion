@@ -139,7 +139,7 @@ if not entries:
     print('  WARNING: manifest is empty — no BMPs found', file=sys.stderr)
 "
 else
-    echo "ERROR: data/base/ui/ not found — run scripts/stage-ui-assets.py first."
+    echo "ERROR: data/base/ui/ not found — run 'go run ./tools/stage-ui-assets' first."
     exit 1
 fi
 

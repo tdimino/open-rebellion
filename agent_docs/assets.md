@@ -213,6 +213,18 @@ Entity mapping: `data/resource-entity-map.json` — 162 GOKRES resource IDs → 
 | STRATEGY | 1,042 | `data/base/ui/strategy-dll/BMP/` |
 | TACTICAL | 288 | `data/base/ui/tactical-dll/BMP/` |
 
+Stage these assets directly from the original game DLLs in `data/base/` using the
+dependency-free Go extractor:
+
+```bash
+go run ./tools/stage-ui-assets
+go run ./tools/stage-ui-assets --verify
+```
+
+Use `--source` or `--output` to override those default directories. Existing BMPs
+are left unchanged when their contents match; use `--force` to replace differing
+files.
+
 **Batch upscale command** (Vertex, all non-portrait packs):
 ```bash
 uv run scripts/vertex-upscale-batch.py              # all 2,231 BMPs
