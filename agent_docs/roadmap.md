@@ -487,6 +487,9 @@ would tune around known simulation feedback defects.
 - [ ] Enforce format, strict clippy, native, packaged-WASM, and clean-package boot gates.
 - [ ] Add at least 20 app/browser integration cases and promote long campaigns when stable.
 - [ ] Generate the complete bitmap resource ledger from the entity map; fail on unexplained misses. Fleet-list miniatures are verified in F-010B.
+- [x] Establish 544 stable required interface baseline cells, link all 42
+  required surface families to 27 bounded retrieval or removal packages, and
+  explicitly cover 106 space-battle cells across `TAC-01` through `TAC-07`.
 - [ ] Close every required surface-state cell in the original-interface audit
   with authoritative captures, exact-resource provenance, screenshot and hotspot
   comparison, complete navigation edges, and zero unknown or invented pixels.

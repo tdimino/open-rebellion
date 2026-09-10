@@ -58,6 +58,9 @@
     "wasm_advisors": "fail",
     "wasm_encyclopedia_art": "fail",
     "tactical_interface": "fail",
+    "required_baseline_cells": "544_pending_or_open",
+    "retrieval_package_coverage": "42_of_42_required_surface_families",
+    "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
   },
@@ -190,10 +193,10 @@
     },
     {
       "id": "UIP-T05",
-      "name": "Tactical Interface",
+      "name": "Space-Battle Tactical Interface",
       "status": "pending",
       "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06", "TAC-07", "TAC-08"],
-      "exit": "The complete original tactical composition, state art, actions, reports, and Death Star paths pass."
+      "exit": "The complete original space-battle composition, both faction HUDs, ships, fighters, controls, state art, audio, reports, strategic return, and Death Star paths pass. Ground assault uses only its original summary and report flow."
     },
     {
       "id": "UIP-T06",
@@ -208,6 +211,7 @@
     "reference_ledger": "reference-ledger.json",
     "reverse_engineering_ledger": "reverse-engineering-ledger.json",
     "reverse_engineering_report": "reverse-engineering-ledger.md",
+    "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },

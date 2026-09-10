@@ -70,24 +70,47 @@ in `advisor.rs` are provisional and cannot pass parity.
 
 ## Work queue
 
+The queue contains 27 bounded packages. Every one of the 42 required surface
+families links to at least one package with named sources, a retrieval method,
+and a next proof in the [machine-readable ledger](reverse-engineering-ledger.json).
+
 | Package | Scope | Status | Next proof |
 |---|---|---|---|
+| RE-FE-01 | Boot, introduction, and credits routing | static-partial | Map media selection and every completion, failure, skip, and return callback |
+| RE-MENU-01 | Shuttle controls and destinations | static-proven | Capture remaining original interaction and edge-probe states |
+| RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
 | RE-STR-01 | Shell, apertures, and reference rail | static-proven | Implement exact faction geometry and compare A0 captures |
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial | Name every command/resource pair and instantiate hit-probe cells |
 | RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial | Resolve TEXTSTRA captions and paint-resource branches |
+| RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |
+| RE-MSG-01 | Messages, Agent menus, alerts, and reports | untriaged | Join categories and event results to resources, audio, and navigation |
+| RE-ENC-01 | Encyclopedia index and topics | static-partial | Complete ENCYBMAP, ENCYTEXT, EData, and navigation mappings |
 | RE-OBJ-01 | System, sector, and object-window constructors | static-partial | Map each object type to tabs, resources, states, and return paths |
 | RE-ADV-01 | Type-302 advisor and briefing frame decoding | static-partial | Decode one anchor-plus-delta run byte-for-byte |
 | RE-ADV-02 | SPT/BIN/FDT action semantics, cadence, and sound | static-partial | Replace inferred priority thirds with authored action mappings |
-| RE-PACK-01 | Complete native/WASM resource transport | untriaged | Version the pack for arbitrary resources, films, and EData |
+| RE-PACK-01 | Complete native/WASM resource transport | implementation-needed | Version the pack for arbitrary resources, films, and EData |
 | RE-MSN-01 | Create Mission and Mission Status composites | untriaged | Trace constructors, legal-target predicates, and outcome routing |
+| RE-EVT-01 | Strategic events and authored reports | static-partial | Resolve every common, faction, and rare event variant |
+| RE-BAT-01 | Battle Alert, strategic reports, and results | untriaged | Recover constructors, choices, force tabs, results, and return routing |
+| RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader and event-handler registry | static-proven | Connect event slots to controls and observable state transitions |
 | RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial | Trace control constructors and type-301/303 loaders |
+| RE-TAC-03 | Tactical battle-results composition | untriaged | Connect result construction to application and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
 | RE-END-01 | Campaign endings, skip, return, restart, and failure | static-partial | Recover the complete terminal media matrix |
 | RE-NET-01 | Original multiplayer screens and controls | static-partial | Finish template 10100–10103 geometry and provider/host/join routing |
 | RE-NET-02 | Two-peer sync, chat, pause, saves, departure, and errors | runtime-needed | Run an original two-peer fixture and compare protocol traces |
+| RE-EXT-01 | Remove visible replacement dashboards | implementation-needed | Preserve every action inside original paths with zero replacement pixels |
 | RE-A0-01 | Lossless original-executable baselines | runtime-needed | Capture every required surface-state cell at native 640×480 |
+
+Space battle is an explicit full mode, not a single panel. `TAC-01` through
+`TAC-07` currently define 106 baseline cells covering battle entry, both
+faction HUDs, capital ships, fighters, assignment, selection, targeting,
+damage, camera and navigation, maneuvers, tactics, missions, recovery,
+withdrawal, simulation and observation, Death Star controls, trench-run
+routing, results, and strategic return. `EVT-02` owns Battle Alert entry;
+`TAC-08` remains the separate strategic ground-assault report flow.
 
 ## Immediate implementation order
 
@@ -98,7 +121,9 @@ in `advisor.rs` are provisional and cannot pass parity.
 4. Rebuild the strategic shell from the recovered rectangles and original
    controls, then replace the sidebar with managed original object windows.
 5. Resolve the full GID mapping before drawing any replacement marker or legend.
-6. Use original-runtime capture only for the remaining dynamic proof boundary.
+6. Recover and implement the complete `TAC-01` through `TAC-07` space-battle
+   path, including type-301/303 resources and Death Star controls.
+7. Use original-runtime capture only for the remaining dynamic proof boundary.
 
 No static discovery marks a surface complete. It closes only the corresponding
 evidence fields; the original, native, and browser acceptance cells remain in

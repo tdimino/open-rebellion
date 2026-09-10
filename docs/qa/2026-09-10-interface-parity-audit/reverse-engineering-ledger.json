@@ -8,12 +8,20 @@
     "untriaged",
     "static-partial",
     "static-proven",
+    "implementation-needed",
     "runtime-needed",
     "runtime-corroborated",
     "accepted",
     "contradicted"
   ],
   "proof_rule": "Static proof may close resource identity, geometry, predicates, and routing. A surface remains incomplete until all required original-runtime, native, and browser cells pass.",
+  "coverage_summary": {
+    "work_packages": 27,
+    "required_surface_families": 42,
+    "required_surface_families_with_packages": 42,
+    "required_baseline_cells": 544,
+    "space_battle_baseline_cells": 106
+  },
   "original_fixture": {
     "local_path": "../star-wars-rebellion",
     "locale": 1033,
@@ -105,21 +113,338 @@
     }
   ],
   "work_packages": [
-    {"id": "RE-STR-01", "surface_ids": ["CMD-01", "CMD-04"], "title": "Strategic shell, apertures, and reference rail", "status": "static-proven", "runtime_capture_required": true},
-    {"id": "RE-STR-02", "surface_ids": ["CMD-03", "CMD-05", "CMD-09"], "title": "Cockpit controls, state art, input, and command routing", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-GID-01", "surface_ids": ["CMD-02"], "title": "GID filters, legends, markers, pan, zoom, and selection", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-OBJ-01", "surface_ids": ["CMD-03", "CMD-04", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12", "OBJ-13", "OBJ-14"], "title": "System, sector, and object-window constructors and states", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-ADV-01", "surface_ids": ["PRE-05", "CMD-07"], "title": "Type-302 advisor and briefing frame decoder", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-ADV-02", "surface_ids": ["PRE-05", "CMD-07"], "title": "SPT/BIN/FDT action, cadence, and audio mapping", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-PACK-01", "surface_ids": ["PRE-03", "PRE-05", "CMD-07", "OBJ-01", "TAC-01", "END-01"], "title": "Deterministic native/WASM transport for all authentic resource kinds", "status": "untriaged", "runtime_capture_required": true},
-    {"id": "RE-MSN-01", "surface_ids": ["OBJ-11", "OBJ-12"], "title": "Create Mission and Mission Status composites and outcomes", "status": "untriaged", "runtime_capture_required": true},
-    {"id": "RE-TAC-01", "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06", "TAC-07"], "title": "Tactical loader and event-handler registry", "status": "static-proven", "runtime_capture_required": true},
-    {"id": "RE-TAC-02", "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"], "title": "Tactical control geometry, resource states, meshes, and textures", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-DS-01", "surface_ids": ["OBJ-06", "OBJ-11", "EVT-01", "EVT-03"], "title": "Strategic Destroy System and Death Star sabotage paths", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-DS-02", "surface_ids": ["TAC-04", "TAC-05", "END-01"], "title": "Tactical Death Star and MDATA.201/.202 trench-run routing", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-END-01", "surface_ids": ["PRE-01", "PRE-04", "END-01"], "title": "Terminal media, skip, completion, return, restart, and failure", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-NET-01", "surface_ids": ["PRE-06", "CMD-08"], "title": "Original multiplayer templates, controls, providers, host, and join", "status": "static-partial", "runtime_capture_required": true},
-    {"id": "RE-NET-02", "surface_ids": ["PRE-06", "CMD-08"], "title": "Two-peer synchronization, chat, pause, save/load, departure, and errors", "status": "runtime-needed", "runtime_capture_required": true},
-    {"id": "RE-A0-01", "surface_ids": ["PRE-02", "CMD-02", "CMD-05", "OBJ-11", "EVT-01", "TAC-03", "TAC-05", "END-01", "PRE-06"], "title": "Lossless owned-original 640x480 capture baselines", "status": "runtime-needed", "runtime_capture_required": true}
+    {
+      "id": "RE-FE-01",
+      "surface_ids": ["PRE-01", "PRE-04"],
+      "title": "Boot, introduction, and credits routing",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "COMMON.DLL", "MDATA", "SMACKW32.DLL"],
+        "method": "Cross-reference startup and credits commands, movie filenames, completion callbacks, skip handlers, and return-to-menu transitions.",
+        "next_proof": "Map each media selection and every skip, natural-completion, failure, and return callback."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-MENU-01",
+      "surface_ids": ["PRE-02"],
+      "title": "Shuttle main-menu controls and destinations",
+      "status": "static-proven",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "COMMON.DLL", "MDATA.300"],
+        "anchors": ["FUN_00405560", "FUN_00405050", "FUN_00406000", "FUN_00603870", "FUN_00603aa0"],
+        "method": "Use the recovered constructor, command handler, animated-control loader, COMMON resource families, and main-menu parity reference.",
+        "next_proof": "Capture the remaining original hover, pressed, selected, disabled, focus, and edge-probe states."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-OPT-01",
+      "surface_ids": ["PRE-03"],
+      "title": "Unified options, save, load, and delete window",
+      "status": "untriaged",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "COMMON.DLL", "REBDLOG.DLL"],
+        "method": "Start from menu command 0x67 and settings strings, then follow window constructors, control IDs, registry reads, save-slot mutations, confirmations, and close routing.",
+        "next_proof": "Identify the constructor and produce a control/resource/state table for the unified window."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-STR-01",
+      "surface_ids": ["CMD-01", "CMD-04"],
+      "title": "Strategic shell, apertures, and reference rail",
+      "status": "static-proven",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL"],
+        "anchors": ["FUN_00421c70", "FUN_00422ce0", "FUN_00429020"],
+        "method": "Use the strategic-shell constructor, twelve rail rectangles, PtInRect routing, focus behavior, and child-window removal path.",
+        "next_proof": "Implement both faction shells and verify every aperture and rail transition against A0 captures."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-STR-02",
+      "surface_ids": ["CMD-03", "CMD-05", "CMD-09"],
+      "title": "Strategic controls, state art, input, and indicators",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL"],
+        "anchors": ["FUN_00427270", "FUN_00602150", "FUN_006028c0", "FUN_00602d30"],
+        "method": "Trace each control constructor through command IDs, paired resources, paint-state offsets, pointer capture, invalidation, and dispatch.",
+        "next_proof": "Name every command/resource pair and connect facility indicators to their simulation predicates."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-GID-01",
+      "surface_ids": ["CMD-02"],
+      "title": "GID filters, legends, markers, pan, zoom, and selection",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL"],
+        "anchors": ["FUN_00425d00", "FUN_00426d00"],
+        "method": "Follow GID mode branches, captions, bitmap loads, map paint predicates, marker resources, viewport transforms, and input handlers.",
+        "next_proof": "Resolve every faction filter, matching legend, marker predicate, selection, pan, and zoom branch."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-OVR-01",
+      "surface_ids": ["CMD-06"],
+      "title": "Galaxy Overview window",
+      "status": "untriaged",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL"],
+        "method": "Cross-reference overview captions and total/maintenance labels to locate the constructor, category population, navigation commands, and close handler.",
+        "next_proof": "Recover window geometry, resource IDs, category formulas, and navigation destinations."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-ADV-01",
+      "surface_ids": ["PRE-05", "CMD-07"],
+      "title": "Type-302 advisor and briefing frame decoder",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["ALSPRITE.DLL", "EMSPRITE.DLL", "ALBRIEF.DLL", "EMBRIEF.DLL"],
+        "method": "Compare type-302 payloads with their standard bitmap anchors, dimensions, palettes, and adjacent frame runs to recover the delta-frame format.",
+        "next_proof": "Decode one Alliance and one Imperial anchor-plus-delta sequence byte-for-byte."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-ADV-02",
+      "surface_ids": ["PRE-05", "CMD-07"],
+      "title": "SPT/BIN/FDT advisor action, cadence, and audio mapping",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "ALSPRITE.DLL", "EMSPRITE.DLL", "ALBRIEF.DLL", "EMBRIEF.DLL", "C3POACT.SPT", "IMP22ACT.SPT", "FDT files"],
+        "anchors": ["FUN_0042d650", "FUN_0042adb0"],
+        "method": "Trace logical SPT actions to BIN records, frame indices, FDT metadata, WAV selection, priority, looping, and preemption.",
+        "next_proof": "Replace sorted-thirds and modulo inference with authored action mappings for both factions."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-MSG-01",
+      "surface_ids": ["CMD-07", "CMD-08", "OBJ-12", "EVT-01"],
+      "title": "Strategic messages, Agent menus, alerts, and report routing",
+      "status": "untriaged",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL", "REBDLOG.DLL", "VOICEFXA.DLL", "VOICEFXE.DLL"],
+        "method": "Cross-reference category labels, report strings, sound IDs, and navigate/delete commands to constructors, filters, item menus, and destination handlers.",
+        "next_proof": "Produce the complete message category, advisor action, report resource, and navigation matrix."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-ENC-01",
+      "surface_ids": ["OBJ-01"],
+      "title": "Encyclopedia index and topic views",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "ENCYBMAP.DLL", "ENCYTEXT.DLL", "EData", "GOKRES.DLL"],
+        "method": "Trace topic commands and previous/next navigation through ENCYBMAP mappings, ENCYTEXT records, EData image selection, and missing-entry handling.",
+        "next_proof": "Recover all index categories, topic constructors, image/text mappings, and context-open paths."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-OBJ-01",
+      "surface_ids": ["CMD-03", "CMD-04", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12", "OBJ-13", "OBJ-14"],
+      "title": "System, sector, finder, and object-window constructors",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "GOKRES.DLL", "STRATEGY.DLL", "REBDLOG.DLL", "TEXTSTRA.DLL"],
+        "anchors": ["FUN_0044f670", "FUN_00442d70", "FUN_0044c410"],
+        "method": "Follow modeless constructors, object-family dispatch, tab creation, resource loads, population predicates, command trees, focus, and rail lifecycle.",
+        "next_proof": "Map each object family to exact tabs, resources, enabled states, commands, and return paths."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-PACK-01",
+      "surface_ids": ["PRE-03", "PRE-05", "CMD-07", "OBJ-01", "TAC-01", "END-01"],
+      "title": "Deterministic native/WASM transport for all authentic resources",
+      "status": "implementation-needed",
+      "retrieval": {
+        "sources": ["all original PE modules", "SPT", "FDT", "EData", "MDATA", "scripts/build-runtime-pack.py"],
+        "method": "Version the pack format and manifest for typed RCDATA, custom PE types 301/302/303, embedded WAV, EData, and decoded media while preserving deterministic identity.",
+        "next_proof": "Build native and WASM manifests with no unexplained original-resource omission."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-MSN-01",
+      "surface_ids": ["OBJ-11", "OBJ-12"],
+      "title": "Create Mission and Mission Status composites and outcomes",
+      "status": "untriaged",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "GOKRES.DLL", "REBDLOG.DLL", "TEXTSTRA.DLL"],
+        "method": "Cross-reference mission names and result strings, then trace constructors, tab creation, legal-target predicates, agent/decoy lists, commands, aborts, and outcome reports.",
+        "next_proof": "Map every mission type and legal, illegal, active, aborted, success, failure, foiled, captured, and killed state."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-EVT-01",
+      "surface_ids": ["EVT-01", "OBJ-12"],
+      "title": "Strategic event and authored report matrix",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL", "VOICEFXA.DLL", "VOICEFXE.DLL"],
+        "method": "Join known event IDs to report constructors, bitmap and voice resources, faction branches, acknowledgment, and navigation callbacks.",
+        "next_proof": "Resolve every common and rare event variant, including Dagobah, Jabba, injury, recovery, capture, escape, Force, shortages, and disasters."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-BAT-01",
+      "surface_ids": ["EVT-02", "EVT-03", "TAC-07"],
+      "title": "Battle Alert, strategic reports, and battle-result routing",
+      "status": "untriaged",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TACTICAL.DLL", "GOKRES.DLL", "TEXTTACT.DLL"],
+        "method": "Cross-reference Battle Alert and result strings to constructors, force tabs, disabled predicates, retreat/simulate/command choices, result population, and return navigation.",
+        "next_proof": "Recover the pre-battle and result window geometry, commands, tabs, population rules, and application routing."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-GND-01",
+      "surface_ids": ["EVT-03", "TAC-08"],
+      "title": "Original ground-assault action, summary, and report flow",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "GOKRES.DLL", "TEXTSTRA.DLL"],
+        "method": "Trace assault commands into deterministic resolution, summary/report constructors, force-detail tabs, casualties, occupation, and return routing.",
+        "next_proof": "Prove the original report-only presentation and identify every replacement live-combat path that must be removed from parity mode."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-TAC-01",
+      "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06", "TAC-07"],
+      "title": "Tactical loader and event-handler registry",
+      "status": "static-proven",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL"],
+        "anchors": ["FUN_0059a8d0", "FUN_005a7500"],
+        "method": "Use tactical module loading and the battle-manager registry to connect lifecycle, selection, orders, fire, damage, repair, recovery, pause, abort, game, and sync events.",
+        "next_proof": "Associate every registered event slot with its concrete control, handler, and observable transition."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-TAC-02",
+      "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"],
+      "title": "Tactical geometry, state art, meshes, and textures",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL"],
+        "method": "Trace control constructors and paint handlers through standard BMPs, type-301 meshes, type-303 textures, selection states, availability predicates, and camera commands.",
+        "next_proof": "Complete both faction HUDs and every rest, hover, pressed, selected, disabled, damage, navigation, maneuver, tactic, mission, recover, and retreat state."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-TAC-03",
+      "surface_ids": ["TAC-07"],
+      "title": "Tactical battle-results composition",
+      "status": "untriaged",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "TACTICAL.DLL", "GOKRES.DLL", "TEXTTACT.DLL"],
+        "method": "Follow tactical completion events into the result constructor, faction outcome branches, force tabs, damage classifications, and strategic return commands.",
+        "next_proof": "Connect the original result renderer to the application and remove bypasses."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-DS-01",
+      "surface_ids": ["OBJ-06", "OBJ-11", "EVT-01", "EVT-03"],
+      "title": "Strategic Destroy System and Death Star sabotage paths",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "STRATEGY.DLL", "GOKRES.DLL", "TEXTSTRA.DLL"],
+        "method": "Trace Death Star family 0x34 predicates through item menus, confirmation, target destruction, sabotage outcomes, reports, and resulting galaxy state.",
+        "next_proof": "Resolve every enabled, disabled, confirmation, destruction, success, failure, foiled, and report branch."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-DS-02",
+      "surface_ids": ["TAC-04", "TAC-05", "END-01"],
+      "title": "Tactical Death Star and trench-run routing",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "TACTICAL.DLL", "MDATA.201", "MDATA.202"],
+        "method": "Trace tactical Death Star controls 1021-1024 and 1176-1178 through recharge, attack, mission resolution, media selection, completion, and return callbacks.",
+        "next_proof": "Prove success selects MDATA.201, failure selects MDATA.202, and map all intervening tactical states."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-END-01",
+      "surface_ids": ["END-01"],
+      "title": "Campaign endings, skip, completion, restart, and return",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "MDATA", "COMMON.DLL", "STRATEGY.DLL"],
+        "method": "Trace victory contracts into faction-specific media and modal selection, then follow skip, completion, media-failure, continue, restart, and menu callbacks.",
+        "next_proof": "Recover the full Alliance and Imperial victory/defeat media matrix and all terminal transitions."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-NET-01",
+      "surface_ids": ["PRE-06", "CMD-08"],
+      "title": "Original multiplayer templates, controls, providers, host, and join",
+      "status": "static-partial",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "COMMON.DLL", "TEXTCOMM.DLL"],
+        "anchors": ["FUN_0040dc30", "FUN_0040ec60"],
+        "method": "Map templates 10100-10103, code-built controls, providers, host/join settings, hit tests, timers, messages, and error routes.",
+        "next_proof": "Finish provider, host, join, ready, wait, settings, and error geometry and command mappings."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-NET-02",
+      "surface_ids": ["PRE-06", "CMD-08"],
+      "title": "Two-peer synchronization, chat, pause, save/load, departure, and errors",
+      "status": "runtime-needed",
+      "retrieval": {
+        "sources": ["REBEXE.EXE", "DirectPlay imports", "COMMON.DLL", "TEXTCOMM.DLL"],
+        "anchors": ["FUN_005f9860", "FUN_005f7ea0"],
+        "method": "Correlate send, receive, timeout, player-departure, teardown, chat, pause, and save/load handlers with a genuine two-peer original session.",
+        "next_proof": "Capture and trace provider through clean game, disconnect, and error paths. Treat reconnect as unproven unless the original exposes it."
+      },
+      "runtime_capture_required": true
+    },
+    {
+      "id": "RE-EXT-01",
+      "surface_ids": ["EXT-01"],
+      "title": "Remove visible replacement dashboards from parity mode",
+      "status": "implementation-needed",
+      "retrieval": {
+        "sources": ["Open Rebellion source", "surface-ledger.json", "original interface navigation map"],
+        "method": "Move each action into its original surface, preserve model behavior, then remove or isolate the replacement route and visible pixels.",
+        "next_proof": "Show zero replacement dashboards and zero lost actions in parity mode."
+      },
+      "runtime_capture_required": false
+    },
+    {
+      "id": "RE-A0-01",
+      "surface_ids": ["PRE-01", "PRE-02", "PRE-03", "PRE-04", "PRE-05", "PRE-06", "CMD-01", "CMD-02", "CMD-03", "CMD-04", "CMD-05", "CMD-06", "CMD-07", "CMD-08", "CMD-09", "OBJ-01", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12", "OBJ-13", "OBJ-14", "EVT-01", "EVT-02", "EVT-03", "TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06", "TAC-07", "TAC-08", "END-01"],
+      "title": "Lossless owned-original 640x480 baselines",
+      "status": "runtime-needed",
+      "retrieval": {
+        "sources": ["owned English original installation"],
+        "method": "Drive deterministic fixtures through the unmodified executable and capture lossless 640x480 frames plus input and transition traces for every acceptance cell.",
+        "next_proof": "Replace compressed or inferred evidence with A0 captures for every required original surface-state cell."
+      },
+      "runtime_capture_required": true
+    }
   ]
 }

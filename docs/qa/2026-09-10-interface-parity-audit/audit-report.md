@@ -104,6 +104,22 @@ non-original families across:
 7. extensions, which are excluded from the parity denominator and must not
    replace or obscure original paths.
 
+It now assigns 549 stable baseline cell IDs: 544 required cells and five
+excluded extension cells. All 42 required families link to at least one of 27
+reverse-engineering, resource, runtime-capture, or replacement-removal packages.
+The baseline cells are durable requirement identities. Compound requirements
+must split into child cells before their surface enters implementation, after
+which the applicable execution dimensions form the actual pass denominator.
+
+Space battle is covered explicitly by 106 baseline cells across `TAC-01`
+through `TAC-07`. They include Battle Alert entry, both faction HUDs, battle
+initialization, capital ships, fighters, task-force assignments, selection,
+targeting, damage, contents, navigation and camera controls, maneuvers, tactics,
+missions, recovery, withdrawal, simulation and observation, Death Star charge
+and attack states, trench-run routing, battle results, and strategic return.
+`TAC-08` is separately reserved for the original ground-assault summary and
+report flow, which had no live tactical minigame.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.
@@ -165,9 +181,11 @@ enabled inside probe fires exactly once; outside and disabled probes fire zero
 times. Decorative, display-only, and drag-only regions use their original input
 contract instead of an invented click action.
 
-Before implementation acceptance begins for a surface, its required dimension
-cross-product must be instantiated as stable cell IDs in the surface ledger.
-The 43-family inventory is not itself the final measurable cell denominator.
+Every listed state has a stable baseline ID such as `TAC-05-C017`. Before
+implementation acceptance begins for a surface, compound requirements become
+explicit child cells and each applicable dimension cross-product receives a
+derived execution ID. The 43-family inventory is not itself the final
+measurable execution denominator.
 
 Every navigation case records pre-state, visible response, model mutation, audio,
 destination, return behavior, and focus restoration. Clicking a system must reach
@@ -223,7 +241,7 @@ inventing behavior or geometry.
 | UIP-T02 | System management and command-center destinations | Original sector/system/object windows, reference rail, messages, options, finders, and return paths pass. |
 | UIP-T03 | Characters, fleets, production, missions, and research | Every original object/status/action family and required state cell passes. |
 | UIP-T04 | Dialogs, events, reports, encyclopedia, and end states | Original report/media routing and all EDATA surfaces pass. |
-| UIP-T05 | Tactical interface | Full tactical composition, controls, state art, results, and Death Star paths pass. |
+| UIP-T05 | Space-battle tactical interface | Full space-battle composition, both faction HUDs, ships, fighters, controls, state art, audio, results, strategic return, and Death Star paths pass. Ground assault retains its original report-only flow. |
 | UIP-T06 | Multiplayer and release matrix | Complete the shuttle interaction-state matrix, two-peer original flow, cross-browser viewports, resource sweep, accessibility overlays, performance, and all cells pass. |
 
 Documentation, screenshots, and machine-readable cells are updated in the same

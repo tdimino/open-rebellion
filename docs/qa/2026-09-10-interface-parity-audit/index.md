@@ -27,12 +27,13 @@ navigation, animation, audio presentation, and the absence of invented UI.
 |------|---------|
 | [Audit report](audit-report.md) | Findings, acceptance rules, immediate implementation order, and the answer to why the current UI looks synthetic or blank. |
 | [Audit data](audit-report.json) | Machine-readable baseline, thresholds, findings, tranches, and release gates. |
-| [Surface ledger](surface-ledger.json) | Stable inventory of every known original surface family and its required visual states. |
+| [Surface ledger](surface-ledger.json) | Stable inventory of every known original surface family, 549 baseline cells, retrieval-package links, and the derived execution contract. |
 | [Screenshot ledger](screenshot-ledger.md) | Human-readable map of the 370 retained reference images and the still-missing owned-executable captures. |
 | [Reference ledger](reference-ledger.json) | Source URLs, provenance, confidence, locale, local paths, and coverage. |
 | [Reverse-engineering ledger](reverse-engineering-ledger.md) | Ghidra and original-resource findings, proof boundaries, and the implementation evidence queue. |
 | [Reverse-engineering data](reverse-engineering-ledger.json) | Machine-readable artifacts, discoveries, resource omissions, and work-package status. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
+| [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
 | [SHA-256 manifest](reference-captures/SHA256SUMS) | Integrity manifest for all 370 retained images. |
 
@@ -41,6 +42,9 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | Gate | Result |
 |------|--------|
 | Original surface families inventoried | 43 |
+| Required baseline acceptance cells | 544 |
+| Required families with retrieval packages | 42 of 42 |
+| Space-battle baseline cells | 106 across TAC-01 through TAC-07 |
 | Reference images retained | 370 |
 | Required surface families not at complete parity | 42 |
 | Scoped shuttle implementation | **Pass** |
@@ -59,11 +63,17 @@ Static recovery is tracked separately in the
 [reverse-engineering ledger](reverse-engineering-ledger.md). It already provides
 authoritative geometry and routing for the strategic shell, but also shows that
 the browser pack omits thousands of original advisor, briefing, and tactical
-resources.
+resources. Its 27 packages now give every required surface a named recovery or
+removal path.
 
 ## What 100% means
 
 The denominator is required surface-state cells, not an estimated percentage.
+The ledger currently instantiates 544 required baseline cells and five excluded
+extension cells. Compound requirements split into stable child cells before
+their implementation starts, and each cell then runs through its applicable
+original, native, browser, viewport, DPR, faction, content, and interaction
+matrix.
 A cell passes only when it has authoritative original evidence, exact resource
 identity, matching layout and interaction geometry, native and browser captures,
 clean runtime diagnostics, and correct audio where applicable. One failed,
