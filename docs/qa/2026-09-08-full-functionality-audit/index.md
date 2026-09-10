@@ -69,5 +69,6 @@ recommendations incorporate independent GPT-6-Astra and verified Claude Fable
 [Rebellion/Supremacy campaign-history baseline](../../reference/campaign-history/),
 which marks unsourced numeric gates as engineering hypotheses.
 
-The prior P40 GitHub Pages pass covers its recorded 2026-09-08 commit. P40 must
-be revalidated after the current documentation revision is deployed.
+P40 was revalidated against the current campaign-history revision in deployment
+run `34505121163`; the new reference pages, source ledger, and preserved manual
+all return HTTP 200.

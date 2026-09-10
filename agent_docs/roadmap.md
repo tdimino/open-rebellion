@@ -470,9 +470,10 @@ would tune around known simulation feedback defects.
 - [ ] Add at least 20 app/browser integration cases and promote long campaigns when stable.
 - [ ] Generate the complete bitmap resource ledger from the entity map; fail on unexplained misses. Fleet-list miniatures are verified in F-010B.
 - [ ] Retain screenshot, console, network, performance, data-hash, and save-schema evidence. F-010B fleet and F-014A runtime-pack evidence are retained; the full ledger remains open.
-- [ ] Revalidate current project documentation from `main` through GitHub Pages
-  after this campaign-history revision. The prior P40 pass was run
-  `34306480934` and does not cover these changes.
+- [x] Revalidate current project documentation from `main` through GitHub Pages.
+  Run `34505121163` built and deployed commit `bcc224f`; the landing page,
+  documentation and campaign indexes, contract, source ledger, audit, and
+  preserved manual all return HTTP 200.
 - [ ] Close every supported P00–P40 pass from release artifacts before claiming 100% functionality.
 
 ### v1.0: Password-Protected Cloudflare Release

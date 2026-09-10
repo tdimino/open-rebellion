@@ -1793,17 +1793,21 @@
     {
       "id": "P40",
       "name": "GitHub Pages documentation",
-      "status": "needs_revalidation",
-      "verified_at": "2026-09-08",
-      "source_commit": "aaf428d286e482471662881124fbad78062fce6f",
-      "deployment_run": 34306480934,
+      "status": "pass",
+      "verified_at": "2026-09-10",
+      "source_commit": "bcc224fc1bf947e0679982bed68dcc41f827d464",
+      "deployment_run": 34505121163,
       "public_http_checks": {
         "landing_page": 200,
+        "documentation_index": 200,
+        "campaign_history_index": 200,
+        "official_campaign_contract": 200,
+        "source_ledger": 200,
+        "preserved_manual": 200,
         "audit_index": 200,
-        "fleet_evidence": 200
+        "manual_bytes": 23866102
       },
-      "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-github-pages.md",
-      "note": "The historical pass covers its source commit, not the 2026-09-10 campaign-history revision. Revalidate after this documentation commit is deployed."
+      "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-github-pages.md"
     }
   ],
   "evidence_contract": [
