@@ -122,11 +122,14 @@ The faction controls start immediately; there is no second custom setup page.
 `difficulty + 4` for Empire. Game type `1` becomes Standard and `2` becomes
 Headquarters Only. Galaxy selections use encoded values `1`, `2`, and `3`.
 
-Standard mode requires the winning faction to occupy the opposing headquarters
-and hold both opposing principal leaders: Luke Skywalker and Mon Mothma for an
-Empire victory, or Emperor Palpatine and Darth Vader for an Alliance victory.
-Headquarters Only ends on opposing-HQ occupation alone and does not allow a
-Death Star outcome to supersede that rule.
+Standard mode requires the faction-specific headquarters objective and both
+opposing principal leaders: destruction of the mobile Alliance headquarters
+plus Luke Skywalker and Mon Mothma for an Empire victory, or capture of
+Coruscant plus Emperor Palpatine and Darth Vader for an Alliance victory.
+Headquarters Only removes the leader requirements but preserves the distinct
+headquarters objectives. Death Star fire can satisfy the Imperial headquarters
+component; Death Star loss is not an independent Alliance win. See the
+[source-backed contract](../docs/reference/campaign-history/official-campaign-contract.md#standard-victory).
 
 ## Rendering and input requirements
 

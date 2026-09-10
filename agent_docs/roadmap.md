@@ -9,7 +9,11 @@ tags: [roadmap, planning, milestones, parity]
 
 # Roadmap
 
-## Galaxy Viewer -- COMPLETE
+The delivery notes before “Audit-Driven Parity” are historical implementation
+records. They do not establish current parity or release acceptance; the active
+audit-driven milestones are the source of truth.
+
+## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 
 Commits: `4e258bb` (scaffold) > `5905497` (dat-dumper + types) > `fc968ec` (renderer + WASM) > `22b61a6` (review fixes)
@@ -22,7 +26,7 @@ Delivered:
 - rebellion-render: macroquad galaxy map with pan/zoom/click-to-select, egui info panel + status bar
 - WASM build: 2.9MB browser artifact via scripts/build-wasm.sh
 
-## Living Galaxy -- COMPLETE
+## Living Galaxy: historical implementation tranche delivered
 *Automated galaxy simulation — shipped 2026-03-13 by Knesset Athirat*
 
 All 11 deliverables shipped. ~8.7K LOC, 105+ unit tests. See `docs/reports/2026-03-13-knesset-athirat-swarm-report.md`.
@@ -40,7 +44,7 @@ Delivered:
 - Mod loader: TOML manifests, RFC 7396 merge patch, semver, hot reload
 - Main loop integration (all systems wired)
 
-## War Room -- COMPLETE
+## War Room: historical implementation tranche delivered
 *Full strategy game without combat*
 
 Committed: `6d47a10` (integration wiring — fog/fleet/panels/encyclopedia/audio into main loop)
@@ -53,8 +57,8 @@ Delivered:
 - Audio system via quad-snd (CoreAudio/ALSA/WebAudio)
 - Main loop integration: all draw calls + event hooks wired
 
-## War Machine -- COMPLETE
-*Complete strategy game*
+## War Machine: historical implementation tranche delivered
+*Major strategy systems implemented*
 
 1. Space combat: auto-resolve first, then tactical 2D view
 2. Ground combat: regiment engagement, orbital bombardment
@@ -64,8 +68,8 @@ Delivered:
 
 Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain fully traced, bombardment formula decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for 7 scholar docs (4,179 lines) and 5,127 decompiled C files.
 
-## Full Parity -- COMPLETE
-*Feature-complete — shipped 2026-03-16 by Knesset Shapash*
+## Full Parity: historical implementation tranche delivered
+*Named delivery tranche shipped 2026-03-16 by Knesset Shapash; final parity remains open*
 
 Delivered (v0.5.0):
 - 4 scripted story chains (Luke Dagobah, Final Battle, Bounty Hunters, Jabba's Palace)
@@ -74,7 +78,7 @@ Delivered (v0.5.0):
 - 6 new EventConditions + 6 new EventActions, 15 RE event ID constants
 - All 9 mission types with world-mutating effects (sabotage, assassination, rescue, abduction, incite uprising)
 
-## Mod Workshop -- COMPLETE
+## Mod Workshop: historical implementation tranche delivered
 *Release candidate — Knesset Elat (v0.6.0)*
 
 Delivered:
@@ -86,8 +90,8 @@ Delivered:
 - Mod Manager egui panel (discover, toggle, reload)
 - ESCAPETB per-tick escape check wired into main loop
 
-## Release -- READY
-*Release packaging — Knesset Hokhmah (v0.7.0)*
+## Release: historical packaging tranche delivered
+*Release packaging work by Knesset Hokhmah (v0.7.0); release acceptance remains open*
 
 Delivered:
 - 8 new story event chains (0x1e1, 0x1e5, 0x390-0x39A)
@@ -102,7 +106,7 @@ Remaining:
 - HD asset pack bulk execution
 - Distribution: itch.io (web), Homebrew (macOS), GitHub Releases
 
-## AI Overhaul -- COMPLETE
+## AI Overhaul: historical implementation tranche delivered
 *v0.13.0 — AI balance, observability, autoresearch*
 
 Delivered:
@@ -224,9 +228,10 @@ All 10 review findings from Knesset Ma'at resolved:
 - Dead code (`ButtonSprite::disabled`, `atk_class_defense`) → removed
 - Deprecated API (`Frame::none()`) → `Frame::NONE`
 
-**Combat parity: 99%.** Only 74 informational GNPRTB parameters deferred.
+This tranche corrected the listed combat defects. Formula, tactical/automatic,
+and full combat acceptance remain open under P23–P26.
 
-## Knesset Resheph -- COMPLETE
+## Knesset Resheph: historical implementation tranche delivered
 *Final parity sprint — 10 delivered tasks across combat, AI, WASM, UI, and eval*
 
 Plan: `docs/plans/2026-04-03-001-feat-knesset-resheph-final-sprint-plan.md`
@@ -243,7 +248,7 @@ Delivered:
 - WASM audio: `audio_base_path()` and `AUDIO_PREFIX` now normalize browser audio asset paths.
 - Eval parity: `scripts/eval_parity.py` was rewritten into a golden-value oracle backed by `scripts/golden_values.json`, covering all mapped 111 GNPRTB bindings plus combat, economy, research, AI, movement, and victory constants with pass/fail reporting.
 
-## Knesset Shamash-Bet Dabora 3 -- COMPLETE
+## Knesset Shamash-Bet Dabora 3: historical implementation tranche delivered
 *Story events + betrayal telemetry sprint — 8 R-tasks delivered*
 
 Plan: `docs/plans/2026-04-08-001-feat-knesset-shamash-bet-story-events-cutscene-plan.md`
@@ -259,7 +264,7 @@ Delivered:
 - R13: Stale "notifications" removed from section comment.
 - 446 tests (347 core + 50 data + 46 render + 3 doc), zero warnings.
 
-## Knesset Tammuz -- COMPLETE
+## Knesset Tammuz: historical implementation tranche delivered
 *Full parity sprint — 7 phases across combat, telemetry, cutscenes, AI, and advisor*
 
 Plan: `docs/plans/2026-04-12-001-feat-knesset-tammuz-full-parity-sprint-plan.md`
@@ -364,7 +369,7 @@ release acceptance. The September 2026 [full-functionality audit](../docs/qa/202
 - [x] Add the F-011A versioned canonical save-state fingerprint, v9 integrity verification, v8 compatibility, and lossless browser metadata; Astra-medium r3 passed all 34 save/reload/load and bitmap assertions ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-state-fingerprints.md)).
 - [x] Add the F-011B1 v10 continuation envelope for simulation RNG, second AI, repair, combat cooldowns, and active configuration; preserve real v9 artifacts and pass the Astra-medium 40/40 browser continuation gate ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-state-continuation.md)).
 - [x] Resolve the original cockpit command-to-animation table from Ghidra and screenshot evidence, implement it without inferred sequential mappings, and pass the Astra-medium browser bitmap/hotspot/audio tranche ([reference](main-menu-parity.md); [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-cockpit.md)).
-- [x] Persist the original cockpit's faction, difficulty, galaxy size, and game type through save v11; enforce Standard principal-leader capture versus Headquarters Only rules. All 495 workspace tests passed and Astra-medium R2 passed 18/18 browser state, bitmap, storage, network, and error gates ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-game-setup-propagation.md)).
+- [x] Persist the original cockpit's faction, difficulty, galaxy size, and game type through save v11. All 495 workspace tests passed and Astra-medium R2 passed 18/18 browser state, bitmap, storage, network, and error gates. The selection path is closed; the source review later reopened victory resolution semantics ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-game-setup-propagation.md)).
 - [x] Close P04 and the remaining P03 functional gates: Credits and Multiplayer destinations, gain/mute, return-to-menu audio, original menu SFX, and clean second-campaign reset. Native build/startup passed; F-016D/E later closed the then-open semantic and native visual gates ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-completion.md)).
 - [x] Close F-016D browser semantics: one navigation landmark exposes all 14 original hotspots with selection state, cyclic keyboard traversal, bitmap focus, shared action/SFX routing, and no visible replacement controls. Astra-medium passed all nine acceptance gates ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-semantics.md)).
 - [x] Close P03 final presentation: native visual acceptance and Astra-medium 10/10 browser acceptance pass for the documented music-only extension without changing the original 14-control contract ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-music-toggle.md)).
@@ -397,18 +402,36 @@ release acceptance. The September 2026 [full-functionality audit](../docs/qa/202
   stats, and persist repair episodes in save v12. Five seeds finish with 0%
   transit, a 1.0 move/arrival ratio, at most 1.2× initial fleets, and only 0–5
   repair starts ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md)).
-- [x] Close the F-007E conquest checkpoint: transport regiments within living
+- [x] Close the verified portion of the F-007E conquest checkpoint: transport regiments within living
   ship capacity, preserve cargo through transit and consolidation, land after
   orbital control, continue unresolved surface battles, persist tactical
-  casualties, occupy systems, capture characters, and require occupation for
-  HQ victory ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md)).
+  casualties, and occupy systems. Deterministic character capture and
+  occupation-based Imperial HQ victory are current behaviors, not accepted
+  parity, and have been reopened
+  ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md)).
 - [x] Add player troop selection to the bitmap fleet workflow with live
   capacity, authoritative embarkation, transit, and automatic landing
   ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md)).
-- [ ] Balance both factions so battles reach 50–400 across at least eight
-  systems and the AI acquires every selected victory target.
+- [x] Establish a cited historical campaign baseline from the original manual,
+  contemporary guides, and player testimony. It separates binding mechanics,
+  observed original-AI behavior, reverse-engineered behavior, desired
+  enhancements, and provisional engineering guards
+  ([reference](../docs/reference/campaign-history/)).
+- [ ] Correct victory semantics first: distinguish Coruscant capture from
+  destruction of the mobile Alliance HQ; preserve Standard leader conjunctions
+  after Death Star fire; make Death Star loss nonterminal; remove the uncited
+  200-tick grace period from the parity profile; and replace deterministic mass
+  capture with validated capture/evasion behavior.
+- [ ] Establish faction liveness and the full cited campaign loop, including
+  production, diplomacy, recruitment, intelligence, research, blockade
+  follow-up, uprisings, bombardment, HQ relocation, and principal missions.
+  Do not require symmetric attack counts from an asymmetric game.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
-- [ ] Pass five 5,000-tick seeds: transit ≤10%, orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles across ≥8 systems, busiest system ≤40%.
+- [ ] Pass five reproducibly configured 5,000-tick seeds: transit ≤10%, orders
+  ≤1.5× arrivals, and fleet arena ≤3× initial. Record 50–400 engagements, eight
+  systems, busiest-system ≤40%, and 10% minority-faction attack share as
+  diagnostics until original telemetry or calibrated playtests justify hard
+  lower bounds.
 
 Parameter autoresearch remains paused until this milestone closes; otherwise it
 would tune around known simulation feedback defects.
@@ -447,7 +470,9 @@ would tune around known simulation feedback defects.
 - [ ] Add at least 20 app/browser integration cases and promote long campaigns when stable.
 - [ ] Generate the complete bitmap resource ledger from the entity map; fail on unexplained misses. Fleet-list miniatures are verified in F-010B.
 - [ ] Retain screenshot, console, network, performance, data-hash, and save-schema evidence. F-010B fleet and F-014A runtime-pack evidence are retained; the full ledger remains open.
-- [x] Publish current project documentation from `main` through GitHub Pages and verify the public site (P40; run `34296165296`).
+- [ ] Revalidate current project documentation from `main` through GitHub Pages
+  after this campaign-history revision. The prior P40 pass was run
+  `34306480934` and does not cover these changes.
 - [ ] Close every supported P00–P40 pass from release artifacts before claiming 100% functionality.
 
 ### v1.0: Password-Protected Cloudflare Release
@@ -506,9 +531,10 @@ secrets and signed sessions.
 - New sectors (Unknown Regions, Corporate Sector)
 - Hyperspace lane network (optional overlay on Euclidean model)
 
-### Addon 3: Tactical Combat View (Future)
-- 2D tactical view for space combat (currently auto-resolve only)
-- Ship placement, formation selection, manual targeting
+### Addon 3: Tactical Combat Convergence (Future)
+- Bring the existing 2D tactical view onto the authoritative combat path.
+- Complete ship placement, formation selection, manual targeting, and parity
+  with automatic result application.
 - 3D model sprite sheets from Hunyuan3D Pro pipeline
 
 ---
@@ -516,7 +542,8 @@ secrets and signed sessions.
 ## Known Technical Debt
 
 - dat-dumper in `tools/` is also a library dep of rebellion-data -- works but unconventional
-- WASM cfg guards added but browser data loading returns error stub (no fetch API yet)
+- Browser data now loads from deterministic `runtime.orpk`; compression, HD
+  entries, and bounded caches remain open.
 - Save v3 files rejected (bincode layout incompatible) -- no migration possible without SaveStateV3
 - `enabled_sorted()` silently returns empty on dependency resolution errors
 - `ModConfig::load()` silently drops corrupted config.toml

@@ -38,9 +38,9 @@ Rebellion is grand strategy set in the Star Wars universe. Its focus is not ligh
 
 Open Rebellion reads the original game data files, converts them to clean JSON, and reimplements the simulation from the ground up in Rust. It runs natively on macOS and in the browser via WebAssembly.
 
-### Current State: v0.23.0
+### Current development state
 
-> **Verification (2026-09-10):** All 568 workspace tests pass. Astra medium verified the authentic bitmap cockpit, both factions, save v13, exact native/WASM replay, and player troop dispatch. Fleet transport, landing, occupation, and character capture now work end to end. Campaign balance and victory targeting, multiplayer, and release acceptance remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/) and [latest evidence](docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md).
+> **Verification (2026-09-10):** All 568 workspace tests pass. The bitmap cockpit, both factions, save v13, native/WASM replay, troop dispatch, landing, and political occupation are verified. Capture/evasion, victory semantics, multiplayer, and release acceptance remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/). Campaign AI work follows the [cited Rebellion/Supremacy history and preserved manual](docs/reference/campaign-history/); see the [documentation index](docs/INDEX.md).
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|
@@ -208,7 +208,7 @@ The local extraction inventory converts the original game's resource DLLs and me
 | Resource | Count | Format | Source |
 |----------|-------|--------|--------|
 | Game data | 51 files | DAT → JSON | dat-dumper (round-trip validated) |
-| UI images | 2,441 BMPs | BMP | 9 resource DLLs |
+| UI images | 2,441 extracted; 2,231 runtime-staged | BMP | 9 resource DLLs |
 | DLL data resources | 3,223 files | BIN/data | 9 resource DLLs; includes the text subsets below |
 | Voice lines | 285 WAVs | WAV | VOICEFXA/VOICEFXE.DLL |
 | Cutscene videos | 15 files | SMK → WebM | MDATA/ via ffmpeg |

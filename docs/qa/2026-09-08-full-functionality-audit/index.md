@@ -19,6 +19,7 @@ acceptance plan required before the project can claim 100% functionality.
 |------|---------|
 | [Audit report](audit-report.md) | Human-readable findings, verification results, Astra/Fable reviews, optimization roadmap, feature matrix, and bitmap protocol. |
 | [Audit data](audit-report.json) | Machine-readable baseline, findings, optimization milestones, feature passes, and release gates. |
+| [Original campaign-history baseline](../../reference/campaign-history/) | Cited official rules, human campaign testimony, original-AI behavior, parity observables, machine-readable sources, and a preserved original manual for F-007E. |
 | [Cockpit PR #2 audit](evidence/2026-09-08-cockpit-pr-audit.md) | Resource adjudication, integrated diagnostics, Astra browser evidence, screenshots, and follow-up scope. |
 | [Fleet miniature proof](evidence/2026-09-08-fleet-miniatures.md) | Exact GOKRES mappings, transparency checks, Astra browser evidence, interactions, and screenshots for F-010B. |
 | [Runtime pack proof](evidence/2026-09-08-runtime-pack.md) | Deterministic package hashes, four-request startup, two-faction bitmap/interaction proof, and zoom/WebGL regression evidence for F-014A. |
@@ -32,7 +33,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Player fleet dispatch proof](evidence/2026-09-09-player-fleet-dispatch.md) | F-007C validated destination selection, authoritative departure, transit feedback, stale-menu cleanup, and Astra two-faction bitmap acceptance. |
 | [System combat proof](evidence/2026-09-10-system-combat-resolution.md) | F-007D system-scoped multi-fleet resolution, persistent fighter attrition, shield correction, bounded stalemates, five-seed diagnostics, exact replay, and Astra bitmap acceptance. |
 | [AI campaign-logistics checkpoint](evidence/2026-09-10-ai-campaign-logistics.md) | F-007E ownership, targeting, HQ defense, blockade, troop-class, repair/save-v12, and five-seed evidence; conquest and balance remain open. |
-| [Troop transport and occupation proof](evidence/2026-09-10-troop-transport-occupation.md) | F-007E regiment cargo, invasion, occupation, character capture, save-v13, five-seed evidence, and Astra browser acceptance. |
+| [Troop transport and occupation proof](evidence/2026-09-10-troop-transport-occupation.md) | F-007E regiment cargo, invasion, political occupation, provisional character capture, source-review corrections, save-v13, five-seed evidence, and Astra browser acceptance. |
 | [Player troop dispatch proof](evidence/2026-09-10-player-troop-dispatch.md) | F-007E bitmap troop selection, capacity enforcement, authoritative embarkation, landing, and Astra two-faction browser acceptance. |
 | [Save/Delete UI proof](evidence/2026-09-09-save-delete.md) | F-001 wiring, empty-load-slot regression fix, storage deletion, reload persistence, and Astra 33/33 bitmap/browser proof. |
 | [Original main-menu cockpit proof](evidence/2026-09-09-main-menu-cockpit.md) | Binary-mapped controls, responsive bitmaps, direct faction starts, and Astra-verified browser playback. |
@@ -53,8 +54,10 @@ replay execution, F-011B4 native/WASM fixture equivalence, F-007A fleet-order
 protection, F-007B fleet-position consolidation, F-007C player fleet dispatch,
 F-007D system-combat backlog closure, the F-007E logistics/data/repair and
 transport/occupation/player-dispatch checkpoints, and F-016A/B/C/D/E
-cockpit/setup functionality now pass; P03 and P04 are complete. Faction
-balance, victory targeting, five-seed cross-runtime replay,
+cockpit/setup functionality now pass; P03 and P04 are complete. The source
+review reopened capture/evasion, Imperial HQ destruction, Death Star terminal
+behavior, and the uncited victory grace period. Faction liveness, the wider
+campaign loop, five-seed cross-runtime replay,
 interactive/tactical convergence, browser
 memory/media work, cross-browser performance, formatting, lint, and
 release-level visual acceptance remain incomplete.
@@ -62,4 +65,9 @@ release-level visual acceptance remain incomplete.
 The JSON document is the canonical source for stable finding and feature IDs.
 The Markdown document explains the evidence and how to execute each pass. Its
 recommendations incorporate independent GPT-6-Astra and verified Claude Fable
-5.1 reviews.
+5.1 reviews. F-007E campaign tuning additionally follows the cited
+[Rebellion/Supremacy campaign-history baseline](../../reference/campaign-history/),
+which marks unsourced numeric gates as engineering hypotheses.
+
+The prior P40 GitHub Pages pass covers its recorded 2026-09-08 commit. P40 must
+be revalidated after the current documentation revision is deployed.

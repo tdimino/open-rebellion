@@ -1,10 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "reference_documents": {
     "main_menu": "agent_docs/main-menu-parity.md",
     "deterministic_replay": "agent_docs/deterministic-replay.md",
     "system_combat": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-system-combat-resolution.md",
-    "victory_rules": "agent_docs/systems/victory.md",
+    "campaign_history": "docs/reference/campaign-history/index.md",
+    "campaign_history_sources": "docs/reference/campaign-history/sources.json",
+    "official_victory_contract": "docs/reference/campaign-history/official-campaign-contract.md#standard-victory",
+    "current_victory_implementation": "agent_docs/systems/victory.md",
     "original_game_flow": "docs/GAME-FLOW.md#21-victory--defeat"
   },
   "audit": {
@@ -30,6 +33,15 @@
         "profile": "repository auditor and browser/multiplayer optimizer",
         "sandbox": "read-only",
         "execution_lane": "fable CLI"
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "profile": "researcher",
+        "reasoning_effort": "medium",
+        "sandbox": "read-only",
+        "orchestrator": "codex-orchestrator",
+        "scope": "source-backed Rebellion and Supremacy campaign-history baseline",
+        "discovery_and_extraction": ["Exa", "Keenable"]
       }
     ],
     "tracked_source_files_modified_by_audit": false,
@@ -193,11 +205,11 @@
     {
       "id": "F-002",
       "severity": "P1",
-      "status": "confirmed",
-      "title": "Native HD bitmap root does not match the asset layout",
+      "status": "implemented_acceptance_pending",
+      "title": "Native HD override and fallback display proof remains open",
       "evidence": [
-        "crates/rebellion-app/src/main.rs:561",
-        "crates/rebellion-render/src/bmp_cache.rs:837"
+        "The production HD root was corrected after the audit baseline",
+        "crates/rebellion-render/src/bmp_cache.rs"
       ],
       "acceptance": "A known HD override renders from the production path and falls back to the original BMP when removed."
     },
@@ -216,13 +228,14 @@
     {
       "id": "F-004",
       "severity": "P1",
-      "status": "confirmed",
+      "status": "remediated",
       "title": "WASM omits troop data prefetch",
       "evidence": [
-        "crates/rebellion-app/src/main.rs:167",
-        "crates/rebellion-data/src/lib.rs:406"
+        "F-014A packages all 52 game-data entries, including TROOPSD.DAT",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-runtime-pack.md",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md"
       ],
-      "acceptance": "Native and browser troop-class inventories match and emit no fallback diagnostics."
+      "acceptance": "Native and browser troop-class records resolve without fallback diagnostics. Combat-formula parity remains P25."
     },
     {
       "id": "F-005",
@@ -264,7 +277,8 @@
         "The F-007D seed-42 rerun produces 2 decisive engagements instead of 603 space events, including the former 602-draw Xyquine loop",
         "The first F-007E checkpoint requires system control for AI production, removes friendly cycling and transit fan-in, retains HQ defense and surface garrisons, resolves compound troop IDs, and persists repair episodes in save v12",
         "Five current 5000-tick runs finish with zero fleets in transit, one move per arrival, no more than 1.2 times their initial fleets, and 0 to 5 repair starts",
-        "The second F-007E checkpoint adds save-v13 regiment cargo, living transport capacity, landing, continuing ground combat, occupation, character capture, and occupation-based HQ victory",
+        "The second F-007E checkpoint adds save-v13 regiment cargo, living transport capacity, landing, continuing ground combat, and political occupation",
+        "The source review reopens deterministic character capture and occupation-based Imperial HQ victory as parity defects",
         "Five current 5000-tick runs carry and land 8 to 15 regiments, resolve 6 to 9 ground engagements, and emit 5 to 6 character captures",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-fleet-redispatch.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-fleet-position-consolidation.md",
@@ -272,7 +286,10 @@
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-system-combat-resolution.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md",
-        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md"
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md",
+        "docs/reference/campaign-history/index.md",
+        "docs/reference/campaign-history/ai-behavior-parity.md",
+        "docs/reference/campaign-history/sources.json"
       ],
       "resolved_root_causes": [
         "In-transit fleets remained eligible for AI dispatch and replacement orders reset travel progress.",
@@ -284,13 +301,17 @@
         "Blockade start removed surface garrisons as if they were troops running the blockade.",
         "TROOPSD.DAT sequential IDs were not normalized to the compound 0x10 family IDs held by seeded regiments.",
         "Repair-start telemetry represented each repair tick instead of entry into a persisted repair episode.",
-        "Fleets could not carry surface regiments into hostile systems, so no authoritative landing, ground-invasion, occupation, capture, or occupation-based HQ victory path existed.",
+        "Fleets could not carry surface regiments into hostile systems, so no authoritative landing, ground-invasion, or political-occupation path existed.",
         "The player fleet workflow could not select surface regiments or express transport capacity during a destination order."
       ],
       "root_causes": [
-        "Standard victory requires the qualifying headquarters and both principal enemy leaders; AI target selection does not yet acquire every randomized target.",
-        "Alliance fleet production and attack volume remain far below the Empire across the five-seed campaign gate.",
-        "Battle volume and geographic spread remain below the M1 acceptance bounds."
+        "The current checker equates Imperial political occupation with destruction of the mobile Alliance headquarters.",
+        "Death Star fire can bypass Standard leader requirements, while Death Star loss can grant an unsupported immediate Alliance victory.",
+        "An uncited 200-tick grace period suppresses otherwise valid victory states.",
+        "Occupation deterministically captures every present enemy character without capture/evasion resolution.",
+        "AI target selection does not yet acquire every randomized Standard target or exercise the full documented campaign loop.",
+        "Alliance production and attack activity collapse across the five-seed campaign probe; this is a faction-liveness failure, not a demand for symmetric attack counts.",
+        "Battle volume and geographic spread remain diagnostic only; no located historical source establishes their exact numeric lower bounds."
       ],
       "verified_tranches": [
         {
@@ -603,9 +624,9 @@
         },
         {
           "id": "F-007E-conquest",
-          "status": "pass",
+          "status": "partial_pass_victory_and_capture_semantics_reopened",
           "verified_at": "2026-09-10",
-          "scope": "troop_transport_ground_occupation_capture_and_hq_victory",
+          "scope": "troop_transport_ground_combat_and_political_occupation",
           "automated": {
             "troop_transport_tests_passed": 8,
             "victory_tests_passed": 14,
@@ -639,17 +660,22 @@
           ],
           "m1_bounds": {
             "troop_transport_and_landing": {"status":"pass"},
-            "ground_occupation_and_capture": {"status":"pass"},
+            "ground_occupation": {"status":"pass"},
+            "deterministic_character_capture": {"observed":true,"status":"parity_placeholder"},
+            "imperial_hq_destruction": {"observed":false,"status":"reopened"},
+            "death_star_standard_conjunction": {"observed":false,"status":"reopened"},
+            "death_star_loss_nonterminal": {"observed":false,"status":"reopened"},
+            "victory_minimum_tick": {"observed":200,"status":"unsupported_reopened"},
             "missing_troop_class_warnings": {"observed":0,"status":"pass"},
-            "battle_count_range": {"limit":[50,400],"observed_range":[10,19],"status":"fail"},
+            "battle_count_range": {"diagnostic_range":[50,400],"observed_range":[10,19],"status":"diagnostic_below_range","unit":"completed engagement episodes per seed; bombardments separate"},
             "standard_victory_targets_acquired": {"observed":false,"status":"targeting_open"},
-            "player_troop_commands": {"observed":false,"status":"open"}
+            "player_troop_commands": {"observed":false,"status":"closed_in_following_tranche"}
           },
           "browser": {
             "runner": "codex-orchestrator",
             "model": "gpt-6-astra",
             "effort": "medium",
-            "review": "pass_no_p0_p1",
+            "review": "browser_transport_scope_pass; later source review reopened victory and capture semantics",
             "test_output_muted": true,
             "product_music_enabled_by_default": true,
             "bitmap_main_menu": true,
@@ -676,10 +702,11 @@
             "later_tick_evidence_gap_closed": true
           },
           "open_followups": [
-            "player-facing troop selection and embarkation commands",
-            "Alliance versus Empire production and attack balance",
-            "battle volume and geographic distribution",
-            "complete Standard and Death Star victory targeting",
+            "correct Imperial HQ destruction and both Death Star terminal interactions",
+            "remove the uncited 200-tick victory grace period from the parity profile",
+            "replace deterministic character capture with capture/evasion resolution",
+            "prove faction liveness and the wider campaign loop",
+            "record battle volume and geographic distribution as diagnostics",
             "five-seed native/WASM campaign equivalence"
           ],
           "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md"
@@ -736,20 +763,22 @@
             "missing_assets": 0
           },
           "open_followups": [
-            "Alliance versus Empire production and attack balance",
-            "battle volume and geographic distribution",
-            "complete Standard and Death Star victory targeting",
+            "correct Imperial HQ destruction, Death Star terminal behavior, capture/evasion, and the victory grace period",
+            "prove both-faction liveness and the wider campaign loop",
+            "record battle volume and geographic distribution as diagnostics",
             "five-seed native/WASM campaign equivalence"
           ],
           "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md"
         }
       ],
       "remaining": [
-        "Balance both factions, diversify battle locations, and pass the remaining five-seed M1 bounds.",
-        "Make the AI acquire all Standard victory targets and verify Death Star outcomes in permitted fixtures.",
+        "Correct faction-specific HQ destruction, Standard conjunctions, Death Star loss, capture/evasion, and the uncited victory grace period.",
+        "Prove faction liveness and the full documented campaign loop without imposing symmetric behavior.",
+        "Record encounter volume and geographic spread as diagnostics until calibrated.",
+        "Make the AI acquire all Standard victory targets and verify contract-correct Death Star contribution in permitted fixtures.",
         "Prove native/WASM checkpoint equivalence across all five 5000-tick campaigns."
       ],
-      "acceptance": "Multi-seed bounds for fleet count, orders, event volume, targeting, balance, combat spread, and victory timing all pass."
+      "acceptance": "Fleet and transit health pass; dedicated fixtures prove every faction-specific victory objective, capture/evasion, and legal campaign operation; both factions remain live; five-seed native/WASM checkpoints match; provisional encounter metrics remain diagnostic until calibrated."
     },
     {
       "id": "F-008",
@@ -1119,10 +1148,11 @@
     {
       "id": "F-013",
       "severity": "P0_for_browser_release",
-      "status": "confirmed",
+      "status": "remediated_by_F-014A",
       "title": "The packaged browser artifact omits runtime data",
       "evidence": [
-        "scripts/package-web.sh"
+        "F-014A packages 52 game-data entries, 2231 bitmaps, and 5 audio files in runtime.orpk",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-runtime-pack.md"
       ],
       "acceptance": "A clean unpacked browser artifact boots from its own contents, loads expected data hashes, and passes browser smoke tests."
     },
@@ -1559,16 +1589,19 @@
         "route ordinary player fleet dispatch through validated authoritative departure (verified in F-007C)",
         "resolve all hostile task forces at one system as a bounded engagement and suppress unchanged stalemate retries (verified in F-007D)",
         "gate AI production by political control, eliminate friendly cycling and transit fan-in, retain HQ defense and surface garrisons, normalize troop class IDs, and persist repair episodes (verified in the first F-007E checkpoint)",
-        "carry troops within living transport capacity, land after orbital control, resolve occupation and capture, and require occupation for HQ victory (verified in F-007E conquest)",
+        "carry troops within living transport capacity, land after orbital control, resolve surface combat, and change political control (verified portion of F-007E conquest)",
+        "correct faction-specific HQ destruction, Standard conjunctions, Death Star terminal behavior, capture/evasion, and the uncited 200-tick grace period",
+        "exercise production, diplomacy, recruitment, intelligence, research, blockade follow-up, uprisings, bombardment, HQ relocation, and principal missions",
         "use stable iteration and deterministic per-tick random streams",
         "enable Death Star construction, fire, and cleanup paths",
         "repair parity oracles and degeneracy detection"
       ],
       "verified_tranches": ["F-007A", "F-007B", "F-007C", "F-007D", "F-007E-logistics", "F-007E-conquest", "F-007E-player-troop-dispatch"],
       "remaining": [
-        "AI encounter and faction balance",
-        "battle target diversity",
-        "complete Standard and Death Star victory targeting",
+        "contract-correct victory and capture semantics",
+        "both-faction liveness and complete campaign-loop capability",
+        "diagnostic battle volume and target diversity",
+        "complete Standard and Death Star objective targeting",
         "five-seed native/WASM checkpoint equivalence"
       ],
       "exit_metrics": {
@@ -1577,10 +1610,14 @@
         "maximum_transit_fraction": 0.1,
         "maximum_move_orders_per_arrival": 1.5,
         "maximum_fleet_arena_multiple": 3,
-        "battle_count_range": [50, 400],
-        "minimum_battle_systems": 8,
-        "maximum_top_system_battle_fraction": 0.4,
-        "death_star_victory_when_fixture_permits": true
+        "diagnostic_battle_count_range_per_seed": [50, 400],
+        "diagnostic_minimum_battle_systems_per_seed": 8,
+        "diagnostic_maximum_top_system_battle_fraction_per_seed": 0.4,
+        "encounter_unit": "completed engagement episodes excluding retry ticks and unchanged stalemates; bombardments reported separately",
+        "encounter_metric_basis": "provisional_diagnostic_not_original_telemetry_or_release_lower_bound",
+        "victory_fixtures_follow_official_campaign_contract": true,
+        "death_star_loss_is_nonterminal": true,
+        "minimum_victory_tick_in_parity_profile": 0
       }
     },
     {
@@ -1685,7 +1722,7 @@
     {
       "id": "P03",
       "name": "Main menu",
-      "status": "completed",
+      "status": "pass",
       "reference": "agent_docs/main-menu-parity.md",
       "verified_tranches": [
         "F-016A browser cockpit composition, exact pointer regions, direct faction start, Load/Options, and responsive scaling",
@@ -1711,7 +1748,7 @@
       "verified_tranches": [
         "visible difficulty, galaxy-size, and game-type selections",
         "direct Alliance and Empire starts without the replacement setup page",
-        "F-016B save v11 propagation and Standard versus Headquarters Only victory rules",
+        "F-016B save v11 game-type propagation; terminal victory semantics are assessed under P30",
         "F-016C clean second-campaign reset"
       ],
       "remaining": [],
@@ -1756,7 +1793,7 @@
     {
       "id": "P40",
       "name": "GitHub Pages documentation",
-      "status": "pass",
+      "status": "needs_revalidation",
       "verified_at": "2026-09-08",
       "source_commit": "aaf428d286e482471662881124fbad78062fce6f",
       "deployment_run": 34306480934,
@@ -1765,7 +1802,8 @@
         "audit_index": 200,
         "fleet_evidence": 200
       },
-      "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-github-pages.md"
+      "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-github-pages.md",
+      "note": "The historical pass covers its source commit, not the 2026-09-10 campaign-history revision. Revalidate after this documentation commit is deployed."
     }
   ],
   "evidence_contract": [
@@ -1812,7 +1850,7 @@
       "close_feature_id"
     ]
   },
-  "definition_of_done": {
+  "definition_of_done_requirements": {
     "all_supported_feature_passes_through_p40_are_pass": true,
     "all_p0_and_p1_findings_closed": true,
     "no_required_failures_or_unexplained_skips": true,

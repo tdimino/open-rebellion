@@ -32,9 +32,10 @@ claim campaign-balance or victory acceptance.
 - Starting a blockade no longer destroys surface garrisons. Event `0x340`
   remains reserved for a future troop that is actually running a blockade.
 - `TROOPSD.DAT` sequential IDs are normalized with family `0x10`, matching the
-  compound IDs stored on deployed regiments. Ground combat now uses original
-  attack/defense data and emits no missing-class fallback warnings in the
-  five-seed run.
+  compound IDs stored on deployed regiments. Ground combat now resolves the
+  original troop-class records without missing-class fallback warnings in the
+  five-seed run. This proves data identity, not the original combat formula,
+  officer, difficulty, facility, or tactical-path behavior; P25 remains open.
 - `RepairCheckPerformed` now fires only when a fleet enters a repair episode.
   Hull restoration remains per tick. Save v12 persists active repair episodes,
   and the exact v11 body migrates with an empty episode set.
@@ -64,12 +65,13 @@ far below Empire volume. No run reaches victory.
 ## Victory interpretation
 
 Zero controlled systems is not sufficient for Standard victory. Standard mode
-requires the qualifying headquarters and both principal enemy leaders to be
-captured. Headquarters Only mode requires the qualifying HQ alone. The current
-AI cannot transport surface regiments with fleets or complete an occupation and
-principal-leader capture sequence, so the observed no-victory result is a real
-campaign-completion gap, not evidence that the victory checker ignored a valid
-Standard state.
+requires the faction-specific headquarters objective and both principal enemy
+leaders: Alliance control of Coruscant, or Imperial destruction of the mobile
+Alliance HQ, plus the corresponding captives. Headquarters Only removes only
+the leader requirements. This checkpoint predates troop transport, and its
+no-victory result remains a real campaign-completion gap. A later source review
+also found that the current victory checker equates Imperial occupation with HQ
+destruction; that separate parity defect remains open.
 
 ## Verification
 

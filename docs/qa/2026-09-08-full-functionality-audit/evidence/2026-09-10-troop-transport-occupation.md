@@ -1,6 +1,6 @@
 ---
 title: "Troop Transport and Occupation Evidence"
-description: "F-007E proof for regiment cargo, invasion, occupation, capture, victory semantics, save v13, and browser continuity"
+description: "F-007E proof for regiment cargo, invasion, occupation, provisional capture, save v13, and browser continuity"
 category: qa
 created: 2026-09-10
 updated: 2026-09-10
@@ -18,10 +18,19 @@ orbital control is established, resolve ground combat, occupy the system, and
 capture enemy characters. Headquarters victory now requires occupation rather
 than an enemy fleet merely passing through orbit.
 
+Source review correction: the transport, landing, combat, and political-control
+path remains verified, but the Imperial headquarters and character-capture
+semantics do not. The original contract requires destruction of the mobile
+Alliance HQ, not occupation alone. Current occupation also captures every
+living enemy character at the system without an evasion or capture-resolution
+step. These two items are reopened as parity work; this evidence must not be
+read as accepting them.
+
 This closes the missing transport and occupation root cause in F-007. M1
-remains open for player-directed troop assignment, faction balance, battle
-volume and distribution, all required Standard victory targets, and five-seed
-native/WASM campaign equivalence.
+remains open for faction liveness, battle diagnostics, correct HQ and Death
+Star victory semantics, capture/evasion, the wider campaign loop, and five-seed
+native/WASM campaign equivalence. Player troop dispatch was verified in the
+following checkpoint.
 
 ## Implemented contract
 
@@ -36,11 +45,13 @@ native/WASM campaign equivalence.
 - Unresolved surface combat continues on later ticks after cargo is empty.
 - Automatic and tactical result application persist regiment damage and remove
   destroyed units from both the troop arena and the system roster.
-- Occupation changes political control and captures living enemy characters at
-  that system.
-- Headquarters capture reads political control, so orbital supremacy alone
-  cannot win and an occupied headquarters remains captured after the fleet
-  departs.
+- Occupation changes political control.
+- Current occupation deterministically captures all living enemy characters at
+  that system. This is verified implementation behavior but remains a parity
+  placeholder pending capture/evasion fixtures.
+- The current victory checker reads political control. Orbital supremacy alone
+  cannot win, but treating an occupied Alliance-HQ system as a destroyed mobile
+  headquarters is a known parity defect.
 
 ## Five-seed campaign probe
 
@@ -59,8 +70,11 @@ The campaigns now produce transport, landing, ground-combat, control-change,
 and capture events. Seed 42 occupied Mon Calamari at Smarteel and captured
 Luke, Han, Wedge, Chewbacca, and Dodonna at Yavin. Its randomized Rebel
 headquarters was elsewhere, so Standard victory correctly remained unresolved.
-The remaining no-victory result is now a targeting and balance problem rather
-than an absent conquest mechanic.
+The missing transport and political-conquest mechanic is closed. Campaign
+noncompletion remains multi-causal: victory semantics, capture/evasion,
+targeting, faction liveness, production, diplomacy, intelligence, research,
+uprisings, bombardment, headquarters relocation, and other campaign behaviors
+still require their own acceptance passes.
 
 ## Automated verification
 
@@ -114,10 +128,19 @@ served bytes matched the local files.
 
 ## Remaining M1 work
 
-- Add a player-facing troop selection and embark/disembark command path.
-- Balance Alliance and Empire production, attacks, and territorial recovery.
-- Raise campaign battle volume and geographic distribution to the recorded M1
-  bounds without reintroducing fleet churn.
-- Make the AI acquire every Standard victory target and exercise permitted
-  Death Star victories.
+- Preserve the separately verified player-facing troop selection and
+  embark/disembark command path.
+- Correct faction-specific headquarters destruction, Standard conjunctions,
+  Death Star outcomes, and the uncited 200-tick victory grace period.
+- Replace deterministic mass capture with validated capture/evasion behavior.
+- Prove faction liveness and territorial recovery without treating symmetric
+  attack counts as an original-game requirement.
+- Record battle volume and geographic distribution as diagnostics until
+  original telemetry or calibrated playtests justify release bounds.
+- Exercise the wider campaign loop: diplomacy, recruitment, intelligence,
+  research, production, uprisings, bombardment, HQ relocation, and principal
+  missions.
 - Extend native/WASM checkpoint equivalence across all five 5,000-tick seeds.
+
+The governing contract is the
+[campaign-history reference](../../../reference/campaign-history/official-campaign-contract.md#standard-victory).

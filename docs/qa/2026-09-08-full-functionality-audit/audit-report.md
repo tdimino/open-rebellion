@@ -45,22 +45,25 @@ F-007D resolves all opposing fleets at system scope and closes the permanent
 five-tick combat backlog. The first F-007E checkpoint also closes production
 ownership, friendly cycling, transit, repair-start, and troop-class defects.
 The second F-007E checkpoint adds save-v13 troop transport, landing, continuing
-ground combat, occupation, character capture, and occupation-based HQ victory.
-M1 continues with player troop commands, faction balance, target acquisition,
-campaign victory, and five-seed cross-runtime proof.
+ground combat, occupation, and provisional character capture. Player troop
+selection and dispatch passed in the following checkpoint. The campaign-history
+review reopened Imperial HQ destruction, Death Star outcomes, capture/evasion,
+and the uncited 200-tick victory grace period. M1 continues with those contract
+fixes, faction liveness, the wider campaign loop, target acquisition, and
+five-seed cross-runtime proof.
 
 The repository's records describe different scopes and are not a unified
 acceptance record:
 
 | Record | Actual status |
 |--------|---------------|
-| `README.md` | Advertises Core 100%, Combat 100%, UI 99%; these are claims rather than reproduced acceptance results. |
+| `README.md` | Explicitly distinguishes implementation estimates from final release acceptance and links to this audit. |
 | `archive/progress.archived-2026-04-07-native-video.json` | Archived record of the April 7 native-video task; it reports lint as false and is superseded by this audit. |
 | April 12 Tammuz plan | Described as completed elsewhere, but its functional and quality acceptance checkboxes remain open. |
 | April 6 test-infrastructure plan | Baseline investigation is complete; implementation milestones remain open. |
 | March 24 QA inventory | Historical v0.15 browser observations, not acceptance evidence for the current build. |
 
-## Reproduced baseline
+## Reproduced audit baseline (2026-09-08)
 
 | Gate | Result | Evidence |
 |------|--------|----------|
@@ -139,12 +142,14 @@ arrival, at most 1.2× their initial fleets, and 0–5 repair starts
 
 The second F-007E checkpoint carries regiments within living ship capacity,
 preserves cargo through transit and consolidation, lands after orbital control,
-continues unresolved surface battles, occupies systems, captures enemy
-characters, and requires occupation for HQ victory. Save v13, all 567 workspace
-tests, the exact native/WASM replay, five 5,000-tick transport runs, and Astra
-medium two-faction bitmap/browser acceptance pass. Faction balance, battle
-spread, player troop commands, acquisition of every Standard victory target,
-and five-seed cross-runtime proof remain open
+continues unresolved surface battles, and occupies systems. Its deterministic
+character capture and occupation-based Imperial HQ result are verified current
+behavior but not parity-correct. Save v13, all 567 workspace tests, the exact
+native/WASM replay, five 5,000-tick transport runs, and Astra medium two-faction
+bitmap/browser acceptance pass for the scoped transport path. Player troop
+dispatch passed in the next checkpoint. Correct capture/evasion, faction
+liveness, battle diagnostics, complete victory semantics, and five-seed
+cross-runtime proof remain open
 ([evidence](evidence/2026-09-10-troop-transport-occupation.md)).
 
 ## Confirmed findings
@@ -171,9 +176,9 @@ and five-seed cross-runtime proof remain open
 ### F-002: Native HD bitmap root does not match the asset layout
 
 - Severity: P1
-- Status: confirmed
-- Evidence: the app configures `data/hd/ui`, while production assets are under
-  `data/hd/{common,gokres,strategy,tactical}-dll/`.
+- Status: implemented; display/fallback acceptance pending
+- Evidence: the production HD root was corrected after the audit baseline, but
+  the required same-resource override/fallback visual proof remains open.
 - Acceptance: log and render a known HD override, then remove it and prove BMP
   fallback on the same resource.
 
@@ -190,9 +195,11 @@ and five-seed cross-runtime proof remain open
 ### F-004: WASM omits troop data prefetch
 
 - Severity: P1
-- Status: confirmed
-- Evidence: `TROOPSD.DAT` is not in the WASM prefetch list although the loader
-  consumes it for troop combat statistics.
+- Status: remediated
+- Evidence: `TROOPSD.DAT` is included in the deterministic runtime pack. Native
+  and browser integration resolve the original troop-class records without
+  missing-class fallback diagnostics. This does not establish combat-formula
+  parity, which remains P25.
 - Acceptance: native and browser worlds report matching troop-class counts and
   no fallback diagnostics.
 
@@ -244,10 +251,12 @@ and five-seed cross-runtime proof remain open
   flow, save-v12 reload, replay 9/9, exact music-control boundary, muted test
   output, and clean network/runtime gates. The second F-007E checkpoint adds the
   authoritative troop transport and occupation path, exact tactical survivor
-  persistence, enemy-character capture, and occupation-based HQ victory. Five
-  5,000-tick runs now emit landings, ground battles, control changes, and 5–6
+  persistence, provisional enemy-character capture, and political occupation.
+  Five 5,000-tick runs now emit landings, ground battles, control changes, and 5–6
   captures. All 567 workspace tests, save-v13 migration, exact replay, and Astra
-  bitmap/browser gates pass with no P0/P1 blocker. The next F-007E checkpoint
+  bitmap/browser gates pass for that scoped implementation. Source review then
+  reopened Imperial HQ destruction, Death Star terminal outcomes,
+  capture/evasion, and the 200-tick grace period. The next F-007E checkpoint
   adds player regiment selection to the bitmap fleet chooser, enforces 0/0,
   2/2, and 3/3 live capacity in the browser, and carries selected cargo through
   dispatch and automatic landing. All 568 workspace tests and the packaged
@@ -255,8 +264,17 @@ and five-seed cross-runtime proof remain open
   errors. Alliance attacks and battle spread remain below M1 bounds, and the AI
   does not yet acquire every randomized Standard victory target. See
   `evidence/2026-09-10-player-troop-dispatch.md`.
-- Acceptance: multi-seed bounds for fleet counts, orders, event volume, target
-  diversity, faction balance, battle spread, and victory timing all pass.
+- Historical baseline: the cited
+  [Rebellion/Supremacy campaign-history reference](../../reference/campaign-history/)
+  now defines the official campaign contract, human campaign chronology, and
+  observed computer-opponent profile. The 50–400 battle range and geographic
+  spread remain provisional engineering guards because no located source
+  provides original AI-versus-AI telemetry or those numeric constants.
+- Acceptance remains open: fleet, transit, and player troop-dispatch bounds
+  pass. Faction liveness, target diversity, battle diagnostics, complete
+  victory semantics, the wider campaign loop, and five-seed cross-runtime proof
+  do not yet pass. Qualitative behavior is adjudicated against the historical
+  reference.
 
 ### F-008: Browser media and mods are incomplete
 
@@ -375,9 +393,11 @@ and five-seed cross-runtime proof remain open
 ### F-013: The packaged browser artifact omits runtime data
 
 - Severity: P0 for browser release
-- Status: confirmed
-- Evidence: `scripts/package-web.sh` packages the page, JavaScript glue, and
-  WASM but not the runtime `web/data` payload required by startup.
+- Status: remediated by F-014A
+- Evidence: the deterministic release package carries 52 game-data entries,
+  2,231 bitmaps, and five audio files in `runtime.orpk`; a clean browser boot
+  loads it in four requests and verifies the expected hashes. See
+  [F-014A evidence](evidence/2026-09-08-runtime-pack.md).
 - Acceptance: a clean unpacked artifact boots offline from its own contents,
   loads the expected data hashes, and passes browser smoke tests.
 
@@ -485,8 +505,9 @@ interpretations:
 - Auto-resolve and tactical calculations can still produce different outcomes.
   Tactical ground results now persist exact survivor damage and occupation
   captures characters, but full path convergence remains M2.
-- Autoresearch parameter tuning should remain paused until faction balance,
-  target acquisition, and victory timing are corrected.
+- Autoresearch parameter tuning should remain paused until faction liveness,
+  the wider campaign loop, target acquisition, and contract-correct victory are
+  established.
 
 ## Optimization and parity roadmap
 
@@ -496,7 +517,7 @@ later work must not hide failures in an earlier invariant.
 | Milestone | Scope | Exit criteria |
 |-----------|-------|---------------|
 | M0 — Truth and bleeding | Wire save/load/delete and Load Game selection; fix native HD root and `TROOPSD.DAT`; ship browser data; attach evidence to README claims; add deterministic replay gates. Browser Save/Load/Delete, paths, a self-contained four-request package, F-011A fingerprints, the F-011B1 continuation envelope, the F-011B2/B3 replay pipeline, and F-011B4 native/WASM fixture equivalence are verified. Native GUI restart and persistence hardening remain open. | Persistence works on native/WASM, the packaged site boots from a clean directory, and claims link to current evidence. |
-| M1 — Simulation correctness | F-007A–D close redispatch, fleet-position, player-dispatch, and combat-backlog defects. F-007E closes ownership, friendly cycling, transit fan-in, troop-class lookup, blockade garrison, repair state, troop transport, occupation, character capture, and HQ victory semantics. Next add player troop commands and balance both AIs toward complete victory targets. | Across five 5,000-tick seeds: transit ≤10% of fleets, move orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles over ≥8 systems, top system ≤40%, and at least one Death Star victory where the fixture permits. |
+| M1 — Simulation correctness | F-007A–D close redispatch, fleet-position, player-dispatch, and combat-backlog defects. F-007E closes ownership, friendly cycling, transit fan-in, troop-class lookup, blockade garrison, repair state, troop transport, and political occupation. The cited campaign-history baseline reopens capture/evasion, faction-specific HQ destruction, Death Star terminal behavior, the victory grace period, faction liveness, and the wider campaign loop. | Across five fully identified 5,000-tick seeds: transit ≤10% of fleets, move orders ≤1.5× arrivals, fleet arena ≤3× initial, both factions remain capable of productive action, every contract-correct victory fixture passes, and native/WASM checkpoints match. Record the provisional encounter volume/spread numbers as diagnostics until calibrated. Qualitative behavior matches the historical campaign reference. |
 | M2 — One game engine | Route app and playtest through one tick API and event sink; make combat resumable from core state; construct victory UI; remove or correctly simulate `AdvanceTicks`. | Same seed plus command stream yields identical checkpoints and final state across interactive, headless, native, WASM, auto, and tactical paths. |
 | M3 — Browser excellence | Extend the verified deterministic `runtime.orpk` foundation with Brotli compression, bounded raw/decoded caches, HD entries, high DPI, one egui pass, cached geometry, IndexedDB, gesture-unlocked audio, owned advisor assets, and cross-browser input suites. | Cold start ≤3 s at 50 Mbps/30 ms, ≤4 requests before menu, combined heap/WASM ≤256 MB after 10 minutes, no visual/input failures in current Chrome/Firefox/Safari. |
 | M4 — Multiplayer | Introduce validated, tick-stamped commands; authoritative host simulation; faction-filtered fog-safe deltas and snapshots; secure WSS transport; prediction/reconciliation; reconnect; persistence and observability. | Two clients run 5,000 ticks with matching server checkpoints every 250 ticks; at 200 ms RTT there are no input stalls and ≤1 reconciliation per 100 commands; reconnect within 60 s; all illegal commands rejected; hidden state absent from client memory. |
@@ -561,7 +582,7 @@ and underlying state mutation are both demonstrated.
 | P24 | Tactical space combat | Placement, selection, formations, movement, focus fire, pause/speed, retreat, visual state, accepted formulas, and galaxy result application. |
 | P25 | Ground combat | Troop attack/defense, facilities, officers/difficulty, selection, casualties, conquest, visuals, and parity between automatic and interactive paths. |
 | P26 | Bombardment | Eligibility, shields, losses, popularity, ownership, messages, persistence, and visual feedback. |
-| P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, and both victory interactions. |
+| P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, contribution to the Imperial HQ objective, and nonterminal Alliance destruction behavior. |
 | P28 | Generic events | Every condition/action branch, one-shot behavior, simultaneous events, notification art, state changes, and save/load. |
 | P29 | Story and cutscenes | Every story chain, all eight cutscene mappings, heritage branches, queueing, audio/video sync, skip/end/error behavior, and replay prevention. |
 | P30 | Victory and defeat | Every win/loss condition for both player factions, simulation freeze, result screen, cutscene policy, Continue, and clean restart. |

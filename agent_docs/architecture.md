@@ -53,7 +53,7 @@ crates/rebellion-core/src/
 ├── death_star.rs     — Construction countdown, planet destruction, nearby-warning scan. `cleanup_destroyed_system()` removes all entities (fleets, troops, facilities) and cancels in-transit orders to the destroyed system.
 ├── research.rs       — 3 tech trees (Ship/Troop/Facility), MSTB difficulty lookup
 ├── jedi.rs           — 4-tier Force progression (None→Aware→Training→Experienced), detection
-├── victory.rs        — HQ capture, Death Star fire/destroyed victory conditions
+├── victory.rs        — current HQ/Death Star outcome checks; parity divergences documented
 ├── betrayal.rs       — Loyalty-driven faction defection, UPRIS1TB threshold, immunity flag
 ├── story_events.rs   — 4 scripted story chains (Dagobah, Final Battle, Bounty Hunters, Jabba), 5-case palace outcomes, 5-stage carbonite countdown, telemetry twins (0x200, 0x231), CharactersCoLocated condition. Notification events removed (Phase 3b — belong in economy tick).
 ├── commands.rs       — Shared command registry (16 CommandDef entries) for GUI palette + CLI

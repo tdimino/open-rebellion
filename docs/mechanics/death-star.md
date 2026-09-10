@@ -1,9 +1,9 @@
 ---
 title: "Death Star"
-description: "Construction countdown, fire preconditions, nearby warning, planet destruction"
+description: "Construction countdown, fire preconditions, nearby warning, planet destruction, and victory parity status"
 category: "mechanics"
 created: 2026-03-16
-updated: 2026-03-16
+updated: 2026-09-10
 game_system: "death-star"
 sources:
   - type: "ghidra"
@@ -72,4 +72,5 @@ The Death Star is tracked as a fleet with `has_death_star = true` (family `0x34`
 
 ## Related
 
-- [victory.md](victory.md) -- Death Star fire and destruction are victory conditions
+- [victory.md](victory.md) -- current implementation and open victory-contract divergences
+- [official campaign contract](../reference/campaign-history/official-campaign-contract.md#standard-victory) -- source-backed target behavior

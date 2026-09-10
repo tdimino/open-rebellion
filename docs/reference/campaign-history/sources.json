@@ -1,0 +1,403 @@
+{
+  "schema_version": 2,
+  "title": "Star Wars: Rebellion and Supremacy campaign-history source ledger",
+  "created": "2026-09-10",
+  "updated": "2026-09-10",
+  "scope": {
+    "included": "Coolhand Interactive and LucasArts Star Wars: Rebellion (1998), released as Star Wars: Supremacy in the United Kingdom",
+    "excluded": [
+      "Fantasy Flight Games Star Wars: Rebellion board game",
+      "Star Wars: Empire at War",
+      "unattributed generic Star Wars strategy claims"
+    ],
+    "source_policy": "Claims are classified as manual_rule, observed_original_ai, reverse_engineered_behavior, desired_enhancement, or engineering_guard. Engineering numbers remain provisional unless original telemetry or calibrated playtests support them."
+  },
+  "research": {
+    "retrieved_at": "2026-09-10",
+    "discovery": [
+      "Exa semantic search and bounded content extraction",
+      "Keenable web search and prompt-guided extraction"
+    ],
+    "independent_synthesis": {
+      "orchestrator": "codex-orchestrator",
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "medium",
+      "profile": "researcher",
+      "status": "completed"
+    }
+  },
+  "local_archive": {
+    "manual_pdf": {
+      "path": "archive/star-wars-rebellion-manual.pdf",
+      "source_url": "https://archive.org/download/star-wars-rebellion-manual/Manual.pdf",
+      "source_item": "https://archive.org/details/star-wars-rebellion-manual",
+      "bytes": 23866102,
+      "sha256": "925eb44e42fa0089ec0841ea7989105994b6c60f971cf61f0b408300d17570d0"
+    }
+  },
+  "sources": [
+    {
+      "id": "CH-001",
+      "title": "Star Wars Rebellion game manual",
+      "author": "Heidi Brumbaugh and Doyle Gilstrap",
+      "published_date": "1998-03-25",
+      "url": "https://archive.org/details/star-wars-rebellion-manual/mode/2up",
+      "alternate_url": "https://archive.org/stream/star-wars-rebellion-manual/Manual_djvu.txt",
+      "local_path": "archive/star-wars-rebellion-manual.pdf",
+      "source_class": "official primary rules",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "official rules; OCR checked against the scan",
+      "used_for": [
+        "campaign setup and difficulty",
+        "galaxy size",
+        "control and economy",
+        "forces and missions",
+        "faction asymmetry",
+        "headquarters and Standard victory",
+        "automation and multiplayer"
+      ],
+      "limitations": "The OCR is noisy; rule claims were checked against adjacent headings and the scan. It does not expose strategic AI weights or campaign telemetry."
+    },
+    {
+      "id": "CH-002",
+      "title": "Star Wars: Rebellion - Game Manual",
+      "author": "SW:Rebellion Community file catalog",
+      "published_date": "2021-11-23",
+      "url": "https://swrebellion.net/files/file/23-star-wars-rebellion-game-manual/",
+      "source_class": "community archival metadata",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "manual credit transcription only",
+      "used_for": ["manual author attribution"],
+      "limitations": "Catalog record, not independent evidence for campaign behavior. The catalog lists the game as 1999, so its date metadata is not used."
+    },
+    {
+      "id": "CH-003",
+      "title": "Star Wars Rebellion Review",
+      "author": "Tim McDonald",
+      "published_date": "1998-04-08",
+      "url": "https://www.gamespot.com/reviews/star-wars-rebellion-review/1900-2532756/",
+      "source_class": "contemporary professional review",
+      "game_identity": "confirmed_rebellion_and_uk_supremacy_title",
+      "confidence": "medium",
+      "confidence_scope": "high for game identity; medium for one reviewer's campaign observations",
+      "used_for": [
+        "Rebellion and Supremacy title identity",
+        "semi-real-time pacing",
+        "randomized setup",
+        "AI inactivity",
+        "head-to-head availability"
+      ],
+      "limitations": "A reviewer's experience, not a controlled AI study."
+    },
+    {
+      "id": "CH-004",
+      "title": "The ULTIMATE Star Wars Rebellion Guide, version 2",
+      "author": "Jayson Farrell",
+      "published_date": "1999-10-12",
+      "url": "https://the-spoiler.com/STRATEGY/Lucasarts/rebellion.2.html",
+      "source_class": "dated veteran strategy guide",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "prescriptive strategy and experiential AI assessment",
+      "used_for": [
+        "early diplomacy, recruitment, espionage, and production",
+        "faction asymmetry",
+        "fleet concentration",
+        "invasion force",
+        "headquarters search and movement",
+        "Death Star doctrine",
+        "computer-versus-human contrast"
+      ],
+      "limitations": "Primarily prescriptive human strategy. The broad AI-quality judgment is experiential, not quantified. The current URL redirects to a third-party reproduction; author, version, and date come from the reproduced text."
+    },
+    {
+      "id": "CH-005",
+      "title": "Star Wars Supremacy walkthrough and hints",
+      "author": "Andrew Borelli",
+      "published_date": null,
+      "date_label": "references PC Zone issue 64's review; walkthrough issue and date unverified",
+      "url": "https://www.cheatbook.de/wfiles/starwsso.htm",
+      "source_class": "contemporary magazine walkthrough mirror",
+      "game_identity": "confirmed_uk_supremacy_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "attributed contemporary walkthrough mirror",
+      "used_for": [
+        "randomized opening",
+        "early expansion",
+        "faction production priorities",
+        "resource and production loop",
+        "combined fleet composition",
+        "blockade and invasion"
+      ],
+      "limitations": "Mirror lacks the original magazine layout and blends mechanics with recommendations. Its body says the game was reviewed in PC Zone issue 64, but does not prove the walkthrough appeared in that issue."
+    },
+    {
+      "id": "CH-006",
+      "title": "MasterVodo's Rebellion Strategy Guide to the Universe",
+      "author": "MasterVodo",
+      "published_date": null,
+      "url": "https://members.tripod.com/buds_korner/strategy/vodo.htm",
+      "source_class": "early community strategy guide",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "undated prescriptive strategy",
+      "used_for": [
+        "day-one survey and order activation",
+        "reconnaissance",
+        "production",
+        "fleet feints"
+      ],
+      "limitations": "Undated and prescriptive; extraction quality is affected by legacy encoding."
+    },
+    {
+      "id": "CH-007",
+      "title": "Star Wars Rebellion: Strategy and Tactics, version 1.1",
+      "author": "Rogue (Philip Ryan Ott)",
+      "published_date": "2003-05-16",
+      "url": "https://gamefaqs.gamespot.com/pc/198776-star-wars-rebellion/faqs/19754",
+      "source_class": "dated veteran strategy guide",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "detailed firsthand strategy; not original telemetry",
+      "used_for": [
+        "loyalty and uprisings",
+        "colonization",
+        "mission catalog",
+        "raiding, bombardment, assault, and blockade",
+        "fleet and Death Star properties",
+        "overall faction strategy"
+      ],
+      "limitations": "Author distinguishes a small amount of former LucasArts-site information from extensive personal observation; it is not original telemetry."
+    },
+    {
+      "id": "CH-008",
+      "title": "Star Wars: Rebellion campaign index",
+      "author": "Pander",
+      "published_date": "2008-05-23",
+      "date_label": "campaign ran 2007-10-08 through 2008-04-29; LP Archive capture dated 2008-05-23",
+      "url": "https://lparchive.org/Star-Wars-Rebellion/",
+      "source_class": "illustrated campaign archive",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "visible chronology; opponent identity remains unknown",
+      "used_for": ["campaign sequence and navigation"],
+      "limitations": "The series pages do not explicitly identify whether the opponent is human or computer. Narrator embellishment must be separated from visible game events."
+    },
+    {
+      "id": "CH-009",
+      "title": "Star Wars: Rebellion Part 1: Day 0",
+      "author": "Pander",
+      "published_date": null,
+      "date_label": "campaign entry within 2007-10-08 to 2008-04-29 run",
+      "url": "https://lparchive.org/Star-Wars-Rebellion/Update%201/",
+      "source_class": "illustrated campaign entry",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "visible setup only",
+      "used_for": ["150-system Medium setup", "faction asymmetry", "victory goals"],
+      "limitations": "Opponent type is not explicit."
+    },
+    {
+      "id": "CH-010",
+      "title": "Star Wars: Rebellion Part 8: Days 101-128",
+      "author": "Pander",
+      "published_date": null,
+      "date_label": "campaign entry within 2007-10-08 to 2008-04-29 run",
+      "url": "https://lparchive.org/Star-Wars-Rebellion/Update%208/",
+      "source_class": "illustrated campaign entry",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "visible recorded events",
+      "used_for": ["early economic constraint", "exploration", "diplomacy and missions"],
+      "limitations": "Single campaign; opponent type is not explicit."
+    },
+    {
+      "id": "CH-011",
+      "title": "Star Wars: Rebellion Part 30: Days 640-682",
+      "author": "Pander",
+      "published_date": null,
+      "date_label": "campaign entry within 2007-10-08 to 2008-04-29 run",
+      "url": "https://lparchive.org/Star-Wars-Rebellion/Update%2031/",
+      "source_class": "illustrated campaign entry",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "visible recorded events",
+      "used_for": ["mid-game infrastructure war", "interdiction", "special forces", "Coruscant invasion preparation"],
+      "limitations": "Single campaign; strategy is player-selected and opponent type is not explicit."
+    },
+    {
+      "id": "CH-012",
+      "title": "Star Wars: Rebellion Part 36: Days 891-1009",
+      "author": "Pander",
+      "published_date": null,
+      "date_label": "campaign entry within 2007-10-08 to 2008-04-29 run",
+      "url": "https://lparchive.org/Star-Wars-Rebellion/Update%2037/",
+      "source_class": "illustrated campaign entry",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "visible recorded events",
+      "used_for": ["late reconnaissance", "headquarters movement", "blockade", "principal hunt"],
+      "limitations": "Single campaign; narrator embellishment is extensive and opponent type is not explicit."
+    },
+    {
+      "id": "CH-013",
+      "title": "Star Wars: Rebellion Part 37: Days 1010-1105",
+      "author": "Pander",
+      "published_date": null,
+      "date_label": "campaign entry within 2007-10-08 to 2008-04-29 run",
+      "url": "https://lparchive.org/Star-Wars-Rebellion/Update%2038/",
+      "source_class": "illustrated campaign entry",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "visible recorded events",
+      "used_for": ["post-fleet late game", "system isolation", "leader hunt"],
+      "limitations": "Single campaign; opponent type is not explicit."
+    },
+    {
+      "id": "CH-014",
+      "title": "Star Wars: Rebellion Part 38: Days 1106-1177",
+      "author": "Pander",
+      "published_date": null,
+      "date_label": "campaign entry within 2007-10-08 to 2008-04-29 run",
+      "url": "https://lparchive.org/Star-Wars-Rebellion/Update%2039/",
+      "source_class": "illustrated campaign entry",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "high",
+      "confidence_scope": "visible recorded finale",
+      "used_for": ["final character operation", "day-1177 Rebel victory"],
+      "limitations": "Single campaign; opponent type is not explicit."
+    },
+    {
+      "id": "CH-015",
+      "title": "Damn you",
+      "author": "multiple GameFAQs users",
+      "published_date": null,
+      "date_label": "2009-era thread; exact post dates unavailable in current rendering",
+      "url": "https://gamefaqs.gamespot.com/boards/198776-star-wars-rebellion/50518406?page=2",
+      "source_class": "firsthand player discussion",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "repeated incidents; low for frequency",
+      "used_for": [
+        "300-to-1000-day duration reports",
+        "AI raids and transient fleet visits",
+        "piecemeal fleet arrivals",
+        "predictable principal-character movement",
+        "material victory preceding formal victory"
+      ],
+      "limitations": "Self-reported anecdotes from several uncontrolled campaigns; page-relative age is displayed instead of exact dates."
+    },
+    {
+      "id": "CH-016",
+      "title": "Playing as the Empire",
+      "author": "multiple GameFAQs users",
+      "published_date": null,
+      "date_label": "2009-era thread; exact post dates unavailable in current rendering",
+      "url": "https://gamefaqs.gamespot.com/boards/198776-star-wars-rebellion/50893998",
+      "source_class": "firsthand human-versus-AI discussion",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "human-versus-AI incidents",
+      "used_for": [
+        "day-444 campaign state",
+        "Rebel AI raids and Coruscant pressure",
+        "production and resource stalls",
+        "Rebel headquarters discovery"
+      ],
+      "limitations": "Multiple campaigns and advice are interleaved; no controlled setup."
+    },
+    {
+      "id": "CH-017",
+      "title": "Strategy tips for SW:Rebellion, part one",
+      "author": "kaphtor",
+      "published_date": "2015-01-29",
+      "date_label": "republication of an older memo",
+      "url": "https://www.gog.com/forum/star_wars_rebellion/strategy_tips_for_swrebellion_part_one",
+      "source_class": "firsthand veteran strategy discussion",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "prescriptive veteran strategy",
+      "used_for": [
+        "Alliance evacuation from Yavin",
+        "early character assignments",
+        "production specialization",
+        "refined-material and production-queue management",
+        "blockade mission platforms"
+      ],
+      "limitations": "Prescriptive player strategy, not computer-opponent telemetry."
+    },
+    {
+      "id": "CH-018",
+      "title": "Star Wars Rebellion (1998 PC) veteran discussion",
+      "author": "multiple FFG forum users",
+      "published_date": null,
+      "date_label": "2015 forum archive",
+      "url": "https://ffg-forum-archive.entropicdreams.com/topic/186253-star-wars-rebellion-1998-pc-anyone-familiar-with-it/",
+      "source_class": "retrospective firsthand discussion",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "retrospective firsthand incidents",
+      "used_for": [
+        "sub-1000-day campaign goal",
+        "industrial shipyard concentration",
+        "principal-character capture",
+        "AI Palpatine risk failure"
+      ],
+      "limitations": "Anecdotal memories and separate campaigns; hosted on a board-game publisher's forum but the thread explicitly concerns the 1998 PC game."
+    },
+    {
+      "id": "CH-019",
+      "title": "A rough gem that could have used some more polish",
+      "author": "darkknight109",
+      "published_date": "2008-02-04",
+      "url": "https://gamefaqs.gamespot.com/pc/198776-star-wars-rebellion/reviews/121806",
+      "source_class": "retrospective user review",
+      "game_identity": "confirmed_1998_pc_game",
+      "confidence": "medium",
+      "confidence_scope": "single retrospective review",
+      "used_for": ["hard-difficulty AI criticism", "campaign real-time duration", "multiplayer contrast"],
+      "limitations": "Single reviewer. The campaign-duration estimate is an individual report, not multiplayer telemetry."
+    },
+    {
+      "id": "CH-020",
+      "title": "Star Wars: Rebellion player review",
+      "author": "Terrence Bosky",
+      "published_date": "2006-08-05",
+      "url": "https://www.mobygames.com/game/1144/star-wars-rebellion/user-review/2336492/",
+      "source_class": "retrospective user review",
+      "game_identity": "confirmed_rebellion_and_supremacy_alias",
+      "confidence": "medium",
+      "confidence_scope": "general assessment from one reviewer",
+      "used_for": ["AI-quality criticism", "off-screen mission and combat result presentation"],
+      "limitations": "Single review with little campaign-specific detail."
+    },
+    {
+      "id": "CH-021",
+      "title": "AI Fog of War: Research and Proposal",
+      "author": "Open Rebellion project",
+      "published_date": "2026-03-22",
+      "url": "../../plans/2026-03-22-ai-fog-of-war-proposal.md#the-original-was-omniscient-by-design",
+      "source_class": "local reverse-engineering analysis",
+      "game_identity": "REBEXE.EXE",
+      "confidence": "medium",
+      "confidence_scope": "pending call-path and object-registry validation",
+      "used_for": ["hypothesis about original AI system visibility behavior"],
+      "limitations": "FUN_00519d00 iterates family 0x90 without an explicit visibility parameter, but callers, ownership context, FUN_0051cad0 behavior, and family 0x92 handling have not yet been validated. This does not prove full omniscience."
+    }
+  ],
+  "engineering_hypotheses": {
+    "status": "provisional_until_original_telemetry_or_calibrated_playtests_exist",
+    "five_seed_ticks": 5000,
+    "maximum_transit_fraction": 0.1,
+    "maximum_move_orders_per_arrival": 1.5,
+    "maximum_fleet_arena_multiple": 3,
+    "battle_count_range": [50, 400],
+    "minimum_battle_systems": 8,
+    "maximum_top_system_battle_fraction": 0.4,
+    "diagnostic_minimum_minority_faction_attack_share": 0.1,
+    "historical_source_for_exact_values": null,
+    "interpretation": "Regression and degeneracy guards, not claims about original constants or distributions."
+  }
+}

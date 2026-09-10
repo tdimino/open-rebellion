@@ -3,7 +3,7 @@ title: "Open Rebellion Documentation"
 description: "Universal index linking all documentation across the Open Rebellion project"
 category: reference
 created: 2026-03-22
-updated: 2026-03-22
+updated: 2026-09-10
 tags: [index, documentation]
 ---
 
@@ -54,9 +54,16 @@ Note: `ghidra/` is gitignored except README.md — decompiled code is non-redist
 
 | Document | Description |
 |----------|-------------|
+| [Campaign history and AI parity](reference/campaign-history/) | Cited 1998 Rebellion/Supremacy campaign contract, testimony, AI observables, source ledger, and preserved original manual |
 | [CHANGELOG](CHANGELOG.md) | Version history v0.1.0 through v0.14.0 |
 | [SOURCES](SOURCES.md) | External references by authority tier |
 | [Vong TC](vong-total-conversion.md) | Yuuzhan Vong total conversion asset scope |
+
+## Quality Assurance
+
+| Document | Description |
+|----------|-------------|
+| [Full-functionality audit](qa/2026-09-08-full-functionality-audit/) | Current finding ledger, feature-by-feature acceptance plan, evidence, browser gates, and release roadmap |
 
 ## Reports
 

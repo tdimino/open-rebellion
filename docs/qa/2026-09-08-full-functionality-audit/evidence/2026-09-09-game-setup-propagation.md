@@ -21,11 +21,13 @@ accessibility, or audio-lifecycle gates.
 
 - `CampaignConfig` records `player_faction`, `difficulty`, `galaxy_size`, and
   `victory_conditions` in the live simulation and save v11.
-- Standard mode requires opposing-HQ occupation plus both opposing principal
-  leaders: Luke Skywalker and Mon Mothma for Empire, or Emperor Palpatine and
-  Darth Vader for the Alliance. Existing Death Star terminal outcomes remain.
-- Headquarters Only ends on opposing-HQ occupation alone and ignores Death
-  Star outcomes.
+- Standard mode propagates the game-type selection. A later source review
+  reopened the resolution logic: the correct contract requires destruction of
+  the mobile Alliance HQ plus Luke Skywalker and Mon Mothma for Empire, or
+  capture of Coruscant plus Emperor Palpatine and Darth Vader for the Alliance.
+  Current occupation and Death Star shortcuts remain parity defects.
+- Headquarters Only removes the leader requirements while retaining the
+  faction-specific HQ objective.
 - The v10 positional body remains explicit. Its fingerprint is checked before
   migration; recoverable faction/difficulty values are inferred, unavailable
   setup fields receive documented Standard defaults, and the migrated v11
