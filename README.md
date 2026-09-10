@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Tests-533%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-551%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>
@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current State: v0.23.0
 
-> **Verification (2026-09-10):** The authentic bitmap cockpit, exact native/WASM replay, player fleet dispatch, and system-scoped combat backlog fix pass acceptance; all 541 workspace tests pass. AI encounter balance, transit fan-in, repair telemetry, victory, multiplayer, and release gates remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/), [combat evidence](docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-system-combat-resolution.md), [replay reference](agent_docs/deterministic-replay.md), and [menu reference](agent_docs/main-menu-parity.md).
+> **Verification (2026-09-10):** All 551 workspace tests pass. The authentic bitmap cockpit, exact native/WASM replay, fleet logistics, troop-class loading, repair transitions, and save v12 pass their current gates. Troop transport and occupation, faction balance, campaign victory, multiplayer, and release acceptance remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/) and [latest evidence](docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md).
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|

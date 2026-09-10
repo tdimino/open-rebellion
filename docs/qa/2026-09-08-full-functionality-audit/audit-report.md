@@ -41,9 +41,10 @@ save/load/delete, deterministic browser packaging, save continuation, exact
 native/WASM replay, fleet redispatch protection, and authoritative fleet
 position with compatible-arrival consolidation. Ordinary player fleet dispatch
 passes both-faction browser acceptance through the shared departure helper.
-F-007D now resolves all opposing fleets at system scope and closes the permanent
-five-tick combat backlog. M1 continues with AI encounter balance, transit
-fan-in, repair telemetry, and victory.
+F-007D resolves all opposing fleets at system scope and closes the permanent
+five-tick combat backlog. The first F-007E checkpoint also closes production
+ownership, friendly cycling, transit, repair-start, and troop-class defects.
+M1 continues with troop transport, occupation, faction balance, and victory.
 
 The repository's records describe different scopes and are not a unified
 acceptance record:
@@ -123,12 +124,17 @@ F-007D resolves every hostile task force at a system in one bounded engagement,
 persists fighter losses, corrects fighter launch and shield handling, and stops
 unchanged stalemates until system composition changes. Seed 42 falls from 603
 space events, including 602 recurring Xyquine draws, to two decisive
-engagements with no backlog. The fresh five-seed diagnostic exposes a separate
-AI balance failure: only zero to six engagements occur, seed 1,337 grows to 106
-fleets in transit, seed 424,242 loses all Alliance-controlled systems without a
-formal victory, and repair-start telemetry repeats excessively. These remain
-open as F-007E
+engagements with no backlog
 ([evidence](evidence/2026-09-10-system-combat-resolution.md)).
+
+The first F-007E checkpoint then gates AI production by system ownership,
+removes friendly cycling and transit fan-in, retains HQ defense and surface
+garrisons, resolves compound troop-class IDs, and persists repair episodes in
+save v12. Five current runs finish with 0% transit, exactly one move per
+arrival, at most 1.2× their initial fleets, and 0–5 repair starts. Faction
+balance, battle spread, troop transport, occupation, principal-leader capture,
+and victory remain open
+([evidence](evidence/2026-09-10-ai-campaign-logistics.md)).
 
 ## Confirmed findings
 
@@ -221,9 +227,15 @@ open as F-007E
   engagement, writes fighter losses back, corrects fighter launch/shield
   handling, and suppresses unchanged five-tick stalemates. The 541-test
   workspace, exact native/WASM replay, and Astra bitmap regression gates pass.
-  Five-seed combat volume is now zero to six, and the newly exposed attack
-  fan-in, victory, and repair-telemetry failures remain F-007E. See
-  `evidence/2026-09-10-system-combat-resolution.md`.
+  The first F-007E checkpoint now passes fleet-arena, transit, move/arrival,
+  repair-start, and troop-class gates. All 551 workspace tests and the updated
+  exact native/WASM replay pass. Astra medium also passed the two-faction bitmap
+  flow, save-v12 reload, replay 9/9, exact music-control boundary, muted test
+  output, and clean network/runtime gates. Five-seed combat remains only 8–14
+  combined battles at three or four systems, Alliance attacks remain far below
+  Empire attacks, and there is no troop-transport/occupation path to satisfy
+  Standard HQ-plus-leader victory. See
+  `evidence/2026-09-10-ai-campaign-logistics.md`.
 - Acceptance: multi-seed bounds for fleet counts, orders, event volume, target
   diversity, faction balance, battle spread, and victory timing all pass.
 
@@ -374,8 +386,9 @@ open as F-007E
 - Severity: P1
 - Status: confirmed design gap
 - Evidence: synchronous base64-encoded bincode in `localStorage` is vulnerable
-  to quota limits and main-thread stalls. Save v11 captures the currently known
-  deterministic continuation envelope and campaign setup, but browser
+  to quota limits and main-thread stalls. Save v12 captures the currently known
+  deterministic continuation envelope, campaign setup, and active repair
+  episodes, but browser
   persistence remains synchronous and quota failures are not yet exercised end
   to end.
 - Acceptance: versioned, compressed, asynchronous IndexedDB saves round-trip
@@ -452,9 +465,9 @@ interpretations:
   so release packaging must stage owned runtime assets explicitly.
 - Auto-resolve, tactical space, and ground combat can apply three materially
   different outcomes. Interactive result application also omits officer capture.
-- Autoresearch parameter tuning should remain paused until AI encounter balance,
-  transit fan-in, repair telemetry, and victory are corrected; tuning around
-  those feedback defects would optimize an invalid simulation.
+- Autoresearch parameter tuning should remain paused until troop transport,
+  occupation, faction balance, and victory are corrected; tuning before the
+  conquest loop exists would optimize an incomplete simulation.
 
 ## Optimization and parity roadmap
 
@@ -464,7 +477,7 @@ later work must not hide failures in an earlier invariant.
 | Milestone | Scope | Exit criteria |
 |-----------|-------|---------------|
 | M0 — Truth and bleeding | Wire save/load/delete and Load Game selection; fix native HD root and `TROOPSD.DAT`; ship browser data; attach evidence to README claims; add deterministic replay gates. Browser Save/Load/Delete, paths, a self-contained four-request package, F-011A fingerprints, the F-011B1 continuation envelope, the F-011B2/B3 replay pipeline, and F-011B4 native/WASM fixture equivalence are verified. Native GUI restart and persistence hardening remain open. | Persistence works on native/WASM, the packaged site boots from a clean directory, and claims link to current evidence. |
-| M1 — Simulation correctness | F-007A prevents redispatch; F-007B canonicalizes fleet position, production attachment, and compatible arrivals; F-007C wires validated player dispatch; F-007D closes the system combat backlog. Next balance both AIs, reduce transit fan-in, correct repair telemetry, and make victory and Death Star outcomes reachable. | Across five 5,000-tick seeds: transit ≤10% of fleets, move orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles over ≥8 systems, top system ≤40%, and at least one Death Star victory where the fixture permits. |
+| M1 — Simulation correctness | F-007A–D close redispatch, fleet-position, player-dispatch, and combat-backlog defects. The first F-007E checkpoint closes production ownership, friendly cycling, transit fan-in, troop-class lookup, blockade garrison, and repair-state defects. Next add troop transport/occupation/leader capture and balance both AIs. | Across five 5,000-tick seeds: transit ≤10% of fleets, move orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles over ≥8 systems, top system ≤40%, and at least one Death Star victory where the fixture permits. |
 | M2 — One game engine | Route app and playtest through one tick API and event sink; make combat resumable from core state; construct victory UI; remove or correctly simulate `AdvanceTicks`. | Same seed plus command stream yields identical checkpoints and final state across interactive, headless, native, WASM, auto, and tactical paths. |
 | M3 — Browser excellence | Extend the verified deterministic `runtime.orpk` foundation with Brotli compression, bounded raw/decoded caches, HD entries, high DPI, one egui pass, cached geometry, IndexedDB, gesture-unlocked audio, owned advisor assets, and cross-browser input suites. | Cold start ≤3 s at 50 Mbps/30 ms, ≤4 requests before menu, combined heap/WASM ≤256 MB after 10 minutes, no visual/input failures in current Chrome/Firefox/Safari. |
 | M4 — Multiplayer | Introduce validated, tick-stamped commands; authoritative host simulation; faction-filtered fog-safe deltas and snapshots; secure WSS transport; prediction/reconciliation; reconnect; persistence and observability. | Two clients run 5,000 ticks with matching server checkpoints every 250 ticks; at 200 ms RTT there are no input stalls and ≤1 reconciliation per 100 commands; reconnect within 60 s; all illegal commands rejected; hidden state absent from client memory. |

@@ -7,9 +7,9 @@
 //! 2. **Emits `BlockadeEvent`s** when blockade state changes (enter/exit).
 //! 3. **Halts manufacturing** — `BlockadeState::is_blockaded()` is consulted
 //!    by `ManufacturingSystem::advance` to skip queue advancement at blocked systems.
-//! 4. **Destroys in-transit troops** — troops being transported to/from a
-//!    system while it is blockaded are lost (event `0x340` from RE,
-//!    `TroopRegDestroyedRunningBlockade`).
+//! 4. **Preserves stationed troops** — event `0x340` destroys a regiment that
+//!    is running a blockade. `ground_units` are surface garrisons, not units
+//!    in transit, so they are never removed merely because a blockade starts.
 //!
 //! # Architecture
 //!
@@ -154,9 +154,8 @@ impl BlockadeSystem {
     /// - If a hostile fleet is present AND no defending fleet: mark blockaded.
     /// - If previously blockaded but conditions no longer hold: clear blockade.
     /// - Emit `BlockadeStarted` / `BlockadeEnded` on transitions.
-    /// - For newly blockaded systems: inspect `ground_units` for faction
-    ///   mismatch (troops belonging to the defending faction while a hostile
-    ///   blockade is active) and emit `TroopDestroyed` for each.
+    /// - Stationed `ground_units` remain intact. A future troop-transport model
+    ///   may emit `TroopDestroyed` for units actually running the blockade.
     ///
     /// Does **not** mutate `GameWorld` — returns events for the caller to apply.
     /// Skips zero-tick frames.
@@ -196,31 +195,6 @@ impl BlockadeSystem {
         // New blockades (entered this tick)
         for sys_key in newly_blockaded {
             events.push(BlockadeEvent::BlockadeStarted { system: sys_key, tick });
-
-            // Destroy in-transit troops belonging to the defending faction.
-            // "In transit" = ground_units at the blockaded system that belong to
-            // the faction being blockaded (faction mismatch with blockader).
-            if let Some(sys) = world.systems.get(sys_key) {
-                let blockader_is_alliance = Self::blockader_is_alliance(world, sys);
-                for &troop_key in &sys.ground_units {
-                    if let Some(troop) = world.troops.get(troop_key) {
-                        // Troop is caught in blockade if it belongs to the faction
-                        // being blockaded (i.e., same faction as the system's controller,
-                        // opposite of the blockader).
-                        let troop_is_target = troop.is_alliance != blockader_is_alliance;
-                        // Only destroy troops in transit (regiment_strength > 0 but
-                        // being transported — for now all ground_units at a newly
-                        // blockaded system qualify per RE FUN_00504a00 semantics).
-                        if troop_is_target {
-                            events.push(BlockadeEvent::TroopDestroyed {
-                                system: sys_key,
-                                troop: troop_key,
-                                tick,
-                            });
-                        }
-                    }
-                }
-            }
         }
 
         // Cleared blockades (ended this tick)
@@ -267,18 +241,6 @@ impl BlockadeSystem {
         hostile_count > 0 && defending_count == 0
     }
 
-    /// Returns `true` if the blockading force is Alliance (used for troop
-    /// destruction: Alliance blockader kills Empire troops and vice versa).
-    fn blockader_is_alliance(_world: &GameWorld, sys: &crate::world::System) -> bool {
-        use crate::dat::Faction;
-
-        // The blockader is the faction opposite the system controller.
-        match sys.control {
-            ControlKind::Controlled(Faction::Alliance) => false, // Alliance-controlled → Empire blockades
-            ControlKind::Controlled(Faction::Empire) => true,    // Empire-controlled → Alliance blockades
-            _ => false,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -476,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn troop_destroyed_on_blockade_start() {
+    fn stationed_defending_troop_survives_blockade_start() {
         let (mut world, sys) = make_world();
         let troop = add_troop(&mut world, sys, true); // Alliance troop at Alliance system
         add_fleet(&mut world, sys, false); // Empire blockades
@@ -484,14 +446,14 @@ mod tests {
         let mut state = BlockadeState::new();
         let events = BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
 
-        let destroyed: Vec<_> = events
-            .iter()
-            .filter(|e| matches!(e, BlockadeEvent::TroopDestroyed { .. }))
-            .collect();
-        assert_eq!(destroyed.len(), 1);
-        if let BlockadeEvent::TroopDestroyed { troop: tk, .. } = destroyed[0] {
-            assert_eq!(*tk, troop);
-        }
+        assert!(events.iter().any(|event| matches!(
+            event,
+            BlockadeEvent::BlockadeStarted { system, .. } if *system == sys
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            BlockadeEvent::TroopDestroyed { troop: destroyed, .. } if *destroyed == troop
+        )));
     }
 
     #[test]

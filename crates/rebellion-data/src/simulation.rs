@@ -601,7 +601,7 @@ mod tests {
             victory: VictoryState::new(s1, s2),
             betrayal: BetrayalState::new(),
             economy: EconomyState::default(),
-            repair: RepairState,
+            repair: RepairState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };
@@ -680,7 +680,7 @@ mod tests {
             victory: VictoryState::new(s1, s2),
             betrayal: BetrayalState::new(),
             economy: EconomyState::default(),
-            repair: RepairState,
+            repair: RepairState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };

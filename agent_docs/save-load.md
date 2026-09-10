@@ -1,9 +1,9 @@
 ---
 title: "Save/Load System"
-description: "Native and browser save v11, canonical fingerprints, campaign setup, continuation state, and historical migration"
+description: "Native and browser save v12, canonical fingerprints, campaign setup, continuation state, and historical migration"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-09-09
+updated: 2026-09-10
 tags: [save-load, bincode, migration, serialization, wasm, determinism]
 ---
 
@@ -11,13 +11,13 @@ tags: [save-load, bincode, migration, serialization, wasm, determinism]
 
 `crates/rebellion-data/src/save.rs` owns native files and browser storage.
 `crates/rebellion-app/src/main.rs` converts between a live campaign and the
-serializable snapshot. The current format is v11.
+serializable snapshot. The current format is v12.
 
-## Native format (v11)
+## Native format (v12)
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
-[version: u32 LE]             — SAVE_VERSION = 11
+[version: u32 LE]             — SAVE_VERSION = 12
 [save_name: u32 len + UTF-8]
 [timestamp_secs: u64 LE]
 [mod_count: u32 LE]           — v4+
@@ -64,11 +64,13 @@ Every mutable campaign subsystem required by the app is serialized:
 | `game_config` | `GameConfig` |
 | `campaign_config` | `CampaignConfig` |
 
-The five fields ending with `game_config` are the v10 continuation envelope.
-Loading restores them instead of reseeding RNG or clearing dual-AI, repair,
-and combat memory. Save v11 adds `campaign_config`, preserving the selected
-difficulty, original galaxy-size label, player faction, and Standard versus
-Headquarters Only victory mode.
+The five fields ending with `game_config` began as the v10 continuation
+envelope. Loading restores them instead of reseeding RNG or clearing dual-AI,
+repair, and combat memory. Save v11 added `campaign_config`, preserving the
+selected difficulty, original galaxy-size label, player faction, and Standard
+versus Headquarters Only victory mode. Save v12 persists the fleet set already
+under repair so `RepairCheckPerformed` remains a true episode-start event
+across save/load.
 
 ## Deterministic fingerprints
 
@@ -84,11 +86,14 @@ interactive app/playtest and combat-path convergence remain open.
 
 ## Migration rules
 
-- v11 is read directly and its stored fingerprint must match.
+- v12 is read directly and its stored fingerprint must match.
+- v11 is decoded through the exact historical `SaveStateV11` body. Its stored
+  fingerprint is checked before migration, repair episodes begin empty because
+  v11 stored a unit `RepairState`, and the migrated fingerprint is unverified.
 - v10 is decoded through the exact historical `SaveStateV10` body. Its stored
   fingerprint is checked before migration. Faction and difficulty are inferred
   from preserved state; galaxy size and victory mode use explicit Standard
-  defaults because v10 did not retain them. The migrated v11 fingerprint is
+  defaults because v10 did not retain them. The migrated v12 fingerprint is
   reported as unverified.
 - v9 is decoded through the exact historical `SaveStateV9` body. Its v9
   fingerprint is checked before migration; v10 continuation fields and v11
@@ -97,7 +102,7 @@ interactive app/playtest and combat-path convergence remain open.
 - v8 uses the same historical body without a stored fingerprint. It migrates
   with explicit defaults and is reported as unverified.
 - v3–v7 are recognized but rejected with an incompatibility explanation.
-- Versions newer than v11 and versions older than v3 fail closed.
+- Versions newer than v12 and versions older than v3 fail closed.
 
 Do not rely on `#[serde(default)]` to migrate bincode. Bincode is positional.
 Changing `SaveState` requires a version bump and an exact legacy body struct.
@@ -109,15 +114,15 @@ the real migration boundary.
 WASM stores base64 bincode and versioned JSON metadata in `localStorage`:
 
 ```text
-rebellion_save_v11_<slot>
-rebellion_meta_v11_<slot>
+rebellion_save_v12_<slot>
+rebellion_meta_v12_<slot>
 ```
 
 Metadata includes the full save name, game tick, and fingerprint with its
 `u64` value encoded as a decimal string so JavaScript cannot truncate it. The
-reader falls back to v10 and then v9 keys, validates any stored fingerprint,
-migrates the body, and writes new saves only under v11 keys. Delete removes all
-three generations.
+reader falls back through v11, v10, and v9 keys, validates any stored
+fingerprint, migrates the body, and writes new saves only under v12 keys.
+Delete removes all four generations.
 
 This path is functional but not the production persistence target: base64 and
 synchronous `localStorage` can block the main thread or hit quota limits. M3

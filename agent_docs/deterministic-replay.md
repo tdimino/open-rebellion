@@ -3,7 +3,7 @@ title: "Deterministic Replay Contract"
 description: "Versioned command streams, simulation-data identity, checkpoints, and remaining cross-runtime gates"
 category: agent-docs
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-10
 tags: [determinism, replay, wasm, multiplayer, testing]
 ---
 
@@ -113,12 +113,11 @@ python3 scripts/check-replay-equivalence.py --skip-build --json
 
 The ignored fixture test requires the locally supplied original `.DAT` files.
 It records a nine-command, 25-tick, 200-system campaign, reloads its initial
-state through save v11, and checks every command-prefix fingerprint against a
-cross-process golden. F-007B intentionally changed tick-10 onward state by
-making transit position authoritative and consolidating compatible arrivals.
-The re-reviewed artifact retains the same command stream and now ends at
-`v1:b8a40a56246c1314`. The unit tests use synthetic data and run in normal
-repository test passes.
+state through save v12, and checks every command-prefix fingerprint against a
+cross-process golden. F-007E re-reviewed the unchanged command stream after
+correcting the Alliance HQ seed and adding persisted repair episodes. It now
+starts at `v1:0efe11fdf7aa5859` and ends at `v1:5871d04619e30abd`. The unit
+tests use synthetic data and run in normal repository test passes.
 
 ## Next implementation boundary
 

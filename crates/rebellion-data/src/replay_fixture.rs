@@ -35,23 +35,23 @@ pub const SEED42_FIXTURE_ID: &str = "seed42-v1";
 pub const SEED42_ARTIFACT_BYTES: &[u8] = include_bytes!("../tests/fixtures/replay_seed42_v1.json");
 pub const SEED42_ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SEED42_SEED: u64 = 42;
-pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:765c9318acb5cb50";
-pub const SEED42_FINAL_FINGERPRINT: &str = "v1:b8a40a56246c1314";
+pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:0efe11fdf7aa5859";
+pub const SEED42_FINAL_FINGERPRINT: &str = "v1:5871d04619e30abd";
 pub const SEED42_FINAL_TICK: u64 = 25;
 pub const SEED42_DATA_INPUTS: usize = 51;
 pub const SEED42_DATA_BYTES: u64 = 50_597;
 pub const SEED42_DATA_FINGERPRINT: &str = "5facb1c7ba0e81ad";
 
 pub const SEED42_CHECKPOINTS: &[(u64, u64, &str)] = &[
-    (1, 0, "v1:48f9a97ca6dec269"),
-    (2, 0, "v1:357708f65600307b"),
-    (3, 5, "v1:c3782c7f2ba38f9d"),
-    (4, 10, "v1:84aed71a9cf2c60a"),
-    (5, 15, "v1:f32901ec3ab6430e"),
-    (6, 20, "v1:baa3ee3106369233"),
-    (7, 25, "v1:07bad2832fee46b2"),
-    (8, 25, "v1:b8a40a56246c1314"),
-    (9, 25, "v1:b8a40a56246c1314"),
+    (1, 0, "v1:19cb6b69fbc10454"),
+    (2, 0, "v1:8fd0b33fcc8fdbfe"),
+    (3, 5, "v1:54292fb35ba017f4"),
+    (4, 10, "v1:dbb597bbf32e7fb4"),
+    (5, 15, "v1:9a6331d251ee99cf"),
+    (6, 20, "v1:beddfc6ffdce9b16"),
+    (7, 25, "v1:2221aca5685d7fa3"),
+    (8, 25, "v1:5871d04619e30abd"),
+    (9, 25, "v1:5871d04619e30abd"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,7 +182,7 @@ pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
         economy: EconomyState::default(),
         sim_rng: Xoshiro256PlusPlus::seed_from_u64(SEED42_SEED),
         ai2: None,
-        repair: RepairState,
+        repair: RepairState::default(),
         combat_cooldowns: std::collections::HashMap::new(),
         game_config: GameConfig::default(),
         campaign_config: CampaignConfig::from_seed_options(options, VictoryConditions::Standard),

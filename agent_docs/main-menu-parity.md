@@ -148,7 +148,7 @@ Death Star outcome to supersede that rule.
 - **P04 — Game setup:** difficulty, galaxy size, game type, faction start,
   state propagation, and clean subsequent-campaign reset.
 
-F-016B verifies that all four setup values reach active configuration, save v11,
+F-016B verifies that all four setup values reach active configuration, save v12,
 reload, and `VictorySystem` in the browser. F-016C verifies that a subsequent
 campaign cleanly replaces every campaign subsystem. F-016D verifies that the
 browser accessibility tree operates the same Rust controls, focus art, state,

@@ -153,7 +153,7 @@ pub fn load_game_data_with_options(
             ExplorationStatus::Unexplored
         };
 
-        // Coruscant (0x109) is the Empire HQ; Yavin (0x121) is the Alliance HQ.
+        // Coruscant (0x109) is the Empire HQ; Yavin (0x121) is the Alliance base.
         // The lower 24 bits of `dat.id` are the sequential index.
         let seq_id = dat.id & 0x00FF_FFFF;
         let is_headquarters = seq_id == 0x109 || seq_id == 0x121;
@@ -443,8 +443,17 @@ pub fn load_game_data_with_options(
     if file_available(&troops_path) {
         let troops_file: TroopsFile = read_dat_file(&troops_path)?;
         for dat in &troops_file.troops {
+            // TROOPSD stores a sequential record id (1..N), while army
+            // deployments reference the original compound DatId. Reattach
+            // the file header's family byte so combat resolves the real class
+            // statistics instead of falling back to generic 10/10 values.
+            let class_dat_id = if dat.id >> 24 == 0 {
+                DatId::new((troops_file.family_id << 24) | dat.id)
+            } else {
+                DatId::new(dat.id)
+            };
             world.troop_classes.insert(
-                DatId::new(dat.id),
+                class_dat_id,
                 TroopClassDef {
                     attack_strength: dat.attack_strength,
                     defense_strength: dat.defense_strength,

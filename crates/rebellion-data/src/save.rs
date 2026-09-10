@@ -1,6 +1,6 @@
 //! Save / load for the full game state.
 //!
-//! # Format (v11)
+//! # Format (v12)
 //!
 //! Binary `bincode` encoding. A save file is:
 //!
@@ -77,7 +77,8 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 /// v10: Body gained deterministic continuation state (RNG, second AI, repair,
 /// combat cooldowns, and tuning configuration).
 /// v11: Body gained the original new-game campaign configuration.
-pub const SAVE_VERSION: u32 = 11;
+/// v12: Repair state gained persisted, per-fleet repair-episode tracking.
+pub const SAVE_VERSION: u32 = 12;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -314,7 +315,8 @@ struct SaveStateV10 {
     economy: EconomyState,
     sim_rng: Xoshiro256PlusPlus,
     ai2: Option<AIState>,
-    repair: RepairState,
+    // RepairState was a zero-field unit struct through v11.
+    repair: (),
     #[serde(
         serialize_with = "rebellion_core::serde_ordered::serialize_hash_map",
         deserialize_with = "rebellion_core::serde_ordered::deserialize_hash_map"
@@ -348,7 +350,7 @@ impl From<SaveStateV10> for SaveState {
             economy: legacy.economy,
             sim_rng: legacy.sim_rng,
             ai2: legacy.ai2,
-            repair: legacy.repair,
+            repair: RepairState::default(),
             combat_cooldowns: legacy.combat_cooldowns,
             game_config: legacy.game_config,
             campaign_config,
@@ -379,9 +381,105 @@ impl From<&SaveState> for SaveStateV10 {
             economy: current.economy.clone(),
             sim_rng: current.sim_rng.clone(),
             ai2: current.ai2.clone(),
-            repair: current.repair.clone(),
+            repair: (),
             combat_cooldowns: current.combat_cooldowns.clone(),
             game_config: current.game_config.clone(),
+        }
+    }
+}
+
+/// Exact v11 body. Repair state was still a zero-field unit struct; the
+/// campaign configuration field was appended after the v10 body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SaveStateV11 {
+    world: GameWorld,
+    clock: GameClock,
+    manufacturing: ManufacturingState,
+    missions: MissionState,
+    events: EventState,
+    ai: AIState,
+    movement: MovementState,
+    fog_alliance: FogState,
+    fog_empire: FogState,
+    player_is_alliance: bool,
+    blockade: BlockadeState,
+    uprising: UprisingState,
+    death_star: DeathStarState,
+    research: ResearchState,
+    jedi: JediState,
+    victory: VictoryState,
+    betrayal: BetrayalState,
+    economy: EconomyState,
+    sim_rng: Xoshiro256PlusPlus,
+    ai2: Option<AIState>,
+    repair: (),
+    #[serde(
+        serialize_with = "rebellion_core::serde_ordered::serialize_hash_map",
+        deserialize_with = "rebellion_core::serde_ordered::deserialize_hash_map"
+    )]
+    combat_cooldowns: std::collections::HashMap<SystemKey, u64>,
+    game_config: GameConfig,
+    campaign_config: CampaignConfig,
+}
+
+impl From<SaveStateV11> for SaveState {
+    fn from(legacy: SaveStateV11) -> Self {
+        Self {
+            world: legacy.world,
+            clock: legacy.clock,
+            manufacturing: legacy.manufacturing,
+            missions: legacy.missions,
+            events: legacy.events,
+            ai: legacy.ai,
+            movement: legacy.movement,
+            fog_alliance: legacy.fog_alliance,
+            fog_empire: legacy.fog_empire,
+            player_is_alliance: legacy.player_is_alliance,
+            blockade: legacy.blockade,
+            uprising: legacy.uprising,
+            death_star: legacy.death_star,
+            research: legacy.research,
+            jedi: legacy.jedi,
+            victory: legacy.victory,
+            betrayal: legacy.betrayal,
+            economy: legacy.economy,
+            sim_rng: legacy.sim_rng,
+            ai2: legacy.ai2,
+            repair: RepairState::default(),
+            combat_cooldowns: legacy.combat_cooldowns,
+            game_config: legacy.game_config,
+            campaign_config: legacy.campaign_config,
+        }
+    }
+}
+
+impl From<&SaveState> for SaveStateV11 {
+    fn from(current: &SaveState) -> Self {
+        Self {
+            world: current.world.clone(),
+            clock: current.clock.clone(),
+            manufacturing: current.manufacturing.clone(),
+            missions: current.missions.clone(),
+            events: current.events.clone(),
+            ai: current.ai.clone(),
+            movement: current.movement.clone(),
+            fog_alliance: current.fog_alliance.clone(),
+            fog_empire: current.fog_empire.clone(),
+            player_is_alliance: current.player_is_alliance,
+            blockade: current.blockade.clone(),
+            uprising: current.uprising.clone(),
+            death_star: current.death_star.clone(),
+            research: current.research.clone(),
+            jedi: current.jedi.clone(),
+            victory: current.victory.clone(),
+            betrayal: current.betrayal.clone(),
+            economy: current.economy.clone(),
+            sim_rng: current.sim_rng.clone(),
+            ai2: current.ai2.clone(),
+            repair: (),
+            combat_cooldowns: current.combat_cooldowns.clone(),
+            game_config: current.game_config.clone(),
+            campaign_config: current.campaign_config.clone(),
         }
     }
 }
@@ -740,6 +838,23 @@ mod native {
                 }
                 (state, fingerprint, expected_fingerprint.is_some())
             }
+            11 => {
+                let legacy: SaveStateV11 =
+                    bincode::deserialize(&body).context("deserializing v11 save state")?;
+                if let Some(expected) = expected_fingerprint {
+                    let legacy_fingerprint =
+                        compute_serializable_fingerprint_for_version(version, &legacy)?;
+                    anyhow::ensure!(
+                        expected == legacy_fingerprint,
+                        "save state fingerprint mismatch: expected {}, computed {}",
+                        expected,
+                        legacy_fingerprint
+                    );
+                }
+                let state = SaveState::from(legacy);
+                let fingerprint = compute_state_fingerprint(&state)?;
+                (state, fingerprint, false)
+            }
             10 => {
                 let legacy: SaveStateV10 =
                     bincode::deserialize(&body).context("deserializing v10 save state")?;
@@ -1033,6 +1148,10 @@ pub mod wasm_impl {
     /// from older builds get rejected cleanly instead of attempting an
     /// inoperable bincode deserialize.
     fn slot_key(slot: usize) -> String {
+        format!("rebellion_save_v12_{}", slot)
+    }
+
+    fn v11_slot_key(slot: usize) -> String {
         format!("rebellion_save_v11_{}", slot)
     }
 
@@ -1048,6 +1167,10 @@ pub mod wasm_impl {
     ///
     /// Prefix is bumped per save format version (see [`slot_key`]).
     fn meta_key(slot: usize) -> String {
+        format!("rebellion_meta_v12_{}", slot)
+    }
+
+    fn v11_meta_key(slot: usize) -> String {
         format!("rebellion_meta_v11_{}", slot)
     }
 
@@ -1113,6 +1236,10 @@ pub mod wasm_impl {
             let meta = storage_get(&meta_key(slot))?
                 .ok_or_else(|| anyhow::anyhow!("save metadata missing for slot {}", slot))?;
             (SAVE_VERSION, body, meta)
+        } else if let Some(body) = storage_get(&v11_slot_key(slot))? {
+            let meta = storage_get(&v11_meta_key(slot))?
+                .ok_or_else(|| anyhow::anyhow!("v11 save metadata missing for slot {}", slot))?;
+            (11, body, meta)
         } else if let Some(body) = storage_get(&v10_slot_key(slot))? {
             let meta = storage_get(&v10_meta_key(slot))?
                 .ok_or_else(|| anyhow::anyhow!("v10 save metadata missing for slot {}", slot))?;
@@ -1137,6 +1264,19 @@ pub mod wasm_impl {
                 fingerprint
             );
             (state, fingerprint, true)
+        } else if save_version == 11 {
+            let legacy: SaveStateV11 = bincode::deserialize(&bytes)?;
+            let legacy_fingerprint =
+                compute_serializable_fingerprint_for_version(save_version, &legacy)?;
+            anyhow::ensure!(
+                expected_fingerprint == legacy_fingerprint,
+                "save state fingerprint mismatch: expected {}, computed {}",
+                expected_fingerprint,
+                legacy_fingerprint
+            );
+            let state = SaveState::from(legacy);
+            let fingerprint = compute_state_fingerprint(&state)?;
+            (state, fingerprint, false)
         } else if save_version == 10 {
             let legacy: SaveStateV10 = bincode::deserialize(&bytes)?;
             let legacy_fingerprint =
@@ -1184,10 +1324,14 @@ pub mod wasm_impl {
             .filter_map(|slot| {
                 let encoded = match storage_get(&meta_key(slot)) {
                     Ok(Some(encoded)) => Ok(Some((encoded, true))),
-                    Ok(None) => match storage_get(&v10_meta_key(slot)) {
+                    Ok(None) => match storage_get(&v11_meta_key(slot)) {
                         Ok(Some(encoded)) => Ok(Some((encoded, false))),
-                        Ok(None) => storage_get(&v9_meta_key(slot))
-                            .map(|legacy| legacy.map(|encoded| (encoded, false))),
+                        Ok(None) => match storage_get(&v10_meta_key(slot)) {
+                            Ok(Some(encoded)) => Ok(Some((encoded, false))),
+                            Ok(None) => storage_get(&v9_meta_key(slot))
+                                .map(|legacy| legacy.map(|encoded| (encoded, false))),
+                            Err(error) => Err(error),
+                        },
                         Err(error) => Err(error),
                     },
                     Err(error) => Err(error),
@@ -1216,6 +1360,8 @@ pub mod wasm_impl {
     pub fn delete_slot(_saves_dir: &Path, slot: usize) -> anyhow::Result<()> {
         storage_remove(&slot_key(slot))?;
         storage_remove(&meta_key(slot))?;
+        storage_remove(&v11_slot_key(slot))?;
+        storage_remove(&v11_meta_key(slot))?;
         storage_remove(&v10_slot_key(slot))?;
         storage_remove(&v10_meta_key(slot))?;
         storage_remove(&v9_slot_key(slot))?;
@@ -1374,6 +1520,16 @@ mod tests {
             file.write_all(&compute_mod_hash(&[]).to_le_bytes())
                 .unwrap();
         }
+        if version == 11 {
+            let legacy = SaveStateV11::from(state);
+            let fingerprint = compute_serializable_fingerprint_for_version(version, &legacy)
+                .expect("fingerprint v11 body");
+            file.write_all(&fingerprint.version.to_le_bytes()).unwrap();
+            file.write_all(&fingerprint.value.to_le_bytes()).unwrap();
+            let encoded = bincode::serialize(&legacy).expect("serialize v11 body");
+            file.write_all(&encoded).unwrap();
+            return;
+        }
         if version == 10 {
             let legacy = SaveStateV10::from(state);
             let fingerprint = compute_serializable_fingerprint_for_version(version, &legacy)
@@ -1420,7 +1576,7 @@ mod tests {
 
     #[test]
     fn round_trip_preserves_deterministic_continuation_envelope() {
-        let saves_dir = tmp_dir("continuation_envelope_v11");
+        let saves_dir = tmp_dir("continuation_envelope_v12");
         let mut state = minimal_save_state();
         state.sim_rng = Xoshiro256PlusPlus::seed_from_u64(0x5eed);
         state.ai2 = Some(AIState::new(AiFaction::Alliance));
@@ -1432,6 +1588,46 @@ mod tests {
         state.campaign_config.difficulty = rebellion_core::world::SeedDifficulty::Hard;
         state.campaign_config.victory_conditions =
             rebellion_core::world::VictoryConditions::HeadquartersOnly;
+
+        let facility = state
+            .world
+            .manufacturing_facilities
+            .insert(rebellion_core::world::ManufacturingFacilityInstance {
+                class_dat_id: rebellion_core::ids::DatId::new(0x2800_0001),
+                is_alliance: false,
+                is_shipyard: true,
+            });
+        state.world.systems[system]
+            .manufacturing_facilities
+            .push(facility);
+        let class = state
+            .world
+            .capital_ship_classes
+            .insert(rebellion_core::world::CapitalShipClass {
+                dat_id: rebellion_core::ids::DatId::new(0x1400_0001),
+                name: "Repair fixture".into(),
+                hull: 100,
+                damage_control: 5,
+                ..Default::default()
+            });
+        let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
+            location: system,
+            capital_ships: vec![rebellion_core::world::ShipInstance::new(
+                class, 75, false,
+            )],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        state.world.systems[system].fleets.push(fleet);
+        let repair_events = rebellion_core::repair::RepairSystem::advance(
+            &mut state.repair,
+            &state.world,
+            &[rebellion_core::tick::TickEvent { tick: 1 }],
+        );
+        assert!(!repair_events.is_empty());
+        assert!(state.repair.is_repairing(fleet));
 
         save_slot(&saves_dir, 0, "Continuation", &state, &[]).unwrap();
         let mut uninterrupted_rng = state.sim_rng.clone();
@@ -1450,6 +1646,7 @@ mod tests {
         assert_eq!(loaded.combat_cooldowns.get(&system), Some(&61));
         assert_eq!(loaded.game_config.ai.tick_interval, 13);
         assert_eq!(loaded.campaign_config, state.campaign_config);
+        assert!(loaded.repair.is_repairing(fleet));
     }
 
     #[test]
@@ -1613,6 +1810,19 @@ mod tests {
             loaded.campaign_config.victory_conditions,
             rebellion_core::world::VictoryConditions::Standard
         );
+        assert!(!meta.fingerprint_verified);
+    }
+
+    #[test]
+    fn v11_save_migrates_with_empty_repair_episode_state() {
+        let saves_dir = tmp_dir("v11_repair_state_compatibility");
+        let mut state = minimal_save_state();
+        state.campaign_config.galaxy_size = rebellion_core::dat::GalaxySize::Huge;
+        let path = slot_path(&saves_dir, 0);
+        write_versioned_fixture(&path, 11, "V11 Save", &state);
+
+        let (meta, loaded) = load_slot(&saves_dir, 0).expect("v11 save should migrate");
+        assert_eq!(loaded.campaign_config, state.campaign_config);
         assert!(!meta.fingerprint_verified);
     }
 

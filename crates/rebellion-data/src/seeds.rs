@@ -159,7 +159,7 @@ fn initialize_special_systems(world: &mut GameWorld, special: &SpecialSystems) {
         sys.control = ControlKind::Controlled(Faction::Alliance);
         sys.popularity_alliance = 1.0;
         sys.popularity_empire = 0.0;
-        sys.is_headquarters = true;
+        sys.is_headquarters = false;
     }
 
     // Rebel HQ — Alliance headquarters (separate from Yavin)
@@ -1851,6 +1851,7 @@ mod tests {
         assert!(ys.is_populated, "Yavin must be populated");
         assert_eq!(ys.exploration_status, ExplorationStatus::Explored, "Yavin must be charted");
         assert!(ys.control.is_controlled_by(Faction::Alliance), "Yavin must be Alliance-controlled");
+        assert!(!ys.is_headquarters, "Yavin is the Alliance base, not the randomized Rebel HQ");
         assert!(!ys.ground_units.is_empty(), "Yavin must have ground units (CMUNYVTB)");
 
         // Rebel HQ: must exist, be Alliance-controlled, populated, charted,

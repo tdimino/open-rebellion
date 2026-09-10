@@ -1156,7 +1156,7 @@ mod tests {
             economy: EconomyState::default(),
             sim_rng: Xoshiro256PlusPlus::seed_from_u64(seed),
             ai2: None,
-            repair: RepairState,
+            repair: RepairState::default(),
             combat_cooldowns: std::collections::HashMap::new(),
             game_config: GameConfig::default(),
             campaign_config: CampaignConfig::default(),
@@ -1425,7 +1425,7 @@ mod tests {
     }
 
     #[test]
-    fn executor_accepts_an_initial_state_restored_from_save_v11() {
+    fn executor_accepts_an_initial_state_restored_from_save_v12() {
         let data = sample_data();
         let environment = ReplayEnvironment {
             engine_version: "0.1.0-test",

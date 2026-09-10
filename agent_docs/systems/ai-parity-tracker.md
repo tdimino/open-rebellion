@@ -3,7 +3,7 @@ title: "AI Parity Tracker"
 description: "Comprehensive mapping of original REBEXE.EXE AI functions to Open Rebellion implementation status"
 category: "agent-docs"
 created: 2026-03-21
-updated: 2026-04-14
+updated: 2026-09-10
 tags: [ai, parity, ghidra, fleet-deployment]
 ---
 
@@ -11,7 +11,9 @@ tags: [ai, parity, ghidra, fleet-deployment]
 
 Maps every decompiled AI function from the original REBEXE.EXE to our Rust implementation. Each row documents: original behavior, our implementation, status, and whether we deviate/augment.
 
-Updated 2026-04-14 — all gaps closed. Cross-referenced against Ghidra RE, the community disassembly report, and the current Rust implementation.
+Updated 2026-09-10. The function map is cross-referenced against Ghidra RE,
+the community disassembly report, and current Rust. F-007E keeps long-running
+campaign balance open even where an individual function mapping is complete.
 
 ## Status Key
 
@@ -28,9 +30,9 @@ Updated 2026-04-14 — all gaps closed. Cross-referenced against Ghidra RE, the 
 | # | Original Function | Lines | Purpose | Our Code | Status | Notes |
 |---|---|---|---|---|---|---|
 | 1 | `FUN_00519d00` | 252 | Galaxy-wide system bucketing into 7 categories | `evaluate_galaxy_state()` ai.rs | DONE | 7 buckets + control_ratio + aggression scaling |
-| 2 | `FUN_00537180` | 381 | Primary system-level entity deployment | `evaluate_fleet_deployment()` ai.rs | AUGMENTED | Per-fleet scoring (weakness×proximity×deconfliction×freshness). Original was per-system iteration with capacity check only. **Our model is superior** — original has no weighted scoring. |
+| 2 | `FUN_00537180` | 381 | Primary system-level entity deployment | `evaluate_fleet_deployment()` ai.rs | PARTIAL | Per-fleet scoring and bounded dispatch work, but the five-seed F-007E gate still shows strong Empire bias and insufficient battle spread. |
 | 3 | `FUN_005385f0` | 252 | Secondary deployment pass (redistribution) | Pass 2 in `evaluate_fleet_deployment()` ai.rs | AUGMENTED | Original calls FUN_0052e970 (capacity check) + FUN_00506ea0 (faction evaluator). Our redistribution keeps the stronger aggression model but now honors faction-specific deploy budgets (Alliance 0.6, Empire 0.8). |
-| 4 | `FUN_00502020` | 897 | Garrison strength assessment (ships+troops+fac) | `system_strength()` ai.rs | DONE | Simplified but correct formula |
+| 4 | `FUN_00502020` | 897 | Garrison strength assessment (ships+troops+fac) | `system_strength()` ai.rs | PARTIAL | Saturating approximation covers ships, troops, and facilities. Exact weighting remains unverified. |
 | 5 | `FUN_00508250` | 139 | Action validation (18 AND-chained checks) | `can_dispatch()` + `can_dispatch_to_system()` + `can_dispatch_fleet()` ai.rs | AUGMENTED | 15 of 18 checks represented (Tammuz D1). Remaining 3 (#2, #3, #4) are C++ allocation budget tracking that our per-cycle caps replace. |
 | 6 | `FUN_00520580` | 9 | Movement order issuance (2-field struct setter) | `AIAction::MoveFleet` + simulation.rs | DONE | Original is just a command setter — `*(this) = cmd_type; *(this+4) = param`. |
 
@@ -66,7 +68,7 @@ All 18 sub-functions decompiled 2026-03-23 via Ghidra MCP. Each returns bool; al
 | 3 | `FUN_0050ad80` | 139 | Fleet entity count vs capacity at `+0x5c` (most complex validator) | CLOSED — fleet-level checks in `can_dispatch_fleet()` cover the fleet side; per-cycle evaluation limits prevent over-dispatch. |
 | 4 | `FUN_0050b0b0` | 65 | Entity count via vtable+0x1c8 vs budget at `+0x64` | CLOSED — global deployment budget replaced by per-cycle caps + faction-specific deploy budgets (`alliance_deploy_budget=0.6`, `empire_deploy_budget=0.8`). |
 | 5 | `FUN_0050b230` | 36 | Faction check (+0x24>>6&3) + status bits (+0x88>>11) + multi-param scoring | DONE (faction gate + is_busy/on_mission checks cover status bits) |
-| 6 | `FUN_0050b2c0` | 27 | Faction check + loyalty scoring via FUN_00559c10 | DONE (loyalty threshold + destroyed-system rejection) |
+| 6 | `FUN_0050b2c0` | 27 | Faction check + loyalty scoring via FUN_00559c10 | DONE for population-facing actions; not applied as a military target veto |
 | 7 | `FUN_0050b310` | 73 | Ship type compatibility: fleet count + facility count + bit5 of +0x88 | DONE (alive-ship check in can_dispatch_fleet approximates compatibility) |
 | 8 | `FUN_0050b610` | 77 | Troop deployment: +0x88 bit0, troop class via FUN_0055a080 | DONE (valid-location check in can_dispatch_fleet; troops are system-level) |
 | 9 | `FUN_0050b5a0` | 33 | Faction + status bits (+0x88 bits 0,2,11) + scoring | DONE (faction + captive/mission/busy flags cover all 3 status bits) |
@@ -76,13 +78,13 @@ All 18 sub-functions decompiled 2026-03-23 via Ghidra MCP. Each returns bool; al
 | 13 | `FUN_0050bc60` | 87 | Character iteration (family 4) + faction match + counting | DONE (faction match) |
 | 14 | `FUN_0050be00` | 99 | Character iteration (family 4) + mandatory mission check | DONE (on_mandatory_mission) |
 | 15 | `FUN_0050c350` | 95 | Fleet/facility nested iteration + per-entity FUN_0050c580 check | FAITHFUL (faction-ownership guaranteed by construction) |
-| 16 | `FUN_0050b8e0` | 89 | System-level strength scoring: both factions via FUN_00509710 | DONE (hull-based strength threshold + destroyed-system rejection) |
+| 16 | `FUN_0050b8e0` | 89 | System-level strength scoring: both factions via FUN_00509710 | PARTIAL: writes derived readiness state in the original; Rust scores targets and applies a per-fleet 3× force-allocation bound |
 | 17 | `FUN_0050b800` | 34 | Status bits (+0x88 bits 0,2) + position check (+0x7c ≥ 0) | DONE (captive/mission checks + valid-system check) |
 | 18 | `FUN_0050bb00` | 28 | Faction + status bits + position → deployment flag | DONE (faction + is_busy + location validity) |
 
 **Summary**: All 18 checks are resolved. 15 directly ported or faithfully approximated. #2/#3/#4 CLOSED — the C++ allocation budget tracking (`+0x58`, `+0x5c`, `+0x64`) is functionally replaced by our per-cycle caps (`max_covert_ops_per_eval`, `max_recon_per_eval`, per-fleet evaluation) + faction-specific deploy budgets.
 
-## AI Behavioral Properties (All Resolved)
+## AI Behavioral Properties
 
 | Property | Original (Decoded) | Ours | Status | Decision |
 |---|---|---|---|---|

@@ -391,9 +391,16 @@ release acceptance. The September 2026 [full-functionality audit](../docs/qa/202
   engagements instead of 603 repeated combat events
   ([F-007D evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-system-combat-resolution.md)).
 - [ ] Extend stable ordering and versioned random streams through five 5,000-tick campaign seeds.
-- [ ] Balance both AI factions so battles reach 50-400 across at least eight
-  systems without production-fed transit fan-in; emit victory when its rules
-  are met and stop repeated repair-start telemetry (F-007E).
+- [x] Close the F-007E logistics checkpoint: require control for AI production,
+  eliminate friendly cycling and production-fed transit fan-in, retain an HQ
+  defender, preserve blockaded surface troops, load real `TROOPSD.DAT` class
+  stats, and persist repair episodes in save v12. Five seeds finish with 0%
+  transit, a 1.0 move/arrival ratio, at most 1.2× initial fleets, and only 0–5
+  repair starts ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md)).
+- [ ] Complete F-007E with troop embarkation, capacity, ground assault,
+  occupation, and principal-leader capture; then balance both factions so
+  battles reach 50–400 across at least eight systems and victory occurs when
+  the selected rules are met.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
 - [ ] Pass five 5,000-tick seeds: transit ≤10%, orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles across ≥8 systems, busiest system ≤40%.
 
