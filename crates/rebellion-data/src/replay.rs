@@ -713,6 +713,7 @@ impl ReplayRuntime {
             combat_cooldowns,
             game_config,
             campaign_config,
+            troop_transport,
         } = state;
         let (fog, inactive_fog) = if player_is_alliance {
             (fog_alliance, fog_empire)
@@ -739,6 +740,7 @@ impl ReplayRuntime {
                 betrayal,
                 economy,
                 repair,
+                troop_transport,
                 combat_cooldowns,
                 campaign_config,
             },
@@ -847,6 +849,7 @@ impl ReplayRuntime {
             combat_cooldowns: self.states.combat_cooldowns.clone(),
             game_config: self.game_config.clone(),
             campaign_config: self.states.campaign_config,
+            troop_transport: self.states.troop_transport.clone(),
         }
     }
 }
@@ -1160,6 +1163,7 @@ mod tests {
             combat_cooldowns: std::collections::HashMap::new(),
             game_config: GameConfig::default(),
             campaign_config: CampaignConfig::default(),
+            troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
         }
     }
 
@@ -1425,7 +1429,7 @@ mod tests {
     }
 
     #[test]
-    fn executor_accepts_an_initial_state_restored_from_save_v12() {
+    fn executor_accepts_an_initial_state_restored_from_save_v13() {
         let data = sample_data();
         let environment = ReplayEnvironment {
             engine_version: "0.1.0-test",

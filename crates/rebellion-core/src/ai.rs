@@ -240,6 +240,10 @@ pub enum AIAction {
         fleet: FleetKey,
         to_system: SystemKey,
         reason: FleetMoveReason,
+        /// Surface regiments to embark before departure. Empty for ordinary
+        /// fleet movement. Capacity and co-location are revalidated when the
+        /// action is applied.
+        troops: Vec<TroopKey>,
     },
 
     /// Assign a character to research a tech tree.
@@ -249,12 +253,6 @@ pub enum AIAction {
         ticks: u32,
     },
 
-    /// Relocate a troop unit from one friendly system to another.
-    MoveTroops {
-        troop: TroopKey,
-        from_system: SystemKey,
-        to_system: SystemKey,
-    },
 }
 
 /// Why the AI is moving a fleet.
@@ -322,7 +320,7 @@ impl AISystem {
         Self::evaluate_uprising_prevention(state, world, faction, config, &mut actions);
         Self::evaluate_ds_escort(world, movement, faction, config, &mut actions);
         Self::evaluate_fleet_deployment(state, world, movement, faction, current_tick, config, &mut actions);
-        Self::evaluate_troop_deployment(world, faction, config, &mut actions);
+        Self::evaluate_troop_deployment(world, movement, faction, config, &mut actions);
 
         actions
     }
@@ -1623,6 +1621,7 @@ impl AISystem {
     /// Donor threshold and receiver minimum are configurable via `AiConfig`.
     fn evaluate_troop_deployment(
         world: &GameWorld,
+        movement: &crate::movement::MovementState,
         faction: AiFaction,
         config: &GameConfig,
         actions: &mut Vec<AIAction>,
@@ -1691,29 +1690,125 @@ impl AISystem {
             }
         }
 
-        if donors.is_empty() || receivers.is_empty() {
-            return;
-        }
-
         // Sort receivers by priority (lowest number = highest priority).
         receivers.sort_by_key(|(_, priority)| *priority);
 
-        // Move one troop per donor-receiver pair.
-        let mut receiver_idx = 0;
-        for (donor_sys, friendly_troops) in &donors {
-            if receiver_idx >= receivers.len() {
-                break;
+        // Fleet orders created by the deployment pass are the only legal way
+        // for troops to leave a planet. Fill attack transports first, leaving
+        // the configured minimum garrison behind. Friendly reinforcement
+        // orders carry one regiment when their destination needs it.
+        let mut reserved_troops = HashSet::new();
+        let mut moved_fleets = HashSet::new();
+        let mut reinforced_systems = HashSet::new();
+        for action in actions.iter_mut() {
+            let AIAction::MoveFleet {
+                fleet,
+                to_system,
+                reason,
+                troops,
+            } = action
+            else {
+                continue;
+            };
+            moved_fleets.insert(*fleet);
+
+            let Some(fleet_value) = world.fleets.get(*fleet) else {
+                continue;
+            };
+            let capacity = fleet_value
+                .capital_ships
+                .iter()
+                .filter(|ship| ship.alive)
+                .filter_map(|ship| world.capital_ship_classes.get(ship.class))
+                .map(|class| class.troop_capacity)
+                .sum::<u32>() as usize;
+            if capacity == 0 {
+                continue;
             }
-            // Take the last friendly troop from the donor.
-            if let Some(&troop_key) = friendly_troops.last() {
-                let (recv_sys, _) = receivers[receiver_idx];
-                actions.push(AIAction::MoveTroops {
-                    troop: troop_key,
-                    from_system: *donor_sys,
-                    to_system: recv_sys,
-                });
-                receiver_idx += 1;
+
+            let Some(origin) = world.systems.get(fleet_value.location) else {
+                continue;
+            };
+            let mut available: Vec<_> = origin
+                .ground_units
+                .iter()
+                .copied()
+                .filter(|troop| !reserved_troops.contains(troop))
+                .filter(|troop| {
+                    world
+                        .troops
+                        .get(*troop)
+                        .map(|value| value.is_alliance == is_alliance)
+                        .unwrap_or(false)
+                })
+                .collect();
+            available.sort_unstable();
+
+            let limit = match reason {
+                FleetMoveReason::Attack => available
+                    .len()
+                    .saturating_sub(config.ai.troop_garrison_min)
+                    .min(capacity),
+                FleetMoveReason::Reinforce => {
+                    let needs_reinforcement = receivers
+                        .iter()
+                        .any(|(receiver, _)| receiver == to_system);
+                    let donor_has_surplus = available.len()
+                        > config.ai.troop_garrison_donor_threshold;
+                    usize::from(needs_reinforcement && donor_has_surplus)
+                }
+            };
+            troops.extend(available.into_iter().rev().take(limit));
+            troops.sort_unstable();
+            reserved_troops.extend(troops.iter().copied());
+            if !troops.is_empty() && matches!(reason, FleetMoveReason::Reinforce) {
+                reinforced_systems.insert(*to_system);
             }
+        }
+
+        // If strategic fleet deployment did not already cover a weak friendly
+        // system, pair it with an unused transport at an oversupplied donor.
+        for (receiver, _) in receivers {
+            if reinforced_systems.contains(&receiver) {
+                continue;
+            }
+            let Some((fleet, troop)) = donors.iter().find_map(|(donor, troops)| {
+                let troop = troops
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|troop| !reserved_troops.contains(troop))?;
+                let fleet = world.systems.get(*donor)?.fleets.iter().copied().find(|fleet| {
+                    if moved_fleets.contains(fleet) || movement.is_in_transit(*fleet) {
+                        return false;
+                    }
+                    let Some(value) = world.fleets.get(*fleet) else {
+                        return false;
+                    };
+                    value.is_alliance == is_alliance
+                        && !value.is_empty()
+                        && value.capital_ships.iter().any(|ship| {
+                            ship.alive
+                                && world
+                                    .capital_ship_classes
+                                    .get(ship.class)
+                                    .map(|class| class.troop_capacity > 0)
+                                    .unwrap_or(false)
+                        })
+                })?;
+                Some((fleet, troop))
+            }) else {
+                continue;
+            };
+
+            actions.push(AIAction::MoveFleet {
+                fleet,
+                to_system: receiver,
+                reason: FleetMoveReason::Reinforce,
+                troops: vec![troop],
+            });
+            moved_fleets.insert(fleet);
+            reserved_troops.insert(troop);
         }
     }
 
@@ -1855,6 +1950,7 @@ impl AISystem {
                         fleet: ds_fleet_key,
                         to_system: retreat_sys,
                         reason: FleetMoveReason::Reinforce,
+                        troops: vec![],
                     });
                     return; // Don't also issue an escort — DS is retreating.
                 }
@@ -1903,6 +1999,7 @@ impl AISystem {
                 fleet: escort_key,
                 to_system: ds_location,
                 reason: FleetMoveReason::Reinforce,
+                troops: vec![],
             });
         }
     }
@@ -2090,6 +2187,7 @@ impl AISystem {
                             fleet: *fleet_key,
                             to_system: target,
                             reason: FleetMoveReason::Attack,
+                            troops: vec![],
                         });
                         *targeted_counts.entry(target).or_default() += 1;
                     }
@@ -2117,6 +2215,7 @@ impl AISystem {
                             fleet: *fleet_key,
                             to_system: hq,
                             reason: FleetMoveReason::Reinforce,
+                            troops: vec![],
                         });
                     }
                     hq_defended = true;
@@ -2201,6 +2300,7 @@ impl AISystem {
                             fleet: *fleet_key,
                             to_system: target,
                             reason: FleetMoveReason::Attack,
+                            troops: vec![],
                         });
                         *targeted_counts.entry(target).or_default() += 1;
                         continue;
@@ -2234,6 +2334,7 @@ impl AISystem {
                             fleet: fleet_key,
                             to_system: target,
                             reason: FleetMoveReason::Attack,
+                            troops: vec![],
                         });
                         *targeted_counts.entry(target).or_default() += 1;
                         continue;
@@ -2653,7 +2754,7 @@ mod tests {
 
         let fleet_move = actions.iter().find(|a| matches!(
             a,
-            AIAction::MoveFleet { fleet, to_system, reason: FleetMoveReason::Attack }
+            AIAction::MoveFleet { fleet, to_system, reason: FleetMoveReason::Attack, .. }
             if *fleet == fleet_key && *to_system == target_sys
         ));
         assert!(fleet_move.is_some(), "expected fleet to be directed at weak enemy system");
@@ -2706,6 +2807,7 @@ mod tests {
                 fleet,
                 to_system,
                 reason: FleetMoveReason::Attack,
+                ..
             } if *fleet == empire_fleet && *to_system == target_sys
         )));
     }
@@ -2766,6 +2868,7 @@ mod tests {
                 fleet,
                 to_system,
                 reason: FleetMoveReason::Attack,
+                ..
             } if *fleet == empire_fleet && *to_system == weak_target
         )));
     }
@@ -2865,6 +2968,7 @@ mod tests {
                 fleet,
                 to_system,
                 reason: FleetMoveReason::Attack,
+                ..
             } if *fleet == attacker && *to_system == target_sys
         )));
     }
@@ -2908,6 +3012,7 @@ mod tests {
                 fleet,
                 to_system,
                 reason: FleetMoveReason::Attack,
+                ..
             } if *fleet == wave && *to_system == target_sys
         )));
     }
@@ -3451,6 +3556,19 @@ mod tests {
             });
             world.systems[donor_sys].ground_units.push(tk);
         }
+        let transport_class = world.capital_ship_classes.insert(CapitalShipClass {
+            troop_capacity: 1,
+            ..CapitalShipClass::default()
+        });
+        let transport = world.fleets.insert(Fleet {
+            location: donor_sys,
+            capital_ships: ShipInstance::make(transport_class, 100, false, 1),
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        world.systems[donor_sys].fleets.push(transport);
 
         // Frontline receiver: 0 troops, near enemy territory.
         let frontline_sys = world.systems.insert(System {
@@ -3507,19 +3625,33 @@ mod tests {
         });
 
         let mut actions = Vec::new();
-        AISystem::evaluate_troop_deployment(&world, AiFaction::Empire, &config, &mut actions);
+        AISystem::evaluate_troop_deployment(
+            &world,
+            &crate::movement::MovementState::new(),
+            AiFaction::Empire,
+            &config,
+            &mut actions,
+        );
 
         // Should dispatch at least one troop move.
         assert!(!actions.is_empty(), "expected troop deployment actions");
 
         // First troop move should go to the frontline system (higher priority).
-        if let AIAction::MoveTroops { to_system, .. } = &actions[0] {
+        if let AIAction::MoveFleet {
+            fleet,
+            to_system,
+            reason: FleetMoveReason::Reinforce,
+            troops,
+        } = &actions[0]
+        {
+            assert_eq!(*fleet, transport);
             assert_eq!(
                 *to_system, frontline_sys,
                 "first troop deployment should target frontline system"
             );
+            assert_eq!(troops.len(), 1);
         } else {
-            panic!("expected MoveTroops action");
+            panic!("expected transport-backed MoveFleet action");
         }
     }
 
@@ -3631,7 +3763,7 @@ mod tests {
         // DS should retreat because enemy strength >> friendly strength.
         let retreat = actions.iter().find(|a| matches!(
             a,
-            AIAction::MoveFleet { fleet, to_system, reason: FleetMoveReason::Reinforce }
+            AIAction::MoveFleet { fleet, to_system, reason: FleetMoveReason::Reinforce, .. }
             if *fleet == ds_fleet && *to_system == safe_sys
         ));
         assert!(retreat.is_some(), "Death Star should retreat when outgunned");

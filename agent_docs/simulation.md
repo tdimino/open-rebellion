@@ -46,7 +46,7 @@ The `PerceptionIntegrator` (rebellion-data `integrator.rs`) applies effects to `
 | 14 | **Victory** | `victory.rs` | `check(state, world, ticks)` | Death Star checks supersede HQ capture |
 | 15 | **Betrayal** | `betrayal.rs` | `advance(state, world, ticks, rolls, loyalty_tb)` | `is_unable_to_betray` immunity; 50-tick cooldown |
 | 16 | **Economy** | `economy.rs` | `advance(state, world, ticks, difficulty)` | Full 18-function strategic state rebuild (FUN_005073d0). Runs BEFORE manufacturing (position 0). Resource caps, support drift, collection rate, KDY modifier, side resolution (GNPRTB[7760] energy threshold), garrison, troop/fleet summary, incident generation (state-transition-driven, 4 flags). 17 GNPRTB indices. 30 tests. |
-| 17 | **Repair** | `repair.rs` | `advance(state, world, ticks)` | Damaged ships at shipyards auto-repair using class `damage_control`. `RepairCheckPerformed` marks the start of a continuous repair episode; `ShipRepaired` records each hull step. Active episodes persist in save v12. |
+| 17 | **Repair** | `repair.rs` | `advance(state, world, ticks)` | Damaged ships at shipyards auto-repair using class `damage_control`. `RepairCheckPerformed` marks the start of a continuous repair episode; `ShipRepaired` records each hull step. Active episodes persist in save v13. |
 
 Per-system detail docs: `agent_docs/systems/{combat,blockade,uprising,death-star,research,jedi,victory,betrayal,story-events}.md`
 

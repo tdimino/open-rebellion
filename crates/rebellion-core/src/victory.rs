@@ -153,13 +153,14 @@ impl VictorySystem {
 
     // ── Private ───────────────────────────────────────────────────────────
 
-    /// HQ capture: enemy fleet present AND defending fleet absent.
+    /// HQ capture: the opposing faction has completed planetary occupation.
+    ///
+    /// Orbital supremacy alone is not a capture. System control is changed by
+    /// ground combat and persists if the invading fleet later departs.
     fn check_hq_capture(state: &VictoryState, world: &GameWorld) -> Option<VictoryOutcome> {
         // Alliance HQ → Empire capture?
         if let Some(sys) = world.systems.get(state.alliance_hq) {
-            let empire = Self::fleet_count_at(world, sys, false);
-            let alliance = Self::fleet_count_at(world, sys, true);
-            if empire > 0 && alliance == 0 {
+            if sys.control.is_controlled_by(Faction::Empire) {
                 return Some(VictoryOutcome::HqCaptured {
                     winner: Faction::Empire,
                     loser: Faction::Alliance,
@@ -170,9 +171,7 @@ impl VictorySystem {
 
         // Empire HQ → Alliance capture?
         if let Some(sys) = world.systems.get(state.empire_hq) {
-            let alliance = Self::fleet_count_at(world, sys, true);
-            let empire = Self::fleet_count_at(world, sys, false);
-            if alliance > 0 && empire == 0 {
+            if sys.control.is_controlled_by(Faction::Alliance) {
                 return Some(VictoryOutcome::HqCaptured {
                     winner: Faction::Alliance,
                     loser: Faction::Empire,
@@ -249,14 +248,6 @@ impl VictorySystem {
         }
 
         None
-    }
-
-    fn fleet_count_at(world: &GameWorld, sys: &crate::world::System, is_alliance: bool) -> usize {
-        sys.fleets
-            .iter()
-            .filter_map(|&fk| world.fleets.get(fk))
-            .filter(|f| f.is_alliance == is_alliance)
-            .count()
     }
 }
 
@@ -406,7 +397,7 @@ mod tests {
     #[test]
     fn headquarters_only_empire_captures_alliance_hq() {
         let (mut world, a, e) = make_world();
-        add_fleet(&mut world, a, false, false);
+        world.systems.get_mut(a).unwrap().control = ControlKind::Controlled(Faction::Empire);
 
         let state = VictoryState::new(a, e);
         let out = VictorySystem::check(
@@ -428,7 +419,7 @@ mod tests {
     #[test]
     fn headquarters_only_alliance_captures_empire_hq() {
         let (mut world, a, e) = make_world();
-        add_fleet(&mut world, e, true, false);
+        world.systems.get_mut(e).unwrap().control = ControlKind::Controlled(Faction::Alliance);
 
         let state = VictoryState::new(a, e);
         let out = VictorySystem::check(
@@ -450,8 +441,7 @@ mod tests {
     #[test]
     fn contested_hq_no_capture() {
         let (mut world, a, e) = make_world();
-        add_fleet(&mut world, a, false, false);
-        add_fleet(&mut world, a, true, false);
+        world.systems.get_mut(a).unwrap().control = ControlKind::Contested;
 
         let state = VictoryState::new(a, e);
         assert!(VictorySystem::check(
@@ -461,6 +451,42 @@ mod tests {
             VictoryConditions::HeadquartersOnly
         )
         .is_none());
+    }
+
+    #[test]
+    fn orbital_supremacy_without_occupation_is_not_hq_capture() {
+        let (mut world, alliance_hq, empire_hq) = make_world();
+        add_fleet(&mut world, alliance_hq, false, false);
+
+        let state = VictoryState::new(alliance_hq, empire_hq);
+        assert!(VictorySystem::check(
+            &state,
+            &world,
+            &[tick(VictorySystem::MIN_VICTORY_TICK)],
+            VictoryConditions::HeadquartersOnly,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn occupied_hq_remains_captured_after_invading_fleet_departs() {
+        let (mut world, alliance_hq, empire_hq) = make_world();
+        world.systems.get_mut(alliance_hq).unwrap().control =
+            ControlKind::Controlled(Faction::Empire);
+
+        let state = VictoryState::new(alliance_hq, empire_hq);
+        assert!(matches!(
+            VictorySystem::check(
+                &state,
+                &world,
+                &[tick(VictorySystem::MIN_VICTORY_TICK)],
+                VictoryConditions::HeadquartersOnly,
+            ),
+            Some(VictoryOutcome::HqCaptured {
+                winner: Faction::Empire,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -520,7 +546,8 @@ mod tests {
     #[test]
     fn standard_hq_capture_waits_for_both_alliance_leaders() {
         let (mut world, alliance_hq, empire_hq) = make_world();
-        add_fleet(&mut world, alliance_hq, false, false);
+        world.systems.get_mut(alliance_hq).unwrap().control =
+            ControlKind::Controlled(Faction::Empire);
         capture_leader(&mut world, "Luke Skywalker", Faction::Empire);
 
         let state = VictoryState::new(alliance_hq, empire_hq);
@@ -542,7 +569,8 @@ mod tests {
     #[test]
     fn standard_hq_capture_waits_for_both_empire_leaders() {
         let (mut world, alliance_hq, empire_hq) = make_world();
-        add_fleet(&mut world, empire_hq, true, false);
+        world.systems.get_mut(empire_hq).unwrap().control =
+            ControlKind::Controlled(Faction::Alliance);
         capture_leader(&mut world, "Emperor Palpatine", Faction::Alliance);
         capture_leader(&mut world, "Darth Vader", Faction::Empire);
 

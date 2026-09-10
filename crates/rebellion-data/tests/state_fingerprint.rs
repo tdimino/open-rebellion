@@ -90,6 +90,7 @@ fn seeded_snapshot(seed: u64) -> SaveState {
             options,
             rebellion_core::world::VictoryConditions::Standard,
         ),
+        troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
     }
 }
 

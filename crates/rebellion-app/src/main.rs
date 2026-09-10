@@ -23,6 +23,7 @@ use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fog::{FogState, FogSystem};
+use rebellion_core::ids::TroopKey;
 use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
@@ -35,6 +36,7 @@ use rebellion_core::movement::{
 use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::tick::{GameClock, GameSpeed};
+use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::uprising::{UprisingState, UprisingSystem};
 use rebellion_core::victory::{VictoryState, VictorySystem};
 use rebellion_core::world::{
@@ -195,6 +197,7 @@ struct LiveCampaign<'a> {
     sim_rng: &'a mut Xoshiro256PlusPlus,
     ai2: &'a mut Option<AIState>,
     repair: &'a mut RepairState,
+    troop_transport: &'a mut TroopTransportState,
     combat_cooldowns: &'a mut std::collections::HashMap<rebellion_core::ids::SystemKey, u64>,
     game_config: &'a mut rebellion_core::tuning::GameConfig,
     campaign_config: &'a mut CampaignConfig,
@@ -227,6 +230,7 @@ impl LiveCampaign<'_> {
             combat_cooldowns: self.combat_cooldowns.clone(),
             game_config: self.game_config.clone(),
             campaign_config: *self.campaign_config,
+            troop_transport: self.troop_transport.clone(),
         }
     }
 
@@ -259,6 +263,7 @@ impl LiveCampaign<'_> {
         *self.combat_cooldowns = state.combat_cooldowns;
         *self.game_config = state.game_config;
         *self.campaign_config = state.campaign_config;
+        *self.troop_transport = state.troop_transport;
     }
 }
 
@@ -682,6 +687,7 @@ async fn main() {
     let mut jedi_state = JediState::new();
     let mut betrayal_state = BetrayalState::new();
     let mut repair_state = RepairState::default();
+    let mut troop_transport_state = TroopTransportState::default();
     let mut economy_state = EconomyState::default();
     // Find HQ systems for victory detection
     let alliance_hq = world
@@ -1128,7 +1134,7 @@ async fn main() {
             // ── Movement ────────────────────────────────────────────────────
             let arrivals = MovementSystem::advance(&mut movement_state, &tick_events);
             for arrival in &arrivals {
-                if apply_fleet_arrival(&mut world, arrival).is_none() {
+                if apply_fleet_arrival(&mut world, &mut troop_transport_state, arrival).is_none() {
                     continue;
                 }
                 let sys_name = world
@@ -1146,6 +1152,54 @@ async fn main() {
                 audio_engine.play_sfx(SfxKind::FleetArrival, &audio_vol);
             }
 
+            // Unopposed troop transports can land immediately. Contested
+            // orbits retain cargo until space combat produces a winner.
+            let mut ground_resolved_systems = HashSet::new();
+            let landing_targets: Vec<_> = world
+                .systems
+                .iter()
+                .filter_map(|(system, value)| {
+                    let has_alliance = value.fleets.iter().any(|fleet| {
+                        world
+                            .fleets
+                            .get(*fleet)
+                            .map(|value| value.is_alliance)
+                            .unwrap_or(false)
+                    });
+                    let has_empire = value.fleets.iter().any(|fleet| {
+                        world
+                            .fleets
+                            .get(*fleet)
+                            .map(|value| !value.is_alliance)
+                            .unwrap_or(false)
+                    });
+                    let faction = match (has_alliance, has_empire) {
+                        (true, false) => Some(true),
+                        (false, true) => Some(false),
+                        _ => None,
+                    }?;
+                    value
+                        .fleets
+                        .iter()
+                        .any(|fleet| troop_transport_state.carried_count(*fleet) > 0)
+                        .then_some((system, faction))
+                })
+                .collect();
+            for (system, is_alliance) in landing_targets {
+                let ground_rolls: Vec<f64> =
+                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                ground_resolved_systems.insert(system);
+                resolve_ground_campaign(
+                    &mut world,
+                    &mut troop_transport_state,
+                    system,
+                    is_alliance,
+                    &ground_rolls,
+                    tick_events.last().map(|event| event.tick).unwrap_or(0),
+                    &mut msg_log,
+                );
+            }
+
             // ── Combat ──────────────────────────────────────────────────────
             // After fleet arrivals, check every system for opposing fleets.
             // Collect combat triggers first (immutable world borrow).
@@ -1156,7 +1210,7 @@ async fn main() {
                 .filter_map(|sys_key| {
                     // Combat cooldown: skip systems that had combat within last 5 ticks.
                     if let Some(&last_battle) = combat_cooldowns.get(&sys_key) {
-                        if current_tick < last_battle + 5 {
+                        if current_tick < last_battle.saturating_add(5) {
                             return None;
                         }
                     }
@@ -1247,6 +1301,7 @@ async fn main() {
 
                 // Apply ship damage: reduce counts proportional to destroyed hulls.
                 apply_space_combat_result(&space_result, &mut world);
+                troop_transport_state.destroy_untransportable_cargo(&mut world);
                 // Record combat cooldown to prevent infinite re-trigger on draws.
                 combat_cooldowns.insert(sys_key, current_tick);
 
@@ -1264,37 +1319,28 @@ async fn main() {
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
 
-                // Ground combat: if attacker wins space battle and system has enemy troops.
-                if space_result.winner == CombatSide::Attacker {
+                // Surviving transports land only after a decisive space result.
+                let winner = match space_result.winner {
+                    CombatSide::Attacker => Some((true, atk_fleet)),
+                    CombatSide::Defender => Some((false, def_fleet)),
+                    CombatSide::Draw => None,
+                };
+                if let Some((winner_is_alliance, winner_fleet)) = winner {
                     let ground_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
-                    let ground_result = CombatSystem::resolve_ground(
-                        &world,
+                    ground_resolved_systems.insert(sys_key);
+                    resolve_ground_campaign(
+                        &mut world,
+                        &mut troop_transport_state,
                         sys_key,
-                        true, // alliance is attacker
-                        world.difficulty_index,
+                        winner_is_alliance,
                         &ground_rolls,
                         current_tick,
+                        &mut msg_log,
                     );
-                    apply_ground_combat_result(&ground_result, &mut world);
 
-                    if !ground_result.troop_damage.is_empty() {
-                        let ground_str = match ground_result.winner {
-                            CombatSide::Attacker => "Alliance ground victory",
-                            CombatSide::Defender => "Empire ground holds",
-                            CombatSide::Draw => "Ground combat draw",
-                        };
-                        msg_log.push(GameMessage::at_system(
-                            current_tick,
-                            format!("Ground battle at {} — {}", sys_name, ground_str),
-                            MessageCategory::Combat,
-                            sys_key,
-                        ));
-                    }
-
-                    // Orbital bombardment: empire fleet bombards remaining defenders.
                     let brd_result = BombardmentSystem::resolve_bombardment(
                         &world,
-                        atk_fleet,
+                        winner_fleet,
                         sys_key,
                         world.difficulty_index,
                         current_tick,
@@ -1311,6 +1357,61 @@ async fn main() {
                         ));
                     }
                 }
+            }
+
+            // Continue unresolved surface engagements even after every troop
+            // has left its transport. This mirrors the shared simulation loop
+            // and prevents a no-progress round from freezing an invasion until
+            // another fleet happens to arrive.
+            let continuing_ground_battles: Vec<_> = world
+                .systems
+                .keys()
+                .filter_map(|system| {
+                    if ground_resolved_systems.contains(&system) {
+                        return None;
+                    }
+                    let value = world.systems.get(system)?;
+                    let (alliance_troops, empire_troops) = value.ground_units.iter().fold(
+                        (false, false),
+                        |counts, troop| match world.troops.get(*troop) {
+                            Some(value) if value.regiment_strength > 0 && value.is_alliance => {
+                                (true, counts.1)
+                            }
+                            Some(value) if value.regiment_strength > 0 => (counts.0, true),
+                            _ => counts,
+                        },
+                    );
+                    if !alliance_troops || !empire_troops {
+                        return None;
+                    }
+
+                    let (alliance_fleet, empire_fleet) = value.fleets.iter().fold(
+                        (false, false),
+                        |counts, fleet| match world.fleets.get(*fleet) {
+                            Some(value) if value.is_alliance => (true, counts.1),
+                            Some(_) => (counts.0, true),
+                            None => counts,
+                        },
+                    );
+                    let attacker_is_alliance = match (alliance_fleet, empire_fleet) {
+                        (false, true) => false,
+                        _ => true,
+                    };
+                    Some((system, attacker_is_alliance))
+                })
+                .collect();
+            for (system, attacker_is_alliance) in continuing_ground_battles {
+                let ground_rolls: Vec<f64> =
+                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                resolve_ground_campaign(
+                    &mut world,
+                    &mut troop_transport_state,
+                    system,
+                    attacker_is_alliance,
+                    &ground_rolls,
+                    current_tick,
+                    &mut msg_log,
+                );
             }
 
             // ── Fog of war ──────────────────────────────────────────────────
@@ -1571,6 +1672,7 @@ async fn main() {
                 &mut mission_state,
                 &mut mfg_state,
                 &mut movement_state,
+                &mut troop_transport_state,
                 &mut research_state,
                 &mut world,
                 &mut msg_log,
@@ -1601,6 +1703,7 @@ async fn main() {
                     &mut mission_state,
                     &mut mfg_state,
                     &mut movement_state,
+                    &mut troop_transport_state,
                     &mut research_state,
                     &mut world,
                     &mut msg_log,
@@ -2355,6 +2458,7 @@ async fn main() {
                                     jedi_state = JediState::new();
                                     betrayal_state = BetrayalState::new();
                                     repair_state = RepairState::default();
+                                    troop_transport_state = TroopTransportState::default();
                                     economy_state = EconomyState::default();
                                     game_config = rebellion_core::tuning::GameConfig::default();
                                     dual_ai_mode = false;
@@ -2941,6 +3045,26 @@ async fn main() {
                                 death_star_state.shield_generator_active,
                             );
                             apply_space_combat_result(&space_result, &mut world);
+                            troop_transport_state.destroy_untransportable_cargo(&mut world);
+
+                            let ground_attacker = match space_result.winner {
+                                CombatSide::Attacker => Some(true),
+                                CombatSide::Defender => Some(false),
+                                CombatSide::Draw => None,
+                            };
+                            if let Some(attacker_is_alliance) = ground_attacker {
+                                let ground_rolls: Vec<f64> =
+                                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                                resolve_ground_campaign(
+                                    &mut world,
+                                    &mut troop_transport_state,
+                                    session.system,
+                                    attacker_is_alliance,
+                                    &ground_rolls,
+                                    session.start_tick,
+                                    &mut msg_log,
+                                );
+                            }
 
                             let winner_str = match space_result.winner {
                                 CombatSide::Attacker => "Alliance victory",
@@ -2974,7 +3098,11 @@ async fn main() {
                     TacticalAction::ReturnToGalaxy => {
                         // Apply combat results from tactical session to GameWorld.
                         if let Some(session) = tactical_state.end_battle() {
-                            apply_tactical_results(&session, &mut world);
+                            apply_tactical_results(
+                                &session,
+                                &mut world,
+                                &mut troop_transport_state,
+                            );
                             let winner_str = match session.winner {
                                 Some(rebellion_render::CombatWinner::Attacker) => {
                                     "Attacker victory"
@@ -3010,19 +3138,27 @@ async fn main() {
                                 player_won,
                             );
 
-                            // Check for ground combat: if attacker won and system has enemy troops.
-                            if session.winner == Some(rebellion_render::CombatWinner::Attacker) {
+                            // A decisive winner may land surviving transports,
+                            // regardless of which faction initiated the move.
+                            let ground_attacker = match session.winner {
+                                Some(rebellion_render::CombatWinner::Attacker) => Some(true),
+                                Some(rebellion_render::CombatWinner::Defender) => Some(false),
+                                _ => None,
+                            };
+                            if let Some(attacker_is_alliance) = ground_attacker {
                                 let sys_key = session.system;
-                                let player_is_atk = session.player_is_attacker;
+                                let landed = land_faction_cargo(
+                                    &mut world,
+                                    &mut troop_transport_state,
+                                    sys_key,
+                                    attacker_is_alliance,
+                                    &mut msg_log,
+                                    session.start_tick,
+                                );
                                 if let Some(sys) = world.systems.get(sys_key) {
-                                    let attacker_is_alliance = if player_is_atk {
-                                        player_faction == MissionFaction::Alliance
-                                    } else {
-                                        player_faction != MissionFaction::Alliance
-                                    };
                                     // Check if there are defender troops at this system.
                                     let mut def_idx = 0u32;
-                                    let defender_troops: Vec<(String, i16)> = sys
+                                    let defender_troops: Vec<(TroopKey, String, i16)> = sys
                                         .ground_units
                                         .iter()
                                         .filter_map(|&tk| {
@@ -3032,6 +3168,7 @@ async fn main() {
                                             {
                                                 def_idx += 1;
                                                 Some((
+                                                    tk,
                                                     format!("Defender Regiment {}", def_idx),
                                                     troop.regiment_strength,
                                                 ))
@@ -3041,7 +3178,7 @@ async fn main() {
                                         })
                                         .collect();
                                     let mut atk_idx = 0u32;
-                                    let attacker_troops: Vec<(String, i16)> = sys
+                                    let attacker_troops: Vec<(TroopKey, String, i16)> = sys
                                         .ground_units
                                         .iter()
                                         .filter_map(|&tk| {
@@ -3051,6 +3188,7 @@ async fn main() {
                                             {
                                                 atk_idx += 1;
                                                 Some((
+                                                    tk,
                                                     format!("Attacker Regiment {}", atk_idx),
                                                     troop.regiment_strength,
                                                 ))
@@ -3065,11 +3203,25 @@ async fn main() {
                                         ground_combat_state = Some(GroundCombatState::new(
                                             sys_key,
                                             sys_name,
+                                            attacker_is_alliance,
                                             attacker_troops,
                                             defender_troops,
                                         ));
                                         game_mode = GameMode::GroundCombat;
                                     } else {
+                                        if landed > 0 && !attacker_troops.is_empty() {
+                                            apply_system_occupation(
+                                                &mut world,
+                                                sys_key,
+                                                if attacker_is_alliance {
+                                                    Faction::Alliance
+                                                } else {
+                                                    Faction::Empire
+                                                },
+                                                session.start_tick,
+                                                &mut msg_log,
+                                            );
+                                        }
                                         game_mode = GameMode::Galaxy;
                                     }
                                 } else {
@@ -3115,57 +3267,43 @@ async fn main() {
                         // Apply ground combat results to GameWorld.
                         if let Some(gc) = ground_combat_state.take() {
                             let sys_key = gc.system;
-                            let attacker_is_alliance = player_faction == MissionFaction::Alliance;
+                            let attacker_is_alliance = gc.attacker_is_alliance;
+                            let regiment_strengths: Vec<_> = gc
+                                .regiments
+                                .iter()
+                                .map(|regiment| (regiment.troop, regiment.strength))
+                                .collect();
+                            apply_tactical_ground_strengths(
+                                &mut world,
+                                sys_key,
+                                &regiment_strengths,
+                            );
 
-                            // Remove destroyed side's troops from the system.
-                            match gc.winner {
+                            let occupying_faction = match gc.winner {
                                 Some(rebellion_render::GroundWinner::Attacker) => {
-                                    // Attacker won: remove defender troops.
-                                    if let Some(sys) = world.systems.get(sys_key) {
-                                        let to_remove: Vec<_> = sys
-                                            .ground_units
-                                            .iter()
-                                            .filter(|tk| {
-                                                world
-                                                    .troops
-                                                    .get(**tk)
-                                                    .map(|t| t.is_alliance != attacker_is_alliance)
-                                                    .unwrap_or(false)
-                                            })
-                                            .cloned()
-                                            .collect();
-                                        for tk in &to_remove {
-                                            world.troops.remove(*tk);
-                                        }
-                                        if let Some(sys) = world.systems.get_mut(sys_key) {
-                                            sys.ground_units.retain(|tk| !to_remove.contains(tk));
-                                        }
-                                    }
+                                    Some(if attacker_is_alliance {
+                                        Faction::Alliance
+                                    } else {
+                                        Faction::Empire
+                                    })
                                 }
                                 Some(rebellion_render::GroundWinner::Defender) => {
-                                    // Defender won: remove attacker troops.
-                                    if let Some(sys) = world.systems.get(sys_key) {
-                                        let to_remove: Vec<_> = sys
-                                            .ground_units
-                                            .iter()
-                                            .filter(|tk| {
-                                                world
-                                                    .troops
-                                                    .get(**tk)
-                                                    .map(|t| t.is_alliance == attacker_is_alliance)
-                                                    .unwrap_or(false)
-                                            })
-                                            .cloned()
-                                            .collect();
-                                        for tk in &to_remove {
-                                            world.troops.remove(*tk);
-                                        }
-                                        if let Some(sys) = world.systems.get_mut(sys_key) {
-                                            sys.ground_units.retain(|tk| !to_remove.contains(tk));
-                                        }
-                                    }
+                                    Some(if attacker_is_alliance {
+                                        Faction::Empire
+                                    } else {
+                                        Faction::Alliance
+                                    })
                                 }
-                                _ => {} // Draw: both sides survive
+                                _ => None,
+                            };
+                            if let Some(winner) = occupying_faction {
+                                apply_system_occupation(
+                                    &mut world,
+                                    sys_key,
+                                    winner,
+                                    clock.tick,
+                                    &mut msg_log,
+                                );
                             }
 
                             let gc_winner_str = match gc.winner {
@@ -3267,6 +3405,7 @@ async fn main() {
                         sim_rng: &mut sim_rng,
                         ai2: &mut ai2_state,
                         repair: &mut repair_state,
+                        troop_transport: &mut troop_transport_state,
                         combat_cooldowns: &mut combat_cooldowns,
                         game_config: &mut game_config,
                         campaign_config: &mut campaign_config,
@@ -3333,6 +3472,7 @@ async fn main() {
                                 sim_rng: &mut sim_rng,
                                 ai2: &mut ai2_state,
                                 repair: &mut repair_state,
+                                troop_transport: &mut troop_transport_state,
                                 combat_cooldowns: &mut combat_cooldowns,
                                 game_config: &mut game_config,
                                 campaign_config: &mut campaign_config,
@@ -4519,12 +4659,236 @@ fn apply_ground_combat_result(
     rebellion_data::integrator::apply_ground_combat_result_inner(result, world);
 }
 
+/// Persist every tactical regiment's final strength back into the campaign.
+/// Destroyed regiments leave both the troop arena and the system roster.
+fn apply_tactical_ground_strengths(
+    world: &mut GameWorld,
+    system: rebellion_core::ids::SystemKey,
+    regiment_strengths: &[(TroopKey, i16)],
+) {
+    for &(troop, strength) in regiment_strengths {
+        if strength > 0 {
+            if let Some(unit) = world.troops.get_mut(troop) {
+                unit.regiment_strength = strength;
+            }
+        } else {
+            world.troops.remove(troop);
+        }
+    }
+
+    let living_ground_units: Vec<_> = world
+        .systems
+        .get(system)
+        .map(|value| {
+            value
+                .ground_units
+                .iter()
+                .copied()
+                .filter(|troop| {
+                    world
+                        .troops
+                        .get(*troop)
+                        .is_some_and(|unit| unit.regiment_strength > 0)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(value) = world.systems.get_mut(system) {
+        value.ground_units = living_ground_units;
+    }
+}
+
+fn land_faction_cargo(
+    world: &mut GameWorld,
+    troop_transport: &mut TroopTransportState,
+    system: rebellion_core::ids::SystemKey,
+    is_alliance: bool,
+    log: &mut MessageLog,
+    tick: u64,
+) -> usize {
+    let fleets: Vec<_> = world
+        .systems
+        .get(system)
+        .map(|value| {
+            value
+                .fleets
+                .iter()
+                .copied()
+                .filter(|fleet| {
+                    world
+                        .fleets
+                        .get(*fleet)
+                        .map(|value| value.is_alliance == is_alliance)
+                        .unwrap_or(false)
+                        && troop_transport.carried_count(*fleet) > 0
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut landed = 0;
+    for fleet in fleets {
+        landed += troop_transport
+            .disembark_all(world, fleet, system)
+            .map(|troops| troops.len())
+            .unwrap_or(0);
+    }
+    if landed > 0 {
+        let name = world
+            .systems
+            .get(system)
+            .map(|value| value.name.as_str())
+            .unwrap_or("unknown");
+        log.push(GameMessage::at_system(
+            tick,
+            format!("{landed} regiment(s) landed at {name}"),
+            MessageCategory::Combat,
+            system,
+        ));
+    }
+    landed
+}
+
+fn apply_system_occupation(
+    world: &mut GameWorld,
+    system: rebellion_core::ids::SystemKey,
+    winner: Faction,
+    tick: u64,
+    log: &mut MessageLog,
+) {
+    let previous = world.systems.get(system).map(|value| value.control);
+    if let Some(value) = world.systems.get_mut(system) {
+        value.control = ControlKind::Controlled(winner);
+    }
+    if previous != Some(ControlKind::Controlled(winner)) {
+        let name = world
+            .systems
+            .get(system)
+            .map(|value| value.name.as_str())
+            .unwrap_or("unknown");
+        log.push(GameMessage::at_system(
+            tick,
+            format!("{name} occupied by {winner:?}"),
+            MessageCategory::Combat,
+            system,
+        ));
+    }
+
+    for (_, character) in world.characters.iter_mut() {
+        let is_enemy = match winner {
+            Faction::Alliance => character.is_empire,
+            Faction::Empire => character.is_alliance,
+            Faction::Neutral => false,
+        };
+        if character.current_system == Some(system) && is_enemy && !character.is_killed {
+            character.is_captive = true;
+            character.captured_by = Some(winner);
+            character.capture_tick = Some(tick);
+            character.current_fleet = None;
+        }
+    }
+}
+
+fn resolve_ground_campaign(
+    world: &mut GameWorld,
+    troop_transport: &mut TroopTransportState,
+    system: rebellion_core::ids::SystemKey,
+    attacker_is_alliance: bool,
+    rolls: &[f64],
+    tick: u64,
+    log: &mut MessageLog,
+) {
+    let landed = land_faction_cargo(
+        world,
+        troop_transport,
+        system,
+        attacker_is_alliance,
+        log,
+        tick,
+    );
+    let (alliance, empire) = world
+        .systems
+        .get(system)
+        .map(|value| {
+            value.ground_units.iter().fold((0_usize, 0_usize), |counts, troop| {
+                match world.troops.get(*troop) {
+                    Some(value) if value.regiment_strength > 0 && value.is_alliance => {
+                        (counts.0 + 1, counts.1)
+                    }
+                    Some(value) if value.regiment_strength > 0 => (counts.0, counts.1 + 1),
+                    _ => counts,
+                }
+            })
+        })
+        .unwrap_or_default();
+
+    let winner = match (alliance > 0, empire > 0) {
+        (true, true) => {
+            let mut final_winner = CombatSide::Draw;
+            let mut rounds = 0_u32;
+            while rounds < 256 {
+                let result = CombatSystem::resolve_ground(
+                    world,
+                    system,
+                    attacker_is_alliance,
+                    world.difficulty_index,
+                    rolls,
+                    tick,
+                );
+                let made_progress = result
+                    .troop_damage
+                    .iter()
+                    .any(|event| event.strength_after < event.strength_before);
+                final_winner = result.winner;
+                rounds += 1;
+                apply_ground_combat_result(&result, world);
+                if final_winner != CombatSide::Draw || !made_progress {
+                    break;
+                }
+            }
+            let name = world
+                .systems
+                .get(system)
+                .map(|value| value.name.as_str())
+                .unwrap_or("unknown");
+            log.push(GameMessage::at_system(
+                tick,
+                format!("Ground battle at {name}: {final_winner:?} after {rounds} round(s)"),
+                MessageCategory::Combat,
+                system,
+            ));
+            match final_winner {
+                CombatSide::Attacker => Some(if attacker_is_alliance {
+                    Faction::Alliance
+                } else {
+                    Faction::Empire
+                }),
+                CombatSide::Defender => Some(if attacker_is_alliance {
+                    Faction::Empire
+                } else {
+                    Faction::Alliance
+                }),
+                CombatSide::Draw => None,
+            }
+        }
+        (true, false) if landed > 0 => Some(Faction::Alliance),
+        (false, true) if landed > 0 => Some(Faction::Empire),
+        _ => None,
+    };
+    if let Some(winner) = winner {
+        apply_system_occupation(world, system, winner, tick, log);
+    }
+}
+
 /// Apply tactical combat session results to GameWorld.
 ///
 /// Compares each ship's final hull_current to hull_max.
 /// Ships with hull_current == 0 are destroyed (count decremented).
 /// Fighter squadron losses are applied similarly.
-fn apply_tactical_results(session: &rebellion_render::BattleSession, world: &mut GameWorld) {
+fn apply_tactical_results(
+    session: &rebellion_render::BattleSession,
+    world: &mut GameWorld,
+    troop_transport: &mut TroopTransportState,
+) {
     // Apply capital ship losses for both fleets.
     for (fleet_key, is_attacker) in [
         (session.attacker_fleet, true),
@@ -4593,6 +4957,7 @@ fn apply_tactical_results(session: &rebellion_render::BattleSession, world: &mut
             world.fleets.remove(fleet_key);
         }
     }
+    troop_transport.destroy_untransportable_cargo(world);
 }
 
 fn apply_ai_actions(
@@ -4602,6 +4967,7 @@ fn apply_ai_actions(
     mission_state: &mut MissionState,
     mfg_state: &mut ManufacturingState,
     movement_state: &mut MovementState,
+    troop_transport_state: &mut TroopTransportState,
     research_state: &mut ResearchState,
     world: &mut GameWorld,
     log: &mut MessageLog,
@@ -4653,6 +5019,7 @@ fn apply_ai_actions(
                 fleet,
                 to_system,
                 reason,
+                troops,
             } => {
                 let transit = world.fleets.get(*fleet).map(|fleet| {
                     (
@@ -4663,7 +5030,9 @@ fn apply_ai_actions(
                     )
                 });
                 if let Some((transit, is_alliance)) = transit {
-                    if begin_fleet_transit(
+                    let embarked = troops.is_empty()
+                        || troop_transport_state.embark(world, *fleet, troops).is_ok();
+                    if embarked && begin_fleet_transit(
                         movement_state,
                         world,
                         *fleet,
@@ -4686,10 +5055,28 @@ fn apply_ai_actions(
                         };
                         log.push(GameMessage::at_system(
                             tick,
-                            format!("Empire fleet moving to system ({})", reason_str),
+                            format!(
+                                "{} fleet moving to system ({}){}",
+                                if is_alliance { "Alliance" } else { "Empire" },
+                                reason_str,
+                                if troops.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" with {} regiment(s)", troops.len())
+                                },
+                            ),
                             MessageCategory::Ai,
                             *to_system,
                         ));
+                    } else if embarked && !troops.is_empty() {
+                        let origin = world.fleets.get(*fleet).map(|value| value.location);
+                        if let Some(origin) = origin {
+                            let _ = troop_transport_state.disembark_all(
+                                world,
+                                *fleet,
+                                origin,
+                            );
+                        }
                     }
                 }
             }
@@ -4722,29 +5109,6 @@ fn apply_ai_actions(
                         char_name, tech_type, ticks
                     ),
                     MessageCategory::Ai,
-                ));
-            }
-            AIAction::MoveTroops {
-                troop,
-                from_system,
-                to_system,
-            } => {
-                if let Some(src) = world.systems.get_mut(*from_system) {
-                    src.ground_units.retain(|&k| k != *troop);
-                }
-                if let Some(dst) = world.systems.get_mut(*to_system) {
-                    dst.ground_units.push(*troop);
-                }
-                let to_name = world
-                    .systems
-                    .get(*to_system)
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("unknown");
-                log.push(GameMessage::at_system(
-                    tick,
-                    format!("Troops redeployed to {}", to_name),
-                    MessageCategory::Ai,
-                    *to_system,
                 ));
             }
         }
@@ -4821,5 +5185,66 @@ fn open_cutscene(
             msg_log.push(GameMessage::new(tick, message, MessageCategory::Event));
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tactical_ground_tests {
+    use super::*;
+    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
+    use rebellion_core::ids::DatId;
+    use rebellion_core::world::{Sector, System, TroopUnit};
+
+    #[test]
+    fn tactical_ground_results_persist_survivor_damage_and_remove_losses() {
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector {
+            dat_id: DatId::new(1),
+            name: "Test Sector".into(),
+            group: SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let system = world.systems.insert(System {
+            dat_id: DatId::new(2),
+            name: "Test System".into(),
+            sector,
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
+        });
+        let survivor = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(3),
+            is_alliance: true,
+            regiment_strength: 100,
+        });
+        let destroyed = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(4),
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        world.systems[system].ground_units = vec![survivor, destroyed];
+
+        apply_tactical_ground_strengths(&mut world, system, &[(survivor, 37), (destroyed, 0)]);
+
+        assert_eq!(world.troops[survivor].regiment_strength, 37);
+        assert!(!world.troops.contains_key(destroyed));
+        assert_eq!(world.systems[system].ground_units, vec![survivor]);
     }
 }

@@ -23,6 +23,7 @@ pub mod serde_ordered;
 pub mod research;
 pub mod story_events;
 pub mod tick;
+pub mod troop_transport;
 pub mod tuning;
 pub mod uprising;
 pub mod victory;

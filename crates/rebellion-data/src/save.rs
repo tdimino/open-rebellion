@@ -1,6 +1,6 @@
 //! Save / load for the full game state.
 //!
-//! # Format (v12)
+//! # Format (v13)
 //!
 //! Binary `bincode` encoding. A save file is:
 //!
@@ -59,6 +59,7 @@ use rebellion_core::movement::MovementState;
 use rebellion_core::repair::RepairState;
 use rebellion_core::research::ResearchState;
 use rebellion_core::tick::GameClock;
+use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::tuning::GameConfig;
 use rebellion_core::uprising::UprisingState;
 use rebellion_core::victory::VictoryState;
@@ -78,7 +79,8 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 /// combat cooldowns, and tuning configuration).
 /// v11: Body gained the original new-game campaign configuration.
 /// v12: Repair state gained persisted, per-fleet repair-episode tracking.
-pub const SAVE_VERSION: u32 = 12;
+/// v13: Body gained regiment-to-fleet cargo state.
+pub const SAVE_VERSION: u32 = 13;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -289,6 +291,104 @@ pub struct SaveState {
     pub game_config: GameConfig,
     /// Original difficulty, galaxy-size, faction, and victory-condition choices.
     pub campaign_config: CampaignConfig,
+    /// Regiments embarked aboard capital-ship transports.
+    pub troop_transport: TroopTransportState,
+}
+
+/// Exact v12 body. The regiment cargo state was added in v13.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SaveStateV12 {
+    world: GameWorld,
+    clock: GameClock,
+    manufacturing: ManufacturingState,
+    missions: MissionState,
+    events: EventState,
+    ai: AIState,
+    movement: MovementState,
+    fog_alliance: FogState,
+    fog_empire: FogState,
+    player_is_alliance: bool,
+    blockade: BlockadeState,
+    uprising: UprisingState,
+    death_star: DeathStarState,
+    research: ResearchState,
+    jedi: JediState,
+    victory: VictoryState,
+    betrayal: BetrayalState,
+    economy: EconomyState,
+    sim_rng: Xoshiro256PlusPlus,
+    ai2: Option<AIState>,
+    repair: RepairState,
+    #[serde(
+        serialize_with = "rebellion_core::serde_ordered::serialize_hash_map",
+        deserialize_with = "rebellion_core::serde_ordered::deserialize_hash_map"
+    )]
+    combat_cooldowns: std::collections::HashMap<SystemKey, u64>,
+    game_config: GameConfig,
+    campaign_config: CampaignConfig,
+}
+
+impl From<SaveStateV12> for SaveState {
+    fn from(legacy: SaveStateV12) -> Self {
+        Self {
+            world: legacy.world,
+            clock: legacy.clock,
+            manufacturing: legacy.manufacturing,
+            missions: legacy.missions,
+            events: legacy.events,
+            ai: legacy.ai,
+            movement: legacy.movement,
+            fog_alliance: legacy.fog_alliance,
+            fog_empire: legacy.fog_empire,
+            player_is_alliance: legacy.player_is_alliance,
+            blockade: legacy.blockade,
+            uprising: legacy.uprising,
+            death_star: legacy.death_star,
+            research: legacy.research,
+            jedi: legacy.jedi,
+            victory: legacy.victory,
+            betrayal: legacy.betrayal,
+            economy: legacy.economy,
+            sim_rng: legacy.sim_rng,
+            ai2: legacy.ai2,
+            repair: legacy.repair,
+            combat_cooldowns: legacy.combat_cooldowns,
+            game_config: legacy.game_config,
+            campaign_config: legacy.campaign_config,
+            troop_transport: TroopTransportState::default(),
+        }
+    }
+}
+
+impl From<&SaveState> for SaveStateV12 {
+    fn from(current: &SaveState) -> Self {
+        Self {
+            world: current.world.clone(),
+            clock: current.clock.clone(),
+            manufacturing: current.manufacturing.clone(),
+            missions: current.missions.clone(),
+            events: current.events.clone(),
+            ai: current.ai.clone(),
+            movement: current.movement.clone(),
+            fog_alliance: current.fog_alliance.clone(),
+            fog_empire: current.fog_empire.clone(),
+            player_is_alliance: current.player_is_alliance,
+            blockade: current.blockade.clone(),
+            uprising: current.uprising.clone(),
+            death_star: current.death_star.clone(),
+            research: current.research.clone(),
+            jedi: current.jedi.clone(),
+            victory: current.victory.clone(),
+            betrayal: current.betrayal.clone(),
+            economy: current.economy.clone(),
+            sim_rng: current.sim_rng.clone(),
+            ai2: current.ai2.clone(),
+            repair: current.repair.clone(),
+            combat_cooldowns: current.combat_cooldowns.clone(),
+            game_config: current.game_config.clone(),
+            campaign_config: current.campaign_config,
+        }
+    }
 }
 
 /// Exact v10 body. Keep this separate: bincode is positional, so appending a
@@ -354,6 +454,7 @@ impl From<SaveStateV10> for SaveState {
             combat_cooldowns: legacy.combat_cooldowns,
             game_config: legacy.game_config,
             campaign_config,
+            troop_transport: TroopTransportState::default(),
         }
     }
 }
@@ -449,6 +550,7 @@ impl From<SaveStateV11> for SaveState {
             combat_cooldowns: legacy.combat_cooldowns,
             game_config: legacy.game_config,
             campaign_config: legacy.campaign_config,
+            troop_transport: TroopTransportState::default(),
         }
     }
 }
@@ -537,6 +639,7 @@ impl From<SaveStateV9> for SaveState {
             combat_cooldowns: std::collections::HashMap::new(),
             game_config: GameConfig::default(),
             campaign_config,
+            troop_transport: TroopTransportState::default(),
         }
     }
 }
@@ -837,6 +940,23 @@ mod native {
                     );
                 }
                 (state, fingerprint, expected_fingerprint.is_some())
+            }
+            12 => {
+                let legacy: SaveStateV12 =
+                    bincode::deserialize(&body).context("deserializing v12 save state")?;
+                if let Some(expected) = expected_fingerprint {
+                    let legacy_fingerprint =
+                        compute_serializable_fingerprint_for_version(version, &legacy)?;
+                    anyhow::ensure!(
+                        expected == legacy_fingerprint,
+                        "save state fingerprint mismatch: expected {}, computed {}",
+                        expected,
+                        legacy_fingerprint
+                    );
+                }
+                let state = SaveState::from(legacy);
+                let fingerprint = compute_state_fingerprint(&state)?;
+                (state, fingerprint, false)
             }
             11 => {
                 let legacy: SaveStateV11 =
@@ -1148,6 +1268,10 @@ pub mod wasm_impl {
     /// from older builds get rejected cleanly instead of attempting an
     /// inoperable bincode deserialize.
     fn slot_key(slot: usize) -> String {
+        format!("rebellion_save_v13_{}", slot)
+    }
+
+    fn v12_slot_key(slot: usize) -> String {
         format!("rebellion_save_v12_{}", slot)
     }
 
@@ -1167,6 +1291,10 @@ pub mod wasm_impl {
     ///
     /// Prefix is bumped per save format version (see [`slot_key`]).
     fn meta_key(slot: usize) -> String {
+        format!("rebellion_meta_v13_{}", slot)
+    }
+
+    fn v12_meta_key(slot: usize) -> String {
         format!("rebellion_meta_v12_{}", slot)
     }
 
@@ -1236,6 +1364,10 @@ pub mod wasm_impl {
             let meta = storage_get(&meta_key(slot))?
                 .ok_or_else(|| anyhow::anyhow!("save metadata missing for slot {}", slot))?;
             (SAVE_VERSION, body, meta)
+        } else if let Some(body) = storage_get(&v12_slot_key(slot))? {
+            let meta = storage_get(&v12_meta_key(slot))?
+                .ok_or_else(|| anyhow::anyhow!("v12 save metadata missing for slot {}", slot))?;
+            (12, body, meta)
         } else if let Some(body) = storage_get(&v11_slot_key(slot))? {
             let meta = storage_get(&v11_meta_key(slot))?
                 .ok_or_else(|| anyhow::anyhow!("v11 save metadata missing for slot {}", slot))?;
@@ -1264,6 +1396,19 @@ pub mod wasm_impl {
                 fingerprint
             );
             (state, fingerprint, true)
+        } else if save_version == 12 {
+            let legacy: SaveStateV12 = bincode::deserialize(&bytes)?;
+            let legacy_fingerprint =
+                compute_serializable_fingerprint_for_version(save_version, &legacy)?;
+            anyhow::ensure!(
+                expected_fingerprint == legacy_fingerprint,
+                "save state fingerprint mismatch: expected {}, computed {}",
+                expected_fingerprint,
+                legacy_fingerprint
+            );
+            let state = SaveState::from(legacy);
+            let fingerprint = compute_state_fingerprint(&state)?;
+            (state, fingerprint, false)
         } else if save_version == 11 {
             let legacy: SaveStateV11 = bincode::deserialize(&bytes)?;
             let legacy_fingerprint =
@@ -1324,12 +1469,16 @@ pub mod wasm_impl {
             .filter_map(|slot| {
                 let encoded = match storage_get(&meta_key(slot)) {
                     Ok(Some(encoded)) => Ok(Some((encoded, true))),
-                    Ok(None) => match storage_get(&v11_meta_key(slot)) {
+                    Ok(None) => match storage_get(&v12_meta_key(slot)) {
                         Ok(Some(encoded)) => Ok(Some((encoded, false))),
-                        Ok(None) => match storage_get(&v10_meta_key(slot)) {
+                        Ok(None) => match storage_get(&v11_meta_key(slot)) {
                             Ok(Some(encoded)) => Ok(Some((encoded, false))),
-                            Ok(None) => storage_get(&v9_meta_key(slot))
-                                .map(|legacy| legacy.map(|encoded| (encoded, false))),
+                            Ok(None) => match storage_get(&v10_meta_key(slot)) {
+                                Ok(Some(encoded)) => Ok(Some((encoded, false))),
+                                Ok(None) => storage_get(&v9_meta_key(slot))
+                                    .map(|legacy| legacy.map(|encoded| (encoded, false))),
+                                Err(error) => Err(error),
+                            },
                             Err(error) => Err(error),
                         },
                         Err(error) => Err(error),
@@ -1360,6 +1509,8 @@ pub mod wasm_impl {
     pub fn delete_slot(_saves_dir: &Path, slot: usize) -> anyhow::Result<()> {
         storage_remove(&slot_key(slot))?;
         storage_remove(&meta_key(slot))?;
+        storage_remove(&v12_slot_key(slot))?;
+        storage_remove(&v12_meta_key(slot))?;
         storage_remove(&v11_slot_key(slot))?;
         storage_remove(&v11_meta_key(slot))?;
         storage_remove(&v10_slot_key(slot))?;
@@ -1470,6 +1621,7 @@ mod tests {
             combat_cooldowns: std::collections::HashMap::new(),
             game_config: GameConfig::default(),
             campaign_config: CampaignConfig::default(),
+            troop_transport: TroopTransportState::default(),
         }
     }
 
@@ -1519,6 +1671,16 @@ mod tests {
             file.write_all(&0u32.to_le_bytes()).unwrap(); // empty mod list
             file.write_all(&compute_mod_hash(&[]).to_le_bytes())
                 .unwrap();
+        }
+        if version == 12 {
+            let legacy = SaveStateV12::from(state);
+            let fingerprint = compute_serializable_fingerprint_for_version(version, &legacy)
+                .expect("fingerprint v12 body");
+            file.write_all(&fingerprint.version.to_le_bytes()).unwrap();
+            file.write_all(&fingerprint.value.to_le_bytes()).unwrap();
+            let encoded = bincode::serialize(&legacy).expect("serialize v12 body");
+            file.write_all(&encoded).unwrap();
+            return;
         }
         if version == 11 {
             let legacy = SaveStateV11::from(state);
@@ -1576,7 +1738,7 @@ mod tests {
 
     #[test]
     fn round_trip_preserves_deterministic_continuation_envelope() {
-        let saves_dir = tmp_dir("continuation_envelope_v12");
+        let saves_dir = tmp_dir("continuation_envelope_v13");
         let mut state = minimal_save_state();
         state.sim_rng = Xoshiro256PlusPlus::seed_from_u64(0x5eed);
         state.ai2 = Some(AIState::new(AiFaction::Alliance));
@@ -1608,6 +1770,7 @@ mod tests {
                 name: "Repair fixture".into(),
                 hull: 100,
                 damage_control: 5,
+                troop_capacity: 1,
                 ..Default::default()
             });
         let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
@@ -1629,6 +1792,17 @@ mod tests {
         assert!(!repair_events.is_empty());
         assert!(state.repair.is_repairing(fleet));
 
+        let troop = state.world.troops.insert(rebellion_core::world::TroopUnit {
+            class_dat_id: rebellion_core::ids::DatId::new(0x1000_0008),
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        state.world.systems[system].ground_units.push(troop);
+        state
+            .troop_transport
+            .embark(&mut state.world, fleet, &[troop])
+            .unwrap();
+
         save_slot(&saves_dir, 0, "Continuation", &state, &[]).unwrap();
         let mut uninterrupted_rng = state.sim_rng.clone();
         let expected_rolls = (0..8)
@@ -1647,6 +1821,7 @@ mod tests {
         assert_eq!(loaded.game_config.ai.tick_interval, 13);
         assert_eq!(loaded.campaign_config, state.campaign_config);
         assert!(loaded.repair.is_repairing(fleet));
+        assert_eq!(loaded.troop_transport.cargo(fleet), &[troop]);
     }
 
     #[test]
@@ -1823,6 +1998,18 @@ mod tests {
 
         let (meta, loaded) = load_slot(&saves_dir, 0).expect("v11 save should migrate");
         assert_eq!(loaded.campaign_config, state.campaign_config);
+        assert!(!meta.fingerprint_verified);
+    }
+
+    #[test]
+    fn v12_save_migrates_with_empty_troop_transport_state() {
+        let saves_dir = tmp_dir("v12_troop_transport_compatibility");
+        let state = minimal_save_state();
+        let path = slot_path(&saves_dir, 0);
+        write_versioned_fixture(&path, 12, "V12 Save", &state);
+
+        let (meta, loaded) = load_slot(&saves_dir, 0).expect("v12 save should migrate");
+        assert!(loaded.troop_transport.is_empty());
         assert!(!meta.fingerprint_verified);
     }
 

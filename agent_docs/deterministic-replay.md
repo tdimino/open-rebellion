@@ -113,11 +113,11 @@ python3 scripts/check-replay-equivalence.py --skip-build --json
 
 The ignored fixture test requires the locally supplied original `.DAT` files.
 It records a nine-command, 25-tick, 200-system campaign, reloads its initial
-state through save v12, and checks every command-prefix fingerprint against a
+state through save v13, and checks every command-prefix fingerprint against a
 cross-process golden. F-007E re-reviewed the unchanged command stream after
-correcting the Alliance HQ seed and adding persisted repair episodes. It now
-starts at `v1:0efe11fdf7aa5859` and ends at `v1:5871d04619e30abd`. The unit
-tests use synthetic data and run in normal repository test passes.
+adding persisted troop cargo and occupation state. It now starts at
+`v1:b38248eb039a8032` and ends at `v1:cde64607b027b1d1`. The unit tests use
+synthetic data and run in normal repository test passes.
 
 ## Next implementation boundary
 

@@ -30,6 +30,7 @@ use rebellion_core::movement::{
 };
 use rebellion_core::repair::RepairEvent;
 use rebellion_core::research::{ResearchResult, ResearchState};
+use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
 use rebellion_core::ids::DatId;
@@ -64,6 +65,7 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
             fleet,
             to_system,
             reason,
+            troops,
         } => {
             let faction = world
                 .fleets
@@ -81,6 +83,7 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
                 "from": from,
                 "to": sys_name(world, *to_system),
                 "reason": format!("{:?}", reason),
+                "troops": troops.len(),
             })
         }
         AIAction::DispatchMission { kind, target_system, .. } => {
@@ -104,13 +107,6 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
                 "character": char_name(world, *character),
                 "tech_type": format!("{:?}", tech_type),
                 "ticks": ticks,
-            })
-        }
-        AIAction::MoveTroops { from_system, to_system, .. } => {
-            serde_json::json!({
-                "type": "MoveTroops",
-                "from": sys_name(world, *from_system),
-                "to": sys_name(world, *to_system),
             })
         }
     }
@@ -425,10 +421,11 @@ impl PerceptionIntegrator {
     pub fn apply_arrivals(
         &mut self,
         world: &mut GameWorld,
+        troop_transport: &mut TroopTransportState,
         arrivals: &[ArrivalEvent],
     ) {
         for arrival in arrivals {
-            let Some(applied) = apply_fleet_arrival(world, arrival) else {
+            let Some(applied) = apply_fleet_arrival(world, troop_transport, arrival) else {
                 continue;
             };
             self.emit(SYS_MOVEMENT, EVT_FLEET_ARRIVED, serde_json::json!({
@@ -520,6 +517,122 @@ impl PerceptionIntegrator {
             "winner": ground_winner,
             "engagements": result.troop_damage.len(),
         }));
+    }
+
+    /// Emit one summary for a complete multi-round ground engagement.
+    pub fn emit_system_ground_combat(
+        &mut self,
+        world: &GameWorld,
+        system: SystemKey,
+        winner: CombatSide,
+        engagements: usize,
+        rounds: u32,
+        stalemate: bool,
+    ) {
+        let ground_winner = match winner {
+            CombatSide::Attacker => "attacker",
+            CombatSide::Defender => "defender",
+            CombatSide::Draw => "draw",
+        };
+        self.emit(SYS_COMBAT, EVT_COMBAT_GROUND, serde_json::json!({
+            "system": sys_name(world, system),
+            "winner": ground_winner,
+            "engagements": engagements,
+            "rounds": rounds,
+            "stalemate": stalemate,
+        }));
+    }
+
+    /// Land every regiment carried by a fleet and emit one movement record.
+    pub fn apply_troop_landing(
+        &mut self,
+        world: &mut GameWorld,
+        troop_transport: &mut TroopTransportState,
+        fleet: FleetKey,
+        system: SystemKey,
+    ) -> Vec<TroopKey> {
+        let landed = troop_transport
+            .disembark_all(world, fleet, system)
+            .unwrap_or_default();
+        if !landed.is_empty() {
+            self.emit(SYS_MOVEMENT, EVT_TROOP_MOVED, serde_json::json!({
+                "system": sys_name(world, system),
+                "fleet": format!("{:?}", fleet),
+                "regiments": landed.len(),
+                "status": "landed",
+            }));
+        }
+        landed
+    }
+
+    /// Apply territorial occupation after a decisive ground victory.
+    /// Opposing characters physically present on the captured world become
+    /// prisoners, allowing the standard victory rules to observe HQ captures.
+    pub fn apply_ground_occupation(
+        &mut self,
+        world: &mut GameWorld,
+        system: SystemKey,
+        winner: rebellion_core::dat::Faction,
+        tick: u64,
+    ) {
+        let previous = world.systems.get(system).map(|value| value.control);
+        if let Some(value) = world.systems.get_mut(system) {
+            value.control = ControlKind::Controlled(winner);
+        }
+        if previous != Some(ControlKind::Controlled(winner)) {
+            self.emit(SYS_COMBAT, EVT_CONTROL_CHANGED, serde_json::json!({
+                "system": sys_name(world, system),
+                "from": format!("{:?}", previous.unwrap_or_default()),
+                "to": format!("{:?}", ControlKind::Controlled(winner)),
+                "cause": "ground_occupation",
+            }));
+        }
+
+        let captives: Vec<_> = world
+            .characters
+            .iter()
+            .filter(|(_, character)| {
+                character.current_system == Some(system)
+                    && !character.is_killed
+                    && match winner {
+                        rebellion_core::dat::Faction::Alliance => character.is_empire,
+                        rebellion_core::dat::Faction::Empire => character.is_alliance,
+                        rebellion_core::dat::Faction::Neutral => false,
+                    }
+            })
+            .map(|(key, character)| (key, character.name.clone()))
+            .collect();
+        for (character, name) in captives {
+            if let Some(value) = world.characters.get_mut(character) {
+                value.is_captive = true;
+                value.captured_by = Some(winner);
+                value.capture_tick = Some(tick);
+                value.current_fleet = None;
+            }
+            self.emit(SYS_COMBAT, EVT_CAPTURE, serde_json::json!({
+                "character": name,
+                "system": sys_name(world, system),
+                "captured_by": format!("{:?}", winner),
+                "cause": "ground_occupation",
+            }));
+        }
+    }
+
+    /// Emit loss evidence for regiments whose fleet was destroyed in space.
+    pub fn emit_destroyed_transport_cargo(
+        &mut self,
+        destroyed: &[(FleetKey, Vec<TroopKey>)],
+    ) {
+        for (fleet, troops) in destroyed {
+            if troops.is_empty() {
+                continue;
+            }
+            self.emit(SYS_COMBAT, EVT_TROOP_MOVED, serde_json::json!({
+                "fleet": format!("{:?}", fleet),
+                "regiments": troops.len(),
+                "status": "destroyed_with_transport",
+            }));
+        }
     }
 
     /// Emit bombardment telemetry (no world mutation — bombardment applies via damage field).
@@ -707,6 +820,7 @@ impl PerceptionIntegrator {
         mission_state: &mut MissionState,
         mfg_state: &mut ManufacturingState,
         movement_state: &mut MovementState,
+        troop_transport: &mut TroopTransportState,
         research_state: &mut ResearchState,
         world: &mut GameWorld,
         _tick: u64,
@@ -714,7 +828,7 @@ impl PerceptionIntegrator {
         is_dual: bool,
     ) {
         let applied = apply_ai_actions_inner(actions, rolls, ai_state, mission_state, mfg_state,
-            movement_state, research_state, world, _tick, config);
+            movement_state, troop_transport, research_state, world, _tick, config);
         for (action, was_applied) in actions.iter().zip(applied) {
             if !was_applied {
                 continue;
@@ -1364,6 +1478,7 @@ fn apply_ai_actions_inner(
     mission_state: &mut MissionState,
     mfg_state: &mut ManufacturingState,
     movement_state: &mut MovementState,
+    troop_transport: &mut TroopTransportState,
     research_state: &mut ResearchState,
     world: &mut GameWorld,
     _tick: u64,
@@ -1403,7 +1518,12 @@ fn apply_ai_actions_inner(
                 ai_state.mark_busy(*character);
                 true
             }
-            AIAction::MoveFleet { fleet, to_system, .. } => {
+            AIAction::MoveFleet {
+                fleet,
+                to_system,
+                troops,
+                ..
+            } => {
                 let transit = world.fleets.get(*fleet).map(|f| {
                     rebellion_core::movement::fleet_transit_ticks_with_config(
                         f, world, f.location, *to_system,
@@ -1412,19 +1532,33 @@ fn apply_ai_actions_inner(
                         config.movement.default_fighter_hyperdrive,
                     )
                 });
-                transit.map(|ticks| {
-                    begin_fleet_transit(movement_state, world, *fleet, *to_system, ticks)
-                }).unwrap_or(false)
-            }
-            AIAction::MoveTroops { troop, from_system, to_system } => {
-                // Remove from source system and add to destination.
-                if let Some(src) = world.systems.get_mut(*from_system) {
-                    src.ground_units.retain(|&k| k != *troop);
+                let embarked = if troops.is_empty() {
+                    true
+                } else {
+                    troop_transport.embark(world, *fleet, troops).is_ok()
+                };
+                if !embarked {
+                    false
+                } else {
+                    let departed = transit
+                        .map(|ticks| {
+                            begin_fleet_transit(
+                                movement_state,
+                                world,
+                                *fleet,
+                                *to_system,
+                                ticks,
+                            )
+                        })
+                        .unwrap_or(false);
+                    if !departed && !troops.is_empty() {
+                        let origin = world.fleets.get(*fleet).map(|value| value.location);
+                        if let Some(origin) = origin {
+                            let _ = troop_transport.disembark_all(world, *fleet, origin);
+                        }
+                    }
+                    departed
                 }
-                if let Some(dst) = world.systems.get_mut(*to_system) {
-                    dst.ground_units.push(*troop);
-                }
-                true
             }
         };
         applied.push(was_applied);
@@ -1495,17 +1629,20 @@ mod tests {
                 fleet,
                 to_system: first_target,
                 reason: FleetMoveReason::Attack,
+                troops: vec![],
             },
             AIAction::MoveFleet {
                 fleet,
                 to_system: second_target,
                 reason: FleetMoveReason::Reinforce,
+                troops: vec![],
             },
         ];
         let mut ai = AIState::new(AiFaction::Empire);
         let mut missions = MissionState::new();
         let mut manufacturing = ManufacturingState::new();
         let mut movement = MovementState::new();
+        let mut troop_transport = TroopTransportState::default();
         let mut research = ResearchState::new();
         let mut integrator = PerceptionIntegrator::new(5, 0);
 
@@ -1516,6 +1653,7 @@ mod tests {
             &mut missions,
             &mut manufacturing,
             &mut movement,
+            &mut troop_transport,
             &mut research,
             &mut world,
             5,
@@ -1529,6 +1667,69 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, EVT_AI_ACTION);
         assert_eq!(events[0].details["to"], "First Target");
+    }
+
+    #[test]
+    fn ai_transport_action_embarks_before_authoritative_transit() {
+        let mut world = GameWorld::default();
+        let origin = add_system(&mut world, "Origin");
+        let destination = add_system(&mut world, "Destination");
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            is_alliance: false,
+            is_empire: true,
+            hull: 100,
+            troop_capacity: 1,
+            ..CapitalShipClass::default()
+        });
+        let fleet = world.fleets.insert(Fleet {
+            location: origin,
+            capital_ships: vec![ShipInstance::new(class, 100, false)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        world.systems[origin].fleets.push(fleet);
+        let troop = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(0x1000_0001),
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        world.systems[origin].ground_units.push(troop);
+
+        let actions = [AIAction::MoveFleet {
+            fleet,
+            to_system: destination,
+            reason: FleetMoveReason::Attack,
+            troops: vec![troop],
+        }];
+        let mut ai = AIState::new(AiFaction::Empire);
+        let mut missions = MissionState::new();
+        let mut manufacturing = ManufacturingState::new();
+        let mut movement = MovementState::new();
+        let mut troop_transport = TroopTransportState::default();
+        let mut research = ResearchState::new();
+        let mut integrator = PerceptionIntegrator::new(5, 0);
+
+        integrator.apply_ai_actions(
+            &actions,
+            &[],
+            &mut ai,
+            &mut missions,
+            &mut manufacturing,
+            &mut movement,
+            &mut troop_transport,
+            &mut research,
+            &mut world,
+            5,
+            &GameConfig::default(),
+            false,
+        );
+
+        assert!(movement.is_in_transit(fleet));
+        assert_eq!(troop_transport.cargo(fleet), &[troop]);
+        assert!(!world.systems[origin].ground_units.contains(&troop));
+        assert_eq!(integrator.finish()[0].details["troops"], 1);
     }
 
     #[test]
@@ -1572,6 +1773,32 @@ mod tests {
         let garrison = world.systems[origin].fleets[0];
         assert_ne!(garrison, transit);
         assert_eq!(world.fleets[garrison].ship_count(), 2);
+    }
+
+    #[test]
+    fn troop_production_preserves_original_class_and_faction() {
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Training World");
+        let template = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(0x1000_0003),
+            is_alliance: true,
+            regiment_strength: 37,
+        });
+
+        apply_build_completion_inner(
+            &CompletionEvent {
+                system,
+                tick: 1,
+                kind: BuildableKind::Troop(template),
+            },
+            &mut world,
+        );
+
+        let built = *world.systems[system].ground_units.last().unwrap();
+        assert_ne!(built, template);
+        assert_eq!(world.troops[built].class_dat_id, DatId::new(0x1000_0003));
+        assert!(world.troops[built].is_alliance);
+        assert_eq!(world.troops[built].regiment_strength, 100);
     }
 }
 
@@ -2170,14 +2397,12 @@ pub fn apply_build_completion_inner(
             }
         }
         BuildableKind::Troop(class_key) => {
-            let is_alliance = world
-                .troops
-                .get(*class_key)
-                .map(|t| t.is_alliance)
-                .unwrap_or(false);
+            let Some(template) = world.troops.get(*class_key).cloned() else {
+                return;
+            };
             let unit = TroopUnit {
-                class_dat_id: rebellion_core::ids::DatId::new(0),
-                is_alliance,
+                class_dat_id: template.class_dat_id,
+                is_alliance: template.is_alliance,
                 regiment_strength: 100,
             };
             let tk = world.troops.insert(unit);

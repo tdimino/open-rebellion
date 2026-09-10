@@ -397,10 +397,14 @@ release acceptance. The September 2026 [full-functionality audit](../docs/qa/202
   stats, and persist repair episodes in save v12. Five seeds finish with 0%
   transit, a 1.0 move/arrival ratio, at most 1.2× initial fleets, and only 0–5
   repair starts ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md)).
-- [ ] Complete F-007E with troop embarkation, capacity, ground assault,
-  occupation, and principal-leader capture; then balance both factions so
-  battles reach 50–400 across at least eight systems and victory occurs when
-  the selected rules are met.
+- [x] Close the F-007E conquest checkpoint: transport regiments within living
+  ship capacity, preserve cargo through transit and consolidation, land after
+  orbital control, continue unresolved surface battles, persist tactical
+  casualties, occupy systems, capture characters, and require occupation for
+  HQ victory ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md)).
+- [ ] Add player troop commands and balance both factions so battles reach
+  50–400 across at least eight systems and the AI acquires every selected
+  victory target.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
 - [ ] Pass five 5,000-tick seeds: transit ≤10%, orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles across ≥8 systems, busiest system ≤40%.
 
@@ -410,7 +414,7 @@ would tune around known simulation feedback defects.
 ### M2: One Authoritative Game Engine — 3 weeks
 
 - [ ] Route the app and playtest through one simulation tick API and event sink.
-- [ ] Make automatic, tactical, and ground combat share resumable core state and result application, including officer capture.
+- [ ] Make automatic, tactical, and ground combat share resumable core state and calculations. Tactical ground damage and occupation capture now persist.
 - [ ] Construct the victory modal and unify win/loss transitions.
 - [ ] Remove `AdvanceTicks` or make it execute the real simulation.
 - [ ] Prove identical fingerprints for the same seed and command stream across app/playtest, native/WASM, and auto/tactical paths.

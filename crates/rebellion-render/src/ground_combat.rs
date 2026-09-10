@@ -17,7 +17,7 @@
 
 use egui_macroquad::egui::{self, Color32, RichText};
 use macroquad::prelude::*;
-use rebellion_core::ids::SystemKey;
+use rebellion_core::ids::{SystemKey, TroopKey};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,6 +26,8 @@ use rebellion_core::ids::SystemKey;
 /// One regiment in ground combat.
 #[derive(Debug, Clone)]
 pub struct GroundRegiment {
+    /// Authoritative regiment represented by this animated row.
+    pub troop: TroopKey,
     pub name: String,
     pub strength: i16,
     pub max_strength: i16,
@@ -38,6 +40,8 @@ pub struct GroundRegiment {
 pub struct GroundCombatState {
     pub system: SystemKey,
     pub system_name: String,
+    /// Faction represented by the attacker regiment list.
+    pub attacker_is_alliance: bool,
     pub regiments: Vec<GroundRegiment>,
     pub phase: GroundPhase,
     pub combat_tick: u32,
@@ -74,16 +78,18 @@ pub enum GroundAction {
 impl GroundCombatState {
     /// Create ground combat from system troop data.
     ///
-    /// `attacker_troops` and `defender_troops` are (name, strength) pairs.
+    /// Troop lists contain the authoritative key, label, and starting strength.
     pub fn new(
         system: SystemKey,
         system_name: String,
-        attacker_troops: Vec<(String, i16)>,
-        defender_troops: Vec<(String, i16)>,
+        attacker_is_alliance: bool,
+        attacker_troops: Vec<(TroopKey, String, i16)>,
+        defender_troops: Vec<(TroopKey, String, i16)>,
     ) -> Self {
         let mut regiments = Vec::new();
-        for (name, strength) in attacker_troops {
+        for (troop, name, strength) in attacker_troops {
             regiments.push(GroundRegiment {
+                troop,
                 name,
                 max_strength: strength,
                 strength,
@@ -91,8 +97,9 @@ impl GroundCombatState {
                 alive: strength > 0,
             });
         }
-        for (name, strength) in defender_troops {
+        for (troop, name, strength) in defender_troops {
             regiments.push(GroundRegiment {
+                troop,
                 name,
                 max_strength: strength,
                 strength,
@@ -104,6 +111,7 @@ impl GroundCombatState {
         GroundCombatState {
             system,
             system_name,
+            attacker_is_alliance,
             regiments,
             phase: GroundPhase::Engaging,
             combat_tick: 0,
@@ -373,11 +381,13 @@ mod tests {
     #[test]
     fn ground_combat_resolves() {
         let sys = make_system_key();
+        let troop = TroopKey::default();
         let mut state = GroundCombatState::new(
             sys,
             "Hoth".into(),
-            vec![("Rebel Infantry".into(), 100)],
-            vec![("Stormtroopers".into(), 50)],
+            true,
+            vec![(troop, "Rebel Infantry".into(), 100)],
+            vec![(troop, "Stormtroopers".into(), 50)],
         );
         assert_eq!(state.phase, GroundPhase::Engaging);
 
@@ -392,11 +402,13 @@ mod tests {
     #[test]
     fn ground_combat_stronger_wins() {
         let sys = make_system_key();
+        let troop = TroopKey::default();
         let mut state = GroundCombatState::new(
             sys,
             "Endor".into(),
-            vec![("Rebel Elite".into(), 200)],
-            vec![("Scout Troop".into(), 30)],
+            true,
+            vec![(troop, "Rebel Elite".into(), 200)],
+            vec![(troop, "Scout Troop".into(), 30)],
         );
         for _ in 0..200 {
             if state.step() { break; }

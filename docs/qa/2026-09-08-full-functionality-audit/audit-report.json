@@ -264,11 +264,14 @@
         "The F-007D seed-42 rerun produces 2 decisive engagements instead of 603 space events, including the former 602-draw Xyquine loop",
         "The first F-007E checkpoint requires system control for AI production, removes friendly cycling and transit fan-in, retains HQ defense and surface garrisons, resolves compound troop IDs, and persists repair episodes in save v12",
         "Five current 5000-tick runs finish with zero fleets in transit, one move per arrival, no more than 1.2 times their initial fleets, and 0 to 5 repair starts",
+        "The second F-007E checkpoint adds save-v13 regiment cargo, living transport capacity, landing, continuing ground combat, occupation, character capture, and occupation-based HQ victory",
+        "Five current 5000-tick runs carry and land 8 to 15 regiments, resolve 6 to 9 ground engagements, and emit 5 to 6 character captures",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-fleet-redispatch.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-fleet-position-consolidation.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-player-fleet-dispatch.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-system-combat-resolution.md",
-        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md"
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md"
       ],
       "resolved_root_causes": [
         "In-transit fleets remained eligible for AI dispatch and replacement orders reset travel progress.",
@@ -279,11 +282,12 @@
         "Military targeting misapplied a population-loyalty validator and a derived readiness calculation as hard destination gates.",
         "Blockade start removed surface garrisons as if they were troops running the blockade.",
         "TROOPSD.DAT sequential IDs were not normalized to the compound 0x10 family IDs held by seeded regiments.",
-        "Repair-start telemetry represented each repair tick instead of entry into a persisted repair episode."
+        "Repair-start telemetry represented each repair tick instead of entry into a persisted repair episode.",
+        "Fleets could not carry surface regiments into hostile systems, so no authoritative landing, ground-invasion, occupation, capture, or occupation-based HQ victory path existed."
       ],
       "root_causes": [
-        "Fleets cannot carry surface regiments into a hostile system, so the simulation has no authoritative ground-invasion and occupation flow.",
-        "Standard victory requires the qualifying headquarters and both principal enemy leaders; AI play cannot yet complete that capture sequence.",
+        "The player has no direct troop selection, embarkation, or disembarkation command path.",
+        "Standard victory requires the qualifying headquarters and both principal enemy leaders; AI target selection does not yet acquire every randomized target.",
         "Alliance fleet production and attack volume remain far below the Empire across the five-seed campaign gate.",
         "Battle volume and geographic spread remain below the M1 acceptance bounds."
       ],
@@ -595,12 +599,96 @@
             "five-seed native/WASM campaign equivalence"
           ],
           "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md"
+        },
+        {
+          "id": "F-007E-conquest",
+          "status": "pass",
+          "verified_at": "2026-09-10",
+          "scope": "troop_transport_ground_occupation_capture_and_hq_victory",
+          "automated": {
+            "troop_transport_tests_passed": 8,
+            "victory_tests_passed": 14,
+            "tactical_survivor_persistence_tests_passed": 1,
+            "later_tick_surface_retry_tests_passed": 1,
+            "workspace_unit_tests_passed": 567,
+            "failures": 0,
+            "unit_tests_ignored": 4,
+            "doc_tests_passed": 3,
+            "doc_tests_ignored": 16,
+            "original_data_replay_manifest_passed": 2,
+            "save_version": 13,
+            "v12_migration": "pass",
+            "replay_initial_fingerprint": "v1:b38248eb039a8032",
+            "replay_final_fingerprint": "v1:cde64607b027b1d1",
+            "native_wasm_checkpoints": 9,
+            "replay_artifact_bytes": 13482,
+            "replay_artifact_sha256": "5ec2241c388fecab2c1b05d9e727a829aa246e692134b29472e6dcf3ae7405a2",
+            "wasm_build": "pass_with_preexisting_warnings",
+            "wasm_bytes": 5089398,
+            "wasm_sha256": "e83665b4481197b9e5ba1899d727c3df58d35afbe6082f9645029f259cbf6535",
+            "runtime_pack_bytes": 29096058,
+            "runtime_pack_sha256": "6123deec14cfbfd070573c7001ef1123bd52067273498ad0c36cb7fdb108f509"
+          },
+          "five_seed_runs": [
+            {"seed":7,"ticks":5000,"attack_orders":30,"reinforce_orders":5,"arrivals":35,"troops_moved":9,"space_engagements":5,"ground_engagements":7,"captures":5,"alliance_systems":1,"empire_systems":14,"neutral_systems":185,"victory":false},
+            {"seed":42,"ticks":5000,"attack_orders":38,"reinforce_orders":2,"arrivals":40,"troops_moved":11,"space_engagements":6,"ground_engagements":7,"captures":6,"alliance_systems":0,"empire_systems":11,"neutral_systems":189,"victory":false},
+            {"seed":99,"ticks":5000,"attack_orders":29,"reinforce_orders":6,"arrivals":35,"troops_moved":8,"space_engagements":4,"ground_engagements":6,"captures":6,"alliance_systems":0,"empire_systems":12,"neutral_systems":188,"victory":false},
+            {"seed":1337,"ticks":5000,"attack_orders":35,"reinforce_orders":3,"arrivals":38,"troops_moved":15,"space_engagements":10,"ground_engagements":9,"captures":6,"alliance_systems":0,"empire_systems":15,"neutral_systems":185,"victory":false},
+            {"seed":424242,"ticks":5000,"attack_orders":27,"reinforce_orders":3,"arrivals":30,"troops_moved":8,"space_engagements":7,"ground_engagements":6,"captures":6,"alliance_systems":1,"empire_systems":10,"neutral_systems":189,"victory":false}
+          ],
+          "m1_bounds": {
+            "troop_transport_and_landing": {"status":"pass"},
+            "ground_occupation_and_capture": {"status":"pass"},
+            "missing_troop_class_warnings": {"observed":0,"status":"pass"},
+            "battle_count_range": {"limit":[50,400],"observed_range":[10,19],"status":"fail"},
+            "standard_victory_targets_acquired": {"observed":false,"status":"targeting_open"},
+            "player_troop_commands": {"observed":false,"status":"open"}
+          },
+          "browser": {
+            "runner": "codex-orchestrator",
+            "model": "gpt-6-astra",
+            "effort": "medium",
+            "review": "pass_no_p0_p1",
+            "test_output_muted": true,
+            "product_music_enabled_by_default": true,
+            "bitmap_main_menu": true,
+            "alliance_bitmap_flow": true,
+            "empire_bitmap_flow": true,
+            "fleet_bitmap_art": true,
+            "galaxy_zoom": true,
+            "save_v13_reload_verified": true,
+            "save_fingerprint": "v1:b7a69b50bb16a977",
+            "save_fingerprint_verified": true,
+            "replay_checkpoints": 9,
+            "navigation_requests": 16,
+            "startup_smoke_requests": 4,
+            "all_http_200": true,
+            "game_data_files": 52,
+            "ui_bitmaps": 2231,
+            "audio_files": 5,
+            "console_errors": 0,
+            "page_errors": 0,
+            "request_errors": 0,
+            "wasm_errors": 0,
+            "missing_assets": 0,
+            "webgl_readpixels_performance_warnings": 4,
+            "later_tick_evidence_gap_closed": true
+          },
+          "open_followups": [
+            "player-facing troop selection and embarkation commands",
+            "Alliance versus Empire production and attack balance",
+            "battle volume and geographic distribution",
+            "complete Standard and Death Star victory targeting",
+            "five-seed native/WASM campaign equivalence"
+          ],
+          "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md"
         }
       ],
       "remaining": [
-        "Add troop transport, ground assault, occupation, and principal-leader capture.",
+        "Add player-facing troop selection and embarkation commands.",
         "Balance both factions, diversify battle locations, and pass the remaining five-seed M1 bounds.",
-        "Enable and verify Death Star and victory outcomes in permitted fixtures."
+        "Make the AI acquire all Standard victory targets and verify Death Star outcomes in permitted fixtures.",
+        "Prove native/WASM checkpoint equivalence across all five 5000-tick campaigns."
       ],
       "acceptance": "Multi-seed bounds for fleet count, orders, event volume, targeting, balance, combat spread, and victory timing all pass."
     },
@@ -1048,7 +1136,7 @@
       "title": "Browser persistence is not production-safe",
       "evidence": [
         "synchronous base64 bincode localStorage path",
-        "save v12 preserves the currently known continuation envelope, original campaign setup, and active repair episodes, but quota failures and asynchronous migration are not exercised end to end"
+        "save v13 preserves the currently known continuation envelope, original campaign setup, active repair episodes, and troop cargo, but quota failures and asynchronous migration are not exercised end to end"
       ],
       "acceptance": "Versioned compressed IndexedDB saves round-trip complete state asynchronously, surface quota/corruption errors, and preserve fingerprints."
     },
@@ -1412,16 +1500,17 @@
         "route ordinary player fleet dispatch through validated authoritative departure (verified in F-007C)",
         "resolve all hostile task forces at one system as a bounded engagement and suppress unchanged stalemate retries (verified in F-007D)",
         "gate AI production by political control, eliminate friendly cycling and transit fan-in, retain HQ defense and surface garrisons, normalize troop class IDs, and persist repair episodes (verified in the first F-007E checkpoint)",
+        "carry troops within living transport capacity, land after orbital control, resolve occupation and capture, and require occupation for HQ victory (verified in F-007E conquest)",
         "use stable iteration and deterministic per-tick random streams",
         "enable Death Star construction, fire, and cleanup paths",
         "repair parity oracles and degeneracy detection"
       ],
-      "verified_tranches": ["F-007A", "F-007B", "F-007C", "F-007D", "F-007E-logistics"],
+      "verified_tranches": ["F-007A", "F-007B", "F-007C", "F-007D", "F-007E-logistics", "F-007E-conquest"],
       "remaining": [
-        "troop transport, ground assault, occupation, and principal-leader capture",
+        "player-facing troop selection and embarkation commands",
         "AI encounter and faction balance",
         "battle target diversity",
-        "Death Star and victory outcomes",
+        "complete Standard and Death Star victory targeting",
         "five-seed native/WASM checkpoint equivalence"
       ],
       "exit_metrics": {

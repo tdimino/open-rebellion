@@ -345,6 +345,7 @@ fn main() -> anyhow::Result<()> {
         betrayal: rebellion_core::betrayal::BetrayalState::new(),
         economy: rebellion_core::economy::EconomyState::default(),
         repair: rebellion_core::repair::RepairState::default(),
+        troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
         combat_cooldowns: HashMap::new(),
         campaign_config: rebellion_core::world::CampaignConfig::default(),
     };

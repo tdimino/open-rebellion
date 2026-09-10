@@ -44,7 +44,10 @@ passes both-faction browser acceptance through the shared departure helper.
 F-007D resolves all opposing fleets at system scope and closes the permanent
 five-tick combat backlog. The first F-007E checkpoint also closes production
 ownership, friendly cycling, transit, repair-start, and troop-class defects.
-M1 continues with troop transport, occupation, faction balance, and victory.
+The second F-007E checkpoint adds save-v13 troop transport, landing, continuing
+ground combat, occupation, character capture, and occupation-based HQ victory.
+M1 continues with player troop commands, faction balance, target acquisition,
+campaign victory, and five-seed cross-runtime proof.
 
 The repository's records describe different scopes and are not a unified
 acceptance record:
@@ -131,10 +134,18 @@ The first F-007E checkpoint then gates AI production by system ownership,
 removes friendly cycling and transit fan-in, retains HQ defense and surface
 garrisons, resolves compound troop-class IDs, and persists repair episodes in
 save v12. Five current runs finish with 0% transit, exactly one move per
-arrival, at most 1.2× their initial fleets, and 0–5 repair starts. Faction
-balance, battle spread, troop transport, occupation, principal-leader capture,
-and victory remain open
+arrival, at most 1.2× their initial fleets, and 0–5 repair starts
 ([evidence](evidence/2026-09-10-ai-campaign-logistics.md)).
+
+The second F-007E checkpoint carries regiments within living ship capacity,
+preserves cargo through transit and consolidation, lands after orbital control,
+continues unresolved surface battles, occupies systems, captures enemy
+characters, and requires occupation for HQ victory. Save v13, all 567 workspace
+tests, the exact native/WASM replay, five 5,000-tick transport runs, and Astra
+medium two-faction bitmap/browser acceptance pass. Faction balance, battle
+spread, player troop commands, acquisition of every Standard victory target,
+and five-seed cross-runtime proof remain open
+([evidence](evidence/2026-09-10-troop-transport-occupation.md)).
 
 ## Confirmed findings
 
@@ -231,11 +242,15 @@ and victory remain open
   repair-start, and troop-class gates. All 551 workspace tests and the updated
   exact native/WASM replay pass. Astra medium also passed the two-faction bitmap
   flow, save-v12 reload, replay 9/9, exact music-control boundary, muted test
-  output, and clean network/runtime gates. Five-seed combat remains only 8–14
-  combined battles at three or four systems, Alliance attacks remain far below
-  Empire attacks, and there is no troop-transport/occupation path to satisfy
-  Standard HQ-plus-leader victory. See
-  `evidence/2026-09-10-ai-campaign-logistics.md`.
+  output, and clean network/runtime gates. The second F-007E checkpoint adds the
+  authoritative troop transport and occupation path, exact tactical survivor
+  persistence, enemy-character capture, and occupation-based HQ victory. Five
+  5,000-tick runs now emit landings, ground battles, control changes, and 5–6
+  captures. All 567 workspace tests, save-v13 migration, exact replay, and Astra
+  bitmap/browser gates pass with no P0/P1 blocker. Alliance attacks and battle
+  spread remain below M1 bounds, player troop commands are absent, and the AI
+  does not yet acquire every randomized Standard victory target. See
+  `evidence/2026-09-10-troop-transport-occupation.md`.
 - Acceptance: multi-seed bounds for fleet counts, orders, event volume, target
   diversity, faction balance, battle spread, and victory timing all pass.
 
@@ -460,14 +475,14 @@ interpretations:
   evaluator's `false` flag because it only detects the absence of combat.
 - The Fable finding that main-menu Load Game skipped slot selection and faction
   restoration has since been remediated and browser-verified under F-001.
-- Browser parity currently excludes the entire audio engine, not only selected
-  sounds. Native advisor frames also depend on a gitignored reference-art path,
-  so release packaging must stage owned runtime assets explicitly.
-- Auto-resolve, tactical space, and ground combat can apply three materially
-  different outcomes. Interactive result application also omits officer capture.
-- Autoresearch parameter tuning should remain paused until troop transport,
-  occupation, faction balance, and victory are corrected; tuning before the
-  conquest loop exists would optimize an incomplete simulation.
+- Browser main-menu music and effects are now packaged, but advisor voice and
+  cutscene/media parity remain incomplete. Release packaging must continue to
+  stage owned runtime assets explicitly.
+- Auto-resolve and tactical calculations can still produce different outcomes.
+  Tactical ground results now persist exact survivor damage and occupation
+  captures characters, but full path convergence remains M2.
+- Autoresearch parameter tuning should remain paused until faction balance,
+  target acquisition, and victory timing are corrected.
 
 ## Optimization and parity roadmap
 
@@ -477,7 +492,7 @@ later work must not hide failures in an earlier invariant.
 | Milestone | Scope | Exit criteria |
 |-----------|-------|---------------|
 | M0 — Truth and bleeding | Wire save/load/delete and Load Game selection; fix native HD root and `TROOPSD.DAT`; ship browser data; attach evidence to README claims; add deterministic replay gates. Browser Save/Load/Delete, paths, a self-contained four-request package, F-011A fingerprints, the F-011B1 continuation envelope, the F-011B2/B3 replay pipeline, and F-011B4 native/WASM fixture equivalence are verified. Native GUI restart and persistence hardening remain open. | Persistence works on native/WASM, the packaged site boots from a clean directory, and claims link to current evidence. |
-| M1 — Simulation correctness | F-007A–D close redispatch, fleet-position, player-dispatch, and combat-backlog defects. The first F-007E checkpoint closes production ownership, friendly cycling, transit fan-in, troop-class lookup, blockade garrison, and repair-state defects. Next add troop transport/occupation/leader capture and balance both AIs. | Across five 5,000-tick seeds: transit ≤10% of fleets, move orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles over ≥8 systems, top system ≤40%, and at least one Death Star victory where the fixture permits. |
+| M1 — Simulation correctness | F-007A–D close redispatch, fleet-position, player-dispatch, and combat-backlog defects. F-007E closes ownership, friendly cycling, transit fan-in, troop-class lookup, blockade garrison, repair state, troop transport, occupation, character capture, and HQ victory semantics. Next add player troop commands and balance both AIs toward complete victory targets. | Across five 5,000-tick seeds: transit ≤10% of fleets, move orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles over ≥8 systems, top system ≤40%, and at least one Death Star victory where the fixture permits. |
 | M2 — One game engine | Route app and playtest through one tick API and event sink; make combat resumable from core state; construct victory UI; remove or correctly simulate `AdvanceTicks`. | Same seed plus command stream yields identical checkpoints and final state across interactive, headless, native, WASM, auto, and tactical paths. |
 | M3 — Browser excellence | Extend the verified deterministic `runtime.orpk` foundation with Brotli compression, bounded raw/decoded caches, HD entries, high DPI, one egui pass, cached geometry, IndexedDB, gesture-unlocked audio, owned advisor assets, and cross-browser input suites. | Cold start ≤3 s at 50 Mbps/30 ms, ≤4 requests before menu, combined heap/WASM ≤256 MB after 10 minutes, no visual/input failures in current Chrome/Firefox/Safari. |
 | M4 — Multiplayer | Introduce validated, tick-stamped commands; authoritative host simulation; faction-filtered fog-safe deltas and snapshots; secure WSS transport; prediction/reconciliation; reconnect; persistence and observability. | Two clients run 5,000 ticks with matching server checkpoints every 250 ticks; at 200 ms RTT there are no input stalls and ≤1 reconciliation per 100 commands; reconnect within 60 s; all illegal commands rejected; hidden state absent from client memory. |

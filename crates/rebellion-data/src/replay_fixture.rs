@@ -35,23 +35,23 @@ pub const SEED42_FIXTURE_ID: &str = "seed42-v1";
 pub const SEED42_ARTIFACT_BYTES: &[u8] = include_bytes!("../tests/fixtures/replay_seed42_v1.json");
 pub const SEED42_ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SEED42_SEED: u64 = 42;
-pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:0efe11fdf7aa5859";
-pub const SEED42_FINAL_FINGERPRINT: &str = "v1:5871d04619e30abd";
+pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:b38248eb039a8032";
+pub const SEED42_FINAL_FINGERPRINT: &str = "v1:cde64607b027b1d1";
 pub const SEED42_FINAL_TICK: u64 = 25;
 pub const SEED42_DATA_INPUTS: usize = 51;
 pub const SEED42_DATA_BYTES: u64 = 50_597;
 pub const SEED42_DATA_FINGERPRINT: &str = "5facb1c7ba0e81ad";
 
 pub const SEED42_CHECKPOINTS: &[(u64, u64, &str)] = &[
-    (1, 0, "v1:19cb6b69fbc10454"),
-    (2, 0, "v1:8fd0b33fcc8fdbfe"),
-    (3, 5, "v1:54292fb35ba017f4"),
-    (4, 10, "v1:dbb597bbf32e7fb4"),
-    (5, 15, "v1:9a6331d251ee99cf"),
-    (6, 20, "v1:beddfc6ffdce9b16"),
-    (7, 25, "v1:2221aca5685d7fa3"),
-    (8, 25, "v1:5871d04619e30abd"),
-    (9, 25, "v1:5871d04619e30abd"),
+    (1, 0, "v1:28a462e69d416b5d"),
+    (2, 0, "v1:aeed935e623456c7"),
+    (3, 5, "v1:3b3cdbc63f88a1e3"),
+    (4, 10, "v1:b3abd0dbdafcb4c4"),
+    (5, 15, "v1:45c7a3038602392f"),
+    (6, 20, "v1:d2b0456f1b325fcd"),
+    (7, 25, "v1:450f400e196c4ff7"),
+    (8, 25, "v1:cde64607b027b1d1"),
+    (9, 25, "v1:cde64607b027b1d1"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,6 +186,7 @@ pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
         combat_cooldowns: std::collections::HashMap::new(),
         game_config: GameConfig::default(),
         campaign_config: CampaignConfig::from_seed_options(options, VictoryConditions::Standard),
+        troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
     })
 }
 

@@ -37,7 +37,7 @@ fn original_simulation_data_has_canonical_identity() {
 
 #[test]
 #[ignore = "requires original data/base DAT files"]
-fn original_campaign_replay_matches_after_save_v12_reload() {
+fn original_campaign_replay_matches_after_save_v13_reload() {
     let seed = SEED42_SEED;
     let data =
         compute_simulation_data_manifest_from_dir(&data_dir()).expect("fingerprint original DATs");
@@ -94,15 +94,15 @@ fn original_campaign_replay_matches_after_save_v12_reload() {
     assert_eq!(
         observed_fingerprints,
         vec![
-            (1, 0, "v1:19cb6b69fbc10454".into()),
-            (2, 0, "v1:8fd0b33fcc8fdbfe".into()),
-            (3, 5, "v1:54292fb35ba017f4".into()),
-            (4, 10, "v1:dbb597bbf32e7fb4".into()),
-            (5, 15, "v1:9a6331d251ee99cf".into()),
-            (6, 20, "v1:beddfc6ffdce9b16".into()),
-            (7, 25, "v1:2221aca5685d7fa3".into()),
-            (8, 25, "v1:5871d04619e30abd".into()),
-            (9, 25, "v1:5871d04619e30abd".into()),
+            (1, 0, "v1:28a462e69d416b5d".into()),
+            (2, 0, "v1:aeed935e623456c7".into()),
+            (3, 5, "v1:3b3cdbc63f88a1e3".into()),
+            (4, 10, "v1:b3abd0dbdafcb4c4".into()),
+            (5, 15, "v1:45c7a3038602392f".into()),
+            (6, 20, "v1:d2b0456f1b325fcd".into()),
+            (7, 25, "v1:450f400e196c4ff7".into()),
+            (8, 25, "v1:cde64607b027b1d1".into()),
+            (9, 25, "v1:cde64607b027b1d1".into()),
         ]
     );
     assert_eq!(executed_fingerprint.to_string(), SEED42_FINAL_FINGERPRINT);

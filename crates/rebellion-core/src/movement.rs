@@ -35,7 +35,7 @@
 //!
 //! let tick_events = vec![TickEvent { tick: 1 }];
 //! let arrivals = MovementSystem::advance(&mut state, &tick_events);
-//! // for event in &arrivals { apply_fleet_arrival(&mut world, event); }
+//! // for event in &arrivals { apply_fleet_arrival(&mut world, &mut cargo, event); }
 //! ```
 
 use std::collections::HashMap;
@@ -44,6 +44,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{FleetKey, SystemKey};
+use crate::troop_transport::TroopTransportState;
 use crate::tick::TickEvent;
 use crate::tuning::MovementConfig;
 use crate::world::{Fleet, FighterEntry, GameWorld};
@@ -492,6 +493,7 @@ pub fn reconcile_fleet_orbits(state: &MovementState, world: &mut GameWorld) {
 /// can merge deterministically instead of accumulating one-ship records.
 pub fn apply_fleet_arrival(
     world: &mut GameWorld,
+    troop_transport: &mut TroopTransportState,
     arrival: &ArrivalEvent,
 ) -> Option<AppliedArrival> {
     let arriving = world.fleets.get(arrival.fleet)?;
@@ -533,6 +535,9 @@ pub fn apply_fleet_arrival(
         .iter()
         .filter_map(|&fleet| world.fleets.remove(fleet))
         .collect();
+    for &fleet in &absorbed_keys {
+        troop_transport.transfer_fleet(fleet, survivor);
+    }
 
     if let Some(fleet) = world.fleets.get_mut(survivor) {
         fleet.location = arrival.system;
@@ -820,7 +825,7 @@ mod tests {
     use crate::ids::DatId;
     use crate::world::{
         CapitalShipClass, Character, Fleet, ForceTier, GameWorld, Sector, ShipInstance,
-        SkillPair, System,
+        SkillPair, System, TroopUnit,
     };
 
     fn zero_skill() -> SkillPair {
@@ -845,6 +850,7 @@ mod tests {
             sub_light_engine: 5,
             maneuverability: 5,
             hyperdrive,
+            troop_capacity: 1,
             ..CapitalShipClass::default()
         }
     }
@@ -926,7 +932,12 @@ mod tests {
         assert!(!world.systems[origin].fleets.contains(&fleet));
 
         let arrival = MovementSystem::advance(&mut movement, &ticks(5)).remove(0);
-        let applied = apply_fleet_arrival(&mut world, &arrival).unwrap();
+        let applied = apply_fleet_arrival(
+            &mut world,
+            &mut TroopTransportState::default(),
+            &arrival,
+        )
+        .unwrap();
         assert_eq!(applied.fleet, fleet);
         assert_eq!(applied.merged_fleets, 0);
         assert_eq!(world.fleets[fleet].location, destination);
@@ -962,14 +973,29 @@ mod tests {
             origin,
             system: destination,
         };
+        let troop = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(0x1000_0001),
+            is_alliance: true,
+            regiment_strength: 100,
+        });
+        world.systems[origin].ground_units.push(troop);
+        let mut transport = TroopTransportState::default();
+        transport.embark(&mut world, arriving, &[troop]).unwrap();
 
-        let applied = apply_fleet_arrival(&mut world, &arrival).unwrap();
+        let applied = apply_fleet_arrival(
+            &mut world,
+            &mut transport,
+            &arrival,
+        )
+        .unwrap();
 
         assert_eq!(applied.fleet, survivor);
         assert_eq!(applied.merged_fleets, 1);
         assert!(!world.fleets.contains_key(arriving));
         assert_eq!(world.fleets[survivor].ship_count(), 2);
         assert_eq!(world.systems[destination].fleets, vec![survivor]);
+        assert_eq!(transport.cargo(survivor), &[troop]);
+        assert!(transport.cargo(arriving).is_empty());
     }
 
     #[test]
@@ -987,7 +1013,12 @@ mod tests {
             system: destination,
         };
 
-        let applied = apply_fleet_arrival(&mut world, &arrival).unwrap();
+        let applied = apply_fleet_arrival(
+            &mut world,
+            &mut TroopTransportState::default(),
+            &arrival,
+        )
+        .unwrap();
 
         assert_eq!(applied.fleet, arriving);
         assert_eq!(applied.merged_fleets, 0);
