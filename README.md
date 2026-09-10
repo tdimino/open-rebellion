@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-10):** All 568 workspace tests pass. The bitmap cockpit, both factions, save v13, native/WASM replay, troop dispatch, landing, and political occupation are verified. Capture/evasion, victory semantics, multiplayer, and release acceptance remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/). Campaign AI work follows the [cited Rebellion/Supremacy history and preserved manual](docs/reference/campaign-history/); see the [documentation index](docs/INDEX.md).
+> **Verification (2026-09-10):** All 574 workspace tests pass. The bitmap cockpit, both factions, save v13, native/WASM replay, troop dispatch, occupation, and asymmetric victory contract are verified. Capture/evasion, multiplayer, and release acceptance remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/). Campaign AI work follows the [cited Rebellion/Supremacy history and preserved manual](docs/reference/campaign-history/); see the [documentation index](docs/INDEX.md).
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|

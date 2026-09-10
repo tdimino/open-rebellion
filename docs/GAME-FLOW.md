@@ -1094,15 +1094,16 @@ Accessible from Main Menu or in-game Options button:
 ### 21.1 Victory Conditions
 
 **Standard Game:**
-- **Empire Wins:** Capture Luke Skywalker + Mon Mothma + Capture Rebel HQ planet
-- **Rebels Win:** Capture Emperor Palpatine + Darth Vader + Capture Coruscant
+- **Empire Wins:** Capture Luke Skywalker + Mon Mothma + destroy the mobile Alliance headquarters, then occupy its system; destroying the whole HQ system with a Death Star also satisfies the headquarters objective
+- **Rebels Win:** Capture Emperor Palpatine + Darth Vader + control Coruscant
 
 **Headquarters Only:**
-- **Empire Wins:** Capture Rebel HQ planet
-- **Rebels Win:** Capture Coruscant
+- **Empire Wins:** Destroy the mobile Alliance headquarters, then occupy its system; Death Star destruction of the HQ system also qualifies
+- **Rebels Win:** Control Coruscant
 
 "Capture" for characters means they are prisoners in your custody.
-"Capture" for a planet means you control it militarily.
+Imperial political control of the Alliance HQ system is not enough unless the
+mobile headquarters was destroyed first. Death Star loss is nonterminal.
 
 ### 21.2 Victory Screen
 

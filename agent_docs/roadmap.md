@@ -63,7 +63,7 @@ Delivered:
 1. Space combat: auto-resolve first, then tactical 2D view
 2. Ground combat: regiment engagement, orbital bombardment
 3. Blockade mechanics, Death Star construction/destruction
-4. Victory conditions (capture enemy HQ, destroy Death Star / find Rebel base)
+4. Asymmetric victory conditions (control Coruscant; destroy and occupy the mobile Alliance HQ; preserve Standard leader requirements)
 5. 3D tactical models: nano-banana-pro concept art → Hunyuan3D Pro/Meshy → Blender sprite sheets. Pipeline proven in World War Watcher (14 models). See `agent_docs/assets.md`.
 
 Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain fully traced, bombardment formula decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for 7 scholar docs (4,179 lines) and 5,127 decompiled C files.
@@ -417,11 +417,14 @@ release acceptance. The September 2026 [full-functionality audit](../docs/qa/202
   observed original-AI behavior, reverse-engineered behavior, desired
   enhancements, and provisional engineering guards
   ([reference](../docs/reference/campaign-history/)).
-- [ ] Correct victory semantics first: distinguish Coruscant capture from
-  destruction of the mobile Alliance HQ; preserve Standard leader conjunctions
-  after Death Star fire; make Death Star loss nonterminal; remove the uncited
-  200-tick grace period from the parity profile; and replace deterministic mass
-  capture with validated capture/evasion behavior.
+- [x] Correct victory semantics: distinguish Coruscant capture from destruction
+  and occupation of the mobile Alliance HQ; preserve Standard leader
+  conjunctions after Death Star fire; make Death Star loss nonterminal; remove
+  the uncited 200-tick grace period; and route contested, unopposed, manual, and
+  tactical bombardment through the persisted HQ-survival flag
+  ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-victory-contract.md)).
+- [ ] Replace deterministic mass capture with validated capture/evasion
+  behavior.
 - [ ] Establish faction liveness and the full cited campaign loop, including
   production, diplomacy, recruitment, intelligence, research, blockade
   follow-up, uprisings, bombardment, HQ relocation, and principal missions.

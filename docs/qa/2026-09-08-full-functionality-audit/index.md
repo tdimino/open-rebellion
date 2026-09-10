@@ -35,6 +35,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [AI campaign-logistics checkpoint](evidence/2026-09-10-ai-campaign-logistics.md) | F-007E ownership, targeting, HQ defense, blockade, troop-class, repair/save-v12, and five-seed evidence; conquest and balance remain open. |
 | [Troop transport and occupation proof](evidence/2026-09-10-troop-transport-occupation.md) | F-007E regiment cargo, invasion, political occupation, provisional character capture, source-review corrections, save-v13, five-seed evidence, and Astra browser acceptance. |
 | [Player troop dispatch proof](evidence/2026-09-10-player-troop-dispatch.md) | F-007E bitmap troop selection, capacity enforcement, authoritative embarkation, landing, and Astra two-faction browser acceptance. |
+| [Victory contract proof](evidence/2026-09-10-victory-contract.md) | F-007E asymmetric Coruscant/HQ objectives, Standard conjunctions, Death Star semantics, first-tick resolution, save-v13 continuity, and every current bombardment entry path. |
 | [Save/Delete UI proof](evidence/2026-09-09-save-delete.md) | F-001 wiring, empty-load-slot regression fix, storage deletion, reload persistence, and Astra 33/33 bitmap/browser proof. |
 | [Original main-menu cockpit proof](evidence/2026-09-09-main-menu-cockpit.md) | Binary-mapped controls, responsive bitmaps, direct faction starts, and Astra-verified browser playback. |
 | [Campaign setup proof](evidence/2026-09-09-game-setup-propagation.md) | Save v11 setup persistence, Standard/Headquarters Only victory rules, and Astra 18/18 bitmap/browser proof. |
@@ -52,11 +53,10 @@ startup, F-001 browser Save/Load/Delete, the F-011A fingerprint primitive,
 F-011B1 save continuation, the F-011B2 replay/data contract, F-011B3 native
 replay execution, F-011B4 native/WASM fixture equivalence, F-007A fleet-order
 protection, F-007B fleet-position consolidation, F-007C player fleet dispatch,
-F-007D system-combat backlog closure, the F-007E logistics/data/repair and
-transport/occupation/player-dispatch checkpoints, and F-016A/B/C/D/E
+F-007D system-combat backlog closure, the F-007E logistics/data/repair,
+transport/occupation/player-dispatch, and victory-contract checkpoints, and F-016A/B/C/D/E
 cockpit/setup functionality now pass; P03 and P04 are complete. The source
-review reopened capture/evasion, Imperial HQ destruction, Death Star terminal
-behavior, and the uncited victory grace period. Faction liveness, the wider
+review still leaves capture/evasion open. Faction liveness, the wider
 campaign loop, five-seed cross-runtime replay,
 interactive/tactical convergence, browser
 memory/media work, cross-browser performance, formatting, lint, and

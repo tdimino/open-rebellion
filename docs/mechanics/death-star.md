@@ -49,6 +49,11 @@ When ticks reach 0, `DeathStarEvent::ConstructionCompleted` fires. The construct
 
 On success, `DeathStarEvent::PlanetDestroyed` fires. The caller sets `system.is_destroyed = true`.
 
+If the target contains the mobile Alliance headquarters, planet destruction
+satisfies the Empire's headquarters objective. Standard games still require
+Luke Skywalker and Mon Mothma in Imperial custody. Destroying a Death Star is a
+major strategic event but is not an independent Alliance victory condition.
+
 ### Nearby Warning
 
 Each tick, if the Death Star fleet is deployed, `DeathStarSystem::advance` scans all Alliance-controlled systems within `NEARBY_WARNING_RADIUS` (300 coordinate units) and emits `NearbyWarning` events. This triggers intelligence messages for the Alliance player.
@@ -72,5 +77,5 @@ The Death Star is tracked as a fleet with `has_death_star = true` (family `0x34`
 
 ## Related
 
-- [victory.md](victory.md) -- current implementation and open victory-contract divergences
-- [official campaign contract](../reference/campaign-history/official-campaign-contract.md#standard-victory) -- source-backed target behavior
+- [victory.md](victory.md) -- implemented faction-specific victory contract
+- [official campaign contract](../reference/campaign-history/official-campaign-contract.md#standard-victory) -- source-backed behavior

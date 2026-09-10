@@ -138,10 +138,11 @@ multi-causal.
 
 The next tuning pass should therefore prioritize productive blockade follow-up,
 Alliance industrial recovery, faction-aware headquarters/principal targeting,
-correct faction-specific victory semantics, capture/evasion, headquarters
-relocation, diplomacy, intelligence, research, uprisings, bombardment, and
-complete victory pursuit. Raising raw attack counts without those behaviors
-would satisfy a counter while missing the campaign described by the sources.
+capture/evasion, headquarters relocation, diplomacy, intelligence, research,
+uprisings, bombardment, and complete victory pursuit. The faction-specific
+victory contract now passes dedicated fixtures. Raising raw attack counts
+without the remaining behaviors would satisfy a counter while missing the
+campaign described by the sources.
 
 ## Unknowns to keep open
 
