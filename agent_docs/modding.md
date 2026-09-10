@@ -16,12 +16,12 @@ Open Rebellion supports user mods via a TOML manifest + JSON overlay system. Imp
 ```
 mods/
 ├── better-star-destroyers/
-│   ├── mod.toml              # manifest (required)
-│   ├── capital_ships.json    # entity patches
-│   └── fighters.json
+│   ├── mod.toml                     # manifest (required)
+│   ├── capital_ship_classes.json    # entity patches
+│   └── fighter_classes.json
 ├── rebel-rebalance/
 │   ├── mod.toml
-│   └── troops.json
+│   └── troop_classes.json
 ```
 
 ## Manifest (mod.toml)
@@ -46,7 +46,7 @@ description = "Rebalances Imperial capital ships."
 
 ## JSON Overlay (RFC 7396 Merge Patch)
 
-Each `.json` file in the mod directory patches one entity category. The filename stem maps to a GameWorld arena (e.g. `capital_ships.json` → `world.capital_ship_classes`).
+Each `.json` file in the mod directory patches one entity category. `ModRuntime::apply_enabled` serializes the live `GameWorld` to JSON and looks up each overlay by literal top-level key — so the filename stem must exactly match a `GameWorld` field name (`crates/rebellion-core/src/world/mod.rs`), e.g. `capital_ship_classes.json` targets `GameWorld::capital_ship_classes`. There is no aliasing: a mismatched stem (e.g. `capital_ships.json`) is silently skipped with an `unknown arena` warning.
 
 ```json
 [

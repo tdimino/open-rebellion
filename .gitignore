@@ -5,13 +5,15 @@
 *~
 .DS_Store
 
-# Game data (not redistributable)
-data/base/*.DAT
-data/base/*.DLL
-data/base/EData/
+# Local Docker env (host paths, never committed)
+.env
 
-# Exported JSON (generated from DAT files)
-data/base/json/
+# Game data (not redistributable). Blanket-ignore the whole directory rather
+# than per-extension globs: a real install copy also drops in .sav save
+# files, .FDT/.SPT files, and mixed-case names (unins000.dat, d3drm.dll)
+# that case-sensitive `*.DAT`/`*.DLL` patterns silently missed.
+data/base/*
+!data/base/.gitkeep
 
 # 3D model staging and intermediates (not checked in)
 scripts/models-staging/
@@ -40,9 +42,6 @@ data/sounds/
 # WASM staged data (copied by build-wasm.sh)
 web/data/
 web/open-rebellion.wasm
-
-# Staged UI assets (extracted from DLLs)
-data/base/ui/
 
 # Reference videos (decoded from Smacker, large)
 assets/references/ref-videos/

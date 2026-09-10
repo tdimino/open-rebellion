@@ -30,8 +30,12 @@ echo "Copied open-rebellion.wasm → web/"
 if command -v wasm-opt >/dev/null 2>&1; then
     BYTES_BEFORE=$(wc -c < "$ROOT/web/open-rebellion.wasm" | tr -d ' ')
     # Feature flags for modern Rust-generated WASM. Rust's LLVM backend
-    # emits these by default since ~1.60.
-    wasm-opt -O3 --strip-debug \
+    # emits these by default since ~1.60. Not every packaged wasm-opt build
+    # supports every flag (e.g. Debian's apt binaryen lacks
+    # --enable-bulk-memory-opt) — write to a staging path and only replace
+    # the working .wasm on success, so an unsupported-flag failure degrades
+    # to "ship unoptimized" instead of aborting the whole build.
+    if wasm-opt -O3 --strip-debug \
         --enable-nontrapping-float-to-int \
         --enable-bulk-memory \
         --enable-bulk-memory-opt \
@@ -39,12 +43,17 @@ if command -v wasm-opt >/dev/null 2>&1; then
         --enable-sign-ext \
         --enable-reference-types \
         --enable-multivalue \
-        -o "$ROOT/web/open-rebellion.wasm" \
-        "$ROOT/web/open-rebellion.wasm"
-    BYTES_AFTER=$(wc -c < "$ROOT/web/open-rebellion.wasm" | tr -d ' ')
-    SAVED=$((BYTES_BEFORE - BYTES_AFTER))
-    PCT=$(( (SAVED * 100) / BYTES_BEFORE ))
-    echo "wasm-opt -O3: ${BYTES_BEFORE} → ${BYTES_AFTER} bytes (saved ${SAVED}, ${PCT}%)"
+        -o "$ROOT/web/open-rebellion.wasm.opt" \
+        "$ROOT/web/open-rebellion.wasm"; then
+        mv "$ROOT/web/open-rebellion.wasm.opt" "$ROOT/web/open-rebellion.wasm"
+        BYTES_AFTER=$(wc -c < "$ROOT/web/open-rebellion.wasm" | tr -d ' ')
+        SAVED=$((BYTES_BEFORE - BYTES_AFTER))
+        PCT=$(( (SAVED * 100) / BYTES_BEFORE ))
+        echo "wasm-opt -O3: ${BYTES_BEFORE} → ${BYTES_AFTER} bytes (saved ${SAVED}, ${PCT}%)"
+    else
+        rm -f "$ROOT/web/open-rebellion.wasm.opt"
+        echo "WARNING: wasm-opt failed (this binaryen build may not support all requested flags) — keeping unoptimized .wasm (${BYTES_BEFORE} bytes)."
+    fi
 else
     echo "WARNING: wasm-opt not found. Install binaryen for a smaller release build."
 fi

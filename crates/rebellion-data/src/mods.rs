@@ -329,29 +329,23 @@ impl ModLoader {
     /// Apply mod overlays to a serialized world represented as a `serde_json::Value`.
     ///
     /// The `world_json` must be a JSON object whose top-level keys match the
-    /// entity type names used in mod overlay filenames (e.g. `"capital_ships"`
-    /// maps to the `capital_ships` field of the serialized `GameWorld`).
+    /// entity type names used in mod overlay filenames (e.g. `"capital_ship_classes"`
+    /// maps to the `capital_ship_classes` field of the serialized `GameWorld`).
     ///
-    /// Each patch array targets entities by matching the `"id"` field (which
-    /// corresponds to `dat_id.raw()` in world types). Fields are merged via
-    /// RFC 7396 Merge Patch: null values remove keys, present values overwrite,
-    /// absent fields are preserved.
+    /// Each patch array targets entities by matching the `"id"` selector. For
+    /// entity arenas this corresponds to `dat_id.raw()`; for the wrapped
+    /// GNPRTB/SDPRTB parameter tables it corresponds to `parameter_id`.
+    /// Fields are merged via RFC 7396 Merge Patch: null values remove keys,
+    /// present values overwrite, absent fields are preserved.
     pub fn apply(world_json: &mut Value, content: &ModContent) -> anyhow::Result<()> {
         for (entity_type, patches) in &content.patches {
             let arena = match world_json.get_mut(entity_type) {
                 Some(v) => v,
                 None => {
-                    eprintln!("[mod-loader] overlay '{}' targets unknown arena — skipping", entity_type);
-                    continue;
-                }
-            };
-
-            // The arena serializes as an object (slotmap serializes as {"slot_key": entity_obj}).
-            // We need to find values whose "id" / "dat_id" matches the patch target.
-            let arena_obj = match arena.as_object_mut() {
-                Some(o) => o,
-                None => {
-                    eprintln!("[mod-loader] arena '{}' is not a JSON object — skipping", entity_type);
+                    eprintln!(
+                        "[mod-loader] overlay '{}' targets unknown arena — skipping",
+                        entity_type
+                    );
                     continue;
                 }
             };
@@ -361,46 +355,42 @@ impl ModLoader {
                 let patch_obj = match patch.as_object() {
                     Some(o) => o,
                     None => {
-                        eprintln!("[mod-loader] patch in '{}' is not a JSON object — skipping", entity_type);
+                        eprintln!(
+                            "[mod-loader] patch in '{}' is not a JSON object — skipping",
+                            entity_type
+                        );
                         continue;
                     }
                 };
                 let target_id = match patch_obj.get("id").and_then(|v| v.as_u64()) {
                     Some(id) => id,
                     None => {
-                        eprintln!("[mod-loader] patch in '{}' missing numeric 'id' field — skipping", entity_type);
+                        eprintln!(
+                            "[mod-loader] patch in '{}' missing numeric 'id' field — skipping",
+                            entity_type
+                        );
                         continue;
                     }
                 };
 
-                // Find the matching entity in the arena by dat_id.
-                let mut matched = false;
-                for entity_val in arena_obj.values_mut() {
-                    // DatId is a newtype tuple struct — serde serializes it as a bare
-                    // number in JSON, not {"id": N}. Try bare number first, then
-                    // object form as fallback for hand-crafted patches.
-                    let entity_id = entity_val
-                        .get("dat_id")
-                        .and_then(|v| v.as_u64())
-                        .or_else(|| {
-                            // Fallback: object form {"id": N} (for hand-crafted patches).
-                            entity_val
-                                .get("dat_id")
-                                .and_then(|v| v.as_object())
-                                .and_then(|o| o.get("id"))
-                                .and_then(|v| v.as_u64())
-                        })
-                        .or_else(|| {
-                            // Last resort: direct "id" field at top level.
-                            entity_val.get("id").and_then(|v| v.as_u64())
-                        });
-
-                    if entity_id == Some(target_id) {
-                        merge_patch(entity_val, patch);
-                        matched = true;
-                        break;
-                    }
-                }
+                // Slotmap and HashMap arenas serialize as objects whose values are
+                // entities. GNPRTB/SDPRTB serialize as {"entries": [...]}; their
+                // entries use parameter_id rather than dat_id.
+                let matched = if arena.get("entries").and_then(Value::as_array).is_some() {
+                    let entries = arena
+                        .get_mut("entries")
+                        .and_then(Value::as_array_mut)
+                        .expect("entries was verified as an array");
+                    patch_matching_entity(entries.iter_mut(), target_id, patch)
+                } else if let Some(arena_obj) = arena.as_object_mut() {
+                    patch_matching_entity(arena_obj.values_mut(), target_id, patch)
+                } else {
+                    eprintln!(
+                        "[mod-loader] arena '{}' is not a JSON object — skipping",
+                        entity_type
+                    );
+                    continue;
+                };
 
                 if !matched {
                     eprintln!(
@@ -412,6 +402,43 @@ impl ModLoader {
         }
         Ok(())
     }
+}
+
+fn patch_matching_entity<'a>(
+    entities: impl Iterator<Item = &'a mut Value>,
+    target_id: u64,
+    patch: &Value,
+) -> bool {
+    for entity in entities {
+        if entity_selector_id(entity) == Some(target_id) {
+            // `id` selects the target and is not itself part of the serialized
+            // GameWorld entity. Removing it also keeps parameter entries valid.
+            let mut fields = patch.clone();
+            if let Some(fields_obj) = fields.as_object_mut() {
+                fields_obj.remove("id");
+            }
+            merge_patch(entity, &fields);
+            return true;
+        }
+    }
+    false
+}
+
+fn entity_selector_id(entity: &Value) -> Option<u64> {
+    // DatId is a newtype tuple struct and normally serializes as a bare number.
+    // Retain the object fallback for hand-crafted or legacy serialized worlds.
+    entity
+        .get("dat_id")
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            entity
+                .get("dat_id")
+                .and_then(Value::as_object)
+                .and_then(|dat_id| dat_id.get("id"))
+                .and_then(Value::as_u64)
+        })
+        .or_else(|| entity.get("id").and_then(Value::as_u64))
+        .or_else(|| entity.get("parameter_id").and_then(Value::as_u64))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -922,6 +949,40 @@ version = "0.1.0"
         ModLoader::apply(&mut world, &content).unwrap();
         assert!(world["characters"]["1v1"].get("jedi_probability").is_none());
         assert_eq!(world["characters"]["1v1"]["name"], "Luke");
+    }
+
+    #[test]
+    fn apply_patches_wrapped_parameter_entries() {
+        let mut world = json!({
+            "gnprtb": {
+                "entries": [
+                    { "parameter_id": 3588, "alliance_sp_medium": 75 },
+                    { "parameter_id": 3589, "alliance_sp_medium": 50 }
+                ]
+            },
+            "sdprtb": {
+                "entries": [
+                    { "parameter_id": 7680, "multiplayer_alliance": 40 }
+                ]
+            }
+        });
+        let mut content = ModContent::default();
+        content.patches.insert(
+            "gnprtb".to_string(),
+            vec![json!({ "id": 3588, "alliance_sp_medium": 90 })],
+        );
+        content.patches.insert(
+            "sdprtb".to_string(),
+            vec![json!({ "id": 7680, "multiplayer_alliance": 55 })],
+        );
+
+        ModLoader::apply(&mut world, &content).unwrap();
+
+        assert_eq!(world["gnprtb"]["entries"][0]["alliance_sp_medium"], 90);
+        assert_eq!(world["gnprtb"]["entries"][1]["alliance_sp_medium"], 50);
+        assert_eq!(world["sdprtb"]["entries"][0]["multiplayer_alliance"], 55);
+        assert!(world["gnprtb"]["entries"][0].get("id").is_none());
+        assert_eq!(world["gnprtb"]["entries"][0]["parameter_id"], 3588);
     }
 
     // ── ModRuntime tests ────────────────────────────────────────────────────

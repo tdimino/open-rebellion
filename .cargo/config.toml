@@ -1,0 +1,10 @@
+# macroquad/miniquad's wasm32 backend calls into JS-provided functions
+# (console_log, audio_init, js_create_string, quad_url_link_open, etc. —
+# see web/gl.js's `imports.env.*`) that are deliberately left unresolved in
+# the compiled .wasm and satisfied by the browser at WebAssembly.instantiate
+# time. Recent rust-lld defaults to erroring on any undefined symbol instead
+# of the older permissive default, so it must be told explicitly to allow
+# these — otherwise `cargo build --target wasm32-unknown-unknown` fails at
+# the link step with "undefined symbol" errors for every JS import.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]

@@ -3,7 +3,7 @@ title: "Credits & Acknowledgments"
 description: "Attribution for open-source projects, AI services, and community efforts used in Open Rebellion"
 category: "reference"
 created: 2026-03-14
-updated: 2026-09-09
+updated: 2026-09-10
 tags: [credits, attribution, tools]
 ---
 
@@ -17,6 +17,7 @@ Open Rebellion is built on the work of many open-source projects, AI services, a
 
 - **Tom di Mino** ([GitHub](https://github.com/tdimino)) created and maintains Open Rebellion.
 - **Will Forster** ([GitHub](https://github.com/will-forster)) contributed the dependency-free Go UI asset extractor in [PR #3](https://github.com/tdimino/open-rebellion/pull/3).
+- **Wac** ([GitHub](https://github.com/Wac0)) contributed the Docker browser-build stack, modding reference pipeline, and WASM and Linux build improvements in [PR #4](https://github.com/tdimino/open-rebellion/pull/4).
 - **Monte Quercus** ([GitHub](https://github.com/moqucu)) identified silent bitmap-loading failures and proposed missing-asset diagnostics in [PR #2](https://github.com/tdimino/open-rebellion/pull/2). The adopted diagnostics were incorporated with Monte as a co-author in [commit 4015098](https://github.com/tdimino/open-rebellion/commit/4015098b700aeff32badb72ae933fbc9e1d8f9ac).
 
 ### Original Star Wars: Rebellion Team

@@ -1,0 +1,10 @@
+target/
+data/
+web/data/
+web/open-rebellion.wasm
+assets/references/ref-videos/
+assets/references/cutscene-frames/
+assets/references/ref-ui-full/
+dist/
+.git/
+ghidra/

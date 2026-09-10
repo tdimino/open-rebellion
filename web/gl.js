@@ -1247,6 +1247,13 @@ var importObject = {
                     event.preventDefault();
                     wasm_exports.mouse_wheel(-event.deltaX, -event.deltaY);
                 });
+            // Right-click drives in-game panning/context menus (mouse_down/up
+            // with button 2 below) — without this the browser's native
+            // context menu pops up on top of it and eats the click.
+            canvas.addEventListener('contextmenu',
+                function (event) {
+                    event.preventDefault();
+                });
             canvas.onmouseup = function (event) {
                 var relative_position = mouse_relative_position(event.clientX, event.clientY);
                 var x = relative_position.x;

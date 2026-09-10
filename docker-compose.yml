@@ -1,0 +1,33 @@
+services:
+  builder:
+    build: .
+    image: open-rebellion-builder
+    working_dir: /workspace
+    environment:
+      - ORIGINAL_GAME_DIR=/original-game
+      - FORCE_REBUILD=${FORCE_REBUILD:-0}
+      - PREPARE_MODDING=${PREPARE_MODDING:-0}
+    volumes:
+      - .:/workspace
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - cargo-target:/workspace/target
+      - ${STAR_WARS_REBELLION_DIR}:/original-game:ro
+    command: ["/workspace/scripts/docker-build.sh"]
+
+  web:
+    image: open-rebellion-builder
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    working_dir: /workspace/web
+    volumes:
+      - .:/workspace
+    ports:
+      - "${WEB_PORT}:8080"
+    command: ["python3", "-m", "http.server", "8080"]
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  cargo-target:
