@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0.0",
+  "ledger_id": "UIP-RE-2026-09-10",
+  "audit_id": "UIP-2026-09-10",
+  "status": "in_progress",
+  "purpose": "Track executable and original-resource evidence needed by interface surface-state cells without duplicating screenshot evidence.",
+  "status_vocabulary": [
+    "untriaged",
+    "static-partial",
+    "static-proven",
+    "runtime-needed",
+    "runtime-corroborated",
+    "accepted",
+    "contradicted"
+  ],
+  "proof_rule": "Static proof may close resource identity, geometry, predicates, and routing. A surface remains incomplete until all required original-runtime, native, and browser cells pass.",
+  "original_fixture": {
+    "local_path": "../star-wars-rebellion",
+    "locale": 1033,
+    "rebexe_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
+    "strategy_sha256": "69c1e7f628153dd5125659d0627dc25e95f3958e903dacc0870bc38bd4cbf165",
+    "tactical_sha256": "db12cdcfb6c85cec572a425307d2ad617bbc850027657424c3cc1f61c6ec275a",
+    "common_sha256": "33bfbc7593f25971d63fe53b0122b8a9ae30823982e921584ce0cd34892671b8",
+    "alsprite_sha256": "43a5083d28f06cf40ffbfcc5a7523da422ee11ab0605503e822400e897b847aa",
+    "emsprite_sha256": "bba278e4b3b8e361381f4eb1a3475add219089aa8081cefe470baaa45645bada",
+    "albrief_sha256": "590c9e64d98bbb0f900f4ab58d574648462ff8e72f9adcf46a5578711970feee",
+    "embrief_sha256": "e40490d970e7e8528f5283d14f850fd5b4ea69658c5818180aff1d2dc4739fc7",
+    "rebdlog_sha256": "bfbf800fee8eb4823023711f5dee4861ce02293e6afca94196166e937c85749a"
+  },
+  "decompiler_corpus": {
+    "project": "ghidra/Open Rebellion Ghidra.gpr",
+    "canonical_export_files": 4934,
+    "nonempty_export_files": 2144,
+    "zero_byte_export_files": 2790,
+    "rule": "Query the saved Ghidra project when a required exported function is empty; do not treat the text export as complete interface evidence."
+  },
+  "runtime_pack_baseline": {
+    "sha256": "6123deec14cfbfd070573c7001ef1123bd52067273498ad0c36cb7fdb108f509",
+    "bytes": 29096058,
+    "game_data_entries": 52,
+    "bitmap_entries": 2231,
+    "audio_entries": 5,
+    "unsupported_families": [
+      "RCDATA/BIN",
+      "SPT",
+      "FDT",
+      "EData",
+      "PE type 301 meshes",
+      "PE type 302 animation frames",
+      "PE type 303 textures",
+      "Smacker/WebM media"
+    ]
+  },
+  "resource_discoveries": [
+    {"module": "ALSPRITE.DLL", "standard_bmp": 38, "rcdata_bin": 752, "custom_type_302_frames": 1640, "wav": 213},
+    {"module": "EMSPRITE.DLL", "standard_bmp": 34, "rcdata_bin": 753, "custom_type_302_frames": 2348, "wav": 216},
+    {"module": "ALBRIEF.DLL", "standard_bmp": 20, "rcdata_bin": 366, "custom_type_302_frames": 2684, "wav": 17},
+    {"module": "EMBRIEF.DLL", "standard_bmp": 18, "rcdata_bin": 471, "custom_type_302_frames": 2738, "wav": 22},
+    {"module": "TACTICAL.DLL", "standard_bmp": 288, "rcdata_bin": 1, "custom_type_301_meshes": 87, "custom_type_303_textures": 397, "wav": 66},
+    {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66},
+    {"module": "EData", "images": 187, "dimensions": [400, 200]}
+  ],
+  "static_discoveries": [
+    {
+      "id": "RE-DISC-001",
+      "functions": ["0x00421c70"],
+      "proof": "Faction-specific galaxy apertures and twelve reference-rail rectangles.",
+      "confidence": "high"
+    },
+    {
+      "id": "RE-DISC-002",
+      "functions": ["0x00427270", "0x00602150", "0x006028c0", "0x00602d30"],
+      "proof": "Control rectangles, command IDs, bitmap pairs, mouse capture, command dispatch, state flags, and paint selection.",
+      "confidence": "high"
+    },
+    {
+      "id": "RE-DISC-003",
+      "functions": ["0x00422ce0", "0x00429020", "0x0044f670", "0x00442d70", "0x0044c410"],
+      "proof": "Managed modeless window creation, rail hit testing, focus, close, and removal behavior.",
+      "confidence": "high"
+    },
+    {
+      "id": "RE-DISC-004",
+      "functions": ["0x00425d00", "0x00426d00"],
+      "proof": "GID mode/caption branches and display-window creation path.",
+      "confidence": "high"
+    },
+    {
+      "id": "RE-DISC-005",
+      "functions": ["0x0042d650", "0x0042adb0"],
+      "proof": "Alliance/Empire advisor and briefing module selection plus exact advisor apertures.",
+      "confidence": "high"
+    },
+    {
+      "id": "RE-DISC-006",
+      "functions": ["0x0059a8d0", "0x005a7500"],
+      "proof": "Tactical module/voice loading and complete battle-manager event registration vocabulary.",
+      "confidence": "high"
+    },
+    {
+      "id": "RE-DISC-007",
+      "functions": ["0x0040dc30", "0x0040ec60", "0x005f9860", "0x005f7ea0"],
+      "proof": "Multiplayer template/control mapping, hit testing, timers, receive/send failure, player departure, and teardown paths.",
+      "confidence": "high"
+    }
+  ],
+  "work_packages": [
+    {"id": "RE-STR-01", "surface_ids": ["CMD-01", "CMD-04"], "title": "Strategic shell, apertures, and reference rail", "status": "static-proven", "runtime_capture_required": true},
+    {"id": "RE-STR-02", "surface_ids": ["CMD-03", "CMD-05", "CMD-09"], "title": "Cockpit controls, state art, input, and command routing", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-GID-01", "surface_ids": ["CMD-02"], "title": "GID filters, legends, markers, pan, zoom, and selection", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-OBJ-01", "surface_ids": ["CMD-03", "CMD-04", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12", "OBJ-13", "OBJ-14"], "title": "System, sector, and object-window constructors and states", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-ADV-01", "surface_ids": ["PRE-05", "CMD-07"], "title": "Type-302 advisor and briefing frame decoder", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-ADV-02", "surface_ids": ["PRE-05", "CMD-07"], "title": "SPT/BIN/FDT action, cadence, and audio mapping", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-PACK-01", "surface_ids": ["PRE-03", "PRE-05", "CMD-07", "OBJ-01", "TAC-01", "END-01"], "title": "Deterministic native/WASM transport for all authentic resource kinds", "status": "untriaged", "runtime_capture_required": true},
+    {"id": "RE-MSN-01", "surface_ids": ["OBJ-11", "OBJ-12"], "title": "Create Mission and Mission Status composites and outcomes", "status": "untriaged", "runtime_capture_required": true},
+    {"id": "RE-TAC-01", "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06", "TAC-07"], "title": "Tactical loader and event-handler registry", "status": "static-proven", "runtime_capture_required": true},
+    {"id": "RE-TAC-02", "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"], "title": "Tactical control geometry, resource states, meshes, and textures", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-DS-01", "surface_ids": ["OBJ-06", "OBJ-11", "EVT-01", "EVT-03"], "title": "Strategic Destroy System and Death Star sabotage paths", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-DS-02", "surface_ids": ["TAC-04", "TAC-05", "END-01"], "title": "Tactical Death Star and MDATA.201/.202 trench-run routing", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-END-01", "surface_ids": ["PRE-01", "PRE-04", "END-01"], "title": "Terminal media, skip, completion, return, restart, and failure", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-NET-01", "surface_ids": ["PRE-06", "CMD-08"], "title": "Original multiplayer templates, controls, providers, host, and join", "status": "static-partial", "runtime_capture_required": true},
+    {"id": "RE-NET-02", "surface_ids": ["PRE-06", "CMD-08"], "title": "Two-peer synchronization, chat, pause, save/load, departure, and errors", "status": "runtime-needed", "runtime_capture_required": true},
+    {"id": "RE-A0-01", "surface_ids": ["PRE-02", "CMD-02", "CMD-05", "OBJ-11", "EVT-01", "TAC-03", "TAC-05", "END-01", "PRE-06"], "title": "Lossless owned-original 640x480 capture baselines", "status": "runtime-needed", "runtime_capture_required": true}
+  ]
+}

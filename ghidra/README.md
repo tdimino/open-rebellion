@@ -1,6 +1,6 @@
 ---
 title: "Ghidra Reverse Engineering — REBEXE.EXE"
-description: "Exhaustive decompilation of Star Wars Rebellion (1998) — 5,127 functions, 7 scholar docs, 8 scripts"
+description: "Working decompilation corpus for Star Wars Rebellion (1998), including simulation findings and an incomplete interface evidence set"
 category: ghidra
 created: 2026-03-13
 updated: 2026-03-22
@@ -9,13 +9,16 @@ tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
 
 # Ghidra Reverse Engineering — REBEXE.EXE
 
-Exhaustive decompilation of Star Wars Rebellion (1998, LucasArts) for the Open Rebellion reimplementation.
+Reverse engineering of Star Wars Rebellion (1998, LucasArts) for the Open
+Rebellion reimplementation. Simulation coverage is extensive. Interface
+coverage is incomplete and tracked in the
+[interface reverse-engineering ledger](../docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md).
 
 ## What We Decompiled
 
 | Target | Size | Total Functions | Decompiled | Coverage |
 |--------|------|-----------------|------------|----------|
-| **REBEXE.EXE** | 2.8 MB | 22,741 | **5,127** | Every function >100 bytes |
+| **REBEXE.EXE** | 2.8 MB | 22,741 | **4,934 canonical export targets; 2,144 non-empty** | Partial text export; query the project for empty UI targets |
 | COMMON.DLL | 2.9 MB | — | 0 | Imported, not analyzed |
 | STRATEGY.DLL | 29 MB | 43 (CRT only) | N/A | Resource-only — no game logic |
 
@@ -103,11 +106,11 @@ ghidra/
 ├── Open Rebellion Ghidra.rep/    # Ghidra project data (not tracked)
 ├── notes/
 │   ├── INDEX.md                  # Master index of all notes
-│   ├── FUNCTION_INDEX.md         # 5,127-function catalog
+│   ├── FUNCTION_INDEX.md         # Function catalog
 │   ├── 7 analysis .md files      # Scholar documents (see table above)
 │   ├── 3 combat .md files        # Combat subsystem docs
 │   ├── 4 review .md files        # Internal review notes
-│   └── ~5,127 .c files           # Decompiled C pseudocode
+│   └── FUN_*.c files             # Partial pseudocode export; some files are empty
 └── scripts/
     └── 8 .py files               # Ghidra Jython scripts
 ```

@@ -3,15 +3,21 @@ title: "Ghidra Reverse Engineering"
 description: "RE status and methodology for REBEXE.EXE decompilation (22,741 functions)"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-03-23
+updated: 2026-09-10
 tags: [ghidra, reverse-engineering, rebexe, gnprtb]
 ---
 
 # Ghidra Reverse Engineering
 
-REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,923 decompiled. STRATEGY.DLL is resource-only (29MB sprites, 9KB CRT). RE is **complete** for implementation purposes. See `ghidra/notes/` for the full corpus: 4 scholar documents (4,179 lines), 11 markdown docs, ~4,923 decompiled C files, 8 Jython scripts. 23 AI functions decompiled via GhidraMCP HTTP bridge on 2026-03-23.
+REBEXE.EXE (2.8MB) contains the game logic. STRATEGY.DLL is primarily a
+resource container. Simulation-focused reverse engineering is substantial, but
+interface reverse engineering is still in progress. The text export contains
+4,934 canonical `FUN_????????.c` files, of which 2,790 are zero-byte
+placeholders. Query the saved Ghidra project when an interface target is empty.
+See the [interface reverse-engineering ledger](../docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md)
+for the active UI evidence queue.
 
-## RE Status: COMPLETE
+## RE Status: Simulation Substantial, Interface In Progress
 
 | What | Status |
 |------|--------|
@@ -25,6 +31,9 @@ REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,923 decompil
 | Entity type codes | 8 family byte ranges identified |
 | Scripted events | 15+ story events mapped, 50 event IDs |
 | Modder documentation | 4 scholar documents ready |
+| Strategic shell geometry and routing | Exact apertures, rail rectangles, controls, state paint, and modeless-window routing recovered |
+| Advisor frame and action pipeline | Partial. Custom type-302 frames and SPT/BIN/FDT mappings still require decoding |
+| Tactical and multiplayer interface | Partial. Event/resource vocabulary is mapped; composition and live behavior remain open |
 
 ## Setup
 
@@ -34,7 +43,7 @@ REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,923 decompil
 | Launch | `ghidra` (alias in ~/.zshrc) |
 | Java | Temurin JDK 25.0.2 |
 | Project | `open-rebellion/ghidra/Open Rebellion Ghidra.gpr` |
-| GhidraMCP plugin | LaurieWired v11.3.2 — REST API on `:8080` (caps at 99 results) |
+| GhidraMCP plugin | LaurieWired v11.3.2. REST API on `:8080` (caps at 99 results) |
 | Bridge script | `~/ghidra/GhidraMCP/bridge_mcp_ghidra.py` (bethington v4.3.0 script, old plugin JAR) |
 | pyghidra-mcp | Config fixed: `--project-path`, `--force-analysis`, `--wait-for-analysis` |
 
@@ -44,11 +53,11 @@ REBEXE.EXE (2.8MB) contains ALL game logic — 22,741 functions, ~4,923 decompil
 
 | File | Size | Functions | Decompiled | Content |
 |------|------|-----------|------------|---------|
-| **REBEXE.EXE** | 2.8MB | 22,741 | **~4,923** | ALL game logic |
-| COMMON.DLL | 2.9MB | TBD | 0 | MFC/Win32 shared library |
-| STRATEGY.DLL | 29MB | 43 (CRT) | N/A | Resource-only (sprites) |
-| TACTICAL.DLL | 7.8MB | TBD | 0 | Likely resource-only |
-| TEXTSTRA.DLL | 150KB | — | — | Done — parsed via pelite |
+| **REBEXE.EXE** | 2.8MB | 22,741 discovered entries | **4,934 canonical export targets; 2,144 non-empty** | Main executable logic. The saved project is authoritative for empty exports. |
+| COMMON.DLL | 2.9MB | Not yet counted | Partial | Shared code, templates, bitmaps, sounds, and multiplayer resources |
+| STRATEGY.DLL | 29MB | 43 analyzed CRT entries | N/A | Primarily strategic resources |
+| TACTICAL.DLL | 7.8MB | Not yet counted | Partial | Tactical resources plus loader/event paths reached from REBEXE |
+| TEXTSTRA.DLL | 150KB | N/A | N/A | Strings parsed via pelite |
 
 ## Key Findings
 

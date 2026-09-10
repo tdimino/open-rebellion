@@ -9,7 +9,8 @@ tags: [index, ghidra, reverse-engineering]
 
 # Ghidra Project — Open Rebellion
 
-Exhaustive reverse engineering of Star Wars Rebellion (1998, LucasArts) for game reimplementation and total conversion modding.
+Working reverse-engineering corpus for Star Wars Rebellion (1998, LucasArts).
+Simulation analysis is extensive; interface coverage remains in progress.
 
 ## Structure
 
@@ -45,7 +46,7 @@ ghidra/
 
 | Binary | Size | Functions | Decompiled | Status |
 |--------|------|-----------|------------|--------|
-| REBEXE.EXE | 2.8MB | 22,741 | **~4,900** | Exhaustive — every function >100 bytes |
+| REBEXE.EXE | 2.8MB | 22,741 | **4,934 canonical exports; 2,144 non-empty** | Partial text export; use the project for empty targets |
 | COMMON.DLL | 2.9MB | TBD | 0 | Imported, not yet analyzed |
 | STRATEGY.DLL | 29MB | 43 (CRT) | N/A | Resource-only — no game logic |
 
@@ -77,3 +78,5 @@ ghidra/
 5. Jython scripts: Window → Jython → `exec(open("path/to/script.py").read())`
 
 See [notes/INDEX.md](notes/INDEX.md) for the complete function inventory.
+Interface-specific targets and proof boundaries are tracked in the
+[interface reverse-engineering ledger](../docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md).

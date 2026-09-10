@@ -66,7 +66,12 @@ Delivered:
 4. Asymmetric victory conditions (control Coruscant; destroy and occupy the mobile Alliance HQ; preserve Standard leader requirements)
 5. 3D tactical models: nano-banana-pro concept art → Hunyuan3D Pro/Meshy → Blender sprite sheets. Pipeline proven in World War Watcher (14 models). See `agent_docs/assets.md`.
 
-Ghidra RE of REBEXE.EXE complete: 5,127 functions decompiled, combat call chain fully traced, bombardment formula decoded, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed. See `ghidra/notes/` for 7 scholar docs (4,179 lines) and 5,127 decompiled C files.
+Ghidra RE of REBEXE.EXE has extensive simulation coverage: the combat call
+chain, bombardment formula, 111 GNPRTB parameters, and the C++ class hierarchy
+are mapped. Interface RE remains active because 2,790 of 4,934 canonical text
+exports are empty. Use the saved project and the
+[interface RE ledger](../docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md)
+for UI work.
 
 ## Full Parity: historical implementation tranche delivered
 *Named delivery tranche shipped 2026-03-16 by Knesset Shapash; final parity remains open*
@@ -457,6 +462,9 @@ would tune around known simulation feedback defects.
   object-window, report, and tactical surfaces with the original bitmap-driven
   compositions for both factions. No invented visible control may satisfy a
   parity cell.
+- [ ] Execute the interface `RE-*` queue: decode the type-302 advisor frames
+  and SPT/BIN/FDT actions first, extend the deterministic pack to every required
+  resource kind, then consume the proven shell/control/window mappings.
 - [ ] Add Brotli compression plus bounded raw-byte and decoded-texture caches to the verified runtime-pack foundation.
 - [ ] Include HD assets; enable high DPI; use one egui pass; cache sector geometry.
 - [ ] Move saves from synchronous base64 `localStorage` to compressed asynchronous IndexedDB.

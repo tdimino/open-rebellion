@@ -1,16 +1,19 @@
 ---
 title: "DLL Resource Catalog"
-description: "Complete extraction inventory of all 18 game DLLs — 5,664 resources (BMPs + data)"
+description: "Original game resource inventory, including standard and custom PE resource types"
 category: "agent-docs"
 created: 2026-03-17
-updated: 2026-09-08
+updated: 2026-09-10
 tags: [dll, resources, bmp, sprites]
 ---
 
 # DLL Resource Catalog
 
-Complete extraction of all 18 game DLLs. 5,664 total resources (2,441 BMPs + 3,223 data files).
-Organized by DLL with resource ID ranges, image dimensions, and content descriptions.
+Working inventory of the owned English-US game modules, organized by DLL with
+resource ID ranges, dimensions, and content descriptions. Earlier counts only
+included standard bitmaps and RCDATA. The live PE inventory also contains
+thousands of custom type-302 animation frames, type-301 meshes, type-303
+textures, and embedded WAV resources.
 
 ## Extraction Location
 
@@ -100,7 +103,7 @@ Main menu and global UI elements — buttons, sliders, panel chrome used across 
   11241; the logical command mapping still requires handler-level validation.
 - 10001-10101: Core widgets (scrollbars, checkboxes, sliders)
 
-## TACTICAL.DLL (7.5MB) — 288 BMPs + 1 BIN
+## TACTICAL.DLL (7.5MB) — 288 BMPs + 1 BIN + 87 meshes + 397 textures + 66 WAV
 
 Tactical combat view — HUD, ship/fighter sprites, squadron controls, weapon systems.
 
@@ -119,26 +122,37 @@ Tactical combat view — HUD, ship/fighter sprites, squadron controls, weapon sy
 - 1302: Hull integrity + shield strength panel
 - 2001-2130: ~130 tactical ship sprites (the 3D renders used in combat view)
 
-## ALSPRITE.DLL (16MB) — 74 BMPs + 716 BIN
+Custom type 301 contains 87 binary DirectX `.x` meshes. Custom type 303
+contains 397 texture payloads, including named tactical textures and numeric
+16×16 through 256×256 textures. The current extractor and browser pack omit
+both custom types and all tactical WAV resources.
 
-Alliance advisor: C-3PO and R2-D2 animated sprites. The BIN files are animation sequence data (frame ordering, timing, coordinates).
+## ALSPRITE.DLL (16MB) — 38 BMPs + 752 BIN + 1,640 type-302 frames + 213 WAV
 
-| Content | BMP Count | Dimensions | Notes |
+Alliance advisor resources. Standard BMPs are animation anchors; custom type
+302 contains the missing 67×116 C-3PO and 47×69 R2-D2 frame runs. BIN resources
+hold the linked animation control data.
+
+| Content | Count | Dimensions | Notes |
 |---------|-----------|-----------|-------|
-| C-3PO animation frames | ~62 | 67x116 | 12+ gesture/speech sequences |
-| R2-D2 animation frames | ~12 | 47x69 | 2+ sequences (beep/rotate) |
-| Animation control data | — | (716 BIN files) | Frame ordering, timing, coordinates |
+| Standard anchor BMPs | 38 | 67×116, 47×69 | Native loader's current visual subset |
+| Custom animation frames | 1,640 | 1,617 at 67×116; 23 at 47×69 | Type 302; currently ignored |
+| Animation control data | 752 | — | RCDATA/BIN |
+| Embedded audio | 213 | — | RIFF/WAVE |
 
-## EMSPRITE.DLL (19MB) — 74 BMPs + 713 BIN
+## EMSPRITE.DLL (19MB) — 34 BMPs + 753 BIN + 2,348 type-302 frames + 216 WAV
 
-Empire advisor: Imperial protocol droid animated sprites. Same structure as ALSPRITE.
+Empire advisor resources. They use the same anchor, custom-frame, control, and
+audio structure as ALSPRITE.
 
-| Content | BMP Count | Dimensions | Notes |
+| Content | Count | Dimensions | Notes |
 |---------|-----------|-----------|-------|
-| Imperial droid frames | ~74 | 67x116 | 22+ gesture/speech sequences |
-| Animation control data | — | (713 BIN files) | Frame ordering, timing, coordinates |
+| Standard anchor BMPs | 34 | 106×133, 101×79 | Native loader's current visual subset |
+| Custom animation frames | 2,348 | 2,333 at 106×133; 15 at 101×79 | Type 302; currently ignored |
+| Animation control data | 753 | — | RCDATA/BIN |
+| Embedded audio | 216 | — | RIFF/WAVE |
 
-## ALBRIEF.DLL (7.9MB) — 20 BMPs + 366 BIN
+## ALBRIEF.DLL (7.9MB) — 20 BMPs + 366 BIN + 2,684 type-302 frames + 17 WAV
 
 Alliance briefing screen resources. The BMP sprites are advisor frames shown during the briefing. The BIN data is likely audio + animation control for the briefing sequences.
 
@@ -146,15 +160,18 @@ Alliance briefing screen resources. The BMP sprites are advisor frames shown dur
 |---------|-------|-----------|-------|
 | C-3PO briefing sprites | 15 | 67x116 | Subset of ALSPRITE frames |
 | R2-D2 briefing sprites | 5 | 47x69 | Subset of ALSPRITE frames |
-| Briefing sequence data | 366 BIN | — | Audio clips, animation control, cockpit compositing data |
+| Briefing sequence data | 366 BIN | — | Animation control data |
+| Custom animation frames | 2,684 | 67×116, 47×69 | Type 302; currently ignored |
+| Embedded audio | 17 | — | RIFF/WAVE |
 
 **Note:** The cockpit/shuttle background is NOT a single BMP. It is either composited at runtime from layered elements, or rendered as part of the Smacker video sequences (MDATA.003-005).
 
-## EMBRIEF.DLL (8.2MB) — 18 BMPs + 471 BIN
+## EMBRIEF.DLL (8.2MB) — 18 BMPs + 471 BIN + 2,738 type-302 frames + 22 WAV
 
-Empire briefing screen resources. Same structure as ALBRIEF but for the Imperial bridge environment.
+Empire briefing screen resources. Same structure as ALBRIEF but for the
+Imperial bridge environment. All are currently absent from the browser pack.
 
-## REBDLOG.DLL (290KB) — 24 BMPs
+## REBDLOG.DLL (290KB) — 24 BMPs + 5 string bundles
 
 In-game dialog box UI chrome.
 
@@ -182,7 +199,10 @@ Encyclopedia bitmap mapping table — data-only, maps system IDs to EDATA file n
 
 ## TEXTCOMM.DLL / TEXTTACT.DLL (35KB + 34KB)
 
-Common and tactical text strings. String-only DLLs, no bitmap resources.
+Common and tactical text resources. TEXTCOMM also contains six dialog templates
+and an accelerator; the strategic multiplayer shell uses these alongside
+code-built controls. Neither DLL contains the full rendered interface as a
+standalone screenshot.
 
 ## Smacker Videos (MDATA/) — DECODED TO WebM
 
@@ -191,14 +211,14 @@ Originals in `~/Desktop/Programming/star-wars-rebellion/MDATA/`:
 
 | File | Size | Content | Resolution |
 |------|------|---------|-----------|
-| MDATA.000 | 2.8MB | Intro logo/splash | ~320x200 |
-| MDATA.001 | 39MB | Main intro cinematic | ~320x200 |
-| MDATA.003 | 16MB | Campaign setup 1 (faction select cockpit) | ~320x200 |
-| MDATA.004 | 20MB | Campaign setup 2 (difficulty/options) | ~320x200 |
-| MDATA.005 | 20MB | Campaign setup 3 | ~320x200 |
-| MDATA.101-108 | 230MB | 8 story event cutscenes | ~320x200 |
-| MDATA.201 | 12MB | Victory sequence | ~320x200 |
-| MDATA.202 | 8MB | Defeat sequence | ~320x200 |
+| MDATA.000 | 2.8MB | Intro logo/splash | 640×480 |
+| MDATA.001 | 39MB | Main intro cinematic | 640×324 |
+| MDATA.003 | 16MB | Campaign setup 1 | 640×324 |
+| MDATA.004 | 20MB | Campaign setup 2 | 640×324 |
+| MDATA.005 | 20MB | Campaign setup 3 | 640×324 |
+| MDATA.101-108 | 230MB | 8 story event cutscenes | 640×324 |
+| MDATA.201 | 12MB | Successful X-wing trench run; Death Star destroyed | 640×324 |
+| MDATA.202 | 8MB | Failed trench run; X-wing destroyed | 640×324 |
 
 **Codec:** Smacker 2 (RAD Game Tools). Decode via `ffmpeg -i MDATA.001 output.webm` or RAD tools.
 
@@ -206,21 +226,25 @@ Originals in `~/Desktop/Programming/star-wars-rebellion/MDATA/`:
 
 16 WAV files with John Williams Star Wars soundtrack excerpts. See MetasharpNet `medias/MDATA/readme.txt` for full track listing with timestamps.
 
-## Summary Statistics
+## Corrected Resource Summary
 
-| Category | BMPs | BIN/Data | Total |
-|----------|------|----------|-------|
-| STRATEGY.DLL | 1,042 | 96 | 1,138 |
-| GOKRES.DLL | 580 | 0 | 580 |
-| COMMON.DLL | 321 | 1 | 322 |
-| TACTICAL.DLL | 288 | 1 | 289 |
-| ALSPRITE.DLL | 74 | 716 | 790 |
-| EMSPRITE.DLL | 74 | 713 | 787 |
-| ALBRIEF.DLL | 20 | 366 | 386 |
-| EMBRIEF.DLL | 18 | 471 | 489 |
-| REBDLOG.DLL | 24 | 0 | 24 |
-| ENCYTEXT.DLL | 0 | 348 | 348 |
-| TEXTSTRA.DLL | 0 | 511 | 511 |
-| **Total** | **2,441** | **3,223** | **5,664** |
+| Module | Standard BMP | RCDATA/BIN | Custom visual | Embedded WAV |
+|---|---:|---:|---:|---:|
+| STRATEGY | 1,042 | 96 | 0 | 66 |
+| GOKRES | 580 | 0 | 0 | 0 |
+| COMMON | 321 | 1 | 0 | 5 |
+| TACTICAL | 288 | 1 | 484 | 66 |
+| ALSPRITE | 38 | 752 | 1,640 | 213 |
+| EMSPRITE | 34 | 753 | 2,348 | 216 |
+| ALBRIEF | 20 | 366 | 2,684 | 17 |
+| EMBRIEF | 18 | 471 | 2,738 | 22 |
+| REBDLOG | 24 | 5 | 0 | 0 |
+| ENCYTEXT | 0 | 348 | 0 | 0 |
+| TEXTSTRA | 0 | 511 | 0 | 0 |
 
-Plus: 15 Smacker videos (356MB, decoded to WebM), 16 WAV soundtrack (17MB), 285 voice WAVs (153 Alliance + 132 Empire, extracted).
+“Custom visual” combines the 87 type-301 meshes and 397 type-303 textures in
+TACTICAL with type-302 advisor/briefing frames. It is not interchangeable with
+standard BMP count. The installation also supplies 187 EData images, 15
+Smacker videos, 16 music WAVs, and 285 faction voice WAVs. See the
+[interface reverse-engineering ledger](../docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md)
+for pack coverage and the active decode queue.

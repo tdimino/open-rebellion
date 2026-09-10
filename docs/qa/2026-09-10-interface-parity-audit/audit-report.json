@@ -206,8 +206,10 @@
   "evidence_files": {
     "surface_ledger": "surface-ledger.json",
     "reference_ledger": "reference-ledger.json",
+    "reverse_engineering_ledger": "reverse-engineering-ledger.json",
+    "reverse_engineering_report": "reverse-engineering-ledger.md",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Complete UIP-T01 starting with exact campaign cockpit composition, original system navigation, and packaged browser advisor assets."
+  "next_action": "Execute RE-ADV-01 and RE-ADV-02 to decode the original advisor corpus, then implement RE-STR-01 through RE-GID-01 for the exact strategic shell, controls, system navigation, and GID."
 }

@@ -30,6 +30,8 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [Surface ledger](surface-ledger.json) | Stable inventory of every known original surface family and its required visual states. |
 | [Screenshot ledger](screenshot-ledger.md) | Human-readable map of the 370 retained reference images and the still-missing owned-executable captures. |
 | [Reference ledger](reference-ledger.json) | Source URLs, provenance, confidence, locale, local paths, and coverage. |
+| [Reverse-engineering ledger](reverse-engineering-ledger.md) | Ghidra and original-resource findings, proof boundaries, and the implementation evidence queue. |
+| [Reverse-engineering data](reverse-engineering-ledger.json) | Machine-readable artifacts, discoveries, resource omissions, and work-package status. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
 | [SHA-256 manifest](reference-captures/SHA256SUMS) | Integrity manifest for all 370 retained images. |
@@ -52,6 +54,12 @@ The 370-image corpus is broad, but it is not the final acceptance set. Several
 rare or transient states cannot be sourced responsibly or at sufficient quality
 from the web. They remain explicit capture gaps and must be recorded from a
 legally owned, unmodified English installation before their cells can pass.
+
+Static recovery is tracked separately in the
+[reverse-engineering ledger](reverse-engineering-ledger.md). It already provides
+authoritative geometry and routing for the strategic shell, but also shows that
+the browser pack omits thousands of original advisor, briefing, and tactical
+resources.
 
 ## What 100% means
 

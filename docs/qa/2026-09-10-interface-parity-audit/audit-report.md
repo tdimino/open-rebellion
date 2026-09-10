@@ -56,6 +56,15 @@ The original identity baseline comes from the locally preserved
 the [Steam product page](https://store.steampowered.com/app/441550/STAR_WARS_Rebellion/),
 and the cited galleries in the [reference ledger](reference-ledger.json).
 
+The [reverse-engineering ledger](reverse-engineering-ledger.md) owns the
+executable-to-resource evidence queue. A read-only Ghidra pass recovered exact
+strategic apertures, twelve reference-rail rectangles, control geometry,
+commands, bitmap-state paint paths, managed object-window routing, GID display
+construction, and faction advisor apertures. The owned resource corpus also
+shows that the current extractor omits thousands of custom advisor, briefing,
+and tactical resources. These discoveries narrow implementation; they do not
+replace original-runtime visual acceptance.
+
 ## Immediate findings
 
 | ID | Severity | Finding | Status |
@@ -202,6 +211,11 @@ must still be captured from an owned English original installation:
 No missing reference cell may be marked passed.
 
 ## Execution order
+
+Each tranche consumes the corresponding `RE-*` work packages in the
+[reverse-engineering ledger](reverse-engineering-ledger.md). An empty exported
+`FUN_*.c` file is not negative evidence; query the saved Ghidra project before
+inventing behavior or geometry.
 
 | Tranche | Scope | Exit |
 |---------|-------|------|
