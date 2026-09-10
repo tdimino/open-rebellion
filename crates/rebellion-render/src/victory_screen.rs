@@ -4,12 +4,11 @@
 //! blocks all other interaction until the player dismisses it.
 //!
 //! # Outcomes handled
-//! - `VictoryOutcome::HqCaptured` — shows which faction won and which HQ
-//!   was taken.
-//! - `VictoryOutcome::DeathStarVictory` — Empire victory fanfare with
-//!   the name of the destroyed system.
-//! - `VictoryOutcome::DeathStarDestroyed` — Alliance victory: Rebels
-//!   destroyed the Death Star.
+//! - `VictoryOutcome::HqCaptured` shows the Alliance capture of Coruscant.
+//! - `VictoryOutcome::HqDestroyed` shows the Imperial destruction and
+//!   occupation of the mobile Alliance headquarters.
+//! - `VictoryOutcome::DeathStarVictory` shows an Imperial victory after the
+//!   Death Star destroys the Alliance-HQ system.
 //!
 //! # Integration
 //! ```ignore
@@ -234,11 +233,23 @@ fn describe_outcome(
             )
         }
 
+        VictoryOutcome::HqDestroyed { .. } => (
+            "Galactic Empire Victory!".into(),
+            "Alliance Headquarters Destroyed".into(),
+            vec![
+                "The mobile Alliance headquarters has been destroyed.".into(),
+                String::new(),
+                "Imperial forces control the former headquarters system.".into(),
+                "The Rebellion has been defeated.".into(),
+            ],
+            Color32::from_rgb(220, 60, 60),
+        ),
+
         VictoryOutcome::DeathStarVictory { .. } => (
             "Empire Victory!".into(),
             "Death Star Fires".into(),
             vec![
-                "The Death Star has annihilated the Rebel base.".into(),
+                "The Death Star has annihilated the Alliance headquarters system.".into(),
                 String::new(),
                 "The Rebellion has been crushed.".into(),
                 "The Emperor's reign is absolute.".into(),
@@ -246,17 +257,6 @@ fn describe_outcome(
             Color32::from_rgb(220, 60, 60),
         ),
 
-        VictoryOutcome::DeathStarDestroyed { .. } => (
-            "Alliance Victory!".into(),
-            "Death Star Destroyed".into(),
-            vec![
-                "Rebel pilots destroyed the Death Star!".into(),
-                String::new(),
-                "The Empire's ultimate weapon is no more.".into(),
-                "Hope is restored to the galaxy.".into(),
-            ],
-            Color32::from_rgb(100, 200, 255),
-        ),
     }
 }
 
@@ -319,7 +319,7 @@ mod tests {
         let key = make_system_key();
         let mut state = VictoryScreenState::new();
         assert!(!state.is_pending());
-        state.outcome = Some(VictoryOutcome::DeathStarDestroyed { location: key });
+        state.outcome = Some(VictoryOutcome::DeathStarVictory { target_system: key });
         assert!(state.is_pending());
     }
 
@@ -327,7 +327,7 @@ mod tests {
     fn state_not_pending_when_acknowledged() {
         let key = make_system_key();
         let mut state = VictoryScreenState::new();
-        state.outcome = Some(VictoryOutcome::DeathStarDestroyed { location: key });
+        state.outcome = Some(VictoryOutcome::DeathStarVictory { target_system: key });
         state.acknowledged = true;
         assert!(!state.is_pending());
     }
@@ -336,7 +336,7 @@ mod tests {
     fn state_reset_clears_all_fields() {
         let key = make_system_key();
         let mut state = VictoryScreenState::new();
-        state.outcome = Some(VictoryOutcome::DeathStarDestroyed { location: key });
+        state.outcome = Some(VictoryOutcome::DeathStarVictory { target_system: key });
         state.acknowledged = true;
         state.replay_requested = true;
         state.stats = Some(GameStats { days_played: 100, battles_won: 10, ships_built: 5 });
@@ -356,17 +356,17 @@ mod tests {
     }
 
     #[test]
-    fn describe_hq_captured_empire_wins() {
+    fn describe_hq_destroyed_empire_wins() {
         let key = make_system_key();
-        let outcome = VictoryOutcome::HqCaptured {
+        let outcome = VictoryOutcome::HqDestroyed {
             winner: Faction::Empire,
             loser: Faction::Alliance,
             hq_system: key,
         };
         let (title, subtitle, body, color) = describe_outcome(&outcome);
         assert!(title.contains("Empire"), "title should name winner");
-        assert!(subtitle.contains("Captured"));
-        assert!(body.iter().any(|l| l.contains("Rebel Alliance") || l.contains("headquarters")));
+        assert!(subtitle.contains("Destroyed"));
+        assert!(body.iter().any(|l| l.contains("headquarters")));
         assert_eq!(color, Color32::from_rgb(220, 60, 60));
     }
 
@@ -393,12 +393,4 @@ mod tests {
         assert!(body.iter().any(|l| l.contains("Death Star") || l.contains("Rebel")));
     }
 
-    #[test]
-    fn describe_death_star_destroyed() {
-        let key = make_system_key();
-        let outcome = VictoryOutcome::DeathStarDestroyed { location: key };
-        let (title, _, body, _) = describe_outcome(&outcome);
-        assert!(title.contains("Alliance"));
-        assert!(body.iter().any(|l| l.contains("Death Star")));
-    }
 }

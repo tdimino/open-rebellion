@@ -23,7 +23,7 @@ use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::ids::TroopKey;
+use rebellion_core::ids::{FleetKey, TroopKey};
 use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
@@ -1155,6 +1155,7 @@ async fn main() {
             // Unopposed troop transports can land immediately. Contested
             // orbits retain cargo until space combat produces a winner.
             let mut ground_resolved_systems = HashSet::new();
+            let current_tick = tick_events.last().map(|event| event.tick).unwrap_or(0);
             let landing_targets: Vec<_> = world
                 .systems
                 .iter()
@@ -1186,6 +1187,27 @@ async fn main() {
                 })
                 .collect();
             for (system, is_alliance) in landing_targets {
+                if !is_alliance && system == victory_state.alliance_hq {
+                    let bombardment_fleet = world.systems.get(system).and_then(|value| {
+                        value.fleets.iter().copied().find(|fleet| {
+                            world
+                                .fleets
+                                .get(*fleet)
+                                .is_some_and(|value| !value.is_alliance)
+                                && troop_transport_state.carried_count(*fleet) > 0
+                        })
+                    });
+                    if let Some(fleet) = bombardment_fleet {
+                        apply_automatic_bombardment(
+                            &mut world,
+                            &victory_state,
+                            fleet,
+                            system,
+                            current_tick,
+                            &mut msg_log,
+                        );
+                    }
+                }
                 let ground_rolls: Vec<f64> =
                     (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 ground_resolved_systems.insert(system);
@@ -1195,7 +1217,7 @@ async fn main() {
                     system,
                     is_alliance,
                     &ground_rolls,
-                    tick_events.last().map(|event| event.tick).unwrap_or(0),
+                    current_tick,
                     &mut msg_log,
                 );
             }
@@ -1203,7 +1225,6 @@ async fn main() {
             // ── Combat ──────────────────────────────────────────────────────
             // After fleet arrivals, check every system for opposing fleets.
             // Collect combat triggers first (immutable world borrow).
-            let current_tick = tick_events.last().map(|e| e.tick).unwrap_or(0);
             let combat_triggers: Vec<_> = world
                 .systems
                 .keys()
@@ -1326,6 +1347,15 @@ async fn main() {
                     CombatSide::Draw => None,
                 };
                 if let Some((winner_is_alliance, winner_fleet)) = winner {
+                    apply_automatic_bombardment(
+                        &mut world,
+                        &victory_state,
+                        winner_fleet,
+                        sys_key,
+                        current_tick,
+                        &mut msg_log,
+                    );
+
                     let ground_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                     ground_resolved_systems.insert(sys_key);
                     resolve_ground_campaign(
@@ -1337,25 +1367,6 @@ async fn main() {
                         current_tick,
                         &mut msg_log,
                     );
-
-                    let brd_result = BombardmentSystem::resolve_bombardment(
-                        &world,
-                        winner_fleet,
-                        sys_key,
-                        world.difficulty_index,
-                        current_tick,
-                    );
-                    if brd_result.damage > 0 {
-                        msg_log.push(GameMessage::at_system(
-                            current_tick,
-                            format!(
-                                "Orbital bombardment at {} — {} damage",
-                                sys_name, brd_result.damage
-                            ),
-                            MessageCategory::Combat,
-                            sys_key,
-                        ));
-                    }
                 }
             }
 
@@ -2110,11 +2121,13 @@ async fn main() {
                             winner, loser, winner
                         )
                     }
-                    rebellion_core::victory::VictoryOutcome::DeathStarVictory { .. } => {
-                        "The Death Star destroyed the Rebel base! Empire wins!".to_string()
+                    rebellion_core::victory::VictoryOutcome::HqDestroyed { .. } => {
+                        "The Empire destroyed the Alliance headquarters and secured its system. Empire wins!"
+                            .to_string()
                     }
-                    rebellion_core::victory::VictoryOutcome::DeathStarDestroyed { .. } => {
-                        "The Death Star has been destroyed! Alliance wins!".to_string()
+                    rebellion_core::victory::VictoryOutcome::DeathStarVictory { .. } => {
+                        "The Death Star destroyed the Alliance headquarters system. Empire wins!"
+                            .to_string()
                     }
                 };
                 msg_log.push(GameMessage::new(current_tick, msg, MessageCategory::Event));
@@ -3049,11 +3062,23 @@ async fn main() {
                             troop_transport_state.destroy_untransportable_cargo(&mut world);
 
                             let ground_attacker = match space_result.winner {
-                                CombatSide::Attacker => Some(true),
-                                CombatSide::Defender => Some(false),
+                                CombatSide::Attacker => Some(session.attacker_fleet),
+                                CombatSide::Defender => Some(session.defender_fleet),
                                 CombatSide::Draw => None,
                             };
-                            if let Some(attacker_is_alliance) = ground_attacker {
+                            if let Some(winner_fleet) = ground_attacker {
+                                let attacker_is_alliance = world
+                                    .fleets
+                                    .get(winner_fleet)
+                                    .is_some_and(|fleet| fleet.is_alliance);
+                                apply_automatic_bombardment(
+                                    &mut world,
+                                    &victory_state,
+                                    winner_fleet,
+                                    session.system,
+                                    session.start_tick,
+                                    &mut msg_log,
+                                );
                                 let ground_rolls: Vec<f64> =
                                     (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                                 resolve_ground_campaign(
@@ -3142,12 +3167,28 @@ async fn main() {
                             // A decisive winner may land surviving transports,
                             // regardless of which faction initiated the move.
                             let ground_attacker = match session.winner {
-                                Some(rebellion_render::CombatWinner::Attacker) => Some(true),
-                                Some(rebellion_render::CombatWinner::Defender) => Some(false),
+                                Some(rebellion_render::CombatWinner::Attacker) => {
+                                    Some(session.attacker_fleet)
+                                }
+                                Some(rebellion_render::CombatWinner::Defender) => {
+                                    Some(session.defender_fleet)
+                                }
                                 _ => None,
                             };
-                            if let Some(attacker_is_alliance) = ground_attacker {
+                            if let Some(winner_fleet) = ground_attacker {
+                                let attacker_is_alliance = world
+                                    .fleets
+                                    .get(winner_fleet)
+                                    .is_some_and(|fleet| fleet.is_alliance);
                                 let sys_key = session.system;
+                                apply_automatic_bombardment(
+                                    &mut world,
+                                    &victory_state,
+                                    winner_fleet,
+                                    sys_key,
+                                    session.start_tick,
+                                    &mut msg_log,
+                                );
                                 let landed = land_faction_cargo(
                                     &mut world,
                                     &mut troop_transport_state,
@@ -4012,6 +4053,7 @@ fn apply_panel_action(
         PanelAction::OrderBombardment { fleet, system } => {
             // Guard: both fleet and system must still exist (prevents panic in resolve).
             if world.fleets.contains_key(fleet) && world.systems.contains_key(system) {
+                let attacker_is_alliance = world.fleets[fleet].is_alliance;
                 let result = BombardmentSystem::resolve_bombardment(
                     world,
                     fleet,
@@ -4019,16 +4061,25 @@ fn apply_panel_action(
                     world.difficulty_index,
                     clock.tick,
                 );
+                let attacker = if attacker_is_alliance {
+                    Faction::Alliance
+                } else {
+                    Faction::Empire
+                };
+                let headquarters_destroyed = VictorySystem::apply_headquarters_bombardment(
+                    victory_state,
+                    world,
+                    &result,
+                    attacker,
+                );
                 if let Some(sys) = world.systems.get_mut(system) {
                     let pop_reduction = (result.damage as f32 / 100.0).min(0.25);
-                    if let Some(f) = world.fleets.get(fleet) {
-                        if f.is_alliance {
-                            sys.popularity_empire =
-                                (sys.popularity_empire - pop_reduction).clamp(0.0, 1.0);
-                        } else {
-                            sys.popularity_alliance =
-                                (sys.popularity_alliance - pop_reduction).clamp(0.0, 1.0);
-                        }
+                    if attacker_is_alliance {
+                        sys.popularity_empire =
+                            (sys.popularity_empire - pop_reduction).clamp(0.0, 1.0);
+                    } else {
+                        sys.popularity_alliance =
+                            (sys.popularity_alliance - pop_reduction).clamp(0.0, 1.0);
                     }
                 }
                 msg_log.push(GameMessage::new(
@@ -4036,6 +4087,18 @@ fn apply_panel_action(
                     format!("Orbital bombardment — {} damage", result.damage),
                     MessageCategory::Combat,
                 ));
+                if headquarters_destroyed {
+                    let system_name = world
+                        .systems
+                        .get(system)
+                        .map(|system| system.name.as_str())
+                        .unwrap_or("Unknown");
+                    msg_log.push(GameMessage::new(
+                        clock.tick,
+                        format!("Alliance headquarters destroyed at {}", system_name),
+                        MessageCategory::Combat,
+                    ));
+                }
             }
         }
         PanelAction::FireDeathStar { system } => {
@@ -4794,6 +4857,63 @@ fn land_faction_cargo(
     landed
 }
 
+/// Apply the campaign bombardment that follows an uncontested orbital win.
+///
+/// This keeps AI auto-resolution, tactical combat, and unopposed invasion on
+/// the same headquarters-destruction path before any transported troops land.
+fn apply_automatic_bombardment(
+    world: &mut GameWorld,
+    victory_state: &VictoryState,
+    fleet: FleetKey,
+    system: rebellion_core::ids::SystemKey,
+    tick: u64,
+    log: &mut MessageLog,
+) {
+    if !world.fleets.contains_key(fleet) || !world.systems.contains_key(system) {
+        return;
+    }
+
+    let attacker = if world.fleets[fleet].is_alliance {
+        Faction::Alliance
+    } else {
+        Faction::Empire
+    };
+    let result = BombardmentSystem::resolve_bombardment(
+        world,
+        fleet,
+        system,
+        world.difficulty_index,
+        tick,
+    );
+    let headquarters_destroyed =
+        VictorySystem::apply_headquarters_bombardment(victory_state, world, &result, attacker);
+    let system_name = world
+        .systems
+        .get(system)
+        .map(|value| value.name.as_str())
+        .unwrap_or("unknown");
+
+    if result.damage > 0 {
+        log.push(GameMessage::at_system(
+            tick,
+            format!(
+                "Orbital bombardment at {} — {} damage",
+                system_name, result.damage
+            ),
+            MessageCategory::Combat,
+            system,
+        ));
+    }
+    if headquarters_destroyed {
+        log.push(GameMessage::at_system(
+            tick,
+            format!("Alliance headquarters destroyed at {}", system_name),
+            MessageCategory::Combat,
+            system,
+        ));
+    }
+}
+
 fn apply_system_occupation(
     world: &mut GameWorld,
     system: rebellion_core::ids::SystemKey,
@@ -5198,11 +5318,15 @@ fn player_won_victory(
                     | (Faction::Empire, MissionFaction::Empire)
             )
         }
+        rebellion_core::victory::VictoryOutcome::HqDestroyed { winner, .. } => {
+            matches!(
+                (winner, player_faction),
+                (Faction::Alliance, MissionFaction::Alliance)
+                    | (Faction::Empire, MissionFaction::Empire)
+            )
+        }
         rebellion_core::victory::VictoryOutcome::DeathStarVictory { .. } => {
             player_faction == MissionFaction::Empire
-        }
-        rebellion_core::victory::VictoryOutcome::DeathStarDestroyed { .. } => {
-            player_faction == MissionFaction::Alliance
         }
     }
 }

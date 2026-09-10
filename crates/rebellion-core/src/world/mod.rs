@@ -294,9 +294,11 @@ pub struct System {
     pub manufacturing_facilities: Vec<ManufacturingFacilityKey>,
     /// Mines, refineries, and other resource extractors.
     pub production_facilities: Vec<ProductionFacilityKey>,
-    /// True if this system is a faction's headquarters (from SYSTEMSD IsHeadquarters flag).
+    /// True while this system contains a surviving faction headquarters.
     ///
-    /// Capturing the enemy HQ is the primary victory condition.
+    /// The Empire must destroy the mobile Alliance headquarters before taking
+    /// its system. The Alliance instead captures and holds Coruscant. The flag
+    /// is cleared when bombardment destroys the Alliance-HQ facility.
     pub is_headquarters: bool,
     /// True if this system's planet has been destroyed (Death Star fired; `alive_flag` bit0 == 0).
     ///

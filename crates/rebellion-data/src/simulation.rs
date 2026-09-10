@@ -213,8 +213,23 @@ pub fn run_simulation_tick(
                 world.difficulty_index,
                 current_tick,
             );
-            integrator.emit_bombardment(world, sys_key, brd_result.damage);
-            let _ = winner_is_alliance;
+            let attacker = if winner_is_alliance {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            };
+            let headquarters_destroyed = VictorySystem::apply_headquarters_bombardment(
+                &states.victory,
+                world,
+                &brd_result,
+                attacker,
+            );
+            integrator.emit_bombardment(
+                world,
+                sys_key,
+                brd_result.damage,
+                headquarters_destroyed,
+            );
         }
     }
 
@@ -266,6 +281,45 @@ pub fn run_simulation_tick(
                         .unwrap_or(false)
                 })
                 .collect();
+
+            // An unopposed Imperial invasion of the mobile Alliance HQ has no
+            // space battle to trigger the normal bombardment follow-up. Strike
+            // the HQ before landing, but only when a transport is actually
+            // carrying an invasion force. Occupation alone is not sufficient.
+            if faction == Faction::Empire
+                && sys_key == states.victory.alliance_hq
+                && world
+                    .systems
+                    .get(sys_key)
+                    .is_some_and(|system| system.is_headquarters && !system.is_destroyed)
+            {
+                if let Some(bombardment_fleet) = landing_fleets
+                    .iter()
+                    .copied()
+                    .find(|fleet| states.troop_transport.carried_count(*fleet) > 0)
+                {
+                    let result = BombardmentSystem::resolve_bombardment(
+                        world,
+                        bombardment_fleet,
+                        sys_key,
+                        world.difficulty_index,
+                        current_tick,
+                    );
+                    let headquarters_destroyed = VictorySystem::apply_headquarters_bombardment(
+                        &states.victory,
+                        world,
+                        &result,
+                        Faction::Empire,
+                    );
+                    integrator.emit_bombardment(
+                        world,
+                        sys_key,
+                        result.damage,
+                        headquarters_destroyed,
+                    );
+                }
+            }
+
             for fleet in landing_fleets {
                 integrator.apply_troop_landing(
                     world,
@@ -681,8 +735,8 @@ mod tests {
     use rebellion_core::dat::Faction;
     use rebellion_core::fog::FogState;
     use rebellion_core::game_events::{
-        EVT_CAPTURE, EVT_COMBAT_GROUND, EVT_CONTROL_CHANGED, EVT_FLEET_ARRIVED, EVT_TROOP_MOVED,
-        EVT_VICTORY,
+        EVT_BOMBARDMENT, EVT_CAPTURE, EVT_COMBAT_GROUND, EVT_CONTROL_CHANGED, EVT_FLEET_ARRIVED,
+        EVT_TROOP_MOVED, EVT_VICTORY,
     };
     use rebellion_core::ids::DatId;
     use rebellion_core::movement::begin_fleet_transit;
@@ -990,6 +1044,264 @@ mod tests {
     }
 
     #[test]
+    fn decisive_imperial_bombardment_destroys_the_alliance_hq_facility() {
+        let mut world = GameWorld::default();
+        let make_system = |dat_id, name: &str, control, is_headquarters| System {
+            dat_id: DatId::new(dat_id),
+            name: name.into(),
+            sector: Default::default(),
+            x: dat_id as u16 * 100,
+            y: 0,
+            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters,
+            is_destroyed: false,
+            control,
+            espionage_rating: 0.0,
+        };
+        let alliance_hq = world.systems.insert(make_system(
+            1,
+            "Alliance HQ",
+            ControlKind::Controlled(Faction::Alliance),
+            true,
+        ));
+        let coruscant = world.systems.insert(make_system(
+            2,
+            "Coruscant",
+            ControlKind::Controlled(Faction::Empire),
+            true,
+        ));
+        let alliance_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(61),
+            name: "Alliance Scout".into(),
+            is_alliance: true,
+            is_empire: false,
+            hull: 1,
+            ..CapitalShipClass::default()
+        });
+        let empire_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(62),
+            name: "Imperial Bombardment Ship".into(),
+            is_alliance: false,
+            is_empire: true,
+            hull: 1_000,
+            turbolaser_fore: 1_000,
+            bombardment_modifier: 100,
+            ..CapitalShipClass::default()
+        });
+        let alliance_fleet = world.fleets.insert(Fleet {
+            location: alliance_hq,
+            capital_ships: vec![ShipInstance::new(alliance_class, 1, true)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        let empire_fleet = world.fleets.insert(Fleet {
+            location: alliance_hq,
+            capital_ships: vec![ShipInstance::new(empire_class, 1_000, false)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        world.systems[alliance_hq]
+            .fleets
+            .extend([alliance_fleet, empire_fleet]);
+
+        let mut states = SimulationStates {
+            clock: GameClock::new(),
+            manufacturing: ManufacturingState::new(),
+            missions: MissionState::new(),
+            events: EventState::new(),
+            ai: AIState::new(AiFaction::Empire),
+            ai2: None,
+            movement: MovementState::new(),
+            fog: FogState::new(Faction::Alliance),
+            blockade: BlockadeState::new(),
+            uprising: UprisingState::new(),
+            death_star: DeathStarState::default(),
+            research: ResearchState::new(),
+            jedi: JediState::new(),
+            victory: VictoryState::new(alliance_hq, coruscant),
+            betrayal: BetrayalState::new(),
+            economy: EconomyState::default(),
+            repair: RepairState::default(),
+            troop_transport: TroopTransportState::default(),
+            combat_cooldowns: HashMap::new(),
+            campaign_config: CampaignConfig {
+                victory_conditions: VictoryConditions::HeadquartersOnly,
+                ..CampaignConfig::default()
+            },
+        };
+
+        let events = run_simulation_tick(
+            &mut world,
+            &mut states,
+            &[TickEvent { tick: 1 }],
+            &[0.5; 2_048],
+            10,
+            &rebellion_core::tuning::GameConfig::default(),
+        );
+
+        assert!(!world.systems[alliance_hq].is_headquarters);
+        assert!(!states.victory.resolved, "bombardment still requires occupation");
+        let bombardment = events
+            .iter()
+            .find(|event| event.event_type == EVT_BOMBARDMENT)
+            .expect("bombardment telemetry");
+        assert_eq!(bombardment.details["headquarters_destroyed"], true);
+    }
+
+    #[test]
+    fn unopposed_imperial_invasion_bombards_before_occupying_alliance_hq() {
+        let mut world = GameWorld::default();
+        let add_system = |world: &mut GameWorld,
+                          dat_id,
+                          name: &str,
+                          control,
+                          is_headquarters| {
+            world.systems.insert(System {
+                dat_id: DatId::new(dat_id),
+                name: name.into(),
+                sector: Default::default(),
+                x: dat_id as u16 * 100,
+                y: 0,
+                exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.5,
+                popularity_empire: 0.5,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters,
+                is_destroyed: false,
+                control,
+                espionage_rating: 0.0,
+            })
+        };
+        let alliance_hq = add_system(
+            &mut world,
+            1,
+            "Alliance HQ",
+            ControlKind::Controlled(Faction::Alliance),
+            true,
+        );
+        let coruscant = add_system(
+            &mut world,
+            2,
+            "Coruscant",
+            ControlKind::Controlled(Faction::Empire),
+            true,
+        );
+        let origin = add_system(
+            &mut world,
+            3,
+            "Imperial Staging",
+            ControlKind::Controlled(Faction::Empire),
+            false,
+        );
+        let transport_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(63),
+            name: "Imperial Assault Transport".into(),
+            is_alliance: false,
+            is_empire: true,
+            hull: 100,
+            troop_capacity: 1,
+            bombardment_modifier: 100,
+            ..CapitalShipClass::default()
+        });
+        let fleet = world.fleets.insert(Fleet {
+            location: origin,
+            capital_ships: vec![ShipInstance::new(transport_class, 100, false)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        world.systems[origin].fleets.push(fleet);
+        let troop = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(20),
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        world.systems[origin].ground_units.push(troop);
+
+        let mut states = SimulationStates {
+            clock: GameClock::new(),
+            manufacturing: ManufacturingState::new(),
+            missions: MissionState::new(),
+            events: EventState::new(),
+            ai: AIState::new(AiFaction::Empire),
+            ai2: None,
+            movement: MovementState::new(),
+            fog: FogState::new(Faction::Alliance),
+            blockade: BlockadeState::new(),
+            uprising: UprisingState::new(),
+            death_star: DeathStarState::default(),
+            research: ResearchState::new(),
+            jedi: JediState::new(),
+            victory: VictoryState::new(alliance_hq, coruscant),
+            betrayal: BetrayalState::new(),
+            economy: EconomyState::default(),
+            repair: RepairState::default(),
+            troop_transport: TroopTransportState::default(),
+            combat_cooldowns: HashMap::new(),
+            campaign_config: CampaignConfig {
+                victory_conditions: VictoryConditions::HeadquartersOnly,
+                ..CampaignConfig::default()
+            },
+        };
+        states
+            .troop_transport
+            .embark(&mut world, fleet, &[troop])
+            .unwrap();
+        assert!(begin_fleet_transit(
+            &mut states.movement,
+            &mut world,
+            fleet,
+            alliance_hq,
+            1,
+        ));
+
+        let events = run_simulation_tick(
+            &mut world,
+            &mut states,
+            &[TickEvent { tick: 1 }],
+            &[0.99; 2_048],
+            10,
+            &rebellion_core::tuning::GameConfig::default(),
+        );
+
+        assert!(!world.systems[alliance_hq].is_headquarters);
+        assert_eq!(
+            world.systems[alliance_hq].control,
+            ControlKind::Controlled(Faction::Empire)
+        );
+        assert!(states.victory.resolved);
+        assert!(events.iter().any(|event| {
+            event.event_type == EVT_BOMBARDMENT
+                && event.details["headquarters_destroyed"] == true
+        }));
+        assert!(events.iter().any(|event| event.event_type == EVT_VICTORY));
+    }
+
+    #[test]
     fn troop_transport_arrives_lands_occupies_and_captures() {
         let mut world = GameWorld::default();
         let add_system = |world: &mut GameWorld,
@@ -1113,9 +1425,7 @@ mod tests {
         let events = run_simulation_tick(
             &mut world,
             &mut states,
-            &[TickEvent {
-                tick: VictorySystem::MIN_VICTORY_TICK,
-            }],
+            &[TickEvent { tick: 1 }],
             &[0.99; 2048],
             10,
             &rebellion_core::tuning::GameConfig::default(),

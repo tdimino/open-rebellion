@@ -635,17 +635,19 @@ impl PerceptionIntegrator {
         }
     }
 
-    /// Emit bombardment telemetry (no world mutation — bombardment applies via damage field).
+    /// Emit bombardment telemetry after the caller applies its world effects.
     pub fn emit_bombardment(
         &mut self,
         world: &GameWorld,
         system: SystemKey,
         damage: i32,
+        headquarters_destroyed: bool,
     ) {
         if damage > 0 {
             self.emit(SYS_COMBAT, EVT_BOMBARDMENT, serde_json::json!({
                 "system": sys_name(world, system),
                 "damage": damage,
+                "headquarters_destroyed": headquarters_destroyed,
             }));
         }
     }
