@@ -1,0 +1,213 @@
+{
+  "$schema": "./schemas/interface-parity.schema.json",
+  "schema_version": "1.0.0",
+  "audit_id": "UIP-2026-09-10",
+  "baseline_commit": "a1c9f33",
+  "status": "fail",
+  "scope": {
+    "original_game": "Star Wars: Rebellion / Supremacy",
+    "release_year": 1998,
+    "locale": "en-US",
+    "platforms": [
+      "native",
+      "wasm"
+    ],
+    "surface_families": 43,
+    "retained_reference_images": 370,
+    "parity_rule": "Every required surface-state cell must pass. A failed, partial, blocked, or unknown child prevents parent and project acceptance.",
+    "extensions_rule": "Approved extensions are excluded from the parity denominator and must not replace, overlap, obscure, or alter an original path."
+  },
+  "thresholds": {
+    "ssim_lossless_min": 0.995,
+    "ssim_compressed_provisional_min": 0.97,
+    "normalized_mae_max": 0.0039215686,
+    "changed_pixel_ratio_max": 0.005,
+    "changed_pixel_channel_delta": 2,
+    "edge_iou_lossless_min": 0.98,
+    "edge_iou_compressed_provisional_min": 0.95,
+    "layout_error_logical_px_max": 1,
+    "compressed_layout_error_logical_px_max": 2,
+    "hotspot_iou_min": 0.98,
+    "required_aperture_occupancy": 1.0,
+    "navigation_edge_coverage": 1.0,
+    "invented_visible_elements_max": 0,
+    "unknown_visible_elements_max": 0,
+    "unauthorized_visible_pixel_ratio_max": 0.0
+  },
+  "viewports": [
+    {"width": 640, "height": 480, "dpr": [1, 2]},
+    {"width": 800, "height": 600, "dpr": [1, 2]},
+    {"width": 1280, "height": 960, "dpr": [1, 2]},
+    {"width": 1280, "height": 800, "dpr": [1, 2]},
+    {"width": 1440, "height": 900, "dpr": [1, 2]},
+    {"width": 1920, "height": 1080, "dpr": [1, 2]}
+  ],
+  "authority_tiers": [
+    {"id": "A0", "description": "Lossless original-executable capture with version, locale, fixture, and input trace", "can_close": ["visual", "geometry", "interaction"]},
+    {"id": "A1", "description": "Original executable or decompiled constructor, paint routine, command mapping, and geometry", "can_close": ["visual", "geometry", "interaction"]},
+    {"id": "A2", "description": "Extracted resource identity plus two corroborating original-game visual sources", "can_close": ["artwork_identity"]},
+    {"id": "A3", "description": "Authenticated original-game screenshot or video without executable mapping", "can_close": ["provisional_visual"]},
+    {"id": "A4", "description": "Memory, inference, recreation, modded media, or unverified derivative", "can_close": []}
+  ],
+  "summary": {
+    "main_menu_surface": "partial_complete_state_matrix_open",
+    "campaign_interface": "fail",
+    "strategy_cockpit": "fail",
+    "galaxy_display": "fail",
+    "system_navigation": "fail",
+    "wasm_advisors": "fail",
+    "wasm_encyclopedia_art": "fail",
+    "tactical_interface": "fail",
+    "multiplayer_interface": "blocked",
+    "release_interface_parity": "blocked"
+  },
+  "findings": [
+    {
+      "id": "UIP-F-001",
+      "severity": "P0",
+      "status": "fail",
+      "title": "Campaign cockpit contains stretched and replacement composition",
+      "evidence": ["crates/rebellion-render/src/cockpit.rs:227", "crates/rebellion-render/src/cockpit.rs:281"],
+      "affected_surfaces": ["CMD-01", "CMD-04", "CMD-05"]
+    },
+    {
+      "id": "UIP-F-002",
+      "severity": "P0",
+      "status": "fail",
+      "title": "Galaxy, stars, sector hulls, systems, and facilities use synthetic primitives",
+      "evidence": ["crates/rebellion-render/src/lib.rs:145", "crates/rebellion-render/src/lib.rs:253", "crates/rebellion-render/src/lib.rs:388"],
+      "affected_surfaces": ["CMD-02", "CMD-09"]
+    },
+    {
+      "id": "UIP-F-003",
+      "severity": "P0",
+      "status": "fail",
+      "title": "System selection opens an invented right sidebar",
+      "evidence": ["crates/rebellion-render/src/lib.rs:636"],
+      "affected_surfaces": ["CMD-03", "OBJ-02", "OBJ-14"]
+    },
+    {
+      "id": "UIP-F-004",
+      "severity": "P0",
+      "status": "fail",
+      "title": "WASM advisor frame loader returns empty frame pools",
+      "evidence": ["crates/rebellion-render/src/advisor.rs:830"],
+      "affected_surfaces": ["CMD-07"]
+    },
+    {
+      "id": "UIP-F-005",
+      "severity": "P0",
+      "status": "fail",
+      "title": "Browser pack omits advisor, briefing, dialog, and encyclopedia families",
+      "evidence": ["scripts/build-runtime-pack.py:29"],
+      "affected_surfaces": ["PRE-03", "PRE-05", "CMD-07", "OBJ-01"]
+    },
+    {
+      "id": "UIP-F-006",
+      "severity": "P1",
+      "status": "fail",
+      "title": "WASM encyclopedia image loading always returns no texture",
+      "evidence": ["crates/rebellion-render/src/encyclopedia.rs:486"],
+      "affected_surfaces": ["OBJ-01"]
+    },
+    {
+      "id": "UIP-F-007",
+      "severity": "P1",
+      "status": "fail",
+      "title": "Original object, finder, production, mission, message, and option layouts are replaced or absent",
+      "evidence": ["crates/rebellion-render/src/panels", "crates/rebellion-render/src/message_log.rs"],
+      "affected_surfaces": ["PRE-03", "CMD-08", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12", "OBJ-13", "OBJ-14"]
+    },
+    {
+      "id": "UIP-F-008",
+      "severity": "P1",
+      "status": "fail",
+      "title": "Original battle alert and report flow is absent or bypassed",
+      "evidence": ["crates/rebellion-render/src/combat_view.rs:227", "crates/rebellion-app/src/main.rs:1282"],
+      "affected_surfaces": ["EVT-02", "EVT-03", "TAC-07"]
+    },
+    {
+      "id": "UIP-F-009",
+      "severity": "P1",
+      "status": "fail",
+      "title": "Tactical HUD uses partial original art inside a replacement composition",
+      "evidence": ["crates/rebellion-render/src/tactical_view.rs:773"],
+      "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
+    },
+    {
+      "id": "UIP-F-010",
+      "severity": "P1",
+      "status": "fail",
+      "title": "Live ground-combat screen is an invented surface",
+      "evidence": ["crates/rebellion-render/src/ground_combat.rs:202"],
+      "affected_surfaces": ["TAC-08"]
+    },
+    {
+      "id": "UIP-F-011",
+      "severity": "P1",
+      "status": "fail",
+      "title": "Original modeless window and reference-rail behavior is absent",
+      "evidence": ["docs/reference/campaign-history/archive/star-wars-rebellion-manual.pdf#page=60"],
+      "affected_surfaces": ["CMD-04"]
+    },
+    {
+      "id": "UIP-F-012",
+      "severity": "P1",
+      "status": "partial",
+      "title": "Rare and transient original screenshot states remain uncaptured",
+      "evidence": ["screenshot-ledger.md#remaining-owned-executable-captures"],
+      "affected_surfaces": ["PRE-02", "CMD-02", "OBJ-11", "EVT-01", "TAC-03", "TAC-05", "END-01", "PRE-06"]
+    }
+  ],
+  "tranches": [
+    {
+      "id": "UIP-T01",
+      "name": "Strategic Cockpit Truth",
+      "status": "in_progress",
+      "surface_ids": ["CMD-01", "CMD-02", "CMD-03", "CMD-04", "CMD-05", "CMD-07", "CMD-09"],
+      "exit": "Both factions pass exact shell, galaxy/GID, controls, modeless system navigation, embedded advisors, and markers on native and WASM with zero invented or blank required elements."
+    },
+    {
+      "id": "UIP-T02",
+      "name": "System Management and Cockpit Destinations",
+      "status": "pending",
+      "surface_ids": ["PRE-03", "PRE-04", "CMD-06", "CMD-08", "OBJ-01", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-13", "OBJ-14"],
+      "exit": "Original sector/system windows, finders, messages, options, encyclopedia, reference rail, and return paths pass."
+    },
+    {
+      "id": "UIP-T03",
+      "name": "Objects, Fleets, Production, Missions, and Research",
+      "status": "pending",
+      "surface_ids": ["OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12"],
+      "exit": "Every original object, status, action, and result family passes all required state cells."
+    },
+    {
+      "id": "UIP-T04",
+      "name": "Briefings, Events, Reports, Encyclopedia, and End States",
+      "status": "pending",
+      "surface_ids": ["PRE-01", "PRE-05", "EVT-01", "EVT-02", "EVT-03", "END-01"],
+      "exit": "Original media, event, battle-entry, report, victory, and defeat presentation passes on native and WASM."
+    },
+    {
+      "id": "UIP-T05",
+      "name": "Tactical Interface",
+      "status": "pending",
+      "surface_ids": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06", "TAC-07", "TAC-08"],
+      "exit": "The complete original tactical composition, state art, actions, reports, and Death Star paths pass."
+    },
+    {
+      "id": "UIP-T06",
+      "name": "Multiplayer and Release Matrix",
+      "status": "pending",
+      "surface_ids": ["PRE-02", "PRE-06", "EXT-01", "EXT-02"],
+      "exit": "The shuttle interaction-state matrix, two-peer multiplayer, cross-browser viewports, resource sweep, accessibility overlays, performance, and every required surface-state cell pass."
+    }
+  ],
+  "evidence_files": {
+    "surface_ledger": "surface-ledger.json",
+    "reference_ledger": "reference-ledger.json",
+    "screenshot_ledger": "screenshot-ledger.md",
+    "capture_manifest": "reference-captures/SHA256SUMS"
+  },
+  "next_action": "Complete UIP-T01 starting with exact campaign cockpit composition, original system navigation, and packaged browser advisor assets."
+}

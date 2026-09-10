@@ -17,6 +17,9 @@ is not yet demonstrably 100% functional. The repository is at post-implementatio
 integration and acceptance closeout. Several user-facing paths are incomplete,
 the long-running campaign still fails combat-distribution and full-loop gates,
 and the existing CI pipeline does not establish browser or visual correctness.
+The [original-interface sister audit](../2026-09-10-interface-parity-audit/)
+additionally confirms that the in-campaign strategy, object, report, tactical,
+and multiplayer surfaces do not yet match the original game.
 
 This audit was performed against:
 
@@ -54,6 +57,15 @@ makes Death Star loss nonterminal, removes the uncited grace period, and covers
 every current bombardment entry path. M1 continues with capture/evasion,
 faction liveness, the wider campaign loop, target acquisition, and five-seed
 cross-runtime proof.
+
+The current campaign screenshots also exposed a separate visual truth. The
+original shuttle main menu remains a passing surface, but the strategy screen
+uses replacement controls, synthetic map primitives, an invented system sidebar,
+and empty WASM advisor frames. The sister audit inventories 43 surface families,
+retains 370 original references, and makes UIP-T01 Strategic Cockpit Truth the
+highest-priority presentation tranche. Earlier scoped browser checks retain their
+behavioral and loading evidence; they are not evidence of original interface
+identity.
 
 The repository's records describe different scopes and are not a unified
 acceptance record:
@@ -574,10 +586,10 @@ and underlying state mutation are both demonstrated.
 | P03 | Main menu | **Pass.** Assemble and operate the original 14 cockpit controls, animation, navigation, keyboard and screen-reader access, `MDATA.300` music, original button effects, responsive 4:3 hit testing, and the documented optional music-only extension per [`main-menu-parity.md`](../../../agent_docs/main-menu-parity.md). Native and browser acceptance pass. |
 | P04 | Game setup | Use the cockpit controls for both factions, three difficulties, three original galaxy sizes, both game types, direct campaign start, correct state propagation, and clean second-campaign reset per [`main-menu-parity.md`](../../../agent_docs/main-menu-parity.md). |
 | P05 | Clock | Pause and every speed, focus loss, browser background/resume, modal/combat/cutscene tick behavior. |
-| P06 | Galaxy navigation | Pan, wheel zoom, reset, system selection, right-click menu, resizing, high-DPI scale, and cockpit input boundaries. |
-| P07 | Fog and overlays | Both factions, sensor radius, recon intelligence, fleet/facility/system overlays, labels, grid, and no hidden-information leakage. |
-| P08 | Officers | Every character portrait/state, selection, assignment, availability, captivity, injury, death, and detail refresh. |
-| P09 | Fleets | Fleet and fighter icons, selection, move, cancel, split/merge, invalid operations, arrivals, duplicate prevention, and post-combat refresh. |
+| P06 | Galaxy navigation | Reproduce the original galaxy/GID, sector, and system-window graph, selection, object menus, pan/zoom semantics, resizing, high-DPI transform, and cockpit input boundaries per the [interface audit](../2026-09-10-interface-parity-audit/). The current synthetic map and system sidebar fail. |
+| P07 | Fog and overlays | Both factions, original intelligence/control colors, sensor/recon visibility, every GID filter and matching legend, fleet/facility/system markers, and no hidden-information leakage. Current primitive markers fail visual parity. |
+| P08 | Personnel | Reproduce Personnel Finder, Character Status, special forces, every portrait/state, selection, assignment, availability, captivity, injury, death, Jedi state, item menus, and detail refresh. The current Officers panel is a replacement. |
+| P09 | Fleets | Reproduce Fleet/Ship Finders, original Fleet and status windows, tabs, icons, selection, move, cancel, split/merge/transfer, cargo, transit, invalid operations, arrivals, duplicate prevention, and post-combat refresh. Current custom panels remain visual failures. |
 | P10 | Economy | Income, collection, support drift, maintenance, shortfall, incidents, nonnegative invariants, and faction ownership effects. |
 | P11 | Manufacturing | Enqueue, cancel, prioritize, capacity, costs, each product category, blocked production, completion, and usable world insertion. |
 | P12 | Diplomacy | Legal targets, probability boundaries, success/failure, support/control change, cancellation, messages, and persistence. |
@@ -602,9 +614,9 @@ and underlying state mutation are both demonstrated.
 | P31 | Save/load/delete | UI actions, slot refresh, populated round-trip, native restart, browser restart, corruption, compatibility, quota errors, delete, and deterministic continuation. |
 | P32 | Mods | Discovery, dependency order, cycles, versions, enable/disable/reload, New Game reapplication, save mismatch, hot reload, and additive-feature scope. |
 | P33 | Audio | Music, SFX, voices, context transitions, gain/mute, missing files/devices, browser user-gesture policy, and platform scope. |
-| P34 | Droid advisors | Both factions, every decoded sequence format, correct frame IDs, timing, priority, missing frames, messages, and browser behavior. |
-| P35 | Encyclopedia and EData | Every tab/category/entity, correct identity, search/sort, navigation, system focus, HD/original fallback, and browser loading. |
-| P36 | Bitmap sweep | Every bitmap-bearing screen using the protocol below, original-only and partial-HD configurations, both factions, supported resolutions, and both platforms. |
+| P34 | Droid advisors | Both factions, original embedded chrome, every decoded sequence, exact frame IDs/order/timing, priority, message/audio behavior, missing frames, and packaged browser assets. WASM currently returns empty frame pools. |
+| P35 | Encyclopedia and EData | Original Index/Topic surfaces, every category/entity, exact EDATA identity, navigation, system focus, fallback, and browser loading. WASM currently returns no encyclopedia texture. |
+| P36 | Bitmap and interface sweep | Complete every required cell in the [43-family interface ledger](../2026-09-10-interface-parity-audit/surface-ledger.json), with exact resources, composition, geometry, hotspots, native/browser screenshots, and zero invented or unknown visible elements. |
 | P37 | Campaign acceptance | Short smoke runs and long multi-seed campaigns for both factions/difficulties with bounded fleet/event growth, balance, diversity, victory, and full parity reports. |
 | P38 | Release artifacts | Fresh native install and deployed browser package, exact artifact contents, startup/storage/media/input tests, and documentation generated from results. |
 | P39 | Protected Cloudflare deployment | Preview and production Pages deployments, secret-backed password gate, signed session cookie, logout/expiry/tamper tests, cache/security headers, asset/API access denial before authentication, deployed single-player/multiplayer smoke tests, rollback, and retained Astra evidence. |
@@ -617,6 +629,12 @@ See `evidence/2026-09-08-github-pages.md`. This documentation pass does not
 imply that the gameplay and release-artifact passes above are complete.
 
 ## Bitmap proof protocol
+
+The [interface parity audit](../2026-09-10-interface-parity-audit/) is the
+canonical visual-identity protocol. It adds stable surface/state IDs, authority
+tiers, exact pixel and hotspot thresholds, navigation-graph coverage, provenance
+tracing, a 370-image source corpus, and the hard prohibition on invented visible
+UI. The checks below remain the minimum integration subset.
 
 A bitmap passes only when all of the following evidence exists:
 

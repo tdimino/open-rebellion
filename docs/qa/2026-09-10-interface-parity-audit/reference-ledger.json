@@ -1,0 +1,348 @@
+{
+  "schema_version": "1.0.0",
+  "audit_id": "UIP-2026-09-10",
+  "captured_at": "2026-09-10",
+  "identity_gate": {
+    "accepted_game": "The 1998 Coolhand Interactive and LucasArts Windows game Star Wars: Rebellion, titled Supremacy in the UK",
+    "positive_identifiers": [
+      "diegetic shuttle main menu",
+      "Alliance command center with C-3PO and R2-D2",
+      "Imperial command center with IMP-22 and SD-7",
+      "modeless blue, green, and red object windows",
+      "ten-system sector clusters",
+      "original tactical holocube interface"
+    ],
+    "rejected_or_discovery_only": [
+      "Fantasy Flight Games 2016 board game",
+      "Star Wars: Empire at War",
+      "fan-remake interfaces",
+      "Open Rebellion replacement egui surfaces",
+      "25th Anniversary or remastered replacement art",
+      "modded screenshots unless labeled behavior-only"
+    ],
+    "admission_rule": "A video URL is acquisition provenance only. It contributes no screenshot coverage until an inspected frame is retained, hashed, classified, and linked from the screenshot ledger."
+  },
+  "integrity": {
+    "manifest": "reference-captures/SHA256SUMS",
+    "manifest_sha256": "a34576a94416e5ca77510b48ce3ea6312404945788c1b192fe15743c773e529f",
+    "retained_images": 370
+  },
+  "corpora": [
+    {
+      "id": "REF-MANUAL",
+      "title": "Star Wars: Rebellion official manual",
+      "authority": "A3_state_space",
+      "publisher": "LucasArts",
+      "locale": "en-US",
+      "mod_status": "official",
+      "source_url": "https://files.swrebellion.net/Star_Wars_Rebellion-Manual.pdf",
+      "provenance_url": "https://swrebellion.net/files/file/23-star-wars-rebellion-game-manual/",
+      "preserved_original": "../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf",
+      "local_directory": "reference-captures/manual-pages",
+      "local_capture_count": 104,
+      "coverage": "Annotated screenshots spanning shuttle, command center, galaxy, sectors, systems, windows, finders, messages, production, missions, fleets, defenses, HQ, victory conditions, tactical battle, and multiplayer.",
+      "page_map": [
+        {"pages": "20-21", "surfaces": ["PRE-02", "PRE-05", "CMD-01", "CMD-07"]},
+        {"pages": "22-23", "surfaces": ["CMD-02", "CMD-05"]},
+        {"pages": "24-27", "surfaces": ["CMD-03", "CMD-09", "OBJ-02", "OBJ-07"]},
+        {"pages": "28-30", "surfaces": ["PRE-03", "CMD-06", "OBJ-07"]},
+        {"pages": "31-35", "surfaces": ["CMD-08", "OBJ-07", "OBJ-08"]},
+        {"pages": "36-43", "surfaces": ["OBJ-03", "OBJ-11", "OBJ-12"]},
+        {"pages": "44-50", "surfaces": ["OBJ-10"]},
+        {"pages": "51-58", "surfaces": ["OBJ-05", "OBJ-06", "OBJ-14"]},
+        {"pages": "60-66", "surfaces": ["CMD-01", "CMD-04", "CMD-05", "OBJ-14"]},
+        {"pages": "67-75", "surfaces": ["PRE-03", "CMD-02", "CMD-03", "CMD-07", "OBJ-01", "OBJ-02"]},
+        {"pages": "77-89", "surfaces": ["CMD-06", "CMD-08", "EVT-01", "OBJ-07"]},
+        {"pages": "90-95", "surfaces": ["OBJ-03", "EVT-01"]},
+        {"pages": "97-108", "surfaces": ["OBJ-02", "OBJ-03", "OBJ-11", "OBJ-12"]},
+        {"pages": "109-123", "surfaces": ["OBJ-04", "OBJ-05", "OBJ-06", "OBJ-14", "EVT-03", "TAC-08"]},
+        {"pages": "124-133", "surfaces": ["OBJ-02", "OBJ-04", "OBJ-10", "OBJ-13", "OBJ-14"]},
+        {"pages": "135", "surfaces": ["END-01", "OBJ-13"]},
+        {"pages": "139-150", "surfaces": ["EVT-02", "EVT-03", "TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06", "TAC-07"]},
+        {"pages": "153-159", "surfaces": ["PRE-06", "CMD-08"]}
+      ]
+    },
+    {
+      "id": "REF-STEAM-OFFICIAL",
+      "title": "Steam app 441550 official screenshots",
+      "authority": "A3",
+      "publisher": "LucasArts, Lucasfilm, Disney",
+      "locale": "en-US",
+      "mod_status": "official_store_media",
+      "source_url": "https://store.steampowered.com/app/441550/STAR_WARS_Rebellion/",
+      "metadata_url": "https://store.steampowered.com/api/appdetails?appids=441550",
+      "local_directory": "reference-captures/steam",
+      "local_capture_count": 6,
+      "coverage": [
+        "shuttle main menu",
+        "Imperial command center with starfield, IMP-22, and SD-7",
+        "Alliance command center with starfield, C-3PO, and R2-D2",
+        "Alliance Personnel Finder",
+        "Alliance sector/system and Fleet windows",
+        "Leia mission report"
+      ]
+    },
+    {
+      "id": "REF-STEAM-GUIDE",
+      "title": "Star Wars Rebellion: How To Win vanilla guide",
+      "authority": "A3",
+      "publisher": "Steam Community contributor Dogberto",
+      "locale": "en-US",
+      "mod_status": "vanilla_claimed_and_visually_consistent",
+      "source_url": "https://steamcommunity.com/sharedfiles/filedetails/?id=835643286",
+      "local_directory": "reference-captures/steam-guide",
+      "local_capture_count": 66,
+      "gameplay_capture_count": 65,
+      "coverage": "Annotated shell and galaxy, advisor menus, sectors, defenses, production, build selection, fleet tabs, options, messages, GID filter, encyclopedia, status and finder families, mission topic cards, research/facility cards, battle alerts, results, bombardment, assault, and speed controls."
+    },
+    {
+      "id": "REF-ABANDONWARE-FR",
+      "title": "Abandonware France 640x480 gallery",
+      "authority": "A3",
+      "publisher": "Abandonware France",
+      "locale": "fr-FR",
+      "mod_status": "vanilla_visual_identity",
+      "source_url": "https://www.abandonware-france.org/ltf_abandon/ltf_galeries.php?galerie=9&id=1933",
+      "local_directory": "reference-captures/abandonware-france",
+      "local_capture_count": 23,
+      "coverage": "Boot logos, intro, shuttle, credits, hyperspace, cinematics, Alliance command center, options, system, fleet, manufacturing, encyclopedia, mission/event reports, battle alert, and scripted event.",
+      "comparison_limit": "Use for bitmap geometry and animation discovery, not English text pixels."
+    },
+    {
+      "id": "REF-OLD-GAMES-RU",
+      "title": "Old-Games.RU Star Wars: Rebellion screenshots",
+      "authority": "A3",
+      "publisher": "Old-Games.RU",
+      "locale": "mixed",
+      "mod_status": "vanilla_visual_identity",
+      "source_url": "https://www.old-games.ru/game/screenshots/271.html",
+      "local_directory": "reference-captures/old-games-ru",
+      "local_capture_count": 12,
+      "coverage": "Shuttle, messages, victory conditions, command center, options, Troop Finder, encyclopedia, character status, manufacturing, multiplayer provider, objectives, and Build Selection."
+    },
+    {
+      "id": "REF-PCGAMESDB",
+      "title": "PC Games Database period screenshots",
+      "authority": "A3",
+      "publisher": "PC Games Database",
+      "locale": "en-US",
+      "mod_status": "vanilla_visual_identity",
+      "source_url": "https://www.pcgamesdatabase.de/artikel.php?aid=220",
+      "local_directory": "reference-captures/pc-games-database",
+      "local_capture_count": 9,
+      "coverage": "System defenses, fleets, sectors, mission reports, battle results, paired sector windows, and Create Mission."
+    },
+    {
+      "id": "REF-JODOCAST",
+      "title": "Jodo Cast GOG vanilla review screenshots",
+      "authority": "A3",
+      "publisher": "The Jodo Cast",
+      "locale": "en-GB",
+      "mod_status": "GOG_vanilla_claimed_and_visually_consistent",
+      "source_url": "https://www.jodocast.com/2016/03/03/star-wars-rebellion-retro-review/",
+      "local_directory": "reference-captures/jodocast",
+      "local_capture_count": 3,
+      "coverage": "Imperial sector and fleet detail, Alliance popular-dissent report, and Imperial Future Jedi report."
+    },
+    {
+      "id": "REF-MOBYGAMES",
+      "title": "MobyGames gameplay and promotional screenshots",
+      "authority": "A3",
+      "publisher": "MobyGames contributors and original promotional media",
+      "locale": "en-US",
+      "mod_status": "one_gameplay_capture_and_one_promo_capture",
+      "source_url": "https://www.mobygames.com/game/1144/star-wars-rebellion/screenshots/windows/",
+      "local_directory": "reference-captures/mobygames",
+      "local_capture_count": 2,
+      "coverage": "Paused tactical Dauntless HUD and promotional system/manufacturing composition.",
+      "comparison_limit": "Promotional material is corroboration only."
+    },
+    {
+      "id": "REF-KRITIKANSTVO",
+      "title": "Kritikanstvo 38-frame gallery",
+      "authority": "A3",
+      "publisher": "Kritikanstvo",
+      "locale": "fr-FR",
+      "mod_status": "vanilla_visual_identity",
+      "source_url": "https://kritikanstvo.ru/games/starwarsrebellion/",
+      "local_directory": "reference-captures/kritikanstvo",
+      "local_capture_count": 38,
+      "coverage": "Sectors, fleets, production, system menus, Create Mission, encyclopedia, events, Battle Alert, results, assault, live and paused tactical states, Death Star encyclopedia, and Death Star cinematic imagery.",
+      "comparison_limit": "Use for bitmap geometry and animation discovery, not English text pixels."
+    },
+    {
+      "id": "REF-LPARCHIVE-DISCOVERY",
+      "title": "LP Archive original-interface discovery frames",
+      "authority": "A4_discovery_only",
+      "publisher": "LP Archive contributor Pander",
+      "locale": "en-US",
+      "mod_status": "altered_campaign_with_original_interface",
+      "source_url": "https://lparchive.org/Star-Wars-Rebellion/",
+      "local_directory": "reference-captures/lp-archive-discovery",
+      "local_capture_count": 6,
+      "coverage": "Hostile known empty Trooper Regiments, friendly populated Fleet, character transit, friendly populated Trooper Regiments, hostile blockaded Personnel, and Headquarters Arrives report states.",
+      "comparison_limit": "Original-interface discovery only. The altered campaign cannot close strict vanilla acceptance cells."
+    },
+    {
+      "id": "REF-SQUAKENET-FRAMES",
+      "title": "Squakenet both-faction gameplay frame captures",
+      "authority": "A3",
+      "publisher": "Squakenet",
+      "locale": "en-US",
+      "mod_status": "original_sound_both_factions_visually_consistent",
+      "source_url": "https://www.youtube.com/watch?v=59QHKjE4Vyg",
+      "local_directory": "reference-captures/squakenet-video-frames",
+      "local_capture_count": 12,
+      "coverage": "Shuttle rest and Alliance/Empire hover tooltips plus four Alliance and five Imperial GID views.",
+      "comparison_limit": "Compressed 854x480 video with a source watermark. Use for provisional state discovery, not A0 pixels or geometry."
+    },
+    {
+      "id": "REF-FAILED-MP-SINGLEPLAYER-FRAMES",
+      "title": "Single-player frames from the failed Multiplayer Madness attempt",
+      "authority": "A3",
+      "publisher": "Space Game Junkie",
+      "locale": "en-US",
+      "mod_status": "original_single_player_after_failed_multiplayer_setup",
+      "source_url": "https://www.youtube.com/watch?v=u0OkXY2jmro",
+      "local_directory": "reference-captures/failed-multiplayer-recording-single-player-frames",
+      "local_capture_count": 16,
+      "coverage": "Imperial GID menu, sector, message, advisor, finder, fleet, system tab, construction, empty, populated, hostile, and authored allegiance-report states.",
+      "comparison_limit": "The recording contains no multiplayer UI or successful peer connection. Its retained frames are compressed single-player discovery evidence only."
+    },
+    {
+      "id": "REF-PRAVUS-PART1-FRAMES",
+      "title": "Pravus vanilla Alliance playthrough, Part 1 frame captures",
+      "authority": "A3",
+      "publisher": "Pravus Gaming",
+      "locale": "en-US",
+      "mod_status": "GOG_vanilla_claimed_and_visually_consistent",
+      "source_url": "https://www.youtube.com/watch?v=vVIuq8IC28k",
+      "local_directory": "reference-captures/pravus-part1-video-frames",
+      "local_capture_count": 36,
+      "coverage": "Alliance shuttle rest and hover states, launch transition, command center, sector and system windows, construction and facilities, character status and transfer confirmation, selected personnel, populated fleet, item and advisor menus, unified save and sound options, save-slot hover and completion, Message Index categories, Recruitment, Espionage, and Sabotage mission creation, agent and decoy assignment, uprising and popular-support messages, and successful mission report.",
+      "comparison_limit": "Frames were cropped from a compressed 1920x1080 video encode and normalized to 640x480. Use for provisional state discovery, not A0 pixels, geometry, or interaction acceptance."
+    },
+    {
+      "id": "REF-LPARCHIVE-EXPANDED",
+      "title": "Expanded LP Archive original-interface discovery stills",
+      "authority": "A4_discovery_only",
+      "publisher": "LP Archive contributor Pander",
+      "locale": "en-US",
+      "mod_status": "altered_campaign_with_original_interface",
+      "source_url": "https://lparchive.org/Star-Wars-Rebellion/",
+      "local_directory": "reference-captures/lp-archive-expanded",
+      "local_capture_count": 33,
+      "coverage": "Alliance Popular Support; Abduction creation with targets, agents, and decoys; Sabotage and Diplomacy Mission Status; representative mission success, failure, abort, foiled, and capture reports; Destroy System enabled and firing sequence; tactical selection, unavailable orders, damage, and result states; and rare disaster, smuggling, bounty-hunter, injury, recovery, Dagobah, Force, capture, rescue, and escape events.",
+      "comparison_limit": "Cropped original-interface discovery from an altered campaign. Use to identify surfaces and states only; it cannot close strict vanilla, pixel, geometry, or interaction cells."
+    },
+    {
+      "id": "REF-LAUNCHBOX",
+      "title": "LaunchBox and MobyGames mirror captures",
+      "authority": "A3",
+      "publisher": "LaunchBox and MobyGames",
+      "locale": "en-US",
+      "mod_status": "visually_consistent_original_interface",
+      "source_urls": [
+        "https://images.launchbox-app.com/f4bfb0de-06fe-4850-b6d7-32f97329f090.jpg",
+        "https://images.launchbox-app.com/932d2365-b873-4c12-9936-eeb4b6bedaa9.jpg",
+        "https://images.launchbox-app.com/ceb13680-a6a2-4cbd-a96e-6a8ed946a632.jpg",
+        "https://images.launchbox-app.com/ca047098-cdb7-4971-8101-784b42e4300b.jpg"
+      ],
+      "local_directory": "reference-captures/launchbox",
+      "local_capture_count": 4,
+      "coverage": "Alliance Battle Alert decision controls, Imperial fleet selection and contents, Alliance continue-mission report, and Imperial Future Jedi Discovered report.",
+      "comparison_limit": "Lossy 635x475 or 638x478 JPEGs with incomplete execution provenance. Use for provisional composition and state discovery only."
+    }
+  ],
+  "source_only_references": [
+    {
+      "title": "MobyGames official tactical promotion",
+      "url": "https://www.mobygames.com/images/promo/l/77554-star-wars-rebellion-screenshot.jpg",
+      "coverage": ["TAC-01"],
+      "note": "Promo or pre-release caveat; remote server denied archival fetch."
+    },
+    {
+      "title": "Old-Games.com galaxy and battle captures",
+      "urls": [
+        "https://www.old-games.com/screenshot/8912-1-star-wars-rebellion.jpg",
+        "https://www.old-games.com/screenshot/8912-5-star-wars-rebellion.jpg"
+      ],
+      "coverage": ["CMD-01", "CMD-02", "EVT-02"]
+    },
+    {
+      "title": "Empire no-commentary longplay",
+      "url": "https://www.youtube.com/watch?v=7WvpqPk5gJU",
+      "coverage": ["CMD-01", "CMD-02", "CMD-07", "OBJ-02", "OBJ-05", "OBJ-11", "EVT-01", "TAC-01", "END-01"]
+    },
+    {
+      "title": "Explicitly vanilla Rebel playthrough",
+      "url": "https://www.youtube.com/watch?v=Y0L6VUQAsw4",
+      "coverage": ["CMD-01", "CMD-02", "CMD-07", "OBJ-02", "OBJ-05", "OBJ-11", "EVT-01", "TAC-01", "END-01"],
+      "timestamps": ["01:30:05 captured character state", "01:32:10 successful sabotage report"],
+      "acceptance_limit": "Timestamped compressed video is A3 discovery evidence. Verify the exact visible window before admitting a frame."
+    },
+    {
+      "title": "Atratzu gameplay review",
+      "url": "https://www.youtube.com/watch?v=do5_Z4PHDdo",
+      "coverage": ["CMD-01", "CMD-02", "TAC-01"],
+      "timestamps": ["29:08 gameplay", "35:19 tactical"]
+    },
+    {
+      "title": "Computer Gaming World issue 168 review",
+      "url": "https://www.cgwmuseum.org/galleries/issues/cgw_168.pdf",
+      "coverage": ["CMD-01", "CMD-02", "TAC-01"],
+      "note": "Period print review beginning near printed page 172."
+    },
+    {
+      "title": "LucasArts 1997-98 catalog",
+      "url": "https://mocagh.org/lucasfilm/lucasarts-97-98catalog.pdf",
+      "coverage": ["CMD-01", "CMD-02"],
+      "note": "Official promotional material on PDF page 16; pre-release caveat."
+    },
+    {
+      "title": "Dad's Gaming Addiction vanilla mission workflow",
+      "url": "https://www.youtube.com/watch?v=sOEtKrW9xFI",
+      "coverage": ["OBJ-11", "OBJ-12"],
+      "timestamps": ["04:43 populated Create Mission target and agents", "05:27 illegal assignment and no-target rejection"],
+      "identity": "Description identifies an unmodified, no-mods playthrough of the 1998 game.",
+      "acceptance_limit": "A3 discovery evidence. Accept, cancel, decoy, abort, disabled, and mission-type permutations remain open."
+    },
+    {
+      "title": "Sistros original ending and Death Star cinematic set",
+      "urls": [
+        "https://www.youtube.com/watch?v=Gp4CgyvmYcU",
+        "https://www.youtube.com/watch?v=NHNp1Tu-Gw8",
+        "https://www.youtube.com/watch?v=Z6YW1ubUKtg",
+        "https://www.youtube.com/watch?v=ClUNbFqGpDE",
+        "https://www.youtube.com/watch?v=GILlZ4mD5ts",
+        "https://www.youtube.com/watch?v=fQMHdEdQroo",
+        "https://www.youtube.com/watch?v=9u2Ii9NFjMQ",
+        "https://www.youtube.com/watch?v=AKnF2oDXBX0",
+        "https://www.youtube.com/watch?v=DArNknp93bs",
+        "https://www.youtube.com/watch?v=BQvNLW0JUKE",
+        "https://www.youtube.com/watch?v=i0MMsdddvEI"
+      ],
+      "coverage": ["EVT-01", "TAC-07", "END-01", "PRE-04"],
+      "states": ["Empire victory", "Empire defeat", "Alliance victory", "Alliance defeat", "Alliance HQ destroyed", "Coruscant captured", "Death Star fires", "Death Star sabotage", "trench run failure", "trench run success", "end credits"],
+      "acceptance_limit": "Closes cinematic-content discovery, not skip, completion routing, restart, return, or shell transitions."
+    },
+    {
+      "title": "Galactic Voyage original Rebellion cinematics",
+      "urls": [
+        "https://www.galactic-voyage.com/Movies-Rebellion-Sabotage%20the%20Death%20Star.htm",
+        "https://www.galactic-voyage.com/Movies-Rebellion-Liberation%20of%20Coruscant.htm",
+        "https://galactic-voyage.com/Movies-Rebellion-Rebels%20Win-Destruction%20of%20the%20Executor.htm"
+      ],
+      "coverage": ["EVT-01", "TAC-07", "END-01"],
+      "note": "Independent pages and direct AVI downloads corroborate Death Star sabotage, Coruscant liberation, and Rebel victory cinematics."
+    },
+    {
+      "title": "The Fanatic Reviews tactical and result sequence",
+      "url": "https://www.youtube.com/watch?v=YH3DvhMQu08",
+      "coverage": ["EVT-03", "TAC-01", "TAC-03", "TAC-04", "TAC-06"],
+      "timestamps": ["06:27 tactical engagement starts", "06:57 running battle and orders", "07:57 later battle", "08:02 battle-over transition", "08:16 result details"],
+      "acceptance_limit": "Original-game A3 video at low resolution. Supports general target, escort, and fighter-recover behavior, not exact control-state pixels."
+    }
+  ],
+  "copyright_and_use": "All source images remain property of their respective owners. They are retained solely as attributed, low-volume interoperability and visual-verification evidence. Final pixel acceptance should use private captures from a legally owned, unmodified installation."
+}

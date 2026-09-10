@@ -1,7 +1,12 @@
-# Star Wars: Rebellion (1998) --- Complete Game Flow Reference
+# Star Wars: Rebellion (1998) --- Legacy Game Flow Notes
 
-> Comprehensive screen-by-screen documentation of every interaction from executable launch to game over.
-> Compiled from: Prima Official Strategy Guide, game manual, GameFAQs (Rogue), Steam guide (Crownbreaker), CheatCC (xiriod), PCGamingWiki, Wookieepedia, and community sources.
+> This early synthesis mixes cited behavior, player recollection, and provisional
+> inference. It is not authoritative for visual layout, controls, or navigation,
+> and must not be used to invent interface behavior. Use the
+> [original-interface parity audit](../../docs/qa/2026-09-10-interface-parity-audit/), its
+> [surface ledger](../../docs/qa/2026-09-10-interface-parity-audit/surface-ledger.json), and
+> the preserved official manual for implementation and acceptance. Unverified
+> statements below remain research leads only.
 
 ---
 

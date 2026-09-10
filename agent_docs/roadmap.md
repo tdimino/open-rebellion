@@ -358,7 +358,10 @@ Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchit
 ## Audit-Driven Parity, Browser, and Multiplayer Roadmap
 
 The completed milestones above describe implementation delivery, not final
-release acceptance. The September 2026 [full-functionality audit](../docs/qa/2026-09-08-full-functionality-audit/), including independent Astra and verified Fable 5.1 reviews, is the current acceptance source of truth. Its JSON ledger owns stable finding and feature IDs.
+release acceptance. The September 2026 [full-functionality audit](../docs/qa/2026-09-08-full-functionality-audit/)
+owns behavior acceptance. Its sister [original-interface audit](../docs/qa/2026-09-10-interface-parity-audit/)
+owns visible surface, bitmap, geometry, hotspot, navigation, animation, and audio
+acceptance. Their JSON ledgers provide stable finding and feature IDs.
 
 ### M0: Truth and Critical Integration — 1 week
 
@@ -450,6 +453,10 @@ would tune around known simulation feedback defects.
 ### M3: Exceptional Browser Runtime — 3 weeks
 
 - [x] Replace thousands of serial startup requests with deterministic `runtime.orpk`; both factions now boot in four requests with lazy bitmap decode and zero loose asset requests (`F-014A`).
+- [ ] Complete `UIP-T01` through `UIP-T05`: replace the synthetic strategy,
+  object-window, report, and tactical surfaces with the original bitmap-driven
+  compositions for both factions. No invented visible control may satisfy a
+  parity cell.
 - [ ] Add Brotli compression plus bounded raw-byte and decoded-texture caches to the verified runtime-pack foundation.
 - [ ] Include HD assets; enable high DPI; use one egui pass; cache sector geometry.
 - [ ] Move saves from synchronous base64 `localStorage` to compressed asynchronous IndexedDB.
@@ -472,12 +479,17 @@ would tune around known simulation feedback defects.
 - [ ] Enforce format, strict clippy, native, packaged-WASM, and clean-package boot gates.
 - [ ] Add at least 20 app/browser integration cases and promote long campaigns when stable.
 - [ ] Generate the complete bitmap resource ledger from the entity map; fail on unexplained misses. Fleet-list miniatures are verified in F-010B.
+- [ ] Close every required surface-state cell in the original-interface audit
+  with authoritative captures, exact-resource provenance, screenshot and hotspot
+  comparison, complete navigation edges, and zero unknown or invented pixels.
 - [ ] Retain screenshot, console, network, performance, data-hash, and save-schema evidence. F-010B fleet and F-014A runtime-pack evidence are retained; the full ledger remains open.
 - [x] Revalidate current project documentation from `main` through GitHub Pages.
   Run `34505121163` built and deployed commit `bcc224f`; the landing page,
   documentation and campaign indexes, contract, source ledger, audit, and
   preserved manual all return HTTP 200.
-- [ ] Close every supported P00–P40 pass from release artifacts before claiming 100% functionality.
+- [ ] Close every supported P00–P40 functionality pass and every required
+  interface surface-state cell from release artifacts before claiming 100%
+  functionality.
 
 ### v1.0: Password-Protected Cloudflare Release
 

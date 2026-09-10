@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.local/schemas/interface-parity.schema.json",
+  "title": "Open Rebellion interface parity audit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "audit_id",
+    "baseline_commit",
+    "status",
+    "scope",
+    "thresholds",
+    "viewports",
+    "authority_tiers",
+    "summary",
+    "findings",
+    "tranches",
+    "evidence_files",
+    "next_action"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "1.0.0"},
+    "audit_id": {"pattern": "^UIP-[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "baseline_commit": {"pattern": "^[0-9a-f]{7,40}$"},
+    "status": {"$ref": "#/$defs/status"},
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["original_game", "release_year", "locale", "platforms", "surface_families", "retained_reference_images", "parity_rule", "extensions_rule"],
+      "properties": {
+        "original_game": {"type": "string"},
+        "release_year": {"const": 1998},
+        "locale": {"type": "string"},
+        "platforms": {"type": "array", "uniqueItems": true, "items": {"enum": ["native", "wasm"]}},
+        "surface_families": {"type": "integer", "minimum": 1},
+        "retained_reference_images": {"type": "integer", "minimum": 1},
+        "parity_rule": {"type": "string"},
+        "extensions_rule": {"type": "string"}
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": {"type": "number"},
+      "minProperties": 10
+    },
+    "viewports": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["width", "height", "dpr"],
+        "properties": {
+          "width": {"type": "integer", "minimum": 1},
+          "height": {"type": "integer", "minimum": 1},
+          "dpr": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "number", "exclusiveMinimum": 0}}
+        }
+      }
+    },
+    "authority_tiers": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description", "can_close"],
+        "properties": {
+          "id": {"enum": ["A0", "A1", "A2", "A3", "A4"]},
+          "description": {"type": "string"},
+          "can_close": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+        }
+      }
+    },
+    "summary": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "status", "title", "evidence", "affected_surfaces"],
+        "properties": {
+          "id": {"pattern": "^UIP-F-[0-9]{3}$"},
+          "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+          "status": {"$ref": "#/$defs/status"},
+          "title": {"type": "string"},
+          "evidence": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "affected_surfaces": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"pattern": "^(PRE|CMD|OBJ|EVT|TAC|END|EXT)-[0-9]{2}$"}}
+        }
+      }
+    },
+    "tranches": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "status", "surface_ids", "exit"],
+        "properties": {
+          "id": {"pattern": "^UIP-T[0-9]{2}$"},
+          "name": {"type": "string"},
+          "status": {"$ref": "#/$defs/status"},
+          "surface_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"pattern": "^(PRE|CMD|OBJ|EVT|TAC|END|EXT)-[0-9]{2}$"}},
+          "exit": {"type": "string"}
+        }
+      }
+    },
+    "evidence_files": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+    "next_action": {"type": "string"}
+  },
+  "$defs": {
+    "status": {
+      "enum": ["pass", "partial", "fail", "blocked", "excluded", "unknown", "pending", "in_progress", "pass_separate_scope"]
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "rect": {
+      "type": "array",
+      "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}, {"type": "number"}],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "provenance": {
+      "enum": ["original_bitmap", "original_dynamic_text", "original_dynamic_marker", "accessibility_overlay_invisible", "approved_extension", "unknown", "invented"]
+    }
+  }
+}

@@ -19,6 +19,7 @@ acceptance plan required before the project can claim 100% functionality.
 |------|---------|
 | [Audit report](audit-report.md) | Human-readable findings, verification results, Astra/Fable reviews, optimization roadmap, feature matrix, and bitmap protocol. |
 | [Audit data](audit-report.json) | Machine-readable baseline, findings, optimization milestones, feature passes, and release gates. |
+| [Original interface parity audit](../2026-09-10-interface-parity-audit/) | Sister audit for all original surface families, screenshot evidence, bitmap identity, geometry, navigation, and the prohibition on invented visible UI. |
 | [Original campaign-history baseline](../../reference/campaign-history/) | Cited official rules, human campaign testimony, original-AI behavior, parity observables, machine-readable sources, and a preserved original manual for F-007E. |
 | [Cockpit PR #2 audit](evidence/2026-09-08-cockpit-pr-audit.md) | Resource adjudication, integrated diagnostics, Astra browser evidence, screenshots, and follow-up scope. |
 | [Fleet miniature proof](evidence/2026-09-08-fleet-miniatures.md) | Exact GOKRES mappings, transparency checks, Astra browser evidence, interactions, and screenshots for F-010B. |
@@ -48,7 +49,11 @@ acceptance plan required before the project can claim 100% functionality.
 ## Current conclusion
 
 The project is substantially implemented, but it is not yet demonstrably 100%
-functional. Fleet-miniature acceptance, deterministic four-request browser
+functional and does not yet have original in-campaign interface parity. The
+[interface sister audit](../2026-09-10-interface-parity-audit/) records hard
+failures for the synthetic galaxy composition, replacement cockpit controls,
+invented system sidebar, missing browser droids, and other replacement surfaces.
+Fleet-miniature acceptance, deterministic four-request browser
 startup, F-001 browser Save/Load/Delete, the F-011A fingerprint primitive,
 F-011B1 save continuation, the F-011B2 replay/data contract, F-011B3 native
 replay execution, F-011B4 native/WASM fixture equivalence, F-007A fleet-order
