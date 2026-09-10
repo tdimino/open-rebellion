@@ -31,7 +31,7 @@ use rebellion_core::missions::{
 };
 use rebellion_core::movement::{
     apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit,
-    reconcile_fleet_orbits, MovementState, MovementSystem,
+    reconcile_fleet_orbits, validate_fleet_dispatch, MovementState, MovementSystem,
 };
 use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
@@ -2753,6 +2753,7 @@ async fn main() {
                             ctx,
                             &world,
                             &movement_state,
+                            &troop_transport_state,
                             &mut fleets_state,
                             player_faction,
                             &mut bmp_cache,
@@ -3590,6 +3591,7 @@ async fn main() {
                         &mut mfg_state,
                         &mut mission_state,
                         &mut movement_state,
+                        &mut troop_transport_state,
                         active_fog_state,
                         &mut ai_state,
                         &mut research_state,
@@ -3670,6 +3672,7 @@ fn apply_panel_action(
     mfg_state: &mut ManufacturingState,
     mission_state: &mut MissionState,
     movement_state: &mut MovementState,
+    troop_transport_state: &mut TroopTransportState,
     fog_state: &mut FogState,
     ai_state: &mut AIState,
     research_state: &mut ResearchState,
@@ -3781,6 +3784,8 @@ fn apply_panel_action(
                     dest.has_death_star = true;
                 }
 
+                troop_transport_state.transfer_fleet(fleet_b, fleet_a);
+
                 // Cancel any movement order for fleet_b (defensive).
                 movement_state.cancel(fleet_b);
 
@@ -3800,8 +3805,36 @@ fn apply_panel_action(
                 MessageCategory::Event,
             ));
         }
-        PanelAction::DispatchFleet { fleet, destination } => {
+        PanelAction::DispatchFleet {
+            fleet,
+            destination,
+            troops,
+        } => {
             let expected_is_alliance = *player_faction == MissionFaction::Alliance;
+            if let Err(error) = validate_fleet_dispatch(
+                movement_state,
+                world,
+                fleet,
+                destination,
+                expected_is_alliance,
+            ) {
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("Fleet move rejected: {}", error),
+                    MessageCategory::Event,
+                ));
+                return;
+            }
+            if let Err(error) = troop_transport_state.embark(world, fleet, &troops) {
+                if !troops.is_empty() {
+                    msg_log.push(GameMessage::new(
+                        clock.tick,
+                        format!("Troop embarkation rejected: {}", error),
+                        MessageCategory::Event,
+                    ));
+                    return;
+                }
+            }
             match begin_faction_fleet_transit(
                 movement_state,
                 world,
@@ -3842,6 +3875,19 @@ fn apply_panel_action(
                     }
                 }
                 Err(error) => {
+                    if !troops.is_empty() {
+                        let origin = world
+                            .fleets
+                            .get(fleet)
+                            .map(|value| value.location)
+                            .unwrap_or_default();
+                        let _ = troop_transport_state.disembark_selected(
+                            world,
+                            fleet,
+                            origin,
+                            &troops,
+                        );
+                    }
                     msg_log.push(GameMessage::new(
                         clock.tick,
                         format!("Fleet move rejected: {}", error),

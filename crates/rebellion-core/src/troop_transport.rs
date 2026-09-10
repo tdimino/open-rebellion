@@ -206,6 +206,53 @@ impl TroopTransportState {
         Ok(landed)
     }
 
+    /// Return a selected set of cargo to the fleet's current system.
+    ///
+    /// This is primarily the atomic rollback path for a player departure that
+    /// becomes invalid after embarkation. Cargo not named in `troops` remains
+    /// aboard.
+    pub fn disembark_selected(
+        &mut self,
+        world: &mut GameWorld,
+        fleet: FleetKey,
+        destination: SystemKey,
+        troops: &[TroopKey],
+    ) -> Result<Vec<TroopKey>, TroopTransportError> {
+        let value = world
+            .fleets
+            .get(fleet)
+            .ok_or(TroopTransportError::MissingFleet)?;
+        if value.location != destination {
+            return Err(TroopTransportError::FleetNotAtDestination);
+        }
+        let system = world
+            .systems
+            .get_mut(destination)
+            .ok_or(TroopTransportError::MissingSystem)?;
+        let requested: HashSet<_> = troops.iter().copied().collect();
+        let mut landed = Vec::new();
+        if let Some(cargo) = self.cargo.get_mut(&fleet) {
+            cargo.retain(|troop| {
+                if requested.contains(troop) {
+                    landed.push(*troop);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        if self.cargo.get(&fleet).is_some_and(Vec::is_empty) {
+            self.cargo.remove(&fleet);
+        }
+        landed.retain(|troop| world.troops.contains_key(*troop));
+        landed.sort_unstable();
+        landed.dedup();
+        system.ground_units.extend(landed.iter().copied());
+        system.ground_units.sort_unstable();
+        system.ground_units.dedup();
+        Ok(landed)
+    }
+
     /// Preserve cargo identity when compatible fleet records consolidate.
     pub fn transfer_fleet(&mut self, from: FleetKey, to: FleetKey) {
         if from == to {
@@ -391,6 +438,21 @@ mod tests {
         assert_eq!(landed, vec![troops[0], troops[2]]);
         assert_eq!(world.systems[destination].ground_units, landed);
         assert!(state.cargo(fleet).is_empty());
+    }
+
+    #[test]
+    fn selected_disembark_rolls_back_only_the_requested_regiments() {
+        let (mut world, origin, _, fleet, troops) = fixture(3);
+        let mut state = TroopTransportState::new();
+        state.embark(&mut world, fleet, &troops).unwrap();
+
+        let landed = state
+            .disembark_selected(&mut world, fleet, origin, &troops[..2])
+            .unwrap();
+
+        assert_eq!(landed, troops[..2]);
+        assert_eq!(state.cargo(fleet), &troops[2..]);
+        assert_eq!(world.systems[origin].ground_units, troops[..2]);
     }
 
     #[test]

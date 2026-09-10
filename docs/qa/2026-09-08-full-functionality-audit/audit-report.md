@@ -247,10 +247,14 @@ and five-seed cross-runtime proof remain open
   persistence, enemy-character capture, and occupation-based HQ victory. Five
   5,000-tick runs now emit landings, ground battles, control changes, and 5–6
   captures. All 567 workspace tests, save-v13 migration, exact replay, and Astra
-  bitmap/browser gates pass with no P0/P1 blocker. Alliance attacks and battle
-  spread remain below M1 bounds, player troop commands are absent, and the AI
+  bitmap/browser gates pass with no P0/P1 blocker. The next F-007E checkpoint
+  adds player regiment selection to the bitmap fleet chooser, enforces 0/0,
+  2/2, and 3/3 live capacity in the browser, and carries selected cargo through
+  dispatch and automatic landing. All 568 workspace tests and the packaged
+  WASM pass; Astra observed 12/12 HTTP 200 responses and zero runtime or asset
+  errors. Alliance attacks and battle spread remain below M1 bounds, and the AI
   does not yet acquire every randomized Standard victory target. See
-  `evidence/2026-09-10-troop-transport-occupation.md`.
+  `evidence/2026-09-10-player-troop-dispatch.md`.
 - Acceptance: multi-seed bounds for fleet counts, orders, event volume, target
   diversity, faction balance, battle spread, and victory timing all pass.
 

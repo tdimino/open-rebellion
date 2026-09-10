@@ -271,7 +271,8 @@
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-player-fleet-dispatch.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-system-combat-resolution.md",
         "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md",
-        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md"
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md"
       ],
       "resolved_root_causes": [
         "In-transit fleets remained eligible for AI dispatch and replacement orders reset travel progress.",
@@ -283,10 +284,10 @@
         "Blockade start removed surface garrisons as if they were troops running the blockade.",
         "TROOPSD.DAT sequential IDs were not normalized to the compound 0x10 family IDs held by seeded regiments.",
         "Repair-start telemetry represented each repair tick instead of entry into a persisted repair episode.",
-        "Fleets could not carry surface regiments into hostile systems, so no authoritative landing, ground-invasion, occupation, capture, or occupation-based HQ victory path existed."
+        "Fleets could not carry surface regiments into hostile systems, so no authoritative landing, ground-invasion, occupation, capture, or occupation-based HQ victory path existed.",
+        "The player fleet workflow could not select surface regiments or express transport capacity during a destination order."
       ],
       "root_causes": [
-        "The player has no direct troop selection, embarkation, or disembarkation command path.",
         "Standard victory requires the qualifying headquarters and both principal enemy leaders; AI target selection does not yet acquire every randomized target.",
         "Alliance fleet production and attack volume remain far below the Empire across the five-seed campaign gate.",
         "Battle volume and geographic spread remain below the M1 acceptance bounds."
@@ -682,10 +683,68 @@
             "five-seed native/WASM campaign equivalence"
           ],
           "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md"
+        },
+        {
+          "id": "F-007E-player-troop-dispatch",
+          "status": "pass",
+          "verified_at": "2026-09-10",
+          "scope": "player_troop_selection_capacity_embark_transit_and_landing",
+          "automated": {
+            "troop_transport_tests_passed": 9,
+            "render_fleet_tests_passed": 3,
+            "app_tests_passed": 4,
+            "workspace_unit_tests_passed": 568,
+            "failures": 0,
+            "unit_tests_ignored": 4,
+            "original_data_replay_manifest_passed": 2,
+            "native_wasm_replay_checkpoints": 9,
+            "native_wasm_replay_requests": 4,
+            "native_wasm_replay_browser_errors": 0,
+            "wasm_build": "pass_with_preexisting_warnings",
+            "wasm_bytes": 5105875,
+            "wasm_sha256": "729c59e2265e92163be613a5ea009abf3c32543c7f76a7334065191bdb20b1e1",
+            "runtime_pack_bytes": 29096058,
+            "runtime_pack_sha256": "6123deec14cfbfd070573c7001ef1123bd52067273498ad0c36cb7fdb108f509"
+          },
+          "browser": {
+            "runner": "codex-orchestrator",
+            "model": "gpt-6-astra",
+            "effort": "medium",
+            "review": "pass_no_p0_p1",
+            "test_output_muted": true,
+            "product_audio_defaults_changed": false,
+            "alliance_capacity_limit": "2_of_2_third_selection_blocked",
+            "zero_capacity_limit": "0_of_0_selection_disabled",
+            "alliance_surface_before": 7,
+            "alliance_surface_after_embark": 6,
+            "alliance_destination_surface_before": 2,
+            "alliance_destination_surface_after_landing": 3,
+            "empire_capacity_limit": "3_of_3_fourth_selection_blocked",
+            "empire_dispatch_verified": true,
+            "empire_arrival_verified": false,
+            "acceptance_requests": 8,
+            "initial_headed_attempt_requests": 4,
+            "all_http_200": true,
+            "bitmap_main_menu": true,
+            "alliance_bitmap_flow": true,
+            "empire_bitmap_flow": true,
+            "blank_viewports": 0,
+            "console_errors": 0,
+            "page_errors": 0,
+            "request_errors": 0,
+            "wasm_errors": 0,
+            "missing_assets": 0
+          },
+          "open_followups": [
+            "Alliance versus Empire production and attack balance",
+            "battle volume and geographic distribution",
+            "complete Standard and Death Star victory targeting",
+            "five-seed native/WASM campaign equivalence"
+          ],
+          "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md"
         }
       ],
       "remaining": [
-        "Add player-facing troop selection and embarkation commands.",
         "Balance both factions, diversify battle locations, and pass the remaining five-seed M1 bounds.",
         "Make the AI acquire all Standard victory targets and verify Death Star outcomes in permitted fixtures.",
         "Prove native/WASM checkpoint equivalence across all five 5000-tick campaigns."
@@ -1505,9 +1564,8 @@
         "enable Death Star construction, fire, and cleanup paths",
         "repair parity oracles and degeneracy detection"
       ],
-      "verified_tranches": ["F-007A", "F-007B", "F-007C", "F-007D", "F-007E-logistics", "F-007E-conquest"],
+      "verified_tranches": ["F-007A", "F-007B", "F-007C", "F-007D", "F-007E-logistics", "F-007E-conquest", "F-007E-player-troop-dispatch"],
       "remaining": [
-        "player-facing troop selection and embarkation commands",
         "AI encounter and faction balance",
         "battle target diversity",
         "complete Standard and Death Star victory targeting",

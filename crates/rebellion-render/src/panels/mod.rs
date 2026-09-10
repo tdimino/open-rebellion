@@ -42,7 +42,7 @@ pub use mod_manager::{draw_mod_manager, ModInfo, ModManagerAction, ModManagerSta
 pub use officers::{draw_officers, OfficersState};
 pub use save_load::{draw_save_load, SaveLoadPanelState, SaveSlotInfo};
 
-use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey};
+use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::manufacturing::BuildableKind;
 use rebellion_core::missions::{MissionFaction, MissionKind};
 use rebellion_core::research::TechType;
@@ -71,7 +71,11 @@ pub enum PanelAction {
     /// Merge fleet_b into fleet_a (ships, fighters, characters transfer).
     MergeFleets { fleet_a: FleetKey, fleet_b: FleetKey },
     /// Dispatch one player-controlled fleet to a selected destination.
-    DispatchFleet { fleet: FleetKey, destination: SystemKey },
+    DispatchFleet {
+        fleet: FleetKey,
+        destination: SystemKey,
+        troops: Vec<TroopKey>,
+    },
 
     // ── Manufacturing ─────────────────────────────────────────────────────────
     /// Add a buildable to the production queue at a system.

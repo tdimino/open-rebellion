@@ -402,9 +402,11 @@ release acceptance. The September 2026 [full-functionality audit](../docs/qa/202
   orbital control, continue unresolved surface battles, persist tactical
   casualties, occupy systems, capture characters, and require occupation for
   HQ victory ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md)).
-- [ ] Add player troop commands and balance both factions so battles reach
-  50–400 across at least eight systems and the AI acquires every selected
-  victory target.
+- [x] Add player troop selection to the bitmap fleet workflow with live
+  capacity, authoritative embarkation, transit, and automatic landing
+  ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md)).
+- [ ] Balance both factions so battles reach 50–400 across at least eight
+  systems and the AI acquires every selected victory target.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
 - [ ] Pass five 5,000-tick seeds: transit ≤10%, orders ≤1.5× arrivals, fleet arena ≤3× initial, 50–400 battles across ≥8 systems, busiest system ≤40%.
 

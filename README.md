@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Tests-567%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-568%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>
@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current State: v0.23.0
 
-> **Verification (2026-09-10):** All 567 workspace tests pass. Astra medium verified the authentic bitmap cockpit, both factions, save v13, and exact native/WASM replay. Fleet transport, landing, occupation, and character capture now work end to end. Player troop commands, campaign balance and victory targeting, multiplayer, and release acceptance remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/) and [latest evidence](docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md).
+> **Verification (2026-09-10):** All 568 workspace tests pass. Astra medium verified the authentic bitmap cockpit, both factions, save v13, exact native/WASM replay, and player troop dispatch. Fleet transport, landing, occupation, and character capture now work end to end. Campaign balance and victory targeting, multiplayer, and release acceptance remain open in the [audit](docs/qa/2026-09-08-full-functionality-audit/) and [latest evidence](docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md).
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|

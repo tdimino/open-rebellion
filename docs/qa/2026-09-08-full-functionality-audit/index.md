@@ -33,6 +33,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [System combat proof](evidence/2026-09-10-system-combat-resolution.md) | F-007D system-scoped multi-fleet resolution, persistent fighter attrition, shield correction, bounded stalemates, five-seed diagnostics, exact replay, and Astra bitmap acceptance. |
 | [AI campaign-logistics checkpoint](evidence/2026-09-10-ai-campaign-logistics.md) | F-007E ownership, targeting, HQ defense, blockade, troop-class, repair/save-v12, and five-seed evidence; conquest and balance remain open. |
 | [Troop transport and occupation proof](evidence/2026-09-10-troop-transport-occupation.md) | F-007E regiment cargo, invasion, occupation, character capture, save-v13, five-seed evidence, and Astra browser acceptance. |
+| [Player troop dispatch proof](evidence/2026-09-10-player-troop-dispatch.md) | F-007E bitmap troop selection, capacity enforcement, authoritative embarkation, landing, and Astra two-faction browser acceptance. |
 | [Save/Delete UI proof](evidence/2026-09-09-save-delete.md) | F-001 wiring, empty-load-slot regression fix, storage deletion, reload persistence, and Astra 33/33 bitmap/browser proof. |
 | [Original main-menu cockpit proof](evidence/2026-09-09-main-menu-cockpit.md) | Binary-mapped controls, responsive bitmaps, direct faction starts, and Astra-verified browser playback. |
 | [Campaign setup proof](evidence/2026-09-09-game-setup-propagation.md) | Save v11 setup persistence, Standard/Headquarters Only victory rules, and Astra 18/18 bitmap/browser proof. |
@@ -51,9 +52,9 @@ F-011B1 save continuation, the F-011B2 replay/data contract, F-011B3 native
 replay execution, F-011B4 native/WASM fixture equivalence, F-007A fleet-order
 protection, F-007B fleet-position consolidation, F-007C player fleet dispatch,
 F-007D system-combat backlog closure, the F-007E logistics/data/repair and
-transport/occupation checkpoints, and F-016A/B/C/D/E cockpit/setup
-functionality now pass; P03 and P04 are complete. Player-directed troop
-assignment, faction balance, victory targeting, five-seed cross-runtime replay,
+transport/occupation/player-dispatch checkpoints, and F-016A/B/C/D/E
+cockpit/setup functionality now pass; P03 and P04 are complete. Faction
+balance, victory targeting, five-seed cross-runtime replay,
 interactive/tactical convergence, browser
 memory/media work, cross-browser performance, formatting, lint, and
 release-level visual acceptance remain incomplete.
