@@ -9,14 +9,33 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 
 # Original Interface Parity Audit
 
+## Progress snapshot
+
+| Measure | Current position |
+|---|---:|
+| Practical interface scope materially tackled | approximately 17 to 20% |
+| Practical interface scope remaining | approximately 80 to 83% |
+| Required surface families | 43 |
+| Family status | 0 complete, 7 partial, 36 fail |
+| Strictly accepted required cells | 0 of 564 |
+
+The practical percentage is an implementation-planning estimate. The strict
+cell count remains the release authority because each cell still needs its
+complete original-evidence, native, browser, viewport, faction, interaction,
+audio, and diagnostic matrix. Work proceeds through the current
+[batched execution plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md).
+
 Open Rebellion does not yet have original interface parity. The shuttle main
 menu's scoped composition, destinations, audio, and hotspots are verified, but
 its exhaustive original control-state capture matrix remains open. The
 strategic shell now uses the recovered faction bitmaps, exact apertures, and a
-centered 640x480 canvas. Its six primary faction controls now use their recovered
-bitmap pairs, geometry, input masks, and command routing. The strategy screen
-still uses synthetic GID and map art, an invented system sidebar, replacement
-message and status surfaces, and other incomplete controls. Original advisor idle frames render in the scaled
+centered 640x480 canvas. Its six primary faction controls use their recovered
+bitmap pairs, geometry, input masks, and command routing. First-pass original
+sector and system shells replace the invented sidebar, with working tabs and
+rail lifecycle for both factions. The strategy screen still uses synthetic GID
+and map art, incomplete system contents, approximate rail thumbnails,
+replacement message and status surfaces, and other incomplete controls.
+Original advisor idle frames render in the scaled
 apertures, but their authored actions, voice, and chrome remain open.
 
 This bundle is the visual and interaction-identity sister to the
@@ -38,6 +57,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [Reverse-engineering data](reverse-engineering-ledger.json) | Machine-readable artifacts, discoveries, resource omissions, and work-package status. |
 | [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md) | Durable canvas, aperture, shared-transform, test, artifact-hash, and Astra acceptance record. |
 | [P46B strategic-control evidence](evidence/2026-09-11-strategic-command-controls.md) | Recovered six-control geometry, bitmap pairs, input masks, command mapping, tests, and browser acceptance. |
+| [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) | First-pass sector and system windows, tab resources, modeless lifecycle, rail routing, browser evidence, and open item-level work. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -58,7 +78,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | Complete shuttle state matrix | **Partial** |
 | Strategy cockpit parity | **Partial** |
 | Browser advisor visibility | **Partial** |
-| Original system-window navigation | **Fail** |
+| Original system-window navigation | **Partial** |
 | Release claim of 100% interface parity | **Blocked** |
 
 The 370-image corpus is broad, but it is not the final acceptance set. Several
@@ -74,6 +94,11 @@ verifies the shell, crop, apertures, clipping, and shared transform in
 implements the six primary faction controls from the recovered constructor,
 paint, capture, hit-mask, and routing paths. Its durable evidence is
 [recorded separately](evidence/2026-09-11-strategic-command-controls.md).
+The UIP-B01 checkpoint adds recovered modeless sector and system shells,
+double-click routing, core tabs, and rail minimize/restore. Its
+[evidence record](evidence/2026-09-11-strategic-window-navigation.md) keeps
+item contents, active/inactive rail thumbnails, and uncommon state coverage
+open.
 Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain
@@ -109,8 +134,10 @@ this order:
    faction sources cropped to 480 display rows, completed by P46A;
 2. original galaxy/starfield and Galactic Information Display modes;
 3. the six primary cockpit controls, state art, hotspots, and routing, completed
-   by P46B; remaining speed and GID controls plus the window-reference rail;
-4. original sector and system windows instead of the right sidebar;
+   by P46B; remaining speed and GID controls;
+4. first-pass original sector and system shells plus rail lifecycle, completed
+   as a partial UIP-B01 checkpoint; remaining item compositions, commands,
+   rail thumbnails, and uncommon states;
 5. complete Alliance and Imperial droid actions, BIN sequences, voice, chrome,
    and unobscured apertures on top of the packaged idle-frame foundation;
 6. authoritative system, facility, fleet, HQ, blockade, and intelligence glyphs.

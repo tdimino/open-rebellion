@@ -482,6 +482,12 @@ would tune around known simulation feedback defects.
   replacement message and status bars that covered them. A0 captures, the disabled path,
   original destination windows, speed and GID controls, and the rest of
   `UIP-T01` remain open.
+- [x] Complete the first UIP-B01 strategic-navigation checkpoint: replace the
+  invented sidebar with recovered sector and detailed-system shells, original
+  planet and tab resources, double-click routing, modeless focus and close,
+  plus both factions' 12-slot minimize/restore rail geometry. Item-level tab
+  compositions, commands, exact rail thumbnails, uncommon states, and the
+  complete `CMD-03` and `CMD-04` acceptance matrices remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

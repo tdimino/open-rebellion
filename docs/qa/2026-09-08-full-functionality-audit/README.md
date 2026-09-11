@@ -53,9 +53,11 @@ acceptance plan required before the project can claim 100% functionality.
 The project is substantially implemented, but it is not yet demonstrably 100%
 functional and does not yet have original in-campaign interface parity. The
 [interface sister audit](../2026-09-10-interface-parity-audit/) records hard
-failures for the synthetic galaxy composition, replacement cockpit controls,
-invented system sidebar, overlapping advisor apertures, and other replacement
-surfaces. The four authentic advisor idle runs now render in native and WASM;
+failures for the synthetic galaxy composition, incomplete cockpit controls,
+partial system-window contents, approximate rail thumbnails, and other
+replacement surfaces. First-pass original sector and system shells plus the
+rail lifecycle now work for both factions. The four authentic advisor idle runs
+now render in native and WASM;
 their complete actions, voice, chrome, and shell integration remain open.
 Fleet-miniature acceptance, deterministic four-request browser
 startup, F-001 browser Save/Load/Delete, the F-011A fingerprint primitive,

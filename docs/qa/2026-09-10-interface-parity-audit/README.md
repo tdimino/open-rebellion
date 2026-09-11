@@ -9,6 +9,9 @@ geometry, and unverified asset mappings do not count as parity.
 
 - Read the [audit overview](index.md) for the current result and definition of
   100% interface parity.
+- Follow the current
+  [batched execution plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md)
+  for bundle boundaries, verification cadence, Astra review, and commit gates.
 - Choose a bounded surface and state from the
   [machine-readable surface ledger](surface-ledger.json).
 - Use the [reverse-engineering ledger](reverse-engineering-ledger.md) to find
@@ -21,6 +24,9 @@ geometry, and unverified asset mappings do not count as parity.
   for the verified canvas, aperture, and browser-transform checkpoint.
 - Review the [P46B strategic-control evidence](evidence/2026-09-11-strategic-command-controls.md)
   for the recovered six-control geometry, bitmap, input, and command contract.
+- Review the [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md)
+  for the sector, system-shell, tab, and rail checkpoint and its remaining
+  item-level boundaries.
 
 ## Suggested contribution lanes
 
@@ -43,6 +49,14 @@ commit as the verified implementation.
 Do not commit copyrighted game assets. Extraction and runtime-pack tooling must
 stage them from a contributor-owned installation.
 
+## Progress snapshot
+
+The practical implementation estimate is approximately 17 to 20% tackled and
+80 to 83% remaining. Formally, the ledger has 43 required families: 0 complete,
+7 partial, and 36 failing. All 564 required cells remain pending until their
+complete evidence and execution matrices pass. The practical estimate guides
+bundle planning; it does not replace strict acceptance.
+
 The first recovered implementation tranche now packages and renders the four
 original faction-advisor idle runs. See the
 [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md).
@@ -53,6 +67,10 @@ crop, recovered galaxy apertures, and shared browser transform. See the
 [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md). P46B restores
 the six primary faction controls and removes their replacement text strip. See
 the [P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
-`CMD-01`, `CMD-10`, and `UIP-T01` remain open because the full control matrix,
-GID and map art, window-reference rail, original destination windows, and
-replacement surfaces are not complete.
+UIP-B01 now replaces the invented sidebar with first-pass original sector and
+system shells and a working 12-slot rail lifecycle for both factions. See the
+[navigation evidence](evidence/2026-09-11-strategic-window-navigation.md).
+`CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
+full control matrix, GID and map art, item-level system contents, exact rail
+thumbnails, original destination windows, and replacement surfaces are not
+complete.

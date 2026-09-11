@@ -3,7 +3,7 @@ title: "F-016C Main-Menu Completion Evidence"
 description: "Destinations, keyboard traversal, campaign reset, corrected music, original button effects, and browser acceptance"
 category: qa
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-11
 tags: [qa, main-menu, wasm, audio, astra, bitmap]
 ---
 
@@ -28,6 +28,8 @@ per-control browser semantics remain explicit P03 release-hardening work.
   Enter, and Space remain single-shot.
 - Browser and native paths load the actual `MDATA.300` shuttle-menu cue and
   the original `COMMON.DLL` button effects recovered from `FUN_00405560`.
+- The Small, Medium, and Large screens use COMMON resources `10019`, `10018`,
+  and `10017` respectively, so each selected state retains its matching scale.
 
 ## Original audio identity
 
@@ -90,3 +92,11 @@ cooldowns, one active AI, no second AI, and 34 freshly defined events.
   [Quit](main-menu-completion/quit.png)
 - [Forward Tab traversal](main-menu-completion/tab-forward.png) and
   [reverse traversal](main-menu-completion/tab-reverse.png)
+- [Corrected Small, Medium, and Large selected states](main-menu-r3/galaxy-sizes-corrected-2026-09-11.png)
+
+## 2026-09-11 selected-state regression
+
+A focused resource-mapping test and a muted packaged-browser pass cover all
+three galaxy selections. Each screen now keeps the matching native-scale art,
+the lever moves to the corresponding detent, and no browser error or missing
+asset diagnostic appears.

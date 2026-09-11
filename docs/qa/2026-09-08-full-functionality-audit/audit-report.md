@@ -60,8 +60,10 @@ cross-runtime proof.
 
 The current campaign screenshots also exposed a separate visual truth. The
 original shuttle main menu remains a passing surface, but the strategy screen
-uses replacement controls, synthetic map primitives, an invented system sidebar,
-and incomplete advisor-shell integration. The sister audit inventories 43 surface families,
+still uses synthetic map primitives, incomplete system-window contents,
+approximate rail thumbnails, and incomplete advisor-shell integration. The
+first original sector and system shells now replace the sidebar. The sister
+audit inventories 43 surface families,
 retains 370 original references, and makes UIP-T01 Strategic Cockpit Truth the
 highest-priority presentation tranche. Earlier scoped browser checks retain their
 behavioral and loading evidence; they are not evidence of original interface
@@ -592,7 +594,7 @@ and underlying state mutation are both demonstrated.
 | P03 | Main menu | **Pass.** Assemble and operate the original 14 cockpit controls, animation, navigation, keyboard and screen-reader access, `MDATA.300` music, original button effects, responsive 4:3 hit testing, and the documented optional music-only extension per [`main-menu-parity.md`](../../../agent_docs/main-menu-parity.md). Native and browser acceptance pass. |
 | P04 | Game setup | Use the cockpit controls for both factions, three difficulties, three original galaxy sizes, both game types, direct campaign start, correct state propagation, and clean second-campaign reset per [`main-menu-parity.md`](../../../agent_docs/main-menu-parity.md). |
 | P05 | Clock | Pause and every speed, focus loss, browser background/resume, modal/combat/cutscene tick behavior. |
-| P06 | Galaxy navigation | Reproduce the original galaxy/GID, sector, and system-window graph, selection, object menus, pan/zoom semantics, resizing, high-DPI transform, and cockpit input boundaries per the [interface audit](../2026-09-10-interface-parity-audit/). The current synthetic map and system sidebar fail. |
+| P06 | Galaxy navigation | Reproduce the original galaxy/GID, sector, and system-window graph, selection, object menus, pan/zoom semantics, resizing, high-DPI transform, and cockpit input boundaries per the [interface audit](../2026-09-10-interface-parity-audit/). First-pass sector and system shells plus the rail lifecycle work; the synthetic galaxy, complete item compositions, commands, uncommon states, and exact rail thumbnails remain open. |
 | P07 | Fog and overlays | Both factions, original intelligence/control colors, sensor/recon visibility, every GID filter and matching legend, fleet/facility/system markers, and no hidden-information leakage. Current primitive markers fail visual parity. |
 | P08 | Personnel | Reproduce Personnel Finder, Character Status, special forces, every portrait/state, selection, assignment, availability, captivity, injury, death, Jedi state, item menus, and detail refresh. The current Officers panel is a replacement. |
 | P09 | Fleets | Reproduce Fleet/Ship Finders, original Fleet and status windows, tabs, icons, selection, move, cancel, split/merge/transfer, cargo, transit, invalid operations, arrivals, duplicate prevention, and post-combat refresh. Current custom panels remain visual failures. |

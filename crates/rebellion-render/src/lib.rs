@@ -14,6 +14,8 @@ pub mod main_menu;
 pub mod main_menu_destinations;
 pub mod message_log;
 pub mod panels;
+pub mod sector_window;
+pub mod system_window;
 pub mod tactical_view;
 pub mod theme;
 pub mod victory_screen;
@@ -70,6 +72,14 @@ pub use panels::{
     draw_save_load, FleetsState, ManufacturingPanelState, MissionsPanelState, ModInfo,
     ModManagerAction, ModManagerState, OfficersState, PanelAction, SaveLoadPanelState,
     SaveSlotInfo,
+};
+pub use sector_window::{
+    draw_sector_windows, SectorWindowAction, SectorWindowState, SECTOR_WINDOW_HEIGHT,
+    SECTOR_WINDOW_WIDTH,
+};
+pub use system_window::{
+    draw_system_windows, SystemWindowAction, SystemWindowState, SystemWindowTab,
+    REFERENCE_RAIL_SLOTS, SYSTEM_WINDOW_CLIENT_WIDTH, SYSTEM_WINDOW_HEIGHT, SYSTEM_WINDOW_WIDTH,
 };
 pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
@@ -142,6 +152,11 @@ pub struct GalaxyMapState {
     pub zoom: f32,
     pub selected_system: Option<SystemKey>,
     pub hovered_system: Option<SystemKey>,
+    /// System activated by a primary press in the current frame.
+    /// Consumers clear this by drawing the next map frame.
+    pub activated_system: Option<SystemKey>,
+    /// True while a modeless original-interface window owns the pointer.
+    pub pointer_blocked: bool,
     pub show_sector_labels: bool,
     pub show_grid: bool,
     /// Previous mouse position used for right-drag panning.
@@ -174,6 +189,8 @@ impl Default for GalaxyMapState {
             zoom: 1.0,
             selected_system: None,
             hovered_system: None,
+            activated_system: None,
+            pointer_blocked: false,
             show_sector_labels: true,
             show_grid: false,
             drag_start: None,
@@ -194,13 +211,15 @@ impl Default for GalaxyMapState {
 /// overlays can use matching coordinates.
 pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraView {
     discard_stale_context_menus(world, state);
+    state.activated_system = None;
 
     let sw = screen_width();
     let sh = screen_height();
     let (viewport_x, viewport_y, viewport_width, viewport_height) =
         state.viewport.unwrap_or((0.0, 0.0, sw, sh));
     let (mx, my) = mouse_position();
-    let in_viewport = mx >= viewport_x
+    let in_viewport = !state.pointer_blocked
+        && mx >= viewport_x
         && mx < viewport_x + viewport_width
         && my >= viewport_y
         && my < viewport_y + viewport_height;
@@ -360,42 +379,20 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         && !context_menu_owns_pointer(state)
     {
         state.selected_system = state.hovered_system;
+        state.activated_system = state.hovered_system;
     }
 
-    // ── Right-click context menu ─────────────────────────────────────────────
-    // Open context menu only on a short right-click (no drag).
-    //
-    // WASM note: browsers intercept the contextmenu event and swallow the
-    // mouseup, so `is_mouse_button_released(Right)` never fires in WebAssembly.
-    // We detect the fallback condition: right_click_start is set (button was
-    // pressed at least 1 frame) but button is no longer held this frame and no
-    // released event arrived. Both paths share the same drag-distance check.
-    //
-    // NOTE: Do NOT clear right_click_start here — main.rs needs to read it
-    // for fleet hover detection before it gets cleared. main.rs clears it.
+    // End right-button capture after panning. The parity path intentionally
+    // does not create the replacement system or fleet context menus.
     let right_released = is_mouse_button_released(MouseButton::Right);
-    // WASM fallback: held for ≥1 frame, button no longer down, no released event.
+    // Browsers can swallow the release event after a context-menu gesture.
     let right_released_wasm = !right_released
         && state.right_click_held_frames >= 1
         && !is_mouse_button_down(MouseButton::Right)
         && state.right_click_start.is_some();
-    if (right_released || right_released_wasm) && in_viewport {
-        // Reset held counter on either release path.
+    if right_released || right_released_wasm {
         state.right_click_held_frames = 0;
-        let was_drag = state.right_click_start.is_none_or(|(sx, sy)| {
-            let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
-            dist > 5.0
-        });
-        if !was_drag {
-            if let Some(sys_key) = state.hovered_system {
-                state.context_menu_system = Some((sys_key, mx, my));
-                state.context_menu_fleet = None;
-            } else {
-                // Clicked empty space — dismiss.
-                state.context_menu_system = None;
-                state.context_menu_fleet = None;
-            }
-        }
+        state.right_click_start = None;
     }
 
     cam

@@ -3,7 +3,7 @@ title: "Plans Index"
 description: "All feature plans, ExecPlans, and design proposals for Open Rebellion"
 category: plan
 created: 2026-03-22
-updated: 2026-09-10
+updated: 2026-09-11
 tags: [index, plans]
 ---
 
@@ -25,8 +25,14 @@ Completed plans live in `completed/`.
 
 ## Active Plans
 
+The [Batched Interface Parity Execution Plan](2026-09-11-feat-batched-interface-parity-plan.md)
+is the current primary implementation plan. It groups related original-game
+surfaces into browser-verifiable bundles while the interface audit remains the
+strict acceptance authority.
+
 | Plan | Type | Status | Date |
 |------|------|--------|------|
+| [Batched Interface Parity](2026-09-11-feat-batched-interface-parity-plan.md) | feat | active, UIP-B01 in progress | 2026-09-11 |
 | [AI Attack Target Variety](2026-03-21-feat-ai-attack-target-variety-plan.md) | feat | complete | 2026-03-21 |
 | [Autoresearch Metrics](2026-03-21-autoresearch-metrics-plan.md) | feat | planned | 2026-03-21 |
 | [Create Your Own Character](2026-03-21-addon-create-your-own-character.md) | addon | planned | 2026-03-21 |
