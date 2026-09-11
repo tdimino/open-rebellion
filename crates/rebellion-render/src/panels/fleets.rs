@@ -685,7 +685,7 @@ fn available_surface_troops(
     troops
 }
 
-fn capital_ship_mini_id(dat_id: DatId) -> Option<u32> {
+pub(crate) fn capital_ship_mini_id(dat_id: DatId) -> Option<u32> {
     match dat_id.index() {
         64..=78 => ALLIANCE_CAPITAL_SHIP_MINIS
             .get((dat_id.index() - 64) as usize)
@@ -697,7 +697,7 @@ fn capital_ship_mini_id(dat_id: DatId) -> Option<u32> {
     }
 }
 
-fn fighter_mini_id(dat_id: DatId) -> Option<u32> {
+pub(crate) fn fighter_mini_id(dat_id: DatId) -> Option<u32> {
     match dat_id.index() {
         1..=4 => ALLIANCE_FIGHTER_MINIS
             .get((dat_id.index() - 1) as usize)

@@ -309,22 +309,27 @@
         "sources": ["REBEXE.EXE", "GOKRES.DLL", "STRATEGY.DLL", "REBDLOG.DLL", "TEXTSTRA.DLL"],
         "anchors": ["FUN_0044f670", "FUN_00442d70", "FUN_0044c410", "FUN_0045aac0", "FUN_00452fc0", "FUN_00455060", "FUN_004534f0"],
         "method": "Follow modeless constructors, object-family dispatch, tab creation, resource loads, population predicates, command trees, focus, and rail lifecycle.",
-        "next_proof": "Complete system-window item compositions, drag and command paths, indicators, and uncommon states, then map the remaining object families."
+        "next_proof": "Recover nested fleet and object compositions, drag and command paths, exact original intelligence semantics, indicators, and uncommon states, then map the remaining object families."
       },
       "runtime_capture_required": true,
       "implementation_evidence": {
-        "status": "sector_and_system_shells_runtime_corroborated_item_contents_open",
-        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md",
+        "status": "sector_system_shells_and_first_tab_items_runtime_corroborated",
+        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-detailed-system-tab-items.md",
         "completed": [
           "235x360 modeless sector shell with original planet pictures and recovered placement",
           "226x304 detailed-system shell with relationship title resources",
           "six original tab resource families with available and disabled selection paths",
           "single-click selection and double-click detailed-window routing",
-          "close, sector return, focus, pointer occlusion, minimize, and restore"
+          "close, sector return, foreground focus, pointer occlusion, minimize, and restore",
+          "source-mapped GOKRES miniatures and displayed labels across all six tabs",
+          "three-column three-row viewport with STRATEGY 10365 through 10369 scrollbar art",
+          "item selection and preserved tab, item, and scroll state through minimize and restore",
+          "coarse current-intelligence gating prevents stale hostile views from exposing opposing objects"
         ],
         "remaining": [
-          "exact item images, stacks, selection, drag, and command behavior",
+          "nested fleet and object contents, stacks, drag, and command behavior",
           "complete support, resource, facility, fleet, troop, personnel, and HQ indicators",
+          "exact intelligence age, espionage, detection, and hostile item visibility semantics",
           "unexplored, uninhabited, blockade, uprising, damage, destroyed, and transit variants",
           "complete A0, native, browser, viewport, and multiwindow matrix"
         ]

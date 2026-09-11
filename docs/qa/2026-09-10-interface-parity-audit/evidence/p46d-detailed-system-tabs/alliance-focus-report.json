@@ -1,0 +1,172 @@
+{
+  "request": [
+    {
+      "at": "2026-09-11T22:00:59.840Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/?p46d-alliance-focus=1789164059838"
+    },
+    {
+      "at": "2026-09-11T22:00:59.856Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/gl.js"
+    },
+    {
+      "at": "2026-09-11T22:00:59.861Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/open-rebellion.wasm"
+    },
+    {
+      "at": "2026-09-11T22:01:00.030Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/data/runtime.orpk"
+    }
+  ],
+  "response": [
+    {
+      "at": "2026-09-11T22:00:59.852Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/?p46d-alliance-focus=1789164059838",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T22:00:59.857Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/gl.js",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T22:00:59.862Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/open-rebellion.wasm",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T22:01:00.031Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "wasm": [
+    {
+      "at": "2026-09-11T22:01:00.028Z",
+      "kind": "wasm",
+      "sha256": "7dcdd00685c9e73c6bf7d1cf41020c5a3603f71497fe839d791224303091976f",
+      "bytes": 5703813
+    }
+  ],
+  "pack": [
+    {
+      "at": "2026-09-11T22:01:12.761Z",
+      "kind": "pack",
+      "sha256": "1ce8e2370d037423ad20683ff747245548b3eca453305596a45ef3083899a862",
+      "bytes": 36156163
+    }
+  ],
+  "music-check": [
+    {
+      "at": "2026-09-11T22:01:13.030Z",
+      "kind": "music-check",
+      "state": "false"
+    }
+  ],
+  "fixture": [
+    {
+      "at": "2026-09-11T22:01:13.031Z",
+      "kind": "fixture",
+      "source": "/private/tmp/open-rebellion-p46d-final-r2/alliance-overflow/",
+      "sha256": "12e00eb9cc85c2d0892f9207ef53de87bc5fb6c9e9db882ec90a6a940a84e4be"
+    }
+  ],
+  "environment": [
+    {
+      "at": "2026-09-11T22:03:12.849Z",
+      "kind": "environment",
+      "version": "151.0.7922.34",
+      "viewport": {
+        "width": 1000,
+        "height": 700
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "at": "2026-09-11T22:03:36.716Z",
+      "kind": "cleanup",
+      "browserClosed": true
+    }
+  ],
+  "errors": [],
+  "pixel_comparisons": [
+    {
+      "width": 640,
+      "height": 480,
+      "yavin_detail_box": [
+        170,
+        86,
+        401,
+        391
+      ],
+      "covered_item_box": [
+        316,
+        161,
+        385,
+        189
+      ],
+      "foreground_click_logical": [
+        350,
+        175
+      ],
+      "foreground_click_screen": [
+        350.0,
+        175
+      ],
+      "background_detail_identical": true,
+      "background_item_identical": true,
+      "foreground_empty_click_identical": true,
+      "title_raise_changes_overlap": true,
+      "direct_selection_difference": [
+        146,
+        75,
+        214,
+        102
+      ]
+    },
+    {
+      "width": 1000,
+      "height": 700,
+      "yavin_detail_box": [
+        281,
+        125,
+        618,
+        570
+      ],
+      "covered_item_box": [
+        494,
+        235,
+        595,
+        276
+      ],
+      "foreground_click_logical": [
+        350,
+        175
+      ],
+      "foreground_click_screen": [
+        543.75,
+        255.20833333333331
+      ],
+      "background_detail_identical": true,
+      "background_item_identical": true,
+      "foreground_empty_click_identical": true,
+      "title_raise_changes_overlap": true,
+      "direct_selection_difference": [
+        213,
+        110,
+        312,
+        149
+      ]
+    }
+  ],
+  "result": "PASS: two simultaneous Alliance detail windows at 640x480 and 1000x700",
+  "visual_inspection": "Both focus sheets inspected: intended overlap order, empty Selonia personnel, unchanged Wedge portrait and positive direct-selection control verified."
+}

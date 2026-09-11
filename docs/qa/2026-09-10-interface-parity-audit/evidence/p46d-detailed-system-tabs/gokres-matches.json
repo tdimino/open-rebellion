@@ -1,0 +1,410 @@
+[
+  {
+    "resource": "gokres-dll/BMP/18499.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "42f1e2c9440ca88d08b7d4f1a8710d2d7cbab870195e8bfaebf1bb1a5a9b6ae1",
+    "upload_indices": [
+      238
+    ],
+    "transparent_pixels": 917
+  },
+  {
+    "resource": "gokres-dll/BMP/18498.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "f02a5a725d4a6a019972e32f9dec4e32d90501eccf4bc7a1e32170f1e125f459",
+    "upload_indices": [
+      237
+    ],
+    "transparent_pixels": 960
+  },
+  {
+    "resource": "gokres-dll/BMP/17795.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "e249e630cf9300371efa5467b3ea74c0c441dfce20d7d1e570997b3f2c810bd0",
+    "upload_indices": [
+      181
+    ],
+    "transparent_pixels": 1055
+  },
+  {
+    "resource": "gokres-dll/BMP/19009.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "976a51fc74c4dc66af2ceba146c8348a981b768334b801d0e6d9b4d3dadf9074",
+    "upload_indices": [
+      239
+    ],
+    "transparent_pixels": 1063
+  },
+  {
+    "resource": "gokres-dll/BMP/17794.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "3afc0a3c5d9be6327d3c8f29bbb636fce38a1b66e9fecaffcee904253fa7703e",
+    "upload_indices": [
+      180
+    ],
+    "transparent_pixels": 1185
+  },
+  {
+    "resource": "gokres-dll/BMP/16897.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "ca85bc3a003cc0c3793ef3437131b602d3f365d257f8db20b271c62b44135e6e",
+    "upload_indices": [
+      94
+    ],
+    "transparent_pixels": 1316
+  },
+  {
+    "resource": "gokres-dll/BMP/18313.bmp",
+    "size": [
+      66,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "9ea98524fcfc1cc3f3d03fc87ad765f485d7ac9793a8c1b2da4bb030962a4a52",
+    "upload_indices": [
+      164
+    ],
+    "transparent_pixels": 929
+  },
+  {
+    "resource": "gokres-dll/BMP/16896.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "c46d548b15612d6b62ddb2c865e43c1aa5f1d7673de5d38da7c3f43ab24de9ec",
+    "upload_indices": [
+      166
+    ],
+    "transparent_pixels": 976
+  },
+  {
+    "resource": "gokres-dll/BMP/17793.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "3407637d75b7272ec35439b05bc62d59536f71b670fb1fd3e284fae886188b81",
+    "upload_indices": [
+      179
+    ],
+    "transparent_pixels": 1145
+  },
+  {
+    "resource": "gokres-dll/BMP/17792.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "5bd33b82d4728a0bb7ebaf7f6a45cfe3c88a54bd065aad891f5f147da9c96b4d",
+    "upload_indices": [
+      178
+    ],
+    "transparent_pixels": 1248
+  },
+  {
+    "resource": "gokres-dll/BMP/17537.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "ef90b37ec8de670ce5f3c44645aacb1db65f485a2541d37ef4d6dc95ccc220b7",
+    "upload_indices": [
+      170
+    ],
+    "transparent_pixels": 915
+  },
+  {
+    "resource": "gokres-dll/BMP/17536.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "00071732c25f8f092daf8e5e37aa75ff886179ad540ff86b7b9161add50dd177",
+    "upload_indices": [
+      171
+    ],
+    "transparent_pixels": 639
+  },
+  {
+    "resource": "gokres-dll/BMP/17731.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "f5f8ceb6d34061d5964c69eae77353b6d13f72c69a7f0d03436318cbc6727628",
+    "upload_indices": [
+      100
+    ],
+    "transparent_pixels": 1228
+  },
+  {
+    "resource": "gokres-dll/BMP/18560.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "5648311cba042f340c8c367fcc6c68cc703e00afdfc69f93f3108cbd7f709ad2",
+    "upload_indices": [
+      159
+    ],
+    "transparent_pixels": 769
+  },
+  {
+    "resource": "gokres-dll/BMP/18561.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "b433b2ae35535aa9860da2b4c56a1b595668cafd8ddb605166aa408980096af8",
+    "upload_indices": [
+      160
+    ],
+    "transparent_pixels": 1021
+  },
+  {
+    "resource": "gokres-dll/BMP/16385.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "6567fb4c4005d8257d3f34d4b1bcde2cb5d50ae07f03763b2c776aab03205904",
+    "upload_indices": [
+      104
+    ],
+    "transparent_pixels": 1213
+  },
+  {
+    "resource": "gokres-dll/BMP/17473.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "f406b00deaebd38a61f2c801776dea0b4b9af89416193cac736e9800388873b7",
+    "upload_indices": [
+      244
+    ],
+    "transparent_pixels": 1183
+  },
+  {
+    "resource": "gokres-dll/BMP/17538.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "923d446ffb62282a56e0d30f26d1219d3d3f9761d974c6fa339f84cb08e44934",
+    "upload_indices": [
+      172
+    ],
+    "transparent_pixels": 1024
+  },
+  {
+    "resource": "gokres-dll/BMP/16640.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "510418580c7b4e7dab05e578428e00380491aa085e4374125c27b6fd7ce40188",
+    "upload_indices": [
+      97
+    ],
+    "transparent_pixels": 1420
+  },
+  {
+    "resource": "gokres-dll/BMP/18309.bmp",
+    "size": [
+      66,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "9feffeabbe99c13ceb58ed75f6c3cc7049c3595eef7252d8337fc966c5a08e5d",
+    "upload_indices": [
+      163
+    ],
+    "transparent_pixels": 1032
+  },
+  {
+    "resource": "gokres-dll/BMP/16642.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "aca31dfa3995273b7b87466ade0feaaaa3c2a2d0023ad3066571a31a5f94acba",
+    "upload_indices": [
+      168
+    ],
+    "transparent_pixels": 691
+  },
+  {
+    "resource": "gokres-dll/BMP/19011.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "e59c869df3dfc53f222bec16d4677c77bfee46b1402c9816afdfc9229104cc4d",
+    "upload_indices": [
+      240
+    ],
+    "transparent_pixels": 743
+  },
+  {
+    "resource": "gokres-dll/BMP/19012.bmp",
+    "size": [
+      61,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "7ded9f5dab68e904f25e8b9772629c03afb8b8144ab6157a8492b0d07da4a239",
+    "upload_indices": [
+      241
+    ],
+    "transparent_pixels": 890
+  },
+  {
+    "resource": "gokres-dll/BMP/18245.bmp",
+    "size": [
+      66,
+      25
+    ],
+    "key": [
+      0,
+      0,
+      255
+    ],
+    "rgba_sha256": "4fb91a4ba138d5612e42b34cedead283ae83ecd69c0770496b8d3083c4e3189c",
+    "upload_indices": [
+      243
+    ],
+    "transparent_pixels": 973
+  }
+]

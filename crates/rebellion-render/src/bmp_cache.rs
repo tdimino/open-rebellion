@@ -1363,17 +1363,7 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
                     ..=resources::strategy::SECTOR_PLANET_SPECIAL_LAST
         ),
-        DllSource::Gokres => matches!(
-            resource_id,
-            resources::gokres::MINI_FIGHTER_A_WING
-                ..=resources::gokres::MINI_FIGHTER_Y_WING
-                | resources::gokres::MINI_FIGHTER_TIE_FIGHTER
-                    ..=resources::gokres::MINI_FIGHTER_TIE_DEFENDER
-                | resources::gokres::MINI_SHIP_MC80_LIBERTY_CRUISER
-                    ..=resources::gokres::MINI_SHIP_MC80A_HOME_ONE_CRUISER
-                | resources::gokres::MINI_SHIP_STRIKE_CRUISER
-                    ..=resources::gokres::MINI_SHIP_IMPERIAL_DREADNOUGHT
-        ),
+        DllSource::Gokres => matches!(resource_id, 16_000..=19_999),
         DllSource::Common => matches!(
             resource_id,
             10001..=10003
@@ -1656,7 +1646,7 @@ mod tests {
     }
 
     #[test]
-    fn fleet_miniature_blue_screen_becomes_transparent() {
+    fn gokres_miniature_blue_screen_becomes_transparent() {
         let mut image = image::RgbaImage::new(3, 1);
         image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
         image.put_pixel(1, 0, image::Rgba([20, 20, 220, 255]));
@@ -1669,16 +1659,21 @@ mod tests {
                 image::ImageFormat::Png,
             )
             .unwrap();
-        let decoded = decode_color_image(
-            &encoded,
-            DllSource::Gokres,
+        for resource_id in [
+            16_385,
+            16_640,
+            16_896,
+            17_472,
+            17_728,
             resources::gokres::MINI_FIGHTER_X_WING,
-        )
-        .unwrap();
-
-        assert_eq!(decoded.pixels[0].a(), 0);
-        assert_eq!(decoded.pixels[1].a(), 0);
-        assert_eq!(decoded.pixels[2].a(), 255);
+            resources::gokres::MINI_SHIP_CORELLIAN_CORVETTE,
+            19_008,
+        ] {
+            let decoded = decode_color_image(&encoded, DllSource::Gokres, resource_id).unwrap();
+            assert_eq!(decoded.pixels[0].a(), 0);
+            assert_eq!(decoded.pixels[1].a(), 0);
+            assert_eq!(decoded.pixels[2].a(), 255);
+        }
     }
 
     #[test]
@@ -1714,7 +1709,7 @@ mod tests {
                 image::ImageFormat::Png,
             )
             .unwrap();
-        let decoded = decode_color_image(&encoded, DllSource::Gokres, 19008).unwrap();
+        let decoded = decode_color_image(&encoded, DllSource::Gokres, 2112).unwrap();
 
         assert_eq!(decoded.pixels[0].a(), 255);
     }

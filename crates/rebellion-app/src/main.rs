@@ -2952,6 +2952,7 @@ async fn main() {
                     for action in draw_system_windows(
                         ctx,
                         &world,
+                        fog_state,
                         &mut system_window_state,
                         cockpit_state.faction,
                         cockpit_layout,

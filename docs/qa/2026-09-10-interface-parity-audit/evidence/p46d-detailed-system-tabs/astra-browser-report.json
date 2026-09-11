@@ -1,0 +1,136 @@
+{
+  "scope": "P46D partial checkpoint browser-only acceptance; not full CMD-03/CMD-04/OBJ-02 acceptance",
+  "findings": {
+    "P0": [],
+    "P1": [],
+    "P2": [],
+    "P3": []
+  },
+  "overall": "Partial acceptance; exercised checks pass, remaining criteria explicitly unverified",
+  "requests": [
+    {
+      "at": "2026-09-11T21:43:40.097Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/?p46d-final-r2=1789163020094"
+    },
+    {
+      "at": "2026-09-11T21:43:40.121Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/gl.js"
+    },
+    {
+      "at": "2026-09-11T21:43:40.132Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/open-rebellion.wasm"
+    },
+    {
+      "at": "2026-09-11T21:43:40.349Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/data/runtime.orpk"
+    }
+  ],
+  "responses": [
+    {
+      "at": "2026-09-11T21:43:40.110Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/?p46d-final-r2=1789163020094",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T21:43:40.123Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/gl.js",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T21:43:40.133Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/open-rebellion.wasm",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T21:43:40.349Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "hashes": [
+    {
+      "at": "2026-09-11T21:43:40.348Z",
+      "kind": "wasm",
+      "sha256": "7dcdd00685c9e73c6bf7d1cf41020c5a3603f71497fe839d791224303091976f",
+      "bytes": 5703813
+    },
+    {
+      "at": "2026-09-11T21:43:53.091Z",
+      "kind": "pack",
+      "sha256": "1ce8e2370d037423ad20683ff747245548b3eca453305596a45ef3083899a862",
+      "bytes": 36156163
+    }
+  ],
+  "music": [
+    {
+      "at": "2026-09-11T21:43:53.687Z",
+      "kind": "music-check",
+      "campaign": "Alliance",
+      "state": "false"
+    },
+    {
+      "at": "2026-09-11T21:44:24.474Z",
+      "kind": "music-check",
+      "campaign": "Empire",
+      "state": "false"
+    },
+    {
+      "at": "2026-09-11T21:46:30.357Z",
+      "kind": "music-check",
+      "campaign": "Alliance supplemental",
+      "state": "false"
+    },
+    {
+      "at": "2026-09-11T21:48:40.157Z",
+      "kind": "music-check",
+      "campaign": "alliance edge-sweep",
+      "state": "false"
+    },
+    {
+      "at": "2026-09-11T21:49:17.590Z",
+      "kind": "music-check",
+      "campaign": "empire edge-sweep",
+      "state": "false"
+    }
+  ],
+  "errors": [],
+  "environment": [
+    {
+      "at": "2026-09-11T21:45:35.132Z",
+      "kind": "environment",
+      "version": "151.0.7922.34",
+      "viewport": {
+        "width": 1000,
+        "height": 700
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "at": "2026-09-11T21:51:04.235Z",
+      "kind": "cleanup",
+      "browserClosed": true,
+      "contextClosed": true
+    },
+    {
+      "at": "2026-09-11T21:51:21.385Z",
+      "kind": "cleanup",
+      "browserClosed": true
+    }
+  ],
+  "gokres_matches": 24,
+  "unverified": [
+    "Alliance overflow scrolling, pressed arrows and upper/lower limits: visited owned planets did not contain a scrollable list. Empire covers these at both sizes.",
+    "Two simultaneous Alliance detail-window foreground/no-click-through case: tested with two Empire details; Alliance minimize/restore and item edges were exercised at both sizes.",
+    "Exhaustive hostile/fog states and background clamping remain with parent source/test verification. Browser hostile Tierfon probe only.",
+    "Native parity, nested fleet contents, drag/drop and full CMD-03/CMD-04/OBJ-02 completion are outside this partial checkpoint."
+  ]
+}

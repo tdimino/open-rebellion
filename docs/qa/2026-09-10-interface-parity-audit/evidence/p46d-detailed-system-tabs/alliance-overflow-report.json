@@ -1,0 +1,365 @@
+{
+  "run-start": [
+    {
+      "at": "2026-09-11T21:54:23.495Z",
+      "kind": "run-start",
+      "name": "complete-matrix"
+    }
+  ],
+  "request": [
+    {
+      "at": "2026-09-11T21:54:23.498Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/?p46d-alliance-scroll=1789163663495"
+    },
+    {
+      "at": "2026-09-11T21:54:23.513Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/gl.js"
+    },
+    {
+      "at": "2026-09-11T21:54:23.515Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/open-rebellion.wasm"
+    },
+    {
+      "at": "2026-09-11T21:54:23.688Z",
+      "kind": "request",
+      "url": "http://127.0.0.1:8765/data/runtime.orpk"
+    }
+  ],
+  "response": [
+    {
+      "at": "2026-09-11T21:54:23.509Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/?p46d-alliance-scroll=1789163663495",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T21:54:23.514Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/gl.js",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T21:54:23.516Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/open-rebellion.wasm",
+      "status": 200
+    },
+    {
+      "at": "2026-09-11T21:54:23.689Z",
+      "kind": "response",
+      "url": "http://127.0.0.1:8765/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "wasm": [
+    {
+      "at": "2026-09-11T21:54:23.687Z",
+      "kind": "wasm",
+      "sha256": "7dcdd00685c9e73c6bf7d1cf41020c5a3603f71497fe839d791224303091976f",
+      "bytes": 5703813
+    }
+  ],
+  "pack": [
+    {
+      "at": "2026-09-11T21:54:36.475Z",
+      "kind": "pack",
+      "sha256": "1ce8e2370d037423ad20683ff747245548b3eca453305596a45ef3083899a862",
+      "bytes": 36156163
+    }
+  ],
+  "music-check": [
+    {
+      "at": "2026-09-11T21:54:36.743Z",
+      "kind": "music-check",
+      "state": "false"
+    },
+    {
+      "at": "2026-09-11T21:55:31.028Z",
+      "kind": "music-check",
+      "state": "false"
+    }
+  ],
+  "fixture-installed": [
+    {
+      "at": "2026-09-11T21:55:31.028Z",
+      "kind": "fixture-installed",
+      "slot": 0,
+      "sha256": "12e00eb9cc85c2d0892f9207ef53de87bc5fb6c9e9db882ec90a6a940a84e4be"
+    }
+  ],
+  "environment": [
+    {
+      "at": "2026-09-11T21:56:40.208Z",
+      "kind": "environment",
+      "version": "151.0.7922.34",
+      "viewport": {
+        "width": 1000,
+        "height": 700
+      }
+    },
+    {
+      "at": "2026-09-11T21:57:43.901Z",
+      "kind": "environment",
+      "version": "151.0.7922.34",
+      "viewport": {
+        "width": 1000,
+        "height": 700
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "at": "2026-09-11T21:58:40.623Z",
+      "kind": "cleanup",
+      "browserClosed": true
+    }
+  ],
+  "errors": [],
+  "arrow_checks": [
+    {
+      "width": 640,
+      "direction": "up",
+      "pressed_difference_bounds": [
+        213,
+        82,
+        225,
+        88
+      ],
+      "normal_equals_released": true
+    },
+    {
+      "width": 640,
+      "direction": "down",
+      "pressed_difference_bounds": [
+        213,
+        288,
+        225,
+        294
+      ],
+      "normal_equals_released": true
+    },
+    {
+      "width": 1000,
+      "direction": "up",
+      "pressed_difference_bounds": [
+        311,
+        120,
+        329,
+        129
+      ],
+      "normal_equals_released": true
+    },
+    {
+      "width": 1000,
+      "direction": "down",
+      "pressed_difference_bounds": [
+        311,
+        420,
+        329,
+        429
+      ],
+      "normal_equals_released": true
+    }
+  ],
+  "state_checks": [
+    {
+      "width": 640,
+      "pair": [
+        "bottom",
+        "bottom-clamped"
+      ],
+      "identical": true,
+      "difference_bounds": null
+    },
+    {
+      "width": 640,
+      "pair": [
+        "top-return",
+        "top-clamped"
+      ],
+      "identical": true,
+      "difference_bounds": null
+    },
+    {
+      "width": 640,
+      "pair": [
+        "selected",
+        "restored"
+      ],
+      "identical": true,
+      "difference_bounds": null
+    },
+    {
+      "width": 640,
+      "pair": [
+        "top",
+        "down-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        14,
+        76,
+        203,
+        261
+      ]
+    },
+    {
+      "width": 640,
+      "pair": [
+        "bottom",
+        "up-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        14,
+        76,
+        203,
+        261
+      ]
+    },
+    {
+      "width": 640,
+      "pair": [
+        "bottom",
+        "selected"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        5,
+        215,
+        73,
+        242
+      ]
+    },
+    {
+      "width": 640,
+      "pair": [
+        "down-pressed",
+        "down-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        14,
+        76,
+        225,
+        294
+      ]
+    },
+    {
+      "width": 640,
+      "pair": [
+        "up-pressed",
+        "up-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        5,
+        76,
+        225,
+        261
+      ]
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "bottom",
+        "bottom-clamped"
+      ],
+      "identical": true,
+      "difference_bounds": null
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "top-return",
+        "top-clamped"
+      ],
+      "identical": true,
+      "difference_bounds": null
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "selected",
+        "restored"
+      ],
+      "identical": true,
+      "difference_bounds": null
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "top",
+        "down-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        20,
+        111,
+        296,
+        369
+      ]
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "bottom",
+        "up-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        20,
+        111,
+        296,
+        383
+      ]
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "bottom",
+        "selected"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        8,
+        314,
+        107,
+        353
+      ]
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "down-pressed",
+        "down-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        20,
+        111,
+        329,
+        429
+      ]
+    },
+    {
+      "width": 1000,
+      "pair": [
+        "up-pressed",
+        "up-1"
+      ],
+      "identical": false,
+      "difference_bounds": [
+        8,
+        111,
+        329,
+        383
+      ]
+    }
+  ],
+  "pre_navigation_launch_diagnostics": 2,
+  "result": "PASS: Alliance overflow coverage gap at both 640x480 and 1000x700"
+}

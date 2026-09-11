@@ -997,7 +997,7 @@
         123,
         124
       ],
-      "current_implementation": "UIP-B01 replaces the custom right SidePanel with first-pass original 235x360 sector and 226x304 detailed-system shells. Original planet pictures, placement, relationship title art, six core tab resource families, close, sector return, double-click routing, focus, and pointer occlusion work in both factions. Complete item compositions, commands, indicators, uncommon states, and the full A0/browser matrix remain open.",
+      "current_implementation": "UIP-B01 replaces the custom right SidePanel with original 235x360 sector and 226x304 detailed-system shells. Original planet pictures, placement, relationship title art, six core tab resource families, close, sector return, double-click routing, foreground focus, and pointer occlusion work in both factions. P46D adds source-mapped GOKRES miniatures, displayed entity labels, bounded original-scrollbar navigation, and coarse current-intelligence gating. Nested compositions, exact intelligence semantics, commands, indicators, uncommon states, and the full A0/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-003"
       ],
@@ -1113,7 +1113,7 @@
         61,
         66
       ],
-      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab and window position. Exact active and inactive rail thumbnails, multiple-window visual comparison, and the complete A0/browser matrix remain open.",
+      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab, selected item, scroll row, and window position. Detailed-system windows retain foreground ownership over sector windows. Exact active and inactive rail thumbnails and the complete A0 multiwindow/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-011"
@@ -1778,11 +1778,7 @@
         "UIP-F-007"
       ],
       "reverse_engineering_package_ids": [
-        "RE-A0-01",
-        "RE-STR-02",
-        "RE-OBJ-01",
-        "RE-OPT-01",
-        "RE-ENC-01"
+        "RE-STR-02"
       ],
       "acceptance_cells": [
         {
@@ -2036,7 +2032,7 @@
       "phase": "object_management",
       "title": "System Finder, System window, and System Defenses",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "finder",
         "filtered",
@@ -2071,7 +2067,7 @@
         123,
         124
       ],
-      "current_implementation": "Original finder and tabbed windows are absent; the system sidebar is a replacement.",
+      "current_implementation": "The replacement system sidebar is removed. The original detailed-system shell and six bitmap tabs render source-mapped character, fleet, defense, manufacturing, troop, special-force, and production miniatures with displayed labels, selection, bounded scrollbar navigation, and coarse current-intelligence gating. Nested object status, contents, drag and command paths, finder windows, exact intelligence semantics, uncommon states, and the complete A0/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-003",
         "UIP-F-007"

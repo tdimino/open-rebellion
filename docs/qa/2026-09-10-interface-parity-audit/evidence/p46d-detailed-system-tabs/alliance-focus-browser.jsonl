@@ -1,0 +1,105 @@
+{"at":"2026-09-11T22:00:59.838Z","kind":"run-start","name":"alliance-focus"}
+{"at":"2026-09-11T22:00:59.840Z","kind":"request","url":"http://127.0.0.1:8765/?p46d-alliance-focus=1789164059838"}
+{"at":"2026-09-11T22:00:59.852Z","kind":"response","url":"http://127.0.0.1:8765/?p46d-alliance-focus=1789164059838","status":200}
+{"at":"2026-09-11T22:00:59.856Z","kind":"request","url":"http://127.0.0.1:8765/gl.js"}
+{"at":"2026-09-11T22:00:59.857Z","kind":"response","url":"http://127.0.0.1:8765/gl.js","status":200}
+{"at":"2026-09-11T22:00:59.861Z","kind":"request","url":"http://127.0.0.1:8765/open-rebellion.wasm"}
+{"at":"2026-09-11T22:00:59.862Z","kind":"response","url":"http://127.0.0.1:8765/open-rebellion.wasm","status":200}
+{"at":"2026-09-11T22:00:59.871Z","kind":"console","type":"log","text":"Plugin open_rebellion_replay is present in JS bundle, but is not used in the rust code."}
+{"at":"2026-09-11T22:00:59.984Z","kind":"console","type":"info","text":"[assets] render_profile=original-parity"}
+{"at":"2026-09-11T22:01:00.028Z","kind":"wasm","sha256":"7dcdd00685c9e73c6bf7d1cf41020c5a3603f71497fe839d791224303091976f","bytes":5703813}
+{"at":"2026-09-11T22:01:00.030Z","kind":"request","url":"http://127.0.0.1:8765/data/runtime.orpk"}
+{"at":"2026-09-11T22:01:00.031Z","kind":"response","url":"http://127.0.0.1:8765/data/runtime.orpk","status":200}
+{"at":"2026-09-11T22:01:00.096Z","kind":"console","type":"info","text":"runtime_asset_pack loaded game_files=52 ui_bitmaps=2303 advisor_frames=3988 audio_files=5 bytes=36156163"}
+{"at":"2026-09-11T22:01:12.761Z","kind":"pack","sha256":"1ce8e2370d037423ad20683ff747245548b3eca453305596a45ef3083899a862","bytes":36156163}
+{"at":"2026-09-11T22:01:12.762Z","kind":"startup-complete"}
+{"at":"2026-09-11T22:01:12.775Z","kind":"input","method":"press","args":["Enter"]}
+{"at":"2026-09-11T22:01:12.777Z","kind":"console","type":"info","text":"[audio] menu_sfx=MenuSelect resource=8004"}
+{"at":"2026-09-11T22:01:12.777Z","kind":"console","type":"info","text":"[audio] menu_music_enabled=false"}
+{"at":"2026-09-11T22:01:12.777Z","kind":"console","type":"info","text":"[audio] music_volume=0.00 muted=false music_muted=true"}
+{"at":"2026-09-11T22:01:13.030Z","kind":"music-check","state":"false"}
+{"at":"2026-09-11T22:01:13.031Z","kind":"fixture","source":"/private/tmp/open-rebellion-p46d-final-r2/alliance-overflow/","sha256":"12e00eb9cc85c2d0892f9207ef53de87bc5fb6c9e9db882ec90a6a940a84e4be"}
+{"at":"2026-09-11T22:01:13.035Z","kind":"input","method":"press","args":["Enter"]}
+{"at":"2026-09-11T22:01:13.038Z","kind":"console","type":"info","text":"[audio] menu_sfx=MenuLoadOptions resource=8001"}
+{"at":"2026-09-11T22:01:13.287Z","kind":"input","method":"click","args":[275,136,{"delay":90}]}
+{"at":"2026-09-11T22:01:13.532Z","kind":"input","method":"click","args":[154,411,{"delay":90}]}
+{"at":"2026-09-11T22:01:13.638Z","kind":"console","type":"info","text":"load_state_fingerprint slot=0 tick=0 fingerprint=v1:5970b97629b12c71 verified=true"}
+{"at":"2026-09-11T22:01:13.639Z","kind":"console","type":"info","text":"[campaign] loaded configuration=Easy, Large Galaxy, Standard Game"}
+{"at":"2026-09-11T22:01:13.652Z","kind":"console","type":"info","text":"[advisor] loaded authentic source=alsprite-dll primary_resources=2001..2024 primary_frames=24 secondary_resources=3331..3346 secondary_frames=16"}
+{"at":"2026-09-11T22:01:14.379Z","kind":"input","method":"click","args":[124,144,{"delay":90}]}
+{"at":"2026-09-11T22:01:14.623Z","kind":"input","method":"click","args":[163,209,{"delay":90}]}
+{"at":"2026-09-11T22:01:14.870Z","kind":"input","method":"click","args":[163,209,{"delay":90}]}
+{"at":"2026-09-11T22:01:15.114Z","kind":"input","method":"click","args":[370,96,{"delay":90}]}
+{"at":"2026-09-11T22:01:15.358Z","kind":"input","method":"click","args":[285,44,{"delay":90}]}
+{"at":"2026-09-11T22:01:15.601Z","kind":"input","method":"move","args":[320,230]}
+{"at":"2026-09-11T22:01:15.603Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:15.700Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:15.792Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:15.887Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:15.977Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:16.072Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:16.164Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:16.255Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:16.350Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:16.441Z","kind":"input","method":"wheel","args":[0,500]}
+{"at":"2026-09-11T22:01:16.533Z","kind":"input","method":"move","args":[405,220]}
+{"at":"2026-09-11T22:01:16.539Z","kind":"input","method":"wheel","args":[0,-1000]}
+{"at":"2026-09-11T22:01:16.816Z","kind":"input","method":"click","args":[424,222,{"delay":90}]}
+{"at":"2026-09-11T22:01:17.060Z","kind":"input","method":"click","args":[424,222,{"delay":90}]}
+{"at":"2026-09-11T22:01:17.305Z","kind":"input","method":"click","args":[180,244,{"delay":90}]}
+{"at":"2026-09-11T22:01:17.548Z","kind":"input","method":"click","args":[180,244,{"delay":90}]}
+{"at":"2026-09-11T22:01:17.793Z","kind":"input","method":"click","args":[575,70,{"delay":90}]}
+{"at":"2026-09-11T22:01:18.090Z","kind":"screenshot","name":"setup"}
+{"at":"2026-09-11T22:01:31.425Z","kind":"input","method":"click","args":[370,96,{"delay":90}]}
+{"at":"2026-09-11T22:01:31.668Z","kind":"input","method":"click","args":[170,244,{"delay":90}]}
+{"at":"2026-09-11T22:01:31.912Z","kind":"input","method":"click","args":[170,244,{"delay":90}]}
+{"at":"2026-09-11T22:01:32.156Z","kind":"input","method":"click","args":[575,70,{"delay":90}]}
+{"at":"2026-09-11T22:01:32.490Z","kind":"screenshot","name":"two-windows-setup"}
+{"at":"2026-09-11T22:02:19.356Z","kind":"input","method":"click","args":[172,96,{"delay":90}]}
+{"at":"2026-09-11T22:02:19.598Z","kind":"input","method":"click","args":[384,96,{"delay":90}]}
+{"at":"2026-09-11T22:02:19.842Z","kind":"input","method":"click","args":[403,209,{"delay":90}]}
+{"at":"2026-09-11T22:02:20.087Z","kind":"input","method":"click","args":[403,209,{"delay":90}]}
+{"at":"2026-09-11T22:02:20.419Z","kind":"screenshot","name":"separated-setup"}
+{"at":"2026-09-11T22:02:33.657Z","kind":"input","method":"dblclick","args":[403,209,{"delay":90}]}
+{"at":"2026-09-11T22:02:33.657Z","kind":"input","method":"click","args":[403,209,{"delay":90,"clickCount":2}]}
+{"at":"2026-09-11T22:02:34.392Z","kind":"screenshot","name":"selonia-raised-setup"}
+{"at":"2026-09-11T22:02:44.129Z","kind":"input","method":"dblclick","args":[170,244,{"delay":90}]}
+{"at":"2026-09-11T22:02:44.130Z","kind":"input","method":"click","args":[170,244,{"delay":90,"clickCount":2}]}
+{"at":"2026-09-11T22:02:44.875Z","kind":"screenshot","name":"ready-two-owned-details"}
+{"at":"2026-09-11T22:03:07.639Z","kind":"input","method":"click","args":[260,96,{"delay":90}]}
+{"at":"2026-09-11T22:03:07.884Z","kind":"input","method":"click","args":[229,122,{"delay":90}]}
+{"at":"2026-09-11T22:03:08.129Z","kind":"input","method":"click","args":[190,122,{"delay":90}]}
+{"at":"2026-09-11T22:03:08.374Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:08.508Z","kind":"screenshot","name":"alliance-640-yavin-before"}
+{"at":"2026-09-11T22:03:08.508Z","kind":"input","method":"click","args":[455,96,{"delay":90}]}
+{"at":"2026-09-11T22:03:08.752Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:08.886Z","kind":"screenshot","name":"alliance-640-selonia-foreground"}
+{"at":"2026-09-11T22:03:08.886Z","kind":"input","method":"click","args":[350,175,{"delay":90}]}
+{"at":"2026-09-11T22:03:09.132Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:09.266Z","kind":"screenshot","name":"alliance-640-empty-click"}
+{"at":"2026-09-11T22:03:09.266Z","kind":"input","method":"click","args":[260,96,{"delay":90}]}
+{"at":"2026-09-11T22:03:09.508Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:09.641Z","kind":"screenshot","name":"alliance-640-yavin-after"}
+{"at":"2026-09-11T22:03:09.641Z","kind":"input","method":"click","args":[350,175,{"delay":90}]}
+{"at":"2026-09-11T22:03:09.883Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:10.021Z","kind":"screenshot","name":"alliance-640-direct-selection-control"}
+{"at":"2026-09-11T22:03:10.426Z","kind":"input","method":"click","args":[412.5,140,{"delay":90}]}
+{"at":"2026-09-11T22:03:10.669Z","kind":"input","method":"click","args":[367.2916666666667,177.91666666666666,{"delay":90}]}
+{"at":"2026-09-11T22:03:10.915Z","kind":"input","method":"click","args":[310.4166666666667,177.91666666666666,{"delay":90}]}
+{"at":"2026-09-11T22:03:11.158Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:11.313Z","kind":"screenshot","name":"alliance-1000-yavin-before"}
+{"at":"2026-09-11T22:03:11.313Z","kind":"input","method":"click","args":[696.875,140,{"delay":90}]}
+{"at":"2026-09-11T22:03:11.558Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:11.712Z","kind":"screenshot","name":"alliance-1000-selonia-foreground"}
+{"at":"2026-09-11T22:03:11.712Z","kind":"input","method":"click","args":[543.75,255.20833333333331,{"delay":90}]}
+{"at":"2026-09-11T22:03:11.957Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:12.097Z","kind":"screenshot","name":"alliance-1000-empty-click"}
+{"at":"2026-09-11T22:03:12.097Z","kind":"input","method":"click","args":[412.5,140,{"delay":90}]}
+{"at":"2026-09-11T22:03:12.343Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:12.479Z","kind":"screenshot","name":"alliance-1000-yavin-after"}
+{"at":"2026-09-11T22:03:12.479Z","kind":"input","method":"click","args":[543.75,255.20833333333331,{"delay":90}]}
+{"at":"2026-09-11T22:03:12.722Z","kind":"input","method":"move","args":[10,10]}
+{"at":"2026-09-11T22:03:12.849Z","kind":"screenshot","name":"alliance-1000-direct-selection-control"}
+{"at":"2026-09-11T22:03:12.849Z","kind":"environment","version":"151.0.7922.34","viewport":{"width":1000,"height":700}}
+{"at":"2026-09-11T22:03:12.849Z","kind":"final-health","requests":4,"responses":[{"at":"2026-09-11T22:00:59.852Z","kind":"response","url":"http://127.0.0.1:8765/?p46d-alliance-focus=1789164059838","status":200},{"at":"2026-09-11T22:00:59.857Z","kind":"response","url":"http://127.0.0.1:8765/gl.js","status":200},{"at":"2026-09-11T22:00:59.862Z","kind":"response","url":"http://127.0.0.1:8765/open-rebellion.wasm","status":200},{"at":"2026-09-11T22:01:00.031Z","kind":"response","url":"http://127.0.0.1:8765/data/runtime.orpk","status":200}],"errors":[]}
+{"at":"2026-09-11T22:03:36.716Z","kind":"cleanup","browserClosed":true}

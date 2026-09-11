@@ -13,10 +13,10 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 17 to 20% |
-| Practical interface scope remaining | approximately 80 to 83% |
+| Practical interface scope materially tackled | approximately 19 to 22% |
+| Practical interface scope remaining | approximately 78 to 81% |
 | Required surface families | 43 |
-| Family status | 0 complete, 7 partial, 36 fail |
+| Family status | 0 complete, 8 partial, 35 fail |
 | Strictly accepted required cells | 0 of 564 |
 
 The practical percentage measures scoped implementation work and guides the
@@ -43,15 +43,20 @@ This explains the observed symptoms:
   original destination windows remain closed instead of opening replacement
   panels. First-pass original sector and detailed system shells now replace
   the invented sidebar, including double-click routing, core tabs, and the
-  rail lifecycle. Their item-level compositions remain open. The replacement
-  message and status bars are also withheld because
+  rail lifecycle. All six tabs now render source-mapped GOKRES miniatures and
+  displayed entity labels within the original three-column scrolled viewport.
+  Coarse current-intelligence gating prevents stale hostile views from exposing
+  opposing objects. Nested object compositions, exact intelligence semantics,
+  and commands remain open. The replacement message and status
+  bars are also withheld because
   they covered the original controls. Their authentic versions remain open.
 - The galaxy is drawn from a dark fill, vector circles, text labels, sector
   outlines, and 5×5 facility squares instead of the original starfield,
   Galactic Information Display rules, and bitmap marker families.
 - Selecting a system now opens a recovered modeless sector shell. Double-click
   opens the original detailed-system shell and core bitmap tabs. Illustrated
-  item contents, drag actions, complete state variants, and exact rail
+  first-pass item contents, bounded scrollbar navigation, and selection work.
+  Nested contents, drag actions, complete state variants, and exact rail
   thumbnails remain incomplete.
 - The four original advisor idle runs now follow the shared canvas transform in
   native and WASM. Original action, voice, and chrome behavior remains
@@ -71,7 +76,7 @@ The local source inspection establishes the implementation causes:
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
 | Synthetic galaxy and glyphs | `crates/rebellion-render/src/lib.rs` | Manual pp. 66–73 and official Steam faction captures |
-| Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors and [UIP-B01 evidence](evidence/2026-09-11-strategic-window-navigation.md) |
+| Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
@@ -93,9 +98,12 @@ dialog, encyclopedia, advisor-control, and voice families remain incomplete.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
-and command paths. The reference rail, destination-window compositions, other
-controls, and the other discoveries remain open. Static discoveries do not
-replace required original-runtime visual acceptance.
+and command paths. P46C and P46D add the first reference-rail lifecycle,
+sector/system window journey, source-mapped tab items, coarse
+current-intelligence gating, and recovered scrollbar art. Exact rail
+thumbnails, destination-window compositions, nested object contents, exact
+intelligence semantics, commands, other controls, and uncommon states remain open. Static
+discoveries do not replace required original-runtime visual acceptance.
 
 ## Immediate findings
 
@@ -103,7 +111,7 @@ replace required original-runtime visual acceptance.
 |----|----------|---------|--------|
 | UIP-F-001 | P0 | The shell, viewport scaling, six primary controls, and first rail lifecycle pass scoped checkpoints; the full control matrix, exact rail thumbnails, and required aperture content remain incomplete. | partial |
 | UIP-F-002 | P0 | Galaxy, stars, system markers, sector hulls, and facility indicators use synthetic primitives and incomplete rules. | fail |
-| UIP-F-003 | P0 | First-pass original sector and detailed-system shells replace the invented sidebar; complete tab contents, commands, indicators, and uncommon states remain open. | partial |
+| UIP-F-003 | P0 | Original sector and detailed-system shells replace the invented sidebar; all six tabs have first-pass source-mapped items, while nested contents, commands, indicators, and uncommon states remain open. | partial |
 | UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
 | UIP-F-005 | P0 | Runtime pack v2 includes ALSPRITE and EMSPRITE BMP/type-302 content; ALBRIEF, EMBRIEF, REBDLOG, EDATA, action controls, and voice remain omitted. | partial |
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
@@ -138,7 +146,7 @@ non-original families across:
 
 It now assigns 569 stable baseline cell IDs: 564 required cells and five
 excluded extension cells. All required cells remain pending or open because
-P46A and P46B did not execute the complete native and browser matrix. All 43 required
+P46A through P46D did not execute the complete native and browser matrix. All 43 required
 families link to at least one of 27
 reverse-engineering, resource, runtime-capture, or replacement-removal packages.
 The baseline cells are durable requirement identities. Compound requirements
@@ -283,8 +291,9 @@ Documentation, screenshots, and machine-readable cells are updated in the same
 atomic commit as each verified implementation tranche.
 
 P46A completes the strategic canvas checkpoint within `UIP-T01`. P46B restores
-the six primary controls, but `CMD-10` remains partial pending A0 captures, its
-full matrix, the disabled path, and original destination windows. GID and map
-art, other controls, the window-reference rail, original system windows, the
-replacement sidebar, and replacement message and status surfaces remain open.
-`CMD-01`, `CMD-10`, `UIP-T01`, and project-wide interface parity do not pass.
+the six primary controls. P46C and P46D restore the first sector-to-system
+journey plus source-mapped core-tab items and bounded scrolling. GID and map
+art, other controls, exact rail thumbnails, nested object compositions,
+commands, uncommon states, replacement message and status surfaces, and the A0
+matrix remain open. `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, `OBJ-02`,
+`UIP-T01`, and project-wide interface parity do not pass.

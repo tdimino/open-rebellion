@@ -27,6 +27,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md)
   for the sector, system-shell, tab, and rail checkpoint and its remaining
   item-level boundaries.
+- Review the [P46D detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items.md)
+  for source-mapped item miniatures, bounded scrolling, selection, coarse
+  current-intelligence gating, and the remaining object-window boundaries.
 
 ## Suggested contribution lanes
 
@@ -51,9 +54,9 @@ stage them from a contributor-owned installation.
 
 ## Progress snapshot
 
-The practical implementation estimate is approximately 17 to 20% tackled and
-80 to 83% remaining. Formally, the ledger has 43 required families: 0 complete,
-7 partial, and 36 failing. All 564 required cells remain pending until their
+The practical implementation estimate is approximately 19 to 22% tackled and
+78 to 81% remaining. Formally, the ledger has 43 required families: 0 complete,
+8 partial, and 35 failing. All 564 required cells remain pending until their
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
@@ -70,7 +73,11 @@ the [P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
 UIP-B01 now replaces the invented sidebar with first-pass original sector and
 system shells and a working 12-slot rail lifecycle for both factions. See the
 [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md).
+P46D populates all six system tabs with source-mapped GOKRES miniatures,
+displayed entity labels, recovered scrollbar art, bounded interaction,
+preserved selection, and coarse current-intelligence gating.
+See the [detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items.md).
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
-full control matrix, GID and map art, item-level system contents, exact rail
-thumbnails, original destination windows, and replacement surfaces are not
-complete.
+full control matrix, GID and map art, nested object compositions and commands,
+exact rail thumbnails, original destination windows, and replacement surfaces
+are not complete.

@@ -485,9 +485,17 @@ would tune around known simulation feedback defects.
 - [x] Complete the first UIP-B01 strategic-navigation checkpoint: replace the
   invented sidebar with recovered sector and detailed-system shells, original
   planet and tab resources, double-click routing, modeless focus and close,
-  plus both factions' 12-slot minimize/restore rail geometry. Item-level tab
+  plus both factions' 12-slot minimize/restore rail geometry. Nested tab
   compositions, commands, exact rail thumbnails, uncommon states, and the
   complete `CMD-03` and `CMD-04` acceptance matrices remain open.
+- [x] Complete P46D / the detailed-system item checkpoint: populate all six
+  core tabs with source-mapped GOKRES miniatures and displayed entity labels;
+  restore selection, foreground focus, and the three-column scrolled viewport
+  with STRATEGY `10365` through `10369`; preserve tab, item, and scroll state
+  through rail restoration; and prevent stale hostile views from exposing
+  opposing objects without current system intelligence. Nested compositions,
+  drag and command paths, exact original intelligence semantics, uncommon
+  states, exact rail thumbnails, and A0 acceptance remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

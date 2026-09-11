@@ -19,10 +19,10 @@ full WASM build, Astra review, commit, and push after every small control.
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 17 to 20% |
-| Practical interface scope remaining | approximately 80 to 83% |
+| Practical interface scope materially tackled | approximately 19 to 22% |
+| Practical interface scope remaining | approximately 78 to 81% |
 | Required surface families | 43 |
-| Family status | 0 complete, 7 partial, 36 fail |
+| Family status | 0 complete, 8 partial, 35 fail |
 | Strictly accepted required cells | 0 of 564 |
 
 The practical percentage is a planning estimate based on scoped implementation
@@ -70,21 +70,24 @@ matrix passes.
 
 ## Current bundle: UIP-B01
 
-P46C and P46D implement the first UIP-B01 checkpoint. Selecting a galaxy system
-opens the recovered 235x360 modeless sector window instead of the invented
-right sidebar. Original planet resources, picture mapping, placement, faction
-columns, close and side-switch controls, stacking, exact pointer boundaries,
-and system double-click routing are present. The original 226x304 system shell,
-relationship title art, six core tab resource families, close, sector return,
-minimize, and both faction rail geometries are also active. The rail preserves
-the selected tab and window position when restored.
+P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
+the recovered 235x360 modeless sector window instead of the invented right
+sidebar. Original planet resources, placement, faction columns, controls,
+stacking, pointer boundaries, system double-click routing, the 226x304 system
+shell, and both faction rail geometries are active.
 
-The checkpoint has passed the primary browser journey for both factions at
-640x480 and a responsive viewport. UIP-B01 remains open for complete tab-item
-compositions, drag and command behavior, exact active and inactive rail
-thumbnails, multiple-window A0 comparison, complete sector indicators, and
-uncommon system states. No pending cell is promoted solely by this partial
-checkpoint.
+P46D adds source-mapped GOKRES miniatures and displayed entity labels to all
+six system tabs, including personnel, fleets, defenses, manufacturing, troops,
+special forces, and production. Three-column overflow is bounded by the
+recovered STRATEGY scrollbar art. Selection, tab clearing, foreground focus,
+rail restoration, and coarse current-intelligence gating are preserved. Both
+checkpoints pass their scoped browser journeys for both factions at 640x480
+and a responsive viewport.
+
+UIP-B01 remains open for nested fleet and object compositions, drag and command
+behavior, exact hostile-intelligence semantics, active and inactive rail
+thumbnails, complete sector indicators, uncommon system states, and the A0
+matrix. No pending cell is promoted solely by these partial checkpoints.
 
 ## Bundle acceptance record
 

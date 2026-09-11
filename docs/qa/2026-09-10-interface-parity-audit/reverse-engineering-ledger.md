@@ -61,9 +61,14 @@ The first UIP-B01 checkpoint also replaces the invented sidebar with recovered
 235x360 sector and 226x304 detailed-system shells. Original planet pictures,
 relationship title art, six tab resource families, single and double-click
 routing, pointer occlusion, and rail transitions work in both faction shells.
-Exact item compositions, drag and command semantics, uncommon states, and the
-complete A0 matrix remain open. See the
-[navigation evidence](evidence/2026-09-11-strategic-window-navigation.md).
+P46D maps characters, fleet representatives, facilities, regiments, special
+forces, mines, and refineries to their GOKRES miniatures. It also restores the
+three-column item viewport, STRATEGY `10365` through `10369` scrollbar art,
+selection, displayed labels, bounded input, and coarse current-intelligence
+gating for opposing objects. Nested compositions, exact intelligence rules,
+drag and command semantics, uncommon states, and the complete A0 matrix remain open. See the
+[navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) and
+[tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md).
 
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a
