@@ -199,7 +199,7 @@ pub enum EventCondition {
     /// Character is a Jedi trainer (can teach others).
     CharacterIsJediTrainer { character: CharacterKey },
 
-    /// A specific event has NOT yet fired (inverse of EventFired).
+    /// A specific event has NOT yet fired (inverse of `EventFired`).
     EventNotFired { id: u32 },
 
     /// All listed characters are at the same system (any system).
@@ -422,6 +422,7 @@ pub struct EventState {
 }
 
 impl EventState {
+    #[must_use]
     pub fn new() -> Self {
         EventState {
             events: Vec::new(),
@@ -447,11 +448,13 @@ impl EventState {
     }
 
     /// Whether event `id` has ever been fired.
+    #[must_use]
     pub fn has_fired(&self, id: u32) -> bool {
         self.fired_ids.contains(&id)
     }
 
     /// All events (read-only, for inspection or serialization).
+    #[must_use]
     pub fn events(&self) -> &[GameEvent] {
         &self.events
     }
@@ -509,12 +512,12 @@ impl EventSystem {
         tick_events: &[TickEvent],
         rng_rolls: &[f32],
     ) -> Vec<FiredEvent> {
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return Vec::new();
-        }
+        };
 
         // The current tick is the last tick that completed this frame.
-        let current_tick = tick_events.last().unwrap().tick;
+        let current_tick = last_tick_event.tick;
 
         let mut fired = Vec::new();
         let mut rng_cursor = 0usize;
@@ -589,6 +592,10 @@ fn evaluate_conditions(
     true // empty condition list always fires
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn evaluate_condition(
     condition: &EventCondition,
     world: &GameWorld,
@@ -622,28 +629,24 @@ fn evaluate_condition(
         } => world
             .characters
             .get(*character)
-            .map(|c| c.force_tier >= *min_tier)
-            .unwrap_or(false),
+            .is_some_and(|c| c.force_tier >= *min_tier),
 
         EventCondition::FactionControlsSystem { faction, system } => world
             .systems
             .get(*system)
-            .map(|s| s.control.is_controlled_by(*faction))
-            .unwrap_or(false),
+            .is_some_and(|s| s.control.is_controlled_by(*faction)),
 
         EventCondition::CharacterIsForceUser { character } => world
             .characters
             .get(*character)
-            .map(|c| c.force_tier > ForceTier::None)
-            .unwrap_or(false),
+            .is_some_and(|c| c.force_tier > ForceTier::None),
 
         EventCondition::CharacterExists { character } => world.characters.contains_key(*character),
 
         EventCondition::CharacterOnMandatoryMission { character } => world
             .characters
             .get(*character)
-            .map(|c| c.on_mandatory_mission)
-            .unwrap_or(false),
+            .is_some_and(|c| c.on_mandatory_mission),
 
         EventCondition::FactionControlsNSystems { faction, min_count } => {
             let count = world
@@ -657,20 +660,17 @@ fn evaluate_condition(
         EventCondition::CharacterForceExperience { character, min_xp } => world
             .characters
             .get(*character)
-            .map(|c| c.force_experience >= *min_xp)
-            .unwrap_or(false),
+            .is_some_and(|c| c.force_experience >= *min_xp),
 
         EventCondition::CharacterIsCaptive { character } => world
             .characters
             .get(*character)
-            .map(|c| c.is_captive)
-            .unwrap_or(false),
+            .is_some_and(|c| c.is_captive),
 
         EventCondition::CharacterIsJediTrainer { character } => world
             .characters
             .get(*character)
-            .map(|c| c.is_jedi_trainer)
-            .unwrap_or(false),
+            .is_some_and(|c| c.is_jedi_trainer),
 
         EventCondition::EventNotFired { id } => !fired_ids.contains(id),
 
@@ -727,8 +727,7 @@ fn evaluate_condition(
             world
                 .characters
                 .get(*character)
-                .map(|c| !c.is_killed && c.current_fleet.is_some())
-                .unwrap_or(false)
+                .is_some_and(|c| !c.is_killed && c.current_fleet.is_some())
         }
 
         EventCondition::CharacterIsKilled { character } => {
@@ -747,17 +746,15 @@ fn evaluate_condition(
             world
                 .characters
                 .get(*character)
-                .map(|c| c.is_killed)
-                .unwrap_or(false)
+                .is_some_and(|c| c.is_killed)
         }
     }
 }
 
 /// Returns true when `character` is in any fleet orbiting `system`.
 fn character_is_at_system(world: &GameWorld, character: CharacterKey, system: SystemKey) -> bool {
-    let sys = match world.systems.get(system) {
-        Some(s) => s,
-        None => return false,
+    let Some(sys) = world.systems.get(system) else {
+        return false;
     };
     for fleet_key in &sys.fleets {
         if let Some(fleet) = world.fleets.get(*fleet_key) {
@@ -802,7 +799,7 @@ mod tests {
     fn event(id: u32, conditions: Vec<EventCondition>, actions: Vec<EventAction>) -> GameEvent {
         GameEvent {
             id,
-            name: format!("event_{}", id),
+            name: format!("event_{id}"),
             conditions,
             actions,
             is_repeatable: false,
@@ -818,7 +815,7 @@ mod tests {
     ) -> GameEvent {
         GameEvent {
             id,
-            name: format!("repeat_{}", id),
+            name: format!("repeat_{id}"),
             conditions,
             actions,
             is_repeatable: true,
@@ -1229,9 +1226,7 @@ mod tests {
                 production_facilities: vec![],
                 is_headquarters: false,
                 is_destroyed: false,
-                control: faction
-                    .map(ControlKind::Controlled)
-                    .unwrap_or(ControlKind::Uncontrolled),
+                control: faction.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
             })
         };
 

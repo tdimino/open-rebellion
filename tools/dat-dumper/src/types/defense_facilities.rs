@@ -12,7 +12,7 @@ pub struct DefenseFacilitiesFile {
 }
 
 /// One record from DEFFACSD.DAT — 60 bytes per entry.
-/// 14 u32 fields (56 bytes) + text_stra_dll_id: u16 + field7: u16 (4 bytes) = 60 bytes.
+/// 14 u32 fields (56 bytes) + `text_stra_dll_id`: u16 + field7: u16 (4 bytes) = 60 bytes.
 #[derive(Debug, Clone, Serialize)]
 pub struct DefenseFacility {
     pub id: u32,

@@ -92,6 +92,9 @@ impl DatRecord for MajorCharactersFile {
 }
 
 impl CharacterEntry {
+    ///
+    /// # Errors
+    /// Returns an error if the input ends before the character record is complete.
     pub fn parse_entry(r: &mut ByteReader) -> anyhow::Result<Self> {
         Ok(Self {
             id: r.read_u32()?,

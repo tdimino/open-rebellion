@@ -191,6 +191,10 @@ pub enum AdvisorFrameError {
 /// renderer adds each literal byte to the corresponding anchor pixel with
 /// wrapping arithmetic before palette lookup. The resource is a delta, not a
 /// standalone transparent image.
+///
+/// # Errors
+/// Returns an error for invalid dimensions, inconsistent anchor data, truncated
+/// payloads, or malformed row offsets and runs.
 pub fn decode_type302_frame(
     bytes: &[u8],
     base: &AdvisorFrameBase,
@@ -315,6 +319,14 @@ fn indexed_frame(
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn decode_anchor_bitmap(bytes: &[u8]) -> Result<AdvisorFrameBase, AdvisorFrameError> {
     if bytes.get(0..2) != Some(b"BM") || bytes.len() < 54 {
         return Err(AdvisorFrameError::InvalidAnchorBitmap);
@@ -485,6 +497,9 @@ pub enum BinError {
 ///
 /// Kept for backwards compatibility and tests. Prefer `parse_advisor_bin_cascade`
 /// for production use.
+///
+/// # Errors
+/// Returns an error if the header or frame list is truncated or invalid.
 pub fn parse_advisor_bin(bytes: &[u8]) -> Result<BinSequence, BinError> {
     if bytes.len() < 2 {
         return Err(BinError::TruncatedHeader {
@@ -533,6 +548,13 @@ pub fn parse_advisor_bin(bytes: &[u8]) -> Result<BinSequence, BinError> {
 ///
 /// v3 and v4 are tried before v2/v1 because the zero-prefix discriminator
 /// (`w0 == 0`) prevents ambiguity with v1/v2 (which require `w0 > 0`).
+///
+/// # Errors
+/// Returns an error if the bytes do not encode a supported, valid BIN sequence.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 pub fn parse_advisor_bin_cascade(bytes: &[u8]) -> Result<BinSequence, BinError> {
     let len = bytes.len();
 
@@ -666,6 +688,7 @@ pub struct AdvisorState {
 
 impl AdvisorState {
     /// Create a new advisor state.
+    #[must_use]
     pub fn new(faction: AdvisorFaction) -> Self {
         Self {
             faction,
@@ -746,8 +769,9 @@ impl AdvisorState {
         if let Some(ref current) = self.current_message {
             if msg.priority > current.priority {
                 // Demote current back to front of queue.
-                let demoted = self.current_message.take().unwrap();
-                self.queue.push_front(demoted);
+                if let Some(demoted) = self.current_message.take() {
+                    self.queue.push_front(demoted);
+                }
                 self.activate_sequence_for_priority(msg.priority);
                 self.message_timer = msg.display_time;
                 self.current_message = Some(msg);
@@ -781,6 +805,7 @@ impl AdvisorState {
     }
 
     /// Whether the advisor has a message to show.
+    #[must_use]
     pub fn has_message(&self) -> bool {
         self.current_message.is_some()
     }
@@ -1018,10 +1043,18 @@ struct FactionAssetBytes {
     frames: HashMap<u32, Vec<u8>>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn load_authored_faction_frames(
     ctx: &egui::Context,
     faction: AdvisorFaction,
-    assets: FactionAssetBytes,
+    assets: &FactionAssetBytes,
 ) -> FactionFrames {
     let spec = AuthoredFrameSpec::for_faction(faction);
     let Some(palette_bitmap) = assets.bitmaps.get(&spec.primary_anchor) else {
@@ -1121,25 +1154,24 @@ fn load_authored_faction_frames(
         }
     }
 
-    let secondary_base = match assets.bitmaps.get(&spec.secondary_anchor) {
-        Some(bytes) => match decode_anchor_bitmap(bytes) {
+    let secondary_base = if let Some(bytes) = assets.bitmaps.get(&spec.secondary_anchor) {
+        match decode_anchor_bitmap(bytes) {
             Ok(base) => Some(base),
             Err(error) => {
                 macroquad::logging::warn!(
-                    "[advisor] secondary anchor decode failed source={} resource_id={} error={error:?}",
-                    spec.dll_dir, spec.secondary_anchor
-                );
+                "[advisor] secondary anchor decode failed source={} resource_id={} error={error:?}",
+                spec.dll_dir, spec.secondary_anchor
+            );
                 None
             }
-        },
-        None => {
-            macroquad::logging::warn!(
-                "[advisor] missing secondary anchor source={} resource_id={}",
-                spec.dll_dir,
-                spec.secondary_anchor
-            );
-            None
         }
+    } else {
+        macroquad::logging::warn!(
+            "[advisor] missing secondary anchor source={} resource_id={}",
+            spec.dll_dir,
+            spec.secondary_anchor
+        );
+        None
     };
     if let Some(mut secondary_base) = secondary_base {
         let secondary_anchor = match indexed_frame(
@@ -1286,6 +1318,10 @@ fn load_authored_asset_bytes(_asset_root: &Path, faction: AdvisorFaction) -> Fac
 /// Returns primary frames, secondary frames (R2-D2 for Alliance), parsed BIN
 /// sequences from the cascading decoder, and a BMP resource ID lookup map.
 #[cfg(not(target_arch = "wasm32"))]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn load_legacy_faction_frames(
     ctx: &egui::Context,
     sprite_dir: &Path,
@@ -1310,7 +1346,7 @@ fn load_legacy_faction_frames(
     let mut bmp_files: Vec<PathBuf> = std::fs::read_dir(&faction_dir)
         .into_iter()
         .flatten()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| {
             p.extension()
@@ -1325,7 +1361,7 @@ fn load_legacy_faction_frames(
     let mut bin_files: Vec<PathBuf> = std::fs::read_dir(&faction_dir)
         .into_iter()
         .flatten()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| {
             p.extension()
@@ -1334,14 +1370,12 @@ fn load_legacy_faction_frames(
         .collect();
     bin_files.sort();
 
-    for bmp_path in bmp_files.iter() {
-        let bytes = match std::fs::read(bmp_path) {
-            Ok(b) => b,
-            Err(_) => continue,
+    for bmp_path in &bmp_files {
+        let Ok(bytes) = std::fs::read(bmp_path) else {
+            continue;
         };
-        let img = match image::load_from_memory(&bytes) {
-            Ok(i) => i,
-            Err(_) => continue,
+        let Ok(img) = image::load_from_memory(&bytes) else {
+            continue;
         };
         let rgba = img.to_rgba8();
         let (w, h) = rgba.dimensions();
@@ -1357,7 +1391,7 @@ fn load_legacy_faction_frames(
             .and_then(|s| s.parse::<u16>().ok());
 
         let idx = primary.len(); // index BEFORE pushing (secondary frames don't count)
-        let label = format!("advisor_{}_{}", subdir, idx);
+        let label = format!("advisor_{subdir}_{idx}");
         let handle = ctx.load_texture(&label, color_image, TextureOptions::default());
 
         // Alliance: R2-D2 frames are 47×69, C-3PO are 67×116.
@@ -1386,12 +1420,9 @@ fn load_legacy_faction_frames(
     let mut bmp_mapped_count = 0usize;
 
     for bin_path in bin_files {
-        let bytes = match std::fs::read(&bin_path) {
-            Ok(b) => b,
-            Err(_) => {
-                io_failures += 1;
-                continue;
-            }
+        let Ok(bytes) = std::fs::read(&bin_path) else {
+            io_failures += 1;
+            continue;
         };
         match parse_advisor_bin_cascade(&bytes) {
             Ok(sequence) if !sequence.frame_ids.is_empty() => {
@@ -1433,21 +1464,9 @@ fn load_legacy_faction_frames(
             );
         }
         eprintln!(
-            "[advisor] {} BIN files: {}/{} valid ({}%) \
-             [v1={}, v2={}, v3={}, v4={}], \
-             {} bmp-mapped, {} parse-failed, {} empty, {} io-failed",
-            subdir,
-            valid_total,
-            total_bins,
-            pct,
-            valid_v1,
-            valid_v2,
-            valid_v3,
-            valid_v4,
-            bmp_mapped_count,
-            parse_failures,
-            empty,
-            io_failures,
+            "[advisor] {subdir} BIN files: {valid_total}/{total_bins} valid ({pct}%) \
+             [v1={valid_v1}, v2={valid_v2}, v3={valid_v3}, v4={valid_v4}], \
+             {bmp_mapped_count} bmp-mapped, {parse_failures} parse-failed, {empty} empty, {io_failures} io-failed",
         );
     }
 
@@ -1465,8 +1484,11 @@ fn load_faction_frames(
     asset_root: &Path,
     faction: AdvisorFaction,
 ) -> FactionFrames {
-    let authored =
-        load_authored_faction_frames(ctx, faction, load_authored_asset_bytes(asset_root, faction));
+    let authored = load_authored_faction_frames(
+        ctx,
+        faction,
+        &load_authored_asset_bytes(asset_root, faction),
+    );
     if !authored.primary.is_empty() {
         return authored;
     }
@@ -1482,7 +1504,11 @@ fn load_faction_frames(
     asset_root: &Path,
     faction: AdvisorFaction,
 ) -> FactionFrames {
-    load_authored_faction_frames(ctx, faction, load_authored_asset_bytes(asset_root, faction))
+    load_authored_faction_frames(
+        ctx,
+        faction,
+        &load_authored_asset_bytes(asset_root, faction),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1608,24 +1634,21 @@ pub fn advisor_greet(state: &mut AdvisorState) {
 pub fn advisor_mission_result(state: &mut AdvisorState, mission_name: &str, success: bool) {
     let text = if success {
         match state.faction {
-            AdvisorFaction::Alliance => format!(
-                "Wonderful news! The {} mission was a success, sir!",
-                mission_name
-            ),
+            AdvisorFaction::Alliance => {
+                format!("Wonderful news! The {mission_name} mission was a success, sir!")
+            }
             AdvisorFaction::Empire => {
-                format!("The {} operation has succeeded, my Lord.", mission_name)
+                format!("The {mission_name} operation has succeeded, my Lord.")
             }
         }
     } else {
         match state.faction {
-            AdvisorFaction::Alliance => format!(
-                "Oh dear! I'm afraid the {} mission has failed.",
-                mission_name
-            ),
-            AdvisorFaction::Empire => format!(
-                "The {} operation has failed. Most unfortunate, my Lord.",
-                mission_name
-            ),
+            AdvisorFaction::Alliance => {
+                format!("Oh dear! I'm afraid the {mission_name} mission has failed.")
+            }
+            AdvisorFaction::Empire => {
+                format!("The {mission_name} operation has failed. Most unfortunate, my Lord.")
+            }
         }
     };
     state.push_message(AdvisorMessage::new(text, AdvisorPriority::Normal));
@@ -1636,22 +1659,19 @@ pub fn advisor_combat_result(state: &mut AdvisorState, system_name: &str, player
     let text = if player_won {
         match state.faction {
             AdvisorFaction::Alliance => {
-                format!("A great victory at {}! The Force is with us!", system_name)
+                format!("A great victory at {system_name}! The Force is with us!")
             }
-            AdvisorFaction::Empire => format!(
-                "Victory at {}, my Lord. The enemy has been crushed.",
-                system_name
-            ),
+            AdvisorFaction::Empire => {
+                format!("Victory at {system_name}, my Lord. The enemy has been crushed.")
+            }
         }
     } else {
         match state.faction {
-            AdvisorFaction::Alliance => format!(
-                "We've suffered a defeat at {}. We must regroup.",
-                system_name
-            ),
+            AdvisorFaction::Alliance => {
+                format!("We've suffered a defeat at {system_name}. We must regroup.")
+            }
             AdvisorFaction::Empire => format!(
-                "Our forces at {} have been repelled. Reinforcements are advised.",
-                system_name
+                "Our forces at {system_name} have been repelled. Reinforcements are advised."
             ),
         }
     };
@@ -1662,22 +1682,19 @@ pub fn advisor_combat_result(state: &mut AdvisorState, system_name: &str, player
 pub fn advisor_uprising(state: &mut AdvisorState, system_name: &str, gained: bool) {
     let text = if gained {
         match state.faction {
-            AdvisorFaction::Alliance => format!(
-                "Excellent! The people of {} have risen up to join us!",
-                system_name
-            ),
-            AdvisorFaction::Empire => format!(
-                "The population of {} has been brought to heel, my Lord.",
-                system_name
-            ),
+            AdvisorFaction::Alliance => {
+                format!("Excellent! The people of {system_name} have risen up to join us!")
+            }
+            AdvisorFaction::Empire => {
+                format!("The population of {system_name} has been brought to heel, my Lord.")
+            }
         }
     } else {
         match state.faction {
-            AdvisorFaction::Alliance => format!("Oh no! We've lost control of {}!", system_name),
-            AdvisorFaction::Empire => format!(
-                "Unacceptable. {} has slipped from Imperial control.",
-                system_name
-            ),
+            AdvisorFaction::Alliance => format!("Oh no! We've lost control of {system_name}!"),
+            AdvisorFaction::Empire => {
+                format!("Unacceptable. {system_name} has slipped from Imperial control.")
+            }
         }
     };
     state.push_message(AdvisorMessage::new(text, AdvisorPriority::High));
@@ -1692,9 +1709,9 @@ pub fn advisor_death_star(state: &mut AdvisorState, event_text: &str) {
 pub fn advisor_manufacturing_complete(state: &mut AdvisorState, item_name: &str) {
     let text = match state.faction {
         AdvisorFaction::Alliance => {
-            format!("Construction of {} is complete, Commander.", item_name)
+            format!("Construction of {item_name} is complete, Commander.")
         }
-        AdvisorFaction::Empire => format!("{} construction complete, my Lord.", item_name),
+        AdvisorFaction::Empire => format!("{item_name} construction complete, my Lord."),
     };
     state.push_message(AdvisorMessage::new(text, AdvisorPriority::Low));
 }
@@ -1730,6 +1747,10 @@ mod tests {
         assert_close(empire[1].0, canvas_x + 302.0 * scale);
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn type302_fixture() -> Vec<u8> {
         let payload = [
             1, 2, 4, 5, 1, // row 0: skip 1, draw 2, skip 1
@@ -1756,6 +1777,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn indexed_bmp_fixture() -> Vec<u8> {
         let pixel_offset = 14 + 40 + 256 * 4;
         let mut bytes = vec![0; pixel_offset + 8];
@@ -1826,6 +1851,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn authored_loader_stops_each_cumulative_run_at_first_gap_or_error() {
         let spec = AuthoredFrameSpec::for_faction(AdvisorFaction::Alliance);
         let mut assets = FactionAssetBytes::default();
@@ -1852,7 +1881,7 @@ mod tests {
         let loaded = load_authored_faction_frames(
             &egui::Context::default(),
             AdvisorFaction::Alliance,
-            assets,
+            &assets,
         );
 
         assert_eq!(loaded.primary.len(), 2, "later frame after gap was loaded");
@@ -1996,6 +2025,10 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
+    )]
     fn parse_advisor_bin_happy_path() {
         let bytes = [0x03, 0x00, 0x15, 0x05, 0x16, 0x05, 0x17, 0x05];
         let seq = parse_advisor_bin(&bytes).unwrap();

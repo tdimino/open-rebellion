@@ -60,17 +60,17 @@ impl EventLogger {
         // ── Event counts ──────────────────────────────────────────────
         println!("\nEvents by type:");
         for (event_type, count) in &sorted {
-            println!("  {:30} {:>6}", event_type, count);
+            println!("  {event_type:30} {count:>6}");
         }
 
         // ── Galaxy control ────────────────────────────────────────────
         let mut alliance_systems = Vec::new();
         let mut empire_systems = Vec::new();
         let mut neutral_count = 0usize;
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             match sys.control {
                 ControlKind::Controlled(Faction::Alliance) => {
-                    alliance_systems.push(sys.name.as_str())
+                    alliance_systems.push(sys.name.as_str());
                 }
                 ControlKind::Controlled(Faction::Empire) => empire_systems.push(sys.name.as_str()),
                 _ => neutral_count += 1,
@@ -80,16 +80,16 @@ impl EventLogger {
         println!("  Alliance: {} systems", alliance_systems.len());
         if alliance_systems.len() <= 10 {
             for name in &alliance_systems {
-                println!("    - {}", name);
+                println!("    - {name}");
             }
         }
         println!("  Empire:   {} systems", empire_systems.len());
         if empire_systems.len() <= 10 {
             for name in &empire_systems {
-                println!("    - {}", name);
+                println!("    - {name}");
             }
         }
-        println!("  Neutral:  {} systems", neutral_count);
+        println!("  Neutral:  {neutral_count} systems");
 
         // ── Fleets in transit ─────────────────────────────────────────
         if !movement.is_empty() {
@@ -98,18 +98,18 @@ impl EventLogger {
                 let origin = world
                     .systems
                     .get(order.origin)
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("?");
+                    .map_or("?", |s| s.name.as_str());
                 let dest = world
                     .systems
                     .get(order.destination)
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("?");
-                let faction = world
-                    .fleets
-                    .get(order.fleet)
-                    .map(|f| if f.is_alliance { "Alliance" } else { "Empire" })
-                    .unwrap_or("?");
+                    .map_or("?", |s| s.name.as_str());
+                let faction = world.fleets.get(order.fleet).map_or("?", |f| {
+                    if f.is_alliance {
+                        "Alliance"
+                    } else {
+                        "Empire"
+                    }
+                });
                 println!(
                     "  {} fleet: {} → {} ({:.0}%, {} ticks left)",
                     faction,
@@ -137,8 +137,8 @@ impl EventLogger {
             .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Reinforce"))
             .count();
         println!("\nCombat diagnostics:");
-        println!("  Fleet attack orders:     {}", move_fleet_attacks);
-        println!("  Fleet reinforce orders:  {}", move_fleet_reinforce);
+        println!("  Fleet attack orders:     {move_fleet_attacks}");
+        println!("  Fleet reinforce orders:  {move_fleet_reinforce}");
         println!(
             "  Space battles:           {}",
             counts.get("combat_space").unwrap_or(&0)

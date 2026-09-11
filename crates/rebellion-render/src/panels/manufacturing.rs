@@ -44,6 +44,10 @@ pub enum AddSelection {
 ///
 /// `mfg_state` is a read-only snapshot of the current queues — the panel never
 /// mutates it directly.  All mutations are returned as `PanelAction`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn draw_manufacturing(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -82,7 +86,8 @@ pub fn draw_manufacturing(
                     }
 
                     let queue = mfg_state.queue(sys_key);
-                    let queue_len = queue.map(|q| q.len()).unwrap_or(0);
+                    let queue_len =
+                        queue.map_or(0, rebellion_core::manufacturing::ProductionQueue::len);
                     let is_expanded = panel_state.expanded_system == Some(sys_key);
 
                     // ── System header row ─────────────────────────────────────
@@ -244,40 +249,36 @@ pub fn draw_manufacturing(
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new("Ship:").small());
                                     let selected_ship_name = match &panel_state.add_selection {
-                                        AddSelection::CapitalShip(i) => ships
-                                            .get(*i)
-                                            .map(|(_, c)| c.name.as_str())
-                                            .unwrap_or("—"),
+                                        AddSelection::CapitalShip(i) => {
+                                            ships.get(*i).map_or("—", |(_, c)| c.name.as_str())
+                                        }
                                         _ => "—",
                                     };
-                                    egui::ComboBox::from_id_salt(format!(
-                                        "ship_combo_{:?}",
-                                        sys_key
-                                    ))
-                                    .selected_text(selected_ship_name)
-                                    .show_ui(ui, |ui| {
-                                        for (i, (_, class)) in ships.iter().enumerate() {
-                                            let sel = matches!(
-                                                &panel_state.add_selection,
-                                                AddSelection::CapitalShip(j) if *j == i
-                                            );
-                                            if ui
-                                                .selectable_label(
-                                                    sel,
-                                                    format!(
-                                                        "{} ({}mat, {}d)",
-                                                        class.name,
-                                                        class.refined_material_cost,
-                                                        class.research_difficulty,
-                                                    ),
-                                                )
-                                                .clicked()
-                                            {
-                                                panel_state.add_selection =
-                                                    AddSelection::CapitalShip(i);
+                                    egui::ComboBox::from_id_salt(format!("ship_combo_{sys_key:?}"))
+                                        .selected_text(selected_ship_name)
+                                        .show_ui(ui, |ui| {
+                                            for (i, (_, class)) in ships.iter().enumerate() {
+                                                let sel = matches!(
+                                                    &panel_state.add_selection,
+                                                    AddSelection::CapitalShip(j) if *j == i
+                                                );
+                                                if ui
+                                                    .selectable_label(
+                                                        sel,
+                                                        format!(
+                                                            "{} ({}mat, {}d)",
+                                                            class.name,
+                                                            class.refined_material_cost,
+                                                            class.research_difficulty,
+                                                        ),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    panel_state.add_selection =
+                                                        AddSelection::CapitalShip(i);
+                                                }
                                             }
-                                        }
-                                    });
+                                        });
 
                                     if ui.small_button("Enqueue").clicked() {
                                         if let AddSelection::CapitalShip(i) =
@@ -301,38 +302,34 @@ pub fn draw_manufacturing(
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new("Fighter:").small());
                                     let selected_ftr_name = match &panel_state.add_selection {
-                                        AddSelection::Fighter(i) => fighters
-                                            .get(*i)
-                                            .map(|(_, c)| c.name.as_str())
-                                            .unwrap_or("—"),
+                                        AddSelection::Fighter(i) => {
+                                            fighters.get(*i).map_or("—", |(_, c)| c.name.as_str())
+                                        }
                                         _ => "—",
                                     };
-                                    egui::ComboBox::from_id_salt(format!(
-                                        "ftr_combo_{:?}",
-                                        sys_key
-                                    ))
-                                    .selected_text(selected_ftr_name)
-                                    .show_ui(ui, |ui| {
-                                        for (i, (_, class)) in fighters.iter().enumerate() {
-                                            let sel = matches!(
-                                                &panel_state.add_selection,
-                                                AddSelection::Fighter(j) if *j == i
-                                            );
-                                            if ui
-                                                .selectable_label(
-                                                    sel,
-                                                    format!(
-                                                        "{} ({}mat)",
-                                                        class.name, class.refined_material_cost,
-                                                    ),
-                                                )
-                                                .clicked()
-                                            {
-                                                panel_state.add_selection =
-                                                    AddSelection::Fighter(i);
+                                    egui::ComboBox::from_id_salt(format!("ftr_combo_{sys_key:?}"))
+                                        .selected_text(selected_ftr_name)
+                                        .show_ui(ui, |ui| {
+                                            for (i, (_, class)) in fighters.iter().enumerate() {
+                                                let sel = matches!(
+                                                    &panel_state.add_selection,
+                                                    AddSelection::Fighter(j) if *j == i
+                                                );
+                                                if ui
+                                                    .selectable_label(
+                                                        sel,
+                                                        format!(
+                                                            "{} ({}mat)",
+                                                            class.name, class.refined_material_cost,
+                                                        ),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    panel_state.add_selection =
+                                                        AddSelection::Fighter(i);
+                                                }
                                             }
-                                        }
-                                    });
+                                        });
 
                                     if ui.small_button("Enqueue").clicked() {
                                         if let AddSelection::Fighter(i) = &panel_state.add_selection
@@ -375,13 +372,11 @@ fn buildable_label(kind: BuildableKind, world: &GameWorld) -> String {
         BuildableKind::CapitalShip(k) => world
             .capital_ship_classes
             .get(k)
-            .map(|c| c.name.clone())
-            .unwrap_or_else(|| "Capital Ship".into()),
+            .map_or_else(|| "Capital Ship".into(), |c| c.name.clone()),
         BuildableKind::Fighter(k) => world
             .fighter_classes
             .get(k)
-            .map(|c| c.name.clone())
-            .unwrap_or_else(|| "Fighter".into()),
+            .map_or_else(|| "Fighter".into(), |c| c.name.clone()),
         BuildableKind::Troop(_) => "Troop Regiment".into(),
         BuildableKind::DefenseFacility(_) => "Defense Facility".into(),
         BuildableKind::ManufacturingFacility(_) => "Manufacturing Facility".into(),

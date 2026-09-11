@@ -33,6 +33,10 @@ use logger::EventLogger;
     name = "rebellion-playtest",
     about = "Headless playtest runner for Open Rebellion"
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 struct Args {
     /// Path to game data directory (containing .DAT files)
     data_dir: PathBuf,
@@ -88,6 +92,14 @@ struct Args {
     clippy::too_many_arguments,
     reason = "Keep the existing explicit simulation state inputs at this integration boundary."
 )]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Elapsed milliseconds cannot approach the u64 limit during a playtest."
+)]
 fn dispatch_command(
     cmd: &str,
     world: &mut rebellion_core::world::GameWorld,
@@ -138,12 +150,11 @@ fn dispatch_command(
                 let sys = world
                     .systems
                     .get(f.location)
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("?");
+                    .map_or("?", |s| s.name.as_str());
                 let side = if f.is_alliance { "Alliance" } else { "Empire" };
                 let ships = f.ship_count() as usize
                     + f.fighters.iter().map(|e| e.count as usize).sum::<usize>();
-                format!("{} fleet at {} — {} ships", side, sys, ships)
+                format!("{side} fleet at {sys} — {ships} ships")
             })
             .collect::<Vec<_>>()
             .join("\n"),
@@ -155,7 +166,7 @@ fn dispatch_command(
                 .iter()
                 .filter(|e| states.events.has_fired(e.id))
                 .count();
-            format!("Events: {} defined, {} fired", total, fired)
+            format!("Events: {total} defined, {fired} fired")
         }
         "toggle_dual_ai" => {
             if states.ai2.is_some() {
@@ -171,7 +182,7 @@ fn dispatch_command(
             }
         }
         "reveal_all_systems" => {
-            for (key, _) in world.systems.iter() {
+            for (key, _) in &world.systems {
                 states.fog.reveal(key);
             }
             "All systems revealed".to_string()
@@ -185,7 +196,7 @@ fn dispatch_command(
                 states.campaign_config.victory_conditions,
             );
             match result {
-                Some(outcome) => format!("Victory: {:?}", outcome),
+                Some(outcome) => format!("Victory: {outcome:?}"),
                 None => "No winner yet".to_string(),
             }
         }
@@ -194,7 +205,7 @@ fn dispatch_command(
                 .trim_start_matches("advance_")
                 .trim_end_matches("_tick")
                 .trim_end_matches("_ticks")
-                .trim_end_matches("s")
+                .trim_end_matches('s')
                 .parse()
                 .unwrap_or(1);
             for t in 1..=n {
@@ -215,16 +226,21 @@ fn dispatch_command(
             let path = std::path::PathBuf::from("playtest_exec.jsonl");
             match logger.export_jsonl(&path) {
                 Ok(()) => format!("Exported to {}", path.display()),
-                Err(e) => format!("Export failed: {}", e),
+                Err(e) => format!("Export failed: {e}"),
             }
         }
-        _ => format!(
-            "Unknown command: '{}'. Use --exec list for available commands.",
-            cmd
-        ),
+        _ => format!("Unknown command: '{cmd}'. Use --exec list for available commands."),
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Elapsed milliseconds cannot approach the u64 limit during a playtest."
+)]
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let start = Instant::now();
@@ -246,10 +262,7 @@ fn main() -> anyhow::Result<()> {
         // Validate command exists
         let commands = all_commands();
         if !commands.iter().any(|c| c.id == cmd.as_str()) {
-            eprintln!(
-                "Unknown command: '{}'. Use --exec list to see available commands.",
-                cmd
-            );
+            eprintln!("Unknown command: '{cmd}'. Use --exec list to see available commands.");
             std::process::exit(1);
         }
     }
@@ -309,14 +322,13 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Empire))
         .map(|(k, _)| k);
-    let (victory_a, victory_e) = match (a_hq, e_hq) {
-        (Some(a), Some(e)) => (a, e),
-        _ => {
-            let mut keys = world.systems.keys();
-            let a = keys.next().expect("need at least 2 systems");
-            let e = keys.next().expect("need at least 2 systems");
-            (a, e)
-        }
+    let (victory_a, victory_e) = if let (Some(a), Some(e)) = (a_hq, e_hq) {
+        (a, e)
+    } else {
+        let mut keys = world.systems.keys();
+        let a = keys.next().expect("need at least 2 systems");
+        let e = keys.next().expect("need at least 2 systems");
+        (a, e)
     };
 
     // Determine second AI faction for dual-AI mode
@@ -378,7 +390,7 @@ fn main() -> anyhow::Result<()> {
             ai_faction,
             &game_config,
         );
-        println!("{}", output);
+        println!("{output}");
         return Ok(());
     }
 
@@ -393,7 +405,7 @@ fn main() -> anyhow::Result<()> {
                 Ok(0) => break, // EOF
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Read error: {}", e);
+                    eprintln!("Read error: {e}");
                     break;
                 }
             }
@@ -439,7 +451,7 @@ fn main() -> anyhow::Result<()> {
                     "new_events": new_events,
                     "victory": states.victory.resolved,
                 });
-                println!("{}", json);
+                println!("{json}");
                 continue;
             }
             // REPL-only inspection commands (not in shared command registry)
@@ -447,13 +459,13 @@ fn main() -> anyhow::Result<()> {
                 let mut alliance = Vec::new();
                 let mut empire = Vec::new();
                 let mut neutral = 0usize;
-                for (_, sys) in world.systems.iter() {
+                for (_, sys) in &world.systems {
                     match sys.control {
                         ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
-                            alliance.push(sys.name.as_str())
+                            alliance.push(sys.name.as_str());
                         }
                         ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => {
-                            empire.push(sys.name.as_str())
+                            empire.push(sys.name.as_str());
                         }
                         _ => neutral += 1,
                     }
@@ -465,7 +477,7 @@ fn main() -> anyhow::Result<()> {
                     "neutral": neutral,
                     "tick": tick_counter,
                 });
-                println!("{}", json);
+                println!("{json}");
                 continue;
             }
             if cmd == "transit" {
@@ -477,18 +489,18 @@ fn main() -> anyhow::Result<()> {
                         let origin = world
                             .systems
                             .get(order.origin)
-                            .map(|s| s.name.as_str())
-                            .unwrap_or("?");
+                            .map_or("?", |s| s.name.as_str());
                         let dest = world
                             .systems
                             .get(order.destination)
-                            .map(|s| s.name.as_str())
-                            .unwrap_or("?");
-                        let faction = world
-                            .fleets
-                            .get(order.fleet)
-                            .map(|f| if f.is_alliance { "Alliance" } else { "Empire" })
-                            .unwrap_or("?");
+                            .map_or("?", |s| s.name.as_str());
+                        let faction = world.fleets.get(order.fleet).map_or("?", |f| {
+                            if f.is_alliance {
+                                "Alliance"
+                            } else {
+                                "Empire"
+                            }
+                        });
                         serde_json::json!({
                             "faction": faction,
                             "origin": origin,
@@ -504,7 +516,7 @@ fn main() -> anyhow::Result<()> {
                     "orders": orders,
                     "tick": tick_counter,
                 });
-                println!("{}", json);
+                println!("{json}");
                 continue;
             }
             if cmd.starts_with("events") {
@@ -522,7 +534,7 @@ fn main() -> anyhow::Result<()> {
                     "events": recent,
                     "tick": tick_counter,
                 });
-                println!("{}", json);
+                println!("{json}");
                 continue;
             }
             let output = dispatch_command(
@@ -542,7 +554,7 @@ fn main() -> anyhow::Result<()> {
                 "victory": states.victory.resolved,
                 "events_total": logger.len(),
             });
-            println!("{}", json);
+            println!("{json}");
         }
         return Ok(());
     }
@@ -575,7 +587,7 @@ fn main() -> anyhow::Result<()> {
 
         // Check victory
         if states.victory.resolved {
-            eprintln!("Victory condition reached at tick {}!", tick_num);
+            eprintln!("Victory condition reached at tick {tick_num}!");
             victory_reached = true;
             break;
         }

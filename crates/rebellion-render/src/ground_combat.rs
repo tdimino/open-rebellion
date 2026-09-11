@@ -66,7 +66,7 @@ pub enum GroundWinner {
     Draw,
 }
 
-/// Action returned by draw_ground_combat.
+/// Action returned by `draw_ground_combat`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroundAction {
     /// Still in ground combat view.
@@ -79,6 +79,7 @@ impl GroundCombatState {
     /// Create ground combat from system troop data.
     ///
     /// Troop lists contain the authoritative key, label, and starting strength.
+    #[must_use]
     pub fn new(
         system: SystemKey,
         system_name: String,
@@ -209,6 +210,16 @@ impl GroundCombatState {
 ///
 /// Shows regiment bars for both sides with animated depletion during
 /// the Engaging phase, and a summary during the Results phase.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
     // Step combat during Engaging phase.
     if state.phase == GroundPhase::Engaging {
@@ -268,7 +279,7 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
     for (row, &(_, reg)) in atk_regiments.iter().enumerate() {
         let y = start_y + 20.0 + row as f32 * spacing;
         let frac = if reg.max_strength > 0 {
-            reg.strength as f32 / reg.max_strength as f32
+            f32::from(reg.strength) / f32::from(reg.max_strength)
         } else {
             0.0
         };
@@ -322,7 +333,7 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
     for (row, &(_, reg)) in def_regiments.iter().enumerate() {
         let y = start_y + 20.0 + row as f32 * spacing;
         let frac = if reg.max_strength > 0 {
-            reg.strength as f32 / reg.max_strength as f32
+            f32::from(reg.strength) / f32::from(reg.max_strength)
         } else {
             0.0
         };

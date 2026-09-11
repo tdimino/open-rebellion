@@ -13,7 +13,7 @@ use crate::combat::CombatSide;
 use crate::dat::Faction;
 // EventAction not used directly — effects carry event_id only.
 // The integrator looks up actions from the EventState when applying.
-use crate::ids::*;
+use crate::ids::{CharacterKey, FleetKey, SystemKey};
 use crate::manufacturing::BuildableKind;
 use crate::missions::{MissionFaction, MissionKind, MissionOutcome};
 use crate::research::TechType;
@@ -272,6 +272,7 @@ pub enum GameEffect {
 
 impl GameEffect {
     /// Which phase this effect belongs to, for ordering.
+    #[must_use]
     pub fn phase(&self) -> EffectPhase {
         match self {
             Self::SupportDrifted { .. }
@@ -328,6 +329,7 @@ impl GameEffect {
     /// Produce the inverse effect for undo/rollback.
     /// Returns None for effects that are inherently irreversible
     /// or whose inverse requires world state not captured in the effect.
+    #[must_use]
     pub fn invert(&self) -> Option<GameEffect> {
         match self {
             Self::PopularityShifted {
@@ -371,6 +373,7 @@ impl GameEffect {
     }
 
     /// System name for telemetry derivation (Principle 9).
+    #[must_use]
     pub fn system_name(&self) -> &'static str {
         match self.phase() {
             EffectPhase::Economy => "economy",
@@ -394,9 +397,10 @@ impl GameEffect {
 ///
 /// NOTE: must remain `sort_by_key` (stable), not `sort_unstable_by_key` —
 /// within-phase ordering is load-bearing for deterministic replay.
+#[must_use]
 pub fn combine_effects(mut a: Vec<GameEffect>, mut b: Vec<GameEffect>) -> Vec<GameEffect> {
     a.append(&mut b);
-    a.sort_by_key(|e| e.phase());
+    a.sort_by_key(GameEffect::phase);
     a
 }
 
@@ -415,6 +419,7 @@ pub fn filter_effects(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::CapitalShipKey;
 
     #[test]
     fn phase_ordering_is_correct() {

@@ -1,13 +1,13 @@
-//! PerceptionIntegrator — centralizes effect application and telemetry emission.
+//! `PerceptionIntegrator` — centralizes effect application and telemetry emission.
 //!
 //! Phase 4 of Knesset Ereshkigal. The integrator translates ad-hoc system events
 //! into world mutations and structured `GameEventRecord` telemetry.
 //!
-//! Architecture: simulation.rs orchestrates 17 system advance() calls and delegates
+//! Architecture: simulation.rs orchestrates 17 system `advance()` calls and delegates
 //! effect application + telemetry to the integrator. This keeps simulation.rs focused
 //! on tick composition while the integrator owns the mutation/telemetry contract.
 //!
-//! All 17 simulation sections route through PerceptionIntegrator methods for both
+//! All 17 simulation sections route through `PerceptionIntegrator` methods for both
 //! world mutation and telemetry emission. simulation.rs is a thin tick orchestrator (~449 LOC).
 
 use std::collections::HashMap;
@@ -20,7 +20,22 @@ use rebellion_core::death_star::{DeathStarEvent, DeathStarState};
 use rebellion_core::economy::{EconomyEvent, EconomyState};
 use rebellion_core::events::{EventAction, FiredEvent, SkillField, SystemTag};
 use rebellion_core::fog::RevealEvent;
-use rebellion_core::game_events::*;
+use rebellion_core::game_events::{
+    GameEventRecord, EVT_AI_ACTION, EVT_BETRAYAL_CHECK, EVT_BLOCKADE_ENDED, EVT_BLOCKADE_STARTED,
+    EVT_BOMBARDMENT, EVT_BUILD_COMPLETE, EVT_CAMPAIGN_SNAPSHOT, EVT_CAPTURE, EVT_CHARACTER_HEALTH,
+    EVT_CHARACTER_KILLED, EVT_COLLECTION_RATE, EVT_COMBAT_GROUND, EVT_COMBAT_SPACE,
+    EVT_CONTROL_CHANGED, EVT_DS_CONSTRUCTION, EVT_DS_FIRED, EVT_DS_STATUS, EVT_ECONOMY_TICK,
+    EVT_ESCAPE, EVT_EVENT_FIRED, EVT_FLEET_ARRIVED, EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED,
+    EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK, EVT_JEDI_DISCOVERED, EVT_JEDI_TIER,
+    EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE, EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER,
+    EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY, EVT_SABOTEUR_DETECTED, EVT_SHIP_REPAIRED,
+    EVT_SHIP_REPAIR_STARTED, EVT_SIDE_CHANGE, EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT,
+    EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED, EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN,
+    EVT_UPRISING_CHECK, EVT_UPRISING_INCIDENT, EVT_VICTORY, EVT_VICTORY_CHECK, SYS_AI,
+    SYS_BETRAYAL, SYS_BLOCKADE, SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY, SYS_EVENTS, SYS_FOG,
+    SYS_JEDI, SYS_MANUFACTURING, SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR, SYS_RESEARCH, SYS_STORY,
+    SYS_UPRISING, SYS_VICTORY,
+};
 use rebellion_core::ids::DatId;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::jedi::{JediEvent, JediState};
@@ -46,25 +61,26 @@ use rebellion_core::world::{
 // Name resolution helpers (shared with simulation.rs)
 // ---------------------------------------------------------------------------
 
-/// Resolve a SystemKey to the system's name, or a fallback string.
+/// Resolve a `SystemKey` to the system's name, or a fallback string.
+#[must_use]
 pub fn sys_name(world: &GameWorld, key: SystemKey) -> String {
     world
         .systems
         .get(key)
-        .map(|s| s.name.clone())
-        .unwrap_or_else(|| format!("{:?}", key))
+        .map_or_else(|| format!("{key:?}"), |s| s.name.clone())
 }
 
-/// Resolve a CharacterKey to the character's name, or a fallback string.
+/// Resolve a `CharacterKey` to the character's name, or a fallback string.
+#[must_use]
 pub fn char_name(world: &GameWorld, key: CharacterKey) -> String {
     world
         .characters
         .get(key)
-        .map(|c| c.name.clone())
-        .unwrap_or_else(|| format!("{:?}", key))
+        .map_or_else(|| format!("{key:?}"), |c| c.name.clone())
 }
 
-/// Format an AIAction as a structured JSON payload with readable names.
+/// Format an `AIAction` as a structured JSON payload with readable names.
+#[must_use]
 pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value {
     match action {
         AIAction::MoveFleet {
@@ -73,16 +89,17 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
             reason,
             troops,
         } => {
-            let faction = world
-                .fleets
-                .get(*fleet)
-                .map(|f| if f.is_alliance { "Alliance" } else { "Empire" })
-                .unwrap_or("unknown");
+            let faction = world.fleets.get(*fleet).map_or("unknown", |f| {
+                if f.is_alliance {
+                    "Alliance"
+                } else {
+                    "Empire"
+                }
+            });
             let from = world
                 .fleets
                 .get(*fleet)
-                .map(|f| sys_name(world, f.location))
-                .unwrap_or_else(|| "unknown".into());
+                .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location));
             serde_json::json!({
                 "type": "MoveFleet",
                 "faction": faction,
@@ -152,13 +169,14 @@ pub struct PerceptionIntegrator {
     /// `SpawnSpecialForce` action resolves to a target system. The
     /// interactive `main.rs` drains this with `drain_story_effects()`
     /// after the tick completes and routes each effect into its
-    /// MessageLog / special-forces arena. Headless `simulation.rs`
+    /// `MessageLog` / special-forces arena. Headless `simulation.rs`
     /// leaves the queue alone and `finish()` discards it.
     story_effects: Vec<rebellion_core::effects::GameEffect>,
 }
 
 impl PerceptionIntegrator {
     /// Create a new integrator for a single simulation tick.
+    #[must_use]
     pub fn new(tick: u64, wall_ms: u64) -> Self {
         Self {
             events: Vec::new(),
@@ -179,11 +197,13 @@ impl PerceptionIntegrator {
     }
 
     /// Current tick number.
+    #[must_use]
     pub fn tick(&self) -> u64 {
         self.tick
     }
 
     /// Wall-clock milliseconds.
+    #[must_use]
     pub fn wall_ms(&self) -> u64 {
         self.wall_ms
     }
@@ -210,6 +230,7 @@ impl PerceptionIntegrator {
     }
 
     /// Consume the integrator, returning all telemetry records.
+    #[must_use]
     pub fn finish(self) -> Vec<GameEventRecord> {
         self.events
     }
@@ -291,13 +312,13 @@ impl PerceptionIntegrator {
         let mut alliance_systems = 0u32;
         let mut empire_systems = 0u32;
         let mut neutral_systems = 0u32;
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             match sys.control {
                 ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
-                    alliance_systems += 1
+                    alliance_systems += 1;
                 }
                 ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => {
-                    empire_systems += 1
+                    empire_systems += 1;
                 }
                 _ => neutral_systems += 1,
             }
@@ -305,7 +326,7 @@ impl PerceptionIntegrator {
 
         // Build per-system economy data for parity eval
         let mut systems_map = serde_json::Map::new();
-        for (key, sys) in world.systems.iter() {
+        for (key, sys) in &world.systems {
             if let Some(econ) = economy.per_system.get(&key) {
                 systems_map.insert(
                     sys.name.clone(),
@@ -338,6 +359,10 @@ impl PerceptionIntegrator {
     // ── Step 2: Economy section ───────────────────────────────────────────
 
     /// Apply economy events: world mutations (support drift, control) + telemetry.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
     pub fn apply_economy_events(&mut self, world: &mut GameWorld, economy_events: &[EconomyEvent]) {
         for ev in economy_events {
             match ev {
@@ -500,7 +525,7 @@ impl PerceptionIntegrator {
 
     // ── Step 3: Manufacturing + Movement ──────────────────────────────────
 
-    /// Apply build completions: add manufactured items to GameWorld + emit telemetry.
+    /// Apply build completions: add manufactured items to `GameWorld` + emit telemetry.
     ///
     /// Emits two telemetry records per completion — `EVT_BUILD_COMPLETE`
     /// (the "construction finished" signal used by the manufacturing panel
@@ -931,7 +956,7 @@ impl PerceptionIntegrator {
                     c.captured_by = None;
                     c.capture_tick = None;
                 }
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
                 self.emit(
@@ -954,7 +979,7 @@ impl PerceptionIntegrator {
     /// `EventAction::SpawnSpecialForce` can resolve in-transit characters
     /// via `MovementState::orders()`. Story/message effects push into the
     /// integrator's `story_effects` queue; callers that want to route them
-    /// into a render-layer MessageLog should call `drain_story_effects()`
+    /// into a render-layer `MessageLog` should call `drain_story_effects()`
     /// after this returns (simulation.rs ignores the queue).
     pub fn apply_fired_events(
         &mut self,
@@ -1036,7 +1061,7 @@ impl PerceptionIntegrator {
         troop_transport: &mut TroopTransportState,
         research_state: &mut ResearchState,
         world: &mut GameWorld,
-        _tick: u64,
+        tick: u64,
         config: &rebellion_core::tuning::GameConfig,
         is_dual: bool,
     ) {
@@ -1050,7 +1075,7 @@ impl PerceptionIntegrator {
             troop_transport,
             research_state,
             world,
-            _tick,
+            tick,
             config,
         );
         for (action, was_applied) in actions.iter().zip(applied) {
@@ -1194,7 +1219,7 @@ impl PerceptionIntegrator {
                 c.is_alliance = *defected_to_alliance;
                 c.is_empire = !*defected_to_alliance;
             }
-            for (_, fleet) in world.fleets.iter_mut() {
+            for (_, fleet) in &mut world.fleets {
                 fleet.characters.retain(|&k| k != *character);
             }
 
@@ -1303,8 +1328,7 @@ impl PerceptionIntegrator {
                     let fleet_name = world
                         .fleets
                         .get(*fleet)
-                        .map(|f| sys_name(world, f.location))
-                        .unwrap_or_else(|| "unknown".into());
+                        .map_or_else(|| "unknown".into(), |f| sys_name(world, f.location));
                     self.emit(
                         SYS_REPAIR,
                         EVT_SHIP_REPAIRED,
@@ -1415,12 +1439,18 @@ impl PerceptionIntegrator {
 // Mission effects helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn apply_mission_effects_inner(
     effects: &[MissionEffect],
     world: &mut GameWorld,
     uprising_state: &mut UprisingState,
     death_star_state: &mut DeathStarState,
 ) {
+    const CONTROL_THRESHOLD: f32 = 0.6;
+
     for effect in effects {
         match effect {
             MissionEffect::PopularityShifted {
@@ -1438,7 +1468,6 @@ fn apply_mission_effects_inner(
                             sys.popularity_empire = (sys.popularity_empire + delta).clamp(0.0, 1.0);
                         }
                     }
-                    const CONTROL_THRESHOLD: f32 = 0.6;
                     let a_pop = sys.popularity_alliance;
                     let e_pop = sys.popularity_empire;
                     let new_control = if a_pop >= CONTROL_THRESHOLD && a_pop > e_pop + 0.1 {
@@ -1475,7 +1504,7 @@ fn apply_mission_effects_inner(
                     sys.exploration_status = rebellion_core::dat::ExplorationStatus::Explored;
                 }
             }
-            MissionEffect::CharacterRecruited { .. } => {}
+            MissionEffect::CharacterRecruited { .. } | MissionEffect::DecoyTriggered { .. } => {}
             MissionEffect::FacilitySabotaged {
                 system,
                 facility_index,
@@ -1509,7 +1538,7 @@ fn apply_mission_effects_inner(
                 // go through `Character::mark_killed()` so systems that iterate
                 // `world.characters` see a consistent "dead" shape regardless
                 // of which path produced the death.
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
                 if let Some(c) = world.characters.get_mut(*character) {
@@ -1529,7 +1558,7 @@ fn apply_mission_effects_inner(
                     });
                     c.current_system = Some(*at_system);
                 }
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
             }
@@ -1565,7 +1594,6 @@ fn apply_mission_effects_inner(
                     c.on_hidden_mission = false;
                 }
             }
-            MissionEffect::DecoyTriggered { .. } => {}
             MissionEffect::CharacterEscaped {
                 character,
                 escaped_to_alliance,
@@ -1580,17 +1608,14 @@ fn apply_mission_effects_inner(
             }
             MissionEffect::UprisingSubdued { system } => {
                 if let Some(sys) = world.systems.get_mut(*system) {
-                    match sys.control {
-                        ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
-                            sys.popularity_alliance =
-                                (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
-                            sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
-                        }
-                        _ => {
-                            sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
-                            sys.popularity_alliance =
-                                (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
-                        }
+                    if let ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) =
+                        sys.control
+                    {
+                        sys.popularity_alliance = (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
+                        sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
+                    } else {
+                        sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
+                        sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
                     }
                 }
                 uprising_state.clear_uprising(*system);
@@ -1625,6 +1650,15 @@ fn apply_mission_effects_inner(
 ///   originating event on `CharacterAtSystem OR CharacterAssignedToFleet`
 ///   to guarantee resolution success (SF-#7).
 #[inline]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 pub fn apply_event_action_to_world(
     actions: &[EventAction],
     world: &mut GameWorld,
@@ -1664,16 +1698,17 @@ pub fn apply_event_action_to_world(
             } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     let d = *base_delta;
-                    let apply = |v: u32, delta: i32| (v as i64 + delta as i64).max(0) as u32;
+                    let apply =
+                        |v: u32, delta: i32| (i64::from(v) + i64::from(delta)).max(0) as u32;
                     match skill {
                         SkillField::Diplomacy => c.diplomacy.base = apply(c.diplomacy.base, d),
                         SkillField::Espionage => c.espionage.base = apply(c.espionage.base, d),
                         SkillField::ShipDesign => c.ship_design.base = apply(c.ship_design.base, d),
                         SkillField::TroopTraining => {
-                            c.troop_training.base = apply(c.troop_training.base, d)
+                            c.troop_training.base = apply(c.troop_training.base, d);
                         }
                         SkillField::FacilityDesign => {
-                            c.facility_design.base = apply(c.facility_design.base, d)
+                            c.facility_design.base = apply(c.facility_design.base, d);
                         }
                         SkillField::Combat => c.combat.base = apply(c.combat.base, d),
                         SkillField::Leadership => c.leadership.base = apply(c.leadership.base, d),
@@ -1682,7 +1717,9 @@ pub fn apply_event_action_to_world(
                     }
                 }
             }
-            EventAction::RelocateCharacter { .. } => {}
+            EventAction::RelocateCharacter { .. }
+            | EventAction::StartJediTraining { .. }
+            | EventAction::TriggerEvent { .. } => {}
             EventAction::SetMandatoryMission {
                 character,
                 mandatory,
@@ -1700,12 +1737,11 @@ pub fn apply_event_action_to_world(
                 }
             }
             EventAction::RemoveCharacter { character } => {
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
                 world.characters.remove(*character);
             }
-            EventAction::StartJediTraining { .. } => {}
             EventAction::TransferCharacter {
                 character,
                 destination,
@@ -1723,12 +1759,11 @@ pub fn apply_event_action_to_world(
                                 c.is_alliance = false;
                                 c.is_empire = true;
                             }
-                            _ => {}
+                            rebellion_core::dat::Faction::Neutral => {}
                         }
                     }
                 }
             }
-            EventAction::TriggerEvent { .. } => {}
             EventAction::AccumulateForceExperience { character, amount } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.force_experience += amount;
@@ -1743,7 +1778,7 @@ pub fn apply_event_action_to_world(
                     c.captured_by = Some(*captor_faction);
                     c.capture_tick = Some(tick);
                 }
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
             }
@@ -1783,7 +1818,7 @@ pub fn apply_event_action_to_world(
                         // AND is currently under a movement order, return the
                         // order's destination.
                         let is_alliance = c.is_alliance;
-                        for (fleet_key, fleet) in world.fleets.iter() {
+                        for (fleet_key, fleet) in &world.fleets {
                             if fleet.characters.contains(&character) {
                                 if let Some(order) = movement.get(fleet_key) {
                                     return Some((order.destination, is_alliance));
@@ -1826,12 +1861,11 @@ pub fn apply_event_action_to_world(
                         // and drop the action rather than spawning at
                         // an arbitrary fallback system.
                         eprintln!(
-                            "[shamash-bet] SpawnSpecialForce at character {:?} \
+                            "[shamash-bet] SpawnSpecialForce at character {character:?} \
                              could not resolve a target system — character has \
                              no current_system and is not on any movement-ordered \
                              fleet. Event chain should have gated this action with \
                              CharacterAtSystem OR CharacterAssignedToFleet.",
-                            character,
                         );
                     }
                 }
@@ -1853,11 +1887,10 @@ pub fn apply_event_action_to_world(
                     c.heritage_known = true;
                 } else {
                     eprintln!(
-                        "[shamash-bet] SetHeritageKnown target character {:?} \
+                        "[shamash-bet] SetHeritageKnown target character {character:?} \
                          not found in arena — heritage_known flip dropped. \
                          Final Battle cutscene variant will not reflect the \
                          paternity reveal.",
-                        character,
                     );
                 }
             }
@@ -1886,10 +1919,10 @@ fn apply_ai_actions_inner(
     _tick: u64,
     config: &rebellion_core::tuning::GameConfig,
 ) -> Vec<bool> {
-    let mission_faction = ai_state
-        .faction
-        .map(|f| f.as_mission_faction())
-        .unwrap_or(MissionFaction::Empire);
+    let mission_faction = ai_state.faction.map_or(
+        MissionFaction::Empire,
+        rebellion_core::ai::AiFaction::as_mission_faction,
+    );
 
     let mut roll_idx = 0;
     let mut applied = Vec::with_capacity(actions.len());
@@ -1930,8 +1963,7 @@ fn apply_ai_actions_inner(
             } => {
                 let is_alliance = ai_state
                     .faction
-                    .map(|f| matches!(f, rebellion_core::ai::AiFaction::Alliance))
-                    .unwrap_or(false);
+                    .is_some_and(|f| matches!(f, rebellion_core::ai::AiFaction::Alliance));
                 research_state.dispatch(rebellion_core::research::ResearchProject {
                     tech_type: *tech_type,
                     character: *character,
@@ -1964,14 +1996,10 @@ fn apply_ai_actions_inner(
                 } else {
                     troop_transport.embark(world, *fleet, troops).is_ok()
                 };
-                if !embarked {
-                    false
-                } else {
-                    let departed = transit
-                        .map(|ticks| {
-                            begin_fleet_transit(movement_state, world, *fleet, *to_system, ticks)
-                        })
-                        .unwrap_or(false);
+                if embarked {
+                    let departed = transit.is_some_and(|ticks| {
+                        begin_fleet_transit(movement_state, world, *fleet, *to_system, ticks)
+                    });
                     if !departed && !troops.is_empty() {
                         let origin = world.fleets.get(*fleet).map(|value| value.location);
                         if let Some(origin) = origin {
@@ -1979,6 +2007,8 @@ fn apply_ai_actions_inner(
                         }
                     }
                     departed
+                } else {
+                    false
                 }
             }
         };
@@ -2397,7 +2427,7 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
             // ship_index maps 1:1 to alive ships at snapshot time.
             // Find the nth alive ship.
             let mut alive_idx = 0;
-            for ship in fleet.capital_ships.iter_mut() {
+            for ship in &mut fleet.capital_ships {
                 if !ship.alive {
                     continue;
                 }
@@ -2431,8 +2461,7 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
         let is_empty = world
             .fleets
             .get(fleet_key)
-            .map(|f| f.is_empty())
-            .unwrap_or(true);
+            .is_none_or(rebellion_core::world::Fleet::is_empty);
         if is_empty {
             // Capture losing fleet's characters (parity: officers captured on fleet destruction).
             let is_loser = match result.winner {
@@ -2475,13 +2504,14 @@ mod combat_application_tests {
     use super::*;
     use rebellion_core::combat::{FighterLossEvent, SpaceCombatResult};
     use rebellion_core::dat::ExplorationStatus;
+    use rebellion_core::ids::{FighterKey, SectorKey};
     use rebellion_core::world::{CapitalShipClass, FighterEntry, Fleet, System};
 
     fn add_combat_system(world: &mut GameWorld) -> SystemKey {
         world.systems.insert(System {
-            dat_id: DatId::new(0x90000001),
+            dat_id: DatId::new(0x9000_0001),
             name: "Test System".into(),
-            sector: Default::default(),
+            sector: SectorKey::default(),
             x: 0,
             y: 0,
             exploration_status: ExplorationStatus::Explored,
@@ -2511,7 +2541,11 @@ mod combat_application_tests {
         attack: u32,
     ) -> FleetKey {
         let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(if is_alliance { 0x30000001 } else { 0x30000002 }),
+            dat_id: DatId::new(if is_alliance {
+                0x3000_0001
+            } else {
+                0x3000_0002
+            }),
             is_alliance,
             is_empire: !is_alliance,
             hull,
@@ -2520,7 +2554,7 @@ mod combat_application_tests {
         });
         let fleet = world.fleets.insert(Fleet {
             location: system,
-            capital_ships: vec![ShipInstance::new(class, hull as i32, is_alliance)],
+            capital_ships: vec![ShipInstance::new(class, hull.cast_signed(), is_alliance)],
             fighters: vec![],
             characters: vec![],
             is_alliance,
@@ -2537,7 +2571,7 @@ mod combat_application_tests {
             location: SystemKey::default(),
             capital_ships: vec![],
             fighters: vec![FighterEntry {
-                class: Default::default(),
+                class: FighterKey::default(),
                 count: 4,
             }],
             characters: vec![],
@@ -2548,7 +2582,7 @@ mod combat_application_tests {
             location: SystemKey::default(),
             capital_ships: vec![],
             fighters: vec![FighterEntry {
-                class: Default::default(),
+                class: FighterKey::default(),
                 count: 3,
             }],
             characters: vec![],
@@ -2657,13 +2691,8 @@ pub fn apply_ground_combat_result_inner(result: &GroundCombatResult, world: &mut
 
     let sys_key = result.system;
     if let Some(sys) = world.systems.get_mut(sys_key) {
-        sys.ground_units.retain(|&k| {
-            world
-                .troops
-                .get(k)
-                .map(|t| t.regiment_strength > 0)
-                .unwrap_or(false)
-        });
+        sys.ground_units
+            .retain(|&k| world.troops.get(k).is_some_and(|t| t.regiment_strength > 0));
     }
     let dead: Vec<_> = final_strengths
         .iter()
@@ -2679,6 +2708,10 @@ pub fn apply_ground_combat_result_inner(result: &GroundCombatResult, world: &mut
 // Build completion helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut GameWorld) {
     let sys_key = completion.system;
 
@@ -2687,20 +2720,17 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
             let is_alliance = world
                 .capital_ship_classes
                 .get(*class_key)
-                .map(|c| c.is_alliance)
-                .unwrap_or(false);
+                .is_some_and(|c| c.is_alliance);
 
             let fleet_key = {
-                let sys = match world.systems.get(sys_key) {
-                    Some(s) => s,
-                    None => return,
+                let Some(sys) = world.systems.get(sys_key) else {
+                    return;
                 };
                 sys.fleets.iter().copied().find(|&fk| {
                     world
                         .fleets
                         .get(fk)
-                        .map(|f| f.is_alliance == is_alliance)
-                        .unwrap_or(false)
+                        .is_some_and(|f| f.is_alliance == is_alliance)
                 })
             };
 
@@ -2709,8 +2739,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                     let hull = world
                         .capital_ship_classes
                         .get(*class_key)
-                        .map(|c| c.hull as i32)
-                        .unwrap_or(100);
+                        .map_or(100, |c| c.hull.cast_signed());
                     fleet
                         .capital_ships
                         .push(ShipInstance::new(*class_key, hull, is_alliance));
@@ -2719,8 +2748,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                 let hull = world
                     .capital_ship_classes
                     .get(*class_key)
-                    .map(|c| c.hull as i32)
-                    .unwrap_or(100);
+                    .map_or(100, |c| c.hull.cast_signed());
                 let fleet = Fleet {
                     location: sys_key,
                     capital_ships: vec![ShipInstance::new(*class_key, hull, is_alliance)],
@@ -2739,20 +2767,17 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
             let is_alliance = world
                 .fighter_classes
                 .get(*class_key)
-                .map(|c| c.is_alliance)
-                .unwrap_or(false);
+                .is_some_and(|c| c.is_alliance);
 
             let fleet_key = {
-                let sys = match world.systems.get(sys_key) {
-                    Some(s) => s,
-                    None => return,
+                let Some(sys) = world.systems.get(sys_key) else {
+                    return;
                 };
                 sys.fleets.iter().copied().find(|&fk| {
                     world
                         .fleets
                         .get(fk)
-                        .map(|f| f.is_alliance == is_alliance)
-                        .unwrap_or(false)
+                        .is_some_and(|f| f.is_alliance == is_alliance)
                 })
             };
 

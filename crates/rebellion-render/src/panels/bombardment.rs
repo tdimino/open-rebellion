@@ -20,6 +20,10 @@ pub struct BombardmentPanelState {
 }
 
 /// Draw the bombardment targeting panel as a left-side egui panel.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn draw_bombardment(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -70,8 +74,7 @@ pub fn draw_bombardment(
                         let sys_name = world
                             .systems
                             .get(fleet.location)
-                            .map(|s| s.name.as_str())
-                            .unwrap_or("Unknown");
+                            .map_or("Unknown", |s| s.name.as_str());
 
                         let ship_count: u32 = fleet.ship_count();
                         let is_selected = state.selected_fleet == Some(*fleet_key);
@@ -80,14 +83,14 @@ pub fn draw_bombardment(
                             let label_color = if is_selected { theme::GOLD } else { theme::TEXT_PRIMARY };
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(is_selected,
-                                    RichText::new(format!("Fleet @ {}", sys_name))
+                                    RichText::new(format!("Fleet @ {sys_name}"))
                                         .color(label_color)
                                         .strong(),
                                 ).clicked() {
                                     state.selected_fleet = if is_selected { None } else { Some(*fleet_key) };
                                 }
                                 ui.label(
-                                    RichText::new(format!("{} ships", ship_count))
+                                    RichText::new(format!("{ship_count} ships"))
                                         .color(theme::TEXT_SECONDARY)
                                         .size(10.0),
                                 );

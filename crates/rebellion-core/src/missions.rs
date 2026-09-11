@@ -17,7 +17,7 @@
 //!
 //! Two paths, in priority order:
 //! 1. **MSTB lookup**: if `world.mission_tables` contains an entry for this mission kind,
-//!    use `MstbTable::lookup(skill_score)` (piecewise-linear over IntTableEntry thresholds).
+//!    use `MstbTable::lookup(skill_score)` (piecewise-linear over `IntTableEntry` thresholds).
 //! 2. **Quadratic fallback**: `clamp(a·score² + b·score + c, min%, max%)` — same as
 //!    rebellion2's Mission.cs coefficients. Used when MSTB tables are not yet loaded.
 //!
@@ -25,9 +25,9 @@
 //!
 //! # Mission Types
 //!
-//! Nine types ported from REBEXE.EXE's 13-case dispatch (FUN_0050d5a0):
+//! Nine types ported from REBEXE.EXE's 13-case dispatch (`FUN_0050d5a0`):
 //! Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction,
-//! InciteUprising, Autoscrap.
+//! `InciteUprising`, Autoscrap.
 //!
 //! # Lifecycle
 //!
@@ -50,7 +50,7 @@ use crate::world::{Character, GameWorld, MstbTable};
 // MissionKind
 // ---------------------------------------------------------------------------
 
-/// All nine mission types recognised by the REBEXE.EXE dispatch (FUN_0050d5a0).
+/// All nine mission types recognised by the REBEXE.EXE dispatch (`FUN_0050d5a0`).
 ///
 /// Type codes match the original binary's 13-case switch where applicable.
 /// Coefficients are ported from rebellion2's Mission.cs; they serve as
@@ -111,6 +111,7 @@ impl MissionKind {
     /// Death Star sabotage) can be foiled by enemy operatives at the target system.
     /// Non-covert missions (diplomacy, recruitment, uprising) are visible operations
     /// that succeed or fail on their own merit without foil risk.
+    #[must_use]
     pub fn is_covert(self) -> bool {
         matches!(
             self,
@@ -127,6 +128,7 @@ impl MissionKind {
     ///
     /// This is the key used to look up `world.mission_tables`. `None` for
     /// `Autoscrap` (no probability table — it always succeeds).
+    #[must_use]
     pub fn mstb_key(self) -> Option<&'static str> {
         match self {
             MissionKind::Diplomacy => Some("DIPLMSTB"),
@@ -150,10 +152,11 @@ impl MissionKind {
     /// Diplomacy and Recruitment are from rebellion2 Mission.cs.
     /// Other types use placeholder coefficients fit to approximate MSTB curves.
     /// Once `world.mission_tables` is populated, these are never used.
+    #[must_use]
     pub fn coefficients(self) -> (f64, f64, f64) {
         match self {
-            MissionKind::Diplomacy => (0.005558, 0.7656, 20.15),
-            MissionKind::Recruitment => (-0.001748, 0.8657, 11.923),
+            MissionKind::Diplomacy => (0.005_558, 0.7656, 20.15),
+            MissionKind::Recruitment => (-0.001_748, 0.8657, 11.923),
             MissionKind::Sabotage => (-0.002, 0.75, 15.0),
             MissionKind::Assassination => (-0.003, 0.80, 10.0),
             MissionKind::Espionage => (-0.002, 0.78, 12.0),
@@ -167,18 +170,18 @@ impl MissionKind {
     }
 
     /// Extract the relevant skill score from a character for this mission type.
+    #[must_use]
     pub fn skill_score(self, character: &Character) -> u32 {
         let pair = match self {
-            MissionKind::Diplomacy => character.diplomacy,
             MissionKind::Recruitment => character.leadership,
-            MissionKind::Sabotage => character.espionage,
-            MissionKind::Assassination => character.combat,
-            MissionKind::Espionage => character.espionage,
-            MissionKind::Rescue => character.combat,
-            MissionKind::Abduction => character.espionage,
-            MissionKind::InciteUprising => character.diplomacy,
-            MissionKind::SubdueUprising => character.diplomacy,
-            MissionKind::DeathStarSabotage => character.espionage,
+            MissionKind::Sabotage
+            | MissionKind::Espionage
+            | MissionKind::Abduction
+            | MissionKind::DeathStarSabotage => character.espionage,
+            MissionKind::Assassination | MissionKind::Rescue => character.combat,
+            MissionKind::Diplomacy | MissionKind::InciteUprising | MissionKind::SubdueUprising => {
+                character.diplomacy
+            }
             // Autoscrap has no character; callers guard against passing None.
             MissionKind::Autoscrap => return 100,
         };
@@ -188,18 +191,27 @@ impl MissionKind {
 
     /// Compute the composite input value for MSTB table lookup.
     ///
-    /// The original game (per Ghidra RE + TheArchitect2018 wiki) computes a
+    /// The original game (per Ghidra RE + `TheArchitect2018` wiki) computes a
     /// composite input from character skill + game-state context before looking
     /// up the probability table. This replaces our previous approach of passing
-    /// raw skill_score directly to `MstbTable::lookup()`.
+    /// raw `skill_score` directly to `MstbTable::lookup()`.
     ///
     /// Source functions from REBEXE.EXE:
-    /// - Diplomacy:     sub_55ae50 → `(enemy_pop - our_pop) + diplomacy_rating`
-    /// - Recruitment:   sub_55aed0 → `leadership - target_resistance`
-    /// - Espionage:     sub_55ae90 → `espionage_skill` (direct lookup)
-    /// - Subdue:        sub_55af50 → `(enemy_pop - our_pop) + diplomacy_rating`
-    /// - DS Sabotage:   sub_55b0a0 → `(espionage + combat) / 2`
-    /// - Escape:        sub_55cfb0 → `((p3 + p2) - p4) - p5` (see check_escapes)
+    /// - Diplomacy:     `sub_55ae50` → `(enemy_pop - our_pop) + diplomacy_rating`
+    /// - Recruitment:   `sub_55aed0` → `leadership - target_resistance`
+    /// - Espionage:     `sub_55ae90` → `espionage_skill` (direct lookup)
+    /// - Subdue:        `sub_55af50` → `(enemy_pop - our_pop) + diplomacy_rating`
+    /// - DS Sabotage:   `sub_55b0a0` → `(espionage + combat) / 2`
+    /// - Escape:        `sub_55cfb0` → `((p3 + p2) - p4) - p5` (see `check_escapes`)
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
+    #[expect(
+        clippy::manual_midpoint,
+        reason = "Preserve the existing signed sum and division semantics, including overflow behavior."
+    )]
     pub fn compute_table_input(
         self,
         character: &Character,
@@ -207,25 +219,10 @@ impl MissionKind {
         faction: MissionFaction,
         target_character: Option<&Character>,
     ) -> i32 {
-        let skill = self.skill_score(character) as i32;
+        let skill = self.skill_score(character).cast_signed();
 
         match self {
             // sub_55ae50: input = (enemy_popularity - our_popularity) + diplomacy_rating
-            MissionKind::Diplomacy => {
-                if let Some(sys) = system {
-                    let (our_pop, enemy_pop) = match faction {
-                        MissionFaction::Alliance => {
-                            (sys.popularity_alliance, sys.popularity_empire)
-                        }
-                        MissionFaction::Empire => (sys.popularity_empire, sys.popularity_alliance),
-                    };
-                    let pop_delta = ((enemy_pop - our_pop) * 100.0) as i32;
-                    pop_delta + skill
-                } else {
-                    skill
-                }
-            }
-
             // Original: INCTMS_TABLE[(diplomacy - pop_support) - espionage_rating]
             MissionKind::InciteUprising => {
                 if let Some(sys) = system {
@@ -244,7 +241,7 @@ impl MissionKind {
             }
 
             // sub_55af50: same formula as diplomacy
-            MissionKind::SubdueUprising => {
+            MissionKind::Diplomacy | MissionKind::SubdueUprising => {
                 if let Some(sys) = system {
                     let (our_pop, enemy_pop) = match faction {
                         MissionFaction::Alliance => {
@@ -263,7 +260,7 @@ impl MissionKind {
             // Original: RCRTMS_TABLE[leadership - target_resistance]
             MissionKind::Recruitment => {
                 let resistance = if let Some(target) = target_character {
-                    (target.loyalty.base + target.loyalty.variance / 2) as i32
+                    (target.loyalty.base + target.loyalty.variance / 2).cast_signed()
                 } else if let Some(sys) = system {
                     let our_pop = match faction {
                         MissionFaction::Alliance => sys.popularity_alliance,
@@ -276,20 +273,11 @@ impl MissionKind {
                 skill - resistance
             }
 
-            // sub_55b0a0: input = (espionage + combat) / 2
-            MissionKind::DeathStarSabotage => {
+            // sub_55b0a0 / SBTGMS_TABLE: both sabotage kinds use (espionage + combat) / 2
+            MissionKind::DeathStarSabotage | MissionKind::Sabotage => {
                 let espionage =
-                    (character.espionage.base + character.espionage.variance / 2) as i32;
-                let combat = (character.combat.base + character.combat.variance / 2) as i32;
-                (espionage + combat) / 2
-            }
-
-            // FIX #1: Sabotage uses (espionage + combat) / 2, same as DS Sabotage.
-            // Original: SBTGMS_TABLE[(espionage + combat) / 2]
-            MissionKind::Sabotage => {
-                let espionage =
-                    (character.espionage.base + character.espionage.variance / 2) as i32;
-                let combat = (character.combat.base + character.combat.variance / 2) as i32;
+                    (character.espionage.base + character.espionage.variance / 2).cast_signed();
+                let combat = (character.combat.base + character.combat.variance / 2).cast_signed();
                 (espionage + combat) / 2
             }
 
@@ -297,8 +285,7 @@ impl MissionKind {
             // Original: ASSNMS_TABLE[combat - target_defense]
             MissionKind::Assassination => {
                 let target_defense = target_character
-                    .map(|t| (t.combat.base + t.combat.variance / 2) as i32)
-                    .unwrap_or(0);
+                    .map_or(0, |t| (t.combat.base + t.combat.variance / 2).cast_signed());
                 skill - target_defense
             }
 
@@ -306,8 +293,7 @@ impl MissionKind {
             // Original: ABDCMS_TABLE[espionage - target_defense]
             MissionKind::Abduction => {
                 let target_defense = target_character
-                    .map(|t| (t.combat.base + t.combat.variance / 2) as i32)
-                    .unwrap_or(0);
+                    .map_or(0, |t| (t.combat.base + t.combat.variance / 2).cast_signed());
                 skill - target_defense
             }
 
@@ -319,38 +305,46 @@ impl MissionKind {
     }
 
     /// Minimum success probability (percent, 1–100).
+    #[must_use]
     pub fn min_success_prob(self) -> f64 {
         1.0
     }
 
     /// Maximum success probability (percent, 1–100).
+    #[must_use]
     pub fn max_success_prob(self) -> f64 {
         100.0
     }
 
-    /// Mission duration range in game-days: (min_ticks, max_ticks).
+    /// Mission duration range in game-days: (`min_ticks`, `max_ticks`).
     ///
-    /// Drawn from MISSNSD.DAT base_duration. War Machine types use longer
+    /// Drawn from MISSNSD.DAT `base_duration`. War Machine types use longer
     /// ranges reflecting the original game's espionage timescales.
+    #[must_use]
     pub fn tick_range(self) -> (u32, u32) {
         match self {
             MissionKind::Diplomacy | MissionKind::Recruitment => (15, 20),
-            MissionKind::Sabotage => (20, 30),
-            MissionKind::Assassination => (25, 35),
+            MissionKind::Sabotage
+            | MissionKind::Rescue
+            | MissionKind::InciteUprising
+            | MissionKind::SubdueUprising => (20, 30),
+            MissionKind::Assassination | MissionKind::Abduction => (25, 35),
             MissionKind::Espionage => (15, 25),
-            MissionKind::Rescue => (20, 30),
-            MissionKind::Abduction => (25, 35),
-            MissionKind::InciteUprising => (20, 30),
-            MissionKind::SubdueUprising => (20, 30),
             MissionKind::DeathStarSabotage => (30, 40),
             MissionKind::Autoscrap => (1, 1),
         }
     }
 
     /// Sample a concrete duration from the tick range given a uniform roll in [0,1).
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn sample_duration(self, roll: f64) -> u32 {
         let (min, max) = self.tick_range();
-        let raw = min + (roll * (max - min + 1) as f64).floor() as u32;
+        let raw = min + (roll * f64::from(max - min + 1)).floor() as u32;
         raw.min(max)
     }
 }
@@ -398,6 +392,7 @@ pub struct ActiveMission {
 
 impl ActiveMission {
     /// Create a new mission ready for insertion into `MissionState`.
+    #[must_use]
     pub fn new(
         id: u64,
         kind: MissionKind,
@@ -420,6 +415,11 @@ impl ActiveMission {
     }
 
     /// Progress fraction in [0.0, 1.0].
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn progress_fraction(&self) -> f32 {
         if self.total_ticks == 0 {
             return 1.0;
@@ -440,6 +440,7 @@ pub struct MissionState {
 }
 
 impl MissionState {
+    #[must_use]
     pub fn new() -> Self {
         MissionState {
             missions: VecDeque::new(),
@@ -511,14 +512,17 @@ impl MissionState {
     }
 
     /// All active missions (read-only).
+    #[must_use]
     pub fn missions(&self) -> &VecDeque<ActiveMission> {
         &self.missions
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.missions.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.missions.is_empty()
     }
@@ -666,11 +670,13 @@ pub struct MissionResult {
 /// Evaluate the quadratic success-probability formula.
 ///
 /// Returns a probability in percent [0, 100].
+#[must_use]
 pub fn quadratic_prob(score: f64, a: f64, b: f64, c: f64) -> f64 {
     a * score * score + b * score + c
 }
 
 /// Clamp a probability to the mission's configured [min%, max%] range.
+#[must_use]
 pub fn clamp_prob(p: f64, min: f64, max: f64) -> f64 {
     p.max(min).min(max)
 }
@@ -678,6 +684,7 @@ pub fn clamp_prob(p: f64, min: f64, max: f64) -> f64 {
 /// Combined success probability: `agent_prob% * (1 - foil_prob%)`.
 ///
 /// Both inputs are in percent [0, 100]; output is in percent [0, 100].
+#[must_use]
 pub fn total_success_prob(agent_prob_pct: f64, foil_prob_pct: f64) -> f64 {
     let agent = agent_prob_pct / 100.0;
     let foil = foil_prob_pct / 100.0;
@@ -686,17 +693,18 @@ pub fn total_success_prob(agent_prob_pct: f64, foil_prob_pct: f64) -> f64 {
 
 /// Foil probability from defense score.
 ///
-/// Coefficients from Mission.cs FoilProbability: -0.001999·d² + 0.8879·d + 84.61.
+/// Coefficients from Mission.cs `FoilProbability`: -0.001999·d² + 0.8879·d + 84.61.
 /// Returns 0.0 if the mission is in a friendly system (no counter-intel threat).
 #[expect(
     clippy::manual_clamp,
     reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
 )]
+#[must_use]
 pub fn foil_prob(defense_score: f64, own_system: bool) -> f64 {
     if own_system {
         return 0.0;
     }
-    quadratic_prob(defense_score, -0.001999, 0.8879, 84.61)
+    quadratic_prob(defense_score, -0.001_999, 0.8879, 84.61)
         .max(0.0)
         .min(100.0)
 }
@@ -710,21 +718,21 @@ pub fn foil_prob(defense_score: f64, own_system: bool) -> f64 {
 /// From the original game: enemy operatives stationed at a system can detect
 /// and block covert missions. The system's `espionage_rating` provides a
 /// baseline; stationed characters add their espionage skill on top.
+#[must_use]
 pub fn compute_defense_score(
     world: &GameWorld,
     target_system: SystemKey,
     mission_faction: MissionFaction,
 ) -> f64 {
-    let sys = match world.systems.get(target_system) {
-        Some(s) => s,
-        None => return 0.0,
+    let Some(sys) = world.systems.get(target_system) else {
+        return 0.0;
     };
 
     // Baseline from the system's own counter-intelligence rating.
-    let mut score = sys.espionage_rating as f64;
+    let mut score = f64::from(sys.espionage_rating);
 
     // Add espionage skill of enemy characters stationed at this system.
-    for (_key, character) in world.characters.iter() {
+    for (_key, character) in &world.characters {
         if character.current_system != Some(target_system) {
             continue;
         }
@@ -735,7 +743,7 @@ pub fn compute_defense_score(
         };
         if is_enemy {
             // Use base espionage skill (expected value of the pair).
-            score += character.espionage.base as f64;
+            score += f64::from(character.espionage.base);
         }
     }
 
@@ -745,10 +753,10 @@ pub fn compute_defense_score(
 /// Whether the target system is controlled by the mission's faction.
 ///
 /// Missions in friendly systems face no counter-intelligence threat.
+#[must_use]
 pub fn is_own_system(world: &GameWorld, target_system: SystemKey, faction: MissionFaction) -> bool {
-    let sys = match world.systems.get(target_system) {
-        Some(s) => s,
-        None => return false,
+    let Some(sys) = world.systems.get(target_system) else {
+        return false;
     };
     match sys.control.faction() {
         Some(crate::dat::Faction::Alliance) => faction == MissionFaction::Alliance,
@@ -783,22 +791,26 @@ impl MissionSystem {
     ///
     /// **Important**: The caller is responsible for applying `MissionResult::effects`
     /// to `GameWorld` (popularity shifts, character faction assignment, etc.).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn advance(
         state: &mut MissionState,
         world: &GameWorld,
         tick_events: &[TickEvent],
         rolls: &[f64],
     ) -> Vec<MissionResult> {
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return Vec::new();
-        }
+        };
 
         let tick_count = tick_events.len() as u32;
-        let final_tick = tick_events.last().unwrap().tick;
+        let final_tick = last_tick_event.tick;
         let mut roll_iter = rolls.iter().copied();
         let mut results = Vec::new();
 
-        for mission in state.missions.iter_mut() {
+        for mission in &mut state.missions {
             mission.ticks_remaining = mission.ticks_remaining.saturating_sub(tick_count);
         }
 
@@ -837,27 +849,24 @@ impl MissionSystem {
         let target_char = mission
             .target_character
             .and_then(|k| world.characters.get(k));
-        let table_input = character
-            .map(|c| {
-                mission
-                    .kind
-                    .compute_table_input(c, target_system, mission.faction, target_char)
-            })
-            .unwrap_or(0);
+        let table_input = character.map_or(0, |c| {
+            mission
+                .kind
+                .compute_table_input(c, target_system, mission.faction, target_char)
+        });
 
         // Decoy missions draw enemy counter-intelligence but produce no game effects.
         // From community disassembly FUN_005871d0 + FUN_0055cbe0:
         // Success probability from FDECOYTB (fleet) or TDECOYTB (troop) tables,
         // penalized by GNPRTB[3588] = 35% reduction.
         if mission.is_decoy {
-            let character_skill = character
-                .map(|c| mission.kind.skill_score(c) as i32)
-                .unwrap_or(0);
+            let character_skill =
+                character.map_or(0, |c| mission.kind.skill_score(c).cast_signed());
             // Use FDECOYTB if available, otherwise fall back to 65% flat threshold.
             let decoy_prob = if let Some(table) = world.mission_tables.get("FDECOYTB") {
-                let raw = table.lookup(character_skill) as f64;
+                let raw = f64::from(table.lookup(character_skill));
                 // Apply GNPRTB[3588] = 35% penalty: reduce probability by 35%.
-                let penalty = world.gnprtb.value(3588, world.difficulty_index) as f64 / 100.0;
+                let penalty = f64::from(world.gnprtb.value(3588, world.difficulty_index)) / 100.0;
                 let penalized = raw * (1.0 - penalty.clamp(0.0, 1.0));
                 clamp_prob(penalized, 1.0, 100.0) / 100.0
             } else {
@@ -936,13 +945,13 @@ impl MissionSystem {
             return (MissionOutcome::Success, Self::build_effects(mission));
         }
 
-        let skill_score: u32 = character.map(|c| mission.kind.skill_score(c)).unwrap_or(0);
+        let skill_score: u32 = character.map_or(0, |c| mission.kind.skill_score(c));
 
         // Priority 1: MSTB table lookup using composite input (per original game formulas).
         // Priority 2: quadratic fallback using raw skill_score (rebellion2 Mission.cs).
         let agent_prob = if let Some(key) = mission.kind.mstb_key() {
             if let Some(table) = mission_tables.get(key) {
-                let raw = table.lookup(table_input) as f64;
+                let raw = f64::from(table.lookup(table_input));
                 clamp_prob(
                     raw,
                     mission.kind.min_success_prob(),
@@ -950,7 +959,7 @@ impl MissionSystem {
                 )
             } else {
                 let (a, b, c) = mission.kind.coefficients();
-                let raw = quadratic_prob(skill_score as f64, a, b, c);
+                let raw = quadratic_prob(f64::from(skill_score), a, b, c);
                 clamp_prob(
                     raw,
                     mission.kind.min_success_prob(),
@@ -1091,6 +1100,7 @@ impl MissionSystem {
     /// If a defending-faction character with espionage skill is present at the
     /// target system, look up FDECOYTB to determine decoy probability.
     /// Returns `Some(DecoyTriggered)` if the decoy succeeds, consuming one roll.
+    #[must_use]
     pub fn check_decoy(
         mission: &ActiveMission,
         world: &GameWorld,
@@ -1107,7 +1117,7 @@ impl MissionSystem {
         });
 
         let (decoy_key, decoy_char) = defender?;
-        let prob = table.lookup(decoy_char.espionage.base as i32) as f64 / 100.0;
+        let prob = f64::from(table.lookup(decoy_char.espionage.base.cast_signed())) / 100.0;
 
         if roll < prob {
             Some(MissionEffect::DecoyTriggered {
@@ -1124,23 +1134,23 @@ impl MissionSystem {
     /// For each character held by the opposing faction, look up ESCAPETB
     /// and roll against the escape probability. Returns one `CharacterEscaped`
     /// effect per successful escape.
+    #[must_use]
     pub fn check_escapes(world: &GameWorld, rolls: &[f64]) -> Vec<MissionEffect> {
-        let table = match world.mission_tables.get("ESCAPETB") {
-            Some(t) => t,
-            None => return Vec::new(),
+        let Some(table) = world.mission_tables.get("ESCAPETB") else {
+            return Vec::new();
         };
 
         let mut effects = Vec::new();
         let mut roll_iter = rolls.iter().copied();
 
-        for (char_key, character) in world.characters.iter() {
+        for (char_key, character) in &world.characters {
             if !character.is_captive {
                 continue;
             }
             let roll = roll_iter.next().unwrap_or(1.0); // 1.0 = no escape (safe default)
                                                         // Use loyalty as the skill score for escape probability
-            let skill_score = character.loyalty.base as i32;
-            let escape_prob = table.lookup(skill_score) as f64 / 100.0;
+            let skill_score = character.loyalty.base.cast_signed();
+            let escape_prob = f64::from(table.lookup(skill_score)) / 100.0;
             if roll < escape_prob {
                 // Character escapes back to their home faction.
                 // is_alliance reflects original allegiance — capture tracks captor,
@@ -1212,6 +1222,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "Friendly systems must return exactly zero, not an approximation."
+    )]
     fn foil_prob_own_system_is_zero() {
         assert_eq!(foil_prob(99.0, true), 0.0);
     }
@@ -1226,7 +1240,7 @@ mod tests {
     #[test]
     fn sample_duration_stays_in_range() {
         for i in 0..=10 {
-            let roll = i as f64 / 10.0;
+            let roll = f64::from(i) / 10.0;
             let d = MissionKind::Diplomacy.sample_duration(roll);
             let (min, max) = MissionKind::Diplomacy.tick_range();
             assert!(d >= min && d <= max, "duration {d} out of [{min}, {max}]");
@@ -1257,6 +1271,10 @@ mod tests {
     // --- Counter-intelligence integration ---
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "An empty defense must produce exactly zero."
+    )]
     fn defense_score_zero_with_no_enemies() {
         let world = GameWorld::default();
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
@@ -1862,7 +1880,7 @@ mod tests {
                 // Captured by Empire → escapes TO Alliance
                 assert!(*escaped_to_alliance);
             }
-            other => panic!("expected CharacterEscaped, got {:?}", other),
+            other => panic!("expected CharacterEscaped, got {other:?}"),
         }
     }
 
@@ -2062,9 +2080,7 @@ mod tests {
         );
         assert!(
             incite_input < diplomacy_input,
-            "espionage_rating=0.25 should reduce incite input below diplomacy: {} vs {}",
-            incite_input,
-            diplomacy_input
+            "espionage_rating=0.25 should reduce incite input below diplomacy: {incite_input} vs {diplomacy_input}"
         );
         // 0.25 * 100 = 25 reduction
         assert_eq!(diplomacy_input - incite_input, 25);

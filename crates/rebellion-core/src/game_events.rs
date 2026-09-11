@@ -21,6 +21,7 @@ pub struct GameEventRecord {
 }
 
 impl GameEventRecord {
+    #[must_use]
     pub fn new(
         tick: u64,
         wall_ms: u64,
@@ -234,7 +235,7 @@ mod tests {
         ];
         let mut seen = std::collections::HashSet::new();
         for evt in &all {
-            assert!(seen.insert(*evt), "duplicate event type constant: {}", evt);
+            assert!(seen.insert(*evt), "duplicate event type constant: {evt}");
         }
     }
 }

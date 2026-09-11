@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::*;
+use crate::ids::{FleetKey, SystemKey};
 use crate::tick::TickEvent;
 use crate::world::GameWorld;
 
@@ -57,6 +57,7 @@ pub struct RepairState {
 
 impl RepairState {
     /// Whether a fleet was undergoing repair at the preceding repair step.
+    #[must_use]
     pub fn is_repairing(&self, fleet: FleetKey) -> bool {
         self.active_fleets.contains(&fleet)
     }
@@ -86,16 +87,15 @@ impl RepairSystem {
         let mut repairing_now = HashSet::new();
 
         // Iterate all systems that have manufacturing facilities (shipyards).
-        for (sys_key, sys) in world.systems.iter() {
+        for (sys_key, sys) in &world.systems {
             if sys.is_destroyed || sys.manufacturing_facilities.is_empty() {
                 continue;
             }
 
             // Each fleet at this system gets repair service.
             for &fleet_key in &sys.fleets {
-                let fleet = match world.fleets.get(fleet_key) {
-                    Some(f) => f,
-                    None => continue,
+                let Some(fleet) = world.fleets.get(fleet_key) else {
+                    continue;
                 };
 
                 // Repair damaged ships using the class damage_control rate.
@@ -108,11 +108,12 @@ impl RepairSystem {
                         Some(c) if c.damage_control > 0 => c,
                         _ => continue,
                     };
-                    let hull_max = class.hull as i32;
+                    let hull_max = class.hull.cast_signed();
                     if ship.hull_current < hull_max {
                         ships_repaired += 1;
                         let hull_before = ship.hull_current;
-                        let hull_after = (hull_before + class.damage_control as i32).min(hull_max);
+                        let hull_after =
+                            (hull_before + class.damage_control.cast_signed()).min(hull_max);
                         events.push(RepairEvent::ShipRepaired {
                             fleet: fleet_key,
                             ship_index,
@@ -154,6 +155,7 @@ impl RepairSystem {
 mod tests {
     use super::*;
     use crate::dat::{ExplorationStatus, Faction};
+    use crate::ids::DatId;
     use crate::world::*;
 
     fn make_shipyard_system(world: &mut GameWorld) -> SystemKey {
@@ -373,7 +375,7 @@ mod tests {
                 // damage_control=10, so hull_after = min(150+10, 200) = 160
                 assert_eq!(*hull_after, 160);
             }
-            _ => unreachable!(),
+            RepairEvent::RepairCheckPerformed { .. } => unreachable!(),
         }
     }
 

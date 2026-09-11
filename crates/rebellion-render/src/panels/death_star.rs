@@ -14,6 +14,7 @@ use super::PanelAction;
 use crate::theme;
 
 /// Draw the Death Star control panel as a left-side egui panel.
+#[must_use]
 pub fn draw_death_star(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -46,6 +47,14 @@ pub fn draw_death_star(
 }
 
 /// Empire view: construction status, location, fire button.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn draw_empire_view(
     ui: &mut egui::Ui,
     world: &GameWorld,
@@ -64,10 +73,9 @@ fn draw_empire_view(
         let sys_name = world
             .systems
             .get(construction.system)
-            .map(|s| s.name.as_str())
-            .unwrap_or("Unknown");
+            .map_or("Unknown", |s| s.name.as_str());
         ui.label(
-            RichText::new(format!("Location: {}", sys_name))
+            RichText::new(format!("Location: {sys_name}"))
                 .color(theme::TEXT_PRIMARY)
                 .size(11.0),
         );
@@ -108,17 +116,16 @@ fn draw_empire_view(
             let sys_name = world
                 .systems
                 .get(fleet.location)
-                .map(|s| s.name.as_str())
-                .unwrap_or("Unknown");
+                .map_or("Unknown", |s| s.name.as_str());
             ui.label(
-                RichText::new(format!("Location: {}", sys_name))
+                RichText::new(format!("Location: {sys_name}"))
                     .color(theme::TEXT_PRIMARY)
                     .size(11.0),
             );
 
             let ship_count: u32 = fleet.ship_count();
             ui.label(
-                RichText::new(format!("Escort: {} capital ships", ship_count))
+                RichText::new(format!("Escort: {ship_count} capital ships"))
                     .color(theme::TEXT_SECONDARY)
                     .size(10.0),
             );
@@ -204,12 +211,12 @@ fn draw_empire_view(
 
             let mut nearby: Vec<(SystemKey, &str, f32)> = Vec::new();
             if let Some(cur_sys) = world.systems.get(fleet.location) {
-                for (sk, sys) in world.systems.iter() {
+                for (sk, sys) in &world.systems {
                     if sk == fleet.location || sys.is_destroyed {
                         continue;
                     }
-                    let dx = (sys.x as f32) - (cur_sys.x as f32);
-                    let dy = (sys.y as f32) - (cur_sys.y as f32);
+                    let dx = f32::from(sys.x) - f32::from(cur_sys.x);
+                    let dy = f32::from(sys.y) - f32::from(cur_sys.y);
                     let dist = (dx * dx + dy * dy).sqrt();
                     if dist < 500.0 {
                         nearby.push((sk, &sys.name, dist));
@@ -230,7 +237,7 @@ fn draw_empire_view(
                     ui.horizontal(|ui| {
                         if ui
                             .small_button(
-                                RichText::new(format!("{} ({:.0})", name, dist))
+                                RichText::new(format!("{name} ({dist:.0})"))
                                     .color(theme::TEXT_PRIMARY)
                                     .size(10.0),
                             )
@@ -293,10 +300,9 @@ fn draw_alliance_view(ui: &mut egui::Ui, world: &GameWorld, ds_state: &DeathStar
             let sys_name = world
                 .systems
                 .get(fleet.location)
-                .map(|s| s.name.as_str())
-                .unwrap_or("Unknown");
+                .map_or("Unknown", |s| s.name.as_str());
             ui.label(
-                RichText::new(format!("Last known location: {}", sys_name))
+                RichText::new(format!("Last known location: {sys_name}"))
                     .color(theme::TEXT_PRIMARY)
                     .size(11.0),
             );

@@ -4,7 +4,7 @@
 //! world data, and mutable panel-local state.  Every panel returns
 //! `Option<PanelAction>` — the caller applies the action to game state rather
 //! than letting the panel borrow mutable world references, which would conflict
-//! with egui's FnMut closure requirements.
+//! with egui's `FnMut` closure requirements.
 //!
 //! # Integration
 //!
@@ -74,7 +74,7 @@ pub enum PanelAction {
         character: CharacterKey,
         fleet: FleetKey,
     },
-    /// Merge fleet_b into fleet_a (ships, fighters, characters transfer).
+    /// Merge `fleet_b` into `fleet_a` (ships, fighters, characters transfer).
     MergeFleets {
         fleet_a: FleetKey,
         fleet_b: FleetKey,

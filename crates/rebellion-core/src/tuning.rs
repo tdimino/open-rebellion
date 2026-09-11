@@ -68,13 +68,13 @@ pub struct AiConfig {
     /// Minimum popularity threshold for Alliance covert target selection. **Augmentation.**
     pub covert_target_popularity_threshold: f32,
 
-    /// Alliance deployment budget — fraction of max_attack_fronts the Alliance uses.
-    /// **Parity** (FUN_00506ea0: Alliance evaluator at +0xc4 on global struct).
+    /// Alliance deployment budget — fraction of `max_attack_fronts` the Alliance uses.
+    /// **Parity** (`FUN_00506ea0`: Alliance evaluator at +0xc4 on global struct).
     /// Alliance is more conservative, opening fewer attack fronts.
     pub alliance_deploy_budget: f64,
 
-    /// Empire deployment budget — fraction of max_attack_fronts the Empire uses.
-    /// **Parity** (FUN_00506ea0: Empire evaluator at +0xc8 on global struct).
+    /// Empire deployment budget — fraction of `max_attack_fronts` the Empire uses.
+    /// **Parity** (`FUN_00506ea0`: Empire evaluator at +0xc8 on global struct).
     /// Empire is more aggressive, opening more attack fronts.
     pub empire_deploy_budget: f64,
 
@@ -170,7 +170,7 @@ impl Default for ProductionConfig {
     }
 }
 
-/// Scoring targets for eval_game_quality.py (not used in Rust, but stored
+/// Scoring targets for `eval_game_quality.py` (not used in Rust, but stored
 /// here for autoresearch config symmetry).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

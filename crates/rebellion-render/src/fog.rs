@@ -66,13 +66,13 @@ const FOG_DOT_RADIUS: f32 = 2.5;
 /// - `fog_state` — current visibility set for the player's faction
 /// - `camera` — the exact transform and faction aperture from `draw_galaxy_map`
 pub fn draw_fog_overlay(world: &GameWorld, fog_state: &FogState, camera: &CameraView) {
-    for (_key, system) in &world.systems {
+    for (system_key, system) in &world.systems {
         // Fully visible systems are rendered at normal brightness elsewhere.
-        if fog_state.is_visible(_key) {
+        if fog_state.is_visible(system_key) {
             continue;
         }
 
-        let (sx, sy) = camera.to_screen(system.x as f32, system.y as f32);
+        let (sx, sy) = camera.to_screen(f32::from(system.x), f32::from(system.y));
         if !camera.contains_with_margin(sx, sy, camera.scale_pixels(20.0)) {
             continue;
         }

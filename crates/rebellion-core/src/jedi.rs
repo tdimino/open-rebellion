@@ -2,7 +2,7 @@
 //!
 //! # Design
 //!
-//! Follows the stateless advance() pattern:
+//! Follows the stateless `advance()` pattern:
 //! - `JediState` tracks which characters are in Force training and their experience.
 //! - `JediSystem::advance(state, world, tick_events, rng_rolls) -> Vec<JediEvent>`
 //! - Caller applies results to `world.characters` and logs messages.
@@ -28,7 +28,7 @@
 //! 4. When `force_experience` crosses a tier threshold, a `JediEvent::TierAdvanced` fires.
 //! 5. Once `Experienced`, training is complete — the character is removed from active training.
 //! 6. Once per `DETECTION_CHECK_INTERVAL` ticks, the opposing faction may detect a Jedi
-//!    (`JediEvent::JediDiscovered`). Detection probability scales with force_tier.
+//!    (`JediEvent::JediDiscovered`). Detection probability scales with `force_tier`.
 //!
 //! # RNG Contract
 //!
@@ -80,7 +80,7 @@ pub struct JediTrainingRecord {
     pub last_detection_tick: u64,
     /// Accumulated XP since training began. Stored here (not in world)
     /// so XP persists across ticks without requiring the caller to write
-    /// force_experience back to the character every tick.
+    /// `force_experience` back to the character every tick.
     pub accumulated_xp: u32,
 }
 
@@ -96,6 +96,7 @@ pub struct JediState {
 }
 
 impl JediState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -128,6 +129,7 @@ impl JediState {
     }
 
     /// True if the character is currently in training.
+    #[must_use]
     pub fn is_training(&self, character: CharacterKey) -> bool {
         self.training.iter().any(|r| r.character == character)
     }
@@ -175,18 +177,25 @@ impl JediSystem {
     /// 2. Update `world.characters[key].force_tier` from `TierAdvanced` events.
     /// 3. Update `world.characters[key].is_discovered_jedi` from `JediDiscovered` events.
     /// 4. Call `state.stop_training(key)` for each `TrainingComplete` event.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn advance(
         state: &mut JediState,
         world: &GameWorld,
         tick_events: &[TickEvent],
         rng_rolls: &[f64],
     ) -> Vec<JediEvent> {
-        if tick_events.is_empty() || state.training.is_empty() {
+        if state.training.is_empty() {
             return Vec::new();
         }
 
+        let Some(last_tick_event) = tick_events.last() else {
+            return Vec::new();
+        };
         let ticks_elapsed = tick_events.len() as u32;
-        let current_tick = tick_events.last().unwrap().tick;
+        let current_tick = last_tick_event.tick;
         let mut events = Vec::new();
         let mut roll_idx = 0;
 
@@ -276,11 +285,12 @@ impl JediSystem {
     ///
     /// Caller must update `world.characters[key].force_tier = ForceTier::Aware`
     /// for each returned key.
+    #[must_use]
     pub fn apply_initial_awakening(world: &GameWorld, rng_rolls: &[f64]) -> Vec<CharacterKey> {
         let mut awakened = Vec::new();
         let mut roll_idx = 0;
 
-        for (key, character) in world.characters.iter() {
+        for (key, character) in &world.characters {
             if character.jedi_probability == 0 {
                 continue;
             }
@@ -288,7 +298,7 @@ impl JediSystem {
                 continue; // already awakened (e.g. Luke)
             }
 
-            let threshold = character.jedi_probability as f64 / 100.0;
+            let threshold = f64::from(character.jedi_probability) / 100.0;
             let roll = if roll_idx < rng_rolls.len() {
                 let r = rng_rolls[roll_idx];
                 roll_idx += 1;

@@ -164,6 +164,14 @@ pub fn draw_officers(
 // ---------------------------------------------------------------------------
 
 /// Render the full character detail inside an already-open panel UI.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn draw_character_detail(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
@@ -283,7 +291,7 @@ fn draw_character_detail(
     // Find current location via fleet assignment
     let mut location_name: Option<String> = None;
     let mut fleet_info: Option<String> = None;
-    for (_, fleet) in world.fleets.iter() {
+    for (_, fleet) in &world.fleets {
         if fleet.characters.contains(&key) {
             if let Some(sys) = world.systems.get(fleet.location) {
                 location_name = Some(sys.name.clone());
@@ -294,21 +302,21 @@ fn draw_character_detail(
             } else {
                 "Empire"
             };
-            fleet_info = Some(format!("{} fleet ({} ships)", tag, ship_count));
+            fleet_info = Some(format!("{tag} fleet ({ship_count} ships)"));
             break;
         }
     }
 
     if let Some(loc) = &location_name {
         ui.label(
-            RichText::new(format!("Location: {}", loc))
+            RichText::new(format!("Location: {loc}"))
                 .color(theme::TEXT_PRIMARY)
                 .size(11.0),
         );
     }
     if let Some(fleet) = &fleet_info {
         ui.label(
-            RichText::new(format!("Fleet: {}", fleet))
+            RichText::new(format!("Fleet: {fleet}"))
                 .color(theme::TEXT_SECONDARY)
                 .size(11.0),
         );
@@ -360,7 +368,7 @@ fn draw_character_detail(
                 let progress = xp as f32 / XP_TO_TRAINING as f32;
                 ui.add(
                     ProgressBar::new(progress.min(1.0))
-                        .text(format!("{}/{} XP", xp, XP_TO_TRAINING))
+                        .text(format!("{xp}/{XP_TO_TRAINING} XP"))
                         .fill(Color32::from_rgb(60, 100, 180)),
                 );
             }
@@ -369,7 +377,7 @@ fn draw_character_detail(
                 let progress = xp as f32 / XP_TO_EXPERIENCED as f32;
                 ui.add(
                     ProgressBar::new(progress.min(1.0))
-                        .text(format!("{}/{} XP", xp, XP_TO_EXPERIENCED))
+                        .text(format!("{xp}/{XP_TO_EXPERIENCED} XP"))
                         .fill(Color32::from_rgb(100, 60, 180)),
                 );
             }
@@ -434,6 +442,10 @@ fn draw_character_detail(
 }
 
 /// Render one skill row inside a grid: label | progress bar + value.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn skill_row(ui: &mut egui::Ui, label: &str, skill: SkillPair) {
     ui.label(RichText::new(label).color(theme::TEXT_SECONDARY).size(11.0));
     ui.horizontal(|ui| {

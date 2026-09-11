@@ -104,21 +104,22 @@ pub const MAX_SAVE_SLOTS: usize = 10;
 ///
 /// Uses FNV-1a (64-bit). The mod list is sorted before hashing so that
 /// insertion order does not affect the result.
+#[must_use]
 pub fn compute_mod_hash(mods: &[(String, String)]) -> u64 {
     let mut sorted = mods.to_vec();
     sorted.sort();
-    let mut hash: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
     for (name, version) in &sorted {
         for byte in name
             .bytes()
             .chain(b":".iter().copied())
             .chain(version.bytes())
         {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3); // FNV-1a prime
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3); // FNV-1a prime
         }
         hash ^= 0xff; // separator between mod entries
-        hash = hash.wrapping_mul(0x100000001b3);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
     hash
 }
@@ -219,7 +220,7 @@ fn compute_serializable_fingerprint_for_version<T: Serialize + ?Sized>(
     canonicalize_fingerprint_value(&mut canonical_state, None)?;
     let canonical_bytes = serde_json::to_vec(&canonical_state)?;
 
-    let mut hash: u64 = 0xcbf29ce484222325;
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in b"OPENREB-STATE-FINGERPRINT\0"
         .iter()
         .copied()
@@ -227,8 +228,8 @@ fn compute_serializable_fingerprint_for_version<T: Serialize + ?Sized>(
         .chain(save_version.to_le_bytes())
         .chain(canonical_bytes)
     {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(0x100000001b3);
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
     Ok(StateFingerprint {
         version: STATE_FINGERPRINT_VERSION,
@@ -237,6 +238,9 @@ fn compute_serializable_fingerprint_for_version<T: Serialize + ?Sized>(
 }
 
 /// Canonicalize a snapshot and return the fingerprint used by new save files.
+///
+/// # Errors
+/// Returns an error if the canonical save state cannot be serialized for hashing.
 pub fn compute_state_fingerprint(state: &SaveState) -> anyhow::Result<StateFingerprint> {
     compute_serializable_fingerprint_for_version(SAVE_VERSION, state)
 }
@@ -676,7 +680,7 @@ impl From<&SaveState> for SaveStateV9 {
 /// Lightweight metadata for a save slot — used by the save/load UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaveMeta {
-    /// Slot index (0..MAX_SAVE_SLOTS).
+    /// Slot index (`0..MAX_SAVE_SLOTS`).
     pub slot: usize,
     /// Human-readable name provided by the player.
     pub name: String,
@@ -703,13 +707,19 @@ pub struct SaveMeta {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use super::*;
+    use super::{
+        compute_mod_hash, compute_serializable_fingerprint_for_version, compute_state_fingerprint,
+        SaveMeta, SaveState, SaveStateV10, SaveStateV11, SaveStateV12, SaveStateV9,
+        StateFingerprint, MAX_SAVE_SLOTS, MIN_MIGRATABLE_VERSION, SAVE_MAGIC, SAVE_VERSION,
+        STATE_FINGERPRINT_VERSION,
+    };
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
 
     use anyhow::Context;
 
     /// Default save directory: `<exe_dir>/saves/`.
+    #[must_use]
     pub fn default_saves_dir() -> PathBuf {
         // Prefer a directory relative to the executable.  Fall back to the
         // working directory if the executable path is unavailable.
@@ -721,8 +731,9 @@ mod native {
     }
 
     /// Path for save slot `slot` under `saves_dir`.
+    #[must_use]
     pub fn slot_path(saves_dir: &Path, slot: usize) -> PathBuf {
-        saves_dir.join(format!("{}.reb", slot))
+        saves_dir.join(format!("{slot}.reb"))
     }
 
     /// Write `state` to slot `slot` in `saves_dir`.
@@ -731,6 +742,14 @@ mod native {
     /// mods. Pass an empty slice when no mods are active.
     ///
     /// Creates `saves_dir` if it does not exist.
+    ///
+    /// # Errors
+    /// Returns an error if state serialization, fingerprinting, or creating/writing
+    /// the save file fails.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
+    )]
     pub fn save_slot(
         saves_dir: &Path,
         slot: usize,
@@ -762,8 +781,7 @@ mod native {
         // Timestamp
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_secs());
         file.write_all(&timestamp.to_le_bytes())
             .context("writing timestamp")?;
 
@@ -797,6 +815,10 @@ mod native {
     }
 
     /// Convenience wrapper: save with no active mods.
+    ///
+    /// # Errors
+    /// Returns an error if state serialization, fingerprinting, or creating/writing
+    /// the save file fails.
     pub fn save_slot_no_mods(
         saves_dir: &Path,
         slot: usize,
@@ -810,6 +832,14 @@ mod native {
     ///
     /// Supports migrating saves from older versions (minimum v3). Saves from
     /// future versions are rejected.
+    ///
+    /// # Errors
+    /// Returns an error for unreadable, truncated, corrupt, or unsupported save data,
+    /// including invalid text, deserialization failures, and fingerprint mismatches.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
     pub fn load_slot(saves_dir: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
         let path = slot_path(saves_dir, slot);
         let mut file = std::fs::File::open(&path)
@@ -832,16 +862,12 @@ mod native {
         // ── Version gate ────────────────────────────────────────────────────
         if version > SAVE_VERSION {
             anyhow::bail!(
-                "save version {} is from a newer build (this build supports up to {})",
-                version,
-                SAVE_VERSION
+                "save version {version} is from a newer build (this build supports up to {SAVE_VERSION})"
             );
         }
         if version < MIN_MIGRATABLE_VERSION {
             anyhow::bail!(
-                "save version {} is too old to migrate (minimum supported: {})",
-                version,
-                MIN_MIGRATABLE_VERSION
+                "save version {version} is too old to migrate (minimum supported: {MIN_MIGRATABLE_VERSION})"
             );
         }
 
@@ -906,9 +932,7 @@ mod native {
             let fingerprint_version = u16::from_le_bytes(fingerprint_version_buf);
             anyhow::ensure!(
                 fingerprint_version == STATE_FINGERPRINT_VERSION,
-                "unsupported state fingerprint version {} (this build supports {})",
-                fingerprint_version,
-                STATE_FINGERPRINT_VERSION
+                "unsupported state fingerprint version {fingerprint_version} (this build supports {STATE_FINGERPRINT_VERSION})"
             );
 
             let mut fingerprint_buf = [0u8; 8];
@@ -934,9 +958,7 @@ mod native {
                 if let Some(expected) = expected_fingerprint {
                     anyhow::ensure!(
                         expected == fingerprint,
-                        "save state fingerprint mismatch: expected {}, computed {}",
-                        expected,
-                        fingerprint
+                        "save state fingerprint mismatch: expected {expected}, computed {fingerprint}"
                     );
                 }
                 (state, fingerprint, expected_fingerprint.is_some())
@@ -949,9 +971,7 @@ mod native {
                         compute_serializable_fingerprint_for_version(version, &legacy)?;
                     anyhow::ensure!(
                         expected == legacy_fingerprint,
-                        "save state fingerprint mismatch: expected {}, computed {}",
-                        expected,
-                        legacy_fingerprint
+                        "save state fingerprint mismatch: expected {expected}, computed {legacy_fingerprint}"
                     );
                 }
                 let state = SaveState::from(legacy);
@@ -966,9 +986,7 @@ mod native {
                         compute_serializable_fingerprint_for_version(version, &legacy)?;
                     anyhow::ensure!(
                         expected == legacy_fingerprint,
-                        "save state fingerprint mismatch: expected {}, computed {}",
-                        expected,
-                        legacy_fingerprint
+                        "save state fingerprint mismatch: expected {expected}, computed {legacy_fingerprint}"
                     );
                 }
                 let state = SaveState::from(legacy);
@@ -983,9 +1001,7 @@ mod native {
                         compute_serializable_fingerprint_for_version(version, &legacy)?;
                     anyhow::ensure!(
                         expected == legacy_fingerprint,
-                        "save state fingerprint mismatch: expected {}, computed {}",
-                        expected,
-                        legacy_fingerprint
+                        "save state fingerprint mismatch: expected {expected}, computed {legacy_fingerprint}"
                     );
                 }
                 let state = SaveState::from(legacy);
@@ -1000,9 +1016,7 @@ mod native {
                         compute_serializable_fingerprint_for_version(version, &legacy)?;
                     anyhow::ensure!(
                         expected == legacy_fingerprint,
-                        "save state fingerprint mismatch: expected {}, computed {}",
-                        expected,
-                        legacy_fingerprint
+                        "save state fingerprint mismatch: expected {expected}, computed {legacy_fingerprint}"
                     );
                 }
                 let state = SaveState::from(legacy);
@@ -1067,6 +1081,7 @@ mod native {
     ///
     /// Slots without a file are silently skipped. Corrupt files are reported
     /// as `Err` entries in the returned vector.
+    #[must_use]
     pub fn list_saves(saves_dir: &Path) -> Vec<anyhow::Result<SaveMeta>> {
         (0..MAX_SAVE_SLOTS)
             .filter_map(|slot| {
@@ -1081,6 +1096,9 @@ mod native {
     }
 
     /// Delete a save slot file. No-op if the slot doesn't exist.
+    ///
+    /// # Errors
+    /// Returns an error if an existing save file cannot be deleted.
     pub fn delete_slot(saves_dir: &Path, slot: usize) -> anyhow::Result<()> {
         let path = slot_path(saves_dir, slot);
         if path.exists() {
@@ -1636,6 +1654,10 @@ mod tests {
 
     /// Write a v3-format save file (no mod metadata in header).
     /// Used as a fixture for migration tests.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
+    )]
     fn write_v3_fixture(path: &std::path::Path, name: &str, state: &SaveState) {
         let mut file = std::fs::File::create(path).expect("create v3 fixture");
         file.write_all(SAVE_MAGIC).unwrap();
@@ -1644,7 +1666,7 @@ mod tests {
         file.write_all(&(name_bytes.len() as u32).to_le_bytes())
             .unwrap();
         file.write_all(name_bytes).unwrap();
-        let timestamp: u64 = 1700000000; // fixed timestamp for reproducibility
+        let timestamp: u64 = 1_700_000_000; // fixed timestamp for reproducibility
         file.write_all(&timestamp.to_le_bytes()).unwrap();
         // No mod metadata — that's the v3 format
         let encoded = bincode::serialize(state).expect("serialize v3 body");
@@ -1652,6 +1674,10 @@ mod tests {
     }
 
     /// Write a save file with an arbitrary version number (for rejection tests).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
+    )]
     fn write_versioned_fixture(
         path: &std::path::Path,
         version: u32,
@@ -1665,7 +1691,7 @@ mod tests {
         file.write_all(&(name_bytes.len() as u32).to_le_bytes())
             .unwrap();
         file.write_all(name_bytes).unwrap();
-        let timestamp: u64 = 1700000000;
+        let timestamp: u64 = 1_700_000_000;
         file.write_all(&timestamp.to_le_bytes()).unwrap();
         if version >= 4 {
             file.write_all(&0u32.to_le_bytes()).unwrap(); // empty mod list
@@ -1909,8 +1935,9 @@ mod tests {
 
     #[test]
     fn fingerprint_mismatch_rejects_tampered_body() {
-        let saves_dir = tmp_dir("fingerprint_tamper_v9");
         const SAVE_NAME: &str = "Tamper Check";
+
+        let saves_dir = tmp_dir("fingerprint_tamper_v9");
         let state = minimal_save_state();
         save_slot(&saves_dir, 0, SAVE_NAME, &state, &[]).unwrap();
 
@@ -2052,7 +2079,7 @@ mod tests {
 
         let metas: Vec<_> = list_saves(&saves_dir)
             .into_iter()
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
 
         assert_eq!(metas.len(), 2);

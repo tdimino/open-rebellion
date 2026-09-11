@@ -54,7 +54,7 @@ use crate::world::{FighterEntry, Fleet, GameWorld};
 // ---------------------------------------------------------------------------
 
 /// Multiplier applied to Euclidean distance before dividing by hyperdrive rating.
-/// Higher = slower transit. At DISTANCE_SCALE=2, a ~440-unit trip with hyperdrive
+/// Higher = slower transit. At `DISTANCE_SCALE=2`, a ~440-unit trip with hyperdrive
 /// 80 takes ~11 ticks; a ~900-unit cross-galaxy trip takes ~22 ticks.
 pub const DISTANCE_SCALE: u32 = 2;
 
@@ -79,6 +79,7 @@ pub const DEFAULT_FIGHTER_HYPERDRIVE: u32 = 60;
 /// Result is clamped to `MIN_TRANSIT_TICKS`.
 ///
 /// Accepts optional `MovementConfig` for tuning. Uses module constants as defaults.
+#[must_use]
 pub fn fleet_transit_ticks(
     fleet: &Fleet,
     world: &GameWorld,
@@ -97,6 +98,12 @@ pub fn fleet_transit_ticks(
 }
 
 /// Config-aware variant of `fleet_transit_ticks`.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 pub fn fleet_transit_ticks_with_config(
     fleet: &Fleet,
     world: &GameWorld,
@@ -110,13 +117,11 @@ pub fn fleet_transit_ticks_with_config(
     let (ox, oy) = world
         .systems
         .get(origin)
-        .map(|s| (s.x as f64, s.y as f64))
-        .unwrap_or((0.0, 0.0));
+        .map_or((0.0, 0.0), |s| (f64::from(s.x), f64::from(s.y)));
     let (dx, dy) = world
         .systems
         .get(dest)
-        .map(|s| (s.x as f64, s.y as f64))
-        .unwrap_or((0.0, 0.0));
+        .map_or((0.0, 0.0), |s| (f64::from(s.x), f64::from(s.y)));
     let distance = ((dx - ox).powi(2) + (dy - oy).powi(2)).sqrt();
 
     // Slowest ship's hyperdrive rating determines fleet speed.
@@ -134,7 +139,8 @@ pub fn fleet_transit_ticks_with_config(
             .max(1) // guard against 0 in DAT data
     };
 
-    let base_ticks = ((distance * distance_scale as f64) / slowest_hyperdrive as f64).ceil() as u32;
+    let base_ticks =
+        ((distance * f64::from(distance_scale)) / f64::from(slowest_hyperdrive)).ceil() as u32;
 
     // Han Solo speed bonus: best hyperdrive_modifier among fleet characters.
     let han_bonus = fleet
@@ -170,6 +176,7 @@ pub struct MovementOrder {
 
 impl MovementOrder {
     /// Create a new movement order.
+    #[must_use]
     pub fn new(
         fleet: FleetKey,
         origin: SystemKey,
@@ -186,6 +193,11 @@ impl MovementOrder {
     }
 
     /// Progress fraction in [0.0, 1.0] — 0.0 = just departed, 1.0 = arrived.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn progress(&self) -> f32 {
         if self.transit_ticks == 0 {
             return 1.0;
@@ -194,11 +206,13 @@ impl MovementOrder {
     }
 
     /// True if the fleet has completed transit.
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.ticks_elapsed >= self.transit_ticks
     }
 
     /// Remaining ticks until arrival.
+    #[must_use]
     pub fn ticks_remaining(&self) -> u32 {
         self.transit_ticks.saturating_sub(self.ticks_elapsed)
     }
@@ -223,6 +237,7 @@ pub struct MovementState {
 }
 
 impl MovementState {
+    #[must_use]
     pub fn new() -> Self {
         MovementState {
             orders: HashMap::new(),
@@ -262,16 +277,19 @@ impl MovementState {
     }
 
     /// Get the active order for a fleet, if any.
+    #[must_use]
     pub fn get(&self, fleet: FleetKey) -> Option<&MovementOrder> {
         self.orders.get(&fleet)
     }
 
     /// Whether a fleet currently has an active hyperspace order.
+    #[must_use]
     pub fn is_in_transit(&self, fleet: FleetKey) -> bool {
         self.orders.contains_key(&fleet)
     }
 
     /// All active orders (immutable).
+    #[must_use]
     pub fn orders(&self) -> &HashMap<FleetKey, MovementOrder> {
         &self.orders
     }
@@ -281,10 +299,12 @@ impl MovementState {
         &mut self.orders
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.orders.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.orders.is_empty()
     }
@@ -361,6 +381,10 @@ impl fmt::Display for FleetDispatchError {
 }
 
 /// Validate a player-facing fleet dispatch without mutating the campaign.
+///
+/// # Errors
+/// Returns a dispatch error for missing entities, a faction mismatch, an empty
+/// fleet, an active transit order, or an invalid destination.
 pub fn validate_fleet_dispatch(
     state: &MovementState,
     world: &GameWorld,
@@ -398,6 +422,10 @@ pub fn validate_fleet_dispatch(
 }
 
 /// Validate, time, and begin a faction-controlled fleet departure.
+///
+/// # Errors
+/// Returns a dispatch error when fleet or destination validation fails,
+/// or the fleet already has a transit order.
 pub fn begin_faction_fleet_transit(
     state: &mut MovementState,
     world: &mut GameWorld,
@@ -469,7 +497,7 @@ pub fn reconcile_fleet_orbits(state: &MovementState, world: &mut GameWorld) {
         .map(|(fleet, value)| (fleet, value.location))
         .collect();
 
-    for (system_key, system) in world.systems.iter_mut() {
+    for (system_key, system) in &mut world.systems {
         system
             .fleets
             .retain(|fleet| orbiting.get(fleet) == Some(&system_key));
@@ -516,16 +544,12 @@ pub fn apply_fleet_arrival(
         if let Some(destination) = world.systems.get(arrival.system) {
             compatible.extend(destination.fleets.iter().copied().filter(|&fleet| {
                 fleet != arrival.fleet
-                    && world
-                        .fleets
-                        .get(fleet)
-                        .map(|value| {
-                            value.location == arrival.system
-                                && value.is_alliance == is_alliance
-                                && value.characters.is_empty()
-                                && !value.has_death_star
-                        })
-                        .unwrap_or(false)
+                    && world.fleets.get(fleet).is_some_and(|value| {
+                        value.location == arrival.system
+                            && value.is_alliance == is_alliance
+                            && value.characters.is_empty()
+                            && !value.has_death_star
+                    })
             }));
         }
     }
@@ -597,13 +621,20 @@ impl MovementSystem {
     /// Returns one `ArrivalEvent` per fleet that completes transit this frame.
     /// The caller applies each event through [`apply_fleet_arrival`] so world
     /// fleet records and system orbit indexes remain canonical.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
+    ///
+    /// # Panics
+    /// Panics if an order key collected for this batch is absent when its order is advanced.
     pub fn advance(state: &mut MovementState, tick_events: &[TickEvent]) -> Vec<ArrivalEvent> {
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return Vec::new();
-        }
+        };
 
         let tick_count = tick_events.len() as u32;
-        let final_tick = tick_events.last().unwrap().tick;
+        let final_tick = last_tick_event.tick;
         let mut arrivals = Vec::new();
 
         // HashMap iteration order is randomized per process. Arrival order
@@ -669,6 +700,10 @@ mod tests {
     // --- MovementOrder ---
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "Transit endpoints are exactly zero and one."
+    )]
     fn progress_starts_at_zero() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let order = MovementOrder::new(fleet, origin, dest, 10);
@@ -687,6 +722,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "Transit endpoints are exactly zero and one."
+    )]
     fn progress_clamps_at_one() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let mut order = MovementOrder::new(fleet, origin, dest, 5);
@@ -858,7 +897,7 @@ mod tests {
     fn make_system(sector: crate::ids::SectorKey, x: u16, y: u16) -> System {
         System {
             dat_id: DatId::new(0x9000_0000),
-            name: format!("Sys@{},{}", x, y),
+            name: format!("Sys@{x},{y}"),
             sector,
             x,
             y,
@@ -1107,7 +1146,7 @@ mod tests {
             has_death_star: false,
         };
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
-        assert!((10..=12).contains(&t), "expected ~11, got {}", t);
+        assert!((10..=12).contains(&t), "expected ~11, got {t}");
     }
 
     #[test]
@@ -1124,7 +1163,7 @@ mod tests {
             has_death_star: false,
         };
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
-        assert!(t >= 20, "cross-galaxy should take 20+ ticks, got {}", t);
+        assert!(t >= 20, "cross-galaxy should take 20+ ticks, got {t}");
     }
 
     #[test]
@@ -1163,7 +1202,7 @@ mod tests {
             has_death_star: false,
         };
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
-        assert!(t >= 40, "slow ship should dominate, got {}", t);
+        assert!(t >= 40, "slow ship should dominate, got {t}");
     }
 
     #[test]
@@ -1202,8 +1241,7 @@ mod tests {
         // No bonus, base ~11
         assert!(
             (10..=12).contains(&t),
-            "expected ~11 with no bonus, got {}",
-            t
+            "expected ~11 with no bonus, got {t}"
         );
     }
 

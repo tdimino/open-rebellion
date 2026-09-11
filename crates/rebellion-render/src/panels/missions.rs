@@ -82,7 +82,7 @@ pub fn draw_missions(
                     .filter(|m| m.faction == player_faction)
                     .count();
 
-                let active_label = format!("Active ({})", active_count);
+                let active_label = format!("Active ({active_count})");
                 if ui
                     .selectable_label(panel_state.tab == MissionsTab::Active, active_label)
                     .clicked()
@@ -149,8 +149,7 @@ fn draw_active_tab(
                 let commander_name = world
                     .characters
                     .get(mission.character)
-                    .map(|c| c.name.as_str())
-                    .unwrap_or("Unknown");
+                    .map_or("Unknown", |c| c.name.as_str());
                 ui.label(RichText::new(commander_name).small());
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -167,8 +166,7 @@ fn draw_active_tab(
             let target_name = world
                 .systems
                 .get(mission.target_system)
-                .map(|s| s.name.as_str())
-                .unwrap_or("Unknown");
+                .map_or("Unknown", |s| s.name.as_str());
 
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
@@ -206,6 +204,10 @@ fn draw_active_tab(
 // Dispatch form tab
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn draw_dispatch_tab(
     ui: &mut egui::Ui,
     world: &GameWorld,
@@ -236,8 +238,7 @@ fn draw_dispatch_tab(
     let commander_name = panel_state
         .selected_commander
         .and_then(|k| world.characters.get(k))
-        .map(|c| c.name.as_str())
-        .unwrap_or("— Select —");
+        .map_or("— Select —", |c| c.name.as_str());
 
     egui::ComboBox::from_id_salt("dispatch_commander")
         .selected_text(commander_name)
@@ -288,8 +289,7 @@ fn draw_dispatch_tab(
     let target_name = panel_state
         .selected_target
         .and_then(|k| world.systems.get(k))
-        .map(|s| s.name.as_str())
-        .unwrap_or("— Select —");
+        .map_or("— Select —", |s| s.name.as_str());
 
     egui::ComboBox::from_id_salt("dispatch_target")
         .selected_text(target_name)
@@ -313,19 +313,18 @@ fn draw_dispatch_tab(
     {
         if let Some(character) = world.characters.get(char_key) {
             let skill = match kind {
-                MissionKind::Diplomacy => character.diplomacy,
-                MissionKind::Recruitment => character.leadership,
-                MissionKind::Sabotage => character.espionage,
-                MissionKind::Assassination => character.combat,
-                MissionKind::Espionage => character.espionage,
-                MissionKind::Rescue => character.combat,
-                MissionKind::Abduction => character.espionage,
-                MissionKind::InciteUprising => character.diplomacy,
-                MissionKind::SubdueUprising => character.diplomacy,
-                MissionKind::DeathStarSabotage => character.espionage,
-                MissionKind::Autoscrap => character.leadership, // no-op; Autoscrap never shown in UI
+                MissionKind::Recruitment | MissionKind::Autoscrap => character.leadership,
+                MissionKind::Sabotage
+                | MissionKind::Espionage
+                | MissionKind::Abduction
+                | MissionKind::DeathStarSabotage => character.espionage,
+                MissionKind::Assassination | MissionKind::Rescue => character.combat,
+                MissionKind::Diplomacy
+                | MissionKind::InciteUprising
+                | MissionKind::SubdueUprising => character.diplomacy,
+                // no-op; Autoscrap never shown in UI
             };
-            let score = skill.base as f64 + skill.variance as f64 * 0.5;
+            let score = f64::from(skill.base) + f64::from(skill.variance) * 0.5;
             let (a, b, c) = kind.coefficients();
             let raw = quadratic_prob(score, a, b, c);
             let prob = clamp_prob(raw, kind.min_success_prob(), kind.max_success_prob());
@@ -345,7 +344,7 @@ fn draw_dispatch_tab(
                         .color(Color32::from_gray(160)),
                 );
                 ui.label(
-                    RichText::new(format!("{:.0}%", prob))
+                    RichText::new(format!("{prob:.0}%"))
                         .strong()
                         .color(prob_color),
                 );

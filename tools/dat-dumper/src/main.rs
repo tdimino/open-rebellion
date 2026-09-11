@@ -15,7 +15,7 @@ use std::path::PathBuf;
     about = "Parse Star Wars Rebellion .DAT files to JSON"
 )]
 struct Cli {
-    /// Path to GData directory containing .DAT files
+    /// Path to `GData` directory containing .DAT files
     #[arg(short, long)]
     gdata: PathBuf,
 
@@ -38,6 +38,10 @@ struct Cli {
     extract_menu_sfx: bool,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -63,7 +67,7 @@ fn main() -> anyhow::Result<()> {
                 );
             }
             None => {
-                println!("{}", json);
+                println!("{json}");
             }
         }
         return Ok(());
@@ -118,7 +122,7 @@ fn main() -> anyhow::Result<()> {
             .ok_or_else(|| {
                 let mut known: Vec<_> = registry.keys().copied().collect();
                 known.sort_unstable();
-                anyhow::anyhow!("Unknown DAT file: {}. Known files: {:?}", name, known)
+                anyhow::anyhow!("Unknown DAT file: {name}. Known files: {known:?}")
             })?;
         vec![(key, cli.gdata.join(key))]
     } else {
@@ -136,7 +140,7 @@ fn main() -> anyhow::Result<()> {
 
     for (name, path) in &files_to_parse {
         if !path.exists() {
-            eprintln!("SKIP {}: file not found", name);
+            eprintln!("SKIP {name}: file not found");
             continue;
         }
 
@@ -155,26 +159,23 @@ fn main() -> anyhow::Result<()> {
                     }
                     None => {
                         if total == 1 {
-                            println!("{}", json);
+                            println!("{json}");
                         } else {
-                            eprintln!("OK   {}", name);
+                            eprintln!("OK   {name}");
                         }
                     }
                 }
                 success += 1;
             }
             Err(e) => {
-                eprintln!("FAIL {}: {}", name, e);
+                eprintln!("FAIL {name}: {e}");
                 failed += 1;
             }
         }
     }
 
     if total > 1 {
-        eprintln!(
-            "\n{} succeeded, {} failed out of {} files",
-            success, failed, total
-        );
+        eprintln!("\n{success} succeeded, {failed} failed out of {total} files");
     }
 
     Ok(())

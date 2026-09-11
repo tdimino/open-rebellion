@@ -1,7 +1,7 @@
 //! Loyalty & Uprising dashboard — per-system loyalty view with uprising risk
 //! and character betrayal risk, sorted by danger level.
 //!
-//! Read-only dashboard (no PanelActions) — surfaces information from the
+//! Read-only dashboard (no `PanelActions`) — surfaces information from the
 //! uprising and betrayal simulation systems to help the player prioritize
 //! diplomatic missions and troop deployments.
 
@@ -13,6 +13,11 @@ use super::PanelAction;
 use crate::theme;
 
 /// Draw the loyalty dashboard as a left-side egui panel.
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn draw_loyalty(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -30,7 +35,7 @@ pub fn draw_loyalty(
             // ── Collect systems with their loyalty scores ─────────────
             let mut systems: Vec<(&str, f32, f32, bool, bool)> = Vec::new();
 
-            for (_, system) in world.systems.iter() {
+            for (_, system) in &world.systems {
                 if system.is_destroyed {
                     continue;
                 }
@@ -72,7 +77,7 @@ pub fn draw_loyalty(
             ui.horizontal(|ui| {
                 if uprising_count > 0 {
                     ui.label(
-                        RichText::new(format!("{} uprising", uprising_count))
+                        RichText::new(format!("{uprising_count} uprising"))
                             .color(theme::DANGER_RED)
                             .size(11.0)
                             .strong(),
@@ -80,13 +85,13 @@ pub fn draw_loyalty(
                 }
                 if at_risk > 0 {
                     ui.label(
-                        RichText::new(format!("{} at risk", at_risk))
+                        RichText::new(format!("{at_risk} at risk"))
                             .color(theme::WARNING_AMBER)
                             .size(11.0),
                     );
                 }
                 ui.label(
-                    RichText::new(format!("{} stable", stable))
+                    RichText::new(format!("{stable} stable"))
                         .color(theme::SUCCESS_GREEN)
                         .size(11.0),
                 );
@@ -160,7 +165,7 @@ pub fn draw_loyalty(
             );
 
             let mut at_risk_chars: Vec<(&str, u32)> = Vec::new();
-            for (_, c) in world.characters.iter() {
+            for (_, c) in &world.characters {
                 let owns = if is_alliance {
                     c.is_alliance
                 } else {
@@ -194,7 +199,7 @@ pub fn draw_loyalty(
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(*name).color(theme::TEXT_PRIMARY).size(11.0));
                         ui.label(
-                            RichText::new(format!("Loyalty: {}", loyalty))
+                            RichText::new(format!("Loyalty: {loyalty}"))
                                 .color(risk_color)
                                 .size(10.0),
                         );

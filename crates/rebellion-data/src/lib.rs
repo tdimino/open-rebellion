@@ -20,8 +20,12 @@ use dat_dumper::types::systems::SystemsFile;
 use dat_dumper::types::textstra;
 use dat_dumper::types::troops::TroopsFile;
 use rebellion_core::dat::{ExplorationStatus, SectorGroup};
-use rebellion_core::ids::*;
-use rebellion_core::world::*;
+use rebellion_core::ids::{DatId, SectorKey, SystemKey};
+use rebellion_core::world::{
+    CapitalShipClass, Character, ControlKind, DefenseFacilityClassDef, FighterClass, GameWorld,
+    GnprtbEntry, GnprtbParams, MstbEntry, MstbTable, SdprtbEntry, SdprtbParams, Sector,
+    SeedOptions, SkillPair, System, TroopClassDef,
+};
 
 pub mod integrator;
 pub mod mods;
@@ -33,6 +37,9 @@ pub mod simulation;
 
 /// Load selected named `WAVE` resources from an original Win32 DLL.
 #[cfg(not(target_arch = "wasm32"))]
+///
+/// # Errors
+/// Returns an error if the DLL or a requested WAVE resource cannot be loaded.
 pub fn load_wave_resources(
     dll_path: &Path,
     resource_ids: &[u32],
@@ -40,7 +47,7 @@ pub fn load_wave_resources(
     dat_dumper::types::wave_resources::load_waves(dll_path, resource_ids)
 }
 
-/// Load all game data from a GData directory into a GameWorld.
+/// Load all game data from a `GData` directory into a `GameWorld`.
 ///
 /// Expected files under `gdata_path`:
 /// - `TEXTSTRA.DLL` (optional: if absent, placeholder names are used)
@@ -50,15 +57,50 @@ pub fn load_wave_resources(
 /// - `FIGHTSD.DAT`
 /// - `MJCHARSD.DAT`
 /// - `MNCHARSD.DAT`
+///
+/// # Errors
+/// Returns an error for unreadable or invalid game data, unsupported sector
+/// groups, or references to missing sectors.
 pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
     load_game_data_with_options(gdata_path, &SeedOptions::default())
 }
 
 /// Load a new game with explicit seeding options.
+///
+/// # Errors
+/// Returns an error for unreadable or invalid game data, unsupported sector
+/// groups, or references to missing sectors.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn load_game_data_with_options(
     gdata_path: &Path,
     seed_options: &SeedOptions,
 ) -> anyhow::Result<GameWorld> {
+    const MSTB_FILES: &[&str] = &[
+        "DIPLMSTB.DAT",
+        "ESPIMSTB.DAT",
+        "ASSNMSTB.DAT",
+        "INCTMSTB.DAT",
+        "DSSBMSTB.DAT",
+        "ABDCMSTB.DAT",
+        "RCRTMSTB.DAT",
+        "RESCMSTB.DAT",
+        "SBTGMSTB.DAT",
+        "SUBDMSTB.DAT",
+        "ESCAPETB.DAT",
+        "FDECOYTB.DAT",
+        "FOILTB.DAT",
+        "INFORMTB.DAT",
+        "CSCRHTTB.DAT",
+        "UPRIS1TB.DAT",
+        "UPRIS2TB.DAT",
+        "RLEVADTB.DAT",
+        "RESRCTB.DAT",
+        "TDECOYTB.DAT",
+    ];
+
     // ── 0. String table ──────────────────────────────────────────────────────
     // Load TEXTSTRA.DLL for real entity names. Fall back to placeholders if
     // the file is absent (WASM builds, test environments, stripped installs).
@@ -81,7 +123,7 @@ pub fn load_game_data_with_options(
         string_table
             .get(&id)
             .cloned()
-            .unwrap_or_else(|| format!("{} {}", kind, id))
+            .unwrap_or_else(|| format!("{kind} {id}"))
     };
 
     let mut world = GameWorld {
@@ -362,7 +404,7 @@ pub fn load_game_data_with_options(
             .collect();
 
         let mut asset_factions: Vec<(SystemKey, bool)> = Vec::new();
-        for (sys_key, sys) in world.systems.iter() {
+        for (sys_key, sys) in &world.systems {
             for &k in &sys.defense_facilities {
                 if let Some(f) = world.defense_facilities.get(k) {
                     asset_factions.push((sys_key, f.is_alliance));
@@ -390,7 +432,7 @@ pub fn load_game_data_with_options(
             }
         }
 
-        for (sys_key, sys) in world.systems.iter_mut() {
+        for (sys_key, sys) in &mut world.systems {
             // Skip systems that already have explicit control from seeding.
             if sys.control != ControlKind::Uncontrolled {
                 continue;
@@ -470,7 +512,7 @@ pub fn load_game_data_with_options(
             world.defense_facility_classes.insert(
                 DatId::new(dat.id),
                 DefenseFacilityClassDef {
-                    bombardment_defense: dat.bombardment_defense as i32,
+                    bombardment_defense: dat.bombardment_defense.cast_signed(),
                 },
             );
         }
@@ -478,28 +520,6 @@ pub fn load_game_data_with_options(
 
     // ── 10. Mission probability tables (*MSTB.DAT and *TB.DAT) ──────────────
     // All 19 IntTableFile tables. Missing files are silently skipped.
-    const MSTB_FILES: &[&str] = &[
-        "DIPLMSTB.DAT",
-        "ESPIMSTB.DAT",
-        "ASSNMSTB.DAT",
-        "INCTMSTB.DAT",
-        "DSSBMSTB.DAT",
-        "ABDCMSTB.DAT",
-        "RCRTMSTB.DAT",
-        "RESCMSTB.DAT",
-        "SBTGMSTB.DAT",
-        "SUBDMSTB.DAT",
-        "ESCAPETB.DAT",
-        "FDECOYTB.DAT",
-        "FOILTB.DAT",
-        "INFORMTB.DAT",
-        "CSCRHTTB.DAT",
-        "UPRIS1TB.DAT",
-        "UPRIS2TB.DAT",
-        "RLEVADTB.DAT",
-        "RESRCTB.DAT",
-        "TDECOYTB.DAT",
-    ];
     for filename in MSTB_FILES {
         let path = gdata_path.join(filename);
         if file_available(&path) {
@@ -530,7 +550,7 @@ pub fn load_game_data_with_options(
             let runtime = crate::mods::ModRuntime::discover(&mods_dir);
             let errors = runtime.apply_enabled(&mut world);
             for err in &errors {
-                eprintln!("Mod error: {:?}", err);
+                eprintln!("Mod error: {err:?}");
             }
         }
     }
@@ -545,6 +565,7 @@ pub fn load_game_data_with_options(
 /// Initialize the mod runtime for UI access. Returns `None` if the mods
 /// directory does not exist (common for first-time players).
 #[cfg(not(target_arch = "wasm32"))]
+#[must_use]
 pub fn init_mod_runtime(gdata_path: &Path) -> Option<crate::mods::ModRuntime> {
     let mods_dir = gdata_path
         .parent()
@@ -690,7 +711,10 @@ pub(crate) fn file_available(path: &Path) -> bool {
 }
 
 /// Parse a DAT file from raw bytes. Platform-independent.
+///
+/// # Errors
+/// Returns an error if the bytes do not contain a valid record of type `T`.
 pub fn parse_dat_bytes<T: DatRecord>(data: &[u8], name: &str) -> anyhow::Result<T> {
     let mut reader = ByteReader::new(data);
-    T::parse(&mut reader).with_context(|| format!("parsing {}", name))
+    T::parse(&mut reader).with_context(|| format!("parsing {name}"))
 }

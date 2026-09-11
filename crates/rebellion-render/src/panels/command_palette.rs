@@ -27,7 +27,7 @@ pub struct CommandPaletteState {
     filtered_indices: Vec<(usize, u32)>, // (command index, score)
 }
 
-/// Map a shared CommandDef ID to a PanelAction.
+/// Map a shared `CommandDef` ID to a `PanelAction`.
 fn command_id_to_action(id: &str) -> Option<super::PanelAction> {
     match id {
         "advance_1_tick" => Some(super::PanelAction::AdvanceTicks(1)),
@@ -51,6 +51,7 @@ fn command_id_to_action(id: &str) -> Option<super::PanelAction> {
 }
 
 impl CommandPaletteState {
+    #[must_use]
     pub fn new() -> Self {
         // Build CommandItems from the shared registry in rebellion-core.
         let commands: Vec<CommandItem> = rebellion_core::commands::all_commands()
@@ -103,8 +104,9 @@ impl CommandPaletteState {
 
             let mut results: Vec<(usize, u32)> = Vec::new();
             for (i, cmd) in self.commands.iter().enumerate() {
-                let matches = pattern.match_list(std::iter::once(cmd.label.as_str()), &mut matcher);
-                if let Some(&(_, score)) = matches.first() {
+                let candidates =
+                    pattern.match_list(std::iter::once(cmd.label.as_str()), &mut matcher);
+                if let Some(&(_, score)) = candidates.first() {
                     results.push((i, score));
                 }
             }
@@ -113,10 +115,10 @@ impl CommandPaletteState {
         }
 
         // Clamp selected index.
-        if !self.filtered_indices.is_empty() {
-            self.selected_index = self.selected_index.min(self.filtered_indices.len() - 1);
-        } else {
+        if self.filtered_indices.is_empty() {
             self.selected_index = 0;
+        } else {
+            self.selected_index = self.selected_index.min(self.filtered_indices.len() - 1);
         }
     }
 
@@ -135,6 +137,10 @@ impl Default for CommandPaletteState {
 }
 
 /// Draw the command palette overlay. Returns actions to execute.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn draw_command_palette(
     ctx: &egui::Context,
     state: &mut CommandPaletteState,
@@ -346,7 +352,7 @@ mod tests {
         let state = CommandPaletteState::new();
         let mut labels: Vec<&str> = state.commands.iter().map(|c| c.label.as_str()).collect();
         let total = labels.len();
-        labels.sort();
+        labels.sort_unstable();
         labels.dedup();
         assert_eq!(labels.len(), total, "Duplicate command labels found");
     }

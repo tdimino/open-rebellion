@@ -5,7 +5,7 @@
 //! garrison requirements, and resource allocation.
 //!
 //! Open Souls mapping: this is a "cognitive step" — a pure function that transforms
-//! economy state + read-only GameWorld into a Vec of effects.
+//! economy state + read-only `GameWorld` into a Vec of effects.
 //!
 //! GNPRTB parameters used:
 //!   7686 = 10 (fleet influence on support drift)
@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::*;
+use crate::ids::SystemKey;
 use crate::tick::TickEvent;
 use crate::world::{ControlKind, GameWorld, GnprtbParams};
 
@@ -58,10 +58,14 @@ const GNPRTB_MAINTENANCE_RATE_CONTROLLED: u16 = 7694; // =30: ticks between main
 // Economy state
 // ---------------------------------------------------------------------------
 
-/// Incident state flags (bits 16-19 of original field_0x88).
+/// Incident state flags (bits 16-19 of original `field_0x88`).
 /// When these change between ticks, the corresponding incident notification fires.
-/// FUN_0050a970 evaluates these each tick; FUN_0050d720 dispatches on transitions.
+/// `FUN_0050a970` evaluates these each tick; `FUN_0050d720` dispatches on transitions.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 pub struct IncidentFlags {
     /// Bit 16 (0x10000): uprising incident active (event 0x152).
     pub uprising: bool,
@@ -73,7 +77,7 @@ pub struct IncidentFlags {
     pub resource: bool,
 }
 
-/// Fleet posture summary for a system (FUN_0050add0/af70/b4c0).
+/// Fleet posture summary for a system (`FUN_0050add0/af70/b4c0`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FleetPosture {
     /// Number of Alliance capital ship hulls at this system.
@@ -84,7 +88,7 @@ pub struct FleetPosture {
     pub is_contested: bool,
 }
 
-/// Fighter posture for a system (FUN_0050aa50).
+/// Fighter posture for a system (`FUN_0050aa50`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FighterPosture {
     /// True if both sides have fighters present.
@@ -99,19 +103,19 @@ pub struct FighterPosture {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SystemSummary {
     /// Troops present minus garrison requirement (negative = deficit).
-    /// FUN_0050a670.
+    /// `FUN_0050a670`.
     pub troop_surplus: i32,
     /// Total troops for the controlling faction.
-    /// FUN_0050ac00.
+    /// `FUN_0050ac00`.
     pub total_controlling_troops: u32,
     /// Whether an orbital shipyard is present.
-    /// FUN_0050ace0.
+    /// `FUN_0050ace0`.
     pub has_shipyard: bool,
     /// Fleet posture (3-pass result).
     pub fleet_posture: FleetPosture,
     /// Fighter posture.
     pub fighter_posture: FighterPosture,
-    /// Bit 11 of original field_0x88: "strong support" flag.
+    /// Bit 11 of original `field_0x88`: "strong support" flag.
     /// When true AND Empire-controlled, troop suppression is doubled (GNPRTB[7680]).
     /// Set when controlling faction's support > drift threshold (GNPRTB[7732]=40).
     pub strong_support: bool,
@@ -140,6 +144,7 @@ pub enum SupportTier {
 
 impl SupportTier {
     /// Compute the tier from integer support (0-100).
+    #[must_use]
     pub fn from_support_int(support_int: i32) -> Self {
         if support_int <= 20 {
             Self::Critical
@@ -157,6 +162,10 @@ impl SupportTier {
 
 /// Per-system resource and economy tracking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 pub struct SystemEconomy {
     /// Resource collection rate, inversely proportional to support.
     pub collection_rate: f32,
@@ -165,10 +174,10 @@ pub struct SystemEconomy {
     /// Production speed modifier from fleet/KDY presence (0-100).
     pub production_modifier: i8,
     /// Current energy output (sum of production facility outputs, capped at system capacity).
-    /// FUN_00509ed0: if energy_allocated > System.total_energy, cap it.
+    /// `FUN_00509ed0`: if `energy_allocated` > `System.total_energy`, cap it.
     pub energy_allocated: u32,
     /// Current raw material output (sum of mine outputs, capped at system capacity).
-    /// FUN_0050a220: if raw_material_allocated > System.raw_materials, cap it.
+    /// `FUN_0050a220`: if `raw_material_allocated` > `System.raw_materials`, cap it.
     pub raw_material_allocated: u32,
     /// True if facilities exceed energy capacity (facility pruning needed).
     pub energy_overcapped: bool,
@@ -176,10 +185,10 @@ pub struct SystemEconomy {
     pub raw_material_overcapped: bool,
     /// Derived troop/fleet/shipyard summary (functions 9-15).
     pub summary: SystemSummary,
-    /// Incident state flags (bits 16-19 of field_0x88). FUN_0050a970.
+    /// Incident state flags (bits 16-19 of `field_0x88`). `FUN_0050a970`.
     /// When these change from the previous tick, corresponding incidents fire.
     pub incident_flags: IncidentFlags,
-    /// System is visibly under uprising. FUN_0050ac70.
+    /// System is visibly under uprising. `FUN_0050ac70`.
     pub uprising_visible: bool,
     /// Previous-tick support band for the controlling faction. Drives
     /// `EVT_SUPPORT_CHANGE` (0x100) transition detection. Persists across
@@ -255,23 +264,23 @@ pub enum EconomyEvent {
         system: SystemKey,
         new_requirement: u32,
     },
-    /// System control resolved from troop presence (FUN_0050a780_system_join_side).
+    /// System control resolved from troop presence (`FUN_0050a780_system_join_side`).
     ControlResolved {
         system: SystemKey,
         new_control: ControlKind,
     },
-    /// Incident state changed — fire the corresponding notification (FUN_0050a970 + FUN_0050d720).
+    /// Incident state changed — fire the corresponding notification (`FUN_0050a970` + `FUN_0050d720`).
     IncidentTriggered {
         system: SystemKey,
         incident_type: &'static str,
     },
-    /// Energy allocated exceeds system capacity (FUN_00509ed0).
+    /// Energy allocated exceeds system capacity (`FUN_00509ed0`).
     EnergyOvercapped {
         system: SystemKey,
         allocated: u32,
         capacity: u32,
     },
-    /// Raw material output exceeds system capacity (FUN_0050a220).
+    /// Raw material output exceeds system capacity (`FUN_0050a220`).
     RawMaterialOvercapped {
         system: SystemKey,
         allocated: u32,
@@ -287,7 +296,7 @@ pub enum EconomyEvent {
     },
     /// K2: `EVT_NATURAL_DISASTER` (0x154) — disaster incident bit flipped
     /// `false → true`. Emitted once per transition (clear-before-emit —
-    /// eco.incident_flags is updated after the transition check).
+    /// `eco.incident_flags` is updated after the transition check).
     NaturalDisaster { system: SystemKey },
     /// K3: `EVT_RESOURCE_DISCOVERY` (0x155) — a new mine came online at
     /// a previously-seeded system. Detected as a positive delta on
@@ -310,10 +319,19 @@ pub enum EconomyEvent {
 pub struct EconomySystem;
 
 impl EconomySystem {
-    /// Run the per-system economy tick. Mutates EconomyState in-place,
+    /// Run the per-system economy tick. Mutates `EconomyState` in-place,
     /// returns events for the integrator.
     ///
     /// Runs BEFORE manufacturing in the tick order (economy affects production).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn advance(
         state: &mut EconomyState,
         world: &GameWorld,
@@ -337,9 +355,8 @@ impl EconomySystem {
         let system_keys: Vec<SystemKey> = world.systems.keys().collect();
 
         for sys_key in system_keys {
-            let sys = match world.systems.get(sys_key) {
-                Some(s) => s,
-                None => continue,
+            let Some(sys) = world.systems.get(sys_key) else {
+                continue;
             };
 
             // Only process populated, non-destroyed systems.
@@ -355,8 +372,8 @@ impl EconomySystem {
             let eco = state.per_system.entry(sys_key).or_default();
             let prev_raw_allocated = eco.raw_material_allocated;
             let (energy_alloc, raw_alloc) = calculate_resource_allocation(world, sys);
-            let energy_cap = sys.total_energy as u32;
-            let raw_cap = sys.raw_materials as u32;
+            let energy_cap = u32::from(sys.total_energy);
+            let raw_cap = u32::from(sys.raw_materials);
 
             eco.energy_allocated = energy_alloc.min(energy_cap);
             eco.energy_overcapped = energy_alloc > energy_cap;
@@ -420,7 +437,7 @@ impl EconomySystem {
             // 3. Calculate garrison requirement.
             let new_garrison = calculate_garrison_requirement(
                 controlling_support,
-                &sys.control,
+                sys.control,
                 gnprtb,
                 difficulty,
             );
@@ -434,9 +451,9 @@ impl EconomySystem {
             let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty);
             let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty);
             let total_capships =
-                presence.alliance_capships as i32 + presence.empire_capships as i32;
+                presence.alliance_capships.cast_signed() + presence.empire_capships.cast_signed();
             let total_fighters =
-                presence.alliance_fighters as i32 + presence.empire_fighters as i32;
+                presence.alliance_fighters.cast_signed() + presence.empire_fighters.cast_signed();
             let new_prod_mod =
                 (100 - total_capships * capship_penalty - total_fighters * fighter_penalty)
                     .clamp(0, 100) as i8;
@@ -624,8 +641,8 @@ struct MilitaryPresence {
     empire_fighters: u32,
     alliance_troops: u32,
     empire_troops: u32,
-    /// Total alive capital ship hulls (count of alive ShipInstances across all fleets).
-    /// Used by KDY production modifier (FUN_0050a480).
+    /// Total alive capital ship hulls (count of alive `ShipInstances` across all fleets).
+    /// Used by KDY production modifier (`FUN_0050a480`).
     alliance_capships: u32,
     empire_capships: u32,
 }
@@ -686,6 +703,11 @@ fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> Mil
 ///     drift = clamp(base - fighters*5 - troops*2 - fleet_presence*10, 0, 100)
 /// if empire_controlled: drift = -drift
 /// ```
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn calculate_support_drift(
     sys: &crate::world::System,
     presence: &MilitaryPresence,
@@ -763,16 +785,16 @@ fn calculate_support_drift(
     // This doubles troop suppression effectiveness for the Empire.
     let adjusted_troops = if is_empire_controlled && strong_support {
         let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1);
-        friendly_troops as i32 * empire_mult
+        friendly_troops.cast_signed() * empire_mult
     } else {
-        friendly_troops as i32
+        friendly_troops.cast_signed()
     };
 
     // Military suppression: integer subtraction matching original exactly.
     // Original: clamp(base - fighters*GNPRTB[7687] - troops_adj*GNPRTB[7688] - fleet*GNPRTB[7686], 0, 100)
-    let suppression = friendly_fighters as i32 * fighter_influence
+    let suppression = friendly_fighters.cast_signed() * fighter_influence
         + adjusted_troops * troop_influence
-        + friendly_fleets as i32 * fleet_influence;
+        + friendly_fleets.cast_signed() * fleet_influence;
 
     let drift = (base - suppression).clamp(0, 100);
 
@@ -795,10 +817,14 @@ fn calculate_support_drift(
 
 /// Calculate total energy and raw material allocation from facilities and mines.
 ///
-/// Returns (energy_allocated, raw_material_allocated).
+/// Returns (`energy_allocated`, `raw_material_allocated`).
 /// The original sums facility outputs (virtual method at +0x1c8) and mine outputs,
 /// then caps at system limits. If overcapped, the original randomly prunes facilities/mines.
 /// We report overcap via events and let the caller decide on pruning.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) -> (u32, u32) {
     // Sum production facility outputs (energy generators).
     // Each production facility contributes 1 unit of energy output.
@@ -826,12 +852,17 @@ fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) 
 
 /// Resolve which faction controls a system based on troop presence.
 ///
-/// Original logic (FUN_0050a780):
+/// Original logic (`FUN_0050a780`):
 /// - If system not populated: Uncontrolled
 /// - If only Alliance troops: Alliance controls
 /// - If only Empire troops: Empire controls
 /// - If both: keep existing control (Contested)
 /// - If neither: Uncontrolled
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn resolve_system_control(
     sys: &crate::world::System,
     presence: &MilitaryPresence,
@@ -868,6 +899,10 @@ fn resolve_system_control(
 
 /// Compute the per-system derived summary from troop/fleet/facility presence.
 /// Implements functions 9-15 of the economy tick pipeline.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn compute_system_summary(
     world: &GameWorld,
     sys: &crate::world::System,
@@ -882,7 +917,7 @@ fn compute_system_summary(
         ControlKind::Controlled(crate::dat::Faction::Empire) => presence.empire_troops,
         _ => presence.alliance_troops.max(presence.empire_troops),
     };
-    let troop_surplus = controlling_troops as i32 - garrison_requirement as i32;
+    let troop_surplus = controlling_troops.cast_signed() - garrison_requirement.cast_signed();
 
     // FUN_0050ac00: total controlling troops
     let total_controlling_troops = controlling_troops;
@@ -940,12 +975,12 @@ fn compute_system_summary(
 
 /// Evaluate incident flags for a system based on its current state.
 ///
-/// In the original, FUN_0050a970 evaluates field_0x88 bits and the galaxy
-/// notification hub (FUN_0050d720) fires incidents on state transitions.
+/// In the original, `FUN_0050a970` evaluates `field_0x88` bits and the galaxy
+/// notification hub (`FUN_0050d720`) fires incidents on state transitions.
 /// We compute flags each tick and let the advance loop detect transitions.
 ///
 /// Flags:
-/// - uprising: system under uprising (ControlKind::Uprising only)
+/// - uprising: system under uprising (`ControlKind::Uprising` only)
 /// - informant: system has negative troop surplus (garrison shortfall)
 /// - disaster: system has very low support (below 20%)
 /// - resource: facilities exceed system capacity (energy or raw material overcap)
@@ -979,6 +1014,11 @@ fn evaluate_incident_flags(
 ///
 /// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`.
 /// Higher support means a lower collection rate (less taxation needed).
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8) -> f32 {
     // Original: FUN_0053c8d0_calculate_percentage(GNPRTB[7763], 100, support)
     //         = (100 * GNPRTB[7763]) / max(support_int, 1)
@@ -999,9 +1039,14 @@ fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8
 /// Calculate troops needed to prevent uprising at this system.
 ///
 /// Formula: `(threshold - support_pct) / abs(divisor)` when support < threshold.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn calculate_garrison_requirement(
     support: f32,
-    control: &ControlKind,
+    control: ControlKind,
     gnprtb: &GnprtbParams,
     difficulty: u8,
 ) -> u32 {
@@ -1055,9 +1100,15 @@ fn calculate_garrison_requirement(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::DatId;
+    use crate::ids::SectorKey;
     use crate::world::GameWorld;
 
-    /// Create a GnprtbParams with the stock economy values.
+    /// Create a `GnprtbParams` with the stock economy values.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
     fn stock_gnprtb() -> GnprtbParams {
         use crate::world::GnprtbEntry;
         let entries = vec![
@@ -1484,7 +1535,7 @@ mod tests {
     fn garrison_requirement_below_threshold() {
         let gnprtb = stock_gnprtb();
         let control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        let req = calculate_garrison_requirement(0.3, &control, &gnprtb, 2);
+        let req = calculate_garrison_requirement(0.3, control, &gnprtb, 2);
         // (0.60 - 0.30) / 0.10 = 3.0 → 3 troops
         assert_eq!(req, 3, "expected 3, got {req}");
     }
@@ -1493,7 +1544,7 @@ mod tests {
     fn garrison_requirement_above_threshold_is_zero() {
         let gnprtb = stock_gnprtb();
         let control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        let req = calculate_garrison_requirement(0.7, &control, &gnprtb, 2);
+        let req = calculate_garrison_requirement(0.7, control, &gnprtb, 2);
         assert_eq!(req, 0, "above threshold should need 0 garrison");
     }
 
@@ -1502,8 +1553,8 @@ mod tests {
         let gnprtb = stock_gnprtb();
         let alliance = ControlKind::Controlled(crate::dat::Faction::Alliance);
         let empire = ControlKind::Controlled(crate::dat::Faction::Empire);
-        let req_alliance = calculate_garrison_requirement(0.3, &alliance, &gnprtb, 2);
-        let req_empire = calculate_garrison_requirement(0.3, &empire, &gnprtb, 2);
+        let req_alliance = calculate_garrison_requirement(0.3, alliance, &gnprtb, 2);
+        let req_empire = calculate_garrison_requirement(0.3, empire, &gnprtb, 2);
         assert!(
             req_empire < req_alliance,
             "empire garrison should be less: empire={req_empire} vs alliance={req_alliance}"
@@ -1769,35 +1820,35 @@ mod tests {
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x18000001),
+                        class_dat_id: DatId(0x1800_0001),
                         is_alliance: true,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x18000002),
+                        class_dat_id: DatId(0x1800_0002),
                         is_alliance: true,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x18000003),
+                        class_dat_id: DatId(0x1800_0003),
                         is_alliance: true,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x18000004),
+                        class_dat_id: DatId(0x1800_0004),
                         is_alliance: true,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x18000005),
+                        class_dat_id: DatId(0x1800_0005),
                         is_alliance: true,
                         is_mine: false,
                     }),
@@ -1864,14 +1915,14 @@ mod tests {
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x18000001),
+                        class_dat_id: DatId(0x1800_0001),
                         is_alliance: true,
                         is_mine: false,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x18000002),
+                        class_dat_id: DatId(0x1800_0002),
                         is_alliance: true,
                         is_mine: false,
                     }),
@@ -1928,21 +1979,21 @@ mod tests {
             manufacturing_facilities: vec![
                 world.manufacturing_facilities.insert(
                     crate::world::ManufacturingFacilityInstance {
-                        class_dat_id: DatId(0x16000001),
+                        class_dat_id: DatId(0x1600_0001),
                         is_alliance: true,
                         is_shipyard: false,
                     },
                 ),
                 world.manufacturing_facilities.insert(
                     crate::world::ManufacturingFacilityInstance {
-                        class_dat_id: DatId(0x16000002),
+                        class_dat_id: DatId(0x1600_0002),
                         is_alliance: true,
                         is_shipyard: false,
                     },
                 ),
                 world.manufacturing_facilities.insert(
                     crate::world::ManufacturingFacilityInstance {
-                        class_dat_id: DatId(0x16000003),
+                        class_dat_id: DatId(0x1600_0003),
                         is_alliance: true,
                         is_shipyard: false,
                     },
@@ -1952,21 +2003,21 @@ mod tests {
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x2D000001),
+                        class_dat_id: DatId(0x2D00_0001),
                         is_alliance: true,
                         is_mine: true,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x2D000002),
+                        class_dat_id: DatId(0x2D00_0002),
                         is_alliance: true,
                         is_mine: true,
                     }),
                 world
                     .production_facilities
                     .insert(crate::world::ProductionFacilityInstance {
-                        class_dat_id: DatId(0x2D000003),
+                        class_dat_id: DatId(0x2D00_0003),
                         is_alliance: true,
                         is_mine: true,
                     }),
@@ -2131,12 +2182,12 @@ mod tests {
         });
         // System with low support (triggers garrison requirement) and some troops
         let troop1 = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: DatId(0x14000100),
+            class_dat_id: DatId(0x1400_0100),
             is_alliance: true,
             regiment_strength: 100,
         });
         let troop2 = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: DatId(0x14000100),
+            class_dat_id: DatId(0x1400_0100),
             is_alliance: true,
             regiment_strength: 100,
         });
@@ -2567,14 +2618,14 @@ mod tests {
         // Controlled system: garrison = ceil((60 - 30) / 10) = 3
         let garrison_controlled = calculate_garrison_requirement(
             0.30,
-            &ControlKind::Controlled(crate::dat::Faction::Alliance),
+            ControlKind::Controlled(crate::dat::Faction::Alliance),
             &gnprtb,
             2,
         );
         // Uprising system: garrison = 3 * GNPRTB[7682](2) = 6
         let garrison_uprising = calculate_garrison_requirement(
             0.30,
-            &ControlKind::Uprising(crate::dat::Faction::Alliance),
+            ControlKind::Uprising(crate::dat::Faction::Alliance),
             &gnprtb,
             2,
         );
@@ -2861,7 +2912,7 @@ mod tests {
         let mine = world
             .production_facilities
             .insert(crate::world::ProductionFacilityInstance {
-                class_dat_id: DatId(0x22000001),
+                class_dat_id: DatId(0x2200_0001),
                 is_mine: true,
                 is_alliance: true,
             });

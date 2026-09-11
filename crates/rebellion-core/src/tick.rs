@@ -36,6 +36,7 @@ impl GameSpeed {
     /// Real-time multiplier applied to the accumulator each frame.
     ///
     /// Paused returns 0.0 — the accumulator never fills and no ticks fire.
+    #[must_use]
     pub fn multiplier(self) -> f32 {
         match self {
             GameSpeed::Paused => 0.0,
@@ -88,6 +89,7 @@ pub struct GameClock {
 
 impl GameClock {
     /// Create a new clock, paused at day zero.
+    #[must_use]
     pub fn new() -> Self {
         GameClock {
             tick: 0,
@@ -112,6 +114,12 @@ impl GameClock {
     ///
     /// - `dt` should be the real elapsed frame time (e.g. `macroquad::time::get_frame_time()`).
     /// - Negative or zero `dt` is a no-op.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn advance(&mut self, dt: f32) -> Vec<TickEvent> {
         if dt <= 0.0 || self.speed == GameSpeed::Paused {
             return Vec::new();

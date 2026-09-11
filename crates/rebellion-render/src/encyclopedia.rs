@@ -2,12 +2,12 @@
 //!
 //! Displays a floating egui window with tabs for capital ships, fighters,
 //! characters, and star systems.  Each entity shows its 400×200 BMP artwork
-//! loaded from EData/ alongside stats pulled from `GameWorld`.
+//! loaded from `EData`/ alongside stats pulled from `GameWorld`.
 //!
 //! # EDATA mapping
 //!
 //! The original game stores encyclopedia images in sequentially numbered BMP
-//! files (`EData/EDATA.NNN`).  The C# editor (SwRebellionEditor) reveals the
+//! files (`EData/EDATA.NNN`).  The C# editor (`SwRebellionEditor`) reveals the
 //! direct index mapping for entity types that don't go through `ENCYBMAP.DLL`:
 //!
 //! | Entity type          | First EDATA index |
@@ -73,7 +73,7 @@ pub struct EncyclopediaState {
     pub tab: EncyclopediaTab,
     /// Selected entity within the current tab (list index).
     pub selected_index: usize,
-    /// Path to the EData/ directory (original BMPs).
+    /// Path to the `EData`/ directory (original BMPs).
     pub edata_path: Option<PathBuf>,
     /// Path to HD upscaled PNGs directory, used only by the faithful-HD profile.
     pub hd_path: Option<PathBuf>,
@@ -86,11 +86,12 @@ pub struct EncyclopediaState {
 }
 
 impl EncyclopediaState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Configure the EData directory.  Call before opening the encyclopedia.
+    /// Configure the `EData` directory.  Call before opening the encyclopedia.
     pub fn set_edata_path(&mut self, path: impl Into<PathBuf>) {
         self.edata_path = Some(path.into());
         self.textures.clear();
@@ -146,6 +147,14 @@ impl Default for EncyclopediaState {
 /// Returns `Some(SystemKey)` when the user clicks "Zoom to system" on a
 /// star system entry (caller should pan the galaxy map to that system).
 /// Returns `None` otherwise.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 pub fn draw_encyclopedia(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -545,8 +554,7 @@ fn show_edata_image(
             state.asset_profile,
             state
                 .approved_hd_assets
-                .get(&format!("edata/EDATA_{:03}", edata_n))
-                .cloned(),
+                .get(&format!("edata/EDATA_{edata_n:03}")),
         );
         state.textures.insert(edata_n, handle);
     }
@@ -586,17 +594,16 @@ fn load_edata_texture(
     hd_path: Option<&Path>,
     edata_path: Option<&Path>,
     profile: AssetRenderProfile,
-    approved_hd: Option<ApprovedHdAsset>,
+    approved_hd: Option<&ApprovedHdAsset>,
 ) -> Option<TextureHandle> {
     let dir = edata_path?;
-    let bmp_file = dir.join(format!("EDATA.{:03}", edata_n));
+    let bmp_file = dir.join(format!("EDATA.{edata_n:03}"));
 
     if profile == AssetRenderProfile::FaithfulHd {
         if let Some(hd_dir) = hd_path {
-            let hd_file = hd_dir.join(format!("EDATA_{:03}.png", edata_n));
-            if let Some(bytes) = approved_hd
-                .as_ref()
-                .and_then(|approval| validated_hd_bytes(&bmp_file, &hd_file, approval))
+            let hd_file = hd_dir.join(format!("EDATA_{edata_n:03}.png"));
+            if let Some(bytes) =
+                approved_hd.and_then(|approval| validated_hd_bytes(&bmp_file, &hd_file, approval))
             {
                 if let Some(handle) = load_image_bytes(ctx, edata_n, &bytes, TextureOptions::LINEAR)
                 {
@@ -646,7 +653,7 @@ fn load_image_bytes(
     let color_image =
         egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
 
-    let handle = ctx.load_texture(format!("edata_{}", edata_n), color_image, texture_options);
+    let handle = ctx.load_texture(format!("edata_{edata_n}"), color_image, texture_options);
 
     Some(handle)
 }
@@ -658,7 +665,7 @@ fn load_edata_texture(
     _hd_path: Option<&Path>,
     _edata_path: Option<&Path>,
     _profile: AssetRenderProfile,
-    _approved_hd: Option<ApprovedHdAsset>,
+    _approved_hd: Option<&ApprovedHdAsset>,
 ) -> Option<TextureHandle> {
     None
 }
@@ -679,7 +686,7 @@ fn stat_row(ui: &mut egui::Ui, label: &str, value: &str) {
     });
 }
 
-/// Two-column stat row for SkillPair values (base ± variance).
+/// Two-column stat row for `SkillPair` values (base ± variance).
 fn stat_row_pair(ui: &mut egui::Ui, label: &str, base: u32, variance: u32) {
     let value = if variance > 0 {
         format!("{base} ± {variance}")

@@ -72,6 +72,7 @@ const STRATEGY_EVENT_BASE: u32 = 6208;
 ///
 /// The caller resolves `heritage_known` from `Character::heritage_known`
 /// on Luke Skywalker (or `false` if Luke doesn't exist).
+#[must_use]
 pub fn event_id_to_resource(story_event_id: u32, heritage_known: bool) -> Option<u32> {
     // Constants from rebellion_core::events
     const EVT_CHARACTER_FORCE: u32 = 0x1e1; // Luke's Force potential noticed
@@ -95,23 +96,23 @@ pub fn event_id_to_resource(story_event_id: u32, heritage_known: bool) -> Option
         EVT_DAGOBAH_COMPLETED => 6, // Luke — training complete
         // #R4 heritage gate: single event 0x220, render picks BMP variant
         EVT_FINAL_BATTLE if heritage_known => 32, // Emperor & Vader vs Knight Luke
-        EVT_FINAL_BATTLE => 24,                   // Vader vs Student Luke
-        EVT_BOUNTY_ATTACK => 16,                  // Han Solo — captured
-        EVT_LEIA_PLAN => 8,                       // Princess Leia — rescue plan
-        EVT_LEIA_RESCUE => 10,                    // Princess Leia — rescue mission
-        EVT_JABBA_DEMAND => 48,                   // Jabba the Hutt — demands Solo
-        EVT_JABBA_END => 50,                      // Jabba arc end
+        // Vader vs Student Luke
+        EVT_BOUNTY_ATTACK => 16, // Han Solo — captured
+        EVT_LEIA_PLAN => 8,      // Princess Leia — rescue plan
+        EVT_LEIA_RESCUE => 10,   // Princess Leia — rescue mission
+        EVT_JABBA_DEMAND => 48,  // Jabba the Hutt — demands Solo
+        EVT_JABBA_END => 50,     // Jabba arc end
         // Vader / Emperor related events in 0x390-0x39A range
-        0x390 => 24, // Vader — Empire strikes
-        0x391 => 26, // Vader — confrontation
-        0x392 => 28, // Vader — ultimatum
-        0x393 => 33, // Emperor — watches
-        0x394 => 35, // Emperor — intervenes
-        0x396 => 37, // Emperor — final warning
-        0x397 => 56, // Bounty hunters dispatched
-        0x398 => 58, // Bounty hunters closing in
-        0x399 => 40, // Mon Mothma — Alliance mobilizes
-        0x39A => 42, // Mon Mothma — final stand
+        EVT_FINAL_BATTLE | 0x390 => 24, // Vader — Empire strikes
+        0x391 => 26,                    // Vader — confrontation
+        0x392 => 28,                    // Vader — ultimatum
+        0x393 => 33,                    // Emperor — watches
+        0x394 => 35,                    // Emperor — intervenes
+        0x396 => 37,                    // Emperor — final warning
+        0x397 => 56,                    // Bounty hunters dispatched
+        0x398 => 58,                    // Bounty hunters closing in
+        0x399 => 40,                    // Mon Mothma — Alliance mobilizes
+        0x39A => 42,                    // Mon Mothma — final stand
         _ => return None,
     };
 
@@ -145,11 +146,13 @@ struct ActiveOverlay {
 }
 
 impl EventScreenState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns `true` if an overlay is currently active.
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.active.is_some()
     }
@@ -218,14 +221,17 @@ pub fn update_event_screen(state: &mut EventScreenState, dt: f32) {
 /// Returns `true` if the overlay was dismissed this frame (click or timeout).
 /// The caller should also check [`EventScreenState::is_active`] to detect
 /// timer-based dismissal handled by [`update_event_screen`].
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn draw_event_screen(
     ctx: &egui::Context,
     state: &mut EventScreenState,
     cache: &mut BmpCache,
 ) -> bool {
-    let overlay = match &state.active {
-        Some(o) => o,
-        None => return false,
+    let Some(overlay) = &state.active else {
+        return false;
     };
 
     let mut dismissed = false;
@@ -280,7 +286,28 @@ pub fn draw_event_screen(
             };
 
             // Text fallback or caption below sprite.
-            if !sprite_shown {
+            if sprite_shown {
+                // Progress bar below sprite showing time remaining.
+                let ratio = (timer / AUTO_DISMISS_SECS).clamp(0.0, 1.0);
+                let bar_w = (screen_width() * 0.7).min(600.0);
+                let (bar_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(bar_w, 4.0), egui::Sense::hover());
+                let painter = ui.painter();
+                painter.rect_filled(bar_rect, 0.0, Color32::from_rgb(40, 40, 55));
+                let mut filled = bar_rect;
+                filled.set_width(bar_w * ratio);
+                painter.rect_filled(filled, 0.0, Color32::from_rgb(100, 160, 255));
+
+                // Click-to-dismiss hint below bar.
+                ui.vertical_centered(|ui| {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("[ Click to continue ]")
+                            .size(10.0)
+                            .color(Color32::from_rgb(120, 115, 105)),
+                    );
+                });
+            } else {
                 egui::Frame::new()
                     .fill(Color32::from_rgba_unmultiplied(10, 15, 30, 230))
                     .inner_margin(egui::Margin::same(24))
@@ -313,27 +340,6 @@ pub fn draw_event_screen(
                             dismissed = true;
                         }
                     });
-            } else {
-                // Progress bar below sprite showing time remaining.
-                let ratio = (timer / AUTO_DISMISS_SECS).clamp(0.0, 1.0);
-                let bar_w = (screen_width() * 0.7).min(600.0);
-                let (bar_rect, _) =
-                    ui.allocate_exact_size(egui::vec2(bar_w, 4.0), egui::Sense::hover());
-                let painter = ui.painter();
-                painter.rect_filled(bar_rect, 0.0, Color32::from_rgb(40, 40, 55));
-                let mut filled = bar_rect;
-                filled.set_width(bar_w * ratio);
-                painter.rect_filled(filled, 0.0, Color32::from_rgb(100, 160, 255));
-
-                // Click-to-dismiss hint below bar.
-                ui.vertical_centered(|ui| {
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("[ Click to continue ]")
-                            .size(10.0)
-                            .color(Color32::from_rgb(120, 115, 105)),
-                    );
-                });
             }
         });
 

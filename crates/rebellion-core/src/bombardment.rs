@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{FleetKey, SystemKey};
 use crate::world::{ControlKind, GameWorld};
 
-/// GNPRTB parameter_id for the bombardment damage divisor (DAT_006bb6e8).
-/// Confirmed from `data/base/json/GNPRTB.json`: param_id=0x1400 → value=5.
+/// GNPRTB `parameter_id` for the bombardment damage divisor (`DAT_006bb6e8`).
+/// Confirmed from `data/base/json/GNPRTB.json`: `param_id=0x1400` → value=5.
 const GNPRTB_BOMBARDMENT_DIVISOR_PARAM: u16 = 0x1400;
 
 /// Result of one orbital bombardment strike.
@@ -50,16 +50,21 @@ impl BombardmentSystem {
     /// damage = max(damage, 1)
     /// ```
     ///
-    /// # Guards (from FUN_00556430)
+    /// # Guards (from `FUN_00556430`)
     /// - No self-bombardment: attacker faction == defender faction → damage = 0.
     /// - Bombardment disabled flag (`system.bombardment_blocked`) → damage = 0.
     ///   (Flag not yet in world model — add with blockade mechanics in task #20.)
     ///
     /// # Advance contract
     /// - Does NOT mutate world.
-    /// - `difficulty`: 0=development, 1=alliance_easy, 2=alliance_medium, 3=alliance_hard,
-    ///   4=empire_easy, 5=empire_medium, 6=empire_hard, 7=multiplayer.
+    /// - `difficulty`: 0=development, `1=alliance_easy`, `2=alliance_medium`, `3=alliance_hard`,
+    ///   `4=empire_easy`, `5=empire_medium`, `6=empire_hard`, 7=multiplayer.
     ///   Matches the C++ `difficulty_packed` bits 4-5 mapping from `GnprtbParams::value()`.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn resolve_bombardment(
         world: &GameWorld,
         attacker_fleet: FleetKey,
@@ -95,8 +100,8 @@ impl BombardmentSystem {
 
         // FUN_0055d860: power_ratio = Euclidean distance of the stat vectors.
         // C++: sqrt((atk[0]-def[0])² + (atk[1]-def[1])²)
-        let dx = (atk.0 - def.0) as f64;
-        let dy = (atk.1 - def.1) as f64;
+        let dx = f64::from(atk.0 - def.0);
+        let dy = f64::from(atk.1 - def.1);
         let raw_power = (dx * dx + dy * dy).sqrt();
 
         if raw_power == 0.0 {
@@ -115,7 +120,7 @@ impl BombardmentSystem {
         let gnprtb_divisor = world
             .gnprtb
             .value(GNPRTB_BOMBARDMENT_DIVISOR_PARAM, difficulty);
-        let divisor = (gnprtb_divisor.max(1)) as f64; // guard divide-by-zero
+        let divisor = f64::from(gnprtb_divisor.max(1)); // guard divide-by-zero
 
         // FUN_0053e190: apply difficulty modifier.
         // The difficulty modifier adjusts the pre-divisor result.
@@ -138,9 +143,9 @@ impl BombardmentSystem {
     ///
     /// Maps to `FUN_00509620` called for the attacker side.
     ///
-    /// - `[0]` = aggregate bombardment_modifier across all capital ships + fighters.
+    /// - `[0]` = aggregate `bombardment_modifier` across all capital ships + fighters.
     /// - `[1]` = aggregate maneuverability (secondary stat proxy pending decompile
-    ///   of FUN_00509620's exact secondary field selection).
+    ///   of `FUN_00509620`'s exact secondary field selection).
     fn fleet_bombardment_stats(world: &GameWorld, fleet: FleetKey) -> (i32, i32) {
         let f = &world.fleets[fleet];
         let mut brd: i32 = 0;
@@ -151,13 +156,13 @@ impl BombardmentSystem {
                 continue;
             }
             let class = &world.capital_ship_classes[ship.class];
-            brd += class.bombardment_modifier as i32;
-            sec += class.maneuverability as i32;
+            brd += class.bombardment_modifier.cast_signed();
+            sec += class.maneuverability.cast_signed();
         }
         for entry in &f.fighters {
             let class = &world.fighter_classes[entry.class];
             // bombardment_defense in FIGHTSD.DAT encodes bomber attack capability.
-            brd += class.bombardment_defense as i32 * entry.count as i32;
+            brd += class.bombardment_defense.cast_signed() * entry.count.cast_signed();
         }
 
         (brd, sec)
@@ -167,9 +172,9 @@ impl BombardmentSystem {
     ///
     /// Maps to `FUN_00509620` called for the defender side.
     ///
-    /// - `[0]` = sum of defense facility bombardment_defense (placeholder: 10 each).
+    /// - `[0]` = sum of defense facility `bombardment_defense` (placeholder: 10 each).
     ///   Full implementation deferred pending `DefenseFacilityClass` world model.
-    /// - `[1]` = sum of troop regiment_strength as secondary defense contribution.
+    /// - `[1]` = sum of troop `regiment_strength` as secondary defense contribution.
     fn system_bombardment_defense(world: &GameWorld, system: SystemKey) -> (i32, i32) {
         let sys = &world.systems[system];
         let mut def_stat: i32 = 0;
@@ -189,7 +194,7 @@ impl BombardmentSystem {
 
         // Troops contribute secondary defense via regiment_strength.
         for &key in &sys.ground_units {
-            sec_stat += world.troops[key].regiment_strength as i32;
+            sec_stat += i32::from(world.troops[key].regiment_strength);
         }
 
         (def_stat, sec_stat)
@@ -249,7 +254,7 @@ mod tests {
 
     fn make_sector(world: &mut GameWorld) -> SectorKey {
         world.sectors.insert(Sector {
-            dat_id: DatId::new(0x92000001),
+            dat_id: DatId::new(0x9200_0001),
             name: "Outer Rim".into(),
             group: SectorGroup::Core,
             x: 0,
@@ -264,7 +269,7 @@ mod tests {
         controlling: Option<Faction>,
     ) -> SystemKey {
         world.systems.insert(System {
-            dat_id: DatId::new(0x90000001),
+            dat_id: DatId::new(0x9000_0001),
             name: "Hoth".into(),
             sector,
             x: 50,
@@ -282,9 +287,7 @@ mod tests {
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
-            control: controlling
-                .map(ControlKind::Controlled)
-                .unwrap_or(ControlKind::Uncontrolled),
+            control: controlling.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
             is_headquarters: false,
             is_destroyed: false,
         })
@@ -292,7 +295,7 @@ mod tests {
 
     fn make_capital_ship_class(world: &mut GameWorld, bombardment: u32) -> CapitalShipKey {
         world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x30000001),
+            dat_id: DatId::new(0x3000_0001),
             name: "ISD".into(),
             is_alliance: false,
             is_empire: true,
@@ -318,7 +321,7 @@ mod tests {
         count: u32,
         is_alliance: bool,
     ) -> FleetKey {
-        let hull = world.capital_ship_classes[class].hull as i32;
+        let hull = world.capital_ship_classes[class].hull.cast_signed();
         world.fleets.insert(Fleet {
             location: sys,
             capital_ships: ShipInstance::make(class, hull, is_alliance, count),

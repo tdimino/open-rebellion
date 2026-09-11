@@ -79,7 +79,7 @@ pub struct ModManifest {
     #[serde(skip)]
     pub path: PathBuf,
     /// Whether this mod is currently enabled. Not stored in mod.toml —
-    /// managed by ModConfig.
+    /// managed by `ModConfig`.
     #[serde(skip)]
     pub enabled: bool,
 }
@@ -87,6 +87,9 @@ pub struct ModManifest {
 impl ModManifest {
     /// Parse a manifest from a `mod.toml` file.
     #[cfg(not(target_arch = "wasm32"))]
+    ///
+    /// # Errors
+    /// Returns an error if the manifest cannot be read or parsed.
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
@@ -103,6 +106,9 @@ impl ModManifest {
     }
 
     /// Parse the version field as a `semver::Version`.
+    ///
+    /// # Errors
+    /// Returns an error if the manifest version is not valid semantic version syntax.
     pub fn semver_version(&self) -> anyhow::Result<semver::Version> {
         semver::Version::parse(&self.version)
             .with_context(|| format!("mod '{}' has invalid version '{}'", self.name, self.version))
@@ -121,6 +127,7 @@ pub struct ModConfig {
 }
 
 impl ModConfig {
+    #[must_use]
     pub fn load(mods_dir: &Path) -> Self {
         let path = mods_dir.join("config.toml");
         std::fs::read_to_string(&path)
@@ -129,6 +136,9 @@ impl ModConfig {
             .unwrap_or_default()
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the mod directory or load-order file cannot be written.
     pub fn save(&self, mods_dir: &Path) -> anyhow::Result<()> {
         let path = mods_dir.join("config.toml");
         let content = toml::to_string_pretty(self)?;
@@ -136,6 +146,7 @@ impl ModConfig {
         Ok(())
     }
 
+    #[must_use]
     pub fn is_enabled(&self, name: &str) -> bool {
         self.enabled.iter().any(|n| n == name)
     }
@@ -166,6 +177,9 @@ pub struct ModContent {
 impl ModContent {
     /// Load all `*.json` overlay files from the mod directory.
     #[cfg(not(target_arch = "wasm32"))]
+    ///
+    /// # Errors
+    /// Returns an error if a present content file cannot be read or parsed.
     pub fn from_dir(dir: &Path) -> anyhow::Result<Self> {
         let mut content = ModContent::default();
         let entries = match std::fs::read_dir(dir) {
@@ -212,6 +226,10 @@ impl ModLoader {
     ///
     /// Returns an unsorted list of discovered manifests.
     #[cfg(not(target_arch = "wasm32"))]
+    ///
+    /// # Errors
+    /// Returns an error if the mod directory cannot be read or an installed manifest
+    /// cannot be loaded.
     pub fn discover(mods_dir: &Path) -> anyhow::Result<Vec<ModManifest>> {
         let mut manifests = Vec::new();
         if !mods_dir.exists() {
@@ -221,7 +239,7 @@ impl ModLoader {
             .with_context(|| format!("scanning mods directory {}", mods_dir.display()))?;
         for entry in entries.flatten() {
             let meta = entry.metadata();
-            if meta.map(|m| m.is_dir()).unwrap_or(false) {
+            if meta.is_ok_and(|m| m.is_dir()) {
                 let manifest_path = entry.path().join("mod.toml");
                 if manifest_path.exists() {
                     match ModManifest::from_file(&manifest_path) {
@@ -252,6 +270,13 @@ impl ModLoader {
     ///
     /// Returns manifests in dependency-first order (a mod's dependencies always
     /// appear before the mod itself in the returned vec).
+    ///
+    /// # Errors
+    /// Returns an error for invalid version requirements, missing or incompatible
+    /// dependencies, or a dependency cycle.
+    ///
+    /// # Panics
+    /// Panics if the topological order contains a duplicate index, violating its traversal invariant.
     pub fn resolve_load_order(manifests: Vec<ModManifest>) -> anyhow::Result<Vec<ModManifest>> {
         // Build name → index and name → version maps for O(1) lookup.
         let mut name_to_idx: HashMap<&str, usize> = HashMap::new();
@@ -271,13 +296,12 @@ impl ModLoader {
                         manifest.name, req_str, dep_name
                     )
                 })?;
-                let dep_idx = match name_to_idx.get(dep_name.as_str()) {
-                    Some(&idx) => idx,
-                    None => bail!(
+                let Some(&dep_idx) = name_to_idx.get(dep_name.as_str()) else {
+                    bail!(
                         "mod '{}' depends on '{}' which is not installed",
                         manifest.name,
                         dep_name
-                    ),
+                    )
                 };
                 let dep_version = manifests[dep_idx].semver_version()?;
                 if !req.matches(&dep_version) {
@@ -341,40 +365,34 @@ impl ModLoader {
     /// GNPRTB/SDPRTB parameter tables it corresponds to `parameter_id`.
     /// Fields are merged via RFC 7396 Merge Patch: null values remove keys,
     /// present values overwrite, absent fields are preserved.
+    ///
+    /// # Errors
+    /// Returns an error if the world or mod content cannot be patched in the
+    /// expected JSON arena structure.
+    ///
+    /// # Panics
+    /// Panics if a parameter-table entries array changes type after it has been validated.
     pub fn apply(world_json: &mut Value, content: &ModContent) -> anyhow::Result<()> {
         for (entity_type, patches) in &content.patches {
-            let arena = match world_json.get_mut(entity_type) {
-                Some(v) => v,
-                None => {
-                    eprintln!(
-                        "[mod-loader] overlay '{}' targets unknown arena — skipping",
-                        entity_type
-                    );
-                    continue;
-                }
+            let Some(arena) = world_json.get_mut(entity_type) else {
+                eprintln!("[mod-loader] overlay '{entity_type}' targets unknown arena — skipping");
+                continue;
             };
 
             for patch in patches {
                 // Patches must be objects with an "id" field.
-                let patch_obj = match patch.as_object() {
-                    Some(o) => o,
-                    None => {
-                        eprintln!(
-                            "[mod-loader] patch in '{}' is not a JSON object — skipping",
-                            entity_type
-                        );
-                        continue;
-                    }
+                let Some(patch_obj) = patch.as_object() else {
+                    eprintln!(
+                        "[mod-loader] patch in '{entity_type}' is not a JSON object — skipping"
+                    );
+                    continue;
                 };
-                let target_id = match patch_obj.get("id").and_then(|v| v.as_u64()) {
-                    Some(id) => id,
-                    None => {
-                        eprintln!(
-                            "[mod-loader] patch in '{}' missing numeric 'id' field — skipping",
-                            entity_type
-                        );
-                        continue;
-                    }
+                let Some(target_id) = patch_obj.get("id").and_then(serde_json::Value::as_u64)
+                else {
+                    eprintln!(
+                        "[mod-loader] patch in '{entity_type}' missing numeric 'id' field — skipping"
+                    );
+                    continue;
                 };
 
                 // Slotmap and HashMap arenas serialize as objects whose values are
@@ -389,17 +407,13 @@ impl ModLoader {
                 } else if let Some(arena_obj) = arena.as_object_mut() {
                     patch_matching_entity(arena_obj.values_mut(), target_id, patch)
                 } else {
-                    eprintln!(
-                        "[mod-loader] arena '{}' is not a JSON object — skipping",
-                        entity_type
-                    );
+                    eprintln!("[mod-loader] arena '{entity_type}' is not a JSON object — skipping");
                     continue;
                 };
 
                 if !matched {
                     eprintln!(
-                        "[mod-loader] patch in '{}' targets id={} which was not found — skipping",
-                        entity_type, target_id
+                        "[mod-loader] patch in '{entity_type}' targets id={target_id} which was not found — skipping"
                     );
                 }
             }
@@ -456,6 +470,9 @@ fn entity_selector_id(entity: &Value) -> Option<u64> {
 /// - For each key in `patch`:
 ///   - If the value is `null`, remove that key from `target`.
 ///   - Otherwise, recursively merge into `target[key]`.
+///
+/// # Panics
+/// Panics if the target is not an object after object initialization.
 pub fn merge_patch(target: &mut Value, patch: &Value) {
     match patch {
         Value::Object(patch_map) => {
@@ -496,6 +513,9 @@ pub struct ModWatcher {
 #[cfg(not(target_arch = "wasm32"))]
 impl ModWatcher {
     /// Begin watching `mods_dir` for file-system changes.
+    ///
+    /// # Errors
+    /// Returns an error if mod discovery, dependency resolution, or content loading fails.
     pub fn new(mods_dir: &Path) -> anyhow::Result<Self> {
         use notify::Watcher;
         let (tx, rx) = std::sync::mpsc::channel();
@@ -519,6 +539,7 @@ impl ModWatcher {
 
     /// Returns `true` if any relevant file-system event has occurred since the
     /// last call to `changed()`. Drains all pending events.
+    #[must_use]
     pub fn changed(&self) -> bool {
         let mut any = false;
         // Drain all pending messages without blocking.
@@ -526,13 +547,13 @@ impl ModWatcher {
             match event {
                 Ok(e) => {
                     // Only react to modifications and creations — not access events.
-                    use notify::EventKind::*;
+                    use notify::EventKind::{Create, Modify, Remove};
                     match e.kind {
                         Modify(_) | Create(_) | Remove(_) => any = true,
                         _ => {}
                     }
                 }
-                Err(e) => eprintln!("[mod-watcher] watch error: {}", e),
+                Err(e) => eprintln!("[mod-watcher] watch error: {e}"),
             }
         }
         any
@@ -584,7 +605,7 @@ pub enum ModError {
 /// Created once at startup, queried by the mod manager UI, and used
 /// to apply enabled mods to the game world.
 pub struct ModRuntime {
-    /// All discovered mods (from scanning mods_dir).
+    /// All discovered mods (from scanning `mods_dir`).
     pub discovered: Vec<ModManifest>,
     /// Persisted enable/disable config.
     pub config: ModConfig,
@@ -597,6 +618,7 @@ pub struct ModRuntime {
 impl ModRuntime {
     /// Discover all mods in `mods_dir` and load config.
     #[cfg(not(target_arch = "wasm32"))]
+    #[must_use]
     pub fn discover(mods_dir: &Path) -> Self {
         let config = ModConfig::load(mods_dir);
         let mut errors = Vec::new();
@@ -636,6 +658,7 @@ impl ModRuntime {
     }
 
     /// Return only enabled mods in dependency-sorted order.
+    #[must_use]
     pub fn enabled_sorted(&self) -> Vec<&ModManifest> {
         let enabled: Vec<ModManifest> = self
             .discovered
@@ -657,7 +680,7 @@ impl ModRuntime {
                 refs
             }
             Err(e) => {
-                eprintln!("[mod-runtime] load order resolution failed: {}", e);
+                eprintln!("[mod-runtime] load order resolution failed: {e}");
                 Vec::new()
             }
         }
@@ -677,7 +700,7 @@ impl ModRuntime {
             Err(e) => {
                 return vec![ModError::ParseError {
                     mod_name: String::new(),
-                    message: format!("failed to serialize world: {}", e),
+                    message: format!("failed to serialize world: {e}"),
                 }];
             }
         };
@@ -708,7 +731,7 @@ impl ModRuntime {
             Err(e) => {
                 errors.push(ModError::ParseError {
                     mod_name: String::new(),
-                    message: format!("failed to deserialize patched world: {}", e),
+                    message: format!("failed to deserialize patched world: {e}"),
                 });
             }
         }
@@ -725,11 +748,12 @@ impl ModRuntime {
             }
         }
         if let Err(e) = self.config.save(&self.mods_dir) {
-            eprintln!("[mod-runtime] failed to save config: {}", e);
+            eprintln!("[mod-runtime] failed to save config: {e}");
         }
     }
 
     /// Check for filesystem changes and return true if mods need reloading.
+    #[must_use]
     pub fn check_reload(&self, watcher: &ModWatcher) -> bool {
         watcher.changed()
     }
@@ -757,6 +781,7 @@ impl ModRuntime {
     pub fn refresh(&mut self) {}
 
     /// Return (name, version) pairs for all enabled mods (for save metadata).
+    #[must_use]
     pub fn enabled_mod_list(&self) -> Vec<(String, String)> {
         self.enabled_sorted()
             .iter()
@@ -1059,10 +1084,10 @@ version = "1.0.0"
         .unwrap();
 
         // Create mod-b (will NOT be enabled)
-        let mod_b_dir = tmp.path().join("mod-b");
-        std::fs::create_dir(&mod_b_dir).unwrap();
+        let dependent_dir = tmp.path().join("mod-b");
+        std::fs::create_dir(&dependent_dir).unwrap();
         std::fs::write(
-            mod_b_dir.join("mod.toml"),
+            dependent_dir.join("mod.toml"),
             r#"
 name = "mod-b"
 version = "1.0.0"
@@ -1070,7 +1095,7 @@ version = "1.0.0"
         )
         .unwrap();
         std::fs::write(
-            mod_b_dir.join("capital_ships.json"),
+            dependent_dir.join("capital_ships.json"),
             r#"[{"id": 1, "hull": 1}]"#,
         )
         .unwrap();

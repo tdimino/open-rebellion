@@ -45,16 +45,19 @@ pub enum MainMenuControl {
 
 impl MainMenuControl {
     /// Stable DOM/keyboard order shared with the browser accessibility bridge.
+    #[must_use]
     pub const fn index(self) -> usize {
         self as usize
     }
 
+    #[must_use]
     pub fn from_index(index: u32) -> Option<Self> {
         CONTROL_RECTS
             .get(index as usize)
             .map(|(control, _)| *control)
     }
 
+    #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::Easy => "Easy difficulty, X-wing",
@@ -205,6 +208,7 @@ impl MainMenuState {
         }
     }
 
+    #[must_use]
     pub fn semantic_focus(&self) -> Option<MainMenuControl> {
         self.semantic_focus
     }
@@ -233,6 +237,7 @@ pub enum MainMenuAction {
     ToggleMusic,
 }
 
+#[must_use]
 pub fn main_menu_canvas_rect(viewport: Rect) -> Rect {
     let scale = (viewport.width() / LOGICAL_WIDTH)
         .min(viewport.height() / LOGICAL_HEIGHT)
@@ -241,6 +246,7 @@ pub fn main_menu_canvas_rect(viewport: Rect) -> Rect {
     Rect::from_center_size(viewport.center(), size)
 }
 
+#[must_use]
 pub fn control_rect(canvas: Rect, logical: LogicalRect) -> Rect {
     let scale = canvas.width() / LOGICAL_WIDTH;
     Rect::from_min_size(
@@ -250,6 +256,7 @@ pub fn control_rect(canvas: Rect, logical: LogicalRect) -> Rect {
 }
 
 /// Device-pixel-aligned bounds shared by the extension's paint and hit paths.
+#[must_use]
 pub fn music_toggle_rect(canvas: Rect) -> Rect {
     let rect = control_rect(canvas, MUSIC_TOGGLE_RECT);
     Rect::from_min_max(
@@ -269,6 +276,7 @@ fn logical_pointer(canvas: Rect, pointer: Pos2) -> Option<Pos2> {
     ))
 }
 
+#[must_use]
 pub fn hit_test(canvas: Rect, pointer: Pos2) -> Option<MainMenuControl> {
     if music_toggle_rect(canvas).contains(pointer) {
         return Some(MainMenuControl::MusicToggle);
@@ -279,10 +287,20 @@ pub fn hit_test(canvas: Rect, pointer: Pos2) -> Option<MainMenuControl> {
         .find_map(|(control, rect)| rect.contains(logical).then_some(*control))
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn animation_resource(start: u32, count: u32, elapsed: f64) -> u32 {
     start + ((elapsed * ANIMATION_FPS) as u32 % count)
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn texture_for(
     control: MainMenuControl,
     state: &MainMenuState,
@@ -463,6 +481,16 @@ fn adjacent_control(current: Option<MainMenuControl>, backwards: bool) -> MainMe
     CONTROL_RECTS[next].0
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn draw_music_toggle(
     painter: &egui::Painter,
     rect: Rect,
@@ -606,6 +634,10 @@ fn draw_music_toggle(
 }
 
 /// Draw the assembled cockpit and return an action when a control activates.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn draw_main_menu(
     ctx: &egui::Context,
     cache: &mut BmpCache,
@@ -764,6 +796,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
+    )]
     fn preserves_four_by_three_and_centers_letterbox() {
         let wide = main_menu_canvas_rect(viewport(1280.0, 800.0));
         assert!((wide.width() - 1066.6666).abs() < 0.001);
@@ -820,7 +856,9 @@ mod tests {
                 assert_eq!(state.activate_control(hit.unwrap()), Some(action));
                 assert_eq!(texture_for(control, &state, false, 0.0), bitmap);
                 assert_eq!(
-                    MainMenuControl::from_index(control.index() as u32),
+                    MainMenuControl::from_index(
+                        u32::try_from(control.index()).expect("menu control index fits in u32"),
+                    ),
                     Some(control)
                 );
             }
@@ -920,6 +958,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn semantic_indices_cover_original_controls_and_music_extension() {
         assert_eq!(ORIGINAL_CONTROL_COUNT, 14);
         assert_eq!(CONTROL_RECTS.len(), ORIGINAL_CONTROL_COUNT + 1);
@@ -960,6 +1002,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
+    )]
     fn music_extension_occupies_only_its_top_right_region() {
         let canvas = Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
         assert_eq!(MUSIC_TOGGLE_RECT.width, 30.0);

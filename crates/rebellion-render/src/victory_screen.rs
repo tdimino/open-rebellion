@@ -19,7 +19,7 @@
 //! ```
 //!
 //! # Source
-//! - `entity-system.md §4.2` — `SideVictoryConditionsNotif`, VICTORY / VICTORY_II audio IDs
+//! - `entity-system.md §4.2` — `SideVictoryConditionsNotif`, VICTORY / `VICTORY_II` audio IDs
 //! - `victory.rs` — `VictoryOutcome` enum
 
 use egui_macroquad::egui::{self, Color32, RichText};
@@ -57,11 +57,13 @@ pub struct VictoryScreenState {
 }
 
 impl VictoryScreenState {
+    #[must_use]
     pub fn new() -> Self {
         VictoryScreenState::default()
     }
 
     /// Returns `true` if there is an outcome waiting to be displayed.
+    #[must_use]
     pub fn is_pending(&self) -> bool {
         self.outcome.is_some() && !self.acknowledged
     }
@@ -210,7 +212,7 @@ fn describe_outcome(outcome: &VictoryOutcome) -> (String, String, Vec<String>, C
                 Color32::from_rgb(220, 60, 60) // Empire red
             };
             (
-                format!("{} Victory!", winner_name),
+                format!("{winner_name} Victory!"),
                 "Headquarters Captured".into(),
                 vec![
                     format!(

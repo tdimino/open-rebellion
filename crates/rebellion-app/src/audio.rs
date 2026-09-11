@@ -9,8 +9,8 @@
 //! value — even with `optional = true`, the resolver still pulls both in.
 //!
 //! `quad-snd` uses the same `miniquad` audio subsystem as macroquad, so
-//! there is no link conflict.  It supports native (CoreAudio on macOS,
-//! ALSA/PulseAudio on Linux) and WASM (WebAudio) through the same unified
+//! there is no link conflict.  It supports native (`CoreAudio` on macOS,
+//! ALSA/PulseAudio on Linux) and WASM (`WebAudio`) through the same unified
 //! API.  Feature parity for this project's needs: looped background music,
 //! one-shot SFX, and one-shot voice lines — all fully covered.
 //!
@@ -65,15 +65,15 @@
 //!
 //! | Context | Track |
 //! |---------|-------|
-//! | MainMenu | MainTheme |
-//! | GalaxyMap | MainTheme |
+//! | `MainMenu` | `MainTheme` |
+//! | `GalaxyMap` | `MainTheme` |
 //! | Combat | Battle |
 //! | Victory | Victory |
 //! | Defeat | Defeat |
 //!
 //! # WASM
 //!
-//! `quad-snd` provides a WebAudio backend for WASM builds with the same API.
+//! `quad-snd` provides a `WebAudio` backend for WASM builds with the same API.
 //! File loading differs: on WASM you must supply raw bytes (loaded via
 //! `macroquad::file::load_file`).  The `load_*_bytes` methods accept raw
 //! bytes for this purpose.  The standard `load_*` methods are native-only
@@ -169,8 +169,7 @@ fn music_file(track: MusicTrack) -> &'static str {
 /// Select a `MusicTrack` for a given `MusicContext`.
 pub fn track_for_context(ctx: MusicContext) -> MusicTrack {
     match ctx {
-        MusicContext::MainMenu => MusicTrack::MainTheme,
-        MusicContext::GalaxyMap => MusicTrack::MainTheme,
+        MusicContext::MainMenu | MusicContext::GalaxyMap => MusicTrack::MainTheme,
         MusicContext::Combat => MusicTrack::Battle,
         MusicContext::Victory => MusicTrack::Victory,
         MusicContext::Defeat => MusicTrack::Defeat,
@@ -209,7 +208,7 @@ fn voice_filename(faction: &str, id: u32) -> String {
     } else {
         "voicefxa"
     };
-    format!("{}-{}.wav", id, suffix)
+    format!("{id}-{suffix}.wav")
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +420,10 @@ impl AudioEngine {
     /// Play a one-shot SFX at the current SFX volume.
     ///
     /// No-op when the SFX was not loaded or the effective volume is zero.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
     pub fn play_sfx(&mut self, kind: SfxKind, vol_state: &AudioVolumeState) {
         let vol = vol_state.effective_sfx_volume() as f32;
         if vol <= 0.0 {
@@ -440,6 +443,10 @@ impl AudioEngine {
     /// Play a one-shot voice line at the current SFX volume.
     ///
     /// No-op when the line was not loaded or the effective volume is zero.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
     pub fn play_voice(&mut self, line: VoiceLine, vol_state: &AudioVolumeState) {
         let vol = vol_state.effective_sfx_volume() as f32;
         if vol <= 0.0 {
@@ -460,6 +467,10 @@ impl AudioEngine {
     /// not already loaded.
     ///
     /// If the same track is already playing, this is a no-op.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
     pub fn play_music(
         &mut self,
         track: MusicTrack,
@@ -547,6 +558,10 @@ impl AudioEngine {
     /// Apply volume changes to the currently playing music.
     ///
     /// Call when `AudioVolumeState::dirty` is true, then clear `dirty`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
     pub fn apply_volume(&mut self, vol_state: &AudioVolumeState) {
         let vol = vol_state.effective_music_volume() as f32;
         if let Some((sound, _)) = &self.music {
@@ -561,6 +576,10 @@ impl AudioEngine {
     }
 
     /// Always returns `true` — `quad-snd` initialises unconditionally.
+    #[expect(
+        clippy::unused_self,
+        reason = "Keep the same instance API as the audio backend on other platforms."
+    )]
     pub fn is_available(&self) -> bool {
         true
     }

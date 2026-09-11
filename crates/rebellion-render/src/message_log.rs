@@ -49,6 +49,7 @@ pub enum MessageCategory {
 
 impl MessageCategory {
     /// Egui foreground color for this category.
+    #[must_use]
     pub fn color(self) -> Color32 {
         match self {
             MessageCategory::Manufacturing => Color32::from_rgb(100, 220, 100), // green
@@ -61,6 +62,7 @@ impl MessageCategory {
     }
 
     /// Short prefix tag shown before the message text.
+    #[must_use]
     pub fn tag(self) -> &'static str {
         match self {
             MessageCategory::Manufacturing => "[BUILD]",
@@ -147,6 +149,7 @@ impl Default for MessageLog {
 
 impl MessageLog {
     /// Create a new empty log with the given capacity.
+    #[must_use]
     pub fn new(capacity: usize) -> Self {
         MessageLog {
             messages: Vec::with_capacity(capacity.min(512)),
@@ -168,23 +171,26 @@ impl MessageLog {
     }
 
     /// All messages in chronological order (oldest first).
+    #[must_use]
     pub fn messages(&self) -> &[GameMessage] {
         &self.messages
     }
 
     /// Number of messages currently stored.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.messages.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.messages.is_empty()
     }
 
-    /// Resolve SystemKey references to human-readable system names.
+    /// Resolve `SystemKey` references to human-readable system names.
     ///
     /// Call before `export_jsonl()` to populate `system_name` fields.
-    /// Requires a closure that maps SystemKey to a name string.
+    /// Requires a closure that maps `SystemKey` to a name string.
     pub fn resolve_system_names(&mut self, lookup: impl Fn(SystemKey) -> Option<String>) {
         for msg in &mut self.messages {
             if let Some(key) = msg.system {
@@ -194,12 +200,16 @@ impl MessageLog {
     }
 
     /// Export all messages as JSONL (one JSON object per line).
+    ///
+    /// # Errors
+    /// Returns an error if the output file cannot be created or written,
+    /// or a message cannot be serialized.
     pub fn export_jsonl(&self, path: &std::path::Path) -> std::io::Result<()> {
         use std::io::Write;
         let mut file = std::fs::File::create(path)?;
         for msg in &self.messages {
             let json = serde_json::to_string(msg).map_err(std::io::Error::other)?;
-            writeln!(file, "{}", json)?;
+            writeln!(file, "{json}")?;
         }
         Ok(())
     }
@@ -213,6 +223,10 @@ impl MessageLog {
 ///
 /// Does not own any messages — those live in `MessageLog`.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 pub struct MessageLogState {
     /// Whether each category's messages are shown.
     pub show_manufacturing: bool,
@@ -255,6 +269,7 @@ impl Default for MessageLogState {
 }
 
 impl MessageLogState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

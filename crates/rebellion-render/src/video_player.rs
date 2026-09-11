@@ -103,6 +103,13 @@ mod native {
     }
 
     impl VideoPlayer {
+        ///
+        /// # Errors
+        /// Returns an error if the video cannot be opened or its first frame cannot be decoded.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+        )]
         pub fn open(path: &Path) -> Result<VideoPlayer, VideoError> {
             let assets = resolve_decoded_assets(path)?;
             if !assets.frames_dir.exists() || !assets.metadata_path.exists() {
@@ -152,7 +159,7 @@ mod native {
                 }
 
                 if let Err(error) = self.display_frame(next_index) {
-                    eprintln!("[cutscene] {}", error);
+                    eprintln!("[cutscene] {error}");
                     self.stop();
                     break;
                 }
@@ -267,7 +274,7 @@ mod native {
                 message: "frame dimensions must be > 0".to_string(),
             });
         }
-        if metadata.width > u16::MAX as u32 || metadata.height > u16::MAX as u32 {
+        if metadata.width > u32::from(u16::MAX) || metadata.height > u32::from(u16::MAX) {
             return Err(VideoError::InvalidMetadata {
                 path: path.to_path_buf(),
                 message: "frame dimensions exceed macroquad texture limits".to_string(),

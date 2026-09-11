@@ -12,7 +12,7 @@ pub struct ManufacturingFacilitiesFile {
 }
 
 /// Shared layout for MANFACSD.DAT and PROFACSD.DAT — 56 bytes per entry.
-/// 13 u32 fields (52 bytes) + text_stra_dll_id: u16 + field7: u16 (4 bytes) = 56 bytes.
+/// 13 u32 fields (52 bytes) + `text_stra_dll_id`: u16 + field7: u16 (4 bytes) = 56 bytes.
 #[derive(Debug, Clone, Serialize)]
 pub struct ManufacturingFacility {
     pub id: u32,
@@ -63,6 +63,9 @@ impl DatRecord for ManufacturingFacilitiesFile {
 }
 
 impl ManufacturingFacility {
+    ///
+    /// # Errors
+    /// Returns an error if the input ends before the facility record is complete.
     pub fn parse_entry(r: &mut ByteReader) -> anyhow::Result<Self> {
         Ok(Self {
             id: r.read_u32()?,

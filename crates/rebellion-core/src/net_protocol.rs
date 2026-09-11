@@ -26,408 +26,408 @@ pub enum NetMessage {
     // Tactical combat messages (CTacticalBattleManager message router)
     // Source: cpp-class-hierarchy.md §4
     // -----------------------------------------------------------------------
-    /// SHIP_ADD (+0x04)
+    /// `SHIP_ADD` (+0x04)
     ShipAdd,
-    /// SHIP_REMOVE (+0x07)
+    /// `SHIP_REMOVE` (+0x07)
     ShipRemove,
-    /// SHIP_ABSTRACT_DESTROY (+0x0a)
+    /// `SHIP_ABSTRACT_DESTROY` (+0x0a)
     ShipAbstractDestroy,
-    /// SHIP_DESTROY (+0x0d)
+    /// `SHIP_DESTROY` (+0x0d)
     ShipDestroy,
-    /// cmSHIP_POST_DS_STATUS (+0x10)
+    /// `cmSHIP_POST_DS_STATUS` (+0x10)
     ShipPostDeathStarStatus,
-    /// NAV_ADD (+0x13)
+    /// `NAV_ADD` (+0x13)
     NavAdd,
-    /// NAV_REMOVE (+0x16)
+    /// `NAV_REMOVE` (+0x16)
     NavRemove,
-    /// NAV_PURGE (+0x19)
+    /// `NAV_PURGE` (+0x19)
     NavPurge,
-    /// NAV_DELETE (+0x1c)
+    /// `NAV_DELETE` (+0x1c)
     NavDelete,
-    /// SHIPGROUP_MOVE (+0x1f)
+    /// `SHIPGROUP_MOVE` (+0x1f)
     ShipGroupMove,
-    /// SHIPGROUP_NEWMISSION (+0x22)
+    /// `SHIPGROUP_NEWMISSION` (+0x22)
     ShipGroupNewMission,
-    /// SHIPGROUP_NEWFORMATION (+0x25)
+    /// `SHIPGROUP_NEWFORMATION` (+0x25)
     ShipGroupNewFormation,
-    /// SHIPGROUP_NEWTARGETLIST (+0x28)
+    /// `SHIPGROUP_NEWTARGETLIST` (+0x28)
     ShipGroupNewTargetList,
-    /// SHIP_FIRELASERCANNON (+0x2b)
+    /// `SHIP_FIRELASERCANNON` (+0x2b)
     ShipFireLaserCannon,
-    /// SHIP_FIRETURBOLASER (+0x2e)
+    /// `SHIP_FIRETURBOLASER` (+0x2e)
     ShipFireTurboLaser,
-    /// SHIP_FIREIONCANNON (+0x31)
+    /// `SHIP_FIREIONCANNON` (+0x31)
     ShipFireIonCannon,
-    /// SHIP_FIRETORPEDO (+0x34)
+    /// `SHIP_FIRETORPEDO` (+0x34)
     ShipFireTorpedo,
-    /// SHIP_TAKE_LASER_HIT (+0x37)
+    /// `SHIP_TAKE_LASER_HIT` (+0x37)
     ShipTakeLaserHit,
-    /// SHIP_TAKE_ION_HIT (+0x3a)
+    /// `SHIP_TAKE_ION_HIT` (+0x3a)
     ShipTakeIonHit,
-    /// SHIP_TAKE_TURBO_HIT (+0x3d)
+    /// `SHIP_TAKE_TURBO_HIT` (+0x3d)
     ShipTakeTurboHit,
-    /// SHIP_TAKE_TORPEDO_HIT (+0x40)
+    /// `SHIP_TAKE_TORPEDO_HIT` (+0x40)
     ShipTakeTorpedoHit,
-    /// SHIP_ION_DAMAGE (+0x46)
+    /// `SHIP_ION_DAMAGE` (+0x46)
     ShipIonDamage,
-    /// SHIP_LAUNCH (+0x4f)
+    /// `SHIP_LAUNCH` (+0x4f)
     ShipLaunch,
-    /// SHIP_RECOVER (+0x52)
+    /// `SHIP_RECOVER` (+0x52)
     ShipRecover,
-    /// SHIP_ENGINE_DOWN (+0x55)
+    /// `SHIP_ENGINE_DOWN` (+0x55)
     ShipEngineDown,
-    /// SHIP_WEAPON_DOWN (+0x58)
+    /// `SHIP_WEAPON_DOWN` (+0x58)
     ShipWeaponDown,
-    /// SHIP_TRACTOR_DOWN (+0x5b)
+    /// `SHIP_TRACTOR_DOWN` (+0x5b)
     ShipTractorDown,
-    /// SHIP_SHIELD_HIT (+0x5e)
+    /// `SHIP_SHIELD_HIT` (+0x5e)
     ShipShieldHit,
-    /// SHIP_WEAPON_HIT (+0x61)
+    /// `SHIP_WEAPON_HIT` (+0x61)
     ShipWeaponHit,
-    /// SHIP_TRACTOR_HIT (+0x64)
+    /// `SHIP_TRACTOR_HIT` (+0x64)
     ShipTractorHit,
-    /// SHIP_ENGINE_HIT (+0x67)
+    /// `SHIP_ENGINE_HIT` (+0x67)
     ShipEngineHit,
-    /// SHIP_HYPERDRIVE_HIT (+0x6a)
+    /// `SHIP_HYPERDRIVE_HIT` (+0x6a)
     ShipHyperdriveHit,
-    /// SHIP_SHIELD_FIX (+0x6d)
+    /// `SHIP_SHIELD_FIX` (+0x6d)
     ShipShieldFix,
-    /// SHIP_WEAPON_FIX (+0x70)
+    /// `SHIP_WEAPON_FIX` (+0x70)
     ShipWeaponFix,
-    /// SHIP_TRACTOR_FIX (+0x73)
+    /// `SHIP_TRACTOR_FIX` (+0x73)
     ShipTractorFix,
-    /// SHIP_ENGINE_FIX (+0x76)
+    /// `SHIP_ENGINE_FIX` (+0x76)
     ShipEngineFix,
-    /// SHIP_HYPERDRIVE_FIX (+0x79)
+    /// `SHIP_HYPERDRIVE_FIX` (+0x79)
     ShipHyperdriveFix,
-    /// SHIP_TRACTOR_LOCK (+0x7c)
+    /// `SHIP_TRACTOR_LOCK` (+0x7c)
     ShipTractorLock,
-    /// SHIP_TRACTOR_UNLOCK (+0x7f)
+    /// `SHIP_TRACTOR_UNLOCK` (+0x7f)
     ShipTractorUnlock,
-    /// SHIP_GRAVITY_LOCK (+0x82)
+    /// `SHIP_GRAVITY_LOCK` (+0x82)
     ShipGravityLock,
-    /// SHIP_GRAVITY_UNLOCK (+0x85)
+    /// `SHIP_GRAVITY_UNLOCK` (+0x85)
     ShipGravityUnlock,
-    /// SHIP_SET_RECOVERY_SHIP (+0x88)
+    /// `SHIP_SET_RECOVERY_SHIP` (+0x88)
     ShipSetRecoveryShip,
-    /// SHIP_HYPERSPACE (+0x8b)
+    /// `SHIP_HYPERSPACE` (+0x8b)
     ShipHyperspace,
-    /// SHIP_WITHDRAW (+0x8e)
+    /// `SHIP_WITHDRAW` (+0x8e)
     ShipWithdraw,
-    /// SHIP_SCUTTLE (+0x91)
+    /// `SHIP_SCUTTLE` (+0x91)
     ShipScuttle,
-    /// TASKFORCE_NEW (+0x94)
+    /// `TASKFORCE_NEW` (+0x94)
     TaskForceNew,
-    /// FIGHTERGROUP_NEW (+0x97)
+    /// `FIGHTERGROUP_NEW` (+0x97)
     FighterGroupNew,
-    /// SHIPGROUP_DELETE (+0x9a)
+    /// `SHIPGROUP_DELETE` (+0x9a)
     ShipGroupDelete,
-    /// SHIPGROUP_ADDSHIP (+0x9d)
+    /// `SHIPGROUP_ADDSHIP` (+0x9d)
     ShipGroupAddShip,
-    /// SHIPGROUP_ADDTARGET (+0xa0)
+    /// `SHIPGROUP_ADDTARGET` (+0xa0)
     ShipGroupAddTarget,
-    /// SHIPGROUP_REMOVETARGET (+0xa3)
+    /// `SHIPGROUP_REMOVETARGET` (+0xa3)
     ShipGroupRemoveTarget,
-    /// SHIPGROUP_REPLACETARGETLIST (+0xa6)
+    /// `SHIPGROUP_REPLACETARGETLIST` (+0xa6)
     ShipGroupReplaceTargetList,
-    /// SHIPGROUP_REMOVESHIP (+0xa9)
+    /// `SHIPGROUP_REMOVESHIP` (+0xa9)
     ShipGroupRemoveShip,
-    /// SHIPGROUP_ADDNAVPOINT (+0xac)
+    /// `SHIPGROUP_ADDNAVPOINT` (+0xac)
     ShipGroupAddNavPoint,
-    /// SHIPGROUP_REMOVENAVPOINT (+0xaf)
+    /// `SHIPGROUP_REMOVENAVPOINT` (+0xaf)
     ShipGroupRemoveNavPoint,
-    /// SHIPGROUP_REPLACENAVLIST (+0xb2)
+    /// `SHIPGROUP_REPLACENAVLIST` (+0xb2)
     ShipGroupReplaceNavList,
-    /// SHIPGROUP_CHANGETARGET (+0xb5)
+    /// `SHIPGROUP_CHANGETARGET` (+0xb5)
     ShipGroupChangeTarget,
-    /// SHIPGROUP_TACTMISS_CHANGE_STATE (+0xb8)
+    /// `SHIPGROUP_TACTMISS_CHANGE_STATE` (+0xb8)
     ShipGroupTactMissChangeState,
-    /// FORMATION_ACCELERATE (+0xbe)
+    /// `FORMATION_ACCELERATE` (+0xbe)
     FormationAccelerate,
-    /// CAPITALSHIP_UPDATE (+0xc1)
+    /// `CAPITALSHIP_UPDATE` (+0xc1)
     CapitalShipUpdate,
-    /// FIGHTERSQUADRON_UPDATE (+0xc4)
+    /// `FIGHTERSQUADRON_UPDATE` (+0xc4)
     FighterSquadronUpdate,
-    /// TACTCHAR_UPDATE (+0xc7)
+    /// `TACTCHAR_UPDATE` (+0xc7)
     TacticalCharacterUpdate,
-    /// TACTICALRESULT_UPDATE (+0xca)
+    /// `TACTICALRESULT_UPDATE` (+0xca)
     TacticalResultUpdate,
-    /// DEATHSTAR_UPDATE (+0xcd)
+    /// `DEATHSTAR_UPDATE` (+0xcd)
     DeathStarUpdate,
-    /// DEATHSTAR_FIRE (+0xd0)
+    /// `DEATHSTAR_FIRE` (+0xd0)
     DeathStarFire,
-    /// DEATHSTAR_WITHDRAW (+0xd3)
+    /// `DEATHSTAR_WITHDRAW` (+0xd3)
     DeathStarWithdraw,
 
     // -----------------------------------------------------------------------
     // Game lifecycle messages (CTacticalBattleManager continued)
     // Source: cpp-class-hierarchy.md §4
     // -----------------------------------------------------------------------
-    /// ALLIANCE_START_TURN (+0xd6)
+    /// `ALLIANCE_START_TURN` (+0xd6)
     AllianceStartTurn,
-    /// ALLIANCE_END_TURN (+0xd9)
+    /// `ALLIANCE_END_TURN` (+0xd9)
     AllianceEndTurn,
-    /// EMPIRE_START_TURN (+0xdc)
+    /// `EMPIRE_START_TURN` (+0xdc)
     EmpireStartTurn,
-    /// EMPIRE_END_TURN (+0xdf)
+    /// `EMPIRE_END_TURN` (+0xdf)
     EmpireEndTurn,
-    /// GAME_OVER (+0xe2)
+    /// `GAME_OVER` (+0xe2)
     GameOver,
-    /// SYSTEM_TURN_COMPLETED (+0xe5)
+    /// `SYSTEM_TURN_COMPLETED` (+0xe5)
     SystemTurnCompleted,
-    /// SYSTEM_PAUSE (+0xe8)
+    /// `SYSTEM_PAUSE` (+0xe8)
     SystemPause,
-    /// SYSTEM_UNPAUSE (+0xeb)
+    /// `SYSTEM_UNPAUSE` (+0xeb)
     SystemUnpause,
-    /// SYSTEM_SAVE (+0xee)
+    /// `SYSTEM_SAVE` (+0xee)
     SystemSave,
-    /// SYSTEM_QUIT (+0xf1)
+    /// `SYSTEM_QUIT` (+0xf1)
     SystemQuit,
-    /// SYSTEM_WAIT_FOR_GAME_OVER (+0xf4)
+    /// `SYSTEM_WAIT_FOR_GAME_OVER` (+0xf4)
     SystemWaitForGameOver,
-    /// SYSTEM_GAME_OVER (+0xf7)
+    /// `SYSTEM_GAME_OVER` (+0xf7)
     SystemGameOver,
-    /// SYSTEM_SYNCHRONIZE_BEGIN (+0xfa)
+    /// `SYSTEM_SYNCHRONIZE_BEGIN` (+0xfa)
     SystemSynchronizeBegin,
-    /// SYSTEM_SYNCHRONIZE_END (+0xfd)
+    /// `SYSTEM_SYNCHRONIZE_END` (+0xfd)
     SystemSynchronizeEnd,
-    /// SYSTEM_ABORT (+0x100)
+    /// `SYSTEM_ABORT` (+0x100)
     SystemAbort,
 
     // -----------------------------------------------------------------------
     // Entity state change notifications (CNotifyObject setter-notify chain)
     // Source: entity-system.md §1, cpp-class-hierarchy.md §1
     // -----------------------------------------------------------------------
-    /// CapShipHullValueDamageNotif / HullValueDamage — event 0x1c0 (448)
+    /// `CapShipHullValueDamageNotif` / `HullValueDamage` — event 0x1c0 (448)
     CapShipHullDamage,
-    /// CapShipShieldRechargeRateCHAllocatedNotif — event 0x1c1 (449)
+    /// `CapShipShieldRechargeRateCHAllocatedNotif` — event 0x1c1 (449)
     CapShipShieldRechargeAllocated,
-    /// CapShipWeaponRechargeRateCHAllocatedNotif — event 0x1c2 (450)
+    /// `CapShipWeaponRechargeRateCHAllocatedNotif` — event 0x1c2 (450)
     CapShipWeaponRechargeAllocated,
-    /// FightSquadSquadSizeDamageNotif / SquadSizeDamage — event 0x1a0 (416)
+    /// `FightSquadSquadSizeDamageNotif` / `SquadSizeDamage` — event 0x1a0 (416)
     FighterSquadSizeDamage,
-    /// TroopRegDestroyedRunningBlockade — event 0x340 (832)
+    /// `TroopRegDestroyedRunningBlockade` — event 0x340 (832)
     TroopDestroyedRunningBlockade,
-    /// TroopRegWithdrawPercentNotif
+    /// `TroopRegWithdrawPercentNotif`
     TroopWithdrawPercent,
-    /// SystemTroopRegWithdrawPercentNotif
+    /// `SystemTroopRegWithdrawPercentNotif`
     SystemTroopWithdrawPercent,
 
     // -----------------------------------------------------------------------
     // Character state notifications
     // Source: entity-system.md §1.1–1.3
     // -----------------------------------------------------------------------
-    /// SystemLoyaltyNotif / Loyalty — vtable +0x238
+    /// `SystemLoyaltyNotif` / Loyalty — vtable +0x238
     CharacterLoyaltyChanged,
-    /// CharacterEnhancedLoyaltyNotif / EnhancedLoyalty — vtable +0x318
+    /// `CharacterEnhancedLoyaltyNotif` / `EnhancedLoyalty` — vtable +0x318
     CharacterEnhancedLoyalty,
-    /// NotifyCombatStrengthChanged — vtable +0x330
+    /// `NotifyCombatStrengthChanged` — vtable +0x330
     CharacterCombatStrength,
-    /// MissionHyperdriveModifierNotif / MissionHyperdriveModifier — vtable +0x338
+    /// `MissionHyperdriveModifierNotif` / `MissionHyperdriveModifier` — vtable +0x338
     CharacterHyperdriveModifier,
-    /// CharacterEnhancedDiplomacyNotif / EnhancedDiplomacy
+    /// `CharacterEnhancedDiplomacyNotif` / `EnhancedDiplomacy`
     CharacterEnhancedDiplomacy,
-    /// CharacterEnhancedEspionageNotif / EnhancedEspionage
+    /// `CharacterEnhancedEspionageNotif` / `EnhancedEspionage`
     CharacterEnhancedEspionage,
-    /// CharacterEnhancedCombatNotif / EnhancedCombat
+    /// `CharacterEnhancedCombatNotif` / `EnhancedCombat`
     CharacterEnhancedCombat,
-    /// CharacterForceNotif / Force — event 0x1e1 (481)
+    /// `CharacterForceNotif` / Force — event 0x1e1 (481)
     CharacterForce,
-    /// CharacterForceExperienceNotif / ForceExperience
+    /// `CharacterForceExperienceNotif` / `ForceExperience`
     CharacterForceExperience,
-    /// CharacterForceTrainingNotif / ForceTraining — event 0x1e5 (485)
+    /// `CharacterForceTrainingNotif` / `ForceTraining` — event 0x1e5 (485)
     CharacterForceTraining,
-    /// CharacterForceUserDiscoveredKeyNotif / ForceUserDiscovered — event 0x362 (866)
+    /// `CharacterForceUserDiscoveredKeyNotif` / `ForceUserDiscovered` — event 0x362 (866)
     CharacterForceUserDiscovered,
-    /// CharacterForceAwareNotif / ForceAware
+    /// `CharacterForceAwareNotif` / `ForceAware`
     CharacterForceAware,
-    /// CharacterForcePotentialNotif / ForcePotential
+    /// `CharacterForcePotentialNotif` / `ForcePotential`
     CharacterForcePotential,
-    /// CharacterDiscoveringForceUserNotif
+    /// `CharacterDiscoveringForceUserNotif`
     CharacterDiscoveringForceUser,
 
     // -----------------------------------------------------------------------
     // Character role notifications
     // Source: entity-system.md §1.4–1.5
     // -----------------------------------------------------------------------
-    /// RoleBaseDiplomacyNotif / BaseDiplomacy
+    /// `RoleBaseDiplomacyNotif` / `BaseDiplomacy`
     RoleBaseDiplomacy,
-    /// RoleBaseEspionageNotif / BaseEspionage
+    /// `RoleBaseEspionageNotif` / `BaseEspionage`
     RoleBaseEspionage,
-    /// RoleBaseShipyardRDNotif / BaseShipyardRD
+    /// `RoleBaseShipyardRDNotif` / `BaseShipyardRD`
     RoleBaseShipyardRD,
-    /// RoleBaseTrainingFacilRDNotif / BaseTrainingFacilRD
+    /// `RoleBaseTrainingFacilRDNotif` / `BaseTrainingFacilRD`
     RoleBaseTrainingFacilRD,
-    /// RoleBaseConstructionYardRDNotif / BaseConstructionYardRD
+    /// `RoleBaseConstructionYardRDNotif` / `BaseConstructionYardRD`
     RoleBaseConstructionYardRD,
-    /// RoleBaseCombatNotif / BaseCombat
+    /// `RoleBaseCombatNotif` / `BaseCombat`
     RoleBaseCombat,
-    /// RoleBaseLeadershipNotif / BaseLeadership
+    /// `RoleBaseLeadershipNotif` / `BaseLeadership`
     RoleBaseLeadership,
-    /// RoleBaseLoyaltyNotif / BaseLoyalty
+    /// `RoleBaseLoyaltyNotif` / `BaseLoyalty`
     RoleBaseLoyalty,
-    /// RoleMissionKeyNotif / Mission
+    /// `RoleMissionKeyNotif` / Mission
     RoleMission,
-    /// RoleMissionSeedKeyNotif / MissionSeed
+    /// `RoleMissionSeedKeyNotif` / `MissionSeed`
     RoleMissionSeed,
-    /// RoleOnMissionNotif / OnMission
+    /// `RoleOnMissionNotif` / `OnMission`
     RoleOnMission,
-    /// RoleOnHiddenMissionNotif / OnHiddenMission
+    /// `RoleOnHiddenMissionNotif` / `OnHiddenMission`
     RoleOnHiddenMission,
-    /// RoleOnMandatoryMissionNotif / OnMandatoryMission
+    /// `RoleOnMandatoryMissionNotif` / `OnMandatoryMission`
     RoleOnMandatoryMission,
-    /// RoleCanResignFromMissionNotif / CanResignFromMission
+    /// `RoleCanResignFromMissionNotif` / `CanResignFromMission`
     RoleCanResignFromMission,
-    /// RoleMissionResignRequestNotif / MissionResignRequest
+    /// `RoleMissionResignRequestNotif` / `MissionResignRequest`
     RoleMissionResignRequest,
-    /// RoleMissionRemoveRequestNotif / MissionRemoveRequest
+    /// `RoleMissionRemoveRequestNotif` / `MissionRemoveRequest`
     RoleMissionRemoveRequest,
-    /// RoleMovingBetweenMissionsNotif / MovingBetweenMissions
+    /// `RoleMovingBetweenMissionsNotif` / `MovingBetweenMissions`
     RoleMovingBetweenMissions,
-    /// RoleParentAtMissionCompletionKeyNotif / ParentAtMissionCompletion
+    /// `RoleParentAtMissionCompletionKeyNotif` / `ParentAtMissionCompletion`
     RoleParentAtMissionCompletion,
-    /// RoleLocationAtMissionCompletionKeyNotif / LocationAtMissionCompletion
+    /// `RoleLocationAtMissionCompletionKeyNotif` / `LocationAtMissionCompletion`
     RoleLocationAtMissionCompletion,
 
     // -----------------------------------------------------------------------
     // Mission lifecycle notifications
     // Source: mission-event-cookbook.md §5
     // -----------------------------------------------------------------------
-    /// MissionUserIDNotif / UserID
+    /// `MissionUserIDNotif` / `UserID`
     MissionUserId,
-    /// MissionUserID2Notif / UserID2
+    /// `MissionUserID2Notif` / `UserID2`
     MissionUserId2,
-    /// MissionOriginLocationKeyNotif / OriginLocation
+    /// `MissionOriginLocationKeyNotif` / `OriginLocation`
     MissionOriginLocation,
-    /// MissionObjectiveKeyNotif / Objective
+    /// `MissionObjectiveKeyNotif` / Objective
     MissionObjective,
-    /// MissionTargetKeyNotif / Target
+    /// `MissionTargetKeyNotif` / Target
     MissionTarget,
-    /// MissionTargetLocationKeyNotif / TargetLocation
+    /// `MissionTargetLocationKeyNotif` / `TargetLocation`
     MissionTargetLocation,
-    /// MissionLeaderKeyNotif / Leader
+    /// `MissionLeaderKeyNotif` / Leader
     MissionLeader,
-    /// MissionLeaderSeedKeyNotif / LeaderSeed
+    /// `MissionLeaderSeedKeyNotif` / `LeaderSeed`
     MissionLeaderSeed,
-    /// MissionReadyForNextPhaseNotif / ReadyForNextPhase
+    /// `MissionReadyForNextPhaseNotif` / `ReadyForNextPhase`
     MissionReadyForNextPhase,
-    /// MissionImpliedTeamNotif / ImpliedTeam
+    /// `MissionImpliedTeamNotif` / `ImpliedTeam`
     MissionImpliedTeam,
-    /// MissionMandatoryNotif / Mandatory
+    /// `MissionMandatoryNotif` / Mandatory
     MissionMandatory,
-    /// MissionEspionageExtraSystemKeyNotif / ExtraSystem — event 0x370 (880)
+    /// `MissionEspionageExtraSystemKeyNotif` / `ExtraSystem` — event 0x370 (880)
     MissionEspionageExtraSystem,
 
     // -----------------------------------------------------------------------
     // Game object destruction notifications
     // Source: entity-system.md §3
     // -----------------------------------------------------------------------
-    /// GameObjDestroyedNotif / Destroyed — event 0x302 (770)
+    /// `GameObjDestroyedNotif` / Destroyed — event 0x302 (770)
     GameObjDestroyed,
-    /// GameObjDestroyedOnArrivalNotif / DestroyedOnArrival — event 0x303 (771)
+    /// `GameObjDestroyedOnArrivalNotif` / `DestroyedOnArrival` — event 0x303 (771)
     GameObjDestroyedOnArrival,
-    /// GameObjDestroyedAutoscrapNotif / DestroyedAutoscrap — event 0x304 (772)
+    /// `GameObjDestroyedAutoscrapNotif` / `DestroyedAutoscrap` — event 0x304 (772)
     GameObjDestroyedAutoscrap,
-    /// GameObjDestroyedSabotageNotif / DestroyedSabotage — event 0x305 (773)
+    /// `GameObjDestroyedSabotageNotif` / `DestroyedSabotage` — event 0x305 (773)
     GameObjDestroyedSabotage,
-    /// GameObjDestroyedAssassinationNotif / DestroyedAssassination — event 0x306 (774)
+    /// `GameObjDestroyedAssassinationNotif` / `DestroyedAssassination` — event 0x306 (774)
     GameObjDestroyedAssassination,
 
     // -----------------------------------------------------------------------
     // Fleet notifications
     // Source: entity-system.md §3.1
     // -----------------------------------------------------------------------
-    /// FleetBattleNotif / Battle — event 0x180 (384)
+    /// `FleetBattleNotif` / Battle — event 0x180 (384)
     FleetBattle,
-    /// FleetBlockadeNotif / Blockade — event 0x181 (385)
+    /// `FleetBlockadeNotif` / Blockade — event 0x181 (385)
     FleetBlockade,
-    /// FleetBombardNotif / Bombard — event 0x182 (386)
+    /// `FleetBombardNotif` / Bombard — event 0x182 (386)
     FleetBombard,
-    /// FleetAssaultNotif / Assault — event 0x183 (387)
+    /// `FleetAssaultNotif` / Assault — event 0x183 (387)
     FleetAssault,
 
     // -----------------------------------------------------------------------
     // System state notifications
     // Source: entity-system.md §4
     // -----------------------------------------------------------------------
-    /// SystemBattleNotif / Battle — event 0x14d (333)
+    /// `SystemBattleNotif` / Battle — event 0x14d (333)
     SystemBattle,
-    /// SystemBlockadeNotif / Blockade — event 0x14e (334)
+    /// `SystemBlockadeNotif` / Blockade — event 0x14e (334)
     SystemBlockade,
-    /// SystemUprisingNotif / Uprising
+    /// `SystemUprisingNotif` / Uprising
     SystemUprising,
-    /// SystemUprisingIncidentNotif / UprisingIncident — event 0x152 (338)
+    /// `SystemUprisingIncidentNotif` / `UprisingIncident` — event 0x152 (338)
     SystemUprisingIncident,
-    /// ControlKindBattleWonNotif
+    /// `ControlKindBattleWonNotif`
     SystemControlBattleWon,
-    /// SystemControlKindUprisingNotif / ControlKindUprising
+    /// `SystemControlKindUprisingNotif` / `ControlKindUprising`
     SystemControlUprising,
 
     // -----------------------------------------------------------------------
     // Side (faction) notifications
     // Source: entity-system.md §4.1, annotated-functions.md
     // -----------------------------------------------------------------------
-    /// SideRecruitmentDoneNotif / RecruitmentDone — event 0x12c (300)
+    /// `SideRecruitmentDoneNotif` / `RecruitmentDone` — event 0x12c (300)
     SideRecruitmentDone,
-    /// SideConstructionYardRdOrderNotif / ConstructionYardRdOrder — event 0x127 (295)
+    /// `SideConstructionYardRdOrderNotif` / `ConstructionYardRdOrder` — event 0x127 (295)
     SideConstructionYardRdOrder,
-    /// SideVictoryConditionsNotif / VictoryConditions
+    /// `SideVictoryConditionsNotif` / `VictoryConditions`
     SideVictoryConditions,
 
     // -----------------------------------------------------------------------
     // Story chain: Dagobah / Jedi Training
     // Source: mission-event-cookbook.md §5 Dagobah
     // -----------------------------------------------------------------------
-    /// MissionMgrLukeDagobahRequiredNotif / LukeDagobahRequired — gate
+    /// `MissionMgrLukeDagobahRequiredNotif` / `LukeDagobahRequired` — gate
     StoryLukeDagobahRequired,
-    /// MissionMgrLukeDagobahNotif / LukeDagobah — event 0x221 (545)
+    /// `MissionMgrLukeDagobahNotif` / `LukeDagobah` — event 0x221 (545)
     StoryLukeDagobah,
-    /// DagobahMissionFirstTrainingDayNotif / FirstTrainingDay — gate
+    /// `DagobahMissionFirstTrainingDayNotif` / `FirstTrainingDay` — gate
     StoryDagobahFirstTrainingDay,
-    /// MissionJediTrainingTeacherKeyNotif / Teacher — gate
+    /// `MissionJediTrainingTeacherKeyNotif` / Teacher — gate
     StoryJediTrainingTeacher,
-    /// LukeDagobahCompletedNotif / DagobahCompleted — event 0x210 (528)
+    /// `LukeDagobahCompletedNotif` / `DagobahCompleted` — event 0x210 (528)
     StoryDagobahCompleted,
 
     // -----------------------------------------------------------------------
     // Story chain: Final Battle
     // Source: mission-event-cookbook.md §5 Final Battle
     // -----------------------------------------------------------------------
-    /// MissionMgrDarthPickupNotif / DarthPickup — gate
+    /// `MissionMgrDarthPickupNotif` / `DarthPickup` — gate
     StoryDarthPickup,
-    /// MissionMgrDarthToLukeFinalBattleNotif / DarthToLukeFinalBattle — gate
+    /// `MissionMgrDarthToLukeFinalBattleNotif` / `DarthToLukeFinalBattle` — gate
     StoryDarthToLukeFinalBattle,
-    /// MissionMgrDarthToEmperorFinalBattleNotif / DarthToEmperorFinalBattle — gate
+    /// `MissionMgrDarthToEmperorFinalBattleNotif` / `DarthToEmperorFinalBattle` — gate
     StoryDarthToEmperorFinalBattle,
-    /// MissionMgrFinalBattleReadyNotif / FinalBattleReady — gate (mission mgr)
+    /// `MissionMgrFinalBattleReadyNotif` / `FinalBattleReady` — gate (mission mgr)
     StoryFinalBattleReady,
-    /// LukeFinalBattleReadyNotif / FinalBattleReady — gate (Luke side)
+    /// `LukeFinalBattleReadyNotif` / `FinalBattleReady` — gate (Luke side)
     StoryLukeFinalBattleReady,
-    /// MissionMgrFinalBattleNotif / FinalBattle — event 0x220 (544)
+    /// `MissionMgrFinalBattleNotif` / `FinalBattle` — event 0x220 (544)
     StoryFinalBattle,
 
     // -----------------------------------------------------------------------
     // Story chain: Jabba's Palace
     // Source: mission-event-cookbook.md §5 Jabba
     // -----------------------------------------------------------------------
-    /// MissionMgrLukePalaceNotif / LukePalace — gate
+    /// `MissionMgrLukePalaceNotif` / `LukePalace` — gate
     StoryLukePalace,
-    /// MissionMgrHanCapturedAtPalaceNotif / HanCapturedAtPalace — gate
+    /// `MissionMgrHanCapturedAtPalaceNotif` / `HanCapturedAtPalace` — gate
     StoryHanCapturedAtPalace,
-    /// MissionMgrLeiaPalaceNotif / LeiaPalace — gate
+    /// `MissionMgrLeiaPalaceNotif` / `LeiaPalace` — gate
     StoryLeiaPalace,
-    /// MissionMgrChewbaccaPalaceNotif / ChewbaccaPalace — gate
+    /// `MissionMgrChewbaccaPalaceNotif` / `ChewbaccaPalace` — gate
     StoryChewbaccaPalace,
 
     // -----------------------------------------------------------------------
     // Story chain: Bounty Hunters
     // Source: mission-event-cookbook.md §5 Bounty
     // -----------------------------------------------------------------------
-    /// MissionMgrBountyHuntersActiveNotif / BountyHuntersActive — gate
+    /// `MissionMgrBountyHuntersActiveNotif` / `BountyHuntersActive` — gate
     StoryBountyHuntersActive,
-    /// HanBountyAttackNotif / BountyAttack — event 0x212 (530)
+    /// `HanBountyAttackNotif` / `BountyAttack` — event 0x212 (530)
     StoryHanBountyAttack,
-    /// HanCapturedByBountyHuntersNotif / CapturedByBountyHunters — gate
+    /// `HanCapturedByBountyHuntersNotif` / `CapturedByBountyHunters` — gate
     StoryHanCapturedByBountyHunters,
 
     // -----------------------------------------------------------------------
@@ -472,6 +472,7 @@ pub enum NetMessage {
 /// Maps a `NetMessage` to its original event ID, if one was registered.
 /// Returns `None` for gate notifications and vtable-only events.
 impl NetMessage {
+    #[must_use]
     pub const fn event_id(&self) -> Option<u16> {
         match self {
             Self::SideConstructionYardRdOrder => Some(0x127),
@@ -506,6 +507,11 @@ impl NetMessage {
     }
 
     /// Human-readable category for grouping in telemetry and debug output.
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
     pub const fn category(&self) -> &'static str {
         match self {
             Self::ShipAdd
@@ -727,7 +733,7 @@ mod tests {
         for msg in NetMessage::iter() {
             if let Some(id) = msg.event_id() {
                 if let Some(prev) = seen.insert(id, msg) {
-                    panic!("duplicate event ID 0x{:03x}: {:?} and {:?}", id, prev, msg);
+                    panic!("duplicate event ID 0x{id:03x}: {prev:?} and {msg:?}");
                 }
             }
         }
@@ -736,7 +742,7 @@ mod tests {
     #[test]
     fn all_categories_non_empty() {
         for msg in NetMessage::iter() {
-            assert!(!msg.category().is_empty(), "{:?} has empty category", msg);
+            assert!(!msg.category().is_empty(), "{msg:?} has empty category");
         }
     }
 

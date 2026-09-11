@@ -172,6 +172,7 @@ impl SystemWindowState {
         true
     }
 
+    #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
         self.windows.iter().any(|window| {
             let rect = window_screen_rect(*window, layout);
@@ -182,10 +183,12 @@ impl SystemWindowState {
         })
     }
 
+    #[must_use]
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }
 
+    #[must_use]
     pub fn rail_count(&self) -> usize {
         self.rail.len()
     }
@@ -291,6 +294,10 @@ pub enum SystemWindowAction {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 struct WindowDrawResult {
     focus: bool,
     close: bool,
@@ -425,6 +432,10 @@ fn draw_reference_rail(
 #[expect(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this existing UI boundary."
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
 fn draw_system_window(
     ctx: &egui::Context,
@@ -613,6 +624,11 @@ struct TabContentDrawResult {
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this existing UI boundary."
 )]
+#[expect(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates. Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn paint_tab_content(
     ui: &mut egui::Ui,
     cache: &mut BmpCache,
@@ -624,6 +640,15 @@ fn paint_tab_content(
     scale: f32,
     parent: egui::Rect,
 ) -> TabContentDrawResult {
+    const CELL_WIDTH: f32 = 70.0;
+    const CELL_HEIGHT: f32 = 70.0;
+    const IMAGE_WIDTH: f32 = 66.0;
+    const IMAGE_HEIGHT: f32 = 25.0;
+    const CONTENT_TOP: f32 = 76.0;
+    const SCROLL_X: f32 = 214.0;
+    const SCROLL_TOP: f32 = 76.0;
+    const SCROLL_BOTTOM: f32 = 301.0;
+
     let mut result = TabContentDrawResult::default();
     let Some(system) = world.systems.get(window.system) else {
         return result;
@@ -648,15 +673,6 @@ fn paint_tab_content(
     if items.is_empty() {
         return result;
     }
-
-    const CELL_WIDTH: f32 = 70.0;
-    const CELL_HEIGHT: f32 = 70.0;
-    const IMAGE_WIDTH: f32 = 66.0;
-    const IMAGE_HEIGHT: f32 = 25.0;
-    const CONTENT_TOP: f32 = 76.0;
-    const SCROLL_X: f32 = 214.0;
-    const SCROLL_TOP: f32 = 76.0;
-    const SCROLL_BOTTOM: f32 = 301.0;
 
     let max_scroll_row = max_tab_scroll_row(items.len());
     let scroll_row = window.scroll_row.min(max_scroll_row);
@@ -799,6 +815,10 @@ struct TabVisualItem {
     label: String,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn tab_visual_items(
     world: &GameWorld,
     fog: &FogState,
@@ -1112,6 +1132,10 @@ fn cockpit_faction(faction: CockpitFaction) -> Faction {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn clamp_to_galaxy(position: (i16, i16), layout: CockpitLayout) -> (i16, i16) {
     let scale = layout.scale.max(f32::EPSILON);
     let min_x = ((layout.galaxy.x - layout.canvas.x) / scale).round();
@@ -1198,7 +1222,7 @@ fn paint_resource(
 ) {
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
-        .map(|texture| texture.id())
+        .map(egui_macroquad::egui::TextureHandle::id)
     else {
         return;
     };
@@ -1266,6 +1290,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn fixture_world(count: usize) -> (GameWorld, Vec<SystemKey>) {
         let mut world = GameWorld::default();
         let sector = world.sectors.insert(Sector {

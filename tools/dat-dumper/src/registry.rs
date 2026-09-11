@@ -2,7 +2,12 @@ use std::collections::HashMap;
 
 use crate::codec::{ByteReader, ByteWriter};
 use crate::dat_record::DatRecord;
-use crate::types::*;
+use crate::types::{
+    all_facilities, capital_ships, defense_facilities, entity_table, fighters, fleets_seed,
+    general_params, int_table, major_characters, manufacturing_facilities, minor_characters,
+    missions, production_facilities, sectors, seed_table, side_params, special_forces, syfc_table,
+    systems, troops,
+};
 use crate::validate::compare_bytes;
 
 pub type ParseFn = fn(&[u8], &str) -> anyhow::Result<String>;
@@ -22,6 +27,11 @@ fn parse_and_dump<T: DatRecord>(data: &[u8], filename: &str) -> anyhow::Result<S
     Ok(json)
 }
 
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn build_registry() -> HashMap<&'static str, ParseFn> {
     let mut m: HashMap<&'static str, ParseFn> = HashMap::new();
 
