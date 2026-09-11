@@ -475,6 +475,13 @@ would tune around known simulation feedback defects.
   recovered galaxy apertures, and share their transform across map layers,
   hit tests, blockades, and advisors. The reference rail and the rest of
   `UIP-T01` remain open.
+- [x] Complete P46B / the primary `RE-STR-02` checkpoint: remove the replacement
+  text strip; render both factions' six exact normal and captured-press bitmap
+  pairs; reproduce native capture, release, palette-key, and strict-edge input;
+  prevent them from opening replacement destinations; and withhold the
+  replacement message and status bars that covered them. A0 captures, the disabled path,
+  original destination windows, speed and GID controls, and the rest of
+  `UIP-T01` remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
@@ -505,7 +512,7 @@ would tune around known simulation feedback defects.
 - [ ] Enforce format, strict clippy, native, packaged-WASM, and clean-package boot gates.
 - [ ] Add at least 20 app/browser integration cases and promote long campaigns when stable.
 - [ ] Generate the complete bitmap resource ledger from the entity map; fail on unexplained misses. Fleet-list miniatures are verified in F-010B.
-- [x] Establish 544 stable required interface baseline cells, link all 42
+- [x] Establish 564 stable required interface baseline cells, link all 43
   required surface families to 27 bounded retrieval or removal packages, and
   explicitly cover 106 space-battle cells across `TAC-01` through `TAC-07`.
 - [ ] Close every required surface-state cell in the original-interface audit

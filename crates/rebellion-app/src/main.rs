@@ -54,11 +54,11 @@ use rebellion_render::{
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
     draw_blockade_indicators, draw_cockpit_background, draw_cockpit_chrome,
     draw_cockpit_egui_layer, draw_credits, draw_encyclopedia, draw_event_screen,
-    draw_facility_icons, draw_fleet_context_menu, draw_fleet_overlays, draw_fleets,
-    draw_fog_overlay, draw_galaxy_map, draw_game_setup, draw_ground_combat, draw_main_menu,
-    draw_manufacturing, draw_message_log, draw_missions, draw_multiplayer_setup, draw_officers,
-    draw_save_load, draw_sector_boundaries, draw_status_bar, draw_system_context_menu,
-    draw_system_info_panel, draw_tactical_view, hovered_fleet, set_cockpit_viewport_clip,
+    draw_facility_icons, draw_fleet_context_menu, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
+    draw_galaxy_map, draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing,
+    draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_boundaries,
+    draw_system_context_menu, draw_system_info_panel,
+    draw_tactical_view, handle_cockpit_egui_input, hovered_fleet, set_cockpit_viewport_clip,
     show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
     AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
     EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction,
@@ -2770,6 +2770,9 @@ async fn main() {
                     // Register the cockpit background before panels so the
                     // opaque chrome never covers their content or artwork.
                     draw_cockpit_background(ctx, &cockpit_state, &mut bmp_cache);
+                    // Paint the native primary controls before floating
+                    // windows. Input resolves after those windows register.
+                    draw_cockpit_egui_layer(ctx, &cockpit_state, &mut bmp_cache);
 
                     // War Room panels (mutually exclusive left panels)
                     if show_officers {
@@ -2948,11 +2951,10 @@ async fn main() {
                         panel_actions.push(action);
                     }
 
-                    // Message log (bottom panel, above status bar)
-                    draw_message_log(ctx, &msg_log, &mut log_state);
-
-                    // Status bar (bottom-most, with speed controls + audio)
-                    draw_status_bar(ctx, &world, &mut clock, &mut audio_vol);
+                    // The replacement message and status bars covered the
+                    // original command controls. Keep those reconstructed
+                    // surfaces out of parity mode until their bitmap-driven
+                    // versions are restored.
 
                     // Droid advisor (floating window, bottom-right)
                     draw_advisor(ctx, &mut advisor_state);
@@ -2960,96 +2962,22 @@ async fn main() {
                     // Story event screen overlay (top-most — over everything including advisor)
                     draw_event_screen(ctx, &mut event_screen_state, &mut bmp_cache);
 
-                    // Cockpit button bar (overlays bottom chrome)
-                    if let Some(btn) = draw_cockpit_egui_layer(
-                        ctx,
-                        &cockpit_state,
-                        &mut bmp_cache,
-                        show_officers,
-                        show_fleets,
-                        show_manufacturing,
-                        show_missions,
-                        show_research,
-                        enc_state.open,
-                    ) {
-                        match btn {
-                            CockpitButton::Officers => {
-                                show_officers = !show_officers;
-                                if show_officers {
-                                    show_fleets = false;
-                                    show_manufacturing = false;
-                                    show_missions = false;
-                                }
-                            }
-                            CockpitButton::Fleets => {
-                                show_fleets = !show_fleets;
-                                if show_fleets {
-                                    show_officers = false;
-                                    show_manufacturing = false;
-                                    show_missions = false;
-                                }
-                            }
-                            CockpitButton::Manufacturing => {
-                                show_manufacturing = !show_manufacturing;
-                                if show_manufacturing {
-                                    show_officers = false;
-                                    show_fleets = false;
-                                    show_missions = false;
-                                }
-                            }
-                            CockpitButton::Missions => {
-                                show_missions = !show_missions;
-                                if show_missions {
-                                    show_officers = false;
-                                    show_fleets = false;
-                                    show_manufacturing = false;
-                                }
-                            }
-                            CockpitButton::Research => {
-                                show_research = !show_research;
-                                if show_research {
-                                    show_officers = false;
-                                    show_fleets = false;
-                                    show_manufacturing = false;
-                                    show_missions = false;
-                                    show_jedi = false;
-                                }
-                            }
-                            CockpitButton::Encyclopedia => {
-                                enc_state.open = !enc_state.open;
-                            }
-                            CockpitButton::SaveLoad => {
-                                if !matches!(
-                                    game_mode,
-                                    GameMode::Cutscene { .. } | GameMode::VictoryModal { .. }
-                                ) {
-                                    if show_save_load {
-                                        save_load_panel_state.close();
-                                        show_save_load = false;
-                                    } else {
-                                        save_slots = read_save_slots(&saves_dir);
-                                        save_load_panel_state.open_save();
-                                        show_save_load = true;
-                                    }
-                                }
-                            }
-                            CockpitButton::SpeedDown => {
-                                let next = match clock.speed {
-                                    GameSpeed::Faster => GameSpeed::Fast,
-                                    GameSpeed::Fast => GameSpeed::Normal,
-                                    _ => GameSpeed::Paused,
-                                };
-                                clock.set_speed(next);
-                            }
-                            CockpitButton::SpeedUp => {
-                                let next = match clock.speed {
-                                    GameSpeed::Paused => GameSpeed::Normal,
-                                    GameSpeed::Normal => GameSpeed::Fast,
-                                    _ => GameSpeed::Faster,
-                                };
-                                clock.set_speed(next);
-                            }
-                        }
+                    if let Some(btn) =
+                        handle_cockpit_egui_input(ctx, &mut cockpit_state, &mut bmp_cache)
+                    {
+                        let (command, destination) = match btn {
+                            CockpitButton::SystemFinder => (0x12d, "system_finder"),
+                            CockpitButton::FleetFinder => (0x12e, "fleet_finder"),
+                            CockpitButton::PersonnelFinder => (0x12f, "personnel_finder"),
+                            CockpitButton::TroopFinder => (0x130, "troop_finder"),
+                            CockpitButton::GameOptions => (0x131, "game_options"),
+                            CockpitButton::Encyclopedia => (0x132, "encyclopedia"),
+                        };
+                        macroquad::logging::info!(
+                            "[interface] command=0x{:x} destination={} status=pending_original_window",
+                            command,
+                            destination
+                        );
                     }
                 });
                 egui_macroquad::draw();

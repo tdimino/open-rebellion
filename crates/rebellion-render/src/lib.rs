@@ -43,8 +43,9 @@ pub use bmp_cache::set_bmp_cache;
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
-    set_cockpit_viewport_clip, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
-    CockpitViewport, STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
+    handle_cockpit_egui_input, set_cockpit_viewport_clip, strategic_primary_controls,
+    CockpitButton, CockpitFaction, CockpitLayout, CockpitState, CockpitViewport,
+    StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
 };
 pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};

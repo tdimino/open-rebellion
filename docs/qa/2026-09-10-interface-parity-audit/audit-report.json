@@ -12,7 +12,7 @@
       "native",
       "wasm"
     ],
-    "surface_families": 43,
+    "surface_families": 44,
     "retained_reference_images": 370,
     "parity_rule": "Every required surface-state cell must pass. A failed, partial, blocked, or unknown child prevents parent and project acceptance.",
     "extensions_rule": "Approved extensions are excluded from the parity denominator and must not replace, overlap, obscure, or alter an original path."
@@ -52,14 +52,14 @@
   "summary": {
     "main_menu_surface": "partial_complete_state_matrix_open",
     "campaign_interface": "fail",
-    "strategy_cockpit": "partial_exact_shell_viewports_passed_controls_gid_rail_windows_and_replacement_surfaces_open",
+    "strategy_cockpit": "partial_exact_shell_and_primary_control_checkpoints_passed_full_control_matrix_gid_rail_windows_and_replacement_surfaces_open",
     "galaxy_display": "fail",
     "system_navigation": "fail",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
     "tactical_interface": "fail",
-    "required_baseline_cells": "544_pending_or_open",
-    "retrieval_package_coverage": "42_of_42_required_surface_families",
+    "required_baseline_cells": "564_pending_or_open",
+    "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
@@ -69,12 +69,13 @@
       "id": "UIP-F-001",
       "severity": "P0",
       "status": "partial",
-      "title": "Strategic shell and viewport scaling pass; authentic controls, reference rail, and required aperture content remain incomplete",
+      "title": "Strategic shell, viewport scaling, and six primary controls pass scoped checkpoints; the full control matrix, reference rail, and required aperture content remain incomplete",
       "evidence": [
         "crates/rebellion-render/src/cockpit.rs",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-shell-canvas.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-shell-canvas.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-command-controls.md"
       ],
-      "affected_surfaces": ["CMD-01", "CMD-04", "CMD-05"]
+      "affected_surfaces": ["CMD-01", "CMD-04", "CMD-05", "CMD-10"]
     },
     {
       "id": "UIP-F-002",
@@ -128,7 +129,7 @@
       "status": "fail",
       "title": "Original object, finder, production, mission, message, and option layouts are replaced or absent",
       "evidence": ["crates/rebellion-render/src/panels", "crates/rebellion-render/src/message_log.rs"],
-      "affected_surfaces": ["PRE-03", "CMD-08", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12", "OBJ-13", "OBJ-14"]
+      "affected_surfaces": ["PRE-03", "CMD-08", "CMD-10", "OBJ-02", "OBJ-03", "OBJ-04", "OBJ-05", "OBJ-06", "OBJ-07", "OBJ-08", "OBJ-09", "OBJ-10", "OBJ-11", "OBJ-12", "OBJ-13", "OBJ-14"]
     },
     {
       "id": "UIP-F-008",
@@ -176,7 +177,7 @@
       "id": "UIP-T01",
       "name": "Strategic Cockpit Truth",
       "status": "in_progress",
-      "surface_ids": ["CMD-01", "CMD-02", "CMD-03", "CMD-04", "CMD-05", "CMD-07", "CMD-09"],
+      "surface_ids": ["CMD-01", "CMD-02", "CMD-03", "CMD-04", "CMD-05", "CMD-07", "CMD-09", "CMD-10"],
       "exit": "Both factions pass exact shell, galaxy/GID, controls, modeless system navigation, embedded advisors, and markers on native and WASM with zero invented or blank required elements."
     },
     {
@@ -221,9 +222,10 @@
     "reverse_engineering_ledger": "reverse-engineering-ledger.json",
     "reverse_engineering_report": "reverse-engineering-ledger.md",
     "p46a_strategic_shell": "evidence/2026-09-11-strategic-shell-canvas.md",
+    "p46b_strategic_controls": "evidence/2026-09-11-strategic-command-controls.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Complete the remaining RE-STR-01 window-reference rail, then implement authentic strategic controls, GID and map art, original system windows, advisor actions and voice, and replacement-surface removal without closing UIP-T01 early."
+  "next_action": "Complete the RE-STR-01 window-reference rail and the remaining RE-STR-02 controls, then implement GID and map art, original system windows, advisor actions and voice, and replacement-surface removal without closing UIP-T01 early."
 }

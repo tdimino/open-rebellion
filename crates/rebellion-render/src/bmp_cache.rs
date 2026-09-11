@@ -397,6 +397,56 @@ pub mod resources {
         /// Galaxy display toggle: on.
         pub const GALAXY_DISPLAY_ON: u32 = 903;
 
+        /// Alliance System Finder, pressed.
+        pub const ALLIANCE_SYSTEM_FINDER_PRESSED: u32 = 10001;
+        /// Alliance System Finder, normal.
+        pub const ALLIANCE_SYSTEM_FINDER_NORMAL: u32 = 10002;
+        /// Alliance Fleet Finder, pressed.
+        pub const ALLIANCE_FLEET_FINDER_PRESSED: u32 = 10003;
+        /// Alliance Fleet Finder, normal.
+        pub const ALLIANCE_FLEET_FINDER_NORMAL: u32 = 10004;
+        /// Alliance Personnel Finder, pressed.
+        pub const ALLIANCE_PERSONNEL_FINDER_PRESSED: u32 = 10005;
+        /// Alliance Personnel Finder, normal.
+        pub const ALLIANCE_PERSONNEL_FINDER_NORMAL: u32 = 10006;
+        /// Alliance Troop Finder, pressed.
+        pub const ALLIANCE_TROOP_FINDER_PRESSED: u32 = 10007;
+        /// Alliance Troop Finder, normal.
+        pub const ALLIANCE_TROOP_FINDER_NORMAL: u32 = 10008;
+        /// Alliance Game Options, pressed.
+        pub const ALLIANCE_GAME_OPTIONS_PRESSED: u32 = 10009;
+        /// Alliance Game Options, normal.
+        pub const ALLIANCE_GAME_OPTIONS_NORMAL: u32 = 10010;
+        /// Alliance Encyclopedia, pressed.
+        pub const ALLIANCE_ENCYCLOPEDIA_PRESSED: u32 = 10011;
+        /// Alliance Encyclopedia, normal.
+        pub const ALLIANCE_ENCYCLOPEDIA_NORMAL: u32 = 10012;
+
+        /// Imperial System Finder, pressed.
+        pub const EMPIRE_SYSTEM_FINDER_PRESSED: u32 = 10015;
+        /// Imperial System Finder, normal.
+        pub const EMPIRE_SYSTEM_FINDER_NORMAL: u32 = 10016;
+        /// Imperial Fleet Finder, pressed.
+        pub const EMPIRE_FLEET_FINDER_PRESSED: u32 = 10017;
+        /// Imperial Fleet Finder, normal.
+        pub const EMPIRE_FLEET_FINDER_NORMAL: u32 = 10018;
+        /// Imperial Personnel Finder, pressed.
+        pub const EMPIRE_PERSONNEL_FINDER_PRESSED: u32 = 10019;
+        /// Imperial Personnel Finder, normal.
+        pub const EMPIRE_PERSONNEL_FINDER_NORMAL: u32 = 10020;
+        /// Imperial Troop Finder, pressed.
+        pub const EMPIRE_TROOP_FINDER_PRESSED: u32 = 10021;
+        /// Imperial Troop Finder, normal.
+        pub const EMPIRE_TROOP_FINDER_NORMAL: u32 = 10022;
+        /// Imperial Game Options, pressed.
+        pub const EMPIRE_GAME_OPTIONS_PRESSED: u32 = 10023;
+        /// Imperial Game Options, normal.
+        pub const EMPIRE_GAME_OPTIONS_NORMAL: u32 = 10024;
+        /// Imperial Encyclopedia, pressed.
+        pub const EMPIRE_ENCYCLOPEDIA_PRESSED: u32 = 10025;
+        /// Imperial Encyclopedia, normal.
+        pub const EMPIRE_ENCYCLOPEDIA_NORMAL: u32 = 10026;
+
         /// Generic strategy UI frame variant A.
         pub const UI_PANEL_FRAME_A: u32 = 10553;
         /// Generic strategy UI frame variant B.
@@ -929,6 +979,86 @@ pub struct BmpCache {
     approved_hd_assets: HashMap<String, ApprovedHdAsset>,
     /// Cached textures.  `None` value means "attempted load, file not found".
     textures: HashMap<(DllSource, u32), Option<TextureHandle>>,
+    /// Native-style per-pixel hit masks decoded from the original BMPs.
+    hit_masks: HashMap<(DllSource, u32), Option<BitmapHitMask>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BitmapHitMask {
+    width: usize,
+    height: usize,
+    opaque: Vec<bool>,
+}
+
+impl BitmapHitMask {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.get(0..2)? != b"BM" {
+            return None;
+        }
+        let u16_at = |offset: usize| {
+            Some(u16::from_le_bytes(
+                bytes.get(offset..offset + 2)?.try_into().ok()?,
+            ))
+        };
+        let u32_at = |offset: usize| {
+            Some(u32::from_le_bytes(
+                bytes.get(offset..offset + 4)?.try_into().ok()?,
+            ))
+        };
+        let i32_at = |offset: usize| {
+            Some(i32::from_le_bytes(
+                bytes.get(offset..offset + 4)?.try_into().ok()?,
+            ))
+        };
+
+        let pixel_offset = u32_at(10)? as usize;
+        let dib_size = u32_at(14)?;
+        let signed_width = i32_at(18)?;
+        let signed_height = i32_at(22)?;
+        if dib_size < 40
+            || signed_width <= 0
+            || signed_height == 0
+            || u16_at(26)? != 1
+            || u16_at(28)? != 8
+            || u32_at(30)? != 0
+        {
+            return None;
+        }
+
+        let width = usize::try_from(signed_width).ok()?;
+        let height = usize::try_from(signed_height.unsigned_abs()).ok()?;
+        let row_stride = width.checked_add(3)? & !3;
+        let pixel_bytes = row_stride.checked_mul(height)?;
+        pixel_offset
+            .checked_add(pixel_bytes)
+            .filter(|end| *end <= bytes.len())?;
+
+        // The native control stores the first DIB pixel's palette index as its
+        // transparent key. Positive-height BMP rows are stored bottom-up.
+        let transparent_index = *bytes.get(pixel_offset)?;
+        let bottom_up = signed_height > 0;
+        let mut opaque = Vec::with_capacity(width.checked_mul(height)?);
+        for y in 0..height {
+            let stored_y = if bottom_up { height - 1 - y } else { y };
+            let row_offset = pixel_offset + stored_y * row_stride;
+            for x in 0..width {
+                opaque.push(bytes[row_offset + x] != transparent_index);
+            }
+        }
+
+        Some(Self {
+            width,
+            height,
+            opaque,
+        })
+    }
+
+    /// `FUN_005fca00` excludes every outer edge before consulting the BMP's
+    /// palette-key mask. Its transparent palette index is the first stored
+    /// pixel, which is the decoded image's bottom-left pixel for these BMPs.
+    fn contains(&self, x: usize, y: usize) -> bool {
+        x > 0 && y > 0 && x < self.width && y < self.height && self.opaque[y * self.width + x]
+    }
 }
 
 impl BmpCache {
@@ -940,6 +1070,7 @@ impl BmpCache {
             profile: AssetRenderProfile::OriginalParity,
             approved_hd_assets: HashMap::new(),
             textures: HashMap::new(),
+            hit_masks: HashMap::new(),
         }
     }
 
@@ -949,6 +1080,7 @@ impl BmpCache {
     pub fn set_base_path(&mut self, path: impl Into<PathBuf>) {
         self.base_path = Some(path.into());
         self.textures.clear();
+        self.hit_masks.clear();
     }
 
     /// Set an optional HD PNG directory.
@@ -1018,6 +1150,48 @@ impl BmpCache {
         self.textures.get(&key)?.as_ref()
     }
 
+    /// Test a source pixel against the original bitmap's native hit mask.
+    ///
+    /// This intentionally ignores faithful-HD substitutions. Interaction
+    /// geometry remains tied to the original resource even when reviewed HD
+    /// artwork is selected for rendering.
+    pub fn is_resource_hit(
+        &mut self,
+        source: DllSource,
+        resource_id: u32,
+        x: usize,
+        y: usize,
+    ) -> bool {
+        self.ensure_hit_mask(source, resource_id);
+        self.hit_masks
+            .get(&(source, resource_id))
+            .and_then(Option::as_ref)
+            .is_some_and(|mask| mask.contains(x, y))
+    }
+
+    /// Return the original indexed bitmap dimensions used for logical paint.
+    pub fn original_resource_size(
+        &mut self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<[usize; 2]> {
+        self.ensure_hit_mask(source, resource_id);
+        self.hit_masks
+            .get(&(source, resource_id))
+            .and_then(Option::as_ref)
+            .map(|mask| [mask.width, mask.height])
+    }
+
+    fn ensure_hit_mask(&mut self, source: DllSource, resource_id: u32) {
+        let key = (source, resource_id);
+        if !self.hit_masks.contains_key(&key) {
+            let mask = self
+                .load_original_bytes(source, resource_id)
+                .and_then(|bytes| BitmapHitMask::from_bytes(&bytes));
+            self.hit_masks.insert(key, mask);
+        }
+    }
+
     /// Bulk-load all resources in `[start, end]` (inclusive) for one DLL.
     ///
     /// Useful for pre-warming the cache before the first frame that needs
@@ -1041,6 +1215,21 @@ impl BmpCache {
     }
 
     // ── Internal ────────────────────────────────────────────────────────────
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_original_bytes(&self, source: DllSource, resource_id: u32) -> Option<Vec<u8>> {
+        let base = self.base_path.as_deref()?;
+        let bmp_file = rebase_path_prefix(base, "data/base", DATA_PREFIX)
+            .join(source.dll_dir_name())
+            .join("BMP")
+            .join(format!("{}.bmp", resource_id));
+        std::fs::read(bmp_file).ok()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn load_original_bytes(&self, source: DllSource, resource_id: u32) -> Option<Vec<u8>> {
+        get_bmp_bytes(source.dll_dir_name(), resource_id)
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn load_texture(
@@ -1495,5 +1684,46 @@ mod tests {
         let decoded = decode_color_image(&encoded, DllSource::Gokres, 19008).unwrap();
 
         assert_eq!(decoded.pixels[0].a(), 255);
+    }
+
+    #[test]
+    fn native_hit_mask_uses_bottom_left_palette_key_and_strict_edges() {
+        let width = 4usize;
+        let height = 4usize;
+        let row_stride = 4usize;
+        let pixel_offset = 14 + 40 + 256 * 4;
+        let mut encoded = vec![0u8; pixel_offset + row_stride * height];
+        encoded[0..2].copy_from_slice(b"BM");
+        let encoded_len = encoded.len() as u32;
+        encoded[2..6].copy_from_slice(&encoded_len.to_le_bytes());
+        encoded[10..14].copy_from_slice(&(pixel_offset as u32).to_le_bytes());
+        encoded[14..18].copy_from_slice(&40u32.to_le_bytes());
+        encoded[18..22].copy_from_slice(&(width as i32).to_le_bytes());
+        encoded[22..26].copy_from_slice(&(height as i32).to_le_bytes());
+        encoded[26..28].copy_from_slice(&1u16.to_le_bytes());
+        encoded[28..30].copy_from_slice(&8u16.to_le_bytes());
+        encoded[34..38].copy_from_slice(&((row_stride * height) as u32).to_le_bytes());
+
+        // Indices 3 and 7 deliberately share a palette color. The native mask
+        // compares indices, not decoded RGBA values. The first stored pixel is
+        // index 7, and an interior index-7 pixel is transparent too.
+        encoded[14 + 40 + 3 * 4..14 + 40 + 3 * 4 + 4].copy_from_slice(&[0, 255, 0, 0]);
+        encoded[14 + 40 + 7 * 4..14 + 40 + 7 * 4 + 4].copy_from_slice(&[0, 255, 0, 0]);
+        for stored_y in 0..height {
+            let row = pixel_offset + stored_y * row_stride;
+            encoded[row..row + width].fill(3);
+        }
+        encoded[pixel_offset] = 7;
+        let interior_stored_y = height - 1 - 2;
+        encoded[pixel_offset + interior_stored_y * row_stride + 2] = 7;
+
+        let mask = BitmapHitMask::from_bytes(&encoded).unwrap();
+
+        assert!(!mask.contains(0, 1));
+        assert!(!mask.contains(1, 0));
+        assert!(mask.contains(1, 1));
+        assert!(!mask.contains(2, 2));
+        assert!(!mask.contains(4, 1));
+        assert!(!mask.contains(1, 4));
     }
 }

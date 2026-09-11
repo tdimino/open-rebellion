@@ -39,11 +39,10 @@
 //! The bitmap shells and aperture geometry are faction-specific. No synthetic
 //! top or bottom chrome is drawn underneath them.
 
-use egui_macroquad::egui::{self, Ui};
+use egui_macroquad::egui;
 use macroquad::prelude::*;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
-use crate::theme;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -65,30 +64,31 @@ pub const STRATEGIC_LOGICAL_WIDTH: f32 = 640.0;
 /// part of the displayed 640×480 composition.
 pub const STRATEGIC_LOGICAL_HEIGHT: f32 = 480.0;
 
-/// Cockpit button identifiers.
-///
-/// These correspond to the nine main strategy-view control buttons in the
-/// original game.  Keyboard shortcuts are listed as fallbacks.
+/// Original strategic command-control identifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CockpitButton {
-    /// Officers panel (O)
-    Officers,
-    /// Fleets panel (F)
-    Fleets,
-    /// Manufacturing panel (M)
-    Manufacturing,
-    /// Missions panel (N)
-    Missions,
-    /// Research panel (T)
-    Research,
-    /// Encyclopedia (E)
+    /// Find a known star system (F2).
+    SystemFinder,
+    /// Find a fleet or ship (F3).
+    FleetFinder,
+    /// Find a troop unit (F4).
+    TroopFinder,
+    /// Find a character or special force (F5).
+    PersonnelFinder,
+    /// Open the original game-options destination (F7).
+    GameOptions,
+    /// Open the Encyclopedia.
     Encyclopedia,
-    /// Save / Load
-    SaveLoad,
-    /// Speed: decrease
-    SpeedDown,
-    /// Speed: increase
-    SpeedUp,
+}
+
+/// Recovered native control record for one strategic command button.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StrategicControlSpec {
+    pub button: CockpitButton,
+    pub command_id: u16,
+    pub rect: CockpitViewport,
+    pub normal_resource: u32,
+    pub pressed_resource: u32,
 }
 
 /// Pixel viewport the galaxy map should render into.
@@ -133,6 +133,164 @@ impl CockpitViewport {
     }
 }
 
+const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
+    StrategicControlSpec {
+        button: CockpitButton::SystemFinder,
+        command_id: 0x12d,
+        rect: CockpitViewport {
+            x: 106.0,
+            y: 408.0,
+            width: 27.0,
+            height: 16.0,
+        },
+        normal_resource: resources::strategy::ALLIANCE_SYSTEM_FINDER_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_SYSTEM_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::FleetFinder,
+        command_id: 0x12e,
+        rect: CockpitViewport {
+            x: 157.0,
+            y: 407.0,
+            width: 27.0,
+            height: 15.0,
+        },
+        normal_resource: resources::strategy::ALLIANCE_FLEET_FINDER_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_FLEET_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::PersonnelFinder,
+        command_id: 0x12f,
+        rect: CockpitViewport {
+            x: 258.0,
+            y: 405.0,
+            width: 27.0,
+            height: 16.0,
+        },
+        normal_resource: resources::strategy::ALLIANCE_PERSONNEL_FINDER_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_PERSONNEL_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::TroopFinder,
+        command_id: 0x130,
+        rect: CockpitViewport {
+            x: 209.0,
+            y: 405.0,
+            width: 27.0,
+            height: 16.0,
+        },
+        normal_resource: resources::strategy::ALLIANCE_TROOP_FINDER_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_TROOP_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::GameOptions,
+        command_id: 0x131,
+        rect: CockpitViewport {
+            x: 394.0,
+            y: 405.0,
+            width: 27.0,
+            height: 16.0,
+        },
+        normal_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::Encyclopedia,
+        command_id: 0x132,
+        rect: CockpitViewport {
+            x: 446.0,
+            y: 406.0,
+            width: 27.0,
+            height: 16.0,
+        },
+        normal_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
+    },
+];
+
+const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
+    StrategicControlSpec {
+        button: CockpitButton::SystemFinder,
+        command_id: 0x12d,
+        rect: CockpitViewport {
+            x: 143.0,
+            y: 434.0,
+            width: 37.0,
+            height: 24.0,
+        },
+        normal_resource: resources::strategy::EMPIRE_SYSTEM_FINDER_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_SYSTEM_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::FleetFinder,
+        command_id: 0x12e,
+        rect: CockpitViewport {
+            x: 199.0,
+            y: 434.0,
+            width: 37.0,
+            height: 24.0,
+        },
+        normal_resource: resources::strategy::EMPIRE_FLEET_FINDER_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_FLEET_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::PersonnelFinder,
+        command_id: 0x12f,
+        rect: CockpitViewport {
+            x: 412.0,
+            y: 433.0,
+            width: 34.0,
+            height: 22.0,
+        },
+        normal_resource: resources::strategy::EMPIRE_PERSONNEL_FINDER_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_PERSONNEL_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::TroopFinder,
+        command_id: 0x130,
+        rect: CockpitViewport {
+            x: 253.0,
+            y: 433.0,
+            width: 34.0,
+            height: 22.0,
+        },
+        normal_resource: resources::strategy::EMPIRE_TROOP_FINDER_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_TROOP_FINDER_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::GameOptions,
+        command_id: 0x131,
+        rect: CockpitViewport {
+            x: 465.0,
+            y: 434.0,
+            width: 35.0,
+            height: 24.0,
+        },
+        normal_resource: resources::strategy::EMPIRE_GAME_OPTIONS_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
+    },
+    StrategicControlSpec {
+        button: CockpitButton::Encyclopedia,
+        command_id: 0x132,
+        rect: CockpitViewport {
+            x: 519.0,
+            y: 434.0,
+            width: 37.0,
+            height: 25.0,
+        },
+        normal_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
+    },
+];
+
+/// Exact primary-control table created by `FUN_00427270` for a faction.
+pub fn strategic_primary_controls(faction: CockpitFaction) -> &'static [StrategicControlSpec; 6] {
+    match faction {
+        CockpitFaction::Alliance => &ALLIANCE_PRIMARY_CONTROLS,
+        CockpitFaction::Empire => &EMPIRE_PRIMARY_CONTROLS,
+    }
+}
+
 /// Uniformly scaled strategic canvas and its transparent galaxy aperture.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CockpitLayout {
@@ -151,6 +309,8 @@ pub struct CockpitState {
     pub bottom_bar_h: f32,
     /// Side gutters width in pixels (equal left/right).
     pub side_gutter_w: f32,
+    /// Primary control currently holding native-style pointer capture.
+    pressed_control: Option<CockpitButton>,
 }
 
 impl Default for CockpitState {
@@ -160,6 +320,7 @@ impl Default for CockpitState {
             top_bar_h: 32.0,
             bottom_bar_h: 40.0,
             side_gutter_w: 0.0, // no side gutters for now — full width
+            pressed_control: None,
         }
     }
 }
@@ -289,104 +450,194 @@ fn cockpit_source_uv_max_y(texture_size: [usize; 2]) -> f32 {
     visible_source_height / texture_size[1] as f32
 }
 
-/// Draw egui-layer cockpit elements: control button bar.
+/// Paint the six native primary strategic controls over their shell apertures.
 ///
-/// Call inside `egui_macroquad::ui(|ctx| { ... })`.
+/// `FUN_00602d30` paints the first resource in each pair at rest and the
+/// second only while a valid primary press is captured. The original control
+/// has no separate hover or persistent-selected bitmap state.
+pub fn draw_cockpit_egui_layer(ctx: &egui::Context, state: &CockpitState, cache: &mut BmpCache) {
+    let layout = state.layout();
+    let controls = strategic_primary_controls(state.faction);
+    let primary_down = ctx.input(|input| input.pointer.button_down(egui::PointerButton::Primary));
+    let painter = ctx.layer_painter(egui::LayerId::background());
+
+    for control in controls {
+        let pressed = primary_down && state.pressed_control == Some(control.button);
+        let resource_id = control_resource(control, pressed);
+        let Some(original_size) =
+            cache.original_resource_size(DllSource::Strategy, control.normal_resource)
+        else {
+            continue;
+        };
+        let Some(texture_id) = cache
+            .get(ctx, DllSource::Strategy, resource_id)
+            .map(|texture| texture.id())
+        else {
+            continue;
+        };
+        let screen_rect = logical_rect_to_screen(layout, control.rect);
+        let image_rect = egui::Rect::from_min_size(
+            screen_rect.min,
+            egui::vec2(
+                original_size[0] as f32 * layout.scale,
+                original_size[1] as f32 * layout.scale,
+            ),
+        );
+        painter.with_clip_rect(screen_rect).image(
+            texture_id,
+            image_rect,
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+}
+
+/// Resolve control input after floating panels have registered their areas.
 ///
-/// Returns the `CockpitButton` that was clicked this frame, if any.
-pub fn draw_cockpit_egui_layer(
+/// This prevents a control hidden by a modeless window from receiving the
+/// window's click. Paint remains on egui's canonical background layer.
+pub fn handle_cockpit_egui_input(
     ctx: &egui::Context,
-    state: &CockpitState,
-    _cache: &mut BmpCache,
-    // Panel visibility flags so buttons show active state
-    show_officers: bool,
-    show_fleets: bool,
-    show_manufacturing: bool,
-    show_missions: bool,
-    show_research: bool,
-    enc_open: bool,
+    state: &mut CockpitState,
+    cache: &mut BmpCache,
 ) -> Option<CockpitButton> {
-    let sw = screen_width();
-    let sh = screen_height();
-    let bottom_y = sh - state.bottom_bar_h;
+    let layout = state.layout();
+    let controls = strategic_primary_controls(state.faction);
+    let (pointer_pos, primary_pressed, primary_down, primary_released) = ctx.input(|input| {
+        (
+            input.pointer.interact_pos(),
+            input.pointer.button_pressed(egui::PointerButton::Primary),
+            input.pointer.button_down(egui::PointerButton::Primary),
+            input.pointer.button_released(egui::PointerButton::Primary),
+        )
+    });
+    let pointer_hit = if ctx.is_pointer_over_area() {
+        None
+    } else {
+        pointer_pos.and_then(|pointer| control_at_pointer(cache, controls, layout, pointer))
+    };
 
-    let mut clicked: Option<CockpitButton> = None;
+    let clicked = update_control_capture(
+        &mut state.pressed_control,
+        primary_pressed,
+        primary_down,
+        primary_released,
+        pointer_hit,
+    );
 
-    // ── Bottom button bar ────────────────────────────────────────────────────
-    // Place an egui panel anchored to the bottom of the screen, matching the
-    // macroquad-drawn chrome bar.
-    egui::Area::new(egui::Id::new("cockpit_buttons"))
-        .fixed_pos(egui::pos2(0.0, bottom_y + 2.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            ui.set_width(sw);
-            ui.set_height(state.bottom_bar_h - 2.0);
+    clicked.or_else(|| keyboard_control(ctx))
+}
 
-            ui.horizontal_centered(|ui| {
-                ui.add_space(8.0);
+fn update_control_capture(
+    captured: &mut Option<CockpitButton>,
+    primary_pressed: bool,
+    primary_down: bool,
+    primary_released: bool,
+    pointer_hit: Option<CockpitButton>,
+) -> Option<CockpitButton> {
+    if primary_pressed {
+        *captured = pointer_hit;
+    } else if !primary_down && !primary_released {
+        // Browser focus loss can omit the release event. Do not leave a
+        // native pressed frame latched when capture has ended.
+        *captured = None;
+    }
 
-                let faction_active = if state.faction == CockpitFaction::Alliance {
-                    theme::ALLIANCE_BLUE
-                } else {
-                    theme::EMPIRE_RED
-                };
+    if primary_released {
+        let pressed = captured.take();
+        pressed.filter(|button| Some(*button) == pointer_hit)
+    } else {
+        None
+    }
+}
 
-                // The extracted 11001–11275 resources are animated cockpit
-                // sequences, not one logical button per numeric triplet. Until
-                // the original command-to-sequence table is resolved, use a
-                // clear functional label instead of displaying unrelated art.
-                let control_btn =
-                    |ui: &mut Ui, label: &str, key: &str, active: bool| -> bool {
-                        let text = format!("{}\n[{}]", label, key);
-                        let rt = egui::RichText::new(text).size(9.0).color(if active {
-                            faction_active
-                        } else {
-                            theme::TEXT_SECONDARY
-                        });
-                        ui.add(egui::Button::new(rt).min_size(egui::vec2(52.0, 32.0)).fill(
-                            if active {
-                                egui::Color32::from_rgba_unmultiplied(30, 60, 120, 200)
-                            } else {
-                                egui::Color32::from_rgba_unmultiplied(10, 15, 30, 200)
-                            },
-                        ))
-                        .on_hover_text(format!("{} [{}]", label, key))
-                        .clicked()
-                    };
+fn control_resource(control: &StrategicControlSpec, pressed: bool) -> u32 {
+    if pressed {
+        control.pressed_resource
+    } else {
+        control.normal_resource
+    }
+}
 
-                // Main panel buttons (Officers → Encyclopedia)
-                let buttons: &[(CockpitButton, &str, &str, bool)] = &[
-                    (CockpitButton::Officers, "Officers", "O", show_officers),
-                    (CockpitButton::Fleets, "Fleets", "F", show_fleets),
-                    (CockpitButton::Manufacturing, "Mfg", "M", show_manufacturing),
-                    (CockpitButton::Missions, "Missions", "N", show_missions),
-                    (CockpitButton::Research, "Research", "T", show_research),
-                    (CockpitButton::Encyclopedia, "Encyclopedia", "E", enc_open),
-                ];
-                for &(btn_id, label, key, active) in buttons {
-                    if control_btn(ui, label, key, active) {
-                        clicked = Some(btn_id);
-                    }
-                }
+fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewport) -> egui::Rect {
+    egui::Rect::from_min_size(
+        egui::pos2(
+            layout.canvas.x + rect.x * layout.scale,
+            layout.canvas.y + rect.y * layout.scale,
+        ),
+        egui::vec2(rect.width * layout.scale, rect.height * layout.scale),
+    )
+}
 
-                ui.add_space(16.0);
+fn resource_pixel_at_pointer(
+    screen_rect: egui::Rect,
+    scale: f32,
+    pointer: egui::Pos2,
+) -> Option<(usize, usize)> {
+    if scale <= 0.0
+        || pointer.x <= screen_rect.min.x
+        || pointer.y <= screen_rect.min.y
+        || pointer.x >= screen_rect.max.x
+        || pointer.y >= screen_rect.max.y
+    {
+        return None;
+    }
+    Some((
+        ((pointer.x - screen_rect.min.x) / scale).floor() as usize,
+        ((pointer.y - screen_rect.min.y) / scale).floor() as usize,
+    ))
+}
 
-                if control_btn(ui, "Save/Load", "S", false) {
-                    clicked = Some(CockpitButton::SaveLoad);
-                }
+fn control_at_pointer(
+    cache: &mut BmpCache,
+    controls: &[StrategicControlSpec],
+    layout: CockpitLayout,
+    pointer: egui::Pos2,
+) -> Option<CockpitButton> {
+    controls.iter().find_map(|control| {
+        let screen_rect = logical_rect_to_screen(layout, control.rect);
+        let (x, y) = resource_pixel_at_pointer(screen_rect, layout.scale, pointer)?;
+        cache
+            .is_resource_hit(DllSource::Strategy, control.normal_resource, x, y)
+            .then_some(control.button)
+    })
+}
 
-                ui.add_space(16.0);
+fn keyboard_control(ctx: &egui::Context) -> Option<CockpitButton> {
+    let egui_key = ctx.input(|input| {
+        [
+            (egui::Key::F2, CockpitButton::SystemFinder),
+            (egui::Key::F3, CockpitButton::FleetFinder),
+            (egui::Key::F4, CockpitButton::TroopFinder),
+            (egui::Key::F5, CockpitButton::PersonnelFinder),
+            (egui::Key::F7, CockpitButton::GameOptions),
+        ]
+        .into_iter()
+        .find_map(|(key, button)| input.key_pressed(key).then_some(button))
+    });
+    egui_key.or_else(|| {
+        [
+            KeyCode::F2,
+            KeyCode::F3,
+            KeyCode::F4,
+            KeyCode::F5,
+            KeyCode::F7,
+        ]
+        .into_iter()
+        .find(|key| is_key_pressed(*key))
+        .and_then(macroquad_accelerator)
+    })
+}
 
-                if control_btn(ui, "Slower", "<", false) {
-                    clicked = Some(CockpitButton::SpeedDown);
-                }
-                if control_btn(ui, "Faster", ">", false) {
-                    clicked = Some(CockpitButton::SpeedUp);
-                }
-            });
-        });
-
-    clicked
+fn macroquad_accelerator(key: KeyCode) -> Option<CockpitButton> {
+    match key {
+        KeyCode::F2 => Some(CockpitButton::SystemFinder),
+        KeyCode::F3 => Some(CockpitButton::FleetFinder),
+        KeyCode::F4 => Some(CockpitButton::TroopFinder),
+        KeyCode::F5 => Some(CockpitButton::PersonnelFinder),
+        KeyCode::F7 => Some(CockpitButton::GameOptions),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -470,5 +721,243 @@ mod tests {
         assert!(viewport.contains(599.999, 394.999));
         assert!(!viewport.contains(600.0, 394.0));
         assert!(!viewport.contains(599.0, 395.0));
+    }
+
+    #[test]
+    fn alliance_primary_controls_match_recovered_constructor_records() {
+        let controls = strategic_primary_controls(CockpitFaction::Alliance);
+        let records: Vec<_> = controls
+            .iter()
+            .map(|control| {
+                (
+                    control.button,
+                    control.command_id,
+                    control.rect,
+                    control.normal_resource,
+                    control.pressed_resource,
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            records,
+            vec![
+                (
+                    CockpitButton::SystemFinder,
+                    0x12d,
+                    CockpitViewport {
+                        x: 106.0,
+                        y: 408.0,
+                        width: 27.0,
+                        height: 16.0,
+                    },
+                    10002,
+                    10001,
+                ),
+                (
+                    CockpitButton::FleetFinder,
+                    0x12e,
+                    CockpitViewport {
+                        x: 157.0,
+                        y: 407.0,
+                        width: 27.0,
+                        height: 15.0,
+                    },
+                    10004,
+                    10003,
+                ),
+                (
+                    CockpitButton::PersonnelFinder,
+                    0x12f,
+                    CockpitViewport {
+                        x: 258.0,
+                        y: 405.0,
+                        width: 27.0,
+                        height: 16.0,
+                    },
+                    10006,
+                    10005,
+                ),
+                (
+                    CockpitButton::TroopFinder,
+                    0x130,
+                    CockpitViewport {
+                        x: 209.0,
+                        y: 405.0,
+                        width: 27.0,
+                        height: 16.0,
+                    },
+                    10008,
+                    10007,
+                ),
+                (
+                    CockpitButton::GameOptions,
+                    0x131,
+                    CockpitViewport {
+                        x: 394.0,
+                        y: 405.0,
+                        width: 27.0,
+                        height: 16.0,
+                    },
+                    10010,
+                    10009,
+                ),
+                (
+                    CockpitButton::Encyclopedia,
+                    0x132,
+                    CockpitViewport {
+                        x: 446.0,
+                        y: 406.0,
+                        width: 27.0,
+                        height: 16.0,
+                    },
+                    10012,
+                    10011,
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn empire_primary_controls_match_recovered_constructor_records() {
+        let controls = strategic_primary_controls(CockpitFaction::Empire);
+        assert_eq!(
+            controls
+                .iter()
+                .map(|control| (
+                    control.command_id,
+                    control.rect.x,
+                    control.rect.y,
+                    control.rect.width,
+                    control.rect.height,
+                    control.normal_resource,
+                    control.pressed_resource,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (0x12d, 143.0, 434.0, 37.0, 24.0, 10016, 10015),
+                (0x12e, 199.0, 434.0, 37.0, 24.0, 10018, 10017),
+                (0x12f, 412.0, 433.0, 34.0, 22.0, 10020, 10019),
+                (0x130, 253.0, 433.0, 34.0, 22.0, 10022, 10021),
+                (0x131, 465.0, 434.0, 35.0, 24.0, 10024, 10023),
+                (0x132, 519.0, 434.0, 37.0, 25.0, 10026, 10025),
+            ]
+        );
+    }
+
+    #[test]
+    fn primary_control_rects_follow_uniform_canvas_scaling() {
+        let layout = CockpitState::new(CockpitFaction::Empire).layout_for(1600.0, 960.0);
+        let screen_rect = logical_rect_to_screen(
+            layout,
+            strategic_primary_controls(CockpitFaction::Empire)[0].rect,
+        );
+
+        assert_close(layout.scale, 2.0);
+        assert_close(screen_rect.min.x, 160.0 + 143.0 * 2.0);
+        assert_close(screen_rect.min.y, 434.0 * 2.0);
+        assert_close(screen_rect.width(), 74.0);
+        assert_close(screen_rect.height(), 48.0);
+    }
+
+    #[test]
+    fn native_pointer_conversion_excludes_exact_outer_edges() {
+        let rect = egui::Rect::from_min_max(egui::pos2(10.0, 20.0), egui::pos2(64.0, 52.0));
+
+        assert_eq!(resource_pixel_at_pointer(rect, 2.0, rect.min), None);
+        assert_eq!(
+            resource_pixel_at_pointer(rect, 2.0, egui::pos2(10.1, 20.1)),
+            Some((0, 0))
+        );
+        assert_eq!(
+            resource_pixel_at_pointer(rect, 2.0, egui::pos2(12.0, 22.0)),
+            Some((1, 1))
+        );
+        assert_eq!(
+            resource_pixel_at_pointer(rect, 2.0, egui::pos2(63.999, 51.999)),
+            Some((26, 15))
+        );
+        assert_eq!(resource_pixel_at_pointer(rect, 2.0, rect.max), None);
+        assert_eq!(
+            resource_pixel_at_pointer(rect, 2.0, egui::pos2(rect.max.x, 30.0)),
+            None
+        );
+        assert_eq!(
+            resource_pixel_at_pointer(rect, 2.0, egui::pos2(30.0, rect.max.y)),
+            None
+        );
+    }
+
+    #[test]
+    fn native_capture_dispatches_only_after_release_over_the_same_control() {
+        let mut captured = None;
+        assert_eq!(
+            update_control_capture(
+                &mut captured,
+                true,
+                true,
+                false,
+                Some(CockpitButton::FleetFinder),
+            ),
+            None
+        );
+        assert_eq!(captured, Some(CockpitButton::FleetFinder));
+
+        assert_eq!(
+            update_control_capture(
+                &mut captured,
+                false,
+                false,
+                true,
+                Some(CockpitButton::FleetFinder),
+            ),
+            Some(CockpitButton::FleetFinder)
+        );
+        assert_eq!(captured, None);
+    }
+
+    #[test]
+    fn native_capture_cancels_on_outside_release_or_lost_capture() {
+        let mut captured = Some(CockpitButton::PersonnelFinder);
+        assert_eq!(
+            update_control_capture(&mut captured, false, false, true, None),
+            None
+        );
+        assert_eq!(captured, None);
+
+        captured = Some(CockpitButton::TroopFinder);
+        assert_eq!(
+            update_control_capture(&mut captured, false, false, false, None),
+            None
+        );
+        assert_eq!(captured, None);
+    }
+
+    #[test]
+    fn control_art_and_macroquad_accelerators_match_native_states() {
+        let control = &strategic_primary_controls(CockpitFaction::Alliance)[0];
+        assert_eq!(control_resource(control, false), control.normal_resource);
+        assert_eq!(control_resource(control, true), control.pressed_resource);
+        assert_eq!(
+            macroquad_accelerator(KeyCode::F2),
+            Some(CockpitButton::SystemFinder)
+        );
+        assert_eq!(
+            macroquad_accelerator(KeyCode::F3),
+            Some(CockpitButton::FleetFinder)
+        );
+        assert_eq!(
+            macroquad_accelerator(KeyCode::F4),
+            Some(CockpitButton::TroopFinder)
+        );
+        assert_eq!(
+            macroquad_accelerator(KeyCode::F5),
+            Some(CockpitButton::PersonnelFinder)
+        );
+        assert_eq!(
+            macroquad_accelerator(KeyCode::F7),
+            Some(CockpitButton::GameOptions)
+        );
+        assert_eq!(macroquad_accelerator(KeyCode::F6), None);
     }
 }

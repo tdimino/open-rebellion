@@ -16,15 +16,19 @@ Coolhand Interactive and LucasArts release of *Star Wars: Rebellion*, titled
 *Supremacy* in the UK. The shuttle main menu passes its scoped implementation
 gate, but remains partial here until every original interaction-state cell has
 A0 or A1 evidence. Entering a campaign now reaches the recovered faction shell
-on an exact, centered 640x480 canvas. Most content within that shell remains a
-custom macroquad/egui reconstruction.
+on an exact, centered 640x480 canvas. Its six primary faction controls now use
+the recovered STRATEGY resources and native input contract. Most other content
+within that shell remains a custom macroquad/egui reconstruction.
 
 This explains the observed symptoms:
 
 - P46A fixes shell stretching, crops STRATEGY 900/901 from 640x481 sources to
-  480 display rows, and applies the recovered faction apertures. The top and
-  bottom text-button rows are still temporary replacements. The source says the
-  original command-to-sequence mapping is unresolved.
+  480 display rows, and applies the recovered faction apertures. P46B removes
+  the replacement primary text-button strip and restores all six normal and
+  captured-press bitmap pairs, exact hotspots, and command recognition. Their
+  original destination windows remain closed instead of opening replacement
+  panels. The replacement message and status bars are also withheld because
+  they covered the original controls. Their authentic versions remain open.
 - The galaxy is drawn from a dark fill, vector circles, text labels, sector
   outlines, and 5×5 facility squares instead of the original starfield,
   Galactic Information Display rules, and bitmap marker families.
@@ -47,7 +51,7 @@ The local source inspection establishes the implementation causes:
 | Finding | Repository evidence | Original evidence |
 |---------|---------------------|-------------------|
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
-| Synthetic strategy controls | `crates/rebellion-render/src/cockpit.rs` | Manual pp. 60–66 and official Steam command-center captures |
+| Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
 | Synthetic galaxy and glyphs | `crates/rebellion-render/src/lib.rs` | Manual pp. 66–73 and official Steam faction captures |
 | Invented system sidebar | `crates/rebellion-render/src/lib.rs` | Manual pp. 67–68, 97–100, and 122–124 |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
@@ -68,16 +72,18 @@ commands, bitmap-state paint paths, managed object-window routing, GID display
 construction, and faction advisor apertures. The extractor and runtime pack now
 preserve all 3,988 ALSPRITE and EMSPRITE type-302 frames. Briefing, tactical,
 dialog, encyclopedia, advisor-control, and voice families remain incomplete.
-P46A now corroborates the shell and aperture portion at runtime, including one
-shared transform for overlays, hit tests, and advisors. The reference rail and
-the other discoveries remain open. Static discoveries do not replace required
-original-runtime visual acceptance.
+P46A corroborates the shell and aperture portion at runtime, including one
+shared transform for overlays, hit tests, and advisors. P46B implements the six
+primary faction controls from their exact resources, geometry, state, input,
+and command paths. The reference rail, destination-window compositions, other
+controls, and the other discoveries remain open. Static discoveries do not
+replace required original-runtime visual acceptance.
 
 ## Immediate findings
 
 | ID | Severity | Finding | Status |
 |----|----------|---------|--------|
-| UIP-F-001 | P0 | The shell and viewport scaling pass, but authentic controls, the reference rail, and required aperture content remain incomplete. | partial |
+| UIP-F-001 | P0 | The shell, viewport scaling, and six primary controls pass their scoped checkpoints, but the full control matrix, reference rail, and required aperture content remain incomplete. | partial |
 | UIP-F-002 | P0 | Galaxy, stars, system markers, sector hulls, and facility indicators use synthetic primitives and incomplete rules. | fail |
 | UIP-F-003 | P0 | System selection routes to an invented right sidebar instead of the original modeless sector/system surface. | fail |
 | UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
@@ -97,7 +103,7 @@ with correctly. This audit supersedes those checks only for visual-parity claims
 
 ## Surface coverage
 
-The [surface ledger](surface-ledger.json) covers 43 original or explicitly
+The [surface ledger](surface-ledger.json) covers 44 original or explicitly
 non-original families across:
 
 1. boot, intro, shuttle, options, credits, briefings, and multiplayer setup;
@@ -112,9 +118,9 @@ non-original families across:
 7. extensions, which are excluded from the parity denominator and must not
    replace or obscure original paths.
 
-It now assigns 549 stable baseline cell IDs: 544 required cells and five
+It now assigns 569 stable baseline cell IDs: 564 required cells and five
 excluded extension cells. All required cells remain pending or open because
-P46A did not execute the complete native and browser matrix. All 42 required
+P46A and P46B did not execute the complete native and browser matrix. All 43 required
 families link to at least one of 27
 reverse-engineering, resource, runtime-capture, or replacement-removal packages.
 The baseline cells are durable requirement identities. Compound requirements
@@ -194,7 +200,7 @@ contract instead of an invented click action.
 Every listed state has a stable baseline ID such as `TAC-05-C017`. Before
 implementation acceptance begins for a surface, compound requirements become
 explicit child cells and each applicable dimension cross-product receives a
-derived execution ID. The 43-family inventory is not itself the final
+derived execution ID. The 44-family inventory is not itself the final
 measurable execution denominator.
 
 Every navigation case records pre-state, visible response, model mutation, audio,
@@ -225,7 +231,8 @@ The [screenshot ledger](screenshot-ledger.md) and hash manifest retain 370 image
 They establish broad discovery coverage, not final acceptance. The following
 must still be captured from an owned English original installation:
 
-- every shuttle and cockpit control hover, pressed, selected, and disabled state;
+- every shuttle control state, plus strategic command-control rest, press
+  capture, release/cancel, disabled, mask, and edge probes;
 - both faction variants of every GID overlay, legend, and object window;
 - every mission dialog with legal, illegal, agent, decoy, result, and abort states;
 - Destroy System enabled, confirmation, animation, and report;
@@ -257,7 +264,9 @@ inventing behavior or geometry.
 Documentation, screenshots, and machine-readable cells are updated in the same
 atomic commit as each verified implementation tranche.
 
-P46A completes only the strategic canvas checkpoint within `UIP-T01`. Authentic
-command controls, GID and map art, the window-reference rail, original system
-windows, the replacement sidebar, and replacement message and status surfaces
-remain open. `CMD-01`, `UIP-T01`, and project-wide interface parity do not pass.
+P46A completes the strategic canvas checkpoint within `UIP-T01`. P46B restores
+the six primary controls, but `CMD-10` remains partial pending A0 captures, its
+full matrix, the disabled path, and original destination windows. GID and map
+art, other controls, the window-reference rail, original system windows, the
+replacement sidebar, and replacement message and status surfaces remain open.
+`CMD-01`, `CMD-10`, `UIP-T01`, and project-wide interface parity do not pass.

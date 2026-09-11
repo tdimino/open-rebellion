@@ -32,8 +32,9 @@ comparison.
 | Evidence | Static result | Surfaces |
 |---|---|---|
 | `REBEXE.EXE` `FUN_00421c70` | Faction-specific galaxy apertures and all twelve window-reference rectangles | CMD-01, CMD-04 |
-| `FUN_00427270` | Original control positions, sizes, command IDs, and paired bitmap resource IDs | CMD-03, CMD-05, CMD-09 |
-| `FUN_006028c0` and `FUN_00602d30` | Mouse capture, down/up command dispatch, invalidation, disabled/state flags, and state-dependent bitmap paint paths | CMD-05 |
+| `FUN_00427270` | Original control positions, sizes, command IDs, and paired bitmap resource IDs | CMD-10 |
+| `FUN_006028c0`, `FUN_00602d30`, `FUN_006030c0`, `FUN_006030f0`, and `FUN_006035f0` | Normal and captured-press paint states, pointer capture, release cancellation, dispatch, and disabled flags | CMD-10 |
+| `FUN_005fca00`, `FUN_005fd170`, and `FUN_005fc140` | Strict four-edge rejection, bottom-left palette-key hit mask, natural-size paint, and control-window clipping | CMD-10 |
 | `FUN_00422ce0` and freshly recovered `FUN_00429020` | `WM_COMMAND`, double-click routing, exact rail hit testing, child-window focus, and rail removal | CMD-03, CMD-04 |
 | `FUN_00425d00` and freshly recovered `FUN_00426d00` | GID mode/caption branches and the original floating 180×240 display window path | CMD-02 |
 | `FUN_0044f670`, `FUN_00442d70`, and `FUN_0044c410` | Code-built, modeless object windows using GOKRES rather than an invented sidebar | CMD-03, OBJ-02–OBJ-14 |
@@ -45,6 +46,14 @@ and advisor transform. Native tests and packaged-browser viewport checks
 corroborate this shell checkpoint. The twelve-slot reference rail and its
 window transitions remain open. See the
 [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md).
+
+P46B restores the six primary faction controls from the recovered constructor,
+paint, hit-test, capture, and `WM_COMMAND` paths. It removes the replacement
+text strip, renders the exact normal and captured-press bitmap pairs, and keeps
+all six destinations closed until their original windows exist. Full
+A0 captures, the disabled path, destination compositions, speed and GID
+controls, and the complete native/browser matrix remain open. See the
+[P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
 
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a
@@ -78,7 +87,7 @@ in `advisor.rs` are provisional and cannot pass parity.
 
 ## Work queue
 
-The queue contains 27 bounded packages. Every one of the 42 required surface
+The queue contains 27 bounded packages. Every one of the 43 required surface
 families links to at least one package with named sources, a retrieval method,
 and a next proof in the [machine-readable ledger](reverse-engineering-ledger.json).
 
@@ -88,7 +97,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-MENU-01 | Shuttle controls and destinations | static-proven | Capture remaining original interaction and edge-probe states |
 | RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
 | RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell checkpoint runtime-corroborated | Implement the twelve-slot rail and window transitions, then compare the complete shell against A0 captures |
-| RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial | Name every command/resource pair and instantiate hit-probe cells |
+| RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial; primary controls implemented | Capture the six primary controls in A0, implement original destinations, then recover speed and facility-indicator predicates |
 | RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial | Resolve TEXTSTRA captions and paint-resource branches |
 | RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |
 | RE-MSG-01 | Messages, Agent menus, alerts, and reports | untriaged | Join categories and event results to resources, audio, and navigation |
@@ -127,8 +136,8 @@ routing, results, and strategic return. `EVT-02` owns Battle Alert entry;
 2. Extend the decoder and transport to ALBRIEF and EMBRIEF.
 3. Extend staging and the runtime pack with EData, dialogs,
    voices, and media without weakening deterministic manifests.
-4. Rebuild the strategic shell from the recovered rectangles and original
-   controls, then replace the sidebar with managed original object windows.
+4. Extend the recovered shell and six primary controls with the reference rail,
+   then replace the sidebar with managed original object windows.
 5. Resolve the full GID mapping before drawing any replacement marker or legend.
 6. Recover and implement the complete `TAC-01` through `TAC-07` space-battle
    path, including type-301/303 resources and Death Star controls.

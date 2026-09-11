@@ -19,6 +19,8 @@ geometry, and unverified asset mappings do not count as parity.
   six-tranche implementation order.
 - Review the [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md)
   for the verified canvas, aperture, and browser-transform checkpoint.
+- Review the [P46B strategic-control evidence](evidence/2026-09-11-strategic-command-controls.md)
+  for the recovered six-control geometry, bitmap, input, and command contract.
 
 ## Suggested contribution lanes
 
@@ -48,7 +50,9 @@ Full `CMD-07` action, voice, chrome, and shell integration remains open.
 
 P46A now verifies the exact centered 640x480 strategic canvas, faction shell
 crop, recovered galaxy apertures, and shared browser transform. See the
-[P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md). `CMD-01` and
-`UIP-T01` remain open because the authentic controls, GID and map art,
-window-reference rail, original system windows, and replacement surfaces are
-not complete.
+[P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md). P46B restores
+the six primary faction controls and removes their replacement text strip. See
+the [P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
+`CMD-01`, `CMD-10`, and `UIP-T01` remain open because the full control matrix,
+GID and map art, window-reference rail, original destination windows, and
+replacement surfaces are not complete.

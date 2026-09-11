@@ -17,9 +17,9 @@
   "proof_rule": "Static proof may close resource identity, geometry, predicates, and routing. A surface remains incomplete until all required original-runtime, native, and browser cells pass.",
   "coverage_summary": {
     "work_packages": 27,
-    "required_surface_families": 42,
-    "required_surface_families_with_packages": 42,
-    "required_baseline_cells": 544,
+    "required_surface_families": 43,
+    "required_surface_families_with_packages": 43,
+    "required_baseline_cells": 564,
     "space_battle_baseline_cells": 106
   },
   "original_fixture": {
@@ -67,7 +67,7 @@
     {"module": "ALBRIEF.DLL", "standard_bmp": 20, "rcdata_bin": 366, "custom_type_302_frames": 2684, "wav": 17},
     {"module": "EMBRIEF.DLL", "standard_bmp": 18, "rcdata_bin": 471, "custom_type_302_frames": 2738, "wav": 22},
     {"module": "TACTICAL.DLL", "standard_bmp": 288, "rcdata_bin": 1, "custom_type_301_meshes": 87, "custom_type_303_textures": 397, "wav": 66},
-    {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66},
+    {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66, "primary_control_bitmaps": {"Alliance": "10001-10012", "Empire": "10015-10026"}},
     {"module": "EData", "images": 187, "dimensions": [400, 200]}
   ],
   "static_discoveries": [
@@ -79,8 +79,8 @@
     },
     {
       "id": "RE-DISC-002",
-      "functions": ["0x00427270", "0x00602150", "0x006028c0", "0x00602d30"],
-      "proof": "Control rectangles, command IDs, bitmap pairs, mouse capture, command dispatch, state flags, and paint selection.",
+      "functions": ["0x00427270", "0x00602150", "0x006028c0", "0x00602d30", "0x006030c0", "0x006030f0", "0x006035f0", "0x005fca00", "0x005fd170"],
+      "proof": "Primary control rectangles, commands, normal and pressed resources, press capture, release cancellation, no hover or persistent-selected art, strict outer-edge rejection, palette-key pixel masks, disabled handling, accelerators, and dispatch.",
       "confidence": "high"
     },
     {
@@ -183,16 +183,33 @@
     },
     {
       "id": "RE-STR-02",
-      "surface_ids": ["CMD-03", "CMD-05", "CMD-09"],
+      "surface_ids": ["CMD-03", "CMD-05", "CMD-09", "CMD-10"],
       "title": "Strategic controls, state art, input, and indicators",
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "STRATEGY.DLL"],
-        "anchors": ["FUN_00427270", "FUN_00602150", "FUN_006028c0", "FUN_00602d30"],
+        "anchors": ["FUN_00427270", "FUN_00602150", "FUN_006028c0", "FUN_00602d30", "FUN_006030c0", "FUN_006030f0", "FUN_006035f0", "FUN_005fca00", "FUN_005fd170"],
         "method": "Trace each control constructor through command IDs, paired resources, paint-state offsets, pointer capture, invalidation, and dispatch.",
-        "next_proof": "Name every command/resource pair and connect facility indicators to their simulation predicates."
+        "next_proof": "Capture the six primary controls in the original runtime, implement their original destinations, then complete the speed control and facility-indicator predicates."
       },
-      "runtime_capture_required": true
+      "runtime_capture_required": true,
+      "implementation_evidence": {
+        "status": "primary_controls_implemented_pending_complete_matrix",
+        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-command-controls.md",
+        "completed": [
+          "six Alliance and six Imperial normal and captured-press resources",
+          "exact rectangles and command IDs from FUN_00427270",
+          "pointer capture, release cancellation, strict outer-edge rejection, and original palette-key masks",
+          "six recognized commands with no replacement destination panels",
+          "F2 through F5 and F7 keyboard routing"
+        ],
+        "remaining": [
+          "A0 original-runtime captures and the full native/browser matrix",
+          "disabled control path",
+          "all six original destination-window compositions",
+          "speed controls and facility indicators"
+        ]
+      }
     },
     {
       "id": "RE-GID-01",

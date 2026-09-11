@@ -1736,6 +1736,178 @@
       ]
     },
     {
+      "id": "CMD-10",
+      "phase": "strategy",
+      "title": "Primary strategic command controls",
+      "required": true,
+      "status": "partial",
+      "required_states": [
+        "Alliance rest",
+        "Alliance pressed",
+        "Imperial rest",
+        "Imperial pressed",
+        "hover unchanged",
+        "release inside",
+        "release outside",
+        "palette-key miss",
+        "outer-edge miss",
+        "disabled ignores input",
+        "no persistent selected art",
+        "System Finder command",
+        "Fleet Finder command",
+        "Troop Finder command",
+        "Personnel Finder command",
+        "Game Options command",
+        "Encyclopedia command",
+        "F2 through F5 accelerators",
+        "F7 accelerator",
+        "window overlap ordering"
+      ],
+      "authority_refs": [
+        "REF-MANUAL",
+        "REF-STEAM-OFFICIAL",
+        "REF-ABANDONWARE-FR",
+        "REF-PRAVUS-PART1-FRAMES"
+      ],
+      "manual_pages": [
+        71
+      ],
+      "current_implementation": "P46B removes the synthetic text-button strip and renders the six faction-specific STRATEGY bitmap pairs at the exact recovered control rectangles. Press capture, release cancellation, strict outer-edge rejection, indexed palette-key hit masks, F2 through F5, and F7 follow the native state machine. Input resolves after floating content so covered controls do not receive clicks. All six commands are recognized, but none opens a replacement panel while its original destination window remains pending. The replacement message and status bars are withheld because they covered the original control apertures.",
+      "finding_ids": [
+        "UIP-F-001",
+        "UIP-F-007"
+      ],
+      "reverse_engineering_package_ids": [
+        "RE-A0-01",
+        "RE-STR-02",
+        "RE-OBJ-01",
+        "RE-OPT-01",
+        "RE-ENC-01"
+      ],
+      "acceptance_cells": [
+        {
+          "id": "CMD-10-C001",
+          "requirement": "Alliance rest",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C002",
+          "requirement": "Alliance pressed",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C003",
+          "requirement": "Imperial rest",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C004",
+          "requirement": "Imperial pressed",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C005",
+          "requirement": "hover unchanged",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C006",
+          "requirement": "release inside",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C007",
+          "requirement": "release outside",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C008",
+          "requirement": "palette-key miss",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C009",
+          "requirement": "outer-edge miss",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C010",
+          "requirement": "disabled ignores input",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C011",
+          "requirement": "no persistent selected art",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C012",
+          "requirement": "System Finder command",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C013",
+          "requirement": "Fleet Finder command",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C014",
+          "requirement": "Troop Finder command",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C015",
+          "requirement": "Personnel Finder command",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C016",
+          "requirement": "Game Options command",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C017",
+          "requirement": "Encyclopedia command",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C018",
+          "requirement": "F2 through F5 accelerators",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C019",
+          "requirement": "F7 accelerator",
+          "status": "pending",
+          "counts_toward_parity": true
+        },
+        {
+          "id": "CMD-10-C020",
+          "requirement": "window overlap ordering",
+          "status": "pending",
+          "counts_toward_parity": true
+        }
+      ]
+    },
+    {
       "id": "OBJ-01",
       "phase": "object_management",
       "title": "Encyclopedia Index and Topic views",
@@ -5408,11 +5580,11 @@
     }
   },
   "acceptance_summary": {
-    "surface_families": 43,
-    "required_surface_families": 42,
-    "baseline_cells": 549,
-    "required_baseline_cells": 544,
+    "surface_families": 44,
+    "required_surface_families": 43,
+    "baseline_cells": 569,
+    "required_baseline_cells": 564,
     "excluded_baseline_cells": 5,
-    "required_surfaces_with_retrieval_packages": 42
+    "required_surfaces_with_retrieval_packages": 43
   }
 }
