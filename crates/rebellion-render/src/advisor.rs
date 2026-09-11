@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 use egui_macroquad::egui::{self, TextureHandle, TextureOptions};
 
-use crate::cockpit::CockpitFaction;
+use crate::cockpit::{CockpitFaction, CockpitState};
 
 // ---------------------------------------------------------------------------
 // Advisor faction
@@ -1495,6 +1495,26 @@ fn advisor_apertures(faction: AdvisorFaction) -> [(f32, f32, f32, f32); 2] {
     }
 }
 
+fn scaled_advisor_apertures(
+    faction: AdvisorFaction,
+    screen_width: f32,
+    screen_height: f32,
+) -> [(f32, f32, f32, f32); 2] {
+    let cockpit_faction = match faction {
+        AdvisorFaction::Alliance => CockpitFaction::Alliance,
+        AdvisorFaction::Empire => CockpitFaction::Empire,
+    };
+    let layout = CockpitState::new(cockpit_faction).layout_for(screen_width, screen_height);
+    advisor_apertures(faction).map(|(x, y, width, height)| {
+        (
+            layout.canvas.x + x * layout.scale,
+            layout.canvas.y + y * layout.scale,
+            width * layout.scale,
+            height * layout.scale,
+        )
+    })
+}
+
 /// Draw both faction droids directly into the original command-center
 /// apertures recovered from `FUN_0042adb0`.
 pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
@@ -1528,9 +1548,7 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
     }
 
     let screen = ctx.screen_rect();
-    let scale_x = screen.width() / 640.0;
-    let scale_y = screen.height() / 480.0;
-    let apertures = advisor_apertures(state.faction);
+    let apertures = scaled_advisor_apertures(state.faction, screen.width(), screen.height());
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Middle,
         egui::Id::new("authentic_droid_advisors"),
@@ -1542,8 +1560,8 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
         painter.image(
             texture.id(),
             egui::Rect::from_min_size(
-                egui::pos2(x * scale_x, y * scale_y),
-                egui::vec2(width * scale_x, height * scale_y),
+                egui::pos2(screen.min.x + x, screen.min.y + y),
+                egui::vec2(width, height),
             ),
             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
@@ -1557,8 +1575,8 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
         painter.image(
             texture.id(),
             egui::Rect::from_min_size(
-                egui::pos2(x * scale_x, y * scale_y),
-                egui::vec2(width * scale_x, height * scale_y),
+                egui::pos2(screen.min.x + x, screen.min.y + y),
+                egui::vec2(width, height),
             ),
             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
@@ -1687,6 +1705,29 @@ pub fn advisor_manufacturing_complete(state: &mut AdvisorState, item_name: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn advisor_apertures_follow_the_uniform_letterboxed_canvas() {
+        let alliance = scaled_advisor_apertures(AdvisorFaction::Alliance, 640.0, 600.0);
+        assert_eq!(alliance[0], (541.0, 397.0, 67.0, 116.0));
+        assert_eq!(alliance[1], (316.0, 471.0, 47.0, 69.0));
+
+        let empire = scaled_advisor_apertures(AdvisorFaction::Empire, 1280.0, 800.0);
+        let scale = 800.0 / 480.0;
+        let canvas_x = (1280.0 - 640.0 * scale) / 2.0;
+        assert_close(empire[0].0, canvas_x);
+        assert_close(empire[0].1, 347.0 * scale);
+        assert_close(empire[0].2, 107.0 * scale);
+        assert_close(empire[0].3, 133.0 * scale);
+        assert_close(empire[1].0, canvas_x + 302.0 * scale);
+    }
 
     fn type302_fixture() -> Vec<u8> {
         let payload = [

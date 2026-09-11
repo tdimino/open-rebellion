@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit Report"
 description: "Evidence-backed diagnosis and execution plan for complete bitmap-driven UI parity"
 category: qa
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 ---
 
@@ -15,22 +15,25 @@ The user-visible campaign interface currently fails parity with the 1998
 Coolhand Interactive and LucasArts release of *Star Wars: Rebellion*, titled
 *Supremacy* in the UK. The shuttle main menu passes its scoped implementation
 gate, but remains partial here until every original interaction-state cell has
-A0 or A1 evidence. Entering a campaign reaches a mostly custom macroquad/egui
-reconstruction.
+A0 or A1 evidence. Entering a campaign now reaches the recovered faction shell
+on an exact, centered 640x480 canvas. Most content within that shell remains a
+custom macroquad/egui reconstruction.
 
 This explains the observed symptoms:
 
-- The top and bottom text-button rows are temporary replacements. The source
-  says the original command-to-sequence mapping is unresolved.
+- P46A fixes shell stretching, crops STRATEGY 900/901 from 640x481 sources to
+  480 display rows, and applies the recovered faction apertures. The top and
+  bottom text-button rows are still temporary replacements. The source says the
+  original command-to-sequence mapping is unresolved.
 - The galaxy is drawn from a dark fill, vector circles, text labels, sector
   outlines, and 5×5 facility squares instead of the original starfield,
   Galactic Information Display rules, and bitmap marker families.
 - Selecting a system opens a custom right `egui::SidePanel`. The original opens
   modeless sector/system windows with illustrated systems, tabbed contents,
   support/resources, and bitmap actions.
-- The four original advisor idle runs now render in native and WASM, but
-  replacement controls overlap their lower apertures. Original action, voice,
-  and chrome behavior remains unimplemented.
+- The four original advisor idle runs now follow the shared canvas transform in
+  native and WASM. Original action, voice, and chrome behavior remains
+  unimplemented.
 - Several cockpit apertures remain blank because the original window-reference,
   advisor, message, and command compositions have not been implemented.
 
@@ -43,9 +46,10 @@ The local source inspection establishes the implementation causes:
 
 | Finding | Repository evidence | Original evidence |
 |---------|---------------------|-------------------|
-| Synthetic strategy controls | `crates/rebellion-render/src/cockpit.rs:281` | Manual pp. 60–66 and official Steam command-center captures |
-| Synthetic galaxy and glyphs | `crates/rebellion-render/src/lib.rs:145`, `:253`, `:388` | Manual pp. 66–73 and official Steam faction captures |
-| Invented system sidebar | `crates/rebellion-render/src/lib.rs:636` | Manual pp. 67–68, 97–100, and 122–124 |
+| Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
+| Synthetic strategy controls | `crates/rebellion-render/src/cockpit.rs` | Manual pp. 60–66 and official Steam command-center captures |
+| Synthetic galaxy and glyphs | `crates/rebellion-render/src/lib.rs` | Manual pp. 66–73 and official Steam faction captures |
+| Invented system sidebar | `crates/rebellion-render/src/lib.rs` | Manual pp. 67–68, 97–100, and 122–124 |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
@@ -64,17 +68,19 @@ commands, bitmap-state paint paths, managed object-window routing, GID display
 construction, and faction advisor apertures. The extractor and runtime pack now
 preserve all 3,988 ALSPRITE and EMSPRITE type-302 frames. Briefing, tactical,
 dialog, encyclopedia, advisor-control, and voice families remain incomplete.
-These discoveries narrow implementation; they do not replace original-runtime
-visual acceptance.
+P46A now corroborates the shell and aperture portion at runtime, including one
+shared transform for overlays, hit tests, and advisors. The reference rail and
+the other discoveries remain open. Static discoveries do not replace required
+original-runtime visual acceptance.
 
 ## Immediate findings
 
 | ID | Severity | Finding | Status |
 |----|----------|---------|--------|
-| UIP-F-001 | P0 | Campaign cockpit shell is stretched and overlaid with replacement text controls and blank apertures. | fail |
+| UIP-F-001 | P0 | The shell and viewport scaling pass, but authentic controls, the reference rail, and required aperture content remain incomplete. | partial |
 | UIP-F-002 | P0 | Galaxy, stars, system markers, sector hulls, and facility indicators use synthetic primitives and incomplete rules. | fail |
 | UIP-F-003 | P0 | System selection routes to an invented right sidebar instead of the original modeless sector/system surface. | fail |
-| UIP-F-004 | P0 | Authentic advisor idle runs render for both factions, but the replacement shell overlaps them and complete action/voice/chrome behavior is absent. | partial |
+| UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
 | UIP-F-005 | P0 | Runtime pack v2 includes ALSPRITE and EMSPRITE BMP/type-302 content; ALBRIEF, EMBRIEF, REBDLOG, EDATA, action controls, and voice remain omitted. | partial |
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
@@ -107,7 +113,9 @@ non-original families across:
    replace or obscure original paths.
 
 It now assigns 549 stable baseline cell IDs: 544 required cells and five
-excluded extension cells. All 42 required families link to at least one of 27
+excluded extension cells. All required cells remain pending or open because
+P46A did not execute the complete native and browser matrix. All 42 required
+families link to at least one of 27
 reverse-engineering, resource, runtime-capture, or replacement-removal packages.
 The baseline cells are durable requirement identities. Compound requirements
 must split into child cells before their surface enters implementation, after
@@ -248,3 +256,8 @@ inventing behavior or geometry.
 
 Documentation, screenshots, and machine-readable cells are updated in the same
 atomic commit as each verified implementation tranche.
+
+P46A completes only the strategic canvas checkpoint within `UIP-T01`. Authentic
+command controls, GID and map art, the window-reference rail, original system
+windows, the replacement sidebar, and replacement message and status surfaces
+remain open. `CMD-01`, `UIP-T01`, and project-wide interface parity do not pass.

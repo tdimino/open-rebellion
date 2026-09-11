@@ -42,8 +42,9 @@ pub use audio::{
 pub use bmp_cache::set_bmp_cache;
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
-    draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, CockpitButton,
-    CockpitFaction, CockpitState, CockpitViewport,
+    draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
+    set_cockpit_viewport_clip, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
+    CockpitViewport, STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
 };
 pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
@@ -82,12 +83,55 @@ pub use panels::command_palette::{draw_command_palette, CommandPaletteState};
 ///
 /// Returned by `draw_galaxy_map` so fog/fleet overlays can use matching
 /// coordinates without recomputing screen dimensions.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraView {
     pub cam_x: f32,
     pub cam_y: f32,
+    /// Effective screen-space zoom, including the strategic canvas scale.
     pub zoom: f32,
-    pub map_width: f32,
-    pub screen_height: f32,
+    /// Player-controlled gameplay zoom, independent of window size.
+    pub logical_zoom: f32,
+    /// Uniform scale from original 640×480 pixels to screen pixels.
+    pub display_scale: f32,
+    pub viewport_x: f32,
+    pub viewport_y: f32,
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+}
+
+impl CameraView {
+    /// Convert original DAT coordinates into this aperture's screen space.
+    pub fn to_screen(self, dat_x: f32, dat_y: f32) -> (f32, f32) {
+        let sx = (dat_x - self.cam_x) * self.zoom + self.viewport_x + self.viewport_width / 2.0;
+        let sy = (dat_y - self.cam_y) * self.zoom + self.viewport_y + self.viewport_height / 2.0;
+        (sx, sy)
+    }
+
+    /// Whether a screen-space point is inside the recovered map aperture.
+    pub fn contains(self, x: f32, y: f32) -> bool {
+        x >= self.viewport_x
+            && x < self.viewport_x + self.viewport_width
+            && y >= self.viewport_y
+            && y < self.viewport_y + self.viewport_height
+    }
+
+    /// Whether a point lies in or just outside the aperture for draw culling.
+    pub fn contains_with_margin(self, x: f32, y: f32, margin: f32) -> bool {
+        x >= self.viewport_x - margin
+            && x <= self.viewport_x + self.viewport_width + margin
+            && y >= self.viewport_y - margin
+            && y <= self.viewport_y + self.viewport_height + margin
+    }
+
+    /// Convert a fixed original-interface pixel measurement to screen pixels.
+    pub fn scale_pixels(self, logical_pixels: f32) -> f32 {
+        logical_pixels * self.display_scale
+    }
+
+    /// Apply gameplay zoom and its original clamp before display scaling.
+    pub fn zoomed_pixels(self, base: f32, min: f32, max: f32) -> f32 {
+        (base * self.logical_zoom).clamp(min, max) * self.display_scale
+    }
 }
 
 /// All mutable UI state for the galaxy map view.
@@ -111,6 +155,8 @@ pub struct GalaxyMapState {
     /// Cockpit viewport bounds for mouse input clamping.
     /// If set, mouse input outside this rect is ignored.
     pub viewport: Option<(f32, f32, f32, f32)>,
+    /// Uniform scale of the original 640×480 strategic canvas.
+    pub display_scale: f32,
     /// Frame counter incremented while right-mouse is held.
     /// Used as a WASM fallback: browsers swallow the mouseup on right-click
     /// (context menu intercepts it), so `is_mouse_button_released` never fires.
@@ -134,6 +180,7 @@ impl Default for GalaxyMapState {
             context_menu_fleet: None,
             right_click_start: None,
             viewport: None,
+            display_scale: 1.0,
             right_click_held_frames: 0,
         }
     }
@@ -145,31 +192,20 @@ impl Default for GalaxyMapState {
 /// colored dot sized by selection state. Returns a `CameraView` so fog and fleet
 /// overlays can use matching coordinates.
 pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraView {
-    clear_background(Color::new(0.02, 0.02, 0.08, 1.0));
-
     discard_stale_context_menus(world, state);
 
     let sw = screen_width();
     let sh = screen_height();
-    // Reserve space on the right when a system is selected.
-    let panel_width: f32 = if state.selected_system.is_some() {
-        300.0
-    } else {
-        0.0
-    };
-    let map_width = sw - panel_width;
-
+    let (viewport_x, viewport_y, viewport_width, viewport_height) =
+        state.viewport.unwrap_or((0.0, 0.0, sw, sh));
     let (mx, my) = mouse_position();
-
-    // Check if mouse is within the cockpit viewport (if set).
-    let in_viewport = if let Some((vx, vy, vw, vh)) = state.viewport {
-        mx >= vx && mx <= vx + vw && my >= vy && my <= vy + vh
-    } else {
-        true
-    };
+    let in_viewport = mx >= viewport_x
+        && mx < viewport_x + viewport_width
+        && my >= viewport_y
+        && my < viewport_y + viewport_height;
 
     // ── Input: only when the cursor is in the map area ───────────────────────
-    if mx < map_width && in_viewport {
+    if in_viewport {
         // Zoom with scroll wheel (vertical component).
         let wheel_y = mouse_wheel().1;
         if wheel_y != 0.0 {
@@ -188,8 +224,9 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
             if let Some((px, py)) = state.drag_start {
                 let dx = mx - px;
                 let dy = my - py;
-                state.camera_x -= dx / state.zoom;
-                state.camera_y -= dy / state.zoom;
+                let effective_zoom = state.zoom * state.display_scale;
+                state.camera_x -= dx / effective_zoom;
+                state.camera_y -= dy / effective_zoom;
             }
             state.drag_start = Some((mx, my));
         } else {
@@ -200,26 +237,40 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         state.drag_start = None;
     }
 
-    // ── Coordinate transform helpers ─────────────────────────────────────────
-    let cam_x = state.camera_x;
-    let cam_y = state.camera_y;
-    let zoom = state.zoom;
-
-    let to_screen = |dat_x: f32, dat_y: f32| -> (f32, f32) {
-        let sx = (dat_x - cam_x) * zoom + map_width / 2.0;
-        let sy = (dat_y - cam_y) * zoom + sh / 2.0;
-        (sx, sy)
+    // Build the shared transform after input so wheel zoom and drag apply in
+    // the frame where they occur.
+    let cam = CameraView {
+        cam_x: state.camera_x,
+        cam_y: state.camera_y,
+        zoom: state.zoom * state.display_scale,
+        logical_zoom: state.zoom,
+        display_scale: state.display_scale,
+        viewport_x,
+        viewport_y,
+        viewport_width,
+        viewport_height,
     };
+
+    draw_rectangle(
+        viewport_x,
+        viewport_y,
+        viewport_width,
+        viewport_height,
+        Color::new(0.02, 0.02, 0.08, 1.0),
+    );
+
+    // ── Coordinate transform helpers ─────────────────────────────────────────
+    let zoom = cam.zoom;
 
     // ── Sector labels ─────────────────────────────────────────────────────────
     if state.show_sector_labels {
         for (_, sector) in &world.sectors {
-            let (sx, sy) = to_screen(sector.x as f32, sector.y as f32);
-            if sx > -100.0 && sx < map_width + 100.0 && sy > -100.0 && sy < sh + 100.0 {
-                let font_size = (16.0 * zoom).clamp(10.0, 32.0);
+            let (sx, sy) = cam.to_screen(sector.x as f32, sector.y as f32);
+            if cam.contains_with_margin(sx, sy, cam.scale_pixels(100.0)) {
+                let font_size = (16.0 * cam.logical_zoom).clamp(10.0, 32.0) * cam.display_scale;
                 draw_text(
                     &sector.name,
-                    sx - 30.0,
+                    sx - cam.scale_pixels(30.0),
                     sy,
                     font_size,
                     Color::new(0.3, 0.3, 0.5, 0.6),
@@ -237,11 +288,11 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
     // renders on top without requiring Z-sort.
 
     // Pass 1: hover detection — pick the nearest system within hover_radius.
-    if mx < map_width {
+    if in_viewport {
         let mut best_dist = hover_radius;
         for (key, system) in &world.systems {
-            let (sx, sy) = to_screen(system.x as f32, system.y as f32);
-            if sx < -20.0 || sx > map_width + 20.0 || sy < -20.0 || sy > sh + 20.0 {
+            let (sx, sy) = cam.to_screen(system.x as f32, system.y as f32);
+            if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
                 continue;
             }
             let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
@@ -254,8 +305,8 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
 
     // Pass 2: draw all visible systems.
     for (key, system) in &world.systems {
-        let (sx, sy) = to_screen(system.x as f32, system.y as f32);
-        if sx < -20.0 || sx > map_width + 20.0 || sy < -20.0 || sy > sh + 20.0 {
+        let (sx, sy) = cam.to_screen(system.x as f32, system.y as f32);
+        if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
             continue;
         }
 
@@ -280,20 +331,31 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
 
         // Selection glow ring.
         if is_selected {
-            draw_circle(sx, sy, radius + 3.0, Color::new(1.0, 1.0, 0.3, 0.3));
+            draw_circle(
+                sx,
+                sy,
+                radius + cam.scale_pixels(3.0),
+                Color::new(1.0, 1.0, 0.3, 0.3),
+            );
         }
 
         draw_circle(sx, sy, radius, color);
 
         // Name label on hover.
         if is_hovered {
-            draw_text(&system.name, sx + 10.0, sy - 5.0, 18.0, WHITE);
+            draw_text(
+                &system.name,
+                sx + cam.scale_pixels(10.0),
+                sy - cam.scale_pixels(5.0),
+                cam.scale_pixels(18.0),
+                WHITE,
+            );
         }
     }
 
     // ── Click to select ───────────────────────────────────────────────────────
     if is_mouse_button_pressed(MouseButton::Left)
-        && mx < map_width
+        && in_viewport
         && !context_menu_owns_pointer(state)
     {
         state.selected_system = state.hovered_system;
@@ -316,7 +378,7 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         && state.right_click_held_frames >= 1
         && !is_mouse_button_down(MouseButton::Right)
         && state.right_click_start.is_some();
-    if (right_released || right_released_wasm) && mx < map_width {
+    if (right_released || right_released_wasm) && in_viewport {
         // Reset held counter on either release path.
         state.right_click_held_frames = 0;
         let was_drag = state.right_click_start.map_or(true, |(sx, sy)| {
@@ -335,13 +397,7 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         }
     }
 
-    CameraView {
-        cam_x,
-        cam_y,
-        zoom,
-        map_width,
-        screen_height: sh,
-    }
+    cam
 }
 
 /// An open egui context menu receives the click before the map may select a
@@ -376,15 +432,13 @@ fn discard_stale_context_menus(world: &GameWorld, state: &mut GalaxyMapState) {
 /// Mirrors the closure inside `draw_galaxy_map` so overlays align.
 #[inline]
 fn map_to_screen(dat_x: f32, dat_y: f32, cam: &CameraView) -> (f32, f32) {
-    let sx = (dat_x - cam.cam_x) * cam.zoom + cam.map_width / 2.0;
-    let sy = (dat_y - cam.cam_y) * cam.zoom + cam.screen_height / 2.0;
-    (sx, sy)
+    cam.to_screen(dat_x, dat_y)
 }
 
 /// True if the screen-space point is inside the visible map area.
 #[inline]
 fn in_map_viewport(sx: f32, sy: f32, cam: &CameraView) -> bool {
-    sx > -30.0 && sx < cam.map_width + 30.0 && sy > -30.0 && sy < cam.screen_height + 30.0
+    cam.contains_with_margin(sx, sy, cam.scale_pixels(30.0))
 }
 
 /// Draw small facility indicator squares next to systems that have facilities.
@@ -400,12 +454,12 @@ fn in_map_viewport(sx: f32, sy: f32, cam: &CameraView) -> bool {
 ///
 /// Pass the `CameraView` returned by `draw_galaxy_map`.
 pub fn draw_facility_icons(world: &GameWorld, cam: &CameraView) {
-    if cam.zoom < 0.5 {
+    if cam.logical_zoom < 0.5 {
         return;
     }
 
-    let icon_size = (4.0 * cam.zoom).clamp(2.5, 8.0);
-    let gap = icon_size + 1.5;
+    let icon_size = cam.zoomed_pixels(4.0, 2.5, 8.0);
+    let gap = icon_size + cam.scale_pixels(1.5);
 
     for (_key, system) in &world.systems {
         let has_prod = !system.production_facilities.is_empty();
@@ -540,7 +594,7 @@ pub fn draw_sector_boundaries(world: &GameWorld, cam: &CameraView, show: bool) {
         return;
     }
 
-    let padding = 12.0 * cam.zoom.clamp(0.5, 2.0);
+    let padding = 12.0 * cam.logical_zoom.clamp(0.5, 2.0) * cam.display_scale;
 
     for (_sec_key, sector) in &world.sectors {
         if sector.systems.len() < 2 {
@@ -592,7 +646,7 @@ pub fn draw_sector_boundaries(world: &GameWorld, cam: &CameraView, show: bool) {
         for i in 0..n {
             let (x1, y1) = expanded[i];
             let (x2, y2) = expanded[(i + 1) % n];
-            draw_line(x1, y1, x2, y2, 1.0, color);
+            draw_line(x1, y1, x2, y2, cam.scale_pixels(1.0), color);
         }
     }
 }
@@ -610,7 +664,8 @@ pub fn draw_blockade_indicators(world: &GameWorld, blockade: &BlockadeState, cam
         return;
     }
 
-    let ring_radius = (7.0 * cam.zoom).clamp(5.0, 18.0);
+    let ring_radius = cam.zoomed_pixels(7.0, 5.0, 18.0);
+    let ring_width = cam.scale_pixels(1.5);
     let ring_color = Color::new(0.9, 0.15, 0.15, 0.7);
 
     for &sys_key in blockaded {
@@ -625,9 +680,14 @@ pub fn draw_blockade_indicators(world: &GameWorld, blockade: &BlockadeState, cam
         }
 
         // Outer ring — solid dim red.
-        draw_circle_lines(sx, sy, ring_radius, 1.5, ring_color);
+        draw_circle_lines(sx, sy, ring_radius, ring_width, ring_color);
         // Inner fill — very faint red tint over the system dot.
-        draw_circle(sx, sy, ring_radius - 1.5, Color::new(0.9, 0.1, 0.1, 0.08));
+        draw_circle(
+            sx,
+            sy,
+            ring_radius - ring_width,
+            Color::new(0.9, 0.1, 0.1, 0.08),
+        );
     }
 }
 
@@ -1334,6 +1394,62 @@ pub fn draw_status_bar(
 #[cfg(test)]
 mod interaction_tests {
     use super::*;
+
+    #[test]
+    fn camera_transform_includes_aperture_offset() {
+        let camera = CameraView {
+            cam_x: 450.0,
+            cam_y: 470.0,
+            zoom: 2.0,
+            logical_zoom: 1.0,
+            display_scale: 2.0,
+            viewport_x: 100.0,
+            viewport_y: 40.0,
+            viewport_width: 480.0,
+            viewport_height: 355.0,
+        };
+
+        assert_eq!(camera.to_screen(450.0, 470.0), (340.0, 217.5));
+        assert!(camera.contains(100.0, 40.0));
+        assert!(camera.contains(579.999, 394.999));
+        assert!(!camera.contains(99.0, 40.0));
+        assert!(!camera.contains(580.0, 394.0));
+        assert!(!camera.contains(579.0, 395.0));
+        assert!(camera.contains_with_margin(90.0, 30.0, 10.0));
+        assert_eq!(camera.scale_pixels(8.0), 16.0);
+        assert_eq!(camera.zoomed_pixels(4.0, 2.5, 8.0), 8.0);
+    }
+
+    #[test]
+    fn display_scale_does_not_change_logical_visibility_thresholds() {
+        let baseline = CameraView {
+            cam_x: 0.0,
+            cam_y: 0.0,
+            zoom: 0.7,
+            logical_zoom: 0.7,
+            display_scale: 1.0,
+            viewport_x: 0.0,
+            viewport_y: 0.0,
+            viewport_width: 100.0,
+            viewport_height: 100.0,
+        };
+        let widescreen = CameraView {
+            zoom: 0.7 * 1.666_666_6,
+            display_scale: 1.666_666_6,
+            viewport_width: 166.666_66,
+            viewport_height: 166.666_66,
+            ..baseline
+        };
+
+        assert_eq!(baseline.logical_zoom, widescreen.logical_zoom);
+        assert_eq!(baseline.logical_zoom > 0.8, widescreen.logical_zoom > 0.8);
+        assert!(
+            (widescreen.zoomed_pixels(4.0, 2.5, 8.0) / baseline.zoomed_pixels(4.0, 2.5, 8.0)
+                - widescreen.display_scale)
+                .abs()
+                < 0.001
+        );
+    }
 
     #[test]
     fn open_context_menu_owns_map_left_click() {

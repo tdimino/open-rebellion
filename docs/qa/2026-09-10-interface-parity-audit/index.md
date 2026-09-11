@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit"
 description: "Authoritative screenshot corpus, surface ledger, findings, and acceptance gates for reproducing every visible Rebellion interface state"
 category: qa
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 ---
 
@@ -11,11 +11,12 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 
 Open Rebellion does not yet have original interface parity. The shuttle main
 menu's scoped composition, destinations, audio, and hotspots are verified, but
-its exhaustive original control-state capture matrix remains open. The current
-strategy screen uses replacement controls, a synthetic galaxy drawing, and an
-invented system sidebar. Original advisor idle frames now render in the browser,
-but the replacement shell overlaps their lower apertures and their authored
-actions, voice, and chrome remain open.
+its exhaustive original control-state capture matrix remains open. The
+strategic shell now uses the recovered faction bitmaps, exact apertures, and a
+centered 640x480 canvas. The strategy screen still uses replacement controls,
+synthetic GID and map art, an invented system sidebar, and replacement message
+and status surfaces. Original advisor idle frames render in the scaled
+apertures, but their authored actions, voice, and chrome remain open.
 
 This bundle is the visual and interaction-identity sister to the
 [full-functionality audit](../2026-09-08-full-functionality-audit/). The older
@@ -34,6 +35,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [Reference ledger](reference-ledger.json) | Source URLs, provenance, confidence, locale, local paths, and coverage. |
 | [Reverse-engineering ledger](reverse-engineering-ledger.md) | Ghidra and original-resource findings, proof boundaries, and the implementation evidence queue. |
 | [Reverse-engineering data](reverse-engineering-ledger.json) | Machine-readable artifacts, discoveries, resource omissions, and work-package status. |
+| [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md) | Durable canvas, aperture, shared-transform, test, artifact-hash, and Astra acceptance record. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -45,13 +47,14 @@ navigation, animation, audio presentation, and the absence of invented UI.
 |------|--------|
 | Original surface families inventoried | 43 |
 | Required baseline acceptance cells | 544 |
+| Required baseline cells pending or open | 544 |
 | Required families with retrieval packages | 42 of 42 |
 | Space-battle baseline cells | 106 across TAC-01 through TAC-07 |
 | Reference images retained | 370 |
 | Required surface families not at complete parity | 42 |
 | Scoped shuttle implementation | **Pass** |
 | Complete shuttle state matrix | **Partial** |
-| Strategy cockpit parity | **Fail** |
+| Strategy cockpit parity | **Partial** |
 | Browser advisor visibility | **Partial** |
 | Original system-window navigation | **Fail** |
 | Release claim of 100% interface parity | **Blocked** |
@@ -63,7 +66,9 @@ legally owned, unmodified English installation before their cells can pass.
 
 Static recovery is tracked separately in the
 [reverse-engineering ledger](reverse-engineering-ledger.md). It already provides
-authoritative geometry and routing for the strategic shell. Runtime pack v2 now
+authoritative geometry and routing for the strategic shell. P46A implements and
+verifies the shell, crop, apertures, clipping, and shared transform in
+[its durable evidence](evidence/2026-09-11-strategic-shell-canvas.md). Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain
 open. Its 27 packages give every required surface a named recovery or removal
@@ -73,7 +78,9 @@ path.
 
 The denominator is required surface-state cells, not an estimated percentage.
 The ledger currently instantiates 544 required baseline cells and five excluded
-extension cells. Compound requirements split into stable child cells before
+extension cells. P46A verifies a scoped Chromium viewport checkpoint, but all
+baseline cells remain pending until their complete execution matrix passes.
+Compound requirements split into stable child cells before
 their implementation starts, and each cell then runs through its applicable
 original, native, browser, viewport, DPR, faction, content, and interaction
 matrix.
@@ -92,8 +99,8 @@ parity denominator.
 `UIP-T01`, Strategic Cockpit Truth, replaces the current strategy composition in
 this order:
 
-1. exact 640×480 display composition and uniform scaling, with any 481-row
-   source bitmap or capture mapped to its authoritative crop rather than stretched;
+1. exact 640×480 display composition and uniform scaling, with the 481-row
+   faction sources cropped to 480 display rows, completed by P46A;
 2. original galaxy/starfield and Galactic Information Display modes;
 3. original cockpit controls, state art, hotspots, and window-reference rail;
 4. original sector and system windows instead of the right sidebar;

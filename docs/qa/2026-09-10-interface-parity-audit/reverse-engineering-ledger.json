@@ -161,9 +161,25 @@
         "sources": ["REBEXE.EXE", "STRATEGY.DLL"],
         "anchors": ["FUN_00421c70", "FUN_00422ce0", "FUN_00429020"],
         "method": "Use the strategic-shell constructor, twelve rail rectangles, PtInRect routing, focus behavior, and child-window removal path.",
-        "next_proof": "Implement both faction shells and verify every aperture and rail transition against A0 captures."
+        "next_proof": "Implement the twelve-slot reference rail, focus and child-window transitions, then compare the complete shell against A0 captures."
       },
-      "runtime_capture_required": true
+      "runtime_capture_required": true,
+      "implementation_evidence": {
+        "status": "shell_canvas_and_galaxy_apertures_runtime_corroborated",
+        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-shell-canvas.md",
+        "completed": [
+          "centered uniform 640x480 canvas",
+          "STRATEGY 900 and 901 cropped from 640x481 to 640x480",
+          "Alliance and Empire galaxy apertures from FUN_00421c70",
+          "shared map, hit-test, blockade, and advisor transform",
+          "native tests and packaged-browser viewport verification"
+        ],
+        "remaining": [
+          "twelve-slot window-reference rail",
+          "child-window focus, removal, minimize, and restore transitions",
+          "complete A0 original-executable visual comparison"
+        ]
+      }
     },
     {
       "id": "RE-STR-02",

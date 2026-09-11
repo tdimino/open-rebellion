@@ -58,14 +58,14 @@ use rebellion_render::{
     draw_fog_overlay, draw_galaxy_map, draw_game_setup, draw_ground_combat, draw_main_menu,
     draw_manufacturing, draw_message_log, draw_missions, draw_multiplayer_setup, draw_officers,
     draw_save_load, draw_sector_boundaries, draw_status_bar, draw_system_context_menu,
-    draw_system_info_panel, draw_tactical_view, hovered_fleet, show_event_screen,
-    update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile, AudioVolumeState,
-    BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState, EncyclopediaState,
-    EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction, GameSetupState,
-    GroundAction, GroundCombatState, MainMenuAction, MainMenuState, ManufacturingPanelState,
-    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MissionsPanelState,
-    MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState, PanelAction,
-    SfxKind, TacticalAction, TacticalState, VideoError, VideoPlayer, VoiceLine,
+    draw_system_info_panel, draw_tactical_view, hovered_fleet, set_cockpit_viewport_clip,
+    show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
+    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
+    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction,
+    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
+    ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog, MessageLogState,
+    MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
+    PanelAction, SfxKind, TacticalAction, TacticalState, VideoError, VideoPlayer, VoiceLine,
 };
 
 /// Top-level game mode state machine.
@@ -2697,11 +2697,12 @@ async fn main() {
                 } else {
                     &fog_empire_state
                 };
-                // 1. Cockpit chrome (pure macroquad) — draws top/bottom bars
-                // and returns the viewport rect available for the galaxy map.
+                // 1. Prepare the original 640×480 command-center canvas and
+                // recover the faction-specific galaxy aperture.
                 // The authentic bitmap frame is drawn in the single egui pass
                 // below so input is consumed exactly once per game frame.
-                let cockpit_vp = draw_cockpit_chrome(&cockpit_state);
+                let cockpit_layout = draw_cockpit_chrome(&cockpit_state);
+                let cockpit_vp = cockpit_layout.galaxy;
 
                 // Pass cockpit viewport to galaxy map for mouse input clamping.
                 map_state.viewport = Some((
@@ -2710,36 +2711,26 @@ async fn main() {
                     cockpit_vp.width,
                     cockpit_vp.height,
                 ));
+                map_state.display_scale = cockpit_layout.scale;
 
-                // 2. Galaxy map (pure macroquad) — returns camera params
+                // Keep every macroquad map layer inside the shell's transparent
+                // galaxy aperture. The clip is cleared before the egui pass.
+                set_cockpit_viewport_clip(Some(cockpit_vp));
+
+                // 2. Galaxy map (pure macroquad) — returns the shared transform
                 let cam = draw_galaxy_map(&world, &mut map_state);
 
                 // 2. Fog overlay (pure macroquad) — dim non-visible systems
-                draw_fog_overlay(
-                    &world,
-                    fog_state,
-                    cam.cam_x,
-                    cam.cam_y,
-                    cam.zoom,
-                    cam.map_width,
-                    cam.screen_height,
-                );
+                draw_fog_overlay(&world, fog_state, &cam);
 
                 // 3. Fleet overlays (pure macroquad) — on top of fog
-                draw_fleet_overlays(
-                    &world,
-                    &movement_state,
-                    cam.cam_x,
-                    cam.cam_y,
-                    cam.zoom,
-                    cam.map_width,
-                    cam.screen_height,
-                );
+                draw_fleet_overlays(&world, &movement_state, &cam);
 
                 // 3c. Galaxy map overlays (pure macroquad) — sector boundaries, facility icons, blockades
                 draw_sector_boundaries(&world, &cam, map_state.show_sector_labels);
                 draw_facility_icons(&world, &cam);
                 draw_blockade_indicators(&world, &blockade_state, &cam);
+                set_cockpit_viewport_clip(None);
 
                 // 3b. Fleet hover detection — check if right-click landed on a fleet.
                 // Fleet takes priority over system — overrides the system menu set
@@ -2755,22 +2746,14 @@ async fn main() {
                         && map_state.right_click_held_frames >= 1
                         && !is_mouse_button_down(macroquad::input::MouseButton::Right)
                         && map_state.right_click_start.is_some();
-                    if (right_released || right_released_wasm) && mx < cam.map_width {
+                    if (right_released || right_released_wasm) && cam.contains(mx, my) {
                         let was_drag = map_state.right_click_start.map_or(true, |(sx, sy)| {
                             ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt() > 5.0
                         });
                         if !was_drag {
-                            if let Some(fleet_key) = hovered_fleet(
-                                &world,
-                                &movement_state,
-                                cam.cam_x,
-                                cam.cam_y,
-                                cam.zoom,
-                                cam.map_width,
-                                cam.screen_height,
-                                mx,
-                                my,
-                            ) {
+                            if let Some(fleet_key) =
+                                hovered_fleet(&world, &movement_state, &cam, mx, my)
+                            {
                                 map_state.context_menu_fleet = Some((fleet_key, mx, my));
                                 map_state.context_menu_system = None;
                             }

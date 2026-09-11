@@ -22,20 +22,22 @@
 //! └──────────────────────────────────────────────────┘
 //! ```
 //!
-//! The returned `CockpitViewport` tells `draw_galaxy_map` exactly which
-//! rectangle to render into.
+//! The original command center is a fixed 640×480 composition. Wider or taller
+//! browser windows therefore letterbox one uniformly scaled canvas rather than
+//! stretching independent layers. The returned `CockpitViewport` is the exact
+//! faction aperture recovered from `FUN_00421c70`.
 //!
 //! # BMP resource IDs
 //!
 //! | DLL | ID | Content |
 //! |-----|----|---------|
-//! | STRATEGY | 900 | Galaxy map starfield background (640×481) |
+//! | STRATEGY | 900 | Alliance command-center shell (640×481 source, 640×480 display) |
+//! | STRATEGY | 901 | Imperial command-center shell (640×481 source, 640×480 display) |
 //! | COMMON | 20001 | Main-menu background (640×480) |
 //! | COMMON | 11001-11275 | Animated cockpit display sequences, not a sequential logical-button map |
 //!
-//! Alliance-specific cockpit elements are distinguished in the original game
-//! by color palettes applied at render time.  We approximate with `ALLIANCE_BLUE`
-//! vs `EMPIRE_RED` accents drawn over a shared chrome layout.
+//! The bitmap shells and aperture geometry are faction-specific. No synthetic
+//! top or bottom chrome is drawn underneath them.
 
 use egui_macroquad::egui::{self, Ui};
 use macroquad::prelude::*;
@@ -53,6 +55,15 @@ pub enum CockpitFaction {
     Alliance,
     Empire,
 }
+
+/// Logical width of the original strategic command-center surface.
+pub const STRATEGIC_LOGICAL_WIDTH: f32 = 640.0;
+
+/// Logical height displayed by the original strategic command center.
+///
+/// The recovered STRATEGY resources contain one extra source row. It is not
+/// part of the displayed 640×480 composition.
+pub const STRATEGIC_LOGICAL_HEIGHT: f32 = 480.0;
 
 /// Cockpit button identifiers.
 ///
@@ -83,7 +94,7 @@ pub enum CockpitButton {
 /// Pixel viewport the galaxy map should render into.
 ///
 /// All coordinates are in macroquad screen pixels.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CockpitViewport {
     /// Left edge of the usable map area (pixels from left).
     pub x: f32,
@@ -105,6 +116,29 @@ impl CockpitViewport {
             height: screen_height(),
         }
     }
+
+    /// Right edge in screen pixels.
+    pub fn right(self) -> f32 {
+        self.x + self.width
+    }
+
+    /// Bottom edge in screen pixels.
+    pub fn bottom(self) -> f32 {
+        self.y + self.height
+    }
+
+    /// Whether a screen-space point lies inside this viewport.
+    pub fn contains(self, x: f32, y: f32) -> bool {
+        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
+    }
+}
+
+/// Uniformly scaled strategic canvas and its transparent galaxy aperture.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CockpitLayout {
+    pub canvas: CockpitViewport,
+    pub galaxy: CockpitViewport,
+    pub scale: f32,
 }
 
 /// All mutable state owned by the cockpit module.
@@ -138,19 +172,49 @@ impl CockpitState {
         }
     }
 
-    /// Compute the galaxy map viewport given the current screen size.
+    /// Compute the recovered command-center layout for the current screen.
+    pub fn layout(&self) -> CockpitLayout {
+        self.layout_for(screen_width(), screen_height())
+    }
+
+    /// Compute the recovered command-center layout for an arbitrary screen.
     ///
-    /// The returned `CockpitViewport` is the rectangle that callers should
-    /// pass to `draw_galaxy_map` as its clipping region.
-    pub fn galaxy_viewport(&self) -> CockpitViewport {
-        let sw = screen_width();
-        let sh = screen_height();
-        CockpitViewport {
-            x: self.side_gutter_w,
-            y: self.top_bar_h,
-            width: sw - self.side_gutter_w * 2.0,
-            height: sh - self.top_bar_h - self.bottom_bar_h,
+    /// This pure variant keeps the 640×480 composition testable without a
+    /// graphics context.
+    pub fn layout_for(&self, screen_width: f32, screen_height: f32) -> CockpitLayout {
+        let scale = (screen_width / STRATEGIC_LOGICAL_WIDTH)
+            .min(screen_height / STRATEGIC_LOGICAL_HEIGHT)
+            .max(0.0);
+        let canvas = CockpitViewport {
+            x: (screen_width - STRATEGIC_LOGICAL_WIDTH * scale) / 2.0,
+            y: (screen_height - STRATEGIC_LOGICAL_HEIGHT * scale) / 2.0,
+            width: STRATEGIC_LOGICAL_WIDTH * scale,
+            height: STRATEGIC_LOGICAL_HEIGHT * scale,
+        };
+
+        // FUN_00421c70 constructs these exact client rectangles. The right and
+        // bottom values are exclusive in the original Win32 RECT contract.
+        let (x, y, width, height) = match self.faction {
+            CockpitFaction::Alliance => (55.0, 40.0, 485.0, 350.0),
+            CockpitFaction::Empire => (120.0, 40.0, 480.0, 355.0),
+        };
+        let galaxy = CockpitViewport {
+            x: canvas.x + x * scale,
+            y: canvas.y + y * scale,
+            width: width * scale,
+            height: height * scale,
+        };
+
+        CockpitLayout {
+            canvas,
+            galaxy,
+            scale,
         }
+    }
+
+    /// Compute the galaxy map viewport for the current screen.
+    pub fn galaxy_viewport(&self) -> CockpitViewport {
+        self.layout().galaxy
     }
 }
 
@@ -158,53 +222,33 @@ impl CockpitState {
 // Draw functions
 // ---------------------------------------------------------------------------
 
-/// Draw the top and bottom cockpit chrome bars using macroquad.
+/// Prepare the strategic canvas and return its exact layout.
 ///
-/// Call before `egui_macroquad::ui` so the chrome renders beneath egui panels.
-/// Returns the viewport reserved for the galaxy map.
-pub fn draw_cockpit_chrome(state: &CockpitState) -> CockpitViewport {
-    let sw = screen_width();
-    let sh = screen_height();
+/// Call before the macroquad galaxy layers. The authentic shell is painted in
+/// egui later in the same frame, above the clipped map and below other windows.
+pub fn draw_cockpit_chrome(state: &CockpitState) -> CockpitLayout {
+    clear_background(BLACK);
+    state.layout()
+}
 
-    let faction_color: Color = if state.faction == CockpitFaction::Alliance {
-        Color::new(0.15, 0.35, 0.65, 1.0) // deep Alliance blue
-    } else {
-        Color::new(0.55, 0.10, 0.10, 1.0) // deep Empire crimson
-    };
-    let accent_color: Color = if state.faction == CockpitFaction::Alliance {
-        Color::new(0.4, 0.6, 1.0, 1.0)
-    } else {
-        Color::new(1.0, 0.35, 0.35, 1.0)
-    };
-
-    // ── Top bar ──────────────────────────────────────────────────────────────
-    draw_rectangle(0.0, 0.0, sw, state.top_bar_h, faction_color);
-    // Thin accent line at bottom of top bar
-    draw_rectangle(0.0, state.top_bar_h - 2.0, sw, 2.0, accent_color);
-
-    // Faction label
-    let label = if state.faction == CockpitFaction::Alliance {
-        "REBEL ALLIANCE — COMMAND BRIDGE"
-    } else {
-        "GALACTIC EMPIRE — COMMAND BRIDGE"
-    };
-    let font_size = 14.0;
-    let dims = measure_text(label, None, font_size as u16, 1.0);
-    draw_text(
-        label,
-        (sw - dims.width) / 2.0,
-        state.top_bar_h * 0.72,
-        font_size,
-        Color::new(0.9, 0.85, 0.6, 1.0),
-    );
-
-    // ── Bottom bar ───────────────────────────────────────────────────────────
-    let bottom_y = sh - state.bottom_bar_h;
-    draw_rectangle(0.0, bottom_y, sw, state.bottom_bar_h, faction_color);
-    // Thin accent line at top of bottom bar
-    draw_rectangle(0.0, bottom_y, sw, 2.0, accent_color);
-
-    state.galaxy_viewport()
+/// Apply or clear macroquad's top-left-origin scissor rectangle.
+///
+/// All strategic map layers use this one clip, preventing synthetic map pixels
+/// from leaking into advisor and command-control apertures in the shell.
+pub fn set_cockpit_viewport_clip(viewport: Option<CockpitViewport>) {
+    let clip = viewport.map(|viewport| {
+        (
+            viewport.x.round() as i32,
+            viewport.y.round() as i32,
+            viewport.width.round() as i32,
+            viewport.height.round() as i32,
+        )
+    });
+    // SAFETY: macroquad exposes its immediate drawing state through this API.
+    // The clip is reset before egui begins its pass in the same frame.
+    unsafe {
+        get_internal_gl().quad_gl.scissor(clip);
+    }
 }
 
 /// Draw the faction's authentic STRATEGY.DLL cockpit frame as the first egui
@@ -225,15 +269,24 @@ pub fn draw_cockpit_background(ctx: &egui::Context, state: &CockpitState, cache:
     // canonical layer instead: this shape is appended first, then panels append
     // their frames, text, and bitmaps over it later in the frame.
     let painter = ctx.layer_painter(egui::LayerId::background());
+    let canvas = state.layout().canvas;
+    let uv_max_y = cockpit_source_uv_max_y(texture.size());
     painter.image(
         texture.id(),
-        egui::Rect::from_min_max(
-            egui::Pos2::ZERO,
-            egui::pos2(screen_width(), screen_height()),
+        egui::Rect::from_min_size(
+            egui::pos2(canvas.x, canvas.y),
+            egui::vec2(canvas.width, canvas.height),
         ),
-        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, uv_max_y)),
         egui::Color32::WHITE,
     );
+}
+
+fn cockpit_source_uv_max_y(texture_size: [usize; 2]) -> f32 {
+    let visible_source_height = (texture_size[0] as f32 * STRATEGIC_LOGICAL_HEIGHT
+        / STRATEGIC_LOGICAL_WIDTH)
+        .min(texture_size[1] as f32);
+    visible_source_height / texture_size[1] as f32
 }
 
 /// Draw egui-layer cockpit elements: control button bar.
@@ -334,4 +387,88 @@ pub fn draw_cockpit_egui_layer(
         });
 
     clicked
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn assert_viewport(actual: CockpitViewport, x: f32, y: f32, width: f32, height: f32) {
+        assert_close(actual.x, x);
+        assert_close(actual.y, y);
+        assert_close(actual.width, width);
+        assert_close(actual.height, height);
+    }
+
+    #[test]
+    fn alliance_uses_recovered_640_by_480_aperture() {
+        let layout = CockpitState::new(CockpitFaction::Alliance).layout_for(640.0, 480.0);
+
+        assert_close(layout.scale, 1.0);
+        assert_viewport(layout.canvas, 0.0, 0.0, 640.0, 480.0);
+        assert_viewport(layout.galaxy, 55.0, 40.0, 485.0, 350.0);
+    }
+
+    #[test]
+    fn empire_uses_recovered_640_by_480_aperture() {
+        let layout = CockpitState::new(CockpitFaction::Empire).layout_for(640.0, 480.0);
+
+        assert_close(layout.scale, 1.0);
+        assert_viewport(layout.canvas, 0.0, 0.0, 640.0, 480.0);
+        assert_viewport(layout.galaxy, 120.0, 40.0, 480.0, 355.0);
+    }
+
+    #[test]
+    fn widescreen_is_uniformly_scaled_and_pillarboxed() {
+        let layout = CockpitState::new(CockpitFaction::Alliance).layout_for(1280.0, 800.0);
+        let scale = 800.0 / 480.0;
+
+        assert_close(layout.scale, scale);
+        assert_viewport(
+            layout.canvas,
+            (1280.0 - 640.0 * scale) / 2.0,
+            0.0,
+            640.0 * scale,
+            800.0,
+        );
+        assert_close(layout.galaxy.x, layout.canvas.x + 55.0 * scale);
+        assert_close(layout.galaxy.y, 40.0 * scale);
+        assert_close(layout.galaxy.width, 485.0 * scale);
+        assert_close(layout.galaxy.height, 350.0 * scale);
+    }
+
+    #[test]
+    fn tall_screen_is_uniformly_scaled_and_letterboxed() {
+        let layout = CockpitState::new(CockpitFaction::Empire).layout_for(640.0, 600.0);
+
+        assert_close(layout.scale, 1.0);
+        assert_viewport(layout.canvas, 0.0, 60.0, 640.0, 480.0);
+        assert_viewport(layout.galaxy, 120.0, 100.0, 480.0, 355.0);
+    }
+
+    #[test]
+    fn extra_strategy_source_row_is_not_displayed() {
+        assert_close(cockpit_source_uv_max_y([640, 481]), 480.0 / 481.0);
+        assert_close(cockpit_source_uv_max_y([1280, 962]), 960.0 / 962.0);
+        assert_close(cockpit_source_uv_max_y([640, 480]), 1.0);
+    }
+
+    #[test]
+    fn recovered_aperture_uses_exclusive_right_and_bottom_edges() {
+        let viewport = CockpitState::new(CockpitFaction::Empire)
+            .layout_for(640.0, 480.0)
+            .galaxy;
+
+        assert!(viewport.contains(120.0, 40.0));
+        assert!(viewport.contains(599.999, 394.999));
+        assert!(!viewport.contains(600.0, 394.0));
+        assert!(!viewport.contains(599.0, 395.0));
+    }
 }

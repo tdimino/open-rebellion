@@ -3,7 +3,7 @@ title: "Interface Reverse-Engineering Ledger"
 description: "Executable and original-resource evidence queue for closing the original interface parity audit"
 category: qa
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 tags: [qa, interface, ghidra, resources, bitmap, wasm]
 ---
 
@@ -38,6 +38,13 @@ comparison.
 | `FUN_00425d00` and freshly recovered `FUN_00426d00` | GID mode/caption branches and the original floating 180×240 display window path | CMD-02 |
 | `FUN_0044f670`, `FUN_00442d70`, and `FUN_0044c410` | Code-built, modeless object windows using GOKRES rather than an invented sidebar | CMD-03, OBJ-02–OBJ-14 |
 | `FUN_0042d650` and freshly recovered `FUN_0042adb0` | Faction advisor/briefing DLL selection and exact advisor apertures | PRE-05, CMD-07 |
+
+P46A implements the centered 640x480 strategic canvas, the 640x481 source
+crop, both faction galaxy apertures, and one shared map, hit-test, blockade,
+and advisor transform. Native tests and packaged-browser viewport checks
+corroborate this shell checkpoint. The twelve-slot reference rail and its
+window transitions remain open. See the
+[P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md).
 
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a
@@ -80,7 +87,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-FE-01 | Boot, introduction, and credits routing | static-partial | Map media selection and every completion, failure, skip, and return callback |
 | RE-MENU-01 | Shuttle controls and destinations | static-proven | Capture remaining original interaction and edge-probe states |
 | RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
-| RE-STR-01 | Shell, apertures, and reference rail | static-proven | Implement exact faction geometry and compare A0 captures |
+| RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell checkpoint runtime-corroborated | Implement the twelve-slot rail and window transitions, then compare the complete shell against A0 captures |
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial | Name every command/resource pair and instantiate hit-probe cells |
 | RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial | Resolve TEXTSTRA captions and paint-resource branches |
 | RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |

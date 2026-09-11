@@ -17,6 +17,8 @@ geometry, and unverified asset mappings do not count as parity.
   captures and known evidence gaps.
 - Read the [audit report](audit-report.md) for findings, thresholds, and the
   six-tranche implementation order.
+- Review the [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md)
+  for the verified canvas, aperture, and browser-transform checkpoint.
 
 ## Suggested contribution lanes
 
@@ -43,3 +45,10 @@ The first recovered implementation tranche now packages and renders the four
 original faction-advisor idle runs. See the
 [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md).
 Full `CMD-07` action, voice, chrome, and shell integration remains open.
+
+P46A now verifies the exact centered 640x480 strategic canvas, faction shell
+crop, recovered galaxy apertures, and shared browser transform. See the
+[P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md). `CMD-01` and
+`UIP-T01` remain open because the authentic controls, GID and map art,
+window-reference rail, original system windows, and replacement surfaces are
+not complete.

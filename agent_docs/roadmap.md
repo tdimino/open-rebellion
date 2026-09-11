@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-09-10
+updated: 2026-09-11
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -470,6 +470,11 @@ would tune around known simulation feedback defects.
 - [x] Complete P44 / `RE-ADV-01` for the advisor idle-frame tranche: recover
   type-302 decoding, stage all 3,988 ALSPRITE/EMSPRITE frames, render both
   faction pairs in native/WASM, and fail closed with browser-visible diagnostics.
+- [x] Complete P46A / the first `RE-STR-01` checkpoint: render both faction
+  shells on one centered 640x480 canvas, crop the extra source row, apply the
+  recovered galaxy apertures, and share their transform across map layers,
+  hit tests, blockades, and advisors. The reference rail and the rest of
+  `UIP-T01` remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

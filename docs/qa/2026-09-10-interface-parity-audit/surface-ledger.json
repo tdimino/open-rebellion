@@ -664,7 +664,7 @@
         21,
         66
       ],
-      "current_implementation": "STRATEGY 900/901 are stretched while inner chrome and controls are replaced or blank.",
+      "current_implementation": "P46A renders STRATEGY 900/901 on one centered, uniformly scaled 640x480 canvas, crops the 481st source row, applies the recovered faction apertures, and shares their transform across map layers, hit tests, blockades, and advisors. Authentic controls, the reference rail, GID and map art, original system windows, message and status surfaces, and other required aperture content remain open.",
       "finding_ids": [
         "UIP-F-001"
       ],
