@@ -9,7 +9,7 @@ functional; historical parity percentages are estimates, not acceptance proof.
 ## Active Work
 
 - Start with `progress.json`, the ignored live recovery record.
-- Use `docs/qa/2026-09-08-full-functionality-audit/index.md` for the audit index,
+- Use `docs/qa/2026-09-08-full-functionality-audit/README.md` for the audit index,
   feature ledger, evidence contract, and definition of done.
 - Use `agent_docs/roadmap.md` for milestone order, including the protected
   Cloudflare Pages v1.0 release.

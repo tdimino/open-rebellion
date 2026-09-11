@@ -14,6 +14,7 @@ tags: [index, documentation]
 | Document | Description |
 |----------|-------------|
 | [README.md](../README.md) | Project overview, build instructions, quick start |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Task selection, verification, interface evidence, and pull-request workflow |
 | [CLAUDE.md](../CLAUDE.md) | AI agent instructions, build commands, conventions |
 | [CREDITS.md](../CREDITS.md) | Attribution for tools, AI services, community efforts |
 

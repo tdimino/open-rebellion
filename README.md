@@ -257,7 +257,9 @@ We stand on their shoulders.
 
 ## Contributing
 
-We're one developer and multiple agentic harnesses building in public. If you want to help:
+We're one developer and multiple agentic harnesses building in public. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) to choose a scoped audit item, run its gates,
+and submit evidence. Current contribution areas include:
 
 - **Play-testing**: Run it with your GOG copy, report what looks wrong—tick speed, AI behavior, combat balance, mission success rates
 - **Game data expertise**: If you know what GNPRTB parameter #147 does, or how the original handled sensor range, open an issue
