@@ -11,9 +11,11 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 
 Open Rebellion does not yet have original interface parity. The shuttle main
 menu's scoped composition, destinations, audio, and hotspots are verified, but
-its exhaustive original control-state capture matrix remains open. The current strategy screen uses
-replacement controls, a synthetic galaxy drawing, an invented system sidebar,
-and blank browser advisor apertures. Those are hard failures under this audit.
+its exhaustive original control-state capture matrix remains open. The current
+strategy screen uses replacement controls, a synthetic galaxy drawing, and an
+invented system sidebar. Original advisor idle frames now render in the browser,
+but the replacement shell overlaps their lower apertures and their authored
+actions, voice, and chrome remain open.
 
 This bundle is the visual and interaction-identity sister to the
 [full-functionality audit](../2026-09-08-full-functionality-audit/). The older
@@ -50,7 +52,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | Scoped shuttle implementation | **Pass** |
 | Complete shuttle state matrix | **Partial** |
 | Strategy cockpit parity | **Fail** |
-| Browser advisor visibility | **Fail** |
+| Browser advisor visibility | **Partial** |
 | Original system-window navigation | **Fail** |
 | Release claim of 100% interface parity | **Blocked** |
 
@@ -61,10 +63,11 @@ legally owned, unmodified English installation before their cells can pass.
 
 Static recovery is tracked separately in the
 [reverse-engineering ledger](reverse-engineering-ledger.md). It already provides
-authoritative geometry and routing for the strategic shell, but also shows that
-the browser pack omits thousands of original advisor, briefing, and tactical
-resources. Its 27 packages now give every required surface a named recovery or
-removal path.
+authoritative geometry and routing for the strategic shell. Runtime pack v2 now
+includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
+tactical, dialog, encyclopedia, advisor-control, and voice resources remain
+open. Its 27 packages give every required surface a named recovery or removal
+path.
 
 ## What 100% means
 
@@ -94,7 +97,8 @@ this order:
 2. original galaxy/starfield and Galactic Information Display modes;
 3. original cockpit controls, state art, hotspots, and window-reference rail;
 4. original sector and system windows instead of the right sidebar;
-5. packaged Alliance and Imperial droid frames, BIN sequences, voice, and chrome;
+5. complete Alliance and Imperial droid actions, BIN sequences, voice, chrome,
+   and unobscured apertures on top of the packaged idle-frame foundation;
 6. authoritative system, facility, fleet, HQ, blockade, and intelligence glyphs.
 
 The tranche closes only after both factions pass native and packaged WASM at

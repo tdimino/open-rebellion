@@ -28,8 +28,9 @@ This explains the observed symptoms:
 - Selecting a system opens a custom right `egui::SidePanel`. The original opens
   modeless sector/system windows with illustrated systems, tabbed contents,
   support/resources, and bitmap actions.
-- Browser droids cannot appear because the WASM advisor loader returns empty
-  frame pools.
+- The four original advisor idle runs now render in native and WASM, but
+  replacement controls overlap their lower apertures. Original action, voice,
+  and chrome behavior remains unimplemented.
 - Several cockpit apertures remain blank because the original window-reference,
   advisor, message, and command compositions have not been implemented.
 
@@ -45,7 +46,7 @@ The local source inspection establishes the implementation causes:
 | Synthetic strategy controls | `crates/rebellion-render/src/cockpit.rs:281` | Manual pp. 60–66 and official Steam command-center captures |
 | Synthetic galaxy and glyphs | `crates/rebellion-render/src/lib.rs:145`, `:253`, `:388` | Manual pp. 66–73 and official Steam faction captures |
 | Invented system sidebar | `crates/rebellion-render/src/lib.rs:636` | Manual pp. 67–68, 97–100, and 122–124 |
-| Empty browser droids | `crates/rebellion-render/src/advisor.rs:830` | Manual pp. 20–21 and 73–79; official Steam faction captures |
+| Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
@@ -60,10 +61,11 @@ The [reverse-engineering ledger](reverse-engineering-ledger.md) owns the
 executable-to-resource evidence queue. A read-only Ghidra pass recovered exact
 strategic apertures, twelve reference-rail rectangles, control geometry,
 commands, bitmap-state paint paths, managed object-window routing, GID display
-construction, and faction advisor apertures. The owned resource corpus also
-shows that the current extractor omits thousands of custom advisor, briefing,
-and tactical resources. These discoveries narrow implementation; they do not
-replace original-runtime visual acceptance.
+construction, and faction advisor apertures. The extractor and runtime pack now
+preserve all 3,988 ALSPRITE and EMSPRITE type-302 frames. Briefing, tactical,
+dialog, encyclopedia, advisor-control, and voice families remain incomplete.
+These discoveries narrow implementation; they do not replace original-runtime
+visual acceptance.
 
 ## Immediate findings
 
@@ -72,8 +74,8 @@ replace original-runtime visual acceptance.
 | UIP-F-001 | P0 | Campaign cockpit shell is stretched and overlaid with replacement text controls and blank apertures. | fail |
 | UIP-F-002 | P0 | Galaxy, stars, system markers, sector hulls, and facility indicators use synthetic primitives and incomplete rules. | fail |
 | UIP-F-003 | P0 | System selection routes to an invented right sidebar instead of the original modeless sector/system surface. | fail |
-| UIP-F-004 | P0 | WASM advisor loading returns no Alliance or Imperial droid frames. | fail |
-| UIP-F-005 | P0 | The browser pack omits ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA content. | fail |
+| UIP-F-004 | P0 | Authentic advisor idle runs render for both factions, but the replacement shell overlaps them and complete action/voice/chrome behavior is absent. | partial |
+| UIP-F-005 | P0 | Runtime pack v2 includes ALSPRITE and EMSPRITE BMP/type-302 content; ALBRIEF, EMBRIEF, REBDLOG, EDATA, action controls, and voice remain omitted. | partial |
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |

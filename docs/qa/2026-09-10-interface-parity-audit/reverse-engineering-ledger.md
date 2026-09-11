@@ -47,14 +47,15 @@ when a required export is empty.
 
 ## Original resource truth
 
-The current browser pack contains 52 game-data entries, 2,231 standard BMPs,
-and five audio files. The owned installation contains important additional
-families that are not staged or packed:
+Runtime pack v2 contains 52 game-data entries, 2,303 standard BMPs, all 3,988
+ALSPRITE and EMSPRITE type-302 frames, and five audio files. The owned
+installation contains important additional families that are not yet staged or
+packed:
 
 | Original module | Additional authentic content currently omitted |
 |---|---|
-| ALSPRITE | 752 BIN controls, 1,640 type-302 animation frames, 213 WAVs |
-| EMSPRITE | 753 BIN controls, 2,348 type-302 animation frames, 216 WAVs |
+| ALSPRITE | 752 BIN controls and 213 WAVs; its 38 BMPs and 1,640 type-302 frames are staged |
+| EMSPRITE | 753 BIN controls and 216 WAVs; its 34 BMPs and 2,348 type-302 frames are staged |
 | ALBRIEF | 366 BIN controls, 2,684 type-302 frames, 17 WAVs |
 | EMBRIEF | 471 BIN controls, 2,738 type-302 frames, 22 WAVs |
 | TACTICAL | 87 type-301 DirectX meshes, 397 type-303 textures, 66 WAVs |
@@ -86,7 +87,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-MSG-01 | Messages, Agent menus, alerts, and reports | untriaged | Join categories and event results to resources, audio, and navigation |
 | RE-ENC-01 | Encyclopedia index and topics | static-partial | Complete ENCYBMAP, ENCYTEXT, EData, and navigation mappings |
 | RE-OBJ-01 | System, sector, and object-window constructors | static-partial | Map each object type to tabs, resources, states, and return paths |
-| RE-ADV-01 | Type-302 advisor and briefing frame decoding | static-partial | Decode one anchor-plus-delta run byte-for-byte |
+| RE-ADV-01 | Type-302 advisor and briefing frame decoding | runtime-corroborated | Extend the verified advisor decoder/transport to briefings and compare with A0 captures |
 | RE-ADV-02 | SPT/BIN/FDT action semantics, cadence, and sound | static-partial | Replace inferred priority thirds with authored action mappings |
 | RE-PACK-01 | Complete native/WASM resource transport | implementation-needed | Version the pack for arbitrary resources, films, and EData |
 | RE-MSN-01 | Create Mission and Mission Status composites | untriaged | Trace constructors, legal-target predicates, and outcome routing |
@@ -114,9 +115,10 @@ routing, results, and strategic return. `EVT-02` owns Battle Alert entry;
 
 ## Immediate implementation order
 
-1. Decode and test the type-302 advisor frame format against known anchors.
-2. Trace SPT to BIN to frame and WAV selection for both factions.
-3. Extend staging and the runtime pack with typed resources, EData, dialogs,
+1. Trace SPT to BIN to frame and WAV selection for both factions on top of the
+   verified type-302 advisor idle-frame decoder and transport.
+2. Extend the decoder and transport to ALBRIEF and EMBRIEF.
+3. Extend staging and the runtime pack with EData, dialogs,
    voices, and media without weakening deterministic manifests.
 4. Rebuild the strategic shell from the recovered rectangles and original
    controls, then replace the sidebar with managed original object windows.

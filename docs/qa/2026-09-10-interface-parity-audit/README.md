@@ -38,3 +38,8 @@ commit as the verified implementation.
 
 Do not commit copyrighted game assets. Extraction and runtime-pack tooling must
 stage them from a contributor-owned installation.
+
+The first recovered implementation tranche now packages and renders the four
+original faction-advisor idle runs. See the
+[P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md).
+Full `CMD-07` action, voice, chrome, and shell integration remains open.

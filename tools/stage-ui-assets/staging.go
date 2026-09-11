@@ -59,6 +59,41 @@ func stageBitmapResources(resources []bitmapResource, outputDir string, force bo
 	return result, nil
 }
 
+func stageRawResources(resources []rawResource, outputDir string, force bool) (stageResult, error) {
+	seen := make(map[uint32]uint32, len(resources))
+	for _, resource := range resources {
+		if language, exists := seen[resource.ID]; exists {
+			return stageResult{}, fmt.Errorf("duplicate raw resource ID %d for languages %d and %d", resource.ID, language, resource.Language)
+		}
+		seen[resource.ID] = resource.Language
+	}
+
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return stageResult{}, fmt.Errorf("create output directory: %w", err)
+	}
+
+	result := stageResult{}
+	for _, resource := range resources {
+		path := filepath.Join(outputDir, fmt.Sprintf("%d.bin", resource.ID))
+		if existing, err := os.ReadFile(path); err == nil {
+			if bytes.Equal(existing, resource.Data) {
+				result.Skipped++
+				continue
+			}
+			if !force {
+				return result, fmt.Errorf("raw resource %d already exists with different contents (use --force to replace it)", resource.ID)
+			}
+		} else if !os.IsNotExist(err) {
+			return result, fmt.Errorf("read existing raw resource %d: %w", resource.ID, err)
+		}
+		if err := writeFileAtomically(path, resource.Data, 0o644); err != nil {
+			return result, fmt.Errorf("write raw resource %d: %w", resource.ID, err)
+		}
+		result.Written++
+	}
+	return result, nil
+}
+
 func writeFileAtomically(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
@@ -107,6 +142,24 @@ func stageTargets(sourceDir, outputDir string, targets []dllTarget, namedIDs map
 		summary.Written += result.Written
 		summary.Skipped += result.Skipped
 		fmt.Fprintf(stdout, "%s: %d BMPs (%d written, %d unchanged)\n", target.Filename, len(resources), result.Written, result.Skipped)
+
+		if target.ExpectedType302 > 0 {
+			rawResources, err := readPERawResources(dllPath, rtAdvisorFrame)
+			if err != nil {
+				return summary, fmt.Errorf("%s: %w", target.Filename, err)
+			}
+			if len(rawResources) != target.ExpectedType302 {
+				return summary, fmt.Errorf("%s: found %d type-302 resources, expected %d", target.Filename, len(rawResources), target.ExpectedType302)
+			}
+			rawResult, err := stageRawResources(rawResources, filepath.Join(outputDir, target.Directory, "TYPE302"), force)
+			if err != nil {
+				return summary, fmt.Errorf("%s: %w", target.Filename, err)
+			}
+			summary.Resources += len(rawResources)
+			summary.Written += rawResult.Written
+			summary.Skipped += rawResult.Skipped
+			fmt.Fprintf(stdout, "%s: %d type-302 frames (%d written, %d unchanged)\n", target.Filename, len(rawResources), rawResult.Written, rawResult.Skipped)
+		}
 	}
 	return summary, nil
 }

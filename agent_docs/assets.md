@@ -3,7 +3,7 @@ title: "Asset Pipeline"
 description: "HD upscaling, 3D model generation, and encyclopedia content pipelines"
 category: "agent-docs"
 created: 2026-03-13
-updated: 2026-04-14
+updated: 2026-09-10
 tags: [asset-pipeline, upscaling, 3d-models, audio, references]
 ---
 
@@ -31,7 +31,7 @@ Original BMPs from game's installed directories:
 | Characters (major) | ~6 | EData/ | 072-077 |
 | Characters (minor) | ~54 | EData/ | 078-137 |
 | Systems (planets) | ~200 | EData/ | 138+ |
-| DLL sprites | ~1500+ | GOKRES/STRATEGY/TACTICAL/COMMON/ALSPRITE/EMSPRITE.DLL | Resource IDs |
+| DLL UI | 2,303 BMPs and 3,988 advisor frames | GOKRES/STRATEGY/TACTICAL/COMMON/ALSPRITE/EMSPRITE.DLL | Resource IDs |
 
 **Prerequisite**: `data/base/EData/` must contain extracted BMPs from a legal game copy. Extracted game data also at `~/Desktop/Programming/star-wars-rebellion/GData/`.
 
@@ -225,6 +225,23 @@ Use `--source` or `--output` to override those default directories. Existing BMP
 are left unchanged when their contents match; use `--force` to replace differing
 files.
 
+### Advisor Frame Staging
+
+The same extractor also preserves the full type-302 droid corpus from an owned
+installation:
+
+| DLL | Standard BMP anchors | Type-302 frames | Path |
+|-----|---------------------:|----------------:|------|
+| ALSPRITE | 38 | 1,640 | `data/base/ui/alsprite-dll/` |
+| EMSPRITE | 34 | 2,348 | `data/base/ui/emsprite-dll/` |
+
+Native builds read these ignored files directly. Browser builds place the same
+bytes in `runtime.orpk`; the checked-in repository contains the decoder and
+packaging logic, never the copyrighted game resources. Standard BMP anchors
+provide the original indexed pixels and palette. Type-302 scanlines preserve
+unchanged pixels and add authored byte deltas to the remaining pixels, matching
+the original renderer.
+
 **Batch upscale command** (Vertex, all non-portrait packs):
 ```bash
 uv run scripts/vertex-upscale-batch.py              # all 2,231 BMPs
@@ -241,7 +258,7 @@ data/
 ├── base/              # Original game data (user-extracted, gitignored)
 │   ├─�� *.DAT
 ��   ├─�� EData/         # Original BMPs (EDATA.NNN, 3-digit zero-padded)
-│   ├── ui/            # Staged DLL BMPs: {dll-dir}/BMP/{resource_id}.bmp
+│   ├── ui/            # Staged BMP/{id}.bmp and TYPE302/{id}.bin resources
 │   └── TEXTSTRA.DLL
 ���── hd/                # AI-upscaled PNGs (generated, checked in)
 │   ├── EData/         # EDATA_NNN.png (underscore, PNG extension)

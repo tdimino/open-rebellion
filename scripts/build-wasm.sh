@@ -109,15 +109,17 @@ else
     echo "WARNING: COMMON.DLL not found in $ORIGINAL_GAME_DIR; cockpit SFX will remain silent."
 fi
 
-# ── Stage UI BMPs into web/data/ui/ ─────────────────────────────────────────
+# ── Stage UI resources into web/data/ui/ ────────────────────────────────────
 UI_SRC="$ROOT/data/base/ui"
 WEB_UI="$ROOT/web/data/ui"
 if [ -d "$UI_SRC" ]; then
-    echo "Copying staged UI BMPs to web/data/ui/…"
+    echo "Copying staged UI resources to web/data/ui/…"
     mkdir -p "$WEB_UI"
     cp -r "$UI_SRC"/. "$WEB_UI/"
     UI_COUNT=$(find "$WEB_UI" -name "*.bmp" 2>/dev/null | wc -l | tr -d ' ')
     echo "Staged $UI_COUNT UI BMPs in web/data/ui/"
+    ADVISOR_FRAME_COUNT=$(find "$WEB_UI" -path "*/TYPE302/*.bin" 2>/dev/null | wc -l | tr -d ' ')
+    echo "Staged $ADVISOR_FRAME_COUNT advisor frames in web/data/ui/"
 
     # Generate BMP manifest for WASM pre-fetch (HTTP can't enumerate dirs)
     echo "Generating BMP manifest for WASM…"

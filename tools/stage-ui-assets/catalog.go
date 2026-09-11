@@ -1,9 +1,10 @@
 package main
 
 type dllTarget struct {
-	Filename  string
-	Directory string
-	Expected  int
+	Filename        string
+	Directory       string
+	Expected        int
+	ExpectedType302 int
 }
 
 var uiDLLTargets = []dllTarget{
@@ -11,6 +12,8 @@ var uiDLLTargets = []dllTarget{
 	{Filename: "GOKRES.DLL", Directory: "gokres-dll", Expected: 580},
 	{Filename: "STRATEGY.DLL", Directory: "strategy-dll", Expected: 1042},
 	{Filename: "TACTICAL.DLL", Directory: "tactical-dll", Expected: 288},
+	{Filename: "ALSPRITE.DLL", Directory: "alsprite-dll", Expected: 38, ExpectedType302: 1640},
+	{Filename: "EMSPRITE.DLL", Directory: "emsprite-dll", Expected: 34, ExpectedType302: 2348},
 }
 
 var namedBitmapIDs = map[string]uint32{

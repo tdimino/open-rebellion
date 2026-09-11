@@ -365,17 +365,29 @@ fn install_runtime_pack(
         .unwrap_or_default();
     let bitmap_count = pack.bitmaps.len();
     let audio_file_count = pack.audio_files.len();
+    let advisor_frame_count = pack.advisor_frames.len();
     if bitmap_count == 0 {
         return Err("runtime pack contains no UI bitmaps".to_string());
     }
 
+    let advisor_bitmaps = pack
+        .bitmaps
+        .iter()
+        .filter(|(key, _)| {
+            key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/")
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+
     rebellion_data::set_string_table(string_table);
     rebellion_data::set_file_cache(pack.game_files);
+    rebellion_render::set_advisor_asset_cache(pack.advisor_frames, advisor_bitmaps);
     rebellion_render::set_bmp_cache(pack.bitmaps);
     macroquad::logging::info!(
-        "runtime_asset_pack loaded game_files={} ui_bitmaps={} audio_files={} bytes={}",
+        "runtime_asset_pack loaded game_files={} ui_bitmaps={} advisor_frames={} audio_files={} bytes={}",
         game_file_count,
         bitmap_count,
+        advisor_frame_count,
         audio_file_count,
         bytes.len()
     );
@@ -786,10 +798,8 @@ async fn main() {
     // ── Droid advisor ──────────────────────────────────────────────────────
     let mut advisor_state = AdvisorState::new(AdvisorFaction::Alliance);
     {
-        let sprite_dir = PathBuf::from("assets/references/ref-ui/07-droid-advisors");
-        if sprite_dir.exists() {
-            advisor_state.set_sprite_dir(&sprite_dir);
-        }
+        let sprite_dir = gdata_path.join("ui");
+        advisor_state.set_sprite_dir(&sprite_dir);
     }
 
     // ── Audio state ─────────────────────────────────────────────────────────
@@ -2632,11 +2642,8 @@ async fn main() {
                                 // Sync advisor faction and send greeting
                                 advisor_state =
                                     AdvisorState::new(AdvisorFaction::from(cockpit_state.faction));
-                                let sprite_dir =
-                                    PathBuf::from("assets/references/ref-ui/07-droid-advisors");
-                                if sprite_dir.exists() {
-                                    advisor_state.set_sprite_dir(&sprite_dir);
-                                }
+                                let sprite_dir = gdata_path.join("ui");
+                                advisor_state.set_sprite_dir(&sprite_dir);
                                 advisor_greet(&mut advisor_state);
 
                                 game_mode = GameMode::Galaxy;
@@ -3531,7 +3538,7 @@ async fn main() {
                             } else {
                                 CockpitFaction::Empire
                             };
-                            advisor_state.faction = AdvisorFaction::from(cockpit_state.faction);
+                            advisor_state.set_faction(AdvisorFaction::from(cockpit_state.faction));
                             map_state = GalaxyMapState::default();
                             officers_state = OfficersState::default();
                             fleets_state = FleetsState::default();

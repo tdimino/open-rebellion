@@ -25,13 +25,13 @@ func runCLI(args []string, stdout, stderr io.Writer, targets []dllTarget) error 
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "Staged %d BMPs from %d DLLs (%d written, %d unchanged)\n", summary.Resources, summary.DLLs, summary.Written, summary.Skipped)
+		fmt.Fprintf(stdout, "Staged %d UI resources from %d DLLs (%d written, %d unchanged)\n", summary.Resources, summary.DLLs, summary.Written, summary.Skipped)
 	}
 
 	verified, err := verifyTargets(*outputDir, targets, stdout)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "Verified %d BMPs across %d DLLs\n", verified.Resources, verified.DLLs)
+	fmt.Fprintf(stdout, "Verified %d UI resources across %d DLLs\n", verified.Resources, verified.DLLs)
 	return nil
 }

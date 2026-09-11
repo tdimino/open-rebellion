@@ -1,18 +1,19 @@
 # stage-ui-assets
 
-Extract the original Star Wars Rebellion UI bitmaps into the directory layout
-Open Rebellion loads at runtime. One command stages 2,231 BMPs from four game
-DLLs and checks the resulting files. It uses only the Go standard library: no
-Python environment, third-party packages, or Windows runtime is needed.
+Extract original Star Wars Rebellion UI resources into the directory layout
+Open Rebellion loads at runtime. One command stages 2,303 standard BMPs and
+3,988 custom advisor frames from six game DLLs, then checks all 6,291 files. It
+uses only the Go standard library. No Python environment, third-party package,
+or Windows runtime is needed.
 
-The extractor preserves each resource's original DIB bytes, including its
-palette and pixel data, and adds the BMP file header. It does not resize or
-re-encode the artwork.
+For standard bitmaps, the extractor preserves the original DIB bytes and adds a
+BMP file header. For advisor animations, it preserves each custom PE type-302
+resource byte for byte. It does not resize or re-encode the artwork.
 
 ## Requirements
 
 - Go 1.22 or later to build or use `go run`.
-- Your own copy of the four original game DLLs listed below, together in one
+- Your own copy of the six original game DLLs listed below, together in one
   source directory. Extraction reads these files without modifying them.
 
 The compiled executable does not require Go to run. Game files are not included
@@ -51,9 +52,9 @@ directory—not from the executable's location. The output directory is created
 as needed. A successful extraction ends with:
 
 ```text
-Staged 2231 BMPs from 4 DLLs (2231 written, 0 unchanged)
+Staged 6291 UI resources from 6 DLLs (6291 written, 0 unchanged)
 ...
-Verified 2231 BMPs across 4 DLLs
+Verified 6291 UI resources across 6 DLLs
 ```
 
 Write and unchanged counts depend on what is already staged.
@@ -64,12 +65,17 @@ Each DLL has its own directory, so equal resource IDs in different DLLs do not
 collide. Numeric resource IDs become filenames, for example:
 `data/base/ui/strategy-dll/BMP/900.bmp`.
 
-| Required source file | Expected BMPs | Directory under `--output` |
-| --- | ---: | --- |
-| `COMMON.DLL` | 321 | `common-dll/BMP/` |
-| `GOKRES.DLL` | 580 | `gokres-dll/BMP/` |
-| `STRATEGY.DLL` | 1,042 | `strategy-dll/BMP/` |
-| `TACTICAL.DLL` | 288 | `tactical-dll/BMP/` |
+| Required source file | Standard BMPs | Type-302 frames | Directory under `--output` |
+| --- | ---: | ---: | --- |
+| `COMMON.DLL` | 321 | 0 | `common-dll/` |
+| `GOKRES.DLL` | 580 | 0 | `gokres-dll/` |
+| `STRATEGY.DLL` | 1,042 | 0 | `strategy-dll/` |
+| `TACTICAL.DLL` | 288 | 0 | `tactical-dll/` |
+| `ALSPRITE.DLL` | 38 | 1,640 | `alsprite-dll/` |
+| `EMSPRITE.DLL` | 34 | 2,348 | `emsprite-dll/` |
+
+Standard resources are written to `BMP/{id}.bmp`; custom advisor frames are
+written unchanged to `TYPE302/{id}.bin`.
 
 The tool also maps seven known string-named resources to the numeric filenames
 used by the runtime catalog:
@@ -84,8 +90,8 @@ used by the runtime catalog:
 | `DATA_BUTTON_UP_FIGHTERGROUP_TACTICS` | 40864 |
 | `DATA_BUTTON_DN_FIGHTERGROUP_TACTICS` | 40936 |
 
-Unknown named resources and duplicate IDs within a DLL—including IDs shared by
-multiple languages—cause an error rather than selecting one silently. All four
+Unknown named resources and duplicate IDs within a DLL, including IDs shared by
+multiple languages—cause an error rather than selecting one silently. All six
 DLLs and their expected counts are fixed; there is no single-DLL selection flag.
 
 ## Verify or refresh existing assets
@@ -97,13 +103,14 @@ files:
 ./stage-ui-assets --verify --output ./data/base/ui
 ```
 
-Verification checks each DLL directory's expected `.bmp` count, canonical numeric
-filenames, BMP signature, declared file size, DIB header size, and pixel-offset
-bounds. It ignores subdirectories and files without the lowercase `.bmp`
-extension. `--source` and `--force` have no effect with `--verify`.
+Verification checks each DLL directory's expected resource counts and canonical
+numeric filenames. It validates BMP signatures, declared sizes, DIB headers,
+and pixel offsets. It also validates every type-302 header, scanline table,
+payload size, unchanged skip, additive run, and row boundary.
+`--source` and `--force` have no effect with `--verify`.
 
 Verification does **not** compare files against the DLLs, check an exact inventory
-of resource IDs, decode every pixel, or prove that the game displays the assets.
+of resource IDs, apply the advisor palette, or prove that the game displays the assets.
 For a byte-for-byte comparison with the source-derived BMPs, rerun extraction:
 
 ```sh
@@ -127,7 +134,7 @@ make the final count check fail even with `--force`.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--source` | `data/base` | Directory containing the four DLLs |
+| `--source` | `data/base` | Directory containing the six DLLs |
 | `--output` | `data/base/ui` | Root of the staged asset directories |
 | `--verify` | `false` | Check existing output without extraction |
 | `--force` | `false` | Replace files whose contents differ |
@@ -145,10 +152,12 @@ Successful runs and help exit with status 0. Errors exit with status 1 and an
 - **Verification fails:** inspect the reported file or directory. Rerun
   extraction to restore missing files; use `--force` for differing files.
 
-This tool stages bitmap resources only. It does not extract sound, animation,
-DAT tables, or EData images, and it does not generate the browser manifest or
-runtime pack. The repository's [WASM build script](../../scripts/build-wasm.sh)
-consumes `data/base/ui/` for browser packaging. See the
+This tool stages standard bitmaps and advisor type-302 animation frames. It does
+not extract sound, SPT/BIN/FDT control data, briefing animation, tactical meshes
+or textures, DAT tables, or EData images. It does not generate the browser
+manifest or runtime pack. The repository's
+[WASM build script](../../scripts/build-wasm.sh) consumes `data/base/ui/` for
+browser packaging. See the
 [asset guide](../../agent_docs/assets.md) for the broader pipeline.
 
 ## Development checks
@@ -160,7 +169,8 @@ go test -count=1 ./tools/stage-ui-assets
 go vet ./tools/stage-ui-assets
 ```
 
-Tests construct synthetic PE files and DIB data, so they run without proprietary
-game files. They cover resource traversal, named-ID mappings, BMP headers,
-runtime output paths, duplicate-ID rejection, preserving or replacing existing
-files, temporary-file cleanup, and CLI staging with verification.
+Tests construct synthetic PE files, DIB data, and type-302 frames, so they run
+without proprietary game files. They cover resource traversal, named-ID
+mappings, BMP headers, sparse-frame validation, dimension limits, runtime output
+paths, duplicate-ID rejection, preserving or replacing existing files,
+temporary-file cleanup, and CLI staging with verification.

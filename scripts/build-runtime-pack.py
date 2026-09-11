@@ -11,12 +11,13 @@ from pathlib import Path
 
 
 MAGIC = b"ORPK"
-VERSION = 1
+VERSION = 2
 HEADER = struct.Struct("<4sHHI")
 ENTRY_HEADER = struct.Struct("<BHI")
 KIND_GAME_DATA = 0
 KIND_BITMAP = 1
 KIND_AUDIO = 2
+KIND_ADVISOR_FRAME = 3
 
 
 @dataclass(frozen=True)
@@ -40,13 +41,20 @@ def collect_entries(
 
     for dll_dir in sorted(ui_dir.iterdir(), key=lambda item: item.name):
         bmp_dir = dll_dir / "BMP"
-        if not bmp_dir.is_dir():
-            continue
-        for path in sorted(bmp_dir.glob("*.bmp"), key=lambda item: int(item.stem)):
-            int(path.stem)  # Reject non-numeric resource names before writing.
-            entries.append(
-                Entry(KIND_BITMAP, f"{dll_dir.name}/{path.stem}", path)
-            )
+        if bmp_dir.is_dir():
+            for path in sorted(bmp_dir.glob("*.bmp"), key=lambda item: int(item.stem)):
+                int(path.stem)  # Reject non-numeric resource names before writing.
+                entries.append(
+                    Entry(KIND_BITMAP, f"{dll_dir.name}/{path.stem}", path)
+                )
+
+        frame_dir = dll_dir / "TYPE302"
+        if frame_dir.is_dir():
+            for path in sorted(frame_dir.glob("*.bin"), key=lambda item: int(item.stem)):
+                int(path.stem)
+                entries.append(
+                    Entry(KIND_ADVISOR_FRAME, f"{dll_dir.name}/{path.stem}", path)
+                )
 
     if audio_dir is not None and audio_dir.is_dir():
         for path in sorted(audio_dir.rglob("*.wav")):
@@ -143,9 +151,10 @@ def main() -> None:
     game_files = sum(entry.kind == KIND_GAME_DATA for entry in entries)
     bitmaps = sum(entry.kind == KIND_BITMAP for entry in entries)
     audio_files = sum(entry.kind == KIND_AUDIO for entry in entries)
+    advisor_frames = sum(entry.kind == KIND_ADVISOR_FRAME for entry in entries)
     print(
         f"Runtime pack: {game_files} game files + {bitmaps} bitmaps + "
-        f"{audio_files} audio files, "
+        f"{advisor_frames} advisor frames + {audio_files} audio files, "
         f"{written} bytes ({args.output})"
     )
 

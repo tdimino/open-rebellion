@@ -9,6 +9,7 @@ import (
 
 const (
 	rtBitmap             = uint32(2)
+	rtAdvisorFrame       = uint32(302)
 	resourceSubdirectory = uint32(0x80000000)
 )
 
@@ -16,6 +17,12 @@ type bitmapResource struct {
 	ID       uint32
 	Language uint32
 	DIB      []byte
+}
+
+type rawResource struct {
+	ID       uint32
+	Language uint32
+	Data     []byte
 }
 
 type resourceDirectoryEntry struct {
@@ -77,6 +84,68 @@ func parseBitmapResources(resourceData []byte, resolveRVA func(uint32, uint32) (
 					ID:       resourceID,
 					Language: languageEntry.name,
 					DIB:      append([]byte(nil), dib...),
+				})
+			}
+		}
+	}
+
+	return resources, nil
+}
+
+func parseRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32) ([]rawResource, error) {
+	types, err := readResourceDirectory(resourceData, 0)
+	if err != nil {
+		return nil, fmt.Errorf("read resource types: %w", err)
+	}
+
+	var resources []rawResource
+	for _, resourceType := range types {
+		if resourceType.name&resourceSubdirectory != 0 || resourceType.name != resourceTypeID {
+			continue
+		}
+		if resourceType.target&resourceSubdirectory == 0 {
+			return nil, fmt.Errorf("resource type %d does not point to a directory", resourceTypeID)
+		}
+
+		ids, err := readResourceDirectory(resourceData, resourceType.target&^resourceSubdirectory)
+		if err != nil {
+			return nil, fmt.Errorf("read resource type %d IDs: %w", resourceTypeID, err)
+		}
+		for _, idEntry := range ids {
+			if idEntry.name&resourceSubdirectory != 0 {
+				return nil, fmt.Errorf("resource type %d has unsupported named entry", resourceTypeID)
+			}
+			resourceID := idEntry.name
+			if idEntry.target&resourceSubdirectory == 0 {
+				return nil, fmt.Errorf("resource type %d ID %d does not point to a language directory", resourceTypeID, resourceID)
+			}
+
+			languages, err := readResourceDirectory(resourceData, idEntry.target&^resourceSubdirectory)
+			if err != nil {
+				return nil, fmt.Errorf("read languages for resource type %d ID %d: %w", resourceTypeID, resourceID, err)
+			}
+			for _, languageEntry := range languages {
+				if languageEntry.name&resourceSubdirectory != 0 {
+					continue
+				}
+				if languageEntry.target&resourceSubdirectory != 0 {
+					return nil, fmt.Errorf("resource type %d ID %d language %d points to a directory", resourceTypeID, resourceID, languageEntry.name)
+				}
+
+				dataEntryOffset := languageEntry.target
+				if uint64(dataEntryOffset)+16 > uint64(len(resourceData)) {
+					return nil, fmt.Errorf("resource type %d ID %d language %d has an out-of-bounds data entry", resourceTypeID, resourceID, languageEntry.name)
+				}
+				dataRVA := binary.LittleEndian.Uint32(resourceData[dataEntryOffset : dataEntryOffset+4])
+				dataSize := binary.LittleEndian.Uint32(resourceData[dataEntryOffset+4 : dataEntryOffset+8])
+				data, err := resolveRVA(dataRVA, dataSize)
+				if err != nil {
+					return nil, fmt.Errorf("read resource type %d ID %d language %d: %w", resourceTypeID, resourceID, languageEntry.name, err)
+				}
+				resources = append(resources, rawResource{
+					ID:       resourceID,
+					Language: languageEntry.name,
+					Data:     append([]byte(nil), data...),
 				})
 			}
 		}
@@ -156,6 +225,30 @@ func readPEBitmapResources(path string, namedIDs map[string]uint32) ([]bitmapRes
 	return parseBitmapResources(resourceData, func(rva, size uint32) ([]byte, error) {
 		return readPERange(file, rva, size)
 	}, namedIDs)
+}
+
+func readPERawResources(path string, resourceTypeID uint32) ([]rawResource, error) {
+	file, err := pe.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open PE file: %w", err)
+	}
+	defer file.Close()
+
+	resourceDirectory, err := peDataDirectory(file, 2)
+	if err != nil {
+		return nil, err
+	}
+	if resourceDirectory.VirtualAddress == 0 || resourceDirectory.Size == 0 {
+		return nil, fmt.Errorf("PE file has no resource directory")
+	}
+
+	resourceData, err := readPERange(file, resourceDirectory.VirtualAddress, resourceDirectory.Size)
+	if err != nil {
+		return nil, fmt.Errorf("read resource directory: %w", err)
+	}
+	return parseRawResources(resourceData, func(rva, size uint32) ([]byte, error) {
+		return readPERange(file, rva, size)
+	}, resourceTypeID)
 }
 
 func peDataDirectory(file *pe.File, index int) (pe.DataDirectory, error) {

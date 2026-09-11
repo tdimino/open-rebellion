@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Tests-574%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-582%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>
@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-10):** All 574 workspace tests pass. The original shuttle menu, save v13, native/WASM replay, troop dispatch, occupation, and asymmetric victory contract are verified. The in-campaign interface does not yet match the original; replacement controls, system windows, galaxy drawing, and missing browser droids are tracked in the [interface parity audit](docs/qa/2026-09-10-interface-parity-audit/). Capture/evasion, multiplayer, and release acceptance remain open in the [functionality audit](docs/qa/2026-09-08-full-functionality-audit/).
+> **Verification (2026-09-10):** All 582 workspace tests pass. The shuttle menu, save v13, native/WASM replay, troop dispatch, occupation, victory contract, and original faction-advisor idle frames are verified. The remaining replacement controls, galaxy drawing, system windows, advisor actions and voice, capture/evasion, multiplayer, and release gates are tracked in the [interface](docs/qa/2026-09-10-interface-parity-audit/) and [functionality](docs/qa/2026-09-08-full-functionality-audit/) audits.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|
@@ -60,7 +60,7 @@ Major implemented areas (each remains subject to the linked acceptance audit):
 - **AI Overhaul** — Distance-based transit, per-fleet targeting with deconfliction, ControlKind state machine, faction-asymmetric doctrine, role-based character AI
 - **AI Behavior Coverage** — Config-driven AI (16 tunable params), 18/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance
 - **UI Reconstruction** — Original shuttle menu verified; campaign and tactical replacements are cataloged for bitmap-driven reconstruction
-- **Story and Runtime Integration** — Cutscene state machine (8 story triggers), Emperor combat modifier, advisor BIN v2 decoder (99% parse rate), mission telemetry
+- **Story and Runtime Integration** — Cutscene state machine, Emperor combat modifier, original type-302 advisor idle frames, mission telemetry
 - **Ghidra RE corpus** — [5,127 functions decompiled](https://tdimino.github.io/open-rebellion/) from REBEXE.EXE, 111 GNPRTB parameters mapped, C++ class hierarchy reconstructed
 
 ## You Will Need
@@ -182,7 +182,7 @@ These rows record delivered implementation work, not final parity or release acc
 | **Release Groundwork** | Implemented | Local release packaging, example mod, vendored WASM dependencies |
 | **AI Behavior Coverage** | Implemented | 18/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance |
 | **UI Reconstruction** | In Progress | Shuttle menu verified; 43 original surface families and 370 references cataloged for exact reconstruction |
-| **Story and Runtime Integration** | Implemented | Cutscene state machine, Emperor modifier, advisor BIN v2 (99%), mission telemetry |
+| **Story and Runtime Integration** | Implemented | Cutscene state machine, Emperor modifier, type-302 advisor idle frames, mission telemetry |
 | **HD Visual Polish** | In Progress | UltraSharp V2 upscaling—235/2,231 DLL BMPs done |
 
 **Ghidra RE corpus.** 5,127 functions decompiled from `REBEXE.EXE`, combat formulas decoded, 111 GNPRTB parameters mapped, and the C++ class hierarchy reconstructed. See `ghidra/notes/` for the implementation-focused corpus (7 scholar documents, 4,179 lines).
@@ -208,7 +208,8 @@ The local extraction inventory converts the original game's resource DLLs and me
 | Resource | Count | Format | Source |
 |----------|-------|--------|--------|
 | Game data | 51 files | DAT → JSON | dat-dumper (round-trip validated) |
-| UI images | 2,441 extracted; 2,231 runtime-staged | BMP | 9 resource DLLs |
+| UI images | 2,441 extracted; 2,303 runtime-staged | BMP | 9 resource DLLs |
+| Advisor animation | 3,988 runtime-staged | Type-302 indexed deltas | ALSPRITE/EMSPRITE.DLL |
 | DLL data resources | 3,223 files | BIN/data | 9 resource DLLs; includes the text subsets below |
 | Voice lines | 285 WAVs | WAV | VOICEFXA/VOICEFXE.DLL |
 | Cutscene videos | 15 files | SMK → WebM | MDATA/ via ffmpeg |

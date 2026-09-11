@@ -1869,7 +1869,7 @@
     {"id":"P31","name":"Save/load/delete","status":"pending"},
     {"id":"P32","name":"Mods","status":"pending"},
     {"id":"P33","name":"Audio","status":"pending"},
-    {"id":"P34","name":"Droid advisors","status":"fail","interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["WASM returns empty advisor frame pools","original embedded droid chrome and complete authoritative sequences are absent"]},
+    {"id":"P34","name":"Droid advisors","status":"partial","verified_tranches":["P44_RE-ADV-01_authentic_idle_frames"],"evidence":"docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md","interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["replacement strategic controls overlap lower advisor apertures","original embedded chrome, Agent menus, action timing, preemption, voice, and briefing sequences remain absent"]},
     {"id":"P35","name":"Encyclopedia and EData","status":"fail","interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["WASM returns no encyclopedia texture","original index/topic composition and categories are incomplete"]},
     {"id":"P36","name":"Bitmap and interface sweep","status":"fail","interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","surface_families":43,"retained_reference_images":370,"known_visual_failures":["visible invented and unknown elements exceed zero","required apertures are blank","original resource identity and geometry are incomplete"]},
     {"id":"P37","name":"Campaign acceptance","status":"pending"},

@@ -32,6 +32,26 @@ func TestStageBitmapResourcesWritesNumericBMPFilename(t *testing.T) {
 	}
 }
 
+func TestStageRawResourcesWritesNumericBinFilename(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "TYPE302")
+	resources := []rawResource{{ID: 2002, Language: 1033, Data: validType302Fixture()}}
+
+	result, err := stageRawResources(resources, outputDir, false)
+	if err != nil {
+		t.Fatalf("stageRawResources() error = %v", err)
+	}
+	if result.Written != 1 || result.Skipped != 0 {
+		t.Errorf("result = %+v, want 1 written and 0 skipped", result)
+	}
+	got, err := os.ReadFile(filepath.Join(outputDir, "2002.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, resources[0].Data) {
+		t.Error("staged type-302 resource does not match source bytes")
+	}
+}
+
 func TestStageBitmapResourcesSkipsIdenticalExistingFile(t *testing.T) {
 	dib := make([]byte, 44)
 	binary.LittleEndian.PutUint32(dib[0:4], 40)

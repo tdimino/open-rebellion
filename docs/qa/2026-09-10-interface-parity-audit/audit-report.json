@@ -55,7 +55,7 @@
     "strategy_cockpit": "fail",
     "galaxy_display": "fail",
     "system_navigation": "fail",
-    "wasm_advisors": "fail",
+    "wasm_advisors": "partial_original_idle_runs_visible_actions_voice_chrome_and_shell_open",
     "wasm_encyclopedia_art": "fail",
     "tactical_interface": "fail",
     "required_baseline_cells": "544_pending_or_open",
@@ -92,17 +92,23 @@
     {
       "id": "UIP-F-004",
       "severity": "P0",
-      "status": "fail",
-      "title": "WASM advisor frame loader returns empty frame pools",
-      "evidence": ["crates/rebellion-render/src/advisor.rs:830"],
+      "status": "partial",
+      "title": "Original advisor idle runs render in WASM; unobscured shell integration and authored behavior remain open",
+      "evidence": [
+        "crates/rebellion-render/src/advisor.rs",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md"
+      ],
       "affected_surfaces": ["CMD-07"]
     },
     {
       "id": "UIP-F-005",
       "severity": "P0",
-      "status": "fail",
-      "title": "Browser pack omits advisor, briefing, dialog, and encyclopedia families",
-      "evidence": ["scripts/build-runtime-pack.py:29"],
+      "status": "partial",
+      "title": "Browser pack includes ALSPRITE and EMSPRITE bitmap/type-302 resources; briefing, dialog, encyclopedia, advisor-control, and voice families remain omitted",
+      "evidence": [
+        "scripts/build-runtime-pack.py",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/advisor-droids-r4/verification.json"
+      ],
       "affected_surfaces": ["PRE-03", "PRE-05", "CMD-07", "OBJ-01"]
     },
     {
@@ -215,5 +221,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Execute RE-ADV-01 and RE-ADV-02 to decode the original advisor corpus, then implement RE-STR-01 through RE-GID-01 for the exact strategic shell, controls, system navigation, and GID."
+  "next_action": "Execute RE-ADV-02 for authored advisor actions, cadence, and voice; then implement RE-STR-01 through RE-GID-01 for the exact strategic shell, unobscured droid apertures, controls, system navigation, and GID."
 }

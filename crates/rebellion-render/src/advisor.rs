@@ -1,33 +1,19 @@
-//! Droid Advisor System — animated faction advisors that react to game events.
+//! Droid advisor system for animated faction advisors that react to game events.
 //!
 //! Alliance: C-3PO (67×116) + R2-D2 (47×69) animated sprites from ALSPRITE.DLL.
-//! Empire: Imperial protocol droid (106×133) from EMSPRITE.DLL.
+//! Empire: IMP-22 (106×133) + SD-7 (101×79) animated sprites from EMSPRITE.DLL.
 //!
-//! Animation frames are BMP files extracted from the DLLs and staged under
-//! `assets/references/ref-ui/07-droid-advisors/{alliance,empire}/`. The original
-//! game also ships ~1,400 BIN control files with frame ordering data; we now
-//! parse those BIN sequences and let them drive frame order/sequence length.
+//! The dependency-free asset tool preserves the DLLs' standard BMP anchors and
+//! all custom PE type-302 frames. `decode_type302_frame` reproduces the original
+//! 17-byte header, scanline offsets, unchanged skips, and additive pixel runs
+//! recovered from `FUN_0041c6c0`, `FUN_0041c7a0`, and `FUN_0041c930`. Native and WASM use
+//! the same decoded bytes and the exact apertures recovered from
+//! `FUN_0042adb0`.
 //!
-//! # BIN format variants (cascading decoder)
-//!
-//! Hex analysis of the ~1,500 BIN files reveals four distinct binary formats.
-//! The cascading decoder (`parse_advisor_bin_cascade`) tries each in priority
-//! order and returns the first successful parse:
-//!
-//! | Format | Layout (LE u16s)                       | Size  | Pct  | Description |
-//! |--------|----------------------------------------|-------|------|-------------|
-//! | v1     | `count \| id[0] \| … \| id[count-1]`  | 2+2N  | ~12% | Explicit frame ID list (original simple format) |
-//! | v2     | `count \| base \| 0 \| 0`              | 8     | ~45% | Sequential range: `[base..base+count)` |
-//! | v3     | `0 \| ref_id \| 9 \| count \| base`    | 10    | ~38% | Referenced sequential range with BMP resource base |
-//! | v4     | `0 \| ref_id \| bmp_id`                | 6     | ~4%  | Single-frame BMP reference |
-//!
-//! v1/v2 frame IDs target an internal DLL resource index (1301-range) and still
-//! use modulo mapping over the sorted BMP pool. v3/v4 `base`/`bmp_id` values
-//! are literal BMP resource IDs (2001+ range) and can be looked up directly via
-//! the `bmp_resource_ids` map when available.
-//!
-//! Remaining ~1% of files (2-byte stubs, 4-byte zero-prefix stubs) are too
-//! small to carry useful animation data and are silently skipped.
+//! The current visible idle runs are authoritative resources. Exact SPT/BIN/FDT
+//! action selection, cadence, preemption, and sound mapping remain a separate
+//! parity task. The legacy cascading BIN parser below is retained only as a
+//! development fallback and must not be treated as authored action proof.
 //!
 //! # Advisor triggers
 //!
@@ -40,10 +26,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use egui_macroquad::egui::{self, TextureHandle};
-
-#[cfg(not(target_arch = "wasm32"))]
-use egui_macroquad::egui::TextureOptions;
+use egui_macroquad::egui::{self, TextureHandle, TextureOptions};
 
 use crate::cockpit::CockpitFaction;
 
@@ -118,6 +101,328 @@ impl AdvisorMessage {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_FRAME_INTERVAL: f32 = 0.15;
+const TYPE302_HEADER_LEN: usize = 17;
+const MAX_TYPE302_WIDTH: usize = 640;
+const MAX_TYPE302_HEIGHT: usize = 480;
+const MAX_TYPE302_PIXELS: usize = MAX_TYPE302_WIDTH * MAX_TYPE302_HEIGHT;
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+struct WasmAdvisorAssets {
+    frames: HashMap<String, Vec<u8>>,
+    bitmaps: HashMap<String, Vec<u8>>,
+}
+
+#[cfg(target_arch = "wasm32")]
+static WASM_ADVISOR_ASSETS: std::sync::LazyLock<std::sync::Mutex<WasmAdvisorAssets>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(WasmAdvisorAssets::default()));
+
+/// Install the custom advisor resources unpacked by the browser runtime pack.
+#[cfg(target_arch = "wasm32")]
+pub fn set_advisor_asset_cache(
+    frames: HashMap<String, Vec<u8>>,
+    bitmaps: HashMap<String, Vec<u8>>,
+) {
+    *WASM_ADVISOR_ASSETS.lock().unwrap() = WasmAdvisorAssets { frames, bitmaps };
+}
+
+/// Exact decoded pixels from one original PE type-302 sparse frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedAdvisorFrame {
+    pub width: usize,
+    pub height: usize,
+    pub indices: Vec<u8>,
+    pub rgba: Vec<u8>,
+}
+
+/// Indexed base bitmap used by the original additive type-302 renderer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdvisorFrameBase {
+    pub width: usize,
+    pub height: usize,
+    pub indices: Vec<u8>,
+    pub palette: Vec<[u8; 3]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdvisorFrameError {
+    TruncatedHeader {
+        actual_len: usize,
+    },
+    InvalidDimensions {
+        width: usize,
+        height: usize,
+    },
+    BaseDimensionsMismatch {
+        frame_width: usize,
+        frame_height: usize,
+        base_width: usize,
+        base_height: usize,
+    },
+    SizeMismatch {
+        declared: usize,
+        actual: usize,
+    },
+    RowOffsetOutOfBounds {
+        row: usize,
+        offset: usize,
+    },
+    TruncatedRun {
+        row: usize,
+        x: usize,
+    },
+    RowOverflow {
+        row: usize,
+        x: usize,
+        count: usize,
+    },
+    PaletteTooSmall {
+        index: usize,
+        available: usize,
+    },
+    InvalidAnchorBitmap,
+}
+
+/// Decode the sparse scanline format loaded by original functions
+/// `FUN_0041c6c0`, `FUN_0041c7a0`, and `FUN_0041c930`.
+///
+/// Each scanline begins at its authored little-endian offset and alternates an
+/// unchanged-pixel skip count with a literal run of 8-bit values. The original
+/// renderer adds each literal byte to the corresponding anchor pixel with
+/// wrapping arithmetic before palette lookup. The resource is a delta, not a
+/// standalone transparent image.
+pub fn decode_type302_frame(
+    bytes: &[u8],
+    base: &AdvisorFrameBase,
+) -> Result<DecodedAdvisorFrame, AdvisorFrameError> {
+    if bytes.len() < TYPE302_HEADER_LEN {
+        return Err(AdvisorFrameError::TruncatedHeader {
+            actual_len: bytes.len(),
+        });
+    }
+
+    let width = u16::from_le_bytes([bytes[0], bytes[1]]) as usize;
+    let height = u16::from_le_bytes([bytes[2], bytes[3]]) as usize;
+    let declared = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    if width == 0
+        || height == 0
+        || width > MAX_TYPE302_WIDTH
+        || height > MAX_TYPE302_HEIGHT
+        || width.saturating_mul(height) > MAX_TYPE302_PIXELS
+    {
+        return Err(AdvisorFrameError::InvalidDimensions { width, height });
+    }
+    if width != base.width || height != base.height {
+        return Err(AdvisorFrameError::BaseDimensionsMismatch {
+            frame_width: width,
+            frame_height: height,
+            base_width: base.width,
+            base_height: base.height,
+        });
+    }
+
+    let payload_start = TYPE302_HEADER_LEN
+        .checked_add(
+            height
+                .checked_mul(4)
+                .ok_or(AdvisorFrameError::InvalidDimensions { width, height })?,
+        )
+        .ok_or(AdvisorFrameError::InvalidDimensions { width, height })?;
+    let payload = bytes
+        .get(payload_start..)
+        .ok_or(AdvisorFrameError::SizeMismatch {
+            declared,
+            actual: bytes.len().saturating_sub(payload_start),
+        })?;
+    if payload.len() != declared {
+        return Err(AdvisorFrameError::SizeMismatch {
+            declared,
+            actual: payload.len(),
+        });
+    }
+
+    let pixel_count = width
+        .checked_mul(height)
+        .ok_or(AdvisorFrameError::InvalidDimensions { width, height })?;
+    if base.indices.len() != pixel_count {
+        return Err(AdvisorFrameError::InvalidAnchorBitmap);
+    }
+    let mut indices = base.indices.clone();
+    for row in 0..height {
+        let offset_start = TYPE302_HEADER_LEN + row * 4;
+        let offset = u32::from_le_bytes([
+            bytes[offset_start],
+            bytes[offset_start + 1],
+            bytes[offset_start + 2],
+            bytes[offset_start + 3],
+        ]) as usize;
+        if offset >= payload.len() {
+            return Err(AdvisorFrameError::RowOffsetOutOfBounds { row, offset });
+        }
+
+        let mut cursor = offset;
+        let mut x = 0usize;
+        let mut literal = false;
+        while x < width {
+            let count = *payload
+                .get(cursor)
+                .ok_or(AdvisorFrameError::TruncatedRun { row, x })?
+                as usize;
+            cursor += 1;
+            if x + count > width {
+                return Err(AdvisorFrameError::RowOverflow { row, x, count });
+            }
+            if literal {
+                let deltas = payload
+                    .get(cursor..cursor + count)
+                    .ok_or(AdvisorFrameError::TruncatedRun { row, x })?;
+                for (run_x, &delta) in deltas.iter().enumerate() {
+                    let destination = row * width + x + run_x;
+                    indices[destination] = indices[destination].wrapping_add(delta);
+                }
+                cursor += count;
+            }
+            x += count;
+            literal = !literal;
+        }
+    }
+
+    indexed_frame(width, height, &indices, &base.palette)
+}
+
+fn indexed_frame(
+    width: usize,
+    height: usize,
+    indices: &[u8],
+    palette: &[[u8; 3]],
+) -> Result<DecodedAdvisorFrame, AdvisorFrameError> {
+    let mut rgba = Vec::with_capacity(indices.len() * 4);
+    for &index in indices {
+        let color = palette
+            .get(index as usize)
+            .ok_or(AdvisorFrameError::PaletteTooSmall {
+                index: index as usize,
+                available: palette.len(),
+            })?;
+        let alpha = if index == 0 { 0 } else { 255 };
+        rgba.extend_from_slice(&[color[0], color[1], color[2], alpha]);
+    }
+    Ok(DecodedAdvisorFrame {
+        width,
+        height,
+        indices: indices.to_vec(),
+        rgba,
+    })
+}
+
+fn decode_anchor_bitmap(bytes: &[u8]) -> Result<AdvisorFrameBase, AdvisorFrameError> {
+    if bytes.get(0..2) != Some(b"BM") || bytes.len() < 54 {
+        return Err(AdvisorFrameError::InvalidAnchorBitmap);
+    }
+    let pixel_offset = u32::from_le_bytes([bytes[10], bytes[11], bytes[12], bytes[13]]) as usize;
+    let dib_start = 14usize;
+    let header_size = u32::from_le_bytes([
+        bytes[dib_start],
+        bytes[dib_start + 1],
+        bytes[dib_start + 2],
+        bytes[dib_start + 3],
+    ]) as usize;
+    let palette_start = dib_start
+        .checked_add(header_size)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    if header_size < 40 || palette_start > bytes.len() {
+        return Err(AdvisorFrameError::InvalidAnchorBitmap);
+    }
+    let width_signed = i32::from_le_bytes([bytes[18], bytes[19], bytes[20], bytes[21]]);
+    let height_signed = i32::from_le_bytes([bytes[22], bytes[23], bytes[24], bytes[25]]);
+    let planes = u16::from_le_bytes([bytes[26], bytes[27]]);
+    let bit_count = u16::from_le_bytes([bytes[dib_start + 14], bytes[dib_start + 15]]);
+    let compression = u32::from_le_bytes([bytes[30], bytes[31], bytes[32], bytes[33]]);
+    if width_signed <= 0
+        || height_signed == 0
+        || height_signed == i32::MIN
+        || planes != 1
+        || bit_count != 8
+        || compression != 0
+    {
+        return Err(AdvisorFrameError::InvalidAnchorBitmap);
+    }
+    let width = width_signed as usize;
+    let height = height_signed.unsigned_abs() as usize;
+    if width > MAX_TYPE302_WIDTH
+        || height > MAX_TYPE302_HEIGHT
+        || width.saturating_mul(height) > MAX_TYPE302_PIXELS
+    {
+        return Err(AdvisorFrameError::InvalidAnchorBitmap);
+    }
+    let colors_used = u32::from_le_bytes([
+        bytes[dib_start + 32],
+        bytes[dib_start + 33],
+        bytes[dib_start + 34],
+        bytes[dib_start + 35],
+    ]) as usize;
+    let color_count = if colors_used == 0 { 256 } else { colors_used };
+    if !(1..=256).contains(&color_count) {
+        return Err(AdvisorFrameError::InvalidAnchorBitmap);
+    }
+    let palette_bytes = color_count
+        .checked_mul(4)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    let palette_end = palette_start
+        .checked_add(palette_bytes)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    if pixel_offset < palette_end {
+        return Err(AdvisorFrameError::InvalidAnchorBitmap);
+    }
+    let entries = bytes
+        .get(palette_start..palette_end)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    let palette: Vec<[u8; 3]> = entries
+        .chunks_exact(4)
+        .map(|entry| [entry[2], entry[1], entry[0]])
+        .collect();
+
+    let row_stride = width
+        .checked_add(3)
+        .map(|value| value & !3)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    let pixel_bytes = row_stride
+        .checked_mul(height)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    let source_end = pixel_offset
+        .checked_add(pixel_bytes)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    let source = bytes
+        .get(pixel_offset..source_end)
+        .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
+    let mut indices = vec![0; width * height];
+    for output_row in 0..height {
+        let source_row = if height_signed > 0 {
+            height - 1 - output_row
+        } else {
+            output_row
+        };
+        let source_start = source_row * row_stride;
+        indices[output_row * width..(output_row + 1) * width]
+            .copy_from_slice(&source[source_start..source_start + width]);
+    }
+    if let Some(&index) = indices
+        .iter()
+        .find(|&&index| index as usize >= palette.len())
+    {
+        return Err(AdvisorFrameError::PaletteTooSmall {
+            index: index as usize,
+            available: palette.len(),
+        });
+    }
+
+    Ok(AdvisorFrameBase {
+        width,
+        height,
+        indices,
+        palette,
+    })
+}
 
 /// Which BIN format variant was used to parse a sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -353,8 +658,8 @@ pub struct AdvisorState {
     primary_textures: Vec<TextureHandle>,
     secondary_textures: Vec<TextureHandle>,
 
-    /// Path to the advisor sprite directory.
-    sprite_dir: Option<PathBuf>,
+    /// Path to the staged UI root containing `alsprite-dll` and `emsprite-dll`.
+    sprite_dir: PathBuf,
 }
 
 impl AdvisorState {
@@ -379,13 +684,15 @@ impl AdvisorState {
             frames_loaded: false,
             primary_textures: Vec::new(),
             secondary_textures: Vec::new(),
-            sprite_dir: None,
+            // WASM resolves this logical root through the installed runtime
+            // cache. Native builds replace it with the staged UI directory.
+            sprite_dir: PathBuf::new(),
         }
     }
 
-    /// Set the root path to `assets/references/ref-ui/07-droid-advisors/`.
+    /// Set the staged UI root used for native advisor assets.
     pub fn set_sprite_dir(&mut self, path: impl Into<PathBuf>) {
-        self.sprite_dir = Some(path.into());
+        self.sprite_dir = path.into();
         self.primary_textures.clear();
         self.secondary_textures.clear();
         self.bin_sequences.clear();
@@ -398,6 +705,25 @@ impl AdvisorState {
         self.secondary_frame = 0;
         self.frame_timer = 0.0;
         self.frames_loaded = false; // force reload on next draw
+    }
+
+    pub fn set_faction(&mut self, faction: AdvisorFaction) {
+        if self.faction == faction {
+            return;
+        }
+        self.faction = faction;
+        self.primary_textures.clear();
+        self.secondary_textures.clear();
+        self.bin_sequences.clear();
+        self.bmp_resource_id_map.clear();
+        self.primary_frame_pool_len = 0;
+        self.secondary_frame_pool_len = 0;
+        self.primary_frame = 0;
+        self.secondary_frame = 0;
+        self.current_sequence = 0;
+        self.frame_cursor = 0;
+        self.frame_timer = 0.0;
+        self.frames_loaded = false;
     }
 
     /// Push a message into the advisor queue.
@@ -636,7 +962,7 @@ impl AdvisorState {
 }
 
 // ---------------------------------------------------------------------------
-// Frame loading (native only)
+// Frame loading
 // ---------------------------------------------------------------------------
 
 /// Result of loading a faction's sprite directory.
@@ -648,12 +974,317 @@ struct FactionFrames {
     bmp_resource_id_map: HashMap<u16, usize>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AuthoredFrameSpec {
+    dll_dir: &'static str,
+    primary_anchor: u32,
+    primary_first: u32,
+    primary_last: u32,
+    secondary_anchor: u32,
+    secondary_first: u32,
+    secondary_last: u32,
+}
+
+impl AuthoredFrameSpec {
+    fn for_faction(faction: AdvisorFaction) -> Self {
+        match faction {
+            AdvisorFaction::Alliance => Self {
+                dll_dir: "alsprite-dll",
+                primary_anchor: 2001,
+                primary_first: 2002,
+                primary_last: 2024,
+                secondary_anchor: 3331,
+                secondary_first: 3332,
+                secondary_last: 3346,
+            },
+            AdvisorFaction::Empire => Self {
+                dll_dir: "emsprite-dll",
+                primary_anchor: 2001,
+                primary_first: 2002,
+                primary_last: 2016,
+                secondary_anchor: 3001,
+                secondary_first: 3002,
+                secondary_last: 3016,
+            },
+        }
+    }
+}
+
+#[derive(Default)]
+struct FactionAssetBytes {
+    bitmaps: HashMap<u32, Vec<u8>>,
+    frames: HashMap<u32, Vec<u8>>,
+}
+
+fn load_authored_faction_frames(
+    ctx: &egui::Context,
+    faction: AdvisorFaction,
+    assets: FactionAssetBytes,
+) -> FactionFrames {
+    let spec = AuthoredFrameSpec::for_faction(faction);
+    let Some(palette_bitmap) = assets.bitmaps.get(&spec.primary_anchor) else {
+        macroquad::logging::warn!(
+            "[advisor] missing palette anchor source={} resource_id={}",
+            spec.dll_dir,
+            spec.primary_anchor
+        );
+        return FactionFrames {
+            primary: Vec::new(),
+            secondary: Vec::new(),
+            bin_sequences: Vec::new(),
+            bmp_resource_id_map: HashMap::new(),
+        };
+    };
+    let mut primary_base = match decode_anchor_bitmap(palette_bitmap) {
+        Ok(base) => base,
+        Err(error) => {
+            macroquad::logging::warn!(
+                "[advisor] anchor decode failed source={} resource_id={} error={error:?}",
+                spec.dll_dir,
+                spec.primary_anchor
+            );
+            return FactionFrames {
+                primary: Vec::new(),
+                secondary: Vec::new(),
+                bin_sequences: Vec::new(),
+                bmp_resource_id_map: HashMap::new(),
+            };
+        }
+    };
+
+    let mut primary = Vec::new();
+    let mut secondary = Vec::new();
+    let mut bmp_resource_id_map = HashMap::new();
+
+    let primary_anchor = match indexed_frame(
+        primary_base.width,
+        primary_base.height,
+        &primary_base.indices,
+        &primary_base.palette,
+    ) {
+        Ok(frame) => frame,
+        Err(error) => {
+            macroquad::logging::warn!(
+                "[advisor] anchor conversion failed source={} resource_id={} error={error:?}",
+                spec.dll_dir,
+                spec.primary_anchor
+            );
+            return FactionFrames {
+                primary: Vec::new(),
+                secondary: Vec::new(),
+                bin_sequences: Vec::new(),
+                bmp_resource_id_map: HashMap::new(),
+            };
+        }
+    };
+    bmp_resource_id_map.insert(spec.primary_anchor as u16, primary.len());
+    primary.push(ctx.load_texture(
+        format!("advisor_{}_{}", spec.dll_dir, spec.primary_anchor),
+        egui::ColorImage::from_rgba_unmultiplied(
+            [primary_anchor.width, primary_anchor.height],
+            &primary_anchor.rgba,
+        ),
+        TextureOptions::NEAREST,
+    ));
+    for resource_id in spec.primary_first..=spec.primary_last {
+        let Some(bytes) = assets.frames.get(&resource_id) else {
+            macroquad::logging::warn!(
+                "[advisor] missing type-302 frame source={} resource_id={resource_id}",
+                spec.dll_dir
+            );
+            break;
+        };
+        match decode_type302_frame(bytes, &primary_base) {
+            Ok(frame) => {
+                primary_base.indices.clone_from(&frame.indices);
+                let image = egui::ColorImage::from_rgba_unmultiplied(
+                    [frame.width, frame.height],
+                    &frame.rgba,
+                );
+                bmp_resource_id_map.insert(resource_id as u16, primary.len());
+                primary.push(ctx.load_texture(
+                    format!("advisor_{}_{}", spec.dll_dir, resource_id),
+                    image,
+                    TextureOptions::NEAREST,
+                ));
+            }
+            Err(error) => {
+                macroquad::logging::warn!(
+                    "[advisor] type-302 decode failed source={} resource_id={} error={error:?}",
+                    spec.dll_dir,
+                    resource_id
+                );
+                break;
+            }
+        }
+    }
+
+    let secondary_base = match assets.bitmaps.get(&spec.secondary_anchor) {
+        Some(bytes) => match decode_anchor_bitmap(bytes) {
+            Ok(base) => Some(base),
+            Err(error) => {
+                macroquad::logging::warn!(
+                    "[advisor] secondary anchor decode failed source={} resource_id={} error={error:?}",
+                    spec.dll_dir, spec.secondary_anchor
+                );
+                None
+            }
+        },
+        None => {
+            macroquad::logging::warn!(
+                "[advisor] missing secondary anchor source={} resource_id={}",
+                spec.dll_dir,
+                spec.secondary_anchor
+            );
+            None
+        }
+    };
+    if let Some(mut secondary_base) = secondary_base {
+        let secondary_anchor = match indexed_frame(
+            secondary_base.width,
+            secondary_base.height,
+            &secondary_base.indices,
+            &secondary_base.palette,
+        ) {
+            Ok(frame) => frame,
+            Err(error) => {
+                macroquad::logging::warn!(
+                    "[advisor] secondary anchor conversion failed source={} resource_id={} error={error:?}",
+                    spec.dll_dir,
+                    spec.secondary_anchor
+                );
+                return FactionFrames {
+                    primary,
+                    secondary,
+                    bin_sequences: Vec::new(),
+                    bmp_resource_id_map,
+                };
+            }
+        };
+        secondary.push(ctx.load_texture(
+            format!("advisor_{}_{}", spec.dll_dir, spec.secondary_anchor),
+            egui::ColorImage::from_rgba_unmultiplied(
+                [secondary_anchor.width, secondary_anchor.height],
+                &secondary_anchor.rgba,
+            ),
+            TextureOptions::NEAREST,
+        ));
+        for resource_id in spec.secondary_first..=spec.secondary_last {
+            let Some(bytes) = assets.frames.get(&resource_id) else {
+                macroquad::logging::warn!(
+                    "[advisor] missing secondary type-302 frame source={} resource_id={resource_id}",
+                    spec.dll_dir
+                );
+                break;
+            };
+            match decode_type302_frame(bytes, &secondary_base) {
+                Ok(frame) => {
+                    secondary_base.indices.clone_from(&frame.indices);
+                    let image = egui::ColorImage::from_rgba_unmultiplied(
+                        [frame.width, frame.height],
+                        &frame.rgba,
+                    );
+                    secondary.push(ctx.load_texture(
+                        format!("advisor_{}_{}", spec.dll_dir, resource_id),
+                        image,
+                        TextureOptions::NEAREST,
+                    ));
+                }
+                Err(error) => {
+                    macroquad::logging::warn!(
+                        "[advisor] secondary type-302 decode failed source={} resource_id={} error={error:?}",
+                        spec.dll_dir,
+                        resource_id
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    let primary_last_loaded = spec.primary_anchor + primary.len().saturating_sub(1) as u32;
+    if secondary.is_empty() {
+        macroquad::logging::info!(
+            "[advisor] loaded authentic source={} primary_resources={}..{} primary_frames={} secondary_anchor={} secondary_frames=0",
+            spec.dll_dir,
+            spec.primary_anchor,
+            primary_last_loaded,
+            primary.len(),
+            spec.secondary_anchor
+        );
+    } else {
+        let secondary_last_loaded =
+            spec.secondary_anchor + secondary.len().saturating_sub(1) as u32;
+        macroquad::logging::info!(
+            "[advisor] loaded authentic source={} primary_resources={}..{} primary_frames={} secondary_resources={}..{} secondary_frames={}",
+            spec.dll_dir,
+            spec.primary_anchor,
+            primary_last_loaded,
+            primary.len(),
+            spec.secondary_anchor,
+            secondary_last_loaded,
+            secondary.len()
+        );
+    }
+    FactionFrames {
+        primary,
+        secondary,
+        bin_sequences: Vec::new(),
+        bmp_resource_id_map,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_authored_asset_bytes(asset_root: &Path, faction: AdvisorFaction) -> FactionAssetBytes {
+    let spec = AuthoredFrameSpec::for_faction(faction);
+    let source = asset_root.join(spec.dll_dir);
+    let mut assets = FactionAssetBytes::default();
+    for resource_id in [spec.primary_anchor, spec.secondary_anchor] {
+        let path = source.join("BMP").join(format!("{resource_id}.bmp"));
+        if let Ok(bytes) = std::fs::read(path) {
+            assets.bitmaps.insert(resource_id, bytes);
+        }
+    }
+    for resource_id in
+        (spec.primary_first..=spec.primary_last).chain(spec.secondary_first..=spec.secondary_last)
+    {
+        let path = source.join("TYPE302").join(format!("{resource_id}.bin"));
+        if let Ok(bytes) = std::fs::read(path) {
+            assets.frames.insert(resource_id, bytes);
+        }
+    }
+    assets
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_authored_asset_bytes(_asset_root: &Path, faction: AdvisorFaction) -> FactionAssetBytes {
+    let spec = AuthoredFrameSpec::for_faction(faction);
+    let web = WASM_ADVISOR_ASSETS.lock().unwrap();
+    let mut assets = FactionAssetBytes::default();
+    for resource_id in [spec.primary_anchor, spec.secondary_anchor] {
+        if let Some(bytes) = web
+            .bitmaps
+            .get(&format!("{}/{}", spec.dll_dir, resource_id))
+        {
+            assets.bitmaps.insert(resource_id, bytes.clone());
+        }
+    }
+    for resource_id in
+        (spec.primary_first..=spec.primary_last).chain(spec.secondary_first..=spec.secondary_last)
+    {
+        if let Some(bytes) = web.frames.get(&format!("{}/{}", spec.dll_dir, resource_id)) {
+            assets.frames.insert(resource_id, bytes.clone());
+        }
+    }
+    assets
+}
+
 /// Load BMP frames from a faction's sprite directory.
 ///
 /// Returns primary frames, secondary frames (R2-D2 for Alliance), parsed BIN
 /// sequences from the cascading decoder, and a BMP resource ID lookup map.
 #[cfg(not(target_arch = "wasm32"))]
-fn load_faction_frames(
+fn load_legacy_faction_frames(
     ctx: &egui::Context,
     sprite_dir: &Path,
     faction: AdvisorFaction,
@@ -827,49 +1458,63 @@ fn load_faction_frames(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn load_faction_frames(
+    ctx: &egui::Context,
+    asset_root: &Path,
+    faction: AdvisorFaction,
+) -> FactionFrames {
+    let authored =
+        load_authored_faction_frames(ctx, faction, load_authored_asset_bytes(asset_root, faction));
+    if !authored.primary.is_empty() {
+        return authored;
+    }
+
+    // Retain the old curated reference path as a development fallback. It is
+    // not used by packaged builds and does not satisfy the parity gate.
+    load_legacy_faction_frames(ctx, asset_root, faction)
+}
+
 #[cfg(target_arch = "wasm32")]
 fn load_faction_frames(
-    _ctx: &egui::Context,
-    _sprite_dir: &Path,
-    _faction: AdvisorFaction,
+    ctx: &egui::Context,
+    asset_root: &Path,
+    faction: AdvisorFaction,
 ) -> FactionFrames {
-    FactionFrames {
-        primary: Vec::new(),
-        secondary: Vec::new(),
-        bin_sequences: Vec::new(),
-        bmp_resource_id_map: HashMap::new(),
-    }
+    load_authored_faction_frames(ctx, faction, load_authored_asset_bytes(asset_root, faction))
 }
 
 // ---------------------------------------------------------------------------
 // Draw
 // ---------------------------------------------------------------------------
 
-/// Draw the droid advisor floating window.
-///
-/// Call this inside an `egui_macroquad::ui(|ctx| { ... })` block during the
-/// Galaxy mode egui pass.  The advisor window anchors to the bottom-right of
-/// the screen, above the status bar.
+fn advisor_apertures(faction: AdvisorFaction) -> [(f32, f32, f32, f32); 2] {
+    match faction {
+        AdvisorFaction::Alliance => [(541.0, 337.0, 67.0, 116.0), (316.0, 411.0, 47.0, 69.0)],
+        AdvisorFaction::Empire => [(0.0, 347.0, 107.0, 133.0), (302.0, 401.0, 101.0, 79.0)],
+    }
+}
+
+/// Draw both faction droids directly into the original command-center
+/// apertures recovered from `FUN_0042adb0`.
 pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
     // Lazy-load frames on first draw (needs egui context for texture registration).
     if !state.frames_loaded {
-        if let Some(ref dir) = state.sprite_dir {
-            let frames = load_faction_frames(ctx, dir, state.faction);
-            state.primary_frame_pool_len = frames.primary.len();
-            state.secondary_frame_pool_len = frames.secondary.len();
-            state.primary_textures = frames.primary;
-            state.secondary_textures = frames.secondary;
-            state.bin_sequences = frames.bin_sequences;
-            state.bmp_resource_id_map = frames.bmp_resource_id_map;
-            if state.bin_sequences.is_empty() {
-                state.primary_frame = 0;
-                state.secondary_frame = 0;
-            } else {
-                state.set_sequence(
-                    state.next_sequence_for_priority(state.active_animation_priority()),
-                    true,
-                );
-            }
+        let frames = load_faction_frames(ctx, &state.sprite_dir, state.faction);
+        state.primary_frame_pool_len = frames.primary.len();
+        state.secondary_frame_pool_len = frames.secondary.len();
+        state.primary_textures = frames.primary;
+        state.secondary_textures = frames.secondary;
+        state.bin_sequences = frames.bin_sequences;
+        state.bmp_resource_id_map = frames.bmp_resource_id_map;
+        if state.bin_sequences.is_empty() {
+            state.primary_frame = 0;
+            state.secondary_frame = 0;
+        } else {
+            state.set_sequence(
+                state.next_sequence_for_priority(state.active_animation_priority()),
+                true,
+            );
         }
         state.frames_loaded = true;
     }
@@ -878,82 +1523,47 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
         return;
     }
 
-    // If no frames loaded and no message, nothing to draw.
-    if state.primary_textures.is_empty() && state.current_message.is_none() {
+    if state.primary_textures.is_empty() && state.secondary_textures.is_empty() {
         return;
     }
 
-    // Window sizing — based on faction frame dimensions + message area.
-    let (primary_w, primary_h) = if !state.primary_textures.is_empty() {
-        let tex = &state.primary_textures[0];
-        (tex.size()[0] as f32, tex.size()[1] as f32)
-    } else {
-        match state.faction {
-            AdvisorFaction::Alliance => (67.0, 116.0),
-            AdvisorFaction::Empire => (106.0, 133.0),
-        }
-    };
-
-    let has_r2 = !state.secondary_textures.is_empty();
-    let r2_w = if has_r2 { 47.0 } else { 0.0 };
-
-    // Total sprite area width: primary + gap + R2 (if alliance).
-    let sprite_area_w = primary_w + if has_r2 { 8.0 + r2_w } else { 0.0 };
-    let window_w = sprite_area_w.max(200.0) + 16.0; // padding
-
-    // Anchor bottom-right, above the bottom bar (~90px).
     let screen = ctx.screen_rect();
-    let anchor_x = screen.right() - window_w - 12.0;
-    let anchor_y = screen.bottom() - primary_h - 100.0;
+    let scale_x = screen.width() / 640.0;
+    let scale_y = screen.height() / 480.0;
+    let apertures = advisor_apertures(state.faction);
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Middle,
+        egui::Id::new("authentic_droid_advisors"),
+    ));
 
-    egui::Window::new("Advisor")
-        .id(egui::Id::new("droid_advisor"))
-        .fixed_pos(egui::pos2(anchor_x, anchor_y))
-        .resizable(false)
-        .collapsible(false)
-        .title_bar(false)
-        .frame(
-            egui::Frame::new()
-                .fill(egui::Color32::from_black_alpha(180))
-                .inner_margin(8.0),
-        )
-        .show(ctx, |ui| {
-            // Sprite row: primary droid (+ R2-D2 if Alliance).
-            ui.horizontal(|ui| {
-                // Primary droid frame.
-                if !state.primary_textures.is_empty() {
-                    let idx = state.primary_frame % state.primary_textures.len();
-                    let tex = &state.primary_textures[idx];
-                    ui.image(egui::load::SizedTexture::new(
-                        tex.id(),
-                        egui::vec2(primary_w, primary_h),
-                    ));
-                }
+    if !state.primary_textures.is_empty() {
+        let texture = &state.primary_textures[state.primary_frame % state.primary_textures.len()];
+        let (x, y, width, height) = apertures[0];
+        painter.image(
+            texture.id(),
+            egui::Rect::from_min_size(
+                egui::pos2(x * scale_x, y * scale_y),
+                egui::vec2(width * scale_x, height * scale_y),
+            ),
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
 
-                // R2-D2 (Alliance only) — positioned at bottom of primary area.
-                if has_r2 {
-                    let r2_h = 69.0;
-                    let offset_y = primary_h - r2_h; // align bottoms
-                    ui.allocate_space(egui::vec2(0.0, offset_y));
-                    let idx = state.secondary_frame % state.secondary_textures.len();
-                    let tex = &state.secondary_textures[idx];
-                    ui.image(egui::load::SizedTexture::new(
-                        tex.id(),
-                        egui::vec2(r2_w, r2_h),
-                    ));
-                }
-            });
-
-            // Message text below the sprite.
-            if let Some(ref msg) = state.current_message {
-                ui.add_space(4.0);
-                let text_color = match state.faction {
-                    AdvisorFaction::Alliance => egui::Color32::from_rgb(255, 232, 140), // gold
-                    AdvisorFaction::Empire => egui::Color32::from_rgb(200, 200, 220), // cool silver
-                };
-                ui.label(egui::RichText::new(&msg.text).color(text_color).size(12.0));
-            }
-        });
+    if !state.secondary_textures.is_empty() {
+        let texture =
+            &state.secondary_textures[state.secondary_frame % state.secondary_textures.len()];
+        let (x, y, width, height) = apertures[1];
+        painter.image(
+            texture.id(),
+            egui::Rect::from_min_size(
+                egui::pos2(x * scale_x, y * scale_y),
+                egui::vec2(width * scale_x, height * scale_y),
+            ),
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,6 +1687,193 @@ pub fn advisor_manufacturing_complete(state: &mut AdvisorState, item_name: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn type302_fixture() -> Vec<u8> {
+        let payload = [
+            1, 2, 4, 5, 1, // row 0: skip 1, draw 2, skip 1
+            0, 4, 1, 2, 3, 4, // row 1: draw all 4 pixels
+        ];
+        let mut bytes = vec![0; TYPE302_HEADER_LEN + 2 * 4];
+        bytes[0..2].copy_from_slice(&4_u16.to_le_bytes());
+        bytes[2..4].copy_from_slice(&2_u16.to_le_bytes());
+        bytes[4..8].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        bytes[TYPE302_HEADER_LEN..TYPE302_HEADER_LEN + 4].copy_from_slice(&0_u32.to_le_bytes());
+        bytes[TYPE302_HEADER_LEN + 4..TYPE302_HEADER_LEN + 8].copy_from_slice(&5_u32.to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        bytes
+    }
+
+    fn frame_base() -> AdvisorFrameBase {
+        let mut indices = vec![1; 8];
+        indices[0] = 0;
+        AdvisorFrameBase {
+            width: 4,
+            height: 2,
+            indices,
+            palette: (0..=255).map(|index| [index, 0, 255 - index]).collect(),
+        }
+    }
+
+    fn indexed_bmp_fixture() -> Vec<u8> {
+        let pixel_offset = 14 + 40 + 256 * 4;
+        let mut bytes = vec![0; pixel_offset + 8];
+        bytes[0..2].copy_from_slice(b"BM");
+        let file_len = bytes.len() as u32;
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&(pixel_offset as u32).to_le_bytes());
+        bytes[14..18].copy_from_slice(&40_u32.to_le_bytes());
+        bytes[18..22].copy_from_slice(&4_i32.to_le_bytes());
+        bytes[22..26].copy_from_slice(&2_i32.to_le_bytes());
+        bytes[26..28].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[28..30].copy_from_slice(&8_u16.to_le_bytes());
+        for index in 0..256 {
+            let start = 54 + index * 4;
+            bytes[start..start + 4].copy_from_slice(&[index as u8, 0, 0, 0]);
+        }
+        // Positive-height BMP rows are stored bottom-up.
+        bytes[pixel_offset..pixel_offset + 4].copy_from_slice(&[5, 6, 7, 8]);
+        bytes[pixel_offset + 4..pixel_offset + 8].copy_from_slice(&[1, 2, 3, 4]);
+        bytes
+    }
+
+    #[test]
+    fn type302_decoder_applies_additive_runs_over_anchor_pixels() {
+        let decoded = decode_type302_frame(&type302_fixture(), &frame_base()).unwrap();
+
+        assert_eq!((decoded.width, decoded.height), (4, 2));
+        assert_eq!(&decoded.rgba[0..4], &[0, 0, 255, 0]);
+        assert_eq!(&decoded.rgba[4..8], &[5, 0, 250, 255]);
+        assert_eq!(&decoded.rgba[8..12], &[6, 0, 249, 255]);
+        assert_eq!(&decoded.rgba[12..16], &[1, 0, 254, 255]);
+        assert_eq!(&decoded.rgba[16..20], &[2, 0, 253, 255]);
+        assert_eq!(&decoded.rgba[28..32], &[5, 0, 250, 255]);
+    }
+
+    #[test]
+    fn type302_sequence_applies_each_delta_to_the_previous_frame() {
+        let mut base = frame_base();
+        let first = decode_type302_frame(&type302_fixture(), &base).unwrap();
+        base.indices.clone_from(&first.indices);
+        let second = decode_type302_frame(&type302_fixture(), &base).unwrap();
+
+        assert_eq!(first.indices[1], 5);
+        assert_eq!(second.indices[1], 9);
+        assert_eq!(second.indices[0], 0);
+    }
+
+    #[test]
+    fn indexed_anchor_decoder_restores_top_down_rows_and_palette() {
+        let base = decode_anchor_bitmap(&indexed_bmp_fixture()).unwrap();
+        assert_eq!((base.width, base.height), (4, 2));
+        assert_eq!(base.indices, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(base.palette[7], [0, 0, 7]);
+    }
+
+    #[test]
+    fn indexed_anchor_decoder_rejects_pixels_outside_declared_palette() {
+        let mut bytes = indexed_bmp_fixture();
+        bytes[46..50].copy_from_slice(&1_u32.to_le_bytes());
+
+        assert_eq!(
+            decode_anchor_bitmap(&bytes),
+            Err(AdvisorFrameError::PaletteTooSmall {
+                index: 1,
+                available: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn authored_loader_stops_each_cumulative_run_at_first_gap_or_error() {
+        let spec = AuthoredFrameSpec::for_faction(AdvisorFaction::Alliance);
+        let mut assets = FactionAssetBytes::default();
+        assets
+            .bitmaps
+            .insert(spec.primary_anchor, indexed_bmp_fixture());
+        assets
+            .bitmaps
+            .insert(spec.secondary_anchor, indexed_bmp_fixture());
+
+        assets.frames.insert(spec.primary_first, type302_fixture());
+        assets
+            .frames
+            .insert(spec.primary_first + 2, type302_fixture());
+
+        assets
+            .frames
+            .insert(spec.secondary_first, type302_fixture());
+        assets.frames.insert(spec.secondary_first + 1, vec![0; 3]);
+        assets
+            .frames
+            .insert(spec.secondary_first + 2, type302_fixture());
+
+        let loaded = load_authored_faction_frames(
+            &egui::Context::default(),
+            AdvisorFaction::Alliance,
+            assets,
+        );
+
+        assert_eq!(loaded.primary.len(), 2, "later frame after gap was loaded");
+        assert_eq!(
+            loaded.secondary.len(),
+            2,
+            "later frame after corrupt delta was loaded"
+        );
+        assert!(!loaded
+            .bmp_resource_id_map
+            .contains_key(&((spec.primary_first + 2) as u16)));
+    }
+
+    #[test]
+    fn type302_decoder_rejects_corrupt_payloads() {
+        let base = frame_base();
+        let mut truncated = type302_fixture();
+        truncated.pop();
+        assert!(matches!(
+            decode_type302_frame(&truncated, &base),
+            Err(AdvisorFrameError::SizeMismatch { .. })
+        ));
+
+        let mut bad_offset = type302_fixture();
+        bad_offset[TYPE302_HEADER_LEN..TYPE302_HEADER_LEN + 4]
+            .copy_from_slice(&999_u32.to_le_bytes());
+        assert_eq!(
+            decode_type302_frame(&bad_offset, &base),
+            Err(AdvisorFrameError::RowOffsetOutOfBounds {
+                row: 0,
+                offset: 999
+            })
+        );
+    }
+
+    #[test]
+    fn type302_decoder_rejects_pathological_dimensions_before_allocation() {
+        let height = u16::MAX as usize;
+        let mut oversized = vec![0; TYPE302_HEADER_LEN + height * 4 + 1];
+        oversized[0..2].copy_from_slice(&u16::MAX.to_le_bytes());
+        oversized[2..4].copy_from_slice(&u16::MAX.to_le_bytes());
+        oversized[4..8].copy_from_slice(&1_u32.to_le_bytes());
+
+        assert_eq!(
+            decode_type302_frame(&oversized, &frame_base()),
+            Err(AdvisorFrameError::InvalidDimensions {
+                width: u16::MAX as usize,
+                height,
+            })
+        );
+    }
+
+    #[test]
+    fn advisor_apertures_match_recovered_original_geometry() {
+        assert_eq!(
+            advisor_apertures(AdvisorFaction::Alliance),
+            [(541.0, 337.0, 67.0, 116.0), (316.0, 411.0, 47.0, 69.0)]
+        );
+        assert_eq!(
+            advisor_apertures(AdvisorFaction::Empire),
+            [(0.0, 347.0, 107.0, 133.0), (302.0, 401.0, 101.0, 79.0)]
+        );
+    }
 
     /// Helper to build a v1-style (non-BMP-mapped) sequence for state tests.
     fn sequence(frame_ids: &[u16], default_interval: f32) -> BinSequence {

@@ -43,10 +43,12 @@
     "rule": "Query the saved Ghidra project when a required exported function is empty; do not treat the text export as complete interface evidence."
   },
   "runtime_pack_baseline": {
-    "sha256": "6123deec14cfbfd070573c7001ef1123bd52067273498ad0c36cb7fdb108f509",
-    "bytes": 29096058,
+    "version": 2,
+    "sha256": "1ce8e2370d037423ad20683ff747245548b3eca453305596a45ef3083899a862",
+    "bytes": 36156163,
     "game_data_entries": 52,
-    "bitmap_entries": 2231,
+    "bitmap_entries": 2303,
+    "advisor_frame_entries": 3988,
     "audio_entries": 5,
     "unsupported_families": [
       "RCDATA/BIN",
@@ -54,7 +56,7 @@
       "FDT",
       "EData",
       "PE type 301 meshes",
-      "PE type 302 animation frames",
+      "PE type 302 animation frames outside ALSPRITE and EMSPRITE",
       "PE type 303 textures",
       "Smacker/WebM media"
     ]
@@ -117,7 +119,7 @@
       "id": "RE-FE-01",
       "surface_ids": ["PRE-01", "PRE-04"],
       "title": "Boot, introduction, and credits routing",
-      "status": "static-partial",
+      "status": "runtime-corroborated",
       "retrieval": {
         "sources": ["REBEXE.EXE", "COMMON.DLL", "MDATA", "SMACKW32.DLL"],
         "method": "Cross-reference startup and credits commands, movie filenames, completion callbacks, skip handlers, and return-to-menu transitions.",
@@ -209,9 +211,22 @@
       "retrieval": {
         "sources": ["ALSPRITE.DLL", "EMSPRITE.DLL", "ALBRIEF.DLL", "EMBRIEF.DLL"],
         "method": "Compare type-302 payloads with their standard bitmap anchors, dimensions, palettes, and adjacent frame runs to recover the delta-frame format.",
-        "next_proof": "Decode one Alliance and one Imperial anchor-plus-delta sequence byte-for-byte."
+        "next_proof": "Apply the verified decoder and transport to ALBRIEF and EMBRIEF, then compare native and browser output with A0 original-executable captures."
       },
-      "runtime_capture_required": true
+      "runtime_capture_required": true,
+      "implementation_evidence": {
+        "status": "advisor_idle_runs_verified",
+        "resource_counts": {
+          "standard_bitmaps": 72,
+          "type_302_frames": 3988
+        },
+        "evidence": "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md",
+        "remaining": [
+          "ALBRIEF and EMBRIEF transport and rendering",
+          "A0 original-executable pixel comparison",
+          "RE-ADV-02 action, timing, preemption, and voice mapping"
+        ]
+      }
     },
     {
       "id": "RE-ADV-02",

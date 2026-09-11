@@ -43,6 +43,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Main-menu completion proof](evidence/2026-09-09-main-menu-completion.md) | Credits, explicit multiplayer status, audio controls, campaign reset, corrected `MDATA.300` cue, original button effects, and Astra completion acceptance. |
 | [Main-menu semantics proof](evidence/2026-09-09-main-menu-semantics.md) | Fourteen authentic semantic hotspots, selection state, cyclic keyboard focus, shared actions/SFX, destination lifecycle, and Astra browser acceptance. |
 | [Main-menu music and final visual proof](evidence/2026-09-09-main-menu-music-toggle.md) | Original-button absence proof, documented holographic extension, native acceptance, and Astra 10/10 browser evidence. |
+| [Authentic faction-advisor proof](evidence/2026-09-10-authentic-droid-advisors.md) | Type-302 extraction and decoding, native/WASM transport, both factions, corruption containment, and Astra browser evidence. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 
@@ -52,7 +53,9 @@ The project is substantially implemented, but it is not yet demonstrably 100%
 functional and does not yet have original in-campaign interface parity. The
 [interface sister audit](../2026-09-10-interface-parity-audit/) records hard
 failures for the synthetic galaxy composition, replacement cockpit controls,
-invented system sidebar, missing browser droids, and other replacement surfaces.
+invented system sidebar, overlapping advisor apertures, and other replacement
+surfaces. The four authentic advisor idle runs now render in native and WASM;
+their complete actions, voice, chrome, and shell integration remain open.
 Fleet-miniature acceptance, deterministic four-request browser
 startup, F-001 browser Save/Load/Delete, the F-011A fingerprint primitive,
 F-011B1 save continuation, the F-011B2 replay/data contract, F-011B3 native

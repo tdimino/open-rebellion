@@ -1,0 +1,61 @@
+{
+  "feature": "P44",
+  "reverse_engineering_package": "RE-ADV-01",
+  "status": "pass_scoped_tranche",
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "ready_to_commit": true,
+    "findings": {
+      "P0": 0,
+      "P1": 0,
+      "P2": 0,
+      "P3": 0
+    }
+  },
+  "runtime_pack": {
+    "version": 2,
+    "bytes": 36156163,
+    "sha256": "1ce8e2370d037423ad20683ff747245548b3eca453305596a45ef3083899a862",
+    "entries": {
+      "game_data": 52,
+      "bitmaps": 2303,
+      "advisor_frames": 3988,
+      "audio": 5,
+      "total": 6348
+    }
+  },
+  "wasm": {
+    "bytes": 5133258,
+    "sha256": "be9759912cd30d81fb962611155a3af397cb318c858a64170c0447bd9d6f8920"
+  },
+  "tests": {
+    "workspace_targets_passed": 579,
+    "workspace_targets_ignored": 4,
+    "doc_tests_passed": 3,
+    "doc_tests_ignored": 16,
+    "advisor_tests_passed": 31,
+    "extra_loader_probes_passed": 24,
+    "runtime_pack_python_tests_passed": 3
+  },
+  "browser": {
+    "viewport": [640, 480],
+    "dpr": 1,
+    "muted": true,
+    "initial_cases": 14,
+    "refresh_cases": 6,
+    "refresh_assertions_passed": 49,
+    "errors": 0
+  },
+  "transport": {
+    "source_resources_compared": 6291,
+    "all_byte_equal": true
+  },
+  "remaining_scope": [
+    "unobscured original command-center composition",
+    "briefing type-302 frame transport and rendering",
+    "SPT/BIN/FDT action and cadence mapping",
+    "advisor voice and preemption mapping",
+    "A0 original-executable pixel comparison"
+  ]
+}

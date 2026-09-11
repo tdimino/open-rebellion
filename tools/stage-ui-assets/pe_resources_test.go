@@ -77,6 +77,29 @@ func TestReadPEBitmapResourcesReadsResourceDataDirectory(t *testing.T) {
 	}
 }
 
+func TestReadPERawResourcesPreservesType302Bytes(t *testing.T) {
+	frame := validType302Fixture()
+	dll := buildTestPE32WithResource(t, rtAdvisorFrame, 2002, 1033, frame)
+	path := filepath.Join(t.TempDir(), "TEST.DLL")
+	if err := os.WriteFile(path, dll, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	resources, err := readPERawResources(path, rtAdvisorFrame)
+	if err != nil {
+		t.Fatalf("readPERawResources() error = %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("resource count = %d, want 1", len(resources))
+	}
+	if resources[0].ID != 2002 || resources[0].Language != 1033 {
+		t.Errorf("resource identity = (%d, %d), want (2002, 1033)", resources[0].ID, resources[0].Language)
+	}
+	if !bytes.Equal(resources[0].Data, frame) {
+		t.Error("type-302 resource does not match source bytes")
+	}
+}
+
 func TestBitmapResourceIDUsesSuppliedMapping(t *testing.T) {
 	// A one-character UTF-16 resource name, independent of the game catalog.
 	data := []byte{1, 0, 'X', 0}

@@ -52,7 +52,8 @@ instead of a frame-cycling fallback.
 - [x] (2026-09-10) Completed the F-007E logistics checkpoint: AI production requires system control; hostile neutral-orbit fleets remain targetable; friendly cycling stops; HQ defense is retained; surface troops survive blockade; compound `TROOPSD.DAT` IDs resolve; and persisted save-v12 repair episodes replace per-tick repair-start spam. Five runs finish with no transit, one move per arrival, at most 1.2× initial fleets, and 0–5 repair starts. Battle spread, Alliance/Empire balance, ground transport/occupation, leader capture, and victory remain open. Evidence: `../qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-ai-campaign-logistics.md`.
 - [x] (2026-09-10) Completed the verified transport and occupation portion of F-007E: save-v13 fleet cargo enforces living transport capacity, survives transit and consolidation, lands after orbital control, continues unresolved surface battles, persists tactical casualties, and changes political control. Five 5,000-tick runs exercise that invasion chain. All 567 workspace tests, exact native/WASM replay, and Astra-medium two-faction bitmap/browser gates pass for the scoped path. A source review then reopened deterministic character capture and occupation-based Imperial HQ victory as parity defects. Evidence: `../qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-troop-transport-occupation.md`.
 - [x] (2026-09-10) Completed F-007E player troop dispatch: the bitmap destination-first fleet chooser lists same-faction surface regiments, reports living transport capacity, blocks excess selection, embarks atomically, preserves cargo through authoritative transit, and lands it automatically. All 568 workspace tests and the packaged WASM pass. Astra medium demonstrated both factions, the 0/0, 2/2, and 3/3 capacity gates, Alliance arrival and landing, 12/12 HTTP responses, intact bitmaps, and zero browser or asset errors. Evidence: `../qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-player-troop-dispatch.md`.
-- [x] (2026-09-10) Established the sister [original-interface audit](../qa/2026-09-10-interface-parity-audit/) with 43 stable surface families, 370 retained reference images, exact visual and hotspot thresholds, and a six-tranche reconstruction plan. The shuttle menu passes its scoped implementation gate but still needs the complete original interaction-state capture matrix. The in-campaign command center, galaxy, system navigation, browser droids, object windows, tactical shell, and multiplayer surfaces are not yet original-parity.
+- [x] (2026-09-10) Established the sister [original-interface audit](../qa/2026-09-10-interface-parity-audit/) with 43 stable surface families, 370 retained reference images, exact visual and hotspot thresholds, and a six-tranche reconstruction plan. The shuttle menu passes its scoped implementation gate but still needs the complete original interaction-state capture matrix. The in-campaign command center, galaxy, system navigation, advisor behavior beyond idle motion, object windows, tactical shell, and multiplayer surfaces are not yet original-parity.
+- [x] (2026-09-10) Completed RE-ADV-01: the runtime pack now carries all 3,988 original type-302 advisor frames, and both factions render their original two-droid idle runs in native and WASM builds. All 582 workspace tests pass; Astra-medium found no P0-P3 issue in the scoped browser gate. Authored actions, voice sequencing, unobscured apertures, and full command-center parity remain open. Evidence: `../qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md`.
 - [ ] Implement Milestone 1: targeted mission parity and covert foil parity.
 - [ ] Implement Milestone 2: remaining AI decision parity.
 - [ ] Implement Milestone 3: remaining UI and media parity.
@@ -64,7 +65,7 @@ instead of a frame-cycling fallback.
 - [ ] M0: complete native GUI restart acceptance and browser persistence hardening. Browser Save/Load/Delete, HD/troop-data paths, the self-contained browser package, F-011A fingerprints, the F-011B1 v10 continuation envelope, the F-011B2/B3 replay pipeline, and F-011B4 native/WASM fixture equivalence are verified.
 - [ ] M1: stop fleet redispatch/spawn/backlog feedback loops and prove deterministic native/WASM replay across five 5,000-tick seeds. F-007A prevents redispatch and travel resets. F-007B closes stale position, production attachment, and compatible arrival accumulation. F-007C closes ordinary player dispatch. F-007D closes the system combat backlog. F-007E now closes ownership, friendly-cycle, transit, troop-class, repair-state, troop transport, player dispatch, political occupation, and the source-backed asymmetric victory contract. Capture/evasion, faction liveness, target acquisition, the wider campaign loop, and five-seed cross-runtime replay remain.
 - [ ] M2: converge app, playtest, automatic combat, and tactical combat on one authoritative simulation/event path.
-- [ ] M3: complete interface tranches UIP-T01 through UIP-T05, extend the runtime pack with every required original UI family plus compression and bounded caches, then add IndexedDB saves, high-DPI rendering, browser audio/advisors, and Chrome/Firefox/Safari acceptance.
+- [ ] M3: complete interface tranches UIP-T01 through UIP-T05, extend the runtime pack with every required original UI family plus compression and bounded caches, then finish authored advisor actions and voice, high-DPI rendering, browser audio, and Chrome/Firefox/Safari acceptance. RE-ADV-01 establishes the original two-faction advisor idle-frame foundation.
 - [ ] M4: build validated commands, an authoritative fog-safe server, prediction/reconciliation, reconnect, and multiplayer security after determinism passes.
 - [ ] M5: continuously gate format, clippy, release builds, app/browser integration, campaign bounds, all interface surface-state cells, bitmap screenshots, provenance traces, and performance budgets.
 - [ ] v1.0: deploy the complete browser build to Cloudflare Pages behind secret-backed password middleware and signed sessions, then pass Astra-medium authentication, single-player, multiplayer, performance, and bitmap acceptance against the deployed URL.
@@ -88,7 +89,7 @@ closes so it does not tune around known simulation defects.
   Evidence: `crates/rebellion-render/src/panels/mod.rs` defines `PanelAction::DispatchMission` without a target character, `crates/rebellion-app/src/main.rs` calls `mission_state.dispatch(kind, faction, character, target, duration_roll)`, and `crates/rebellion-core/src/missions.rs` still documents that target-character formulas are correct but inert without dispatch plumbing.
 
 - Observation: the remaining UI parity work is a full in-campaign surface reconstruction, not merely resource lookup or media playback.
-  Evidence: the [original-interface audit](../qa/2026-09-10-interface-parity-audit/) proves that current strategy controls, galaxy rendering, system sidebar, most object windows, browser droids, tactical composition, and live ground-combat presentation are replacements or absent. The original runtime pack also omits advisor, briefing, dialog, and encyclopedia families.
+  Evidence: the [original-interface audit](../qa/2026-09-10-interface-parity-audit/) proves that current strategy controls, galaxy rendering, system sidebar, most object windows, tactical composition, and live ground-combat presentation are replacements or absent. RE-ADV-01 now packs and renders all original advisor idle frames, while authored actions, voice, briefing, dialog, and encyclopedia families remain open.
 
 - Observation: the official manual plus period and official captures provide broad visual coverage, but rare transient states still need controlled captures from the original executable.
   Evidence: the interface audit retains 370 classified images and lists explicit gaps for button-state permutations, Death Star actions, tactical damage states, endings, rare events, and two-peer multiplayer.
@@ -179,8 +180,9 @@ validator parity, and faction-specific budgets remain incomplete.
 `crates/rebellion-render/src/encyclopedia.rs` does not resolve star-system art
 through `ENCYBMAP.DLL`.
 
-`crates/rebellion-render/src/advisor.rs` uses a fallback animation model because
-the advisor BIN control data is not fully mapped.
+`crates/rebellion-render/src/advisor.rs` now decodes the original type-302 cumulative
+advisor frames and renders the verified Alliance and Imperial idle runs. The BIN
+control data for authored actions, timing, and voice sequencing is not fully mapped.
 
 `crates/rebellion-core/src/combat.rs` still calls its weapon-fire path an
 approximation of the original per-arc resolver.
@@ -207,8 +209,8 @@ small AI behaviors that still diverge from the original.
 After simulation parity is closed, finish presentation parity. Parse the remaining
 resource lookup tables needed for real star-system encyclopedia art and accurate UI
 sprite selection. Then add native video playback for the decoded WebM cutscenes that
-stand in for Smacker videos. Finish by replacing the advisor frame-cycling fallback
-with BIN-driven sequencing and timing.
+stand in for Smacker videos. Finish by extending the verified original advisor idle
+frames with BIN-driven action, timing, and voice sequencing.
 
 The final step is small but important. Resolve the last known combat and Death Star
 approximations so the codebase no longer documents them as guesses. If the team wants
@@ -229,7 +231,7 @@ delay the main 100% feature-parity claim.
 | U1 | UI | P2 | Parse the remaining DLL lookup tables needed for faithful art selection: `ENCYBMAP.DLL` for star-system encyclopedia art and real lookup-based resource mapping for tactical sprites. Fleet-list mini-icons are complete. | `crates/rebellion-render/src/encyclopedia.rs` uses a placeholder for systems and `crates/rebellion-render/src/tactical_view.rs` documents approximate sprite mappings. Commit `4589d2e` closed the fleet-list portion with exact GOKRES mappings and Astra-medium proof. | 180-300 | None | Yes |
 | U2 | UI | P2 | Add native playback for the already-decoded cutscene videos used for intro, campaign setup, story events, and victory or defeat sequences. | `agent_docs/game-domain.md` and `agent_docs/roadmap.md` still list video playback as missing. There is no `crates/rebellion-render/src/video_player.rs` and no video code in `crates/`. | 280-450 | None | Yes |
 | F3 | Formula/Logic | P2 | Replace the approximate aggregate weapon-fire resolver with a closer port of the original per-arc weapon-fire behavior. | `crates/rebellion-core/src/combat.rs` calls `phase_weapon_fire()` a known approximation of the original per-arc resolver. | 250-400 | None | Yes |
-| C1 | Cosmetic | P3 | Replace advisor sorted-frame cycling with BIN-driven frame ordering and timing so the droid advisors behave like the original briefings and cockpit advisors. | `crates/rebellion-render/src/advisor.rs` explicitly says the game ships BIN control files but Open Rebellion currently uses sorted-frame cycling. | 160-280 | None | Yes |
+| C1 | Cosmetic | P3 | Extend the verified original advisor idle runs with BIN-driven authored actions, timing, and voice sequencing so the droids behave like the original briefings and cockpit advisors. | RE-ADV-01 renders the complete type-302 idle-frame families. The interface audit keeps RE-ADV-02 open for control-sequence mapping and unobscured visual acceptance. | 120-240 | RE-ADV-01 complete | Yes |
 | F4 | Formula/Logic | P3 | Resolve the last documented Death Star and combat approximations: exact construction duration, exact nearby-warning radius, and any remaining residual combat-edge checks that are still only described as approximations. | `crates/rebellion-core/src/death_star.rs` marks the construction duration and warning radius as approximate. The remaining combat approximations are documented inline in `crates/rebellion-core/src/combat.rs`. | 40-80 | F3 recommended | Yes |
 
 ## Work Packages
@@ -321,9 +323,9 @@ look similar from the outside but have different rollback costs.
 
 For media work, keep graceful fallbacks until acceptance is complete. The
 encyclopedia can keep its placeholder path until the real lookup is validated.
-The advisor can keep the current frame-cycling fallback behind a runtime branch
-until BIN sequencing is verified. Video playback should fail closed by skipping
-the cutscene, not by blocking gameplay startup.
+Advisor resource corruption should continue to fail closed instead of silently
+substituting invented motion. Video playback should fail closed by skipping the
+cutscene, not by blocking gameplay startup.
 
 ## Interfaces and Dependencies
 

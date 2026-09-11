@@ -61,6 +61,25 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 [(entry.kind, entry.key) for entry in entries],
             )
 
+    def test_type302_advisor_frames_use_typed_runtime_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / "base"
+            bmp = root / "ui" / "alsprite-dll" / "BMP"
+            frames = root / "ui" / "alsprite-dll" / "TYPE302"
+            base.mkdir()
+            bmp.mkdir(parents=True)
+            frames.mkdir(parents=True)
+            (base / "SYSTEMSD.DAT").write_bytes(b"systems")
+            (bmp / "2001.bmp").write_bytes(b"palette anchor")
+            (frames / "2002.bin").write_bytes(b"sparse frame")
+
+            entries = PACKER.collect_entries(base, root / "ui")
+            self.assertIn(
+                (PACKER.KIND_ADVISOR_FRAME, "alsprite-dll/2002"),
+                [(entry.kind, entry.key) for entry in entries],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

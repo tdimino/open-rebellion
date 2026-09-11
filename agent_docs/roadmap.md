@@ -186,12 +186,12 @@ python3 scripts/model-shootout.py --html-only    # Regenerate comparison at data
 | DLL BMP upscaling (2,231 total) | 235/2,231 (10.5%) |
 | EData encyclopedia images (~330) | NOT STARTED |
 
-### Knesset Kothar wa Khasis — COMPLETE (2026-04-07)
-*U2 + C1 — the two final deferred tasks from Knesset Resheph*
+### Knesset Kothar wa Khasis. Historical implementation (2026-04-07)
+*U2 plus the first C1 attempt from Knesset Resheph. P44 supersedes the advisor result.*
 
 Delivered:
 - **U2 — Native video playback for decoded WebM cutscenes**: new `crates/rebellion-render/src/video_player.rs` with `VideoPlayer::open/advance/current_frame/is_finished/stop`. Runtime path is PNG frame sequences + WAV sidecars (no ffmpeg/libvpx/gstreamer runtime deps). `scripts/decode-cutscenes.sh` is a one-time local ffmpeg decode that produces `assets/references/cutscene-frames/<name>/frame-*.png` + `metadata.json` + `<name>.wav` (ignored by git). `GameMode::Cutscene` added to `rebellion-app/src/main.rs`, plays `000.webm` on startup before MainMenu and `201.webm`/`202.webm` on victory/defeat. ESC/SPACE skip handling. Graceful `VideoError::NotDecoded` path logs a skip message and proceeds when decoded assets are missing. WASM build unaffected via a cfg-gated no-op stub. New dep: `quad-snd` on rebellion-render (player owns its own audio context).
-- **C1 — BIN-driven advisor animation**: `parse_advisor_bin()` in `rebellion-render/src/advisor.rs` parses the `u16 frame_count + u16 frame_id[]` format with `BinError::{TruncatedHeader, TruncatedFrames, LengthMismatch}` real-error rejection. `AdvisorState` now carries `bin_sequences`, `current_sequence`, and `frame_cursor`; the rewritten `update(dt)` walks authored sequences on their `default_interval` and picks the next sequence from idle/normal/critical bands (contiguous thirds of the sorted valid BIN list) based on current `AdvisorPriority`. BIN frame IDs map into the sorted BMP pool via modulo — commented as honest best-effort because the real DLL resource-index table is still undocumented. Falls back to the legacy sorted-frame cycling if zero BINs parse successfully, so the droid never freezes. 3 new parser/state tests added.
+- **C1 first attempt**: a cascading BIN parser and sorted-frame fallback were added, but later interface review showed that this did not prove original motion or even transport the custom type-302 pixels. P44 replaces the visible idle path with the exact indexed anchors and cumulative type-302 deltas for both factions. `RE-ADV-02` still owns authored action, cadence, preemption, and voice mapping.
 
 Known gaps left for future work:
 - Only ~24% of advisor BINs (183 of ~752 per faction) match the simple `u16 count + u16 ids` shape. The other ~76% declare inconsistent lengths and are silently skipped — the game almost certainly uses one or more additional header variants (timing bytes, loop counts, control flags) that have not been decoded. The 24% that do parse now drive authored sequence length/variation; the rest fall through to the legacy path.
@@ -462,13 +462,17 @@ would tune around known simulation feedback defects.
   object-window, report, and tactical surfaces with the original bitmap-driven
   compositions for both factions. No invented visible control may satisfy a
   parity cell.
-- [ ] Execute the interface `RE-*` queue: decode the type-302 advisor frames
-  and SPT/BIN/FDT actions first, extend the deterministic pack to every required
-  resource kind, then consume the proven shell/control/window mappings.
+- [x] Complete P44 / `RE-ADV-01` for the advisor idle-frame tranche: recover
+  type-302 decoding, stage all 3,988 ALSPRITE/EMSPRITE frames, render both
+  faction pairs in native/WASM, and fail closed with browser-visible diagnostics.
+- [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
+  and voice mappings; extend the decoder/pack to briefings and every other
+  required resource kind; then consume the proven shell/control/window mappings.
 - [ ] Add Brotli compression plus bounded raw-byte and decoded-texture caches to the verified runtime-pack foundation.
 - [ ] Include HD assets; enable high DPI; use one egui pass; cache sector geometry.
 - [ ] Move saves from synchronous base64 `localStorage` to compressed asynchronous IndexedDB.
-- [ ] Start audio after user gesture and stage owned advisor assets in release packages.
+- [ ] Add authored advisor voice and preemption after user gesture; advisor idle
+  assets are now staged from a contributor-owned installation.
 - [ ] Exercise real mouse/keyboard input and bitmap screenshots in Chrome, Firefox, and Safari.
 - [ ] Meet budgets: ≤3 s cold start at 50 Mbps/30 ms, ≤4 pre-menu requests, ≤8 ms frame, ≤12 ms WASM tick at 1,000 fleets, ≤5 MB optimized WASM, and ≤256 MB combined memory after 10 minutes.
 

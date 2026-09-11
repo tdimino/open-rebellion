@@ -61,7 +61,7 @@ cross-runtime proof.
 The current campaign screenshots also exposed a separate visual truth. The
 original shuttle main menu remains a passing surface, but the strategy screen
 uses replacement controls, synthetic map primitives, an invented system sidebar,
-and empty WASM advisor frames. The sister audit inventories 43 surface families,
+and incomplete advisor-shell integration. The sister audit inventories 43 surface families,
 retains 370 original references, and makes UIP-T01 Strategic Cockpit Truth the
 highest-priority presentation tranche. Earlier scoped browser checks retain their
 behavioral and loading evidence; they are not evidence of original interface
@@ -305,9 +305,10 @@ cross-runtime proof remain open
 
 - Severity: P1 if browser parity is claimed
 - Status: confirmed platform gap
-- Evidence: browser advisor frames, EData images, cutscene playback, mods, and
-  parts of audio integration use stubs, empty collections, or immediate
-  completion behavior.
+- Evidence: original advisor idle frames now render in the browser, but
+  briefing frames, EData images, cutscene playback, mods, advisor action/voice,
+  and parts of audio integration still use stubs, empty collections, inferred
+  behavior, or immediate completion.
 - Acceptance: implement and demonstrate each feature, or explicitly exclude it
   from the supported browser contract and qualify all completion claims.
 
@@ -614,7 +615,7 @@ and underlying state mutation are both demonstrated.
 | P31 | Save/load/delete | UI actions, slot refresh, populated round-trip, native restart, browser restart, corruption, compatibility, quota errors, delete, and deterministic continuation. |
 | P32 | Mods | Discovery, dependency order, cycles, versions, enable/disable/reload, New Game reapplication, save mismatch, hot reload, and additive-feature scope. |
 | P33 | Audio | Music, SFX, voices, context transitions, gain/mute, missing files/devices, browser user-gesture policy, and platform scope. |
-| P34 | Droid advisors | Both factions, original embedded chrome, every decoded sequence, exact frame IDs/order/timing, priority, message/audio behavior, missing frames, and packaged browser assets. WASM currently returns empty frame pools. |
+| P34 | Droid advisors | Both factions, original embedded chrome, every decoded sequence, exact frame IDs/order/timing, priority, message/audio behavior, missing frames, and packaged browser assets. The authentic idle-frame transport/rendering tranche passes; shell overlap and authored behavior remain open. |
 | P35 | Encyclopedia and EData | Original Index/Topic surfaces, every category/entity, exact EDATA identity, navigation, system focus, fallback, and browser loading. WASM currently returns no encyclopedia texture. |
 | P36 | Bitmap and interface sweep | Complete every required cell in the [43-family interface ledger](../2026-09-10-interface-parity-audit/surface-ledger.json), with exact resources, composition, geometry, hotspots, native/browser screenshots, and zero invented or unknown visible elements. |
 | P37 | Campaign acceptance | Short smoke runs and long multi-seed campaigns for both factions/difficulties with bounded fleet/event growth, balance, diversity, victory, and full parity reports. |

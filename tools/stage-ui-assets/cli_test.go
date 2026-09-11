@@ -32,7 +32,7 @@ func TestRunCLIStagesAndVerifiesConfiguredTargets(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(outputDir, "test-dll", "BMP", "88.bmp")); err != nil {
 		t.Fatalf("staged runtime asset: %v", err)
 	}
-	if !bytes.Contains(stdout.Bytes(), []byte("Verified 1 BMPs")) {
+	if !bytes.Contains(stdout.Bytes(), []byte("Verified 1 UI resources")) {
 		t.Errorf("stdout = %q, want verification summary", stdout.String())
 	}
 }

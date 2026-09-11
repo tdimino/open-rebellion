@@ -16,6 +16,10 @@ func putResourceEntry(dst []byte, offset int, name, target uint32) {
 }
 
 func buildTestPE32WithBitmap(t *testing.T, id, language uint32, dib []byte) []byte {
+	return buildTestPE32WithResource(t, rtBitmap, id, language, dib)
+}
+
+func buildTestPE32WithResource(t *testing.T, resourceType, id, language uint32, data []byte) []byte {
 	t.Helper()
 	const (
 		peOffset      = 0x80
@@ -27,14 +31,14 @@ func buildTestPE32WithBitmap(t *testing.T, id, language uint32, dib []byte) []by
 
 	resource := make([]byte, sectionSize)
 	putResourceDirectory(resource, 0x00, 0, 1)
-	putResourceEntry(resource, 0x10, 2, 0x80000020)
+	putResourceEntry(resource, 0x10, resourceType, 0x80000020)
 	putResourceDirectory(resource, 0x20, 0, 1)
 	putResourceEntry(resource, 0x30, id, 0x80000040)
 	putResourceDirectory(resource, 0x40, 0, 1)
 	putResourceEntry(resource, 0x50, language, 0x60)
 	binary.LittleEndian.PutUint32(resource[0x60:0x64], sectionRVA+0x80)
-	binary.LittleEndian.PutUint32(resource[0x64:0x68], uint32(len(dib)))
-	copy(resource[0x80:], dib)
+	binary.LittleEndian.PutUint32(resource[0x64:0x68], uint32(len(data)))
+	copy(resource[0x80:], data)
 
 	file := make([]byte, sectionOffset+sectionSize)
 	copy(file[0:2], "MZ")
