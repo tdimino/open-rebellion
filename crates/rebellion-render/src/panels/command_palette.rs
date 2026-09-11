@@ -103,8 +103,7 @@ impl CommandPaletteState {
 
             let mut results: Vec<(usize, u32)> = Vec::new();
             for (i, cmd) in self.commands.iter().enumerate() {
-                let matches =
-                    pattern.match_list(std::iter::once(cmd.label.as_str()), &mut matcher);
+                let matches = pattern.match_list(std::iter::once(cmd.label.as_str()), &mut matcher);
                 if let Some(&(_, score)) = matches.first() {
                     results.push((i, score));
                 }
@@ -174,8 +173,7 @@ pub fn draw_command_palette(
         .interactable(true)
         .show(ctx, |ui: &mut egui::Ui| {
             let screen = ctx.screen_rect();
-            let (_, response) =
-                ui.allocate_exact_size(screen.size(), egui::Sense::click());
+            let (_, response) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
             ui.painter()
                 .rect_filled(screen, 0.0, Color32::from_black_alpha(160));
             if response.clicked() {
@@ -229,8 +227,7 @@ pub fn draw_command_palette(
             ScrollArea::vertical()
                 .max_height(360.0)
                 .show(ui, |ui: &mut egui::Ui| {
-                    for (list_idx, &(cmd_idx, _score)) in
-                        state.filtered_indices.iter().enumerate()
+                    for (list_idx, &(cmd_idx, _score)) in state.filtered_indices.iter().enumerate()
                     {
                         let cmd = &state.commands[cmd_idx];
                         let is_selected = list_idx == state.selected_index;
@@ -250,9 +247,7 @@ pub fn draw_command_palette(
                                 ui.horizontal(|ui: &mut egui::Ui| {
                                     // Label (bold) + description (dimmed) on the left.
                                     ui.label(
-                                        RichText::new(&cmd.label)
-                                            .color(Color32::WHITE)
-                                            .strong(),
+                                        RichText::new(&cmd.label).color(Color32::WHITE).strong(),
                                     );
                                     ui.label(
                                         RichText::new(&cmd.description)
@@ -264,9 +259,7 @@ pub fn draw_command_palette(
                                         |ui: &mut egui::Ui| {
                                             ui.label(
                                                 RichText::new(&cmd.category)
-                                                    .color(Color32::from_rgb(
-                                                        130, 160, 220,
-                                                    ))
+                                                    .color(Color32::from_rgb(130, 160, 220))
                                                     .small(),
                                             );
                                         },

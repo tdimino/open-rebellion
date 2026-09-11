@@ -66,7 +66,13 @@ impl DatRecord for MissionsFile {
         for _ in 0..count {
             missions.push(Mission::parse_entry(r)?);
         }
-        Ok(Self { field1, count, family_id, field4, missions })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            missions,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

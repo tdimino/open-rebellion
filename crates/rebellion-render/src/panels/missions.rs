@@ -155,9 +155,7 @@ fn draw_active_tab(
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .small_button(
-                            RichText::new("Cancel").color(Color32::from_rgb(200, 80, 80)),
-                        )
+                        .small_button(RichText::new("Cancel").color(Color32::from_rgb(200, 80, 80)))
                         .clicked()
                     {
                         *action = Some(PanelAction::CancelMission(mission.id));
@@ -181,8 +179,7 @@ fn draw_active_tab(
                 );
 
                 let frac = mission.progress_fraction();
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(80.0, 8.0), egui::Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(80.0, 8.0), egui::Sense::hover());
                 ui.painter().rect_filled(rect, 2.0, Color32::from_gray(40));
                 ui.painter().rect_filled(
                     egui::Rect::from_min_size(
@@ -217,7 +214,12 @@ fn draw_dispatch_tab(
     action: &mut Option<PanelAction>,
 ) {
     // ── Commander selection ───────────────────────────────────────────────────
-    ui.label(RichText::new("Commander:").color(Color32::from_gray(180)).small().strong());
+    ui.label(
+        RichText::new("Commander:")
+            .color(Color32::from_gray(180))
+            .small()
+            .strong(),
+    );
 
     let available_commanders: Vec<_> = world
         .characters
@@ -255,7 +257,12 @@ fn draw_dispatch_tab(
     ui.add_space(6.0);
 
     // ── Mission type selection ────────────────────────────────────────────────
-    ui.label(RichText::new("Mission Type:").color(Color32::from_gray(180)).small().strong());
+    ui.label(
+        RichText::new("Mission Type:")
+            .color(Color32::from_gray(180))
+            .small()
+            .strong(),
+    );
     ui.horizontal(|ui| {
         let is_diplo = panel_state.selected_kind == Some(MissionKind::Diplomacy);
         let is_recrt = panel_state.selected_kind == Some(MissionKind::Recruitment);
@@ -271,7 +278,12 @@ fn draw_dispatch_tab(
     ui.add_space(6.0);
 
     // ── Target system selection ───────────────────────────────────────────────
-    ui.label(RichText::new("Target System:").color(Color32::from_gray(180)).small().strong());
+    ui.label(
+        RichText::new("Target System:")
+            .color(Color32::from_gray(180))
+            .small()
+            .strong(),
+    );
 
     let target_name = panel_state
         .selected_target
@@ -301,17 +313,17 @@ fn draw_dispatch_tab(
     {
         if let Some(character) = world.characters.get(char_key) {
             let skill = match kind {
-                MissionKind::Diplomacy      => character.diplomacy,
-                MissionKind::Recruitment    => character.leadership,
-                MissionKind::Sabotage       => character.espionage,
-                MissionKind::Assassination  => character.combat,
-                MissionKind::Espionage      => character.espionage,
-                MissionKind::Rescue         => character.combat,
-                MissionKind::Abduction      => character.espionage,
-                MissionKind::InciteUprising    => character.diplomacy,
-                MissionKind::SubdueUprising    => character.diplomacy,
+                MissionKind::Diplomacy => character.diplomacy,
+                MissionKind::Recruitment => character.leadership,
+                MissionKind::Sabotage => character.espionage,
+                MissionKind::Assassination => character.combat,
+                MissionKind::Espionage => character.espionage,
+                MissionKind::Rescue => character.combat,
+                MissionKind::Abduction => character.espionage,
+                MissionKind::InciteUprising => character.diplomacy,
+                MissionKind::SubdueUprising => character.diplomacy,
                 MissionKind::DeathStarSabotage => character.espionage,
-                MissionKind::Autoscrap         => character.leadership, // no-op; Autoscrap never shown in UI
+                MissionKind::Autoscrap => character.leadership, // no-op; Autoscrap never shown in UI
             };
             let score = skill.base as f64 + skill.variance as f64 * 0.5;
             let (a, b, c) = kind.coefficients();
@@ -327,7 +339,11 @@ fn draw_dispatch_tab(
             };
 
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Est. success:").small().color(Color32::from_gray(160)));
+                ui.label(
+                    RichText::new("Est. success:")
+                        .small()
+                        .color(Color32::from_gray(160)),
+                );
                 ui.label(
                     RichText::new(format!("{:.0}%", prob))
                         .strong()
@@ -393,16 +409,16 @@ fn draw_dispatch_tab(
 
 fn mission_kind_display(kind: MissionKind) -> (&'static str, Color32) {
     match kind {
-        MissionKind::Diplomacy      => ("[DIPLO]", Color32::from_rgb(255, 220,  80)),
-        MissionKind::Recruitment    => ("[RECRT]", Color32::from_rgb(100, 220, 180)),
-        MissionKind::Sabotage       => ("[SBTGE]", Color32::from_rgb(220, 100,  60)),
-        MissionKind::Assassination  => ("[ASSN]",  Color32::from_rgb(200,  50,  50)),
-        MissionKind::Espionage      => ("[ESPI]",  Color32::from_rgb(160, 120, 220)),
-        MissionKind::Rescue         => ("[RESC]",  Color32::from_rgb( 80, 180, 255)),
-        MissionKind::Abduction      => ("[ABDC]",  Color32::from_rgb(220, 160,  60)),
-        MissionKind::InciteUprising    => ("[INCT]",  Color32::from_rgb(255, 140,  40)),
-        MissionKind::SubdueUprising    => ("[SUBD]",  Color32::from_rgb(100, 200, 100)),
-        MissionKind::DeathStarSabotage => ("[DSSB]",  Color32::from_rgb(255,  60,  60)),
-        MissionKind::Autoscrap         => ("[AUTO]",  Color32::from_rgb(120, 120, 120)),
+        MissionKind::Diplomacy => ("[DIPLO]", Color32::from_rgb(255, 220, 80)),
+        MissionKind::Recruitment => ("[RECRT]", Color32::from_rgb(100, 220, 180)),
+        MissionKind::Sabotage => ("[SBTGE]", Color32::from_rgb(220, 100, 60)),
+        MissionKind::Assassination => ("[ASSN]", Color32::from_rgb(200, 50, 50)),
+        MissionKind::Espionage => ("[ESPI]", Color32::from_rgb(160, 120, 220)),
+        MissionKind::Rescue => ("[RESC]", Color32::from_rgb(80, 180, 255)),
+        MissionKind::Abduction => ("[ABDC]", Color32::from_rgb(220, 160, 60)),
+        MissionKind::InciteUprising => ("[INCT]", Color32::from_rgb(255, 140, 40)),
+        MissionKind::SubdueUprising => ("[SUBD]", Color32::from_rgb(100, 200, 100)),
+        MissionKind::DeathStarSabotage => ("[DSSB]", Color32::from_rgb(255, 60, 60)),
+        MissionKind::Autoscrap => ("[AUTO]", Color32::from_rgb(120, 120, 120)),
     }
 }

@@ -69,7 +69,9 @@ impl EventLogger {
         let mut neutral_count = 0usize;
         for (_, sys) in world.systems.iter() {
             match sys.control {
-                ControlKind::Controlled(Faction::Alliance) => alliance_systems.push(sys.name.as_str()),
+                ControlKind::Controlled(Faction::Alliance) => {
+                    alliance_systems.push(sys.name.as_str())
+                }
                 ControlKind::Controlled(Faction::Empire) => empire_systems.push(sys.name.as_str()),
                 _ => neutral_count += 1,
             }
@@ -93,27 +95,43 @@ impl EventLogger {
         if !movement.is_empty() {
             println!("\nFleets in transit: {}", movement.len());
             for (_, order) in movement.orders() {
-                let origin = world.systems.get(order.origin)
-                    .map(|s| s.name.as_str()).unwrap_or("?");
-                let dest = world.systems.get(order.destination)
-                    .map(|s| s.name.as_str()).unwrap_or("?");
-                let faction = world.fleets.get(order.fleet)
+                let origin = world
+                    .systems
+                    .get(order.origin)
+                    .map(|s| s.name.as_str())
+                    .unwrap_or("?");
+                let dest = world
+                    .systems
+                    .get(order.destination)
+                    .map(|s| s.name.as_str())
+                    .unwrap_or("?");
+                let faction = world
+                    .fleets
+                    .get(order.fleet)
                     .map(|f| if f.is_alliance { "Alliance" } else { "Empire" })
                     .unwrap_or("?");
-                println!("  {} fleet: {} → {} ({:.0}%, {} ticks left)",
-                    faction, origin, dest,
+                println!(
+                    "  {} fleet: {} → {} ({:.0}%, {} ticks left)",
+                    faction,
+                    origin,
+                    dest,
                     order.progress() * 100.0,
-                    order.ticks_remaining());
+                    order.ticks_remaining()
+                );
             }
         }
 
         // ── Combat diagnostics ────────────────────────────────────────
-        let move_fleet_attacks = self.events.iter()
+        let move_fleet_attacks = self
+            .events
+            .iter()
             .filter(|e| e.event_type == "ai_action")
             .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
             .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Attack"))
             .count();
-        let move_fleet_reinforce = self.events.iter()
+        let move_fleet_reinforce = self
+            .events
+            .iter()
             .filter(|e| e.event_type == "ai_action")
             .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
             .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Reinforce"))
@@ -121,8 +139,17 @@ impl EventLogger {
         println!("\nCombat diagnostics:");
         println!("  Fleet attack orders:     {}", move_fleet_attacks);
         println!("  Fleet reinforce orders:  {}", move_fleet_reinforce);
-        println!("  Space battles:           {}", counts.get("combat_space").unwrap_or(&0));
-        println!("  Ground battles:          {}", counts.get("combat_ground").unwrap_or(&0));
-        println!("  Bombardments:            {}", counts.get("bombardment").unwrap_or(&0));
+        println!(
+            "  Space battles:           {}",
+            counts.get("combat_space").unwrap_or(&0)
+        );
+        println!(
+            "  Ground battles:          {}",
+            counts.get("combat_ground").unwrap_or(&0)
+        );
+        println!(
+            "  Bombardments:            {}",
+            counts.get("bombardment").unwrap_or(&0)
+        );
     }
 }

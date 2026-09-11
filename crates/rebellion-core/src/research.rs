@@ -110,8 +110,8 @@ impl ResearchLevels {
     /// Return the current level for a specific tech tree.
     pub fn level(&self, tech: TechType) -> u32 {
         match tech {
-            TechType::Ship     => self.ship,
-            TechType::Troop    => self.troop,
+            TechType::Ship => self.ship,
+            TechType::Troop => self.troop,
             TechType::Facility => self.facility,
         }
     }
@@ -119,8 +119,8 @@ impl ResearchLevels {
     /// Increment the level for a specific tech tree (capped at `RESEARCH_MAX_LEVEL`).
     pub fn advance(&mut self, tech: TechType) {
         let v = match tech {
-            TechType::Ship     => &mut self.ship,
-            TechType::Troop    => &mut self.troop,
+            TechType::Ship => &mut self.ship,
+            TechType::Troop => &mut self.troop,
             TechType::Facility => &mut self.facility,
         };
         *v = (*v + 1).min(RESEARCH_MAX_LEVEL);
@@ -159,8 +159,9 @@ impl ResearchState {
 
     /// Cancel a project for a given faction + tech type.
     pub fn cancel(&mut self, faction_is_alliance: bool, tech_type: TechType) {
-        self.projects
-            .retain(|p| !(p.faction_is_alliance == faction_is_alliance && p.tech_type == tech_type));
+        self.projects.retain(|p| {
+            !(p.faction_is_alliance == faction_is_alliance && p.tech_type == tech_type)
+        });
     }
 
     /// Return the current research level for a faction + tech tree.
@@ -174,7 +175,12 @@ impl ResearchState {
 
     /// True if `class_research_order <= current level` — i.e. the class is
     /// buildable by this faction.
-    pub fn is_unlocked(&self, faction_is_alliance: bool, class_research_order: u32, tech: TechType) -> bool {
+    pub fn is_unlocked(
+        &self,
+        faction_is_alliance: bool,
+        class_research_order: u32,
+        tech: TechType,
+    ) -> bool {
         self.level(faction_is_alliance, tech) >= class_research_order
     }
 }
@@ -283,7 +289,11 @@ impl ResearchSystem {
                 .values()
                 .filter(|c| {
                     c.research_order == target_order
-                        && if faction_is_alliance { c.is_alliance } else { c.is_empire }
+                        && if faction_is_alliance {
+                            c.is_alliance
+                        } else {
+                            c.is_empire
+                        }
                 })
                 .map(|c| c.research_difficulty)
                 .max(),
@@ -306,7 +316,11 @@ impl ResearchSystem {
         let Some(class) = world.capital_ship_classes.get(class_key) else {
             return false;
         };
-        let faction_ok = if faction_is_alliance { class.is_alliance } else { class.is_empire };
+        let faction_ok = if faction_is_alliance {
+            class.is_alliance
+        } else {
+            class.is_empire
+        };
         if !faction_ok {
             return false;
         }
@@ -325,7 +339,11 @@ impl ResearchSystem {
         let Some(class) = world.fighter_classes.get(class_key) else {
             return false;
         };
-        let faction_ok = if faction_is_alliance { class.is_alliance } else { class.is_empire };
+        let faction_ok = if faction_is_alliance {
+            class.is_alliance
+        } else {
+            class.is_empire
+        };
         if !faction_ok {
             return false;
         }
@@ -344,10 +362,10 @@ impl ResearchSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::ControlKind;
     use crate::ids::{CharacterKey, DatId};
-    use crate::world::{CapitalShipClass, Character, GameWorld, SkillPair};
     use crate::tick::TickEvent;
+    use crate::world::ControlKind;
+    use crate::world::{CapitalShipClass, Character, GameWorld, SkillPair};
 
     fn ticks(n: u32) -> Vec<TickEvent> {
         (1..=n as u64).map(|t| TickEvent { tick: t }).collect()
@@ -357,17 +375,37 @@ mod tests {
         world.characters.insert(Character {
             name: "Researcher".into(),
             is_alliance: true,
-            ship_design: SkillPair { base: 60, variance: 0 },
-            troop_training: SkillPair { base: 50, variance: 0 },
-            facility_design: SkillPair { base: 50, variance: 0 },
-            leadership: SkillPair { base: 30, variance: 0 },
-            loyalty: SkillPair { base: 70, variance: 0 },
+            ship_design: SkillPair {
+                base: 60,
+                variance: 0,
+            },
+            troop_training: SkillPair {
+                base: 50,
+                variance: 0,
+            },
+            facility_design: SkillPair {
+                base: 50,
+                variance: 0,
+            },
+            leadership: SkillPair {
+                base: 30,
+                variance: 0,
+            },
+            loyalty: SkillPair {
+                base: 70,
+                variance: 0,
+            },
             can_be_commander: true,
             ..Default::default()
         })
     }
 
-    fn add_ship_class(world: &mut GameWorld, research_order: u32, research_difficulty: u32, is_alliance: bool) {
+    fn add_ship_class(
+        world: &mut GameWorld,
+        research_order: u32,
+        research_difficulty: u32,
+        is_alliance: bool,
+    ) {
         world.capital_ship_classes.insert(CapitalShipClass {
             name: "TestShip".into(),
             is_alliance,
@@ -436,9 +474,16 @@ mod tests {
         assert_eq!(state.alliance.ship, 0, "advance() should NOT mutate state");
         // Caller applies:
         for result in &r {
-            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
-            if *faction_is_alliance { state.alliance.advance(*tech_type); }
-            else { state.empire.advance(*tech_type); }
+            let ResearchResult::TechUnlocked {
+                faction_is_alliance,
+                tech_type,
+                ..
+            } = result;
+            if *faction_is_alliance {
+                state.alliance.advance(*tech_type);
+            } else {
+                state.empire.advance(*tech_type);
+            }
         }
         assert_eq!(state.alliance.ship, 1);
         // Project removed.
@@ -516,12 +561,24 @@ mod tests {
         let mut state = ResearchState::new();
 
         // Level 0 — order-0 classes are available (pre-game units), order-1 are not.
-        assert!(state.is_unlocked(true, 0, TechType::Ship), "order 0 always unlocked");
-        assert!(!state.is_unlocked(true, 1, TechType::Ship), "order 1 needs level ≥ 1");
+        assert!(
+            state.is_unlocked(true, 0, TechType::Ship),
+            "order 0 always unlocked"
+        );
+        assert!(
+            !state.is_unlocked(true, 1, TechType::Ship),
+            "order 1 needs level ≥ 1"
+        );
 
         state.alliance.advance(TechType::Ship);
-        assert!(state.is_unlocked(true, 1, TechType::Ship), "order 1 unlocked after advance");
-        assert!(!state.is_unlocked(true, 2, TechType::Ship), "order 2 still locked");
+        assert!(
+            state.is_unlocked(true, 1, TechType::Ship),
+            "order 1 unlocked after advance"
+        );
+        assert!(
+            !state.is_unlocked(true, 2, TechType::Ship),
+            "order 2 still locked"
+        );
     }
 
     #[test]
@@ -548,16 +605,26 @@ mod tests {
         let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
         // Only alliance completes.
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0], ResearchResult::TechUnlocked {
-            faction_is_alliance: true,
-            tech_type: TechType::Facility,
-            new_level: 1,
-        });
+        assert_eq!(
+            r[0],
+            ResearchResult::TechUnlocked {
+                faction_is_alliance: true,
+                tech_type: TechType::Facility,
+                new_level: 1,
+            }
+        );
         // Caller applies results.
         for result in &r {
-            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
-            if *faction_is_alliance { state.alliance.advance(*tech_type); }
-            else { state.empire.advance(*tech_type); }
+            let ResearchResult::TechUnlocked {
+                faction_is_alliance,
+                tech_type,
+                ..
+            } = result;
+            if *faction_is_alliance {
+                state.alliance.advance(*tech_type);
+            } else {
+                state.empire.advance(*tech_type);
+            }
         }
         assert_eq!(state.alliance.facility, 1);
         assert_eq!(state.empire.facility, 0);
@@ -566,9 +633,16 @@ mod tests {
         let r2 = ResearchSystem::advance(&mut state, &world, &ticks(5));
         assert_eq!(r2.len(), 1);
         for result in &r2 {
-            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
-            if *faction_is_alliance { state.alliance.advance(*tech_type); }
-            else { state.empire.advance(*tech_type); }
+            let ResearchResult::TechUnlocked {
+                faction_is_alliance,
+                tech_type,
+                ..
+            } = result;
+            if *faction_is_alliance {
+                state.alliance.advance(*tech_type);
+            } else {
+                state.empire.advance(*tech_type);
+            }
         }
         assert_eq!(state.empire.facility, 1);
     }
@@ -590,10 +664,14 @@ mod tests {
         let class_key = world.capital_ship_classes.keys().next().unwrap();
         let mut state = ResearchState::new(); // level 0
 
-        assert!(!ResearchSystem::ship_class_is_available(&world, &state, true, class_key));
+        assert!(!ResearchSystem::ship_class_is_available(
+            &world, &state, true, class_key
+        ));
 
         state.alliance.ship = 3;
-        assert!(ResearchSystem::ship_class_is_available(&world, &state, true, class_key));
+        assert!(ResearchSystem::ship_class_is_available(
+            &world, &state, true, class_key
+        ));
     }
 
     #[test]
@@ -613,7 +691,10 @@ mod tests {
         let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
         assert_eq!(r.len(), 1);
         // advance() must NOT auto-apply level-ups.
-        assert_eq!(state.alliance.ship, 0, "advance() should not mutate state internally");
+        assert_eq!(
+            state.alliance.ship, 0,
+            "advance() should not mutate state internally"
+        );
     }
 
     #[test]

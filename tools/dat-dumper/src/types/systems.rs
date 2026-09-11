@@ -48,7 +48,13 @@ impl DatRecord for SystemsFile {
         for _ in 0..count {
             systems.push(StarSystem::parse_entry(r)?);
         }
-        Ok(Self { field1, count, family_id, field4, systems })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            systems,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

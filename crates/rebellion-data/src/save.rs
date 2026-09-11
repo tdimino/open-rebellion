@@ -1751,33 +1751,31 @@ mod tests {
         state.campaign_config.victory_conditions =
             rebellion_core::world::VictoryConditions::HeadquartersOnly;
 
-        let facility = state
-            .world
-            .manufacturing_facilities
-            .insert(rebellion_core::world::ManufacturingFacilityInstance {
+        let facility = state.world.manufacturing_facilities.insert(
+            rebellion_core::world::ManufacturingFacilityInstance {
                 class_dat_id: rebellion_core::ids::DatId::new(0x2800_0001),
                 is_alliance: false,
                 is_shipyard: true,
-            });
+            },
+        );
         state.world.systems[system]
             .manufacturing_facilities
             .push(facility);
-        let class = state
-            .world
-            .capital_ship_classes
-            .insert(rebellion_core::world::CapitalShipClass {
-                dat_id: rebellion_core::ids::DatId::new(0x1400_0001),
-                name: "Repair fixture".into(),
-                hull: 100,
-                damage_control: 5,
-                troop_capacity: 1,
-                ..Default::default()
-            });
+        let class =
+            state
+                .world
+                .capital_ship_classes
+                .insert(rebellion_core::world::CapitalShipClass {
+                    dat_id: rebellion_core::ids::DatId::new(0x1400_0001),
+                    name: "Repair fixture".into(),
+                    hull: 100,
+                    damage_control: 5,
+                    troop_capacity: 1,
+                    ..Default::default()
+                });
         let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
             location: system,
-            capital_ships: vec![rebellion_core::world::ShipInstance::new(
-                class, 75, false,
-            )],
+            capital_ships: vec![rebellion_core::world::ShipInstance::new(class, 75, false)],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,

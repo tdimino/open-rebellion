@@ -24,7 +24,7 @@
 
 use egui_macroquad::egui::{self, Color32, RichText, Vec2};
 use macroquad::prelude::*;
-use rebellion_core::ids::{FleetKey, SystemKey, CapitalShipKey, FighterKey};
+use rebellion_core::ids::{CapitalShipKey, FighterKey, FleetKey, SystemKey};
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -208,10 +208,10 @@ pub enum WeaponKind {
 impl WeaponKind {
     pub fn color(self) -> Color {
         match self {
-            WeaponKind::Turbolaser => Color::new(0.0, 1.0, 0.0, 0.8),     // green
-            WeaponKind::IonCannon => Color::new(0.3, 0.5, 1.0, 0.8),      // blue
-            WeaponKind::LaserCannon => Color::new(1.0, 0.2, 0.2, 0.8),    // red
-            WeaponKind::FighterAttack => Color::new(1.0, 0.8, 0.2, 0.6),  // yellow
+            WeaponKind::Turbolaser => Color::new(0.0, 1.0, 0.0, 0.8), // green
+            WeaponKind::IonCannon => Color::new(0.3, 0.5, 1.0, 0.8),  // blue
+            WeaponKind::LaserCannon => Color::new(1.0, 0.2, 0.2, 0.8), // red
+            WeaponKind::FighterAttack => Color::new(1.0, 0.8, 0.2, 0.6), // yellow
         }
     }
 }
@@ -237,7 +237,9 @@ impl BattleSession {
         player_is_attacker: bool,
         tick: u64,
     ) -> Self {
-        let system_name = world.systems.get(system)
+        let system_name = world
+            .systems
+            .get(system)
             .map(|s| s.name.clone())
             .unwrap_or_else(|| "Unknown".into());
 
@@ -289,12 +291,18 @@ impl BattleSession {
             let class = &world.capital_ship_classes[ship.class];
             let sprite_id = Self::class_to_sprite_id(class.dat_id.index());
 
-            let turbolaser_total = (class.turbolaser_fore + class.turbolaser_aft
-                + class.turbolaser_port + class.turbolaser_starboard) as i32;
-            let ion_cannon_total = (class.ion_cannon_fore + class.ion_cannon_aft
-                + class.ion_cannon_port + class.ion_cannon_starboard) as i32;
-            let laser_cannon_total = (class.laser_cannon_fore + class.laser_cannon_aft
-                + class.laser_cannon_port + class.laser_cannon_starboard) as i32;
+            let turbolaser_total = (class.turbolaser_fore
+                + class.turbolaser_aft
+                + class.turbolaser_port
+                + class.turbolaser_starboard) as i32;
+            let ion_cannon_total = (class.ion_cannon_fore
+                + class.ion_cannon_aft
+                + class.ion_cannon_port
+                + class.ion_cannon_starboard) as i32;
+            let laser_cannon_total = (class.laser_cannon_fore
+                + class.laser_cannon_aft
+                + class.laser_cannon_port
+                + class.laser_cannon_starboard) as i32;
 
             ships.push(TacticalShip {
                 class_key: ship.class,
@@ -354,11 +362,15 @@ impl BattleSession {
     /// Attacker ships go on the left side, defender ships on the right.
     /// Ships are stacked vertically, centered.
     fn auto_place_ships(ships: &mut [TacticalShip]) {
-        let atk_ships: Vec<usize> = ships.iter().enumerate()
+        let atk_ships: Vec<usize> = ships
+            .iter()
+            .enumerate()
             .filter(|(_, s)| s.is_attacker)
             .map(|(i, _)| i)
             .collect();
-        let def_ships: Vec<usize> = ships.iter().enumerate()
+        let def_ships: Vec<usize> = ships
+            .iter()
+            .enumerate()
             .filter(|(_, s)| !s.is_attacker)
             .map(|(i, _)| i)
             .collect();
@@ -386,11 +398,15 @@ impl BattleSession {
         let atk_center = Self::side_center(ships, true);
         let def_center = Self::side_center(ships, false);
 
-        let atk_fighters: Vec<usize> = fighters.iter().enumerate()
+        let atk_fighters: Vec<usize> = fighters
+            .iter()
+            .enumerate()
             .filter(|(_, f)| f.is_attacker)
             .map(|(i, _)| i)
             .collect();
-        let def_fighters: Vec<usize> = fighters.iter().enumerate()
+        let def_fighters: Vec<usize> = fighters
+            .iter()
+            .enumerate()
             .filter(|(_, f)| !f.is_attacker)
             .map(|(i, _)| i)
             .collect();
@@ -413,7 +429,8 @@ impl BattleSession {
     }
 
     fn side_center(ships: &[TacticalShip], is_attacker: bool) -> f32 {
-        let side: Vec<f32> = ships.iter()
+        let side: Vec<f32> = ships
+            .iter()
             .filter(|s| s.is_attacker == is_attacker)
             .map(|s| s.y)
             .collect();
@@ -427,14 +444,18 @@ impl BattleSession {
     /// Returns true if the player controls this side of the battle.
     pub fn player_ships(&self) -> impl Iterator<Item = (usize, &TacticalShip)> {
         let player_is_atk = self.player_is_attacker;
-        self.ships.iter().enumerate()
+        self.ships
+            .iter()
+            .enumerate()
             .filter(move |(_, s)| s.is_attacker == player_is_atk)
     }
 
     /// Returns true if this side is controlled by the AI.
     pub fn ai_ships(&self) -> impl Iterator<Item = (usize, &TacticalShip)> {
         let player_is_atk = self.player_is_attacker;
-        self.ships.iter().enumerate()
+        self.ships
+            .iter()
+            .enumerate()
             .filter(move |(_, s)| s.is_attacker != player_is_atk)
     }
 
@@ -463,7 +484,7 @@ impl BattleSession {
         for ship in &mut self.ships {
             if ship.retreating && ship.alive {
                 ship.retreat_progress += 0.05; // ~20 ticks to fully retreat
-                // Move ship toward the edge.
+                                               // Move ship toward the edge.
                 let retreat_dir = if ship.is_attacker { -1.0 } else { 1.0 };
                 ship.x += retreat_dir * 15.0;
                 if ship.retreat_progress >= 1.0 {
@@ -476,19 +497,37 @@ impl BattleSession {
         }
 
         // Collect alive (non-retreating) ship indices per side for combat.
-        let atk_alive: Vec<usize> = self.ships.iter().enumerate()
+        let atk_alive: Vec<usize> = self
+            .ships
+            .iter()
+            .enumerate()
             .filter(|(_, s)| s.is_attacker && s.alive && !s.retreating)
             .map(|(i, _)| i)
             .collect();
-        let def_alive: Vec<usize> = self.ships.iter().enumerate()
+        let def_alive: Vec<usize> = self
+            .ships
+            .iter()
+            .enumerate()
             .filter(|(_, s)| !s.is_attacker && s.alive && !s.retreating)
             .map(|(i, _)| i)
             .collect();
 
         // Phase: Weapon fire (each ship fires at one random enemy).
         let mut new_effects = Vec::new();
-        Self::fire_side(&mut self.ships, &atk_alive, &def_alive, &mut new_effects, self.combat_tick);
-        Self::fire_side(&mut self.ships, &def_alive, &atk_alive, &mut new_effects, self.combat_tick);
+        Self::fire_side(
+            &mut self.ships,
+            &atk_alive,
+            &def_alive,
+            &mut new_effects,
+            self.combat_tick,
+        );
+        Self::fire_side(
+            &mut self.ships,
+            &def_alive,
+            &atk_alive,
+            &mut new_effects,
+            self.combat_tick,
+        );
         self.weapon_effects.extend(new_effects);
 
         // Phase: Shield regeneration (every 3 ticks).
@@ -509,9 +548,15 @@ impl BattleSession {
 
         // Check for battle end.
         let atk_remaining = self.ships.iter().any(|s| s.is_attacker && s.alive)
-            || self.fighters.iter().any(|f| f.is_attacker && f.alive && f.squad_count > 0);
+            || self
+                .fighters
+                .iter()
+                .any(|f| f.is_attacker && f.alive && f.squad_count > 0);
         let def_remaining = self.ships.iter().any(|s| !s.is_attacker && s.alive)
-            || self.fighters.iter().any(|f| !f.is_attacker && f.alive && f.squad_count > 0);
+            || self
+                .fighters
+                .iter()
+                .any(|f| !f.is_attacker && f.alive && f.squad_count > 0);
 
         if !atk_remaining || !def_remaining {
             self.winner = Some(match (atk_remaining, def_remaining) {
@@ -534,10 +579,14 @@ impl BattleSession {
         effects: &mut Vec<WeaponEffect>,
         tick: u32,
     ) {
-        if targets.is_empty() { return; }
+        if targets.is_empty() {
+            return;
+        }
 
         for &fire_idx in firing {
-            if !ships[fire_idx].alive || ships[fire_idx].retreating { continue; }
+            if !ships[fire_idx].alive || ships[fire_idx].retreating {
+                continue;
+            }
 
             // Focus-fire: if this ship has a valid focus target, prefer it.
             let target_idx = if let Some(ft) = ships[fire_idx].focus_target {
@@ -545,11 +594,13 @@ impl BattleSession {
                     ft
                 } else {
                     // Focus target dead or invalid — fall back to pseudo-random.
-                    targets[((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7)) % targets.len()]
+                    targets[((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7))
+                        % targets.len()]
                 }
             } else {
                 // No focus target — pseudo-random.
-                targets[((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7)) % targets.len()]
+                targets
+                    [((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7)) % targets.len()]
             };
 
             // Calculate total weapon output and kind from actual weapon stats.
@@ -559,8 +610,7 @@ impl BattleSession {
                 && ship.turbolaser_power > 0
             {
                 (ship.turbolaser_power, WeaponKind::Turbolaser)
-            } else if ship.ion_cannon_power >= ship.laser_cannon_power
-                && ship.ion_cannon_power > 0
+            } else if ship.ion_cannon_power >= ship.laser_cannon_power && ship.ion_cannon_power > 0
             {
                 (ship.ion_cannon_power, WeaponKind::IonCannon)
             } else if ship.laser_cannon_power > 0 {
@@ -598,18 +648,25 @@ impl BattleSession {
     /// Fighter squadrons engage: attack enemy ships and each other.
     fn fighter_step(&mut self) {
         // Fighters attack enemy capital ships.
-        let atk_fighter_power: u32 = self.fighters.iter()
+        let atk_fighter_power: u32 = self
+            .fighters
+            .iter()
             .filter(|f| f.is_attacker && f.alive && f.squad_count > 0)
             .map(|f| f.squad_count)
             .sum();
-        let def_fighter_power: u32 = self.fighters.iter()
+        let def_fighter_power: u32 = self
+            .fighters
+            .iter()
             .filter(|f| !f.is_attacker && f.alive && f.squad_count > 0)
             .map(|f| f.squad_count)
             .sum();
 
         // Attack enemy ships: each squadron's damage = squad_count / 5.
         if atk_fighter_power > 0 {
-            let def_ships: Vec<usize> = self.ships.iter().enumerate()
+            let def_ships: Vec<usize> = self
+                .ships
+                .iter()
+                .enumerate()
                 .filter(|(_, s)| !s.is_attacker && s.alive)
                 .map(|(i, _)| i)
                 .collect();
@@ -620,14 +677,18 @@ impl BattleSession {
                 let shield_absorb = damage.min(self.ships[target].shield);
                 self.ships[target].shield -= shield_absorb;
                 let hull_damage = damage - shield_absorb;
-                self.ships[target].hull_current = (self.ships[target].hull_current - hull_damage).max(0);
+                self.ships[target].hull_current =
+                    (self.ships[target].hull_current - hull_damage).max(0);
                 if self.ships[target].hull_current == 0 {
                     self.ships[target].alive = false;
                 }
             }
         }
         if def_fighter_power > 0 {
-            let atk_ships: Vec<usize> = self.ships.iter().enumerate()
+            let atk_ships: Vec<usize> = self
+                .ships
+                .iter()
+                .enumerate()
                 .filter(|(_, s)| s.is_attacker && s.alive)
                 .map(|(i, _)| i)
                 .collect();
@@ -638,7 +699,8 @@ impl BattleSession {
                 let shield_absorb = damage.min(self.ships[target].shield);
                 self.ships[target].shield -= shield_absorb;
                 let hull_damage = damage - shield_absorb;
-                self.ships[target].hull_current = (self.ships[target].hull_current - hull_damage).max(0);
+                self.ships[target].hull_current =
+                    (self.ships[target].hull_current - hull_damage).max(0);
                 if self.ships[target].hull_current == 0 {
                     self.ships[target].alive = false;
                 }
@@ -656,10 +718,18 @@ impl BattleSession {
         }
     }
 
-    fn apply_fighter_attrition(fighters: &mut [TacticalFighter], is_attacker: bool, mut losses: u32) {
+    fn apply_fighter_attrition(
+        fighters: &mut [TacticalFighter],
+        is_attacker: bool,
+        mut losses: u32,
+    ) {
         for f in fighters.iter_mut().rev() {
-            if losses == 0 { break; }
-            if f.is_attacker != is_attacker || !f.alive { continue; }
+            if losses == 0 {
+                break;
+            }
+            if f.is_attacker != is_attacker || !f.alive {
+                continue;
+            }
             let take = losses.min(f.squad_count);
             f.squad_count -= take;
             losses -= take;
@@ -721,7 +791,12 @@ impl TacticalState {
         tick: u64,
     ) {
         self.session = Some(BattleSession::new(
-            world, system, attacker, defender, player_is_attacker, tick,
+            world,
+            system,
+            attacker,
+            defender,
+            player_is_attacker,
+            tick,
         ));
         self.dragging_ship = None;
         self.drag_offset = (0.0, 0.0);
@@ -868,7 +943,9 @@ pub fn draw_tactical_view(
 
     // 4. Draw ships (macroquad primitives).
     for ship in &session.ships {
-        if !ship.alive { continue; }
+        if !ship.alive {
+            continue;
+        }
         let sx = offset_x + ship.x * scale;
         let sy = offset_y + ship.y * scale;
         let size = DEFAULT_SHIP_SIZE * scale;
@@ -920,7 +997,13 @@ pub fn draw_tactical_view(
             let shield_frac = ship.shield as f32 / ship.shield_max as f32;
             let sbar_y = sy - half - 8.0;
             draw_rectangle(bar_x, sbar_y, bar_w, bar_h, Color::new(0.0, 0.0, 0.3, 0.6));
-            draw_rectangle(bar_x, sbar_y, bar_w * shield_frac, bar_h, Color::new(0.3, 0.5, 1.0, 0.8));
+            draw_rectangle(
+                bar_x,
+                sbar_y,
+                bar_w * shield_frac,
+                bar_h,
+                Color::new(0.3, 0.5, 1.0, 0.8),
+            );
         }
 
         let font_size = (12.0 * scale).max(8.0).min(14.0) as u16;
@@ -955,7 +1038,9 @@ pub fn draw_tactical_view(
 
     // 5. Draw fighter squadrons.
     for fighter in &session.fighters {
-        if !fighter.alive { continue; }
+        if !fighter.alive {
+            continue;
+        }
         let fx = offset_x + fighter.x * scale;
         let fy = offset_y + fighter.y * scale;
         let size = FIGHTER_SIZE * scale;
@@ -981,7 +1066,10 @@ pub fn draw_tactical_view(
 
     // 6. Draw weapon fire effects (laser lines between ships).
     for effect in &session.weapon_effects {
-        if let (Some(src), Some(tgt)) = (session.ships.get(effect.source), session.ships.get(effect.target)) {
+        if let (Some(src), Some(tgt)) = (
+            session.ships.get(effect.source),
+            session.ships.get(effect.target),
+        ) {
             let sx = offset_x + src.x * scale;
             let sy = offset_y + src.y * scale;
             let tx = offset_x + tgt.x * scale;
@@ -1005,8 +1093,12 @@ pub fn draw_tactical_view(
     // 6b. Draw targeting lines from player ships to their focus targets.
     if phase == BattlePhase::Combat {
         for ship in &session.ships {
-            if !ship.alive || !ship.selected { continue; }
-            if ship.is_attacker != player_is_attacker { continue; }
+            if !ship.alive || !ship.selected {
+                continue;
+            }
+            if ship.is_attacker != player_is_attacker {
+                continue;
+            }
             if let Some(ft_idx) = ship.focus_target {
                 if let Some(target) = session.ships.get(ft_idx) {
                     if target.alive {
@@ -1028,16 +1120,25 @@ pub fn draw_tactical_view(
     // Collect ship info for the selected ship before mutable borrow.
     let selected_info: Option<(String, Option<u32>, i32, i32, i32, i32, bool)> = selected_ship
         .and_then(|idx| session.ships.get(idx))
-        .map(|s| (
-            s.name.clone(), s.sprite_id,
-            s.hull_current, s.hull_max,
-            s.shield, s.shield_max,
-            s.alive,
-        ));
-    let player_ship_count = session.ships.iter()
+        .map(|s| {
+            (
+                s.name.clone(),
+                s.sprite_id,
+                s.hull_current,
+                s.hull_max,
+                s.shield,
+                s.shield_max,
+                s.alive,
+            )
+        });
+    let player_ship_count = session
+        .ships
+        .iter()
         .filter(|s| s.is_attacker == player_is_attacker && s.alive)
         .count();
-    let enemy_ship_count = session.ships.iter()
+    let enemy_ship_count = session
+        .ships
+        .iter()
         .filter(|s| s.is_attacker != player_is_attacker && s.alive)
         .count();
 
@@ -1047,7 +1148,14 @@ pub fn draw_tactical_view(
     // 6. Handle input per phase.
     if phase == BattlePhase::Placement {
         let session = state.session.as_mut().unwrap();
-        handle_placement_input(session, &mut state.dragging_ship, &mut state.drag_offset, scale, offset_x, offset_y);
+        handle_placement_input(
+            session,
+            &mut state.dragging_ship,
+            &mut state.drag_offset,
+            scale,
+            offset_x,
+            offset_y,
+        );
     } else if phase == BattlePhase::Combat {
         let session = state.session.as_mut().unwrap();
         handle_combat_input(session, scale, offset_x, offset_y);
@@ -1057,7 +1165,12 @@ pub fn draw_tactical_view(
     egui_macroquad::ui(|ctx| {
         // Preload tactical sprites on first frame.
         if needs_preload {
-            bmp_cache.preload_range(ctx, DllSource::Tactical, TACTICAL_SHIP_SPRITE_START, TACTICAL_SHIP_SPRITE_END);
+            bmp_cache.preload_range(
+                ctx,
+                DllSource::Tactical,
+                TACTICAL_SHIP_SPRITE_START,
+                TACTICAL_SHIP_SPRITE_END,
+            );
         }
 
         // Task force info panel overlay (top-left floating window).
@@ -1085,7 +1198,10 @@ pub fn draw_tactical_view(
                     let size = tex.size();
                     let w = (size[0] as f32).min(160.0);
                     let h = w * size[1] as f32 / size[0] as f32;
-                    ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                    ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                        tex.id(),
+                        Vec2::new(w, h),
+                    )));
                 }
 
                 ui.add_space(4.0);
@@ -1095,7 +1211,10 @@ pub fn draw_tactical_view(
                     let size = tex.size();
                     let w = (size[0] as f32).min(160.0);
                     let h = w * size[1] as f32 / size[0] as f32;
-                    ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                    ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                        tex.id(),
+                        Vec2::new(w, h),
+                    )));
                 }
             });
 
@@ -1105,7 +1224,7 @@ pub fn draw_tactical_view(
                 ui.heading(
                     RichText::new(format!("Battle of {}", system_name))
                         .color(Color32::from_rgb(255, 200, 60))
-                        .strong()
+                        .strong(),
                 );
                 ui.separator();
                 ui.label(
@@ -1114,7 +1233,7 @@ pub fn draw_tactical_view(
                         BattlePhase::Combat => "COMBAT",
                         BattlePhase::Results => "BATTLE RESULTS",
                     })
-                    .color(Color32::from_rgb(200, 200, 200))
+                    .color(Color32::from_rgb(200, 200, 200)),
                 );
             });
         });
@@ -1129,26 +1248,32 @@ pub fn draw_tactical_view(
                                 "Your ships: {}  |  Enemy ships: {}",
                                 player_ship_count, enemy_ship_count,
                             ))
-                            .color(Color32::from_rgb(180, 180, 180))
+                            .color(Color32::from_rgb(180, 180, 180)),
                         );
                         ui.separator();
                         ui.label(
                             RichText::new("Drag your ships to reposition. Fighters auto-deploy.")
                                 .color(Color32::from_rgb(140, 140, 140))
-                                .italics()
+                                .italics(),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button(
-                                RichText::new("Begin Battle")
-                                    .color(Color32::from_rgb(60, 220, 60))
-                                    .strong()
-                            ).clicked() {
+                            if ui
+                                .button(
+                                    RichText::new("Begin Battle")
+                                        .color(Color32::from_rgb(60, 220, 60))
+                                        .strong(),
+                                )
+                                .clicked()
+                            {
                                 action = TacticalAction::BeginCombat;
                             }
-                            if ui.button(
-                                RichText::new("Auto-Resolve")
-                                    .color(Color32::from_rgb(200, 200, 100))
-                            ).clicked() {
+                            if ui
+                                .button(
+                                    RichText::new("Auto-Resolve")
+                                        .color(Color32::from_rgb(200, 200, 100)),
+                                )
+                                .clicked()
+                            {
                                 action = TacticalAction::AutoResolve;
                             }
                         });
@@ -1159,7 +1284,7 @@ pub fn draw_tactical_view(
                                 "Your ships: {}  |  Enemy ships: {}  |  Tick: {}",
                                 player_ship_count, enemy_ship_count, combat_tick,
                             ))
-                            .color(Color32::from_rgb(180, 180, 180))
+                            .color(Color32::from_rgb(180, 180, 180)),
                         );
                         ui.separator();
 
@@ -1180,36 +1305,58 @@ pub fn draw_tactical_view(
                             let size = tex.size();
                             let h = 20.0_f32;
                             let w = h * size[0] as f32 / size[1] as f32;
-                            ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                            ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                                tex.id(),
+                                Vec2::new(w, h),
+                            )));
                         }
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Speed controls.
                             let speed_label = format!("{}x", combat_speed);
-                            if ui.button(RichText::new("Faster").color(Color32::from_rgb(120, 200, 120))).clicked() {
+                            if ui
+                                .button(
+                                    RichText::new("Faster").color(Color32::from_rgb(120, 200, 120)),
+                                )
+                                .clicked()
+                            {
                                 action = TacticalAction::SetSpeed(combat_speed.min(2) * 2);
                             }
                             ui.label(
                                 RichText::new(speed_label)
                                     .color(Color32::from_rgb(200, 200, 200))
-                                    .strong()
+                                    .strong(),
                             );
-                            if ui.button(RichText::new("Slower").color(Color32::from_rgb(200, 200, 120))).clicked() {
+                            if ui
+                                .button(
+                                    RichText::new("Slower").color(Color32::from_rgb(200, 200, 120)),
+                                )
+                                .clicked()
+                            {
                                 action = TacticalAction::SetSpeed((combat_speed / 2).max(1));
                             }
                             ui.separator();
 
                             // Pause/resume.
                             // Retreat selected ships.
-                            if ui.button(
-                                RichText::new("Retreat Selected")
-                                    .color(Color32::from_rgb(220, 120, 60))
-                            ).clicked() {
+                            if ui
+                                .button(
+                                    RichText::new("Retreat Selected")
+                                        .color(Color32::from_rgb(220, 120, 60)),
+                                )
+                                .clicked()
+                            {
                                 action = TacticalAction::RetreatSelected;
                             }
                             ui.separator();
                             let pause_label = if paused { "Resume" } else { "Pause" };
-                            if ui.button(RichText::new(pause_label).color(Color32::from_rgb(200, 180, 60))).clicked() {
+                            if ui
+                                .button(
+                                    RichText::new(pause_label)
+                                        .color(Color32::from_rgb(200, 180, 60)),
+                                )
+                                .clicked()
+                            {
                                 action = TacticalAction::TogglePause;
                             }
                         });
@@ -1218,33 +1365,47 @@ pub fn draw_tactical_view(
                         // Show winner.
                         let (winner_text, winner_color) = match winner {
                             Some(CombatWinner::Attacker) => {
-                                if player_is_attacker { ("VICTORY!", Color32::from_rgb(60, 220, 60)) }
-                                else { ("DEFEAT", Color32::from_rgb(220, 60, 60)) }
+                                if player_is_attacker {
+                                    ("VICTORY!", Color32::from_rgb(60, 220, 60))
+                                } else {
+                                    ("DEFEAT", Color32::from_rgb(220, 60, 60))
+                                }
                             }
                             Some(CombatWinner::Defender) => {
-                                if !player_is_attacker { ("VICTORY!", Color32::from_rgb(60, 220, 60)) }
-                                else { ("DEFEAT", Color32::from_rgb(220, 60, 60)) }
+                                if !player_is_attacker {
+                                    ("VICTORY!", Color32::from_rgb(60, 220, 60))
+                                } else {
+                                    ("DEFEAT", Color32::from_rgb(220, 60, 60))
+                                }
                             }
                             Some(CombatWinner::Draw) | None => {
                                 ("DRAW", Color32::from_rgb(200, 200, 60))
                             }
                         };
-                        ui.label(RichText::new(winner_text).color(winner_color).strong().size(16.0));
+                        ui.label(
+                            RichText::new(winner_text)
+                                .color(winner_color)
+                                .strong()
+                                .size(16.0),
+                        );
                         ui.separator();
                         ui.label(
                             RichText::new(format!(
                                 "Your ships: {} remaining  |  Enemy ships: {} remaining",
                                 player_ship_count, enemy_ship_count,
                             ))
-                            .color(Color32::from_rgb(180, 180, 180))
+                            .color(Color32::from_rgb(180, 180, 180)),
                         );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button(
-                                RichText::new("Return to Galaxy")
-                                    .color(Color32::from_rgb(200, 200, 60))
-                                    .strong()
-                            ).clicked() {
+                            if ui
+                                .button(
+                                    RichText::new("Return to Galaxy")
+                                        .color(Color32::from_rgb(200, 200, 60))
+                                        .strong(),
+                                )
+                                .clicked()
+                            {
                                 action = TacticalAction::ReturnToGalaxy;
                             }
                         });
@@ -1254,22 +1415,26 @@ pub fn draw_tactical_view(
         });
 
         // Right panel: selected ship info.
-        if let Some((ref name, sprite_id, hull_current, hull_max, shield, shield_max, alive)) = selected_info {
+        if let Some((ref name, sprite_id, hull_current, hull_max, shield, shield_max, alive)) =
+            selected_info
+        {
             egui::SidePanel::right("tactical_ship_info")
                 .default_width(200.0)
                 .show(ctx, |ui| {
-                    ui.heading(
-                        RichText::new(name)
-                            .color(Color32::from_rgb(255, 220, 100))
-                    );
+                    ui.heading(RichText::new(name).color(Color32::from_rgb(255, 220, 100)));
                     ui.separator();
 
                     // Hull/shield display panel background (TACTICAL.DLL ID 1302).
-                    if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, TACTICAL_HULL_SHIELD_PANEL) {
+                    if let Some(tex) =
+                        bmp_cache.get(ctx, DllSource::Tactical, TACTICAL_HULL_SHIELD_PANEL)
+                    {
                         let size = tex.size();
                         let w = 180.0_f32.min(size[0] as f32);
                         let h = w * size[1] as f32 / size[0] as f32;
-                        ui.add(egui::Image::new(egui::load::SizedTexture::new(tex.id(), Vec2::new(w, h))));
+                        ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                            tex.id(),
+                            Vec2::new(w, h),
+                        )));
                         ui.add_space(2.0);
                     }
 
@@ -1280,23 +1445,25 @@ pub fn draw_tactical_view(
                             let aspect = size[0] as f32 / size[1] as f32;
                             let display_w = 180.0_f32.min(size[0] as f32);
                             let display_h = display_w / aspect;
-                            ui.image(egui::ImageSource::Texture(
-                                egui::load::SizedTexture::new(tex.id(), Vec2::new(display_w, display_h)),
-                            ));
+                            ui.image(egui::ImageSource::Texture(egui::load::SizedTexture::new(
+                                tex.id(),
+                                Vec2::new(display_w, display_h),
+                            )));
                             ui.add_space(4.0);
                         }
                     }
 
                     ui.horizontal(|ui| {
                         ui.label("Hull:");
-                        let hull_color = if hull_max > 0 && hull_current as f32 / hull_max as f32 > 0.5 {
-                            Color32::from_rgb(100, 220, 100)
-                        } else {
-                            Color32::from_rgb(220, 100, 60)
-                        };
+                        let hull_color =
+                            if hull_max > 0 && hull_current as f32 / hull_max as f32 > 0.5 {
+                                Color32::from_rgb(100, 220, 100)
+                            } else {
+                                Color32::from_rgb(220, 100, 60)
+                            };
                         ui.label(
                             RichText::new(format!("{}/{}", hull_current, hull_max))
-                                .color(hull_color)
+                                .color(hull_color),
                         );
                     });
 
@@ -1305,7 +1472,7 @@ pub fn draw_tactical_view(
                             ui.label("Shields:");
                             ui.label(
                                 RichText::new(format!("{}/{}", shield, shield_max))
-                                    .color(Color32::from_rgb(100, 150, 255))
+                                    .color(Color32::from_rgb(100, 150, 255)),
                             );
                         });
                     }
@@ -1313,12 +1480,13 @@ pub fn draw_tactical_view(
                     ui.horizontal(|ui| {
                         ui.label("Status:");
                         ui.label(
-                            RichText::new(if alive { "Active" } else { "Destroyed" })
-                                .color(if alive {
+                            RichText::new(if alive { "Active" } else { "Destroyed" }).color(
+                                if alive {
                                     Color32::from_rgb(100, 220, 100)
                                 } else {
                                     Color32::from_rgb(220, 60, 60)
-                                })
+                                },
+                            ),
                         );
                     });
                 });
@@ -1338,12 +1506,7 @@ pub fn draw_tactical_view(
 /// - Left-click: select a player ship.
 /// - Right-click on enemy: issue focus-fire order to all selected player ships.
 /// - R key: retreat selected ships.
-fn handle_combat_input(
-    session: &mut BattleSession,
-    scale: f32,
-    offset_x: f32,
-    offset_y: f32,
-) {
+fn handle_combat_input(session: &mut BattleSession, scale: f32, offset_x: f32, offset_y: f32) {
     let (mx, my) = mouse_position();
     let arena_mx = (mx - offset_x) / scale;
     let arena_my = (my - offset_y) / scale;
@@ -1353,8 +1516,12 @@ fn handle_combat_input(
     if is_mouse_button_pressed(MouseButton::Left) {
         let mut hit = None;
         for (i, ship) in session.ships.iter().enumerate() {
-            if !ship.alive || ship.retreating { continue; }
-            if ship.is_attacker != session.player_is_attacker { continue; }
+            if !ship.alive || ship.retreating {
+                continue;
+            }
+            if ship.is_attacker != session.player_is_attacker {
+                continue;
+            }
             let dx = arena_mx - ship.x;
             let dy = arena_my - ship.y;
             if dx * dx + dy * dy < hit_radius * hit_radius {
@@ -1368,13 +1535,17 @@ fn handle_combat_input(
             if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
                 session.ships[idx].selected = !session.ships[idx].selected;
             } else {
-                for s in &mut session.ships { s.selected = false; }
+                for s in &mut session.ships {
+                    s.selected = false;
+                }
                 session.ships[idx].selected = true;
             }
             session.selected_ship = Some(idx);
         } else {
             // Clicked empty space — deselect all.
-            for s in &mut session.ships { s.selected = false; }
+            for s in &mut session.ships {
+                s.selected = false;
+            }
             session.selected_ship = None;
         }
     }
@@ -1383,9 +1554,13 @@ fn handle_combat_input(
     if is_mouse_button_pressed(MouseButton::Right) {
         let mut target_hit = None;
         for (i, ship) in session.ships.iter().enumerate() {
-            if !ship.alive { continue; }
+            if !ship.alive {
+                continue;
+            }
             // Can only target enemy ships.
-            if ship.is_attacker == session.player_is_attacker { continue; }
+            if ship.is_attacker == session.player_is_attacker {
+                continue;
+            }
             let dx = arena_mx - ship.x;
             let dy = arena_my - ship.y;
             if dx * dx + dy * dy < hit_radius * hit_radius {
@@ -1452,8 +1627,12 @@ fn handle_placement_input(
         // Check if clicking on a player's ship.
         let mut hit = None;
         for (i, ship) in session.ships.iter().enumerate() {
-            if !ship.alive { continue; }
-            if ship.is_attacker != session.player_is_attacker { continue; }
+            if !ship.alive {
+                continue;
+            }
+            if ship.is_attacker != session.player_is_attacker {
+                continue;
+            }
             let dx = arena_mx - ship.x;
             let dy = arena_my - ship.y;
             if dx * dx + dy * dy < (DEFAULT_SHIP_SIZE * 0.6).powi(2) {
@@ -1469,22 +1648,30 @@ fn handle_placement_input(
                 session.ships[idx].y - arena_my,
             );
             // Select this ship.
-            for s in &mut session.ships { s.selected = false; }
+            for s in &mut session.ships {
+                s.selected = false;
+            }
             session.ships[idx].selected = true;
             session.selected_ship = Some(idx);
         } else {
             // Deselect.
-            for s in &mut session.ships { s.selected = false; }
+            for s in &mut session.ships {
+                s.selected = false;
+            }
             session.selected_ship = None;
         }
     }
 
     if is_mouse_button_down(MouseButton::Left) {
         if let Some(idx) = *dragging_ship {
-            let new_x = (arena_mx + drag_offset.0)
-                .clamp(zone_min_x + DEFAULT_SHIP_SIZE * 0.5, zone_max_x - DEFAULT_SHIP_SIZE * 0.5);
-            let new_y = (arena_my + drag_offset.1)
-                .clamp(DEFAULT_SHIP_SIZE * 0.5, ARENA_HEIGHT - DEFAULT_SHIP_SIZE * 0.5);
+            let new_x = (arena_mx + drag_offset.0).clamp(
+                zone_min_x + DEFAULT_SHIP_SIZE * 0.5,
+                zone_max_x - DEFAULT_SHIP_SIZE * 0.5,
+            );
+            let new_y = (arena_my + drag_offset.1).clamp(
+                DEFAULT_SHIP_SIZE * 0.5,
+                ARENA_HEIGHT - DEFAULT_SHIP_SIZE * 0.5,
+            );
             session.ships[idx].x = new_x;
             session.ships[idx].y = new_y;
         }
@@ -1517,7 +1704,9 @@ fn draw_starfield() {
         let brightness = 0.3 + (seed % 70) as f32 / 100.0;
 
         draw_circle(
-            x, y, 1.0,
+            x,
+            y,
+            1.0,
             Color::new(brightness, brightness, brightness * 1.1, 1.0),
         );
     }

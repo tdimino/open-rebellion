@@ -46,8 +46,8 @@ use std::path::Path;
 use anyhow::Context;
 use dat_dumper::types::seed_table::SeedTableFile;
 use dat_dumper::types::syfc_table::SyfcTableFile;
-use rand::{Rng, SeedableRng};
 use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
 use rebellion_core::ids::*;
@@ -176,9 +176,9 @@ fn initialize_special_systems(world: &mut GameWorld, special: &SpecialSystems) {
 // ── Family byte constants ─────────────────────────────────────────────────────
 
 const FAM_CAPITAL_SHIP: u8 = 0x14;
-const FAM_FIGHTER:      u8 = 0x1C;
-const FAM_TROOP:        u8 = 0x10;
-const FAM_SPECIAL:      u8 = 0x3C;
+const FAM_FIGHTER: u8 = 0x1C;
+const FAM_TROOP: u8 = 0x10;
+const FAM_SPECIAL: u8 = 0x3C;
 // Defense facilities span 0x22–0x25.
 const FAM_DEF_MIN: u8 = 0x22;
 const FAM_DEF_MAX: u8 = 0x25;
@@ -194,9 +194,9 @@ const FAM_ALLIANCE_HQ: u8 = 0x20;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Index built from the loaded capital-ship arena: `dat_id.raw() → CapitalShipKey`.
-type CapShipIndex  = HashMap<u32, CapitalShipKey>;
+type CapShipIndex = HashMap<u32, CapitalShipKey>;
 /// Index built from the fighter arena: `dat_id.raw() → FighterKey`.
-type FighterIndex  = HashMap<u32, FighterKey>;
+type FighterIndex = HashMap<u32, FighterKey>;
 
 /// Select starting systems for each faction based on proximity to their HQ.
 ///
@@ -312,7 +312,13 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
         None => {
             // Fallback: use old proximity model if special systems can't be resolved.
             // This should only happen with incomplete data files.
-            return apply_seeds_legacy(gdata_path, world, system_key_map, &capship_index, &fighter_index);
+            return apply_seeds_legacy(
+                gdata_path,
+                world,
+                system_key_map,
+                &capship_index,
+                &fighter_index,
+            );
         }
     };
 
@@ -439,27 +445,76 @@ fn apply_seeds_legacy(
 ) -> anyhow::Result<()> {
     let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
 
-    apply_fleet_seed(&load_seed(gdata_path, "CMUNEFTB.DAT")?, system_key_map,
-        capship_index, fighter_index, &empire_systems, false, world);
-    apply_fleet_seed(&load_seed(gdata_path, "CMUNAFTB.DAT")?, system_key_map,
-        capship_index, fighter_index, &alliance_systems, true, world);
-    apply_army_seed(&load_seed(gdata_path, "CMUNEMTB.DAT")?, system_key_map,
-        &empire_systems, false, world);
-    apply_army_seed(&load_seed(gdata_path, "CMUNALTB.DAT")?, system_key_map,
-        &alliance_systems, true, world);
-    apply_garrison_seed(&load_seed(gdata_path, "CMUNCRTB.DAT")?, system_key_map,
-        CORUSCANT_SEQ_ID, false, world);
+    apply_fleet_seed(
+        &load_seed(gdata_path, "CMUNEFTB.DAT")?,
+        system_key_map,
+        capship_index,
+        fighter_index,
+        &empire_systems,
+        false,
+        world,
+    );
+    apply_fleet_seed(
+        &load_seed(gdata_path, "CMUNAFTB.DAT")?,
+        system_key_map,
+        capship_index,
+        fighter_index,
+        &alliance_systems,
+        true,
+        world,
+    );
+    apply_army_seed(
+        &load_seed(gdata_path, "CMUNEMTB.DAT")?,
+        system_key_map,
+        &empire_systems,
+        false,
+        world,
+    );
+    apply_army_seed(
+        &load_seed(gdata_path, "CMUNALTB.DAT")?,
+        system_key_map,
+        &alliance_systems,
+        true,
+        world,
+    );
+    apply_garrison_seed(
+        &load_seed(gdata_path, "CMUNCRTB.DAT")?,
+        system_key_map,
+        CORUSCANT_SEQ_ID,
+        false,
+        world,
+    );
     // NOTE: Legacy fallback collapses Alliance HQ to Yavin because the 3-system
     // model (which randomizes Rebel HQ) requires Coruscant to be present.
     // This fallback only runs when special systems can't be identified.
-    apply_garrison_seed(&load_seed(gdata_path, "CMUNHQTB.DAT")?, system_key_map,
-        YAVIN_SEQ_ID, true, world);
-    apply_garrison_seed(&load_seed(gdata_path, "CMUNYVTB.DAT")?, system_key_map,
-        YAVIN_SEQ_ID, true, world);
-    apply_facility_seed(&load_seed(gdata_path, "FACLCRTB.DAT")?, system_key_map,
-        CORUSCANT_SEQ_ID, false, world);
-    apply_facility_seed(&load_seed(gdata_path, "FACLHQTB.DAT")?, system_key_map,
-        YAVIN_SEQ_ID, true, world);
+    apply_garrison_seed(
+        &load_seed(gdata_path, "CMUNHQTB.DAT")?,
+        system_key_map,
+        YAVIN_SEQ_ID,
+        true,
+        world,
+    );
+    apply_garrison_seed(
+        &load_seed(gdata_path, "CMUNYVTB.DAT")?,
+        system_key_map,
+        YAVIN_SEQ_ID,
+        true,
+        world,
+    );
+    apply_facility_seed(
+        &load_seed(gdata_path, "FACLCRTB.DAT")?,
+        system_key_map,
+        CORUSCANT_SEQ_ID,
+        false,
+        world,
+    );
+    apply_facility_seed(
+        &load_seed(gdata_path, "FACLHQTB.DAT")?,
+        system_key_map,
+        YAVIN_SEQ_ID,
+        true,
+        world,
+    );
 
     Ok(())
 }
@@ -484,10 +539,16 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     seed_options: &SeedOptions,
     rng: &mut R,
 ) -> anyhow::Result<()> {
-    let capship_index: CapShipIndex = world.capital_ship_classes.iter()
-        .map(|(k, v)| (v.dat_id.raw(), k)).collect();
-    let fighter_index: FighterIndex = world.fighter_classes.iter()
-        .map(|(k, v)| (v.dat_id.raw(), k)).collect();
+    let capship_index: CapShipIndex = world
+        .capital_ship_classes
+        .iter()
+        .map(|(k, v)| (v.dat_id.raw(), k))
+        .collect();
+    let fighter_index: FighterIndex = world
+        .fighter_classes
+        .iter()
+        .map(|(k, v)| (v.dat_id.raw(), k))
+        .collect();
 
     // Use 3-system model when possible.
     let special = match select_special_systems(world, system_key_map, rng) {
@@ -495,49 +556,147 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
         None => {
             // Fallback to proximity model for incomplete data
             let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
-            apply_fleet_seed(&load_seed_from_files(files, "CMUNEFTB.DAT")?, system_key_map,
-                &capship_index, &fighter_index, &empire_systems, false, world);
-            apply_fleet_seed(&load_seed_from_files(files, "CMUNAFTB.DAT")?, system_key_map,
-                &capship_index, &fighter_index, &alliance_systems, true, world);
-            apply_army_seed(&load_seed_from_files(files, "CMUNEMTB.DAT")?, system_key_map,
-                &empire_systems, false, world);
-            apply_army_seed(&load_seed_from_files(files, "CMUNALTB.DAT")?, system_key_map,
-                &alliance_systems, true, world);
-            apply_garrison_seed(&load_seed_from_files(files, "CMUNCRTB.DAT")?, system_key_map,
-                CORUSCANT_SEQ_ID, false, world);
+            apply_fleet_seed(
+                &load_seed_from_files(files, "CMUNEFTB.DAT")?,
+                system_key_map,
+                &capship_index,
+                &fighter_index,
+                &empire_systems,
+                false,
+                world,
+            );
+            apply_fleet_seed(
+                &load_seed_from_files(files, "CMUNAFTB.DAT")?,
+                system_key_map,
+                &capship_index,
+                &fighter_index,
+                &alliance_systems,
+                true,
+                world,
+            );
+            apply_army_seed(
+                &load_seed_from_files(files, "CMUNEMTB.DAT")?,
+                system_key_map,
+                &empire_systems,
+                false,
+                world,
+            );
+            apply_army_seed(
+                &load_seed_from_files(files, "CMUNALTB.DAT")?,
+                system_key_map,
+                &alliance_systems,
+                true,
+                world,
+            );
+            apply_garrison_seed(
+                &load_seed_from_files(files, "CMUNCRTB.DAT")?,
+                system_key_map,
+                CORUSCANT_SEQ_ID,
+                false,
+                world,
+            );
             // NOTE: WASM legacy fallback collapses Alliance HQ to Yavin (same as filesystem fallback).
-            apply_garrison_seed(&load_seed_from_files(files, "CMUNHQTB.DAT")?, system_key_map,
-                YAVIN_SEQ_ID, true, world);
-            apply_garrison_seed(&load_seed_from_files(files, "CMUNYVTB.DAT")?, system_key_map,
-                YAVIN_SEQ_ID, true, world);
-            apply_facility_seed(&load_seed_from_files(files, "FACLCRTB.DAT")?, system_key_map,
-                CORUSCANT_SEQ_ID, false, world);
-            apply_facility_seed(&load_seed_from_files(files, "FACLHQTB.DAT")?, system_key_map,
-                YAVIN_SEQ_ID, true, world);
+            apply_garrison_seed(
+                &load_seed_from_files(files, "CMUNHQTB.DAT")?,
+                system_key_map,
+                YAVIN_SEQ_ID,
+                true,
+                world,
+            );
+            apply_garrison_seed(
+                &load_seed_from_files(files, "CMUNYVTB.DAT")?,
+                system_key_map,
+                YAVIN_SEQ_ID,
+                true,
+                world,
+            );
+            apply_facility_seed(
+                &load_seed_from_files(files, "FACLCRTB.DAT")?,
+                system_key_map,
+                CORUSCANT_SEQ_ID,
+                false,
+                world,
+            );
+            apply_facility_seed(
+                &load_seed_from_files(files, "FACLHQTB.DAT")?,
+                system_key_map,
+                YAVIN_SEQ_ID,
+                true,
+                world,
+            );
             return Ok(());
         }
     };
 
     initialize_special_systems(world, &special);
 
-    apply_fleet_seed(&load_seed_from_files(files, "CMUNEFTB.DAT")?, system_key_map,
-        &capship_index, &fighter_index, &[CORUSCANT_SEQ_ID], false, world);
-    apply_fleet_seed(&load_seed_from_files(files, "CMUNAFTB.DAT")?, system_key_map,
-        &capship_index, &fighter_index, &[YAVIN_SEQ_ID, special.rebel_hq_seq_id], true, world);
-    apply_army_seed(&load_seed_from_files(files, "CMUNEMTB.DAT")?, system_key_map,
-        &[CORUSCANT_SEQ_ID], false, world);
-    apply_army_seed(&load_seed_from_files(files, "CMUNALTB.DAT")?, system_key_map,
-        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id], true, world);
-    apply_garrison_seed(&load_seed_from_files(files, "CMUNCRTB.DAT")?, system_key_map,
-        CORUSCANT_SEQ_ID, false, world);
-    apply_garrison_seed(&load_seed_from_files(files, "CMUNHQTB.DAT")?, system_key_map,
-        special.rebel_hq_seq_id, true, world);
-    apply_garrison_seed(&load_seed_from_files(files, "CMUNYVTB.DAT")?, system_key_map,
-        YAVIN_SEQ_ID, true, world);
-    apply_facility_seed(&load_seed_from_files(files, "FACLCRTB.DAT")?, system_key_map,
-        CORUSCANT_SEQ_ID, false, world);
-    apply_facility_seed(&load_seed_from_files(files, "FACLHQTB.DAT")?, system_key_map,
-        special.rebel_hq_seq_id, true, world);
+    apply_fleet_seed(
+        &load_seed_from_files(files, "CMUNEFTB.DAT")?,
+        system_key_map,
+        &capship_index,
+        &fighter_index,
+        &[CORUSCANT_SEQ_ID],
+        false,
+        world,
+    );
+    apply_fleet_seed(
+        &load_seed_from_files(files, "CMUNAFTB.DAT")?,
+        system_key_map,
+        &capship_index,
+        &fighter_index,
+        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
+        true,
+        world,
+    );
+    apply_army_seed(
+        &load_seed_from_files(files, "CMUNEMTB.DAT")?,
+        system_key_map,
+        &[CORUSCANT_SEQ_ID],
+        false,
+        world,
+    );
+    apply_army_seed(
+        &load_seed_from_files(files, "CMUNALTB.DAT")?,
+        system_key_map,
+        &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
+        true,
+        world,
+    );
+    apply_garrison_seed(
+        &load_seed_from_files(files, "CMUNCRTB.DAT")?,
+        system_key_map,
+        CORUSCANT_SEQ_ID,
+        false,
+        world,
+    );
+    apply_garrison_seed(
+        &load_seed_from_files(files, "CMUNHQTB.DAT")?,
+        system_key_map,
+        special.rebel_hq_seq_id,
+        true,
+        world,
+    );
+    apply_garrison_seed(
+        &load_seed_from_files(files, "CMUNYVTB.DAT")?,
+        system_key_map,
+        YAVIN_SEQ_ID,
+        true,
+        world,
+    );
+    apply_facility_seed(
+        &load_seed_from_files(files, "FACLCRTB.DAT")?,
+        system_key_map,
+        CORUSCANT_SEQ_ID,
+        false,
+        world,
+    );
+    apply_facility_seed(
+        &load_seed_from_files(files, "FACLHQTB.DAT")?,
+        system_key_map,
+        special.rebel_hq_seq_id,
+        true,
+        world,
+    );
 
     roll_character_stats(world, rng);
     place_named_characters(world, &special);
@@ -590,13 +749,16 @@ fn load_seed(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<SeedTab
     if !crate::file_available(&path) {
         return Ok(None);
     }
-    let file: SeedTableFile = read_dat_file(&path)
-        .with_context(|| format!("parsing seed table {}", filename))?;
+    let file: SeedTableFile =
+        read_dat_file(&path).with_context(|| format!("parsing seed table {}", filename))?;
     Ok(Some(file))
 }
 
 /// Load a seed table file from pre-loaded bytes, returning `Ok(None)` if not in the map.
-fn load_seed_from_files(files: &std::collections::HashMap<String, Vec<u8>>, filename: &str) -> anyhow::Result<Option<SeedTableFile>> {
+fn load_seed_from_files(
+    files: &std::collections::HashMap<String, Vec<u8>>,
+    filename: &str,
+) -> anyhow::Result<Option<SeedTableFile>> {
     match files.get(filename) {
         Some(data) => {
             let file: SeedTableFile = crate::parse_dat_bytes(data, filename)?;
@@ -784,7 +946,9 @@ fn dispatch_fleet_item(
     match family {
         FAM_CAPITAL_SHIP => {
             if let Some(&class) = capship_index.get(&seq_id) {
-                let hull = world.capital_ship_classes.get(class)
+                let hull = world
+                    .capital_ship_classes
+                    .get(class)
                     .map(|c| c.hull as i32)
                     .unwrap_or(100);
                 capital_ships.push(ShipInstance::new(class, hull, is_alliance));
@@ -818,12 +982,19 @@ fn dispatch_ground_item(
 
     match family {
         FAM_TROOP => {
-            let unit = TroopUnit { class_dat_id, is_alliance, regiment_strength: 100 };
+            let unit = TroopUnit {
+                class_dat_id,
+                is_alliance,
+                regiment_strength: 100,
+            };
             let key = world.troops.insert(unit);
             world.systems[system_key].ground_units.push(key);
         }
         FAM_SPECIAL => {
-            let unit = SpecialForceUnit { class_dat_id, is_alliance };
+            let unit = SpecialForceUnit {
+                class_dat_id,
+                is_alliance,
+            };
             let key = world.special_forces.insert(unit);
             world.systems[system_key].special_forces.push(key);
         }
@@ -847,26 +1018,41 @@ fn dispatch_facility_item(
     match family {
         FAM_ALLIANCE_HQ => {
             // Alliance HQ is a manufacturing facility (construction yard class).
-            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance: true, is_shipyard: false };
+            let inst = ManufacturingFacilityInstance {
+                class_dat_id,
+                is_alliance: true,
+                is_shipyard: false,
+            };
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
         f if f >= FAM_DEF_MIN && f <= FAM_DEF_MAX => {
-            let inst = DefenseFacilityInstance { class_dat_id, is_alliance };
+            let inst = DefenseFacilityInstance {
+                class_dat_id,
+                is_alliance,
+            };
             let key = world.defense_facilities.insert(inst);
             world.systems[system_key].defense_facilities.push(key);
         }
         f if f >= FAM_MFG_MIN && f <= FAM_MFG_MAX => {
             // Family 0x28 = shipyard, 0x29 = training center, 0x2A = construction yard
             let is_shipyard = f == 0x28;
-            let inst = ManufacturingFacilityInstance { class_dat_id, is_alliance, is_shipyard };
+            let inst = ManufacturingFacilityInstance {
+                class_dat_id,
+                is_alliance,
+                is_shipyard,
+            };
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
         f if f >= FAM_PROD_MIN && f <= FAM_PROD_MAX => {
             // Family 0x2D = mine, 0x2C = refinery
             let is_mine = f == 0x2D;
-            let inst = ProductionFacilityInstance { class_dat_id, is_alliance, is_mine };
+            let inst = ProductionFacilityInstance {
+                class_dat_id,
+                is_alliance,
+                is_mine,
+            };
             let key = world.production_facilities.insert(inst);
             world.systems[system_key].production_facilities.push(key);
         }
@@ -934,19 +1120,21 @@ fn assign_control_buckets<R: Rng + ?Sized>(
 
     // SDPRTB 7680 = strong support percentage, 7681 = weak support percentage.
     let alliance_strong_pct = world.sdprtb.value(7680, diff, Faction::Alliance);
-    let alliance_weak_pct   = world.sdprtb.value(7681, diff, Faction::Alliance);
-    let empire_strong_pct   = world.sdprtb.value(7680, diff, Faction::Empire);
-    let empire_weak_pct     = world.sdprtb.value(7681, diff, Faction::Empire);
+    let alliance_weak_pct = world.sdprtb.value(7681, diff, Faction::Alliance);
+    let empire_strong_pct = world.sdprtb.value(7680, diff, Faction::Empire);
+    let empire_weak_pct = world.sdprtb.value(7681, diff, Faction::Empire);
 
     let alliance_strong = (core_count * alliance_strong_pct / 100).max(0) as usize;
-    let alliance_weak   = (core_count * alliance_weak_pct / 100).max(0) as usize;
-    let empire_strong   = ((core_count * empire_strong_pct / 100).max(0) as usize).saturating_sub(1);
-    let empire_weak     = (core_count * empire_weak_pct / 100).max(0) as usize;
+    let alliance_weak = (core_count * alliance_weak_pct / 100).max(0) as usize;
+    let empire_strong = ((core_count * empire_strong_pct / 100).max(0) as usize).saturating_sub(1);
+    let empire_weak = (core_count * empire_weak_pct / 100).max(0) as usize;
 
     // Drain buckets in order across the shuffled system list.
     let mut idx = 0;
     for _ in 0..alliance_strong {
-        if idx >= core_systems.len() { break; }
+        if idx >= core_systems.len() {
+            break;
+        }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Alliance);
@@ -955,7 +1143,9 @@ fn assign_control_buckets<R: Rng + ?Sized>(
         idx += 1;
     }
     for _ in 0..alliance_weak {
-        if idx >= core_systems.len() { break; }
+        if idx >= core_systems.len() {
+            break;
+        }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Alliance);
@@ -964,7 +1154,9 @@ fn assign_control_buckets<R: Rng + ?Sized>(
         idx += 1;
     }
     for _ in 0..empire_strong {
-        if idx >= core_systems.len() { break; }
+        if idx >= core_systems.len() {
+            break;
+        }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Empire);
@@ -973,7 +1165,9 @@ fn assign_control_buckets<R: Rng + ?Sized>(
         idx += 1;
     }
     for _ in 0..empire_weak {
-        if idx >= core_systems.len() { break; }
+        if idx >= core_systems.len() {
+            break;
+        }
         let k = core_systems[idx];
         if let Some(sys) = world.systems.get_mut(k) {
             sys.control = ControlKind::Controlled(Faction::Empire);
@@ -1002,12 +1196,16 @@ fn initialize_population<R: Rng + ?Sized>(
 ) {
     let diff = seed_options.gnprtb_index();
     let core_pop_pct = world.gnprtb.value(7730, diff) as u32;
-    let rim_pop_pct  = world.gnprtb.value(7731, diff) as u32;
+    let rim_pop_pct = world.gnprtb.value(7731, diff) as u32;
 
     // Collect keys + sector info to avoid borrow issues.
-    let system_info: Vec<(SystemKey, SectorGroup, bool)> = world.systems.iter()
+    let system_info: Vec<(SystemKey, SectorGroup, bool)> = world
+        .systems
+        .iter()
         .map(|(k, sys)| {
-            let group = world.sectors.get(sys.sector)
+            let group = world
+                .sectors
+                .get(sys.sector)
                 .map(|s| s.group)
                 .unwrap_or(SectorGroup::RimOuter);
             (k, group, sys.is_populated)
@@ -1059,7 +1257,7 @@ fn initialize_support<R: Rng + ?Sized>(
     let diff = seed_options.gnprtb_index();
 
     let core_neutral_spread = world.gnprtb.value(7764, diff).max(0) as u32;
-    let rim_pop_spread      = world.gnprtb.value(7765, diff).max(0) as u32;
+    let rim_pop_spread = world.gnprtb.value(7765, diff).max(0) as u32;
 
     // Collect system info to avoid borrow issues.
     struct SysInfo {
@@ -1068,25 +1266,34 @@ fn initialize_support<R: Rng + ?Sized>(
         is_populated: bool,
         is_special: bool,
     }
-    let sys_infos: Vec<SysInfo> = world.systems.iter()
+    let sys_infos: Vec<SysInfo> = world
+        .systems
+        .iter()
         .map(|(k, sys)| {
-            let group = world.sectors.get(sys.sector)
+            let group = world
+                .sectors
+                .get(sys.sector)
                 .map(|s| s.group)
                 .unwrap_or(SectorGroup::RimOuter);
             let is_special = k == special.coruscant || k == special.yavin || k == special.rebel_hq;
-            SysInfo { key: k, group, is_populated: sys.is_populated, is_special }
+            SysInfo {
+                key: k,
+                group,
+                is_populated: sys.is_populated,
+                is_special,
+            }
         })
         .collect();
 
     // Support base/extra from SDPRTB 7682-7685 (side-aware).
-    let strong_base_a  = world.sdprtb.value(7682, diff, Faction::Alliance);
+    let strong_base_a = world.sdprtb.value(7682, diff, Faction::Alliance);
     let strong_extra_a = world.sdprtb.value(7683, diff, Faction::Alliance).max(0);
-    let weak_base_a    = world.sdprtb.value(7684, diff, Faction::Alliance);
-    let weak_extra_a   = world.sdprtb.value(7685, diff, Faction::Alliance).max(0);
-    let strong_base_e  = world.sdprtb.value(7682, diff, Faction::Empire);
+    let weak_base_a = world.sdprtb.value(7684, diff, Faction::Alliance);
+    let weak_extra_a = world.sdprtb.value(7685, diff, Faction::Alliance).max(0);
+    let strong_base_e = world.sdprtb.value(7682, diff, Faction::Empire);
     let strong_extra_e = world.sdprtb.value(7683, diff, Faction::Empire).max(0);
-    let weak_base_e    = world.sdprtb.value(7684, diff, Faction::Empire);
-    let weak_extra_e   = world.sdprtb.value(7685, diff, Faction::Empire).max(0);
+    let weak_base_e = world.sdprtb.value(7684, diff, Faction::Empire);
+    let weak_extra_e = world.sdprtb.value(7685, diff, Faction::Empire).max(0);
 
     for info in &sys_infos {
         if info.is_special {
@@ -1096,55 +1303,53 @@ fn initialize_support<R: Rng + ?Sized>(
         let bucket = bucket_map.get(&info.key).copied();
 
         let (pop_a, pop_e) = match info.group {
-            SectorGroup::Core => {
-                match bucket {
-                    Some(ControlBucket::AllianceStrong) => {
-                        let support = if strong_extra_a > 0 {
-                            strong_base_a + rng.gen_range(0..=strong_extra_a)
-                        } else {
-                            strong_base_a
-                        };
-                        let s = support.clamp(0, 100) as f32 / 100.0;
-                        (s, 1.0 - s)
-                    }
-                    Some(ControlBucket::AllianceWeak) => {
-                        let support = if weak_extra_a > 0 {
-                            weak_base_a + rng.gen_range(0..=weak_extra_a)
-                        } else {
-                            weak_base_a
-                        };
-                        let s = support.clamp(0, 100) as f32 / 100.0;
-                        (s, 1.0 - s)
-                    }
-                    Some(ControlBucket::EmpireStrong) => {
-                        let support = if strong_extra_e > 0 {
-                            strong_base_e + rng.gen_range(0..=strong_extra_e)
-                        } else {
-                            strong_base_e
-                        };
-                        let s = support.clamp(0, 100) as f32 / 100.0;
-                        (1.0 - s, s)
-                    }
-                    Some(ControlBucket::EmpireWeak) => {
-                        let support = if weak_extra_e > 0 {
-                            weak_base_e + rng.gen_range(0..=weak_extra_e)
-                        } else {
-                            weak_base_e
-                        };
-                        let s = support.clamp(0, 100) as f32 / 100.0;
-                        (1.0 - s, s)
-                    }
-                    Some(ControlBucket::Neutral) | None => {
-                        let support = if core_neutral_spread > 0 {
-                            let r = rng.gen_range(0..core_neutral_spread) as i32;
-                            (50 - (core_neutral_spread as i32) / 2 + r).clamp(0, 100) as f32 / 100.0
-                        } else {
-                            0.5
-                        };
-                        (support, support)
-                    }
+            SectorGroup::Core => match bucket {
+                Some(ControlBucket::AllianceStrong) => {
+                    let support = if strong_extra_a > 0 {
+                        strong_base_a + rng.gen_range(0..=strong_extra_a)
+                    } else {
+                        strong_base_a
+                    };
+                    let s = support.clamp(0, 100) as f32 / 100.0;
+                    (s, 1.0 - s)
                 }
-            }
+                Some(ControlBucket::AllianceWeak) => {
+                    let support = if weak_extra_a > 0 {
+                        weak_base_a + rng.gen_range(0..=weak_extra_a)
+                    } else {
+                        weak_base_a
+                    };
+                    let s = support.clamp(0, 100) as f32 / 100.0;
+                    (s, 1.0 - s)
+                }
+                Some(ControlBucket::EmpireStrong) => {
+                    let support = if strong_extra_e > 0 {
+                        strong_base_e + rng.gen_range(0..=strong_extra_e)
+                    } else {
+                        strong_base_e
+                    };
+                    let s = support.clamp(0, 100) as f32 / 100.0;
+                    (1.0 - s, s)
+                }
+                Some(ControlBucket::EmpireWeak) => {
+                    let support = if weak_extra_e > 0 {
+                        weak_base_e + rng.gen_range(0..=weak_extra_e)
+                    } else {
+                        weak_base_e
+                    };
+                    let s = support.clamp(0, 100) as f32 / 100.0;
+                    (1.0 - s, s)
+                }
+                Some(ControlBucket::Neutral) | None => {
+                    let support = if core_neutral_spread > 0 {
+                        let r = rng.gen_range(0..core_neutral_spread) as i32;
+                        (50 - (core_neutral_spread as i32) / 2 + r).clamp(0, 100) as f32 / 100.0
+                    } else {
+                        0.5
+                    };
+                    (support, support)
+                }
+            },
             SectorGroup::RimInner | SectorGroup::RimOuter => {
                 if info.is_populated {
                     let support = if rim_pop_spread > 0 {
@@ -1177,8 +1382,8 @@ fn load_syfc_table(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<S
     if !crate::file_available(&path) {
         return Ok(None);
     }
-    let file: SyfcTableFile = read_dat_file(&path)
-        .with_context(|| format!("parsing syfc table {}", filename))?;
+    let file: SyfcTableFile =
+        read_dat_file(&path).with_context(|| format!("parsing syfc table {}", filename))?;
     Ok(Some(file))
 }
 
@@ -1214,19 +1419,23 @@ fn initialize_energy_and_raw_materials<R: Rng + ?Sized>(
     let diff = seed_options.gnprtb_index();
 
     // Core params
-    let core_energy_base  = world.gnprtb.value(7721, diff).max(0) as u32; // 10
-    let core_energy_rand  = world.gnprtb.value(7722, diff).max(0) as u32; // 4
-    let core_raw_base     = world.gnprtb.value(7723, diff).max(0) as u32; // 5
-    let core_raw_rand     = world.gnprtb.value(7724, diff).max(0) as u32; // 9
-    // Rim params
-    let rim_energy_base   = world.gnprtb.value(7725, diff).max(0) as u32; // 1
-    let rim_energy_rand1  = world.gnprtb.value(7726, diff).max(0) as u32; // 4
-    let rim_energy_rand2  = world.gnprtb.value(7727, diff).max(0) as u32; // 9
+    let core_energy_base = world.gnprtb.value(7721, diff).max(0) as u32; // 10
+    let core_energy_rand = world.gnprtb.value(7722, diff).max(0) as u32; // 4
+    let core_raw_base = world.gnprtb.value(7723, diff).max(0) as u32; // 5
+    let core_raw_rand = world.gnprtb.value(7724, diff).max(0) as u32; // 9
+                                                                      // Rim params
+    let rim_energy_base = world.gnprtb.value(7725, diff).max(0) as u32; // 1
+    let rim_energy_rand1 = world.gnprtb.value(7726, diff).max(0) as u32; // 4
+    let rim_energy_rand2 = world.gnprtb.value(7727, diff).max(0) as u32; // 9
 
     // Collect system info to avoid borrow issues.
-    let system_info: Vec<(SystemKey, SectorGroup, bool)> = world.systems.iter()
+    let system_info: Vec<(SystemKey, SectorGroup, bool)> = world
+        .systems
+        .iter()
         .map(|(k, sys)| {
-            let group = world.sectors.get(sys.sector)
+            let group = world
+                .sectors
+                .get(sys.sector)
                 .map(|s| s.group)
                 .unwrap_or(SectorGroup::RimOuter);
             (k, group, sys.is_populated)
@@ -1240,21 +1449,37 @@ fn initialize_energy_and_raw_materials<R: Rng + ?Sized>(
 
         let (energy, raw) = match group {
             SectorGroup::Core => {
-                let e = (core_energy_base + if core_energy_rand > 0 { rng.gen_range(0..core_energy_rand) } else { 0 })
-                    .min(15);
-                let r = (core_raw_base + if core_raw_rand > 0 { rng.gen_range(0..core_raw_rand) } else { 0 })
-                    .min(15)
-                    .min(e); // raw capped by energy
+                let e = (core_energy_base
+                    + if core_energy_rand > 0 {
+                        rng.gen_range(0..core_energy_rand)
+                    } else {
+                        0
+                    })
+                .min(15);
+                let r = (core_raw_base
+                    + if core_raw_rand > 0 {
+                        rng.gen_range(0..core_raw_rand)
+                    } else {
+                        0
+                    })
+                .min(15)
+                .min(e); // raw capped by energy
                 (e, r)
             }
             SectorGroup::RimInner | SectorGroup::RimOuter => {
                 let e = (rim_energy_base
-                    + if rim_energy_rand1 > 0 { rng.gen_range(0..rim_energy_rand1) } else { 0 }
-                    + if rim_energy_rand2 > 0 { rng.gen_range(0..rim_energy_rand2) } else { 0 })
-                    .min(15);
-                let r = (1 + rng.gen_range(0u32..14))
-                    .min(15)
-                    .min(e); // raw capped by energy
+                    + if rim_energy_rand1 > 0 {
+                        rng.gen_range(0..rim_energy_rand1)
+                    } else {
+                        0
+                    }
+                    + if rim_energy_rand2 > 0 {
+                        rng.gen_range(0..rim_energy_rand2)
+                    } else {
+                        0
+                    })
+                .min(15);
+                let r = (1 + rng.gen_range(0u32..14)).min(15).min(e); // raw capped by energy
                 (e, r)
             }
         };
@@ -1280,7 +1505,9 @@ fn parse_facility_weights(table: &Option<SyfcTableFile>) -> Vec<FacilityWeight> 
         Some(t) => t,
         None => return Vec::new(),
     };
-    table.entries.iter()
+    table
+        .entries
+        .iter()
         .filter(|e| e.facility != 0) // Skip null entry
         .map(|e| FacilityWeight {
             // The system_id field is actually the cumulative weight percentage.
@@ -1296,10 +1523,13 @@ fn pick_weighted_facility<R: Rng + ?Sized>(weights: &[FacilityWeight], rng: &mut
         return None;
     }
     let max_weight = weights.last().map(|w| w.cumulative_weight).unwrap_or(100);
-    if max_weight == 0 { return None; }
+    if max_weight == 0 {
+        return None;
+    }
     let roll = rng.gen_range(0..max_weight);
     // Find the first entry whose cumulative weight exceeds the roll.
-    weights.iter()
+    weights
+        .iter()
         .find(|w| roll < w.cumulative_weight)
         .map(|w| w.facility_id)
 }
@@ -1321,18 +1551,28 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
 ) {
     let diff = seed_options.gnprtb_index();
     let core_mine_mult = world.gnprtb.value(7766, diff).max(0) as u32; // 4
-    let rim_mine_mult  = world.gnprtb.value(7767, diff).max(0) as u32; // 2
+    let rim_mine_mult = world.gnprtb.value(7767, diff).max(0) as u32; // 2
 
     let core_weights = parse_facility_weights(syfccr);
-    let rim_weights  = parse_facility_weights(syfcrm);
+    let rim_weights = parse_facility_weights(syfcrm);
 
     // Collect system info to avoid borrow issues.
-    let system_info: Vec<(SystemKey, SectorGroup, u8, u8, bool)> = world.systems.iter()
+    let system_info: Vec<(SystemKey, SectorGroup, u8, u8, bool)> = world
+        .systems
+        .iter()
         .map(|(k, sys)| {
-            let group = world.sectors.get(sys.sector)
+            let group = world
+                .sectors
+                .get(sys.sector)
                 .map(|s| s.group)
                 .unwrap_or(SectorGroup::RimOuter);
-            (k, group, sys.total_energy, sys.raw_materials, sys.is_populated)
+            (
+                k,
+                group,
+                sys.total_energy,
+                sys.raw_materials,
+                sys.is_populated,
+            )
         })
         .collect();
 
@@ -1419,17 +1659,21 @@ fn compute_bundle_maintenance(
     world: &GameWorld,
 ) -> u32 {
     let capship_index: HashMap<u32, CapitalShipKey> = world
-        .capital_ship_classes.iter()
+        .capital_ship_classes
+        .iter()
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
     let fighter_index: HashMap<u32, FighterKey> = world
-        .fighter_classes.iter()
+        .fighter_classes
+        .iter()
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
 
     let mut cost = 0u32;
     for item in &group.items {
-        if item.item_id == 0 { continue; }
+        if item.item_id == 0 {
+            continue;
+        }
         let family = (item.item_id >> 24) as u8;
         let seq_id = item.item_id & 0x00FF_FFFF;
         match family {
@@ -1465,11 +1709,13 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
     _rng: &mut R,
 ) {
     let capship_index: HashMap<u32, CapitalShipKey> = world
-        .capital_ship_classes.iter()
+        .capital_ship_classes
+        .iter()
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
     let fighter_index: HashMap<u32, FighterKey> = world
-        .fighter_classes.iter()
+        .fighter_classes
+        .iter()
         .map(|(k, v)| (v.dat_id.raw(), k))
         .collect();
 
@@ -1477,14 +1723,18 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
     let mut fleet_fighters: Vec<FighterEntry> = Vec::new();
 
     for item in &group.items {
-        if item.item_id == 0 { continue; }
+        if item.item_id == 0 {
+            continue;
+        }
         let family = (item.item_id >> 24) as u8;
         let seq_id = item.item_id & 0x00FF_FFFF;
 
         match family {
             FAM_CAPITAL_SHIP => {
                 if let Some(&class) = capship_index.get(&seq_id) {
-                    let hull = world.capital_ship_classes.get(class)
+                    let hull = world
+                        .capital_ship_classes
+                        .get(class)
                         .map(|c| c.hull as i32)
                         .unwrap_or(100);
                     fleet_capital_ships.push(ShipInstance::new(class, hull, is_alliance));
@@ -1552,23 +1802,35 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
             Some(t) => t,
             None => continue,
         };
-        if table.groups.is_empty() { continue; }
+        if table.groups.is_empty() {
+            continue;
+        }
 
-        let faction = if is_alliance { Faction::Alliance } else { Faction::Empire };
+        let faction = if is_alliance {
+            Faction::Alliance
+        } else {
+            Faction::Empire
+        };
         let budget_pct = world.sdprtb.value(budget_param, diff, faction);
-        if budget_pct <= 0 { continue; }
+        if budget_pct <= 0 {
+            continue;
+        }
 
         let existing_maint = compute_faction_maintenance(world, is_alliance);
         let mut budget = (existing_maint as i64 * budget_pct as i64 / 100).max(0) as u32;
 
         // Collect eligible owned systems for this faction.
-        let mut owned_systems: Vec<SystemKey> = world.systems.iter()
+        let mut owned_systems: Vec<SystemKey> = world
+            .systems
+            .iter()
             .filter(|(_, sys)| sys.control.is_controlled_by(faction) && sys.is_populated)
             .map(|(k, _)| k)
             .collect();
         owned_systems.sort_by_key(|&k| world.systems.get(k).map_or(0, |s| s.dat_id.raw()));
 
-        if owned_systems.is_empty() { continue; }
+        if owned_systems.is_empty() {
+            continue;
+        }
 
         // Spend budget by rolling random bundles.
         let mut attempts = 0;
@@ -1582,7 +1844,9 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
 
             // Compute bundle cost.
             let cost = compute_bundle_maintenance(group, world);
-            if cost == 0 || cost > budget { continue; }
+            if cost == 0 || cost > budget {
+                continue;
+            }
 
             // Pick random owned system.
             let sys_idx = rng.gen_range(0..owned_systems.len());
@@ -1615,8 +1879,14 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
     // Empire regiment DatId: family 0x10, index 8 (IMPERIAL_ARMY_REGIMENT per TheArchitect2018)
     let empire_regiment = DatId::new(0x10000008);
     // Guard: if these troop classes don't exist in the data, skip garrison seeding.
-    let alliance_exists = world.troops.values().any(|t| t.class_dat_id == alliance_regiment);
-    let empire_exists = world.troops.values().any(|t| t.class_dat_id == empire_regiment);
+    let alliance_exists = world
+        .troops
+        .values()
+        .any(|t| t.class_dat_id == alliance_regiment);
+    let empire_exists = world
+        .troops
+        .values()
+        .any(|t| t.class_dat_id == empire_regiment);
     if !alliance_exists && !empire_exists {
         return; // Troop classes not loaded — can't seed garrisons.
     }
@@ -1627,16 +1897,26 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
         support_value: i32, // 0-100 original-scale support for the controlling faction
         is_alliance: bool,
     }
-    let infos: Vec<GarrisonInfo> = world.systems.iter()
+    let infos: Vec<GarrisonInfo> = world
+        .systems
+        .iter()
         .filter_map(|(k, sys)| {
             match sys.control {
                 ControlKind::Controlled(Faction::Alliance) => {
                     let support = (sys.popularity_alliance * 100.0) as i32;
-                    Some(GarrisonInfo { key: k, support_value: support, is_alliance: true })
+                    Some(GarrisonInfo {
+                        key: k,
+                        support_value: support,
+                        is_alliance: true,
+                    })
                 }
                 ControlKind::Controlled(Faction::Empire) => {
                     let support = (sys.popularity_empire * 100.0) as i32;
-                    Some(GarrisonInfo { key: k, support_value: support, is_alliance: false })
+                    Some(GarrisonInfo {
+                        key: k,
+                        support_value: support,
+                        is_alliance: false,
+                    })
                 }
                 _ => None, // Neutral systems don't get garrisons.
             }
@@ -1649,9 +1929,15 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
         }
         let gap = threshold - info.support_value;
         let troops_needed = (gap + divisor - 1) / divisor; // ceil division
-        if troops_needed <= 0 { continue; }
+        if troops_needed <= 0 {
+            continue;
+        }
 
-        let class_dat_id = if info.is_alliance { alliance_regiment } else { empire_regiment };
+        let class_dat_id = if info.is_alliance {
+            alliance_regiment
+        } else {
+            empire_regiment
+        };
 
         for _ in 0..troops_needed {
             let unit = TroopUnit {
@@ -1736,10 +2022,7 @@ fn place_named_characters(world: &mut GameWorld, special: &SpecialSystems) {
     const REBEL_HQ_CHARACTERS: &[&str] = &["Mon Mothma"];
 
     // Empire characters at Coruscant
-    const CORUSCANT_CHARACTERS: &[&str] = &[
-        "Emperor Palpatine",
-        "Darth Vader",
-    ];
+    const CORUSCANT_CHARACTERS: &[&str] = &["Emperor Palpatine", "Darth Vader"];
 
     for (_, character) in world.characters.iter_mut() {
         let name = character.name.as_str();
@@ -1757,9 +2040,9 @@ fn place_named_characters(world: &mut GameWorld, special: &SpecialSystems) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
+    use std::path::PathBuf;
 
     fn gdata_path() -> PathBuf {
         // Relative to workspace root when running `cargo test`.
@@ -1831,43 +2114,79 @@ mod tests {
             .expect("load_game_data_with_options failed");
 
         // Coruscant: Empire-controlled, populated, charted, has fleet + facilities
-        let coruscant = world.systems.iter()
+        let coruscant = world
+            .systems
+            .iter()
             .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
             .map(|(k, s)| (k, s));
         assert!(coruscant.is_some(), "Coruscant must exist");
         let (_ck, cs) = coruscant.unwrap();
         assert!(cs.is_populated, "Coruscant must be populated");
-        assert_eq!(cs.exploration_status, ExplorationStatus::Explored, "Coruscant must be charted");
-        assert!(cs.control.is_controlled_by(Faction::Empire), "Coruscant must be Empire-controlled");
-        assert!(!cs.fleets.is_empty(), "Coruscant must have fleets (CMUNEFTB)");
-        assert!(!cs.manufacturing_facilities.is_empty(), "Coruscant must have facilities (FACLCRTB)");
+        assert_eq!(
+            cs.exploration_status,
+            ExplorationStatus::Explored,
+            "Coruscant must be charted"
+        );
+        assert!(
+            cs.control.is_controlled_by(Faction::Empire),
+            "Coruscant must be Empire-controlled"
+        );
+        assert!(
+            !cs.fleets.is_empty(),
+            "Coruscant must have fleets (CMUNEFTB)"
+        );
+        assert!(
+            !cs.manufacturing_facilities.is_empty(),
+            "Coruscant must have facilities (FACLCRTB)"
+        );
 
         // Yavin: Alliance-controlled, populated, charted, has ground units
-        let yavin = world.systems.iter()
+        let yavin = world
+            .systems
+            .iter()
             .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
             .map(|(k, s)| (k, s));
         assert!(yavin.is_some(), "Yavin must exist");
         let (yk, ys) = yavin.unwrap();
         assert!(ys.is_populated, "Yavin must be populated");
-        assert_eq!(ys.exploration_status, ExplorationStatus::Explored, "Yavin must be charted");
-        assert!(ys.control.is_controlled_by(Faction::Alliance), "Yavin must be Alliance-controlled");
-        assert!(!ys.is_headquarters, "Yavin is the Alliance base, not the randomized Rebel HQ");
-        assert!(!ys.ground_units.is_empty(), "Yavin must have ground units (CMUNYVTB)");
+        assert_eq!(
+            ys.exploration_status,
+            ExplorationStatus::Explored,
+            "Yavin must be charted"
+        );
+        assert!(
+            ys.control.is_controlled_by(Faction::Alliance),
+            "Yavin must be Alliance-controlled"
+        );
+        assert!(
+            !ys.is_headquarters,
+            "Yavin is the Alliance base, not the randomized Rebel HQ"
+        );
+        assert!(
+            !ys.ground_units.is_empty(),
+            "Yavin must have ground units (CMUNYVTB)"
+        );
 
         // Rebel HQ: must exist, be Alliance-controlled, populated, charted,
         // and be a DIFFERENT system from Yavin.
         // Find it: it's the Alliance HQ system that is NOT Yavin.
-        let rebel_hq = world.systems.iter()
-            .find(|(k, s)| {
-                s.is_headquarters
-                    && s.control.is_controlled_by(Faction::Alliance)
-                    && s.dat_id.raw() != YAVIN_SEQ_ID
-                    && *k != yk
-            });
-        assert!(rebel_hq.is_some(), "Rebel HQ must be a separate system from Yavin");
+        let rebel_hq = world.systems.iter().find(|(k, s)| {
+            s.is_headquarters
+                && s.control.is_controlled_by(Faction::Alliance)
+                && s.dat_id.raw() != YAVIN_SEQ_ID
+                && *k != yk
+        });
+        assert!(
+            rebel_hq.is_some(),
+            "Rebel HQ must be a separate system from Yavin"
+        );
         let (_rhk, rhs) = rebel_hq.unwrap();
         assert!(rhs.is_populated, "Rebel HQ must be populated");
-        assert_eq!(rhs.exploration_status, ExplorationStatus::Explored, "Rebel HQ must be charted");
+        assert_eq!(
+            rhs.exploration_status,
+            ExplorationStatus::Explored,
+            "Rebel HQ must be charted"
+        );
 
         // Rebel HQ must be a rim system (not core)
         let hq_sector = world.sectors.get(rhs.sector);
@@ -1875,12 +2194,14 @@ mod tests {
         let group = hq_sector.unwrap().group;
         assert!(
             group == SectorGroup::RimInner || group == SectorGroup::RimOuter,
-            "Rebel HQ must be a rim system, got {:?}", group
+            "Rebel HQ must be a rim system, got {:?}",
+            group
         );
 
         // FACLHQTB should be at Rebel HQ, NOT at Yavin
         assert!(
-            !rhs.manufacturing_facilities.is_empty() || !rhs.defense_facilities.is_empty()
+            !rhs.manufacturing_facilities.is_empty()
+                || !rhs.defense_facilities.is_empty()
                 || !rhs.production_facilities.is_empty(),
             "Rebel HQ should have facilities from FACLHQTB"
         );
@@ -1901,7 +2222,9 @@ mod tests {
             .expect("load_game_data_with_options failed");
 
         // Collect all systems that have fleets
-        let systems_with_fleets: Vec<_> = world.systems.iter()
+        let systems_with_fleets: Vec<_> = world
+            .systems
+            .iter()
             .filter(|(_, s)| !s.fleets.is_empty())
             .map(|(_, s)| s.dat_id.raw())
             .collect();
@@ -1915,11 +2238,13 @@ mod tests {
         );
 
         // Empire fleets should NOT be at more than ~3 systems (was 10 in old proximity model)
-        let empire_fleet_system_count = world.systems.iter()
+        let empire_fleet_system_count = world
+            .systems
+            .iter()
             .filter(|(_, s)| {
-                s.fleets.iter().any(|&fk| {
-                    world.fleets.get(fk).map_or(false, |f| !f.is_alliance)
-                })
+                s.fleets
+                    .iter()
+                    .any(|&fk| world.fleets.get(fk).map_or(false, |f| !f.is_alliance))
             })
             .count();
         assert!(
@@ -1941,14 +2266,16 @@ mod tests {
             ..SeedOptions::default()
         };
 
-        let world1 = crate::load_game_data_with_options(&path, &seed_options)
-            .expect("first load failed");
-        let world2 = crate::load_game_data_with_options(&path, &seed_options)
-            .expect("second load failed");
+        let world1 =
+            crate::load_game_data_with_options(&path, &seed_options).expect("first load failed");
+        let world2 =
+            crate::load_game_data_with_options(&path, &seed_options).expect("second load failed");
 
         // Find Rebel HQ in both worlds
         let find_rebel_hq = |world: &GameWorld| -> Option<u32> {
-            world.systems.iter()
+            world
+                .systems
+                .iter()
                 .find(|(_, s)| {
                     s.is_headquarters
                         && s.control.is_controlled_by(Faction::Alliance)
@@ -1980,13 +2307,19 @@ mod tests {
             .expect("load_game_data_with_options failed");
 
         // Find system keys
-        let coruscant_key = world.systems.iter()
+        let coruscant_key = world
+            .systems
+            .iter()
             .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
             .map(|(k, _)| k);
-        let yavin_key = world.systems.iter()
+        let yavin_key = world
+            .systems
+            .iter()
             .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
             .map(|(k, _)| k);
-        let rebel_hq_key = world.systems.iter()
+        let rebel_hq_key = world
+            .systems
+            .iter()
             .find(|(_, s)| {
                 s.is_headquarters
                     && s.control.is_controlled_by(Faction::Alliance)
@@ -1999,21 +2332,31 @@ mod tests {
         assert!(rebel_hq_key.is_some(), "Rebel HQ must exist");
 
         // Check Alliance characters at Yavin
-        for name in &["Luke Skywalker", "Princess Leia", "Han Solo", "Wedge Antilles",
-                       "Chewbacca", "Jan Dodonna"] {
-            let found = world.characters.iter()
-                .find(|(_, c)| c.name == *name);
+        for name in &[
+            "Luke Skywalker",
+            "Princess Leia",
+            "Han Solo",
+            "Wedge Antilles",
+            "Chewbacca",
+            "Jan Dodonna",
+        ] {
+            let found = world.characters.iter().find(|(_, c)| c.name == *name);
             if let Some((_, ch)) = found {
                 assert_eq!(
                     ch.current_system, yavin_key,
-                    "{} should be at Yavin, but is at {:?}", name, ch.current_system
+                    "{} should be at Yavin, but is at {:?}",
+                    name, ch.current_system
                 );
             }
             // If the name isn't found, that's OK (TEXTSTRA.DLL may use different names)
         }
 
         // Check Mon Mothma at Rebel HQ
-        if let Some((_, mm)) = world.characters.iter().find(|(_, c)| c.name == "Mon Mothma") {
+        if let Some((_, mm)) = world
+            .characters
+            .iter()
+            .find(|(_, c)| c.name == "Mon Mothma")
+        {
             assert_eq!(
                 mm.current_system, rebel_hq_key,
                 "Mon Mothma should be at Rebel HQ"
@@ -2025,7 +2368,8 @@ mod tests {
             if let Some((_, ch)) = world.characters.iter().find(|(_, c)| c.name == *name) {
                 assert_eq!(
                     ch.current_system, coruscant_key,
-                    "{} should be at Coruscant, but is at {:?}", name, ch.current_system
+                    "{} should be at Coruscant, but is at {:?}",
+                    name, ch.current_system
                 );
             }
         }
@@ -2047,16 +2391,31 @@ mod tests {
 
         // After rolling, all character skill variances should be 0
         for (_, character) in world.characters.iter() {
-            assert_eq!(character.diplomacy.variance, 0,
-                "Character {} diplomacy variance should be 0 after rolling", character.name);
-            assert_eq!(character.espionage.variance, 0,
-                "Character {} espionage variance should be 0 after rolling", character.name);
-            assert_eq!(character.combat.variance, 0,
-                "Character {} combat variance should be 0 after rolling", character.name);
-            assert_eq!(character.leadership.variance, 0,
-                "Character {} leadership variance should be 0 after rolling", character.name);
-            assert_eq!(character.loyalty.variance, 0,
-                "Character {} loyalty variance should be 0 after rolling", character.name);
+            assert_eq!(
+                character.diplomacy.variance, 0,
+                "Character {} diplomacy variance should be 0 after rolling",
+                character.name
+            );
+            assert_eq!(
+                character.espionage.variance, 0,
+                "Character {} espionage variance should be 0 after rolling",
+                character.name
+            );
+            assert_eq!(
+                character.combat.variance, 0,
+                "Character {} combat variance should be 0 after rolling",
+                character.name
+            );
+            assert_eq!(
+                character.leadership.variance, 0,
+                "Character {} leadership variance should be 0 after rolling",
+                character.name
+            );
+            assert_eq!(
+                character.loyalty.variance, 0,
+                "Character {} loyalty variance should be 0 after rolling",
+                character.name
+            );
         }
     }
 
@@ -2072,38 +2431,60 @@ mod tests {
             ..SeedOptions::default()
         };
 
-        let world1 = crate::load_game_data_with_options(&path, &seed_options)
-            .expect("first load failed");
-        let world2 = crate::load_game_data_with_options(&path, &seed_options)
-            .expect("second load failed");
+        let world1 =
+            crate::load_game_data_with_options(&path, &seed_options).expect("first load failed");
+        let world2 =
+            crate::load_game_data_with_options(&path, &seed_options).expect("second load failed");
 
         // Same seed must produce identical character stats
         for ((_, c1), (_, c2)) in world1.characters.iter().zip(world2.characters.iter()) {
             assert_eq!(c1.name, c2.name, "Character order must be deterministic");
-            assert_eq!(c1.diplomacy.base, c2.diplomacy.base,
-                "Character {} diplomacy should be deterministic", c1.name);
-            assert_eq!(c1.combat.base, c2.combat.base,
-                "Character {} combat should be deterministic", c1.name);
-            assert_eq!(c1.leadership.base, c2.leadership.base,
-                "Character {} leadership should be deterministic", c1.name);
+            assert_eq!(
+                c1.diplomacy.base, c2.diplomacy.base,
+                "Character {} diplomacy should be deterministic",
+                c1.name
+            );
+            assert_eq!(
+                c1.combat.base, c2.combat.base,
+                "Character {} combat should be deterministic",
+                c1.name
+            );
+            assert_eq!(
+                c1.leadership.base, c2.leadership.base,
+                "Character {} leadership should be deterministic",
+                c1.name
+            );
         }
     }
 
     #[test]
     fn roll_skill_pair_unit() {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let mut pair = SkillPair { base: 50, variance: 20 };
+        let mut pair = SkillPair {
+            base: 50,
+            variance: 20,
+        };
         roll_skill_pair(&mut pair, &mut rng);
-        assert!(pair.base >= 50 && pair.base <= 70, "rolled base should be in [50, 70], got {}", pair.base);
+        assert!(
+            pair.base >= 50 && pair.base <= 70,
+            "rolled base should be in [50, 70], got {}",
+            pair.base
+        );
         assert_eq!(pair.variance, 0, "variance should be zeroed after rolling");
     }
 
     #[test]
     fn roll_skill_pair_zero_variance() {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let mut pair = SkillPair { base: 100, variance: 0 };
+        let mut pair = SkillPair {
+            base: 100,
+            variance: 0,
+        };
         roll_skill_pair(&mut pair, &mut rng);
-        assert_eq!(pair.base, 100, "zero-variance pair should keep original base");
+        assert_eq!(
+            pair.base, 100,
+            "zero-variance pair should keep original base"
+        );
         assert_eq!(pair.variance, 0);
     }
 
@@ -2136,7 +2517,8 @@ mod tests {
         assert!(
             zero_pop_count == 0,
             "No system should have both popularity values at 0.0, found {} of {} systems",
-            zero_pop_count, total_count
+            zero_pop_count,
+            total_count
         );
 
         // Core controlled systems should have support in [0.2, 1.0] range
@@ -2187,13 +2569,19 @@ mod tests {
             .expect("load_game_data_with_options failed");
 
         // Count core systems by faction control (excluding special systems).
-        let coruscant = world.systems.iter()
+        let coruscant = world
+            .systems
+            .iter()
             .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
             .map(|(k, _)| k);
-        let yavin = world.systems.iter()
+        let yavin = world
+            .systems
+            .iter()
             .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
             .map(|(k, _)| k);
-        let rebel_hq = world.systems.iter()
+        let rebel_hq = world
+            .systems
+            .iter()
             .find(|(_, s)| {
                 s.is_headquarters
                     && s.control.is_controlled_by(Faction::Alliance)
@@ -2212,9 +2600,13 @@ mod tests {
         let mut total_core = 0;
 
         for (key, sys) in world.systems.iter() {
-            if special_keys.contains(&key) { continue; }
+            if special_keys.contains(&key) {
+                continue;
+            }
             let sector = world.sectors.get(sys.sector);
-            if !sector.map_or(false, |s| s.group == SectorGroup::Core) { continue; }
+            if !sector.map_or(false, |s| s.group == SectorGroup::Core) {
+                continue;
+            }
             total_core += 1;
             match sys.control {
                 ControlKind::Controlled(Faction::Alliance) => alliance_controlled += 1,
@@ -2232,18 +2624,23 @@ mod tests {
         assert!(
             alliance_controlled + empire_controlled + neutral == total_core,
             "Control buckets should sum to total core: A={} E={} N={} total={}",
-            alliance_controlled, empire_controlled, neutral, total_core
+            alliance_controlled,
+            empire_controlled,
+            neutral,
+            total_core
         );
         // With medium difficulty, both sides should have some controlled systems.
         assert!(
             alliance_controlled > 0,
             "Alliance should control some core systems (got {}/{})",
-            alliance_controlled, total_core
+            alliance_controlled,
+            total_core
         );
         assert!(
             empire_controlled > 0,
             "Empire should control some core systems (got {}/{})",
-            empire_controlled, total_core
+            empire_controlled,
+            total_core
         );
     }
 
@@ -2272,11 +2669,15 @@ mod tests {
             match group {
                 SectorGroup::Core => {
                     core_count += 1;
-                    if sys.is_populated { core_populated += 1; }
+                    if sys.is_populated {
+                        core_populated += 1;
+                    }
                 }
                 SectorGroup::RimInner | SectorGroup::RimOuter => {
                     rim_count += 1;
-                    if sys.is_populated { rim_populated += 1; }
+                    if sys.is_populated {
+                        rim_populated += 1;
+                    }
                 }
             }
         }
@@ -2294,7 +2695,9 @@ mod tests {
             assert!(
                 pct > 10.0 && pct < 60.0,
                 "Rim populated percentage should be roughly ~31%, got {:.1}% ({}/{})",
-                pct, rim_populated, rim_count
+                pct,
+                rim_populated,
+                rim_count
             );
         }
     }
@@ -2325,15 +2728,20 @@ mod tests {
                 assert!(
                     sys.total_energy >= 1 && sys.total_energy <= 15,
                     "Populated system '{}' energy={} should be in [1, 15]",
-                    sys.name, sys.total_energy
+                    sys.name,
+                    sys.total_energy
                 );
                 // Raw materials <= energy (capped by energy).
                 assert!(
                     sys.raw_materials <= sys.total_energy,
                     "System '{}' raw_materials={} should be <= total_energy={}",
-                    sys.name, sys.raw_materials, sys.total_energy
+                    sys.name,
+                    sys.raw_materials,
+                    sys.total_energy
                 );
-                if sys.total_energy > 0 { populated_with_energy += 1; }
+                if sys.total_energy > 0 {
+                    populated_with_energy += 1;
+                }
             } else {
                 // Unpopulated systems should have 0 energy/raw.
                 assert_eq!(
@@ -2373,7 +2781,9 @@ mod tests {
                 + sys.manufacturing_facilities.len()
                 + sys.production_facilities.len();
             total_facilities += fac_count;
-            if fac_count > 0 { systems_with_facilities += 1; }
+            if fac_count > 0 {
+                systems_with_facilities += 1;
+            }
         }
 
         // With procedural generation, we should have significantly more facilities
@@ -2419,8 +2829,16 @@ mod tests {
         // Both factions should have at least 1 fleet each (from fixed tables at minimum).
         let alliance_fleets = world.fleets.values().filter(|f| f.is_alliance).count();
         let empire_fleets = world.fleets.values().filter(|f| !f.is_alliance).count();
-        assert!(alliance_fleets >= 1, "Alliance should have fleets, got {}", alliance_fleets);
-        assert!(empire_fleets >= 1, "Empire should have fleets, got {}", empire_fleets);
+        assert!(
+            alliance_fleets >= 1,
+            "Alliance should have fleets, got {}",
+            alliance_fleets
+        );
+        assert!(
+            empire_fleets >= 1,
+            "Empire should have fleets, got {}",
+            empire_fleets
+        );
 
         // Total ground troops should exist (from fixed garrison + bundles + garrison pass).
         let total_troops = world.troops.len();
@@ -2453,13 +2871,13 @@ mod tests {
 
         for (_, sys) in world.systems.iter() {
             let (support, is_controlled) = match sys.control {
-                ControlKind::Controlled(Faction::Alliance) =>
-                    (sys.popularity_alliance, true),
-                ControlKind::Controlled(Faction::Empire) =>
-                    (sys.popularity_empire, true),
+                ControlKind::Controlled(Faction::Alliance) => (sys.popularity_alliance, true),
+                ControlKind::Controlled(Faction::Empire) => (sys.popularity_empire, true),
                 _ => (0.0, false),
             };
-            if !is_controlled { continue; }
+            if !is_controlled {
+                continue;
+            }
             let support_100 = (support * 100.0) as i32;
             if support_100 < 60 {
                 low_support_total += 1;
@@ -2473,7 +2891,8 @@ mod tests {
             assert!(
                 low_support_with_troops > 0,
                 "Low-support controlled systems should have garrison troops ({}/{})",
-                low_support_with_troops, low_support_total
+                low_support_with_troops,
+                low_support_total
             );
         }
     }
@@ -2501,8 +2920,8 @@ mod tests {
             galaxy_size: rebellion_core::dat::GalaxySize::Huge,
             ..SeedOptions::default()
         };
-        let world_huge = crate::load_game_data_with_options(&path, &opts_huge)
-            .expect("huge load failed");
+        let world_huge =
+            crate::load_game_data_with_options(&path, &opts_huge).expect("huge load failed");
 
         // The huge galaxy should have a different fleet count than standard
         // (different SDPRTB 5168 vs 5170 percentages).
@@ -2516,7 +2935,8 @@ mod tests {
         assert!(
             std_fleets != huge_fleets || true, // Allow equal as a valid outcome
             "Fleet counts should differ between standard ({}) and huge ({}) galaxy sizes",
-            std_fleets, huge_fleets
+            std_fleets,
+            huge_fleets
         );
     }
 }

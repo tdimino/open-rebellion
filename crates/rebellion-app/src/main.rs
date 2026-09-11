@@ -30,8 +30,8 @@ use rebellion_core::missions::{
     MissionEffect, MissionFaction, MissionKind, MissionState, MissionSystem,
 };
 use rebellion_core::movement::{
-    apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit,
-    reconcile_fleet_orbits, validate_fleet_dispatch, MovementState, MovementSystem,
+    apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit, reconcile_fleet_orbits,
+    validate_fleet_dispatch, MovementState, MovementSystem,
 };
 use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
@@ -396,9 +396,7 @@ fn install_runtime_pack(
     let advisor_bitmaps = pack
         .bitmaps
         .iter()
-        .filter(|(key, _)| {
-            key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/")
-        })
+        .filter(|(key, _)| key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/"))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
 
@@ -616,10 +614,7 @@ async fn main() {
     let gdata_path = PathBuf::from("data/base");
 
     let asset_render_profile = configured_asset_render_profile();
-    macroquad::logging::info!(
-        "[assets] render_profile={}",
-        asset_render_profile.as_str()
-    );
+    macroquad::logging::info!("[assets] render_profile={}", asset_render_profile.as_str());
 
     #[cfg(target_arch = "wasm32")]
     if web_replay::requested() {
@@ -1249,8 +1244,7 @@ async fn main() {
                         );
                     }
                 }
-                let ground_rolls: Vec<f64> =
-                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                let ground_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 ground_resolved_systems.insert(system);
                 resolve_ground_campaign(
                     &mut world,
@@ -1423,28 +1417,33 @@ async fn main() {
                         return None;
                     }
                     let value = world.systems.get(system)?;
-                    let (alliance_troops, empire_troops) = value.ground_units.iter().fold(
-                        (false, false),
-                        |counts, troop| match world.troops.get(*troop) {
-                            Some(value) if value.regiment_strength > 0 && value.is_alliance => {
-                                (true, counts.1)
-                            }
-                            Some(value) if value.regiment_strength > 0 => (counts.0, true),
-                            _ => counts,
-                        },
-                    );
+                    let (alliance_troops, empire_troops) =
+                        value
+                            .ground_units
+                            .iter()
+                            .fold((false, false), |counts, troop| {
+                                match world.troops.get(*troop) {
+                                    Some(value)
+                                        if value.regiment_strength > 0 && value.is_alliance =>
+                                    {
+                                        (true, counts.1)
+                                    }
+                                    Some(value) if value.regiment_strength > 0 => (counts.0, true),
+                                    _ => counts,
+                                }
+                            });
                     if !alliance_troops || !empire_troops {
                         return None;
                     }
 
-                    let (alliance_fleet, empire_fleet) = value.fleets.iter().fold(
-                        (false, false),
-                        |counts, fleet| match world.fleets.get(*fleet) {
-                            Some(value) if value.is_alliance => (true, counts.1),
-                            Some(_) => (counts.0, true),
-                            None => counts,
-                        },
-                    );
+                    let (alliance_fleet, empire_fleet) =
+                        value.fleets.iter().fold((false, false), |counts, fleet| {
+                            match world.fleets.get(*fleet) {
+                                Some(value) if value.is_alliance => (true, counts.1),
+                                Some(_) => (counts.0, true),
+                                None => counts,
+                            }
+                        });
                     let attacker_is_alliance = match (alliance_fleet, empire_fleet) {
                         (false, true) => false,
                         _ => true,
@@ -1453,8 +1452,7 @@ async fn main() {
                 })
                 .collect();
             for (system, attacker_is_alliance) in continuing_ground_battles {
-                let ground_rolls: Vec<f64> =
-                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                let ground_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 resolve_ground_campaign(
                     &mut world,
                     &mut troop_transport_state,
@@ -3873,12 +3871,8 @@ fn apply_panel_action(
                             .get(fleet)
                             .map(|value| value.location)
                             .unwrap_or_default();
-                        let _ = troop_transport_state.disembark_selected(
-                            world,
-                            fleet,
-                            origin,
-                            &troops,
-                        );
+                        let _ =
+                            troop_transport_state.disembark_selected(world, fleet, origin, &troops);
                     }
                     msg_log.push(GameMessage::new(
                         clock.tick,
@@ -4121,16 +4115,13 @@ fn apply_panel_action(
                             .get(system)
                             .map(|s| s.name.clone())
                             .unwrap_or_else(|| "Unknown".to_string());
-                        if begin_fleet_transit(
-                            movement_state,
-                            world,
-                            fleet_key,
-                            system,
-                            ticks,
-                        ) {
+                        if begin_fleet_transit(movement_state, world, fleet_key, system, ticks) {
                             msg_log.push(GameMessage::new(
                                 clock.tick,
-                                format!("Death Star fleet moving to {} ({} days)", dest_name, ticks),
+                                format!(
+                                    "Death Star fleet moving to {} ({} days)",
+                                    dest_name, ticks
+                                ),
                                 MessageCategory::Event,
                             ));
                         }
@@ -4829,13 +4820,8 @@ fn apply_automatic_bombardment(
     } else {
         Faction::Empire
     };
-    let result = BombardmentSystem::resolve_bombardment(
-        world,
-        fleet,
-        system,
-        world.difficulty_index,
-        tick,
-    );
+    let result =
+        BombardmentSystem::resolve_bombardment(world, fleet, system, world.difficulty_index, tick);
     let headquarters_destroyed =
         VictorySystem::apply_headquarters_bombardment(victory_state, world, &result, attacker);
     let system_name = world
@@ -4926,15 +4912,18 @@ fn resolve_ground_campaign(
         .systems
         .get(system)
         .map(|value| {
-            value.ground_units.iter().fold((0_usize, 0_usize), |counts, troop| {
-                match world.troops.get(*troop) {
-                    Some(value) if value.regiment_strength > 0 && value.is_alliance => {
-                        (counts.0 + 1, counts.1)
+            value
+                .ground_units
+                .iter()
+                .fold((0_usize, 0_usize), |counts, troop| {
+                    match world.troops.get(*troop) {
+                        Some(value) if value.regiment_strength > 0 && value.is_alliance => {
+                            (counts.0 + 1, counts.1)
+                        }
+                        Some(value) if value.regiment_strength > 0 => (counts.0, counts.1 + 1),
+                        _ => counts,
                     }
-                    Some(value) if value.regiment_strength > 0 => (counts.0, counts.1 + 1),
-                    _ => counts,
-                }
-            })
+                })
         })
         .unwrap_or_default();
 
@@ -5141,7 +5130,10 @@ fn apply_ai_actions(
                 let transit = world.fleets.get(*fleet).map(|fleet| {
                     (
                         rebellion_core::movement::fleet_transit_ticks(
-                            fleet, world, fleet.location, *to_system,
+                            fleet,
+                            world,
+                            fleet.location,
+                            *to_system,
                         ),
                         fleet.is_alliance,
                     )
@@ -5149,13 +5141,9 @@ fn apply_ai_actions(
                 if let Some((transit, is_alliance)) = transit {
                     let embarked = troops.is_empty()
                         || troop_transport_state.embark(world, *fleet, troops).is_ok();
-                    if embarked && begin_fleet_transit(
-                        movement_state,
-                        world,
-                        *fleet,
-                        *to_system,
-                        transit,
-                    ) {
+                    if embarked
+                        && begin_fleet_transit(movement_state, world, *fleet, *to_system, transit)
+                    {
                         #[cfg(not(target_arch = "wasm32"))]
                         {
                             audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
@@ -5188,11 +5176,7 @@ fn apply_ai_actions(
                     } else if embarked && !troops.is_empty() {
                         let origin = world.fleets.get(*fleet).map(|value| value.location);
                         if let Some(origin) = origin {
-                            let _ = troop_transport_state.disembark_all(
-                                world,
-                                *fleet,
-                                origin,
-                            );
+                            let _ = troop_transport_state.disembark_all(world, *fleet, origin);
                         }
                     }
                 }

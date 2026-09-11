@@ -18,9 +18,9 @@ pub mod missions;
 pub mod movement;
 pub mod net_protocol;
 pub mod repair;
+pub mod research;
 #[doc(hidden)]
 pub mod serde_ordered;
-pub mod research;
 pub mod story_events;
 pub mod tick;
 pub mod troop_transport;

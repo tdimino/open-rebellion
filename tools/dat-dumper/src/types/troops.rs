@@ -48,7 +48,13 @@ impl DatRecord for TroopsFile {
         for _ in 0..count {
             troops.push(Troop::parse_entry(r)?);
         }
-        Ok(Self { field1, count, family_id, field4, troops })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            troops,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

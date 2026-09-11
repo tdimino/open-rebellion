@@ -66,14 +66,18 @@ impl DatRecord for IntTableFile {
         let mut entries = Vec::with_capacity(entries_count as usize);
         for _ in 0..entries_count {
             entries.push(IntTableEntry {
-                id:        r.read_u32()?,
-                field2:    r.read_u32()?,
+                id: r.read_u32()?,
+                field2: r.read_u32()?,
                 threshold: r.read_i32()?,
-                value:     r.read_u32()?,
+                value: r.read_u32()?,
             });
         }
 
-        Ok(Self { field1, info, entries })
+        Ok(Self {
+            field1,
+            info,
+            entries,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

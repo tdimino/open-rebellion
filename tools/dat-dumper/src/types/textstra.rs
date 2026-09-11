@@ -20,11 +20,10 @@ const RT_STRING_ID: u32 = 6;
 /// Works on both 32-bit and 64-bit PE images. Empty string slots (length == 0)
 /// are omitted from the result.
 pub fn load_strings(path: &Path) -> anyhow::Result<HashMap<u16, String>> {
-    let map = FileMap::open(path)
-        .with_context(|| format!("opening {}", path.display()))?;
+    let map = FileMap::open(path).with_context(|| format!("opening {}", path.display()))?;
 
-    let pe = PeFile::from_bytes(&map)
-        .with_context(|| format!("parsing {} as PE", path.display()))?;
+    let pe =
+        PeFile::from_bytes(&map).with_context(|| format!("parsing {} as PE", path.display()))?;
 
     let resources = pe
         .resources()

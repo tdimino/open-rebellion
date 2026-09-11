@@ -47,9 +47,15 @@ impl CombatPhaseFlags {
     /// bit8 — fighter engagement type code (0x100).
     pub const FIGHTER_TYPE: u32 = 0x0100;
 
-    pub fn new(bits: u32) -> Self { Self(bits) }
-    pub fn contains(&self, flag: u32) -> bool { self.0 & flag != 0 }
-    pub fn set(&mut self, flag: u32) { self.0 |= flag; }
+    pub fn new(bits: u32) -> Self {
+        Self(bits)
+    }
+    pub fn contains(&self, flag: u32) -> bool {
+        self.0 & flag != 0
+    }
+    pub fn set(&mut self, flag: u32) {
+        self.0 |= flag;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -193,8 +199,14 @@ impl CombatSystem {
 
         // Difficulty modifier: FUN_0053e190 scales combat damage via GNPRTB.
         let difficulty_mod = {
-            let raw = world.gnprtb.value(GNPRTB_COMBAT_DIFFICULTY_MODIFIER, difficulty);
-            if raw > 0 { raw as f64 / 100.0 } else { 1.0 }
+            let raw = world
+                .gnprtb
+                .value(GNPRTB_COMBAT_DIFFICULTY_MODIFIER, difficulty);
+            if raw > 0 {
+                raw as f64 / 100.0
+            } else {
+                1.0
+            }
         };
 
         // Phase 3: Weapon fire (FUN_00544030).
@@ -259,9 +271,13 @@ impl CombatSystem {
             // Phase 6: Fighter engagement (FUN_005444e0, 53 lines, vtable +0x1d4).
             // Family 0x71 exactly uses alt_shield_path (C++ +0x78 bit7).
             Self::phase_fighter_engage(
-                world, attacker, defender,
-                &mut atk_fighters, &mut def_fighters,
-                &mut atk_ships, &mut def_ships,
+                world,
+                attacker,
+                defender,
+                &mut atk_fighters,
+                &mut def_fighters,
+                &mut atk_ships,
+                &mut def_ships,
                 &mut rng,
             );
         }
@@ -270,24 +286,32 @@ impl CombatSystem {
         // 1. Checks alive_flag at +0xac bit0 for each unit.
         // 2. Fighter exception: +0x50 & 0x08 → still combat-ready even if hull=0.
         // 3. Family 0x73/0x74 → FUN_00534640 special path (Death Star / special entity).
-        let atk_alive = atk_ships.iter().any(|s| s.alive)
-            || atk_fighters.iter().any(|&c| c > 0);
-        let def_alive = def_ships.iter().any(|s| s.alive)
-            || def_fighters.iter().any(|&c| c > 0);
+        let atk_alive = atk_ships.iter().any(|s| s.alive) || atk_fighters.iter().any(|&c| c > 0);
+        let def_alive = def_ships.iter().any(|s| s.alive) || def_fighters.iter().any(|&c| c > 0);
 
         let winner = match (atk_alive, def_alive) {
-            (true, false)  => CombatSide::Attacker,
-            (false, true)  => CombatSide::Defender,
-            _              => CombatSide::Draw,
+            (true, false) => CombatSide::Attacker,
+            (false, true) => CombatSide::Defender,
+            _ => CombatSide::Draw,
         };
 
         // Phase 8: Post-combat cleanup (FUN_00544a20, 86 lines) — handled by caller.
 
-        Self::build_space_result(attacker, defender, system, &atk_ships, &def_ships,
-                                 &atk_initial_hulls, &def_initial_hulls,
-                                 &atk_fighters, &def_fighters,
-                                 &atk_initial_fighters, &def_initial_fighters,
-                                 winner, tick)
+        Self::build_space_result(
+            attacker,
+            defender,
+            system,
+            &atk_ships,
+            &def_ships,
+            &atk_initial_hulls,
+            &def_initial_hulls,
+            &atk_fighters,
+            &def_fighters,
+            &atk_initial_fighters,
+            &def_initial_fighters,
+            winner,
+            tick,
+        )
     }
 
     /// Build mutable hull snapshots for one fleet.
@@ -297,22 +321,27 @@ impl CombatSystem {
     fn snapshot_fleet(world: &GameWorld, fleet: FleetKey) -> (Vec<ShipSnap>, Vec<u32>) {
         let f = &world.fleets[fleet];
         let is_ds_fleet = f.has_death_star;
-        let ships = f.capital_ships.iter().filter(|ship| ship.alive).map(|ship| {
-            let class = &world.capital_ship_classes[ship.class];
-            let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
-            ShipSnap {
-                hull_current: ship.hull_current,
-                hull_max:     class.hull as i32,
-                shield_current: class.shield_strength as i32,
-                shield_max:     class.shield_strength as i32,
-                pending_damage: 0,
-                pending_ion_damage: 0,
-                shield_nibble: (class.shield_recharge_rate.min(15)) as u8,
-                weapon_nibble: 0x0f,
-                alive: true,
-                is_death_star: is_ds_ship,
-            }
-        }).collect();
+        let ships = f
+            .capital_ships
+            .iter()
+            .filter(|ship| ship.alive)
+            .map(|ship| {
+                let class = &world.capital_ship_classes[ship.class];
+                let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
+                ShipSnap {
+                    hull_current: ship.hull_current,
+                    hull_max: class.hull as i32,
+                    shield_current: class.shield_strength as i32,
+                    shield_max: class.shield_strength as i32,
+                    pending_damage: 0,
+                    pending_ion_damage: 0,
+                    shield_nibble: (class.shield_recharge_rate.min(15)) as u8,
+                    weapon_nibble: 0x0f,
+                    alive: true,
+                    is_death_star: is_ds_ship,
+                }
+            })
+            .collect();
         let fighters = f.fighters.iter().map(|e| e.count).collect();
         (ships, fighters)
     }
@@ -341,7 +370,8 @@ impl CombatSystem {
         // Each weapon type is scaled by its class-specific attack_strength.
         // Each ShipInstance maps 1:1 to a ShipSnap, so zip directly.
         let alive_ships = fleet.capital_ships.iter().filter(|s| s.alive);
-        let (total_fire, total_ion): (i64, i64) = firing.iter()
+        let (total_fire, total_ion): (i64, i64) = firing
+            .iter()
             .zip(alive_ships)
             .filter(|(snap, _)| snap.alive)
             .fold((0i64, 0i64), |(acc_fire, acc_ion), (snap, ship)| {
@@ -375,13 +405,19 @@ impl CombatSystem {
             });
 
         let total = total_fire + total_ion;
-        if total == 0 { return; }
+        if total == 0 {
+            return;
+        }
 
-        let alive_indices: Vec<usize> = targets.iter().enumerate()
+        let alive_indices: Vec<usize> = targets
+            .iter()
+            .enumerate()
             .filter(|(_, t)| t.alive)
             .map(|(i, _)| i)
             .collect();
-        if alive_indices.is_empty() { return; }
+        if alive_indices.is_empty() {
+            return;
+        }
 
         let n = alive_indices.len() as i64;
         let fire_per = total_fire / n;
@@ -395,7 +431,11 @@ impl CombatSystem {
             let damage = (total_per + variance).max(0) as i32;
 
             // Split damage proportionally between ion and non-ion using i64 division.
-            let ion_dmg = if total > 0 { (damage as i64 * total_ion / total) as i32 } else { 0 };
+            let ion_dmg = if total > 0 {
+                (damage as i64 * total_ion / total) as i32
+            } else {
+                0
+            };
 
             targets[idx].pending_damage += damage;
             targets[idx].pending_ion_damage += ion_dmg;
@@ -413,7 +453,9 @@ impl CombatSystem {
     /// for Phase 5 (hull damage application).
     fn phase_shield_absorb(ships: &mut [ShipSnap]) {
         for ship in ships.iter_mut() {
-            if !ship.alive || ship.pending_damage == 0 { continue; }
+            if !ship.alive || ship.pending_damage == 0 {
+                continue;
+            }
 
             // Shield recharge: (shield_nibble / 15) fraction of max shield per tick.
             // Applied before absorption so ships benefit from recharge during combat.
@@ -439,16 +481,16 @@ impl CombatSystem {
             // Use integer math (via i64 to avoid overflow) to eliminate
             // double-rounding that previously lost up to 2 raw damage.
             let raw_consumed = if effective_shield_damage > 0 {
-                (ship.pending_damage as i64 * absorbed as i64
-                    / effective_shield_damage as i64) as i32
+                (ship.pending_damage as i64 * absorbed as i64 / effective_shield_damage as i64)
+                    as i32
             } else {
                 0
             };
 
             ship.pending_damage = (ship.pending_damage - raw_consumed).max(0);
             let ion_consumed = if effective_shield_damage > 0 {
-                (ship.pending_ion_damage as i64 * absorbed as i64
-                    / effective_shield_damage as i64) as i32
+                (ship.pending_ion_damage as i64 * absorbed as i64 / effective_shield_damage as i64)
+                    as i32
             } else {
                 0
             };
@@ -463,7 +505,9 @@ impl CombatSystem {
     /// `new_hull != current_hull` from FUN_00501490).
     fn phase_hull_damage(ships: &mut [ShipSnap], difficulty_mod: f64, ds_shield_active: bool) {
         for ship in ships.iter_mut() {
-            if !ship.alive || ship.pending_damage == 0 { continue; }
+            if !ship.alive || ship.pending_damage == 0 {
+                continue;
+            }
 
             // Death Star shield generator (entity 0x25) absorbs all hull damage
             // while active. The shield must be destroyed before the DS takes damage.
@@ -508,7 +552,9 @@ impl CombatSystem {
             .zip(ship_snaps.iter())
             .filter(|(_, snap)| snap.alive)
             .map(|(ship, _)| {
-                world.capital_ship_classes.get(ship.class)
+                world
+                    .capital_ship_classes
+                    .get(ship.class)
                     .map(|c| c.fighter_capacity)
                     .unwrap_or(0)
             })
@@ -518,10 +564,7 @@ impl CombatSystem {
     /// Launch fighters from carrier ships, capping deployed squadrons to
     /// available carrier capacity. Returns a vec of deployed squadron counts
     /// (same length as the fleet's fighter roster, but each capped).
-    fn launch_fighters(
-        fleet_fighters: &[u32],
-        carrier_capacity: u32,
-    ) -> Vec<u32> {
+    fn launch_fighters(fleet_fighters: &[u32], carrier_capacity: u32) -> Vec<u32> {
         let mut remaining_capacity = carrier_capacity;
         let mut launched = Vec::with_capacity(fleet_fighters.len());
         for &count in fleet_fighters {
@@ -555,18 +598,10 @@ impl CombatSystem {
         let def_system_based_fighters = def_ships.is_empty();
 
         // Step 1: Launch — cap deployed squadrons to carrier capacity.
-        let atk_capacity = Self::compute_carrier_capacity(
-            world,
-            attacker,
-            atk_ships,
-            atk_system_based_fighters,
-        );
-        let def_capacity = Self::compute_carrier_capacity(
-            world,
-            defender,
-            def_ships,
-            def_system_based_fighters,
-        );
+        let atk_capacity =
+            Self::compute_carrier_capacity(world, attacker, atk_ships, atk_system_based_fighters);
+        let def_capacity =
+            Self::compute_carrier_capacity(world, defender, def_ships, def_system_based_fighters);
 
         let mut atk_launched = Self::launch_fighters(atk_fighters, atk_capacity);
         let mut def_launched = Self::launch_fighters(def_fighters, def_capacity);
@@ -580,47 +615,44 @@ impl CombatSystem {
         let def_fleet = &world.fleets[defender];
 
         // Step 2: Fighters attack enemy capital ships.
-        Self::fighters_attack_ships(
-            &atk_launched, atk_fleet, def_ships, world, rng,
-        );
-        Self::fighters_attack_ships(
-            &def_launched, def_fleet, atk_ships, world, rng,
-        );
+        Self::fighters_attack_ships(&atk_launched, atk_fleet, def_ships, world, rng);
+        Self::fighters_attack_ships(&def_launched, def_fleet, atk_ships, world, rng);
 
         // Step 3: Capital-ship laser cannons screen against enemy fighters.
         // The original tactical rules identify laser cannons as the anti-fighter
         // armament. Resolve that fire before the surviving squadrons dogfight.
-        Self::capital_ships_attack_fighters(
-            world, attacker, atk_ships, &mut def_launched, rng,
-        );
-        Self::capital_ships_attack_fighters(
-            world, defender, def_ships, &mut atk_launched, rng,
-        );
+        Self::capital_ships_attack_fighters(world, attacker, atk_ships, &mut def_launched, rng);
+        Self::capital_ships_attack_fighters(world, defender, def_ships, &mut atk_launched, rng);
 
         // Step 4: Fighter-vs-fighter dogfight using attack_strength and maneuverability.
         Self::fighter_dogfight(
-            &mut atk_launched, atk_fleet,
-            &mut def_launched, def_fleet,
-            world, rng,
+            &mut atk_launched,
+            atk_fleet,
+            &mut def_launched,
+            def_fleet,
+            world,
+            rng,
         );
 
         // Step 5: Recall — surviving fighters return to carriers.
         // Re-check capacity (carriers may have been destroyed during this phase).
-        let atk_capacity_post = Self::compute_carrier_capacity(
-            world,
-            attacker,
-            atk_ships,
-            atk_system_based_fighters,
-        );
-        let def_capacity_post = Self::compute_carrier_capacity(
-            world,
-            defender,
-            def_ships,
-            def_system_based_fighters,
-        );
+        let atk_capacity_post =
+            Self::compute_carrier_capacity(world, attacker, atk_ships, atk_system_based_fighters);
+        let def_capacity_post =
+            Self::compute_carrier_capacity(world, defender, def_ships, def_system_based_fighters);
 
-        Self::recall_fighters(atk_fighters, &atk_launched, &atk_originally_launched, atk_capacity_post);
-        Self::recall_fighters(def_fighters, &def_launched, &def_originally_launched, def_capacity_post);
+        Self::recall_fighters(
+            atk_fighters,
+            &atk_launched,
+            &atk_originally_launched,
+            atk_capacity_post,
+        );
+        Self::recall_fighters(
+            def_fighters,
+            &def_launched,
+            &def_originally_launched,
+            def_capacity_post,
+        );
     }
 
     /// Fighters attack enemy capital ships using per-class weapon stats.
@@ -635,14 +667,20 @@ impl CombatSystem {
         world: &GameWorld,
         rng: &mut impl Iterator<Item = f64>,
     ) {
-        let alive_targets: Vec<usize> = enemy_ships.iter().enumerate()
+        let alive_targets: Vec<usize> = enemy_ships
+            .iter()
+            .enumerate()
             .filter(|(_, s)| s.alive)
             .map(|(i, _)| i)
             .collect();
-        if alive_targets.is_empty() { return; }
+        if alive_targets.is_empty() {
+            return;
+        }
 
         for (sq_idx, &sq_count) in squadrons.iter().enumerate() {
-            if sq_count == 0 { continue; }
+            if sq_count == 0 {
+                continue;
+            }
             let class_key = match fleet.fighters.get(sq_idx) {
                 Some(e) => e.class,
                 None => continue,
@@ -662,7 +700,9 @@ impl CombatSystem {
             };
 
             let attack_power = base_attack * sq_count;
-            if attack_power == 0 { continue; }
+            if attack_power == 0 {
+                continue;
+            }
 
             let roll = rng.next().unwrap_or(0.5);
             let raw_idx = (roll * alive_targets.len() as f64) as usize;
@@ -748,13 +788,19 @@ impl CombatSystem {
     ) {
         let atk_total: u32 = atk_launched.iter().sum();
         let def_total: u32 = def_launched.iter().sum();
-        if atk_total == 0 || def_total == 0 { return; }
+        if atk_total == 0 || def_total == 0 {
+            return;
+        }
 
         // Compute weighted combat power per side using attack_strength + maneuverability/2.
-        let atk_power: f64 = atk_launched.iter().enumerate()
+        let atk_power: f64 = atk_launched
+            .iter()
+            .enumerate()
             .filter(|(_, &c)| c > 0)
             .map(|(i, &c)| {
-                let class = atk_fleet.fighters.get(i)
+                let class = atk_fleet
+                    .fighters
+                    .get(i)
                     .map(|e| &world.fighter_classes[e.class]);
                 let (atk_str, maneuver) = class
                     .map(|c| (c.overall_attack_strength as f64, c.maneuverability as f64))
@@ -763,10 +809,14 @@ impl CombatSystem {
             })
             .sum();
 
-        let def_power: f64 = def_launched.iter().enumerate()
+        let def_power: f64 = def_launched
+            .iter()
+            .enumerate()
             .filter(|(_, &c)| c > 0)
             .map(|(i, &c)| {
-                let class = def_fleet.fighters.get(i)
+                let class = def_fleet
+                    .fighters
+                    .get(i)
                     .map(|e| &world.fighter_classes[e.class]);
                 let (atk_str, maneuver) = class
                     .map(|c| (c.overall_attack_strength as f64, c.maneuverability as f64))
@@ -775,7 +825,9 @@ impl CombatSystem {
             })
             .sum();
 
-        if atk_power <= 0.0 && def_power <= 0.0 { return; }
+        if atk_power <= 0.0 && def_power <= 0.0 {
+            return;
+        }
         let total_power = atk_power + def_power;
 
         let roll_atk = rng.next().unwrap_or(0.5);
@@ -833,7 +885,9 @@ impl CombatSystem {
 
     fn apply_fighter_losses(squadrons: &mut Vec<u32>, mut losses: u32) {
         for count in squadrons.iter_mut().rev() {
-            if losses == 0 { break; }
+            if losses == 0 {
+                break;
+            }
             let take = losses.min(*count);
             *count -= take;
             losses -= take;
@@ -948,18 +1002,21 @@ impl CombatSystem {
         let mut troop_damage: Vec<TroopDamageEvent> = Vec::new();
 
         // Step 6-8 of FUN_00560d50: iterate all troops at system by faction.
-        let (atk_keys, def_keys): (Vec<TroopKey>, Vec<TroopKey>) = sys.ground_units
+        let (atk_keys, def_keys): (Vec<TroopKey>, Vec<TroopKey>) = sys
+            .ground_units
             .iter()
             .copied()
             .partition(|&key| world.troops[key].is_alliance == attacker_is_alliance);
 
         // Regiment strength check (C++ offset +0x96, short):
         // units with strength <= 0 are destroyed — skip them.
-        let active_atk: Vec<TroopKey> = atk_keys.iter()
+        let active_atk: Vec<TroopKey> = atk_keys
+            .iter()
             .copied()
             .filter(|&k| world.troops[k].regiment_strength > 0)
             .collect();
-        let active_def: Vec<TroopKey> = def_keys.iter()
+        let active_def: Vec<TroopKey> = def_keys
+            .iter()
             .copied()
             .filter(|&k| world.troops[k].regiment_strength > 0)
             .collect();
@@ -967,11 +1024,14 @@ impl CombatSystem {
         // Defense facility bonus: sum bombardment_defense of defending faction's facilities.
         // Provides a flat defense bonus spread across defending troops (fortification advantage).
         let defender_is_alliance = !attacker_is_alliance;
-        let facility_defense_bonus: f64 = sys.defense_facilities.iter()
+        let facility_defense_bonus: f64 = sys
+            .defense_facilities
+            .iter()
             .filter_map(|&key| world.defense_facilities.get(key))
             .filter(|fac| fac.is_alliance == defender_is_alliance)
             .map(|fac| {
-                world.defense_facility_classes
+                world
+                    .defense_facility_classes
                     .get(&fac.class_dat_id)
                     .map(|c| c.bombardment_defense)
                     .unwrap_or(10) as f64
@@ -987,8 +1047,14 @@ impl CombatSystem {
         // Difficulty modifier: scales damage via GNPRTB (FUN_0053e190).
         // Default to 1.0x (100) if GNPRTB not loaded.
         let difficulty_mod = {
-            let raw = world.gnprtb.value(GNPRTB_COMBAT_DIFFICULTY_MODIFIER, difficulty);
-            if raw > 0 { raw as f64 / 100.0 } else { 1.0 }
+            let raw = world
+                .gnprtb
+                .value(GNPRTB_COMBAT_DIFFICULTY_MODIFIER, difficulty);
+            if raw > 0 {
+                raw as f64 / 100.0
+            } else {
+                1.0
+            }
         };
 
         // Officer combat rating modifier (from community disassembly cross-reference:
@@ -1020,7 +1086,8 @@ impl CombatSystem {
         // Per-unit resolution: FUN_004ee350 (30 lines).
         // Each attacker regiment attacks each defender regiment individually.
         // Damage computed from class attack/defense stats scaled by regiment strength.
-        let mut current_strength: std::collections::HashMap<TroopKey, i16> = active_atk.iter()
+        let mut current_strength: std::collections::HashMap<TroopKey, i16> = active_atk
+            .iter()
             .chain(active_def.iter())
             .map(|&k| (k, world.troops[k].regiment_strength))
             .collect();
@@ -1042,34 +1109,50 @@ impl CombatSystem {
 
                 let atk_str = *current_strength.get(&atk_key).unwrap_or(&0);
                 let def_str = *current_strength.get(&def_key).unwrap_or(&0);
-                if atk_str <= 0 || def_str <= 0 { continue; }
+                if atk_str <= 0 || def_str <= 0 {
+                    continue;
+                }
 
                 // Look up class-based attack/defense stats from TROOPSD.DAT.
                 let atk_unit = &world.troops[atk_key];
                 let def_unit = &world.troops[def_key];
 
-                let atk_class_attack = world.troop_classes.get(&atk_unit.class_dat_id)
-                    .map(|c| c.attack_strength as f64).unwrap_or(10.0);
-                let def_class_defense = world.troop_classes.get(&def_unit.class_dat_id)
-                    .map(|c| c.defense_strength as f64).unwrap_or(10.0);
-                let def_class_attack = world.troop_classes.get(&def_unit.class_dat_id)
-                    .map(|c| c.attack_strength as f64).unwrap_or(10.0);
+                let atk_class_attack = world
+                    .troop_classes
+                    .get(&atk_unit.class_dat_id)
+                    .map(|c| c.attack_strength as f64)
+                    .unwrap_or(10.0);
+                let def_class_defense = world
+                    .troop_classes
+                    .get(&def_unit.class_dat_id)
+                    .map(|c| c.defense_strength as f64)
+                    .unwrap_or(10.0);
+                let def_class_attack = world
+                    .troop_classes
+                    .get(&def_unit.class_dat_id)
+                    .map(|c| c.attack_strength as f64)
+                    .unwrap_or(10.0);
 
                 // Effective power: class stat * (regiment_strength / 100).
                 // Defender gets facility bonus spread across defending units.
                 let atk_effective = atk_class_attack * (atk_str as f64 / 100.0);
-                let def_effective = def_class_defense * (def_str as f64 / 100.0)
-                    + facility_bonus_per_unit;
+                let def_effective =
+                    def_class_defense * (def_str as f64 / 100.0) + facility_bonus_per_unit;
 
                 let total = atk_effective + def_effective;
-                if total <= 0.0 { continue; }
+                if total <= 0.0 {
+                    continue;
+                }
 
                 // Hit probability: proportional to effective attack vs total.
                 let hit_prob = atk_effective / total;
 
                 if roll < hit_prob {
                     // Attacker hits defender. Officer combat rating modifies damage.
-                    let raw_damage = (atk_class_attack * (atk_str as f64 / 100.0) * difficulty_mod * officer_combat_bonus)
+                    let raw_damage = (atk_class_attack
+                        * (atk_str as f64 / 100.0)
+                        * difficulty_mod
+                        * officer_combat_bonus)
                         .max(1.0);
                     let reduction = (raw_damage as i16).max(1).min(def_str);
                     let old_strength = current_strength[&def_key];
@@ -1082,8 +1165,8 @@ impl CombatSystem {
                     });
                 } else {
                     // Defender counter-attacks.
-                    let raw_damage = (def_class_attack * (def_str as f64 / 100.0) * difficulty_mod)
-                        .max(1.0);
+                    let raw_damage =
+                        (def_class_attack * (def_str as f64 / 100.0) * difficulty_mod).max(1.0);
                     let reduction = (raw_damage as i16).max(1).min(atk_str);
                     let old_strength = current_strength[&atk_key];
                     let new_strength = (old_strength - reduction).max(0);
@@ -1104,10 +1187,15 @@ impl CombatSystem {
         let winner = match (surviving_atk > 0, surviving_def > 0) {
             (true, false) => CombatSide::Attacker,
             (false, true) => CombatSide::Defender,
-            _             => CombatSide::Draw,
+            _ => CombatSide::Draw,
         };
 
-        GroundCombatResult { system, winner, troop_damage, tick }
+        GroundCombatResult {
+            system,
+            winner,
+            troop_damage,
+            tick,
+        }
     }
 
     fn count_ground_survivors(
@@ -1115,14 +1203,17 @@ impl CombatSystem {
         damage: &[TroopDamageEvent],
         world: &GameWorld,
     ) -> usize {
-        troops.iter().filter(|&&key| {
-            // Use the latest damage event for this key if present, else world state.
-            if let Some(evt) = damage.iter().rev().find(|e| e.troop == key) {
-                evt.strength_after > 0
-            } else {
-                world.troops[key].regiment_strength > 0
-            }
-        }).count()
+        troops
+            .iter()
+            .filter(|&&key| {
+                // Use the latest damage event for this key if present, else world state.
+                if let Some(evt) = damage.iter().rev().find(|e| e.troop == key) {
+                    evt.strength_after > 0
+                } else {
+                    world.troops[key].regiment_strength > 0
+                }
+            })
+            .count()
     }
 
     // Death Star superlaser resolution is NOT handled by the combat system.
@@ -1166,7 +1257,7 @@ impl CombatEntityKind {
             0x30..=0x33 | 0x35..=0x3b => Self::CapitalShip,
             0x34 => Self::DeathStar,
             0x71 => Self::FighterSquadron, // exact == 0x71 only, NOT range (reviewer-corrected)
-            0x72 => Self::Unknown,       // 0x72 is a different entity type, not alt-shield
+            0x72 => Self::Unknown,         // 0x72 is a different entity type, not alt-shield
             0x73..=0x74 => Self::SpecialCombatEntity,
             _ => Self::Unknown,
         }
@@ -1186,10 +1277,10 @@ pub fn extract_difficulty(packed: u32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dat::{ExplorationStatus, SectorGroup};
+    use crate::ids::*;
     use crate::world::ControlKind;
     use crate::world::*;
-    use crate::ids::*;
-    use crate::dat::{ExplorationStatus, SectorGroup};
     use std::collections::HashMap;
 
     fn empty_world() -> GameWorld {
@@ -1272,8 +1363,13 @@ mod tests {
         })
     }
 
-    fn make_fleet(world: &mut GameWorld, sys: SystemKey, class: CapitalShipKey,
-                  count: u32, is_alliance: bool) -> FleetKey {
+    fn make_fleet(
+        world: &mut GameWorld,
+        sys: SystemKey,
+        class: CapitalShipKey,
+        count: u32,
+        is_alliance: bool,
+    ) -> FleetKey {
         let hull = world.capital_ship_classes[class].hull as i32;
         let key = world.fleets.insert(Fleet {
             location: sys,
@@ -1289,11 +1385,26 @@ mod tests {
 
     #[test]
     fn test_entity_kind_classification() {
-        assert_eq!(CombatEntityKind::from_family_byte(0x30), CombatEntityKind::CapitalShip);
-        assert_eq!(CombatEntityKind::from_family_byte(0x34), CombatEntityKind::DeathStar);
-        assert_eq!(CombatEntityKind::from_family_byte(0x14), CombatEntityKind::Troop);
-        assert_eq!(CombatEntityKind::from_family_byte(0x08), CombatEntityKind::Character);
-        assert_eq!(CombatEntityKind::from_family_byte(0x71), CombatEntityKind::FighterSquadron);
+        assert_eq!(
+            CombatEntityKind::from_family_byte(0x30),
+            CombatEntityKind::CapitalShip
+        );
+        assert_eq!(
+            CombatEntityKind::from_family_byte(0x34),
+            CombatEntityKind::DeathStar
+        );
+        assert_eq!(
+            CombatEntityKind::from_family_byte(0x14),
+            CombatEntityKind::Troop
+        );
+        assert_eq!(
+            CombatEntityKind::from_family_byte(0x08),
+            CombatEntityKind::Character
+        );
+        assert_eq!(
+            CombatEntityKind::from_family_byte(0x71),
+            CombatEntityKind::FighterSquadron
+        );
     }
 
     #[test]
@@ -1352,8 +1463,10 @@ mod tests {
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
         // Equal forces with median rolls → at minimum both sides survive (draw) or one wins.
         // Just verify it returns a valid CombatSide.
-        assert!(matches!(result.winner,
-            CombatSide::Attacker | CombatSide::Defender | CombatSide::Draw));
+        assert!(matches!(
+            result.winner,
+            CombatSide::Attacker | CombatSide::Defender | CombatSide::Draw
+        ));
     }
 
     #[test]
@@ -1432,14 +1545,20 @@ mod tests {
         // Register troop classes with asymmetric stats.
         let strong_class = DatId::new(0x14000001);
         let weak_class = DatId::new(0x14000002);
-        world.troop_classes.insert(strong_class, TroopClassDef {
-            attack_strength: 50,
-            defense_strength: 20,
-        });
-        world.troop_classes.insert(weak_class, TroopClassDef {
-            attack_strength: 5,
-            defense_strength: 5,
-        });
+        world.troop_classes.insert(
+            strong_class,
+            TroopClassDef {
+                attack_strength: 50,
+                defense_strength: 20,
+            },
+        );
+        world.troop_classes.insert(
+            weak_class,
+            TroopClassDef {
+                attack_strength: 5,
+                defense_strength: 5,
+            },
+        );
 
         // 3 strong attackers vs 1 weak defender.
         for _ in 0..3 {
@@ -1471,10 +1590,13 @@ mod tests {
         let sys = make_system(&mut world, sector);
 
         let class_id = DatId::new(0x14000001);
-        world.troop_classes.insert(class_id, TroopClassDef {
-            attack_strength: 20,
-            defense_strength: 20,
-        });
+        world.troop_classes.insert(
+            class_id,
+            TroopClassDef {
+                attack_strength: 20,
+                defense_strength: 20,
+            },
+        );
 
         // Equal forces: 2 attackers vs 2 defenders.
         for _ in 0..2 {
@@ -1496,9 +1618,12 @@ mod tests {
 
         // Add a strong defense facility for the Empire (defender).
         let fac_class_id = DatId::new(0x1c000001);
-        world.defense_facility_classes.insert(fac_class_id, DefenseFacilityClassDef {
-            bombardment_defense: 200,
-        });
+        world.defense_facility_classes.insert(
+            fac_class_id,
+            DefenseFacilityClassDef {
+                bombardment_defense: 200,
+            },
+        );
         let fac_key = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: fac_class_id,
             is_alliance: false, // empire facility
@@ -1509,8 +1634,11 @@ mod tests {
         let rolls: Vec<f64> = vec![0.5; 100];
         let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
         // The facility bonus shifts hit probability toward the defender.
-        assert!(result.winner == CombatSide::Defender || result.winner == CombatSide::Draw,
-            "Defense facilities should help the defender, got {:?}", result.winner);
+        assert!(
+            result.winner == CombatSide::Defender || result.winner == CombatSide::Draw,
+            "Defense facilities should help the defender, got {:?}",
+            result.winner
+        );
     }
 
     #[test]
@@ -1520,17 +1648,20 @@ mod tests {
         let sys = make_system(&mut world, sector);
 
         let class_id = DatId::new(0x14000001);
-        world.troop_classes.insert(class_id, TroopClassDef {
-            attack_strength: 20,
-            defense_strength: 10,
-        });
+        world.troop_classes.insert(
+            class_id,
+            TroopClassDef {
+                attack_strength: 20,
+                defense_strength: 10,
+            },
+        );
 
         // Set up GNPRTB with difficulty-varying modifier.
         // Param 0x1400: easy=50 (0.5x damage), hard=200 (2x damage).
         world.gnprtb = GnprtbParams::new(vec![GnprtbEntry {
             parameter_id: 0x1400,
             development: 100,
-            alliance_sp_easy: 50,   // difficulty=1 → 0.5x damage
+            alliance_sp_easy: 50,    // difficulty=1 → 0.5x damage
             alliance_sp_medium: 100, // difficulty=2 → 1.0x
             alliance_sp_hard: 200,   // difficulty=3 → 2.0x
             empire_sp_easy: 100,
@@ -1554,7 +1685,9 @@ mod tests {
 
         let rolls: Vec<f64> = vec![0.1]; // attacker hits
         let easy_result = CombatSystem::resolve_ground(&world, sys, true, 1, &rolls, 1);
-        let easy_damage: i16 = easy_result.troop_damage.iter()
+        let easy_damage: i16 = easy_result
+            .troop_damage
+            .iter()
             .filter(|e| e.troop == def)
             .map(|e| e.strength_before - e.strength_after)
             .sum();
@@ -1565,14 +1698,20 @@ mod tests {
 
         let rolls: Vec<f64> = vec![0.1];
         let hard_result = CombatSystem::resolve_ground(&world, sys, true, 3, &rolls, 1);
-        let hard_damage: i16 = hard_result.troop_damage.iter()
+        let hard_damage: i16 = hard_result
+            .troop_damage
+            .iter()
             .filter(|e| e.troop == def)
             .map(|e| e.strength_before - e.strength_after)
             .sum();
 
         // Hard (2.0x) should deal more damage than easy (0.5x).
-        assert!(hard_damage > easy_damage,
-            "Hard difficulty damage ({}) should exceed easy ({})", hard_damage, easy_damage);
+        assert!(
+            hard_damage > easy_damage,
+            "Hard difficulty damage ({}) should exceed easy ({})",
+            hard_damage,
+            easy_damage
+        );
     }
 
     #[test]
@@ -1627,19 +1766,27 @@ mod tests {
         // Run at easy difficulty (0.5x damage).
         let rolls: Vec<f64> = vec![0.5; 200];
         let easy_result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
-        let easy_total_damage: i32 = easy_result.ship_damage.iter()
+        let easy_total_damage: i32 = easy_result
+            .ship_damage
+            .iter()
             .map(|e| e.hull_before - e.hull_after)
             .sum();
 
         // Run at hard difficulty (2.0x damage) with same rolls.
         let hard_result = CombatSystem::resolve_space(&world, atk, def, sys, 3, &rolls, 1, false);
-        let hard_total_damage: i32 = hard_result.ship_damage.iter()
+        let hard_total_damage: i32 = hard_result
+            .ship_damage
+            .iter()
             .map(|e| e.hull_before - e.hull_after)
             .sum();
 
         // Hard should deal more total damage than easy.
-        assert!(hard_total_damage > easy_total_damage,
-            "Hard difficulty damage ({}) should exceed easy ({})", hard_total_damage, easy_total_damage);
+        assert!(
+            hard_total_damage > easy_total_damage,
+            "Hard difficulty damage ({}) should exceed easy ({})",
+            hard_total_damage,
+            easy_total_damage
+        );
     }
 
     #[test]
@@ -1650,14 +1797,20 @@ mod tests {
 
         let elite_class = DatId::new(0x14000001);
         let militia_class = DatId::new(0x14000002);
-        world.troop_classes.insert(elite_class, TroopClassDef {
-            attack_strength: 80,
-            defense_strength: 60,
-        });
-        world.troop_classes.insert(militia_class, TroopClassDef {
-            attack_strength: 10,
-            defense_strength: 5,
-        });
+        world.troop_classes.insert(
+            elite_class,
+            TroopClassDef {
+                attack_strength: 80,
+                defense_strength: 60,
+            },
+        );
+        world.troop_classes.insert(
+            militia_class,
+            TroopClassDef {
+                attack_strength: 10,
+                defense_strength: 5,
+            },
+        );
 
         // 2 elite attackers vs 6 militia defenders.
         for _ in 0..2 {
@@ -1681,11 +1834,17 @@ mod tests {
         let rolls: Vec<f64> = vec![0.3; 200];
         let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
         // Elite attackers should win against weak militia despite being outnumbered.
-        assert_eq!(result.winner, CombatSide::Attacker,
-            "Elite troops should overcome militia numbers");
+        assert_eq!(
+            result.winner,
+            CombatSide::Attacker,
+            "Elite troops should overcome militia numbers"
+        );
         // Should have generated substantial damage events.
-        assert!(result.troop_damage.len() >= 6,
-            "Expected at least 6 damage events, got {}", result.troop_damage.len());
+        assert!(
+            result.troop_damage.len() >= 6,
+            "Expected at least 6 damage events, got {}",
+            result.troop_damage.len()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1722,7 +1881,10 @@ mod tests {
         let key = world.fleets.insert(Fleet {
             location: sys,
             capital_ships: ShipInstance::make(ship_class, hull, is_alliance, ship_count),
-            fighters: vec![FighterEntry { class: fighter_class, count: fighter_squads }],
+            fighters: vec![FighterEntry {
+                class: fighter_class,
+                count: fighter_squads,
+            }],
             characters: vec![],
             is_alliance,
             has_death_star: false,
@@ -1750,11 +1912,15 @@ mod tests {
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Nimble side should lose fewer fighters.
-        let atk_losses: u32 = result.fighter_losses.iter()
+        let atk_losses: u32 = result
+            .fighter_losses
+            .iter()
             .filter(|e| e.fleet == atk)
             .map(|e| e.squads_before - e.squads_after)
             .sum();
-        let def_losses: u32 = result.fighter_losses.iter()
+        let def_losses: u32 = result
+            .fighter_losses
+            .iter()
             .filter(|e| e.fleet == def)
             .map(|e| e.squads_before - e.squads_after)
             .sum();
@@ -1782,10 +1948,15 @@ mod tests {
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Defenders should have taken hull damage from fighters.
-        let def_damage: Vec<&ShipDamageEvent> = result.ship_damage.iter()
+        let def_damage: Vec<&ShipDamageEvent> = result
+            .ship_damage
+            .iter()
             .filter(|e| e.fleet == def)
             .collect();
-        assert!(!def_damage.is_empty(), "fighters with attack_strength=50 should damage capital ships");
+        assert!(
+            !def_damage.is_empty(),
+            "fighters with attack_strength=50 should damage capital ships"
+        );
     }
 
     #[test]
@@ -1895,16 +2066,8 @@ mod tests {
             false,
         );
 
-        let result = CombatSystem::resolve_space(
-            &world,
-            attacker,
-            defender,
-            sys,
-            1,
-            &[0.5; 200],
-            1,
-            false,
-        );
+        let result =
+            CombatSystem::resolve_space(&world, attacker, defender, sys, 1, &[0.5; 200], 1, false);
 
         assert_eq!(result.winner, CombatSide::Defender);
         assert!(result.fighter_losses.iter().any(|event| {
@@ -1951,13 +2114,17 @@ mod tests {
         // After recall, attacker should have at most 2 surviving fighters (carrier cap).
         let total_original: u32 = world.fleets[atk].fighters.iter().map(|e| e.count).sum();
         // Surviving = original - losses
-        let total_lost: u32 = result.fighter_losses.iter()
+        let total_lost: u32 = result
+            .fighter_losses
+            .iter()
             .filter(|e| e.fleet == atk)
             .map(|e| e.squads_before - e.squads_after)
             .sum();
         let total_surviving = total_original - total_lost;
-        assert!(total_surviving <= 2,
-            "carrier capacity is 2 but {total_surviving} fighters survived");
+        assert!(
+            total_surviving <= 2,
+            "carrier capacity is 2 but {total_surviving} fighters survived"
+        );
     }
 
     #[test]
@@ -1991,16 +2158,22 @@ mod tests {
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Attacker carrier should be destroyed — all surviving fighters lost during recall.
-        let atk_ship_destroyed = result.ship_damage.iter()
+        let atk_ship_destroyed = result
+            .ship_damage
+            .iter()
             .any(|e| e.fleet == atk && e.hull_after == 0);
         if atk_ship_destroyed {
             // All fighter squads should show as lost (squads_after = 0 in loss events).
-            let surviving: u32 = result.fighter_losses.iter()
+            let surviving: u32 = result
+                .fighter_losses
+                .iter()
                 .filter(|e| e.fleet == atk)
                 .map(|e| e.squads_after)
                 .sum();
-            assert_eq!(surviving, 0,
-                "all fighters should be lost when carrier is destroyed, but {surviving} survived");
+            assert_eq!(
+                surviving, 0,
+                "all fighters should be lost when carrier is destroyed, but {surviving} survived"
+            );
         }
         // If carrier survived, test is inconclusive — that's OK.
     }
@@ -2017,8 +2190,10 @@ mod tests {
 
         let rolls: Vec<f64> = vec![0.5; 200];
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
-        assert!(result.fighter_losses.is_empty(),
-            "no fighter losses expected when neither fleet has fighters");
+        assert!(
+            result.fighter_losses.is_empty(),
+            "no fighter losses expected when neither fleet has fighters"
+        );
     }
 
     #[test]
@@ -2038,7 +2213,9 @@ mod tests {
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
         // Attacker should not lose fighters in dogfight (no enemy fighters).
-        let atk_fighter_losses: u32 = result.fighter_losses.iter()
+        let atk_fighter_losses: u32 = result
+            .fighter_losses
+            .iter()
             .filter(|e| e.fleet == atk)
             .map(|e| e.squads_before - e.squads_after)
             .sum();
@@ -2046,11 +2223,11 @@ mod tests {
             "attacker should lose no fighters in dogfight when defender has none, but lost {atk_fighter_losses}");
 
         // Defender should have taken ship damage (from fighters + capital weapons).
-        let def_damage_count = result.ship_damage.iter()
-            .filter(|e| e.fleet == def)
-            .count();
-        assert!(def_damage_count > 0,
-            "defender ships should be damaged by attacker fighters");
+        let def_damage_count = result.ship_damage.iter().filter(|e| e.fleet == def).count();
+        assert!(
+            def_damage_count > 0,
+            "defender ships should be damaged by attacker fighters"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2092,7 +2269,7 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
-        is_death_star: false,
+            is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
@@ -2113,7 +2290,7 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
-        is_death_star: false,
+            is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 0);
@@ -2135,7 +2312,7 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
-        is_death_star: false,
+            is_death_star: false,
         }];
         let mut turbo_vec = vec![ShipSnap {
             hull_current: 200,
@@ -2147,13 +2324,16 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
-        is_death_star: false,
+            is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ion_vec);
         CombatSystem::phase_shield_absorb(&mut turbo_vec);
-        assert!(ion_vec[0].shield_current < turbo_vec[0].shield_current,
+        assert!(
+            ion_vec[0].shield_current < turbo_vec[0].shield_current,
             "Ion shields {} should be less than turbo shields {}",
-            ion_vec[0].shield_current, turbo_vec[0].shield_current);
+            ion_vec[0].shield_current,
+            turbo_vec[0].shield_current
+        );
     }
 
     #[test]
@@ -2168,7 +2348,7 @@ mod tests {
             shield_nibble: 15,
             weapon_nibble: 15,
             alive: true,
-        is_death_star: false,
+            is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].shield_current, 145);
@@ -2188,7 +2368,7 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
-        is_death_star: false,
+            is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         assert_eq!(ships[0].pending_damage, 60);
@@ -2208,7 +2388,7 @@ mod tests {
             shield_nibble: 0,
             weapon_nibble: 15,
             alive: true,
-        is_death_star: false,
+            is_death_star: false,
         }];
         CombatSystem::phase_shield_absorb(&mut ships);
         CombatSystem::phase_hull_damage(&mut ships, 1.0, false);
@@ -2230,17 +2410,24 @@ mod tests {
         let rolls: Vec<f64> = vec![0.5; 200];
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
 
-        let atk_damage: i32 = result.ship_damage.iter()
+        let atk_damage: i32 = result
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == atk)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
-        let def_damage: i32 = result.ship_damage.iter()
+        let def_damage: i32 = result
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == def)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
-        assert!(def_damage < atk_damage,
+        assert!(
+            def_damage < atk_damage,
             "Shielded defender hull damage {} should be less than unshielded attacker {}",
-            def_damage, atk_damage);
+            def_damage,
+            atk_damage
+        );
     }
 
     #[test]
@@ -2254,7 +2441,8 @@ mod tests {
         let target1 = make_fleet(&mut world, sys, target_class, 1, false);
 
         let rolls: Vec<f64> = vec![0.5; 200];
-        let result_ion = CombatSystem::resolve_space(&world, ion_atk, target1, sys, 1, &rolls, 1, false);
+        let result_ion =
+            CombatSystem::resolve_space(&world, ion_atk, target1, sys, 1, &rolls, 1, false);
 
         let mut world2 = empty_world();
         let sector2 = make_sector(&mut world2);
@@ -2264,19 +2452,27 @@ mod tests {
         let turbo_atk = make_fleet(&mut world2, sys2, turbo_atk_class, 1, true);
         let target2 = make_fleet(&mut world2, sys2, target_class2, 1, false);
 
-        let result_turbo = CombatSystem::resolve_space(&world2, turbo_atk, target2, sys2, 1, &rolls, 1, false);
+        let result_turbo =
+            CombatSystem::resolve_space(&world2, turbo_atk, target2, sys2, 1, &rolls, 1, false);
 
-        let ion_hull_damage: i32 = result_ion.ship_damage.iter()
+        let ion_hull_damage: i32 = result_ion
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == target1)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
-        let turbo_hull_damage: i32 = result_turbo.ship_damage.iter()
+        let turbo_hull_damage: i32 = result_turbo
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == target2)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
-        assert!(ion_hull_damage >= turbo_hull_damage,
+        assert!(
+            ion_hull_damage >= turbo_hull_damage,
             "Ion hull damage {} should be >= turbo hull damage {} against shielded target",
-            ion_hull_damage, turbo_hull_damage);
+            ion_hull_damage,
+            turbo_hull_damage
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2319,7 +2515,11 @@ mod tests {
         let ds_class = make_ds_class(&mut world, 5000);
         let ds_fleet = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipInstance::new(ds_class, world.capital_ship_classes[ds_class].hull as i32, false)],
+            capital_ships: vec![ShipInstance::new(
+                ds_class,
+                world.capital_ship_classes[ds_class].hull as i32,
+                false,
+            )],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2331,18 +2531,25 @@ mod tests {
         let result = CombatSystem::resolve_space(&world, atk, ds_fleet, sys, 1, &rolls, 1, true);
 
         // DS should take no hull damage because shield is active
-        let ds_damage: i32 = result.ship_damage.iter()
+        let ds_damage: i32 = result
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == ds_fleet)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
         assert_eq!(ds_damage, 0, "DS shield should block all hull damage");
 
         // Verify combat actually occurred — attacker should have taken damage from DS turbolasers
-        let atk_damage: i32 = result.ship_damage.iter()
+        let atk_damage: i32 = result
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == atk)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
-        assert!(atk_damage > 0, "Attacker should take damage, confirming combat occurred");
+        assert!(
+            atk_damage > 0,
+            "Attacker should take damage, confirming combat occurred"
+        );
     }
 
     #[test]
@@ -2357,7 +2564,11 @@ mod tests {
         let ds_class = make_ds_class(&mut world, 5000);
         let ds_fleet = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipInstance::new(ds_class, world.capital_ship_classes[ds_class].hull as i32, false)],
+            capital_ships: vec![ShipInstance::new(
+                ds_class,
+                world.capital_ship_classes[ds_class].hull as i32,
+                false,
+            )],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2369,11 +2580,17 @@ mod tests {
         // Shield NOT active — DS should be vulnerable
         let result = CombatSystem::resolve_space(&world, atk, ds_fleet, sys, 1, &rolls, 1, false);
 
-        let ds_damage: i32 = result.ship_damage.iter()
+        let ds_damage: i32 = result
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == ds_fleet)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
-        assert!(ds_damage > 0, "DS should take damage when shield is down, got {}", ds_damage);
+        assert!(
+            ds_damage > 0,
+            "DS should take damage when shield is down, got {}",
+            ds_damage
+        );
     }
 
     #[test]
@@ -2393,11 +2610,16 @@ mod tests {
         // Even with shield=true, non-DS ships should still take damage
         let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, true);
 
-        let def_damage: i32 = result.ship_damage.iter()
+        let def_damage: i32 = result
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == def)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
-        assert!(def_damage > 0, "Non-DS ships should still take damage even with shield flag");
+        assert!(
+            def_damage > 0,
+            "Non-DS ships should still take damage even with shield flag"
+        );
     }
 
     #[test]
@@ -2412,7 +2634,11 @@ mod tests {
         let ds_class = make_ds_class(&mut world, 5000);
         let ds_fleet = world.fleets.insert(Fleet {
             location: sys,
-            capital_ships: vec![ShipInstance::new(ds_class, world.capital_ship_classes[ds_class].hull as i32, false)],
+            capital_ships: vec![ShipInstance::new(
+                ds_class,
+                world.capital_ship_classes[ds_class].hull as i32,
+                false,
+            )],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2423,8 +2649,11 @@ mod tests {
         let rolls: Vec<f64> = vec![0.5; 200];
 
         // With shield
-        let result_shielded = CombatSystem::resolve_space(&world, atk, ds_fleet, sys, 1, &rolls, 1, true);
-        let shielded_damage: i32 = result_shielded.ship_damage.iter()
+        let result_shielded =
+            CombatSystem::resolve_space(&world, atk, ds_fleet, sys, 1, &rolls, 1, true);
+        let shielded_damage: i32 = result_shielded
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == ds_fleet)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
@@ -2438,7 +2667,11 @@ mod tests {
         let ds_class2 = make_ds_class(&mut world2, 5000);
         let ds_fleet2 = world2.fleets.insert(Fleet {
             location: sys2,
-            capital_ships: vec![ShipInstance::new(ds_class2, world2.capital_ship_classes[ds_class2].hull as i32, false)],
+            capital_ships: vec![ShipInstance::new(
+                ds_class2,
+                world2.capital_ship_classes[ds_class2].hull as i32,
+                false,
+            )],
             fighters: vec![],
             characters: vec![],
             is_alliance: false,
@@ -2446,15 +2679,21 @@ mod tests {
         });
         world2.systems[sys2].fleets.push(ds_fleet2);
 
-        let result_unshielded = CombatSystem::resolve_space(&world2, atk2, ds_fleet2, sys2, 1, &rolls, 1, false);
-        let unshielded_damage: i32 = result_unshielded.ship_damage.iter()
+        let result_unshielded =
+            CombatSystem::resolve_space(&world2, atk2, ds_fleet2, sys2, 1, &rolls, 1, false);
+        let unshielded_damage: i32 = result_unshielded
+            .ship_damage
+            .iter()
             .filter(|d| d.fleet == ds_fleet2)
             .map(|d| d.hull_before - d.hull_after)
             .sum();
 
-        assert!(shielded_damage < unshielded_damage,
+        assert!(
+            shielded_damage < unshielded_damage,
             "Shielded DS damage ({}) should be less than unshielded ({})",
-            shielded_damage, unshielded_damage);
+            shielded_damage,
+            unshielded_damage
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2478,10 +2717,13 @@ mod tests {
         let sys = make_system(&mut world, sector);
 
         // Add troop classes so combat works
-        world.troop_classes.insert(DatId::new(0x14000100), TroopClassDef {
-            attack_strength: 30,
-            defense_strength: 20,
-        });
+        world.troop_classes.insert(
+            DatId::new(0x14000100),
+            TroopClassDef {
+                attack_strength: 30,
+                defense_strength: 20,
+            },
+        );
 
         // Add troops: 2 attacker, 2 defender
         let _atk1 = make_troop(&mut world, sys, true);
@@ -2494,7 +2736,9 @@ mod tests {
         let result_no_officer = CombatSystem::resolve_ground(&world, sys, true, 1, &rolls, 1);
 
         // Sum damage to defender troops
-        let no_officer_damage: i16 = result_no_officer.troop_damage.iter()
+        let no_officer_damage: i16 = result_no_officer
+            .troop_damage
+            .iter()
             .filter(|d| d.troop == def1 || d.troop == def2)
             .map(|d| d.strength_before - d.strength_after)
             .sum();
@@ -2503,10 +2747,13 @@ mod tests {
         let mut world2 = empty_world();
         let sector2 = make_sector(&mut world2);
         let sys2 = make_system(&mut world2, sector2);
-        world2.troop_classes.insert(DatId::new(0x14000100), TroopClassDef {
-            attack_strength: 30,
-            defense_strength: 20,
-        });
+        world2.troop_classes.insert(
+            DatId::new(0x14000100),
+            TroopClassDef {
+                attack_strength: 30,
+                defense_strength: 20,
+            },
+        );
 
         let _atk2_1 = make_troop(&mut world2, sys2, true);
         let _atk2_2 = make_troop(&mut world2, sys2, true);
@@ -2514,20 +2761,30 @@ mod tests {
         let def2_2 = make_troop(&mut world2, sys2, false);
 
         // Add a fleet with an officer (combat.base = 80)
-        let sp = SkillPair { base: 0, variance: 0 };
+        let sp = SkillPair {
+            base: 0,
+            variance: 0,
+        };
         let officer = world2.characters.insert(Character {
             dat_id: DatId::new(0x08000001),
             name: "Admiral Ackbar".into(),
             is_alliance: true,
             is_major: true,
-            combat: SkillPair { base: 80, variance: 0 },
+            combat: SkillPair {
+                base: 80,
+                variance: 0,
+            },
             can_be_admiral: true,
             ..Default::default()
         });
         let atk_class = make_class(&mut world2, 100, 10);
         let fleet = world2.fleets.insert(Fleet {
             location: sys2,
-            capital_ships: vec![ShipInstance::new(atk_class, world2.capital_ship_classes[atk_class].hull as i32, true)],
+            capital_ships: vec![ShipInstance::new(
+                atk_class,
+                world2.capital_ship_classes[atk_class].hull as i32,
+                true,
+            )],
             fighters: vec![],
             characters: vec![officer],
             is_alliance: true,
@@ -2538,7 +2795,9 @@ mod tests {
         let result_with_officer = CombatSystem::resolve_ground(&world2, sys2, true, 1, &rolls, 1);
 
         // Officer with combat=80 gives 1.0 + (80/200) = 1.4x multiplier
-        let with_officer_damage: i16 = result_with_officer.troop_damage.iter()
+        let with_officer_damage: i16 = result_with_officer
+            .troop_damage
+            .iter()
             .filter(|d| d.troop == def2_1 || d.troop == def2_2)
             .map(|d| d.strength_before - d.strength_after)
             .sum();
@@ -2550,21 +2809,31 @@ mod tests {
 
     fn make_weapon_snap(weapon_nibble: u8) -> ShipSnap {
         ShipSnap {
-            hull_current: 100, hull_max: 100,
-            shield_current: 0, shield_max: 0,
-            pending_damage: 0, pending_ion_damage: 0,
-            shield_nibble: 0, weapon_nibble,
-            alive: true, is_death_star: false,
+            hull_current: 100,
+            hull_max: 100,
+            shield_current: 0,
+            shield_max: 0,
+            pending_damage: 0,
+            pending_ion_damage: 0,
+            shield_nibble: 0,
+            weapon_nibble,
+            alive: true,
+            is_death_star: false,
         }
     }
 
     fn make_target_snap() -> ShipSnap {
         ShipSnap {
-            hull_current: 200, hull_max: 200,
-            shield_current: 0, shield_max: 0,
-            pending_damage: 0, pending_ion_damage: 0,
-            shield_nibble: 0, weapon_nibble: 15,
-            alive: true, is_death_star: false,
+            hull_current: 200,
+            hull_max: 200,
+            shield_current: 0,
+            shield_max: 0,
+            pending_damage: 0,
+            pending_ion_damage: 0,
+            shield_nibble: 0,
+            weapon_nibble: 15,
+            alive: true,
+            is_death_star: false,
         }
     }
 
@@ -2578,7 +2847,8 @@ mod tests {
             dat_id: DatId::new(0x30000010),
             name: "Heavy ISD".into(),
             hull: 100,
-            turbolaser_fore: 4, turbolaser_aft: 2,
+            turbolaser_fore: 4,
+            turbolaser_aft: 2,
             turbolaser_attack_strength: 10,
             ..CapitalShipClass::default()
         });
@@ -2586,7 +2856,8 @@ mod tests {
             dat_id: DatId::new(0x30000011),
             name: "Light Frigate".into(),
             hull: 100,
-            turbolaser_fore: 4, turbolaser_aft: 2,
+            turbolaser_fore: 4,
+            turbolaser_aft: 2,
             turbolaser_attack_strength: 1,
             ..CapitalShipClass::default()
         });
@@ -2598,8 +2869,13 @@ mod tests {
         let strong_snap = vec![make_weapon_snap(15)];
         let mut target_snap_a = vec![make_target_snap()];
         let rolls_a: Vec<f64> = vec![0.5; 10];
-        CombatSystem::phase_weapon_fire(&world, strong_fleet, &strong_snap,
-            &mut target_snap_a, &mut rolls_a.into_iter());
+        CombatSystem::phase_weapon_fire(
+            &world,
+            strong_fleet,
+            &strong_snap,
+            &mut target_snap_a,
+            &mut rolls_a.into_iter(),
+        );
         let strong_dmg = target_snap_a[0].pending_damage;
 
         // Weak attacker (same arc count, lower attack_strength)
@@ -2607,12 +2883,19 @@ mod tests {
         let weak_snap = vec![make_weapon_snap(15)];
         let mut target_snap_b = vec![make_target_snap()];
         let rolls_b: Vec<f64> = vec![0.5; 10];
-        CombatSystem::phase_weapon_fire(&world, weak_fleet, &weak_snap,
-            &mut target_snap_b, &mut rolls_b.into_iter());
+        CombatSystem::phase_weapon_fire(
+            &world,
+            weak_fleet,
+            &weak_snap,
+            &mut target_snap_b,
+            &mut rolls_b.into_iter(),
+        );
         let weak_dmg = target_snap_b[0].pending_damage;
 
-        assert!(strong_dmg > weak_dmg,
-            "attack_strength=10 ({strong_dmg}) should deal more than =1 ({weak_dmg})");
+        assert!(
+            strong_dmg > weak_dmg,
+            "attack_strength=10 ({strong_dmg}) should deal more than =1 ({weak_dmg})"
+        );
     }
 
     #[test]
@@ -2625,7 +2908,9 @@ mod tests {
             dat_id: DatId::new(0x30000020),
             name: "Mixed Cruiser".into(),
             hull: 100,
-            turbolaser_fore: 3, ion_cannon_fore: 3, laser_cannon_fore: 3,
+            turbolaser_fore: 3,
+            ion_cannon_fore: 3,
+            laser_cannon_fore: 3,
             turbolaser_attack_strength: 5,
             ion_cannon_attack_strength: 8,
             laser_cannon_attack_strength: 2,
@@ -2639,15 +2924,27 @@ mod tests {
         let snap = vec![make_weapon_snap(15)];
         let mut target_snap = vec![make_target_snap()];
         let rolls: Vec<f64> = vec![0.5; 10];
-        CombatSystem::phase_weapon_fire(&world, attacker, &snap,
-            &mut target_snap, &mut rolls.into_iter());
+        CombatSystem::phase_weapon_fire(
+            &world,
+            attacker,
+            &snap,
+            &mut target_snap,
+            &mut rolls.into_iter(),
+        );
 
-        assert!(target_snap[0].pending_damage > 0, "Mixed weapons should deal damage");
-        assert!(target_snap[0].pending_ion_damage > 0,
-            "Ion cannons should contribute ion damage");
+        assert!(
+            target_snap[0].pending_damage > 0,
+            "Mixed weapons should deal damage"
+        );
+        assert!(
+            target_snap[0].pending_ion_damage > 0,
+            "Ion cannons should contribute ion damage"
+        );
         // Ion fraction: 3*8=24 ion vs 3*5+3*2=21 non-ion. Ion > 50%.
-        assert!(target_snap[0].pending_ion_damage > target_snap[0].pending_damage / 3,
-            "Ion damage should be substantial with high ion_cannon_attack_strength");
+        assert!(
+            target_snap[0].pending_ion_damage > target_snap[0].pending_damage / 3,
+            "Ion damage should be substantial with high ion_cannon_attack_strength"
+        );
     }
 
     #[test]
@@ -2672,11 +2969,18 @@ mod tests {
         let snap = vec![make_weapon_snap(15)];
         let mut target_snap = vec![make_target_snap()];
         let rolls: Vec<f64> = vec![0.5; 10];
-        CombatSystem::phase_weapon_fire(&world, attacker, &snap,
-            &mut target_snap, &mut rolls.into_iter());
+        CombatSystem::phase_weapon_fire(
+            &world,
+            attacker,
+            &snap,
+            &mut target_snap,
+            &mut rolls.into_iter(),
+        );
 
-        assert!(target_snap[0].pending_damage > 0,
-            "Ships with attack_strength=0 should still deal damage (fallback to raw arcs)");
+        assert!(
+            target_snap[0].pending_damage > 0,
+            "Ships with attack_strength=0 should still deal damage (fallback to raw arcs)"
+        );
     }
 
     #[test]
@@ -2685,10 +2989,13 @@ mod tests {
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
 
-        world.troop_classes.insert(DatId::new(0x14000100), TroopClassDef {
-            attack_strength: 30,
-            defense_strength: 20,
-        });
+        world.troop_classes.insert(
+            DatId::new(0x14000100),
+            TroopClassDef {
+                attack_strength: 30,
+                defense_strength: 20,
+            },
+        );
 
         make_troop(&mut world, sys, true);
         make_troop(&mut world, sys, false);
@@ -2698,7 +3005,9 @@ mod tests {
         let result = CombatSystem::resolve_ground(&world, sys, true, 1, &rolls, 1);
 
         // Combat should still work (no officer = 1.0x, not a crash)
-        assert!(!result.troop_damage.is_empty(),
-            "Ground combat should produce damage events even without officers");
+        assert!(
+            !result.troop_damage.is_empty(),
+            "Ground combat should produce damage events even without officers"
+        );
     }
 }

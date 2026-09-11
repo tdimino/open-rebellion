@@ -32,8 +32,8 @@ use serde::{Deserialize, Serialize};
 use crate::dat::Faction;
 use crate::ids::{FleetKey, SystemKey};
 use crate::tick::TickEvent;
-use crate::world::GameWorld;
 use crate::world::ControlKind;
+use crate::world::GameWorld;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -66,28 +66,19 @@ pub enum DeathStarEvent {
     ///
     /// Caller should set `Fleet::has_death_star = true` on the fleet at this
     /// system and update `VictoryState::death_star_active = true`.
-    ConstructionCompleted {
-        system: SystemKey,
-        tick: u64,
-    },
+    ConstructionCompleted { system: SystemKey, tick: u64 },
 
     /// The Death Star superlaser fired and destroyed `system`.
     ///
     /// Caller must set `world.systems[system].is_destroyed = true` and update
     /// `VictoryState::death_star_location = Some(system)`.
-    PlanetDestroyed {
-        system: SystemKey,
-        tick: u64,
-    },
+    PlanetDestroyed { system: SystemKey, tick: u64 },
 
     /// A Death Star fleet is within `NEARBY_WARNING_RADIUS` of `system`.
     ///
     /// Maps to `SystemDeathStarNearbyNotif` (FUN_00512480).
     /// Used to trigger Alliance intelligence messages.
-    NearbyWarning {
-        system: SystemKey,
-        tick: u64,
-    },
+    NearbyWarning { system: SystemKey, tick: u64 },
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +111,9 @@ pub struct DeathStarState {
     pub shield_generator_active: bool,
 }
 
-fn default_shield_active() -> bool { true }
+fn default_shield_active() -> bool {
+    true
+}
 
 impl Default for DeathStarState {
     fn default() -> Self {
@@ -180,8 +173,7 @@ impl DeathStarSystem {
 
         // --- 1. Construction countdown ---
         if let Some(ref mut construction) = state.under_construction {
-            construction.ticks_remaining =
-                construction.ticks_remaining.saturating_sub(tick_count);
+            construction.ticks_remaining = construction.ticks_remaining.saturating_sub(tick_count);
             if construction.ticks_remaining == 0 {
                 events.push(DeathStarEvent::ConstructionCompleted {
                     system: construction.system,
@@ -279,10 +271,7 @@ impl DeathStarSystem {
     /// Start a new construction project at `system`.
     ///
     /// Returns `false` (no-op) if construction is already underway.
-    pub fn start_construction(
-        state: &mut DeathStarState,
-        system: SystemKey,
-    ) -> bool {
+    pub fn start_construction(state: &mut DeathStarState, system: SystemKey) -> bool {
         if state.under_construction.is_some() {
             return false;
         }
@@ -334,7 +323,9 @@ pub fn cleanup_destroyed_system(
     blockade: &mut BlockadeState,
     effects: &mut Vec<GameEffect>,
 ) {
-    let Some(sys) = world.systems.get(system) else { return };
+    let Some(sys) = world.systems.get(system) else {
+        return;
+    };
 
     let fleet_keys: Vec<_> = sys.fleets.clone();
     let troop_keys: Vec<_> = sys.ground_units.clone();
@@ -370,11 +361,21 @@ pub fn cleanup_destroyed_system(
         world.fleets.remove(fk);
     }
 
-    for &tk in &troop_keys { world.troops.remove(tk); }
-    for &sk in &sf_keys { world.special_forces.remove(sk); }
-    for &dk in &def_keys { world.defense_facilities.remove(dk); }
-    for &mk in &mfg_keys { world.manufacturing_facilities.remove(mk); }
-    for &pk in &prod_keys { world.production_facilities.remove(pk); }
+    for &tk in &troop_keys {
+        world.troops.remove(tk);
+    }
+    for &sk in &sf_keys {
+        world.special_forces.remove(sk);
+    }
+    for &dk in &def_keys {
+        world.defense_facilities.remove(dk);
+    }
+    for &mk in &mfg_keys {
+        world.manufacturing_facilities.remove(mk);
+    }
+    for &pk in &prod_keys {
+        world.production_facilities.remove(pk);
+    }
 
     if let Some(sys) = world.systems.get_mut(system) {
         sys.fleets.clear();
@@ -387,7 +388,11 @@ pub fn cleanup_destroyed_system(
 
     movement.cancel_orders_to(system);
 
-    if death_star.under_construction.as_ref().map_or(false, |c| c.system == system) {
+    if death_star
+        .under_construction
+        .as_ref()
+        .map_or(false, |c| c.system == system)
+    {
         death_star.under_construction = None;
     }
 
@@ -476,12 +481,21 @@ mod tests {
         let ticks: Vec<TickEvent> = (1..=almost as u64).map(tick).collect();
         let events = DeathStarSystem::advance(&mut state, &world, &ticks);
         assert!(events.is_empty(), "should not complete yet");
-        assert_eq!(state.under_construction.as_ref().unwrap().ticks_remaining, 1);
+        assert_eq!(
+            state.under_construction.as_ref().unwrap().ticks_remaining,
+            1
+        );
 
         // Final tick.
-        let events = DeathStarSystem::advance(&mut state, &world, &[tick(DEATH_STAR_CONSTRUCTION_TICKS as u64)]);
+        let events = DeathStarSystem::advance(
+            &mut state,
+            &world,
+            &[tick(DEATH_STAR_CONSTRUCTION_TICKS as u64)],
+        );
         assert!(
-            events.iter().any(|e| matches!(e, DeathStarEvent::ConstructionCompleted { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, DeathStarEvent::ConstructionCompleted { .. })),
             "expected ConstructionCompleted"
         );
     }
@@ -491,8 +505,10 @@ mod tests {
         let (_, sys) = make_world();
         let mut state = DeathStarState::default();
         assert!(DeathStarSystem::start_construction(&mut state, sys));
-        assert!(!DeathStarSystem::start_construction(&mut state, sys),
-            "second start_construction must return false");
+        assert!(
+            !DeathStarSystem::start_construction(&mut state, sys),
+            "second start_construction must return false"
+        );
     }
 
     #[test]
@@ -557,8 +573,10 @@ mod tests {
         assert!(DeathStarSystem::fire(&state, &world, sys, 1).is_none());
 
         state.destroy_shield();
-        assert!(DeathStarSystem::fire(&state, &world, sys, 1).is_some(),
-            "Death Star should fire after shield is destroyed");
+        assert!(
+            DeathStarSystem::fire(&state, &world, sys, 1).is_some(),
+            "Death Star should fire after shield is destroyed"
+        );
     }
 
     #[test]
@@ -595,8 +613,10 @@ mod tests {
         world.systems.get_mut(sys).unwrap().control = ControlKind::Controlled(Faction::Empire);
         add_ds_fleet(&mut world, sys);
 
-        assert!(DeathStarSystem::fire(&state, &world, sys, 1).is_none(),
-            "Death Star must not fire on Empire-controlled systems");
+        assert!(
+            DeathStarSystem::fire(&state, &world, sys, 1).is_none(),
+            "Death Star must not fire on Empire-controlled systems"
+        );
     }
 
     // ── Nearby-warning tests ─────────────────────────────────────────────────
@@ -640,7 +660,9 @@ mod tests {
 
         let events = DeathStarSystem::advance(&mut state, &world, &[tick(1)]);
         assert!(
-            events.iter().any(|e| matches!(e, DeathStarEvent::NearbyWarning { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, DeathStarEvent::NearbyWarning { .. })),
             "expected NearbyWarning for close Alliance system"
         );
     }
@@ -686,6 +708,9 @@ mod tests {
             .iter()
             .filter(|e| matches!(e, DeathStarEvent::NearbyWarning { .. }))
             .count();
-        assert_eq!(warning_count, 0, "distant system should not trigger NearbyWarning");
+        assert_eq!(
+            warning_count, 0,
+            "distant system should not trigger NearbyWarning"
+        );
     }
 }

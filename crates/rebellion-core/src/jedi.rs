@@ -104,7 +104,12 @@ impl JediState {
     ///
     /// Characters already in training are not re-enrolled (idempotent).
     /// The character's `force_tier` must be ≥ `Aware` before calling this.
-    pub fn start_training(&mut self, character: CharacterKey, faction_is_alliance: bool, current_tick: u64) {
+    pub fn start_training(
+        &mut self,
+        character: CharacterKey,
+        faction_is_alliance: bool,
+        current_tick: u64,
+    ) {
         if self.training.iter().any(|r| r.character == character) {
             return;
         }
@@ -142,9 +147,7 @@ pub enum JediEvent {
         new_tier: ForceTier,
     },
     /// Training is complete — character has reached `Experienced`.
-    TrainingComplete {
-        character: CharacterKey,
-    },
+    TrainingComplete { character: CharacterKey },
     /// The opposing faction detected this character's Force ability.
     JediDiscovered {
         character: CharacterKey,
@@ -273,10 +276,7 @@ impl JediSystem {
     ///
     /// Caller must update `world.characters[key].force_tier = ForceTier::Aware`
     /// for each returned key.
-    pub fn apply_initial_awakening(
-        world: &GameWorld,
-        rng_rolls: &[f64],
-    ) -> Vec<CharacterKey> {
+    pub fn apply_initial_awakening(world: &GameWorld, rng_rolls: &[f64]) -> Vec<CharacterKey> {
         let mut awakened = Vec::new();
         let mut roll_idx = 0;
 
@@ -321,9 +321,9 @@ impl JediSystem {
     /// Detection probability per check interval for a given tier.
     fn detection_probability(tier: ForceTier) -> f64 {
         match tier {
-            ForceTier::None       => 0.0,
-            ForceTier::Aware      => DETECT_PROB_AWARE,
-            ForceTier::Training   => DETECT_PROB_TRAINING,
+            ForceTier::None => 0.0,
+            ForceTier::Aware => DETECT_PROB_AWARE,
+            ForceTier::Training => DETECT_PROB_TRAINING,
             ForceTier::Experienced => DETECT_PROB_EXPERIENCED,
         }
     }
@@ -337,28 +337,60 @@ impl JediSystem {
 mod tests {
     use super::*;
     use crate::ids::DatId;
-    use crate::world::{Character, ForceTier, GameWorld, SkillPair};
     use crate::tick::TickEvent;
+    use crate::world::{Character, ForceTier, GameWorld, SkillPair};
 
     fn ticks(n: u64) -> Vec<TickEvent> {
         (1..=n).map(|t| TickEvent { tick: t }).collect()
     }
 
-    fn add_jedi_character(world: &mut GameWorld, jedi_probability: u32, force_xp: u32, force_tier: ForceTier) -> CharacterKey {
+    fn add_jedi_character(
+        world: &mut GameWorld,
+        jedi_probability: u32,
+        force_xp: u32,
+        force_tier: ForceTier,
+    ) -> CharacterKey {
         world.characters.insert(Character {
             name: "Test Jedi".into(),
             is_alliance: true,
             is_major: true,
-            diplomacy: SkillPair { base: 50, variance: 0 },
-            espionage: SkillPair { base: 50, variance: 0 },
-            ship_design: SkillPair { base: 50, variance: 0 },
-            troop_training: SkillPair { base: 50, variance: 0 },
-            facility_design: SkillPair { base: 50, variance: 0 },
-            combat: SkillPair { base: 70, variance: 0 },
-            leadership: SkillPair { base: 60, variance: 0 },
-            loyalty: SkillPair { base: 80, variance: 0 },
+            diplomacy: SkillPair {
+                base: 50,
+                variance: 0,
+            },
+            espionage: SkillPair {
+                base: 50,
+                variance: 0,
+            },
+            ship_design: SkillPair {
+                base: 50,
+                variance: 0,
+            },
+            troop_training: SkillPair {
+                base: 50,
+                variance: 0,
+            },
+            facility_design: SkillPair {
+                base: 50,
+                variance: 0,
+            },
+            combat: SkillPair {
+                base: 70,
+                variance: 0,
+            },
+            leadership: SkillPair {
+                base: 60,
+                variance: 0,
+            },
+            loyalty: SkillPair {
+                base: 80,
+                variance: 0,
+            },
             jedi_probability,
-            jedi_level: SkillPair { base: 5, variance: 0 },
+            jedi_level: SkillPair {
+                base: 5,
+                variance: 0,
+            },
             can_be_commander: true,
             force_tier,
             force_experience: force_xp,
@@ -398,8 +430,19 @@ mod tests {
 
         let events = JediSystem::advance(&mut state, &world, &ticks(50), &[0.99]);
 
-        let tier_event = events.iter().find(|e| matches!(e, JediEvent::TierAdvanced { new_tier: ForceTier::Training, .. }));
-        assert!(tier_event.is_some(), "should advance to Training after 50 XP");
+        let tier_event = events.iter().find(|e| {
+            matches!(
+                e,
+                JediEvent::TierAdvanced {
+                    new_tier: ForceTier::Training,
+                    ..
+                }
+            )
+        });
+        assert!(
+            tier_event.is_some(),
+            "should advance to Training after 50 XP"
+        );
     }
 
     #[test]
@@ -413,11 +456,19 @@ mod tests {
 
         let events = JediSystem::advance(&mut state, &world, &ticks(10), &[0.99]);
 
-        let completed = events.iter().any(|e| matches!(e, JediEvent::TrainingComplete { .. }));
-        assert!(completed, "should emit TrainingComplete when reaching Experienced");
+        let completed = events
+            .iter()
+            .any(|e| matches!(e, JediEvent::TrainingComplete { .. }));
+        assert!(
+            completed,
+            "should emit TrainingComplete when reaching Experienced"
+        );
 
         // Character removed from training.
-        assert!(!state.is_training(key), "completed trainees should be removed");
+        assert!(
+            !state.is_training(key),
+            "completed trainees should be removed"
+        );
     }
 
     #[test]
@@ -437,7 +488,9 @@ mod tests {
             &[0.01],
         );
 
-        let detected = events.iter().any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
+        let detected = events
+            .iter()
+            .any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
         assert!(detected, "detection should fire on low roll");
     }
 
@@ -457,7 +510,9 @@ mod tests {
             &[0.99],
         );
 
-        let detected = events.iter().any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
+        let detected = events
+            .iter()
+            .any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
         assert!(!detected, "detection should not fire on high roll");
     }
 
@@ -472,15 +527,16 @@ mod tests {
         state.start_training(key, true, 0);
 
         // Even with low roll, no detection event should fire.
-        let events = JediSystem::advance(
-            &mut state,
-            &world,
-            &ticks(DETECTION_CHECK_INTERVAL),
-            &[0.0],
-        );
+        let events =
+            JediSystem::advance(&mut state, &world, &ticks(DETECTION_CHECK_INTERVAL), &[0.0]);
 
-        let detected = events.iter().any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
-        assert!(!detected, "already-discovered Jedi should not trigger detection again");
+        let detected = events
+            .iter()
+            .any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
+        assert!(
+            !detected,
+            "already-discovered Jedi should not trigger detection again"
+        );
     }
 
     #[test]
@@ -495,8 +551,14 @@ mod tests {
         // Roll 0.3 < 0.5 → awakened; second character has jedi_probability=0 → skipped.
         let awakened = JediSystem::apply_initial_awakening(&world, &[0.3, 0.3]);
 
-        assert!(awakened.contains(&high_key), "high-probability character should awaken");
-        assert!(!awakened.contains(&none_key), "zero-probability character should not awaken");
+        assert!(
+            awakened.contains(&high_key),
+            "high-probability character should awaken"
+        );
+        assert!(
+            !awakened.contains(&none_key),
+            "zero-probability character should not awaken"
+        );
     }
 
     #[test]
@@ -507,7 +569,11 @@ mod tests {
 
         state.start_training(key, true, 0);
         state.start_training(key, true, 5);
-        assert_eq!(state.training.len(), 1, "duplicate start_training should not append");
+        assert_eq!(
+            state.training.len(),
+            1,
+            "duplicate start_training should not append"
+        );
     }
 
     #[test]
@@ -526,10 +592,19 @@ mod tests {
     fn tier_for_xp_boundaries() {
         assert_eq!(JediSystem::tier_for_xp(0), ForceTier::None);
         assert_eq!(JediSystem::tier_for_xp(1), ForceTier::Aware);
-        assert_eq!(JediSystem::tier_for_xp(XP_TO_TRAINING - 1), ForceTier::Aware);
+        assert_eq!(
+            JediSystem::tier_for_xp(XP_TO_TRAINING - 1),
+            ForceTier::Aware
+        );
         assert_eq!(JediSystem::tier_for_xp(XP_TO_TRAINING), ForceTier::Training);
-        assert_eq!(JediSystem::tier_for_xp(XP_TO_EXPERIENCED - 1), ForceTier::Training);
-        assert_eq!(JediSystem::tier_for_xp(XP_TO_EXPERIENCED), ForceTier::Experienced);
+        assert_eq!(
+            JediSystem::tier_for_xp(XP_TO_EXPERIENCED - 1),
+            ForceTier::Training
+        );
+        assert_eq!(
+            JediSystem::tier_for_xp(XP_TO_EXPERIENCED),
+            ForceTier::Experienced
+        );
         assert_eq!(JediSystem::tier_for_xp(u32::MAX), ForceTier::Experienced);
     }
 
@@ -555,7 +630,13 @@ mod tests {
             .iter()
             .filter(|e| matches!(e, JediEvent::TierAdvanced { .. }))
             .collect();
-        assert!(tier_events.is_empty(), "killed trainee must not advance tiers");
-        assert!(!state.is_training(key), "killed trainee must be removed from training");
+        assert!(
+            tier_events.is_empty(),
+            "killed trainee must not advance tiers"
+        );
+        assert!(
+            !state.is_training(key),
+            "killed trainee must be removed from training"
+        );
     }
 }

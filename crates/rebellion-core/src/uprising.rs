@@ -45,8 +45,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::SystemKey;
 use crate::tick::TickEvent;
-use crate::world::{GameWorld, MstbTable};
 use crate::world::ControlKind;
+use crate::world::{GameWorld, MstbTable};
 
 // ---------------------------------------------------------------------------
 // Event IDs
@@ -207,7 +207,10 @@ impl UprisingSystem {
                     None => true,
                 };
                 if can_fire {
-                    events.push(UprisingEvent::UprisingIncident { system: sys_key, tick });
+                    events.push(UprisingEvent::UprisingIncident {
+                        system: sys_key,
+                        tick,
+                    });
                     state.incident_cooldowns.insert(sys_key, tick);
                 }
 
@@ -216,7 +219,10 @@ impl UprisingSystem {
                 roll_idx += 1;
 
                 if roll < start_prob / 100.0 {
-                    events.push(UprisingEvent::UprisingBegan { system: sys_key, tick });
+                    events.push(UprisingEvent::UprisingBegan {
+                        system: sys_key,
+                        tick,
+                    });
                     state.active_uprisings.insert(
                         sys_key,
                         ActiveUprising {
@@ -323,19 +329,40 @@ mod tests {
     /// UPRIS1TB with 3 entries: very low (-40), low (-20), medium (-5) loyalty → 90, 50, 10%.
     fn make_upris1tb() -> MstbTable {
         MstbTable::new(vec![
-            MstbEntry { threshold: -40, value: 90 },
-            MstbEntry { threshold: -20, value: 50 },
-            MstbEntry { threshold: -5,  value: 10 },
+            MstbEntry {
+                threshold: -40,
+                value: 90,
+            },
+            MstbEntry {
+                threshold: -20,
+                value: 50,
+            },
+            MstbEntry {
+                threshold: -5,
+                value: 10,
+            },
         ])
     }
 
     /// UPRIS2TB with 4 entries.
     fn make_upris2tb() -> MstbTable {
         MstbTable::new(vec![
-            MstbEntry { threshold: -40, value: 20 },
-            MstbEntry { threshold: -20, value: 40 },
-            MstbEntry { threshold: -5,  value: 70 },
-            MstbEntry { threshold: 10,  value: 90 },
+            MstbEntry {
+                threshold: -40,
+                value: 20,
+            },
+            MstbEntry {
+                threshold: -20,
+                value: 40,
+            },
+            MstbEntry {
+                threshold: -5,
+                value: 70,
+            },
+            MstbEntry {
+                threshold: 10,
+                value: 90,
+            },
         ])
     }
 
@@ -410,8 +437,12 @@ mod tests {
         let events =
             UprisingSystem::advance(&mut state, &world, &[tick(1)], &[0.05], &make_upris1tb());
 
-        assert!(events.iter().any(|e| matches!(e, UprisingEvent::UprisingIncident { .. })));
-        assert!(events.iter().any(|e| matches!(e, UprisingEvent::UprisingBegan { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, UprisingEvent::UprisingIncident { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, UprisingEvent::UprisingBegan { .. })));
         assert!(state.is_uprising(sys));
     }
 
@@ -424,8 +455,12 @@ mod tests {
         let events =
             UprisingSystem::advance(&mut state, &world, &[tick(1)], &[0.95], &make_upris1tb());
 
-        assert!(events.iter().any(|e| matches!(e, UprisingEvent::UprisingIncident { .. })));
-        assert!(!events.iter().any(|e| matches!(e, UprisingEvent::UprisingBegan { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, UprisingEvent::UprisingIncident { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, UprisingEvent::UprisingBegan { .. })));
     }
 
     #[test]
@@ -435,13 +470,18 @@ mod tests {
         // Seed the system as already uprising
         state.active_uprisings.insert(
             sys,
-            ActiveUprising { started_tick: 1, loyalty_at_start: -40 },
+            ActiveUprising {
+                started_tick: 1,
+                loyalty_at_start: -40,
+            },
         );
 
         let events =
             UprisingSystem::advance(&mut state, &world, &[tick(2)], &[0.0], &make_upris1tb());
         // Should fire neither incident nor began for an already-revolting system
-        assert!(!events.iter().any(|e| matches!(e, UprisingEvent::UprisingBegan { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, UprisingEvent::UprisingBegan { .. })));
     }
 
     #[test]
@@ -450,12 +490,18 @@ mod tests {
         let mut state = UprisingState::new();
         state.active_uprisings.insert(
             sys,
-            ActiveUprising { started_tick: 1, loyalty_at_start: -40 },
+            ActiveUprising {
+                started_tick: 1,
+                loyalty_at_start: -40,
+            },
         );
 
         // UPRIS2TB at loyalty = -40 → subdue_prob = 20%. Roll 0.1 → success.
         let result = UprisingSystem::try_subdue(&mut state, &world, sys, 5, 0.1, &make_upris2tb());
-        assert!(matches!(result, Some(UprisingEvent::UprisingSubdued { .. })));
+        assert!(matches!(
+            result,
+            Some(UprisingEvent::UprisingSubdued { .. })
+        ));
         assert!(!state.is_uprising(sys));
     }
 
@@ -465,7 +511,10 @@ mod tests {
         let mut state = UprisingState::new();
         state.active_uprisings.insert(
             sys,
-            ActiveUprising { started_tick: 1, loyalty_at_start: -40 },
+            ActiveUprising {
+                started_tick: 1,
+                loyalty_at_start: -40,
+            },
         );
 
         // UPRIS2TB at loyalty = -40 → subdue_prob = 20%. Roll 0.9 → failure.

@@ -186,7 +186,9 @@ impl FogSystem {
                 continue;
             }
             // Find max detection from fleet's ship classes.
-            let max_detection = fleet.capital_ships.iter()
+            let max_detection = fleet
+                .capital_ships
+                .iter()
                 .filter(|ship| ship.alive)
                 .filter_map(|ship| world.capital_ship_classes.get(ship.class))
                 .map(|c| c.detection)
@@ -230,9 +232,9 @@ impl FogSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::ControlKind;
     use crate::ids::{FleetKey, SystemKey};
     use crate::movement::MovementState;
+    use crate::world::ControlKind;
     use crate::world::{Fleet, GameWorld};
 
     // Build a minimal GameWorld with N systems and M alliance fleets.
@@ -380,7 +382,10 @@ mod tests {
         ms.order(fleet_keys[0], sys_keys[0], sys_keys[1], 10);
 
         // At 4 ticks elapsed (40%) — destination not yet revealed.
-        ms.orders_mut().get_mut(&fleet_keys[0]).unwrap().ticks_elapsed = 4;
+        ms.orders_mut()
+            .get_mut(&fleet_keys[0])
+            .unwrap()
+            .ticks_elapsed = 4;
         let events = FogSystem::advance(&mut fog, &world, &ms);
         assert!(!fog.is_visible(sys_keys[1]));
         // The stationary fleet at sys 0 is already known, so no stationary
@@ -388,7 +393,10 @@ mod tests {
         assert!(events.is_empty());
 
         // At 5 ticks elapsed (50%) — destination revealed.
-        ms.orders_mut().get_mut(&fleet_keys[0]).unwrap().ticks_elapsed = 5;
+        ms.orders_mut()
+            .get_mut(&fleet_keys[0])
+            .unwrap()
+            .ticks_elapsed = 5;
         let events = FogSystem::advance(&mut fog, &world, &ms);
         assert!(fog.is_visible(sys_keys[1]));
         assert_eq!(events.len(), 1);
@@ -400,12 +408,7 @@ mod tests {
         let (world, sys_keys, fleet_keys) = make_world_with_fleets(2, &[0], true);
         let mut fog = FogState::new(Faction::Alliance);
         let mut movement = MovementState::new();
-        assert!(movement.order(
-            fleet_keys[0],
-            sys_keys[0],
-            sys_keys[1],
-            10,
-        ));
+        assert!(movement.order(fleet_keys[0], sys_keys[0], sys_keys[1], 10,));
 
         let events = FogSystem::advance(&mut fog, &world, &movement);
 
@@ -421,7 +424,10 @@ mod tests {
 
         let mut ms = MovementState::new();
         ms.order(fleet_keys[0], sys_keys[0], sys_keys[1], 10);
-        ms.orders_mut().get_mut(&fleet_keys[0]).unwrap().ticks_elapsed = 8;
+        ms.orders_mut()
+            .get_mut(&fleet_keys[0])
+            .unwrap()
+            .ticks_elapsed = 8;
 
         let events = FogSystem::advance(&mut fog, &world, &ms);
         assert!(events.is_empty());
@@ -447,60 +453,93 @@ mod tests {
             dat_id: DatId(0),
             name: "Test".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             systems: vec![],
         });
 
         // Fleet at (0, 0), nearby system at (100, 0), far system at (1000, 0).
         // detection=10 → radius = 10 * 15.0 = 150 units → (100,0) within range, (1000,0) not.
         let sys0 = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Base".into(), sector,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Base".into(),
+            sector,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
-            production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, control: ControlKind::Uncontrolled,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
         });
         let sys_near = world.systems.insert(crate::world::System {
-            dat_id: DatId(1), name: "Near".into(), sector,
-            x: 100, y: 0,
+            dat_id: DatId(1),
+            name: "Near".into(),
+            sector,
+            x: 100,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
-            production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, control: ControlKind::Uncontrolled,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
         });
         let sys_far = world.systems.insert(crate::world::System {
-            dat_id: DatId(2), name: "Far".into(), sector,
-            x: 1000, y: 0,
+            dat_id: DatId(2),
+            name: "Far".into(),
+            sector,
+            x: 1000,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
-            production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, control: ControlKind::Uncontrolled,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
         });
 
         let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId(0), name: "Sensor Ship".into(),
-            is_alliance: true, is_empire: false,
-            hull: 100, shield_strength: 50,
-            sub_light_engine: 5, maneuverability: 5, hyperdrive: 2,
+            dat_id: DatId(0),
+            name: "Sensor Ship".into(),
+            is_alliance: true,
+            is_empire: false,
+            hull: 100,
+            shield_strength: 50,
+            sub_light_engine: 5,
+            maneuverability: 5,
+            hyperdrive: 2,
             detection: 10,
             ..CapitalShipClass::default()
         });
@@ -519,8 +558,14 @@ mod tests {
         let ms = MovementState::new();
         let events = FogSystem::advance(&mut fog, &world, &ms);
 
-        assert!(fog.is_visible(sys_near), "nearby system should be revealed by sensor radius");
-        assert!(!fog.is_visible(sys_far), "far system should NOT be revealed");
+        assert!(
+            fog.is_visible(sys_near),
+            "nearby system should be revealed by sensor radius"
+        );
+        assert!(
+            !fog.is_visible(sys_far),
+            "far system should NOT be revealed"
+        );
         assert!(events.iter().any(|e| e.system == sys_near));
         assert!(!events.iter().any(|e| e.system == sys_far));
     }
@@ -535,45 +580,69 @@ mod tests {
             dat_id: DatId(0),
             name: "Test".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             systems: vec![],
         });
 
         let sys0 = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Base".into(), sector,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Base".into(),
+            sector,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
-            production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, control: ControlKind::Uncontrolled,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
         });
         let sys_near = world.systems.insert(crate::world::System {
-            dat_id: DatId(1), name: "Near".into(), sector,
-            x: 10, y: 0, // very close
+            dat_id: DatId(1),
+            name: "Near".into(),
+            sector,
+            x: 10,
+            y: 0, // very close
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
             is_populated: true,
             total_energy: 0,
             raw_materials: 0,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
-            production_facilities: vec![], is_headquarters: false,
-            is_destroyed: false, control: ControlKind::Uncontrolled,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
         });
 
         // Ship with detection=0
         let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId(0), name: "Blind Ship".into(),
-            is_alliance: true, is_empire: false,
-            hull: 100, shield_strength: 50,
-            sub_light_engine: 5, maneuverability: 5, hyperdrive: 2,
+            dat_id: DatId(0),
+            name: "Blind Ship".into(),
+            is_alliance: true,
+            is_empire: false,
+            hull: 100,
+            shield_strength: 50,
+            sub_light_engine: 5,
+            maneuverability: 5,
+            hyperdrive: 2,
             detection: 0, // no detection
             ..CapitalShipClass::default()
         });
@@ -593,7 +662,10 @@ mod tests {
         let events = FogSystem::advance(&mut fog, &world, &ms);
 
         assert!(fog.is_visible(sys0), "own system should be visible");
-        assert!(!fog.is_visible(sys_near), "detection=0 should not reveal nearby systems");
+        assert!(
+            !fog.is_visible(sys_near),
+            "detection=0 should not reveal nearby systems"
+        );
         assert!(events.is_empty());
     }
 }

@@ -6,14 +6,16 @@
 
 use egui_macroquad::egui::{self, Color32, ProgressBar, RichText, ScrollArea, Vec2};
 use rebellion_core::ids::CharacterKey;
-use rebellion_core::jedi::{DETECT_PROB_AWARE, DETECT_PROB_TRAINING, DETECT_PROB_EXPERIENCED,
-    XP_TO_TRAINING, XP_TO_EXPERIENCED};
+use rebellion_core::jedi::{
+    DETECT_PROB_AWARE, DETECT_PROB_EXPERIENCED, DETECT_PROB_TRAINING, XP_TO_EXPERIENCED,
+    XP_TO_TRAINING,
+};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::{Character, ForceTier, GameWorld, SkillPair};
 
+use super::PanelAction;
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::theme;
-use super::PanelAction;
 
 // ---------------------------------------------------------------------------
 // Portrait resource ID helpers
@@ -132,10 +134,8 @@ pub fn draw_officers(
                             ui.colored_label(dot_color, "●");
 
                             let response = ui.add(
-                                egui::Label::new(
-                                    RichText::new(&character.name).color(name_color),
-                                )
-                                .sense(egui::Sense::click()),
+                                egui::Label::new(RichText::new(&character.name).color(name_color))
+                                    .sense(egui::Sense::click()),
                             );
 
                             if response.clicked() {
@@ -179,49 +179,106 @@ fn draw_character_detail(
     }
 
     // ── 40a: Themed header + status badges ───────────────────────────────────
-    let name_color = if character.is_alliance { theme::ALLIANCE_BLUE }
-        else if character.is_empire { theme::EMPIRE_RED }
-        else { theme::TEXT_PRIMARY };
+    let name_color = if character.is_alliance {
+        theme::ALLIANCE_BLUE
+    } else if character.is_empire {
+        theme::EMPIRE_RED
+    } else {
+        theme::TEXT_PRIMARY
+    };
     ui.heading(RichText::new(&character.name).color(name_color));
 
     // Status badges
     ui.horizontal(|ui| {
         let type_label = if character.is_major { "MAJOR" } else { "MINOR" };
-        ui.label(RichText::new(type_label).color(theme::TEXT_SECONDARY).size(10.0));
+        ui.label(
+            RichText::new(type_label)
+                .color(theme::TEXT_SECONDARY)
+                .size(10.0),
+        );
 
         if character.is_captive {
-            ui.label(RichText::new("CAPTIVE").color(theme::DANGER_RED).size(10.0).strong());
+            ui.label(
+                RichText::new("CAPTIVE")
+                    .color(theme::DANGER_RED)
+                    .size(10.0)
+                    .strong(),
+            );
         }
         if character.on_mission {
-            ui.label(RichText::new("ON MISSION").color(theme::WARNING_AMBER).size(10.0).strong());
+            ui.label(
+                RichText::new("ON MISSION")
+                    .color(theme::WARNING_AMBER)
+                    .size(10.0)
+                    .strong(),
+            );
         }
         if character.on_mandatory_mission {
-            ui.label(RichText::new("MANDATORY").color(theme::WARNING_AMBER).size(10.0).strong());
+            ui.label(
+                RichText::new("MANDATORY")
+                    .color(theme::WARNING_AMBER)
+                    .size(10.0)
+                    .strong(),
+            );
         }
 
         // Force tier badge
         match character.force_tier {
-            ForceTier::Aware => { ui.label(RichText::new("FORCE AWARE").color(Color32::from_rgb(100, 160, 255)).size(10.0)); }
-            ForceTier::Training => { ui.label(RichText::new("TRAINING").color(Color32::from_rgb(180, 120, 255)).size(10.0)); }
-            ForceTier::Experienced => { ui.label(RichText::new("JEDI").color(Color32::from_rgb(60, 200, 100)).size(10.0).strong()); }
+            ForceTier::Aware => {
+                ui.label(
+                    RichText::new("FORCE AWARE")
+                        .color(Color32::from_rgb(100, 160, 255))
+                        .size(10.0),
+                );
+            }
+            ForceTier::Training => {
+                ui.label(
+                    RichText::new("TRAINING")
+                        .color(Color32::from_rgb(180, 120, 255))
+                        .size(10.0),
+                );
+            }
+            ForceTier::Experienced => {
+                ui.label(
+                    RichText::new("JEDI")
+                        .color(Color32::from_rgb(60, 200, 100))
+                        .size(10.0)
+                        .strong(),
+                );
+            }
             ForceTier::None => {}
         }
     });
 
     // Role flags
     let mut roles = Vec::new();
-    if character.can_be_admiral { roles.push("Admiral"); }
-    if character.can_be_commander { roles.push("Commander"); }
-    if character.can_be_general { roles.push("General"); }
+    if character.can_be_admiral {
+        roles.push("Admiral");
+    }
+    if character.can_be_commander {
+        roles.push("Commander");
+    }
+    if character.can_be_general {
+        roles.push("General");
+    }
     if !roles.is_empty() {
-        ui.label(RichText::new(roles.join(" / ")).color(theme::GOLD_DIM).size(11.0));
+        ui.label(
+            RichText::new(roles.join(" / "))
+                .color(theme::GOLD_DIM)
+                .size(11.0),
+        );
     }
 
     ui.add_space(4.0);
     ui.separator();
 
     // ── 40c: Location + assignment section ───────────────────────────────────
-    ui.label(RichText::new("STATUS").color(theme::GOLD_DIM).size(10.0).strong());
+    ui.label(
+        RichText::new("STATUS")
+            .color(theme::GOLD_DIM)
+            .size(10.0)
+            .strong(),
+    );
 
     // Find current location via fleet assignment
     let mut location_name: Option<String> = None;
@@ -232,23 +289,43 @@ fn draw_character_detail(
                 location_name = Some(sys.name.clone());
             }
             let ship_count: u32 = fleet.ship_count();
-            let tag = if fleet.is_alliance { "Alliance" } else { "Empire" };
+            let tag = if fleet.is_alliance {
+                "Alliance"
+            } else {
+                "Empire"
+            };
             fleet_info = Some(format!("{} fleet ({} ships)", tag, ship_count));
             break;
         }
     }
 
     if let Some(loc) = &location_name {
-        ui.label(RichText::new(format!("Location: {}", loc)).color(theme::TEXT_PRIMARY).size(11.0));
+        ui.label(
+            RichText::new(format!("Location: {}", loc))
+                .color(theme::TEXT_PRIMARY)
+                .size(11.0),
+        );
     }
     if let Some(fleet) = &fleet_info {
-        ui.label(RichText::new(format!("Fleet: {}", fleet)).color(theme::TEXT_SECONDARY).size(11.0));
+        ui.label(
+            RichText::new(format!("Fleet: {}", fleet))
+                .color(theme::TEXT_SECONDARY)
+                .size(11.0),
+        );
     }
     if character.on_mission {
-        ui.label(RichText::new("Currently on mission").color(theme::WARNING_AMBER).size(11.0));
+        ui.label(
+            RichText::new("Currently on mission")
+                .color(theme::WARNING_AMBER)
+                .size(11.0),
+        );
     }
     if location_name.is_none() && !character.on_mission {
-        ui.label(RichText::new("Unassigned").color(theme::TEXT_DISABLED).size(11.0));
+        ui.label(
+            RichText::new("Unassigned")
+                .color(theme::TEXT_DISABLED)
+                .size(11.0),
+        );
     }
 
     ui.add_space(4.0);
@@ -256,7 +333,12 @@ fn draw_character_detail(
 
     // ── 40d: Force progression detail ────────────────────────────────────────
     if character.jedi_probability > 0 || character.force_tier != ForceTier::None {
-        ui.label(RichText::new("FORCE").color(theme::GOLD_DIM).size(10.0).strong());
+        ui.label(
+            RichText::new("FORCE")
+                .color(theme::GOLD_DIM)
+                .size(10.0)
+                .strong(),
+        );
 
         let (tier_label, tier_color) = match character.force_tier {
             ForceTier::None => ("Latent", Color32::from_gray(120)),
@@ -264,40 +346,62 @@ fn draw_character_detail(
             ForceTier::Training => ("In Training", Color32::from_rgb(180, 120, 255)),
             ForceTier::Experienced => ("Jedi Knight", Color32::from_rgb(60, 200, 100)),
         };
-        ui.label(RichText::new(tier_label).color(tier_color).size(12.0).strong());
+        ui.label(
+            RichText::new(tier_label)
+                .color(tier_color)
+                .size(12.0)
+                .strong(),
+        );
 
         // XP progress bar
         match character.force_tier {
             ForceTier::Aware => {
                 let xp = character.force_experience;
                 let progress = xp as f32 / XP_TO_TRAINING as f32;
-                ui.add(ProgressBar::new(progress.min(1.0))
-                    .text(format!("{}/{} XP", xp, XP_TO_TRAINING))
-                    .fill(Color32::from_rgb(60, 100, 180)));
+                ui.add(
+                    ProgressBar::new(progress.min(1.0))
+                        .text(format!("{}/{} XP", xp, XP_TO_TRAINING))
+                        .fill(Color32::from_rgb(60, 100, 180)),
+                );
             }
             ForceTier::Training => {
                 let xp = character.force_experience;
                 let progress = xp as f32 / XP_TO_EXPERIENCED as f32;
-                ui.add(ProgressBar::new(progress.min(1.0))
-                    .text(format!("{}/{} XP", xp, XP_TO_EXPERIENCED))
-                    .fill(Color32::from_rgb(100, 60, 180)));
+                ui.add(
+                    ProgressBar::new(progress.min(1.0))
+                        .text(format!("{}/{} XP", xp, XP_TO_EXPERIENCED))
+                        .fill(Color32::from_rgb(100, 60, 180)),
+                );
             }
             _ => {}
         }
 
         // Detection risk
-        if character.force_tier != ForceTier::None && character.force_tier != ForceTier::Experienced {
+        if character.force_tier != ForceTier::None && character.force_tier != ForceTier::Experienced
+        {
             let risk = match character.force_tier {
                 ForceTier::Aware => DETECT_PROB_AWARE,
                 ForceTier::Training => DETECT_PROB_TRAINING,
                 _ => DETECT_PROB_EXPERIENCED,
             };
-            let risk_color = if risk > 0.1 { theme::WARNING_AMBER } else { theme::TEXT_SECONDARY };
-            ui.label(RichText::new(format!("Detection risk: {:.0}%", risk * 100.0)).color(risk_color).size(10.0));
+            let risk_color = if risk > 0.1 {
+                theme::WARNING_AMBER
+            } else {
+                theme::TEXT_SECONDARY
+            };
+            ui.label(
+                RichText::new(format!("Detection risk: {:.0}%", risk * 100.0))
+                    .color(risk_color)
+                    .size(10.0),
+            );
         }
 
         if character.force_tier == ForceTier::None && character.jedi_probability > 0 {
-            ui.label(RichText::new(format!("Sensitivity: {}%", character.jedi_probability)).color(theme::TEXT_SECONDARY).size(10.0));
+            ui.label(
+                RichText::new(format!("Sensitivity: {}%", character.jedi_probability))
+                    .color(theme::TEXT_SECONDARY)
+                    .size(10.0),
+            );
         }
 
         ui.add_space(4.0);
@@ -305,7 +409,12 @@ fn draw_character_detail(
     }
 
     // ── 40b: Themed skill progress bars ──────────────────────────────────────
-    ui.label(RichText::new("SKILLS").color(theme::GOLD_DIM).size(10.0).strong());
+    ui.label(
+        RichText::new("SKILLS")
+            .color(theme::GOLD_DIM)
+            .size(10.0)
+            .strong(),
+    );
     ui.add_space(2.0);
 
     egui::Grid::new("char_skills")
@@ -313,14 +422,14 @@ fn draw_character_detail(
         .striped(true)
         .spacing([8.0, 2.0])
         .show(ui, |ui| {
-            skill_row(ui, "Diplomacy",   character.diplomacy);
-            skill_row(ui, "Espionage",   character.espionage);
+            skill_row(ui, "Diplomacy", character.diplomacy);
+            skill_row(ui, "Espionage", character.espionage);
             skill_row(ui, "Ship Design", character.ship_design);
             skill_row(ui, "Troop Train", character.troop_training);
             skill_row(ui, "Fac. Design", character.facility_design);
-            skill_row(ui, "Combat",      character.combat);
-            skill_row(ui, "Leadership",  character.leadership);
-            skill_row(ui, "Loyalty",     character.loyalty);
+            skill_row(ui, "Combat", character.combat);
+            skill_row(ui, "Leadership", character.leadership);
+            skill_row(ui, "Loyalty", character.loyalty);
         });
 }
 
@@ -370,15 +479,31 @@ fn faction_dot_color(character: &Character) -> Color32 {
 /// Compact role badge labels rendered right-to-left.
 fn draw_role_badges(ui: &mut egui::Ui, character: &Character) {
     if character.can_be_general {
-        ui.label(RichText::new("GEN").color(Color32::from_rgb(180, 140, 60)).small());
+        ui.label(
+            RichText::new("GEN")
+                .color(Color32::from_rgb(180, 140, 60))
+                .small(),
+        );
     }
     if character.can_be_admiral {
-        ui.label(RichText::new("ADM").color(Color32::from_rgb(100, 180, 220)).small());
+        ui.label(
+            RichText::new("ADM")
+                .color(Color32::from_rgb(100, 180, 220))
+                .small(),
+        );
     }
     if character.can_be_commander {
-        ui.label(RichText::new("CMD").color(Color32::from_rgb(120, 200, 120)).small());
+        ui.label(
+            RichText::new("CMD")
+                .color(Color32::from_rgb(120, 200, 120))
+                .small(),
+        );
     }
     if character.jedi_probability > 0 {
-        ui.label(RichText::new("JEDI").color(Color32::from_rgb(220, 210, 120)).small());
+        ui.label(
+            RichText::new("JEDI")
+                .color(Color32::from_rgb(220, 210, 120))
+                .small(),
+        );
     }
 }

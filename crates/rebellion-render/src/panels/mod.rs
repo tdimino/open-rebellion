@@ -65,11 +65,20 @@ pub enum PanelAction {
     /// Focus the galaxy map on the system where a fleet is located.
     FocusFleetSystem(SystemKey),
     /// Assign a character to a fleet as commander.
-    AssignCharacterToFleet { character: CharacterKey, fleet: FleetKey },
+    AssignCharacterToFleet {
+        character: CharacterKey,
+        fleet: FleetKey,
+    },
     /// Remove a character from a fleet.
-    RemoveCharacterFromFleet { character: CharacterKey, fleet: FleetKey },
+    RemoveCharacterFromFleet {
+        character: CharacterKey,
+        fleet: FleetKey,
+    },
     /// Merge fleet_b into fleet_a (ships, fighters, characters transfer).
-    MergeFleets { fleet_a: FleetKey, fleet_b: FleetKey },
+    MergeFleets {
+        fleet_a: FleetKey,
+        fleet_b: FleetKey,
+    },
     /// Dispatch one player-controlled fleet to a selected destination.
     DispatchFleet {
         fleet: FleetKey,
@@ -79,7 +88,12 @@ pub enum PanelAction {
 
     // ── Manufacturing ─────────────────────────────────────────────────────────
     /// Add a buildable to the production queue at a system.
-    Enqueue { system: SystemKey, kind: BuildableKind, cost: u32, ticks: u32 },
+    Enqueue {
+        system: SystemKey,
+        kind: BuildableKind,
+        cost: u32,
+        ticks: u32,
+    },
     /// Cancel the queue item at `index` in a system's production queue.
     CancelQueueItem { system: SystemKey, index: usize },
     /// Move queue item at `index` to the front (prioritize).
@@ -138,9 +152,7 @@ pub enum PanelAction {
         faction: MissionFaction,
     },
     /// Stop Force training for a character.
-    StopJediTraining {
-        character: CharacterKey,
-    },
+    StopJediTraining { character: CharacterKey },
 
     // ── Context Menu Actions ───────────────────────────────────────────
     /// Open mission panel pre-targeted to a system with a specific mission kind.
@@ -150,26 +162,17 @@ pub enum PanelAction {
         faction: MissionFaction,
     },
     /// Start fleet movement selection — player picks which fleet to move.
-    InitiateFleetMove {
-        destination: SystemKey,
-    },
+    InitiateFleetMove { destination: SystemKey },
 
     // ── Bombardment ──────────────────────────────────────────────────
     /// Order orbital bombardment from a fleet against its current system.
-    OrderBombardment {
-        fleet: FleetKey,
-        system: SystemKey,
-    },
+    OrderBombardment { fleet: FleetKey, system: SystemKey },
 
     // ── Death Star ───────────────────────────────────────────────────
     /// Fire the Death Star superlaser at a system.
-    FireDeathStar {
-        system: SystemKey,
-    },
+    FireDeathStar { system: SystemKey },
     /// Move the Death Star fleet to a target system.
-    MoveDeathStar {
-        system: SystemKey,
-    },
+    MoveDeathStar { system: SystemKey },
 
     // ── Play-testing (command palette) ────────────────────────────────
     /// Advance simulation by N ticks immediately.

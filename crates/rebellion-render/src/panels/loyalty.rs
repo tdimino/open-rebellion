@@ -9,8 +9,8 @@ use egui_macroquad::egui::{self, Color32, ProgressBar, RichText, ScrollArea};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::{ControlKind, GameWorld};
 
-use crate::theme;
 use super::PanelAction;
+use crate::theme;
 
 /// Draw the loyalty dashboard as a left-side egui panel.
 pub fn draw_loyalty(
@@ -31,7 +31,9 @@ pub fn draw_loyalty(
             let mut systems: Vec<(&str, f32, f32, bool, bool)> = Vec::new();
 
             for (_, system) in world.systems.iter() {
-                if system.is_destroyed { continue; }
+                if system.is_destroyed {
+                    continue;
+                }
                 let our_pop = if is_alliance {
                     system.popularity_alliance
                 } else {
@@ -57,7 +59,9 @@ pub fn draw_loyalty(
             systems.sort_by(|a, b| {
                 let a_danger = if a.4 { -1.0 } else { a.1 };
                 let b_danger = if b.4 { -1.0 } else { b.1 };
-                a_danger.partial_cmp(&b_danger).unwrap_or(std::cmp::Ordering::Equal)
+                a_danger
+                    .partial_cmp(&b_danger)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
 
             // ── Summary counts ───────────────────────────────────────
@@ -113,16 +117,20 @@ pub fn draw_loyalty(
                                     .size(9.0)
                                     .strong(),
                             );
-                            ui.label(
-                                RichText::new(*name)
-                                    .color(theme::TEXT_PRIMARY)
-                                    .size(11.0),
-                            );
+                            ui.label(RichText::new(*name).color(theme::TEXT_PRIMARY).size(11.0));
                         });
 
                         // Loyalty bars
-                        let our_color = if is_alliance { theme::ALLIANCE_BLUE } else { theme::EMPIRE_RED };
-                        let enemy_color = if is_alliance { theme::EMPIRE_RED } else { theme::ALLIANCE_BLUE };
+                        let our_color = if is_alliance {
+                            theme::ALLIANCE_BLUE
+                        } else {
+                            theme::EMPIRE_RED
+                        };
+                        let enemy_color = if is_alliance {
+                            theme::EMPIRE_RED
+                        } else {
+                            theme::ALLIANCE_BLUE
+                        };
 
                         ui.add_sized(
                             [200.0, 12.0],
@@ -153,7 +161,11 @@ pub fn draw_loyalty(
 
             let mut at_risk_chars: Vec<(&str, u32)> = Vec::new();
             for (_, c) in world.characters.iter() {
-                let owns = if is_alliance { c.is_alliance } else { c.is_empire };
+                let owns = if is_alliance {
+                    c.is_alliance
+                } else {
+                    c.is_empire
+                };
                 if !owns || c.is_captive {
                     continue;
                 }
@@ -180,11 +192,7 @@ pub fn draw_loyalty(
                         theme::WARNING_AMBER
                     };
                     ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(*name)
-                                .color(theme::TEXT_PRIMARY)
-                                .size(11.0),
-                        );
+                        ui.label(RichText::new(*name).color(theme::TEXT_PRIMARY).size(11.0));
                         ui.label(
                             RichText::new(format!("Loyalty: {}", loyalty))
                                 .color(risk_color)

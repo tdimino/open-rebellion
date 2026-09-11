@@ -653,10 +653,9 @@ impl NetMessage {
             | Self::GameObjDestroyedSabotage
             | Self::GameObjDestroyedAssassination => "destruction",
 
-            Self::FleetBattle
-            | Self::FleetBlockade
-            | Self::FleetBombard
-            | Self::FleetAssault => "fleet",
+            Self::FleetBattle | Self::FleetBlockade | Self::FleetBombard | Self::FleetAssault => {
+                "fleet"
+            }
 
             Self::SystemBattle
             | Self::SystemBlockade
@@ -715,7 +714,8 @@ mod tests {
     #[test]
     fn variant_count_is_183() {
         assert_eq!(
-            NetMessage::COUNT, 183,
+            NetMessage::COUNT,
+            183,
             "expected exactly 183 NetMessage variants, got {}",
             NetMessage::COUNT
         );
@@ -727,10 +727,7 @@ mod tests {
         for msg in NetMessage::iter() {
             if let Some(id) = msg.event_id() {
                 if let Some(prev) = seen.insert(id, msg) {
-                    panic!(
-                        "duplicate event ID 0x{:03x}: {:?} and {:?}",
-                        id, prev, msg
-                    );
+                    panic!("duplicate event ID 0x{:03x}: {:?} and {:?}", id, prev, msg);
                 }
             }
         }
@@ -739,11 +736,7 @@ mod tests {
     #[test]
     fn all_categories_non_empty() {
         for msg in NetMessage::iter() {
-            assert!(
-                !msg.category().is_empty(),
-                "{:?} has empty category",
-                msg
-            );
+            assert!(!msg.category().is_empty(), "{:?} has empty category", msg);
         }
     }
 

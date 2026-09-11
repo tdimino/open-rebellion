@@ -47,7 +47,13 @@ impl DatRecord for FleetsSeedFile {
                 field7: r.read_u16()?,
             });
         }
-        Ok(Self { field1, count, family_id, field4, fleets })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            fleets,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

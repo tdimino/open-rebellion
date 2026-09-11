@@ -42,8 +42,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use crate::ids::{
-    CapitalShipKey, DefenseFacilityKey, FighterKey, ManufacturingFacilityKey, ProductionFacilityKey,
-    SystemKey, TroopKey,
+    CapitalShipKey, DefenseFacilityKey, FighterKey, ManufacturingFacilityKey,
+    ProductionFacilityKey, SystemKey, TroopKey,
 };
 use crate::tick::TickEvent;
 
@@ -541,7 +541,15 @@ mod tests {
 
         let completions = ManufacturingSystem::advance(&mut state, &[]);
         assert!(completions.is_empty());
-        assert_eq!(state.queue(system).unwrap().active().unwrap().ticks_remaining, 5);
+        assert_eq!(
+            state
+                .queue(system)
+                .unwrap()
+                .active()
+                .unwrap()
+                .ticks_remaining,
+            5
+        );
     }
 
     #[test]
@@ -579,7 +587,12 @@ mod tests {
         assert_eq!(completions.len(), 1);
         assert_eq!(completions[0].system, sys_a);
         assert_eq!(
-            state.queue(sys_b).unwrap().active().unwrap().ticks_remaining,
+            state
+                .queue(sys_b)
+                .unwrap()
+                .active()
+                .unwrap()
+                .ticks_remaining,
             3
         );
     }
@@ -616,24 +629,25 @@ mod tests {
         // First advance: 2 ticks drain the single item, completions=1,
         // and the queue transitions from non-empty → empty → fires K6.
         let tick_events = vec![TickEvent { tick: 1 }, TickEvent { tick: 2 }];
-        let advance = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &tick_events,
-            &HashSet::new(),
-        );
+        let advance =
+            ManufacturingSystem::advance_tracked(&mut state, &tick_events, &HashSet::new());
         assert_eq!(advance.completions.len(), 1);
-        assert_eq!(advance.newly_idle, vec![system], "K6: queue empty transition fires once");
+        assert_eq!(
+            advance.newly_idle,
+            vec![system],
+            "K6: queue empty transition fires once"
+        );
 
         // Second advance: queue is already empty — pre/post length match,
         // transition detection must NOT emit again.
         let tick_events2 = vec![TickEvent { tick: 3 }];
-        let advance2 = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &tick_events2,
-            &HashSet::new(),
-        );
+        let advance2 =
+            ManufacturingSystem::advance_tracked(&mut state, &tick_events2, &HashSet::new());
         assert!(advance2.completions.is_empty());
-        assert!(advance2.newly_idle.is_empty(), "K6: already-empty queue must not re-fire");
+        assert!(
+            advance2.newly_idle.is_empty(),
+            "K6: already-empty queue must not re-fire"
+        );
     }
 
     #[test]
@@ -649,16 +663,18 @@ mod tests {
         blocked.insert(sys_a);
 
         let tick_events = vec![TickEvent { tick: 1 }, TickEvent { tick: 2 }];
-        let advance = ManufacturingSystem::advance_tracked(
-            &mut state,
-            &tick_events,
-            &blocked,
-        );
+        let advance = ManufacturingSystem::advance_tracked(&mut state, &tick_events, &blocked);
         assert_eq!(advance.completions.len(), 1, "only sys_b should complete");
         assert_eq!(advance.completions[0].system, sys_b);
-        assert_eq!(advance.newly_idle, vec![sys_b], "only sys_b transitions to idle");
-        assert!(!advance.newly_idle.contains(&sys_a),
-            "K6: blockaded systems must never appear in newly_idle");
+        assert_eq!(
+            advance.newly_idle,
+            vec![sys_b],
+            "only sys_b transitions to idle"
+        );
+        assert!(
+            !advance.newly_idle.contains(&sys_a),
+            "K6: blockaded systems must never appear in newly_idle"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use serde::Serialize;
 use crate::codec::{ByteReader, ByteWriter};
 use crate::dat_record::DatRecord;
+use serde::Serialize;
 
 /// One entry in SDPRTB.DAT.
 /// Layout: 3 u32 + 16 i32 = 76 bytes per entry.
@@ -55,29 +55,33 @@ impl DatRecord for SideParamsFile {
         let mut entries = Vec::with_capacity(entries_count as usize);
         for _ in 0..entries_count {
             entries.push(SideParamEntry {
-                id:                          r.read_u32()?,
-                field2:                      r.read_u32()?,
-                parameter_id:                r.read_u32()?,
-                dev_alliance:                r.read_i32()?,
-                dev_empire:                  r.read_i32()?,
-                alliance_sp_easy_alliance:   r.read_i32()?,
-                alliance_sp_easy_empire:     r.read_i32()?,
+                id: r.read_u32()?,
+                field2: r.read_u32()?,
+                parameter_id: r.read_u32()?,
+                dev_alliance: r.read_i32()?,
+                dev_empire: r.read_i32()?,
+                alliance_sp_easy_alliance: r.read_i32()?,
+                alliance_sp_easy_empire: r.read_i32()?,
                 alliance_sp_medium_alliance: r.read_i32()?,
-                alliance_sp_medium_empire:   r.read_i32()?,
-                alliance_sp_hard_alliance:   r.read_i32()?,
-                alliance_sp_hard_empire:     r.read_i32()?,
-                empire_sp_easy_alliance:     r.read_i32()?,
-                empire_sp_easy_empire:       r.read_i32()?,
-                empire_sp_medium_alliance:   r.read_i32()?,
-                empire_sp_medium_empire:     r.read_i32()?,
-                empire_sp_hard_alliance:     r.read_i32()?,
-                empire_sp_hard_empire:       r.read_i32()?,
-                multiplayer_alliance:        r.read_i32()?,
-                multiplayer_empire:          r.read_i32()?,
+                alliance_sp_medium_empire: r.read_i32()?,
+                alliance_sp_hard_alliance: r.read_i32()?,
+                alliance_sp_hard_empire: r.read_i32()?,
+                empire_sp_easy_alliance: r.read_i32()?,
+                empire_sp_easy_empire: r.read_i32()?,
+                empire_sp_medium_alliance: r.read_i32()?,
+                empire_sp_medium_empire: r.read_i32()?,
+                empire_sp_hard_alliance: r.read_i32()?,
+                empire_sp_hard_empire: r.read_i32()?,
+                multiplayer_alliance: r.read_i32()?,
+                multiplayer_empire: r.read_i32()?,
             });
         }
 
-        Ok(Self { field1, info, entries })
+        Ok(Self {
+            field1,
+            info,
+            entries,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

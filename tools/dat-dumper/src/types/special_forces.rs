@@ -60,7 +60,13 @@ impl DatRecord for SpecialForcesFile {
         for _ in 0..count {
             units.push(SpecialForce::parse_entry(r)?);
         }
-        Ok(Self { field1, count, family_id, field4, units })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            units,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

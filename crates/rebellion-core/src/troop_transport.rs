@@ -50,9 +50,7 @@ impl fmt::Display for TroopTransportError {
             Self::TroopNotAtFleetSystem => {
                 formatter.write_str("troop regiment is not stationed with the fleet")
             }
-            Self::AlreadyEmbarked => {
-                formatter.write_str("troop regiment is already embarked")
-            }
+            Self::AlreadyEmbarked => formatter.write_str("troop regiment is already embarked"),
             Self::CapacityExceeded {
                 capacity,
                 requested,
@@ -153,11 +151,9 @@ impl TroopTransportState {
             }
         }
 
-        let capacity = Self::fleet_capacity(world, fleet)
-            .ok_or(TroopTransportError::MissingFleet)?;
-        let requested = self
-            .carried_count(fleet)
-            .saturating_add(troops.len()) as u32;
+        let capacity =
+            Self::fleet_capacity(world, fleet).ok_or(TroopTransportError::MissingFleet)?;
+        let requested = self.carried_count(fleet).saturating_add(troops.len()) as u32;
         if requested > capacity {
             return Err(TroopTransportError::CapacityExceeded {
                 capacity,
@@ -268,11 +264,7 @@ impl TroopTransportState {
     }
 
     /// Destroy every regiment aboard a fleet that has been destroyed.
-    pub fn destroy_fleet_cargo(
-        &mut self,
-        world: &mut GameWorld,
-        fleet: FleetKey,
-    ) -> Vec<TroopKey> {
+    pub fn destroy_fleet_cargo(&mut self, world: &mut GameWorld, fleet: FleetKey) -> Vec<TroopKey> {
         let cargo = self.cargo.remove(&fleet).unwrap_or_default();
         for troop in &cargo {
             world.troops.remove(*troop);
@@ -432,9 +424,7 @@ mod tests {
         world.fleets[fleet].location = destination;
         world.troops.remove(troops[1]);
 
-        let landed = state
-            .disembark_all(&mut world, fleet, destination)
-            .unwrap();
+        let landed = state.disembark_all(&mut world, fleet, destination).unwrap();
         assert_eq!(landed, vec![troops[0], troops[2]]);
         assert_eq!(world.systems[destination].ground_units, landed);
         assert!(state.cargo(fleet).is_empty());

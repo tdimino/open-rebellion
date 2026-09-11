@@ -10,8 +10,8 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::GameWorld;
 
-use crate::theme;
 use super::PanelAction;
+use crate::theme;
 
 /// Draw the Death Star control panel as a left-side egui panel.
 pub fn draw_death_star(
@@ -27,7 +27,11 @@ pub fn draw_death_star(
         .min_width(280.0)
         .max_width(340.0)
         .show(ctx, |ui| {
-            let title = if is_empire { "Death Star Command" } else { "Death Star Threat" };
+            let title = if is_empire {
+                "Death Star Command"
+            } else {
+                "Death Star Threat"
+            };
             ui.heading(RichText::new(title).color(theme::DANGER_RED));
             ui.separator();
 
@@ -134,7 +138,9 @@ fn draw_empire_view(
             let current_system = world.systems.get(fleet.location);
             if let Some(system) = current_system {
                 let is_enemy = match system.control {
-                    rebellion_core::world::ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => true,
+                    rebellion_core::world::ControlKind::Controlled(
+                        rebellion_core::dat::Faction::Alliance,
+                    ) => true,
                     _ => false,
                 };
 
@@ -245,10 +251,7 @@ fn draw_empire_view(
     } else {
         // No Death Star at all
         ui.add_space(20.0);
-        ui.label(
-            RichText::new("No Death Star in service.")
-                .color(theme::TEXT_DISABLED),
-        );
+        ui.label(RichText::new("No Death Star in service.").color(theme::TEXT_DISABLED));
         ui.add_space(4.0);
         ui.label(
             RichText::new("Construct one at a system with an Advanced Shipyard.")
@@ -259,11 +262,7 @@ fn draw_empire_view(
 }
 
 /// Alliance view: threat detection, warning status.
-fn draw_alliance_view(
-    ui: &mut egui::Ui,
-    world: &GameWorld,
-    ds_state: &DeathStarState,
-) {
+fn draw_alliance_view(ui: &mut egui::Ui, world: &GameWorld, ds_state: &DeathStarState) {
     if ds_state.under_construction.is_some() {
         ui.label(
             RichText::new("INTELLIGENCE REPORTS")
@@ -311,9 +310,6 @@ fn draw_alliance_view(
         );
     } else {
         ui.add_space(20.0);
-        ui.label(
-            RichText::new("No Death Star threat detected.")
-                .color(theme::TEXT_DISABLED),
-        );
+        ui.label(RichText::new("No Death Star threat detected.").color(theme::TEXT_DISABLED));
     }
 }

@@ -63,7 +63,13 @@ impl DatRecord for AllFacilitiesFile {
                 extra7: r.read_u32()?,
             });
         }
-        Ok(Self { field1, count, family_id, field4, entries })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            entries,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

@@ -160,10 +160,22 @@ mod tests {
     /// Simple table: any negative score → 80% betrayal chance.
     fn test_loyalty_table() -> MstbTable {
         MstbTable::new(vec![
-            MstbEntry { threshold: -100, value: 80 },
-            MstbEntry { threshold: -1, value: 80 },
-            MstbEntry { threshold: 0, value: 0 },
-            MstbEntry { threshold: 100, value: 0 },
+            MstbEntry {
+                threshold: -100,
+                value: 80,
+            },
+            MstbEntry {
+                threshold: -1,
+                value: 80,
+            },
+            MstbEntry {
+                threshold: 0,
+                value: 0,
+            },
+            MstbEntry {
+                threshold: 100,
+                value: 0,
+            },
         ])
     }
 
@@ -187,9 +199,7 @@ mod tests {
         // Loyalty 80 → score = 80 - 50 = 30 → >= 0 → skip
         world.characters.insert(default_test_character("Loyal", 80));
         let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(
-            &mut state, &world, &ticks(1), &[0.0], &table,
-        );
+        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.0], &table);
         assert!(events.is_empty());
     }
 
@@ -198,14 +208,17 @@ mod tests {
         let mut state = BetrayalState::new();
         let mut world = GameWorld::default();
         // Loyalty 10 → score = 10 - 50 = -40 → table says 80% → roll 0.1 < 0.8 → betrays
-        let ck = world.characters.insert(default_test_character("Disloyal", 10));
+        let ck = world
+            .characters
+            .insert(default_test_character("Disloyal", 10));
         let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(
-            &mut state, &world, &ticks(1), &[0.1], &table,
-        );
+        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.1], &table);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            BetrayalEvent::CharacterBetrayed { character, defected_to_alliance } => {
+            BetrayalEvent::CharacterBetrayed {
+                character,
+                defected_to_alliance,
+            } => {
                 assert_eq!(*character, ck);
                 // is_alliance=true → defects to !alliance = false (Empire)
                 assert!(!defected_to_alliance);
@@ -221,9 +234,7 @@ mod tests {
         c.is_unable_to_betray = true;
         world.characters.insert(c);
         let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(
-            &mut state, &world, &ticks(1), &[0.0], &table,
-        );
+        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.0], &table);
         assert!(events.is_empty());
     }
 
@@ -232,27 +243,23 @@ mod tests {
         let mut state = BetrayalState::new();
         let mut world = GameWorld::default();
         // Loyalty 10 → will trigger if roll is low enough
-        world.characters.insert(default_test_character("Traitor", 10));
+        world
+            .characters
+            .insert(default_test_character("Traitor", 10));
         let table = test_loyalty_table();
 
         // First check at tick 1 — roll 0.9 > 0.8 → no betrayal, but last_check updated
-        let events = BetrayalSystem::advance(
-            &mut state, &world, &ticks(1), &[0.9], &table,
-        );
+        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.9], &table);
         assert!(events.is_empty());
 
         // Second check at tick 2 — within cooldown (50 ticks), should skip
         let tick2 = vec![TickEvent { tick: 2 }];
-        let events = BetrayalSystem::advance(
-            &mut state, &world, &tick2, &[0.0], &table,
-        );
+        let events = BetrayalSystem::advance(&mut state, &world, &tick2, &[0.0], &table);
         assert!(events.is_empty());
 
         // Third check at tick 51 — past cooldown, should check again
         let tick51 = vec![TickEvent { tick: 51 }];
-        let events = BetrayalSystem::advance(
-            &mut state, &world, &tick51, &[0.1], &table,
-        );
+        let events = BetrayalSystem::advance(&mut state, &world, &tick51, &[0.1], &table);
         assert_eq!(events.len(), 1);
     }
 
@@ -267,9 +274,7 @@ mod tests {
         c.mark_killed();
         world.characters.insert(c);
         let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(
-            &mut state, &world, &ticks(1), &[0.0], &table,
-        );
+        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.0], &table);
         assert!(events.is_empty(), "dead characters cannot defect");
     }
 }

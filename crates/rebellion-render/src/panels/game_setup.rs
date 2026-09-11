@@ -76,10 +76,7 @@ pub enum GameSetupAction {
 // ── Rendering ────────────────────────────────────────────────────────────────
 
 /// Render the game setup screen. Returns an action when the player confirms or goes back.
-pub fn draw_game_setup(
-    ctx: &egui::Context,
-    state: &mut GameSetupState,
-) -> Option<GameSetupAction> {
+pub fn draw_game_setup(ctx: &egui::Context, state: &mut GameSetupState) -> Option<GameSetupAction> {
     let mut action = None;
 
     egui::CentralPanel::default()
@@ -114,11 +111,29 @@ pub fn draw_game_setup(
                     ui.add_space(4.0);
 
                     ui.horizontal(|ui| {
-                        galaxy_size_button(ui, "Standard", "200 systems, 15 sectors", GalaxySize::Standard, &mut state.galaxy_size);
+                        galaxy_size_button(
+                            ui,
+                            "Standard",
+                            "200 systems, 15 sectors",
+                            GalaxySize::Standard,
+                            &mut state.galaxy_size,
+                        );
                         ui.add_space(8.0);
-                        galaxy_size_button(ui, "Large", "300 systems, 19 sectors", GalaxySize::Large, &mut state.galaxy_size);
+                        galaxy_size_button(
+                            ui,
+                            "Large",
+                            "300 systems, 19 sectors",
+                            GalaxySize::Large,
+                            &mut state.galaxy_size,
+                        );
                         ui.add_space(8.0);
-                        galaxy_size_button(ui, "Huge", "400 systems, 24 sectors", GalaxySize::Huge, &mut state.galaxy_size);
+                        galaxy_size_button(
+                            ui,
+                            "Huge",
+                            "400 systems, 24 sectors",
+                            GalaxySize::Huge,
+                            &mut state.galaxy_size,
+                        );
                     });
 
                     ui.add_space(20.0);
@@ -187,10 +202,18 @@ pub fn draw_game_setup(
                         };
 
                         let start_btn = egui::Button::new(start_text)
-                            .fill(if can_start { theme::GOLD } else { Color32::from_rgb(40, 42, 56) })
+                            .fill(if can_start {
+                                theme::GOLD
+                            } else {
+                                Color32::from_rgb(40, 42, 56)
+                            })
                             .stroke(egui::Stroke::new(
                                 1.0,
-                                if can_start { theme::GOLD_BRIGHT } else { Color32::from_rgb(60, 62, 76) },
+                                if can_start {
+                                    theme::GOLD_BRIGHT
+                                } else {
+                                    Color32::from_rgb(60, 62, 76)
+                                },
                             ));
 
                         let resp = ui.add_sized([220.0, 44.0], start_btn);
@@ -205,16 +228,19 @@ pub fn draw_game_setup(
                         ui.add_space(12.0);
 
                         // Back button
-                        if ui.add_sized(
-                            [120.0, 32.0],
-                            egui::Button::new(
-                                RichText::new("BACK")
-                                    .color(theme::TEXT_SECONDARY)
-                                    .size(12.0),
+                        if ui
+                            .add_sized(
+                                [120.0, 32.0],
+                                egui::Button::new(
+                                    RichText::new("BACK")
+                                        .color(theme::TEXT_SECONDARY)
+                                        .size(12.0),
+                                )
+                                .fill(Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::new(0.5, theme::TEXT_DISABLED)),
                             )
-                            .fill(Color32::TRANSPARENT)
-                            .stroke(egui::Stroke::new(0.5, theme::TEXT_DISABLED)),
-                        ).clicked() {
+                            .clicked()
+                        {
                             action = Some(GameSetupAction::Back);
                         }
                     });
@@ -250,42 +276,60 @@ fn galaxy_size_button(
     } else {
         Color32::from_rgb(20, 22, 36)
     };
-    let stroke_color = if selected { theme::GOLD } else { theme::GOLD_DIM };
+    let stroke_color = if selected {
+        theme::GOLD
+    } else {
+        theme::GOLD_DIM
+    };
 
     let btn = egui::Button::new(
         RichText::new(format!("{}\n{}", label, description))
-            .color(if selected { theme::GOLD_BRIGHT } else { theme::TEXT_PRIMARY })
+            .color(if selected {
+                theme::GOLD_BRIGHT
+            } else {
+                theme::TEXT_PRIMARY
+            })
             .size(12.0),
     )
     .fill(fill)
-    .stroke(egui::Stroke::new(if selected { 1.5 } else { 0.5 }, stroke_color));
+    .stroke(egui::Stroke::new(
+        if selected { 1.5 } else { 0.5 },
+        stroke_color,
+    ));
 
     if ui.add_sized([140.0, 56.0], btn).clicked() {
         *current = value;
     }
 }
 
-fn difficulty_button(
-    ui: &mut egui::Ui,
-    value: Difficulty,
-    current: &mut Difficulty,
-) {
+fn difficulty_button(ui: &mut egui::Ui, value: Difficulty, current: &mut Difficulty) {
     let selected = *current == value;
     let fill = if selected {
         Color32::from_rgb(40, 38, 20)
     } else {
         Color32::from_rgb(20, 22, 36)
     };
-    let stroke_color = if selected { theme::GOLD } else { theme::GOLD_DIM };
+    let stroke_color = if selected {
+        theme::GOLD
+    } else {
+        theme::GOLD_DIM
+    };
 
     let btn = egui::Button::new(
         RichText::new(value.label())
-            .color(if selected { theme::GOLD_BRIGHT } else { theme::TEXT_PRIMARY })
+            .color(if selected {
+                theme::GOLD_BRIGHT
+            } else {
+                theme::TEXT_PRIMARY
+            })
             .size(14.0)
             .strong(),
     )
     .fill(fill)
-    .stroke(egui::Stroke::new(if selected { 1.5 } else { 0.5 }, stroke_color));
+    .stroke(egui::Stroke::new(
+        if selected { 1.5 } else { 0.5 },
+        stroke_color,
+    ));
 
     if ui.add_sized([120.0, 40.0], btn).clicked() {
         *current = value;
@@ -306,7 +350,11 @@ fn faction_button(
     } else {
         Color32::from_rgb(15, 17, 28)
     };
-    let stroke_color = if selected { accent } else { Color32::from_rgb(50, 52, 68) };
+    let stroke_color = if selected {
+        accent
+    } else {
+        Color32::from_rgb(50, 52, 68)
+    };
 
     let (rect, response) = ui.allocate_exact_size(egui::vec2(200.0, 100.0), egui::Sense::click());
 
@@ -326,7 +374,11 @@ fn faction_button(
             egui::Align2::LEFT_TOP,
             name,
             egui::FontId::proportional(15.0),
-            if selected { accent } else { theme::TEXT_PRIMARY },
+            if selected {
+                accent
+            } else {
+                theme::TEXT_PRIMARY
+            },
         );
         painter.text(
             text_rect.left_top() + egui::vec2(0.0, 22.0),

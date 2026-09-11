@@ -9,8 +9,8 @@ use rebellion_core::ids::FleetKey;
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::GameWorld;
 
-use crate::theme;
 use super::PanelAction;
+use crate::theme;
 
 /// Mutable UI state for the bombardment panel.
 #[derive(Debug, Clone, Default)]

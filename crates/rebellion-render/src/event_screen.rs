@@ -74,33 +74,33 @@ const STRATEGY_EVENT_BASE: u32 = 6208;
 /// on Luke Skywalker (or `false` if Luke doesn't exist).
 pub fn event_id_to_resource(story_event_id: u32, heritage_known: bool) -> Option<u32> {
     // Constants from rebellion_core::events
-    const EVT_CHARACTER_FORCE:  u32 = 0x1e1; // Luke's Force potential noticed
-    const EVT_FORCE_TRAINING:   u32 = 0x1e5; // Luke begins Force training
-    const EVT_LUKE_DAGOBAH:     u32 = 0x221; // Luke departs for Dagobah
-    const EVT_DAGOBAH_COMPLETED:u32 = 0x210; // Luke completes Dagobah training
-    const EVT_FINAL_BATTLE:     u32 = 0x220; // Final battle triggered
-    const EVT_BOUNTY_ATTACK:    u32 = 0x212; // Bounty hunters capture Han
+    const EVT_CHARACTER_FORCE: u32 = 0x1e1; // Luke's Force potential noticed
+    const EVT_FORCE_TRAINING: u32 = 0x1e5; // Luke begins Force training
+    const EVT_LUKE_DAGOBAH: u32 = 0x221; // Luke departs for Dagobah
+    const EVT_DAGOBAH_COMPLETED: u32 = 0x210; // Luke completes Dagobah training
+    const EVT_FINAL_BATTLE: u32 = 0x220; // Final battle triggered
+    const EVT_BOUNTY_ATTACK: u32 = 0x212; // Bounty hunters capture Han
 
     // Additional chain IDs from story_events.rs
     // 0x390-0x39A range: extended story chains
-    const EVT_LEIA_PLAN:        u32 = 0x381; // Leia plans rescue
-    const EVT_LEIA_RESCUE:      u32 = 0x382; // Leia rescue mission begins
-    const EVT_JABBA_DEMAND:     u32 = 0x380; // Jabba's initial demand
-    const EVT_JABBA_END:        u32 = 0x383; // Jabba arc resolution
+    const EVT_LEIA_PLAN: u32 = 0x381; // Leia plans rescue
+    const EVT_LEIA_RESCUE: u32 = 0x382; // Leia rescue mission begins
+    const EVT_JABBA_DEMAND: u32 = 0x380; // Jabba's initial demand
+    const EVT_JABBA_END: u32 = 0x383; // Jabba arc resolution
 
     let offset: u32 = match story_event_id {
-        EVT_CHARACTER_FORCE   => 0,  // Luke — Force awakening
-        EVT_FORCE_TRAINING    => 2,  // Luke — training begins
-        EVT_LUKE_DAGOBAH      => 4,  // Luke — departs for Dagobah
-        EVT_DAGOBAH_COMPLETED => 6,  // Luke — training complete
+        EVT_CHARACTER_FORCE => 0,   // Luke — Force awakening
+        EVT_FORCE_TRAINING => 2,    // Luke — training begins
+        EVT_LUKE_DAGOBAH => 4,      // Luke — departs for Dagobah
+        EVT_DAGOBAH_COMPLETED => 6, // Luke — training complete
         // #R4 heritage gate: single event 0x220, render picks BMP variant
         EVT_FINAL_BATTLE if heritage_known => 32, // Emperor & Vader vs Knight Luke
-        EVT_FINAL_BATTLE      => 24, // Vader vs Student Luke
-        EVT_BOUNTY_ATTACK     => 16, // Han Solo — captured
-        EVT_LEIA_PLAN         => 8,  // Princess Leia — rescue plan
-        EVT_LEIA_RESCUE       => 10, // Princess Leia — rescue mission
-        EVT_JABBA_DEMAND      => 48, // Jabba the Hutt — demands Solo
-        EVT_JABBA_END         => 50, // Jabba arc end
+        EVT_FINAL_BATTLE => 24,                   // Vader vs Student Luke
+        EVT_BOUNTY_ATTACK => 16,                  // Han Solo — captured
+        EVT_LEIA_PLAN => 8,                       // Princess Leia — rescue plan
+        EVT_LEIA_RESCUE => 10,                    // Princess Leia — rescue mission
+        EVT_JABBA_DEMAND => 48,                   // Jabba the Hutt — demands Solo
+        EVT_JABBA_END => 50,                      // Jabba arc end
         // Vader / Emperor related events in 0x390-0x39A range
         0x390 => 24, // Vader — Empire strikes
         0x391 => 26, // Vader — confrontation
@@ -238,10 +238,7 @@ pub fn draw_event_screen(
         .order(egui::Order::Background)
         .interactable(false)
         .show(ctx, |ui| {
-            ui.allocate_exact_size(
-                screen_rect.size(),
-                egui::Sense::hover(),
-            );
+            ui.allocate_exact_size(screen_rect.size(), egui::Sense::hover());
             let painter = ui.painter();
             painter.rect_filled(
                 screen_rect,
@@ -320,10 +317,8 @@ pub fn draw_event_screen(
                 // Progress bar below sprite showing time remaining.
                 let ratio = (timer / AUTO_DISMISS_SECS).clamp(0.0, 1.0);
                 let bar_w = (screen_width() * 0.7).min(600.0);
-                let (bar_rect, _) = ui.allocate_exact_size(
-                    egui::vec2(bar_w, 4.0),
-                    egui::Sense::hover(),
-                );
+                let (bar_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(bar_w, 4.0), egui::Sense::hover());
                 let painter = ui.painter();
                 painter.rect_filled(bar_rect, 0.0, Color32::from_rgb(40, 40, 55));
                 let mut filled = bar_rect;

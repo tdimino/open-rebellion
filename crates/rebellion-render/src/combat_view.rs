@@ -83,9 +83,9 @@ impl BattleOutcome {
 
     pub fn color(self) -> Color32 {
         match self {
-            BattleOutcome::AttackerWon => Color32::from_rgb(255, 120, 60),  // orange-red
+            BattleOutcome::AttackerWon => Color32::from_rgb(255, 120, 60), // orange-red
             BattleOutcome::DefenderHeld => Color32::from_rgb(100, 220, 100), // green
-            BattleOutcome::Stalemate => Color32::from_rgb(200, 200, 80),    // yellow
+            BattleOutcome::Stalemate => Color32::from_rgb(200, 200, 80),   // yellow
         }
     }
 }
@@ -100,11 +100,7 @@ impl CombatResult {
         let mut msgs = Vec::new();
 
         // Primary outcome line
-        let outcome_text = format!(
-            "Battle at {}: {}",
-            self.system_name,
-            self.outcome.label()
-        );
+        let outcome_text = format!("Battle at {}: {}", self.system_name, self.outcome.label());
         msgs.push(GameMessage {
             text: outcome_text,
             tick: self.tick,
@@ -261,14 +257,20 @@ pub fn draw_combat_summary(ctx: &egui::Context, state: &mut CombatSummaryState) 
             } else {
                 if !result.attacker_losses.is_empty() {
                     ui.label(
-                        RichText::new(format!("Attacker losses: {}", format_losses(&result.attacker_losses)))
-                            .color(Color32::from_rgb(240, 140, 80)),
+                        RichText::new(format!(
+                            "Attacker losses: {}",
+                            format_losses(&result.attacker_losses)
+                        ))
+                        .color(Color32::from_rgb(240, 140, 80)),
                     );
                 }
                 if !result.defender_losses.is_empty() {
                     ui.label(
-                        RichText::new(format!("Defender losses: {}", format_losses(&result.defender_losses)))
-                            .color(Color32::from_rgb(100, 200, 255)),
+                        RichText::new(format!(
+                            "Defender losses: {}",
+                            format_losses(&result.defender_losses)
+                        ))
+                        .color(Color32::from_rgb(100, 200, 255)),
                     );
                 }
             }
@@ -405,7 +407,11 @@ mod tests {
     fn to_messages_includes_losses() {
         let result = make_result(BattleOutcome::DefenderHeld);
         let msgs = result.to_messages();
-        let all_text: String = msgs.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join("\n");
+        let all_text: String = msgs
+            .iter()
+            .map(|m| m.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(all_text.contains("Star Destroyer"));
         assert!(all_text.contains("Mon Calamari Cruiser"));
     }

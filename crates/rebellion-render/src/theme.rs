@@ -135,7 +135,8 @@ pub fn apply_theme(ctx: &egui::Context) {
     // Widget styles — non-interactive (labels, etc.)
     visuals.widgets.noninteractive.bg_fill = BG_PANEL;
     visuals.widgets.noninteractive.weak_bg_fill = BG_PANEL;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5, Color32::from_rgb(40, 42, 56));
+    visuals.widgets.noninteractive.bg_stroke =
+        egui::Stroke::new(0.5, Color32::from_rgb(40, 42, 56));
     visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, TEXT_PRIMARY);
     visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(2);
 
