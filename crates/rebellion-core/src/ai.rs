@@ -280,6 +280,10 @@ impl AISystem {
     /// `state.mark_busy(character)` for each dispatched character, and
     /// `state.mark_available(character)` when the corresponding
     /// `MissionResult` arrives.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
     pub fn advance(
         state: &mut AIState,
         world: &GameWorld,
@@ -735,7 +739,7 @@ impl AISystem {
         }
 
         // Sort descending by espionage score so best ops go to highest-value targets.
-        operatives.sort_by(|a, b| b.1.cmp(&a.1));
+        operatives.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         let mut ops_queued = 0;
         let mut op_idx = 0;
@@ -770,7 +774,7 @@ impl AISystem {
             .collect();
 
         // Highest facility count first.
-        sabotage_targets.sort_by(|a, b| b.1.cmp(&a.1));
+        sabotage_targets.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         for (target_sys, _) in &sabotage_targets {
             if ops_queued >= config.ai.max_covert_ops_per_eval || op_idx >= operatives.len() {
@@ -823,7 +827,7 @@ impl AISystem {
                 Some((key, defense))
             })
             .collect();
-        abduction_targets.sort_by(|a, b| a.1.cmp(&b.1));
+        abduction_targets.sort_by_key(|a| a.1);
 
         // For assassination we need a system to target — use any enemy system as the
         // "location" proxy (the actual character is tracked by CharacterKey in effects).
@@ -1033,7 +1037,7 @@ impl AISystem {
             .collect();
 
         // Best operatives first.
-        operatives.sort_by(|a, b| b.1.cmp(&a.1));
+        operatives.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         // Dispatch one rescue per captive, consuming operatives.
         let mut op_iter = operatives.into_iter();
@@ -1106,7 +1110,7 @@ impl AISystem {
         }
 
         // Sort by highest value first (most important to scout).
-        recon_targets.sort_by(|a, b| b.1.cmp(&a.1));
+        recon_targets.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         // Find available scouts: characters with espionage skill >= threshold.
         let mut scouts: Vec<(CharacterKey, u32)> = world
@@ -1130,7 +1134,7 @@ impl AISystem {
         }
 
         // Sort by espionage score descending — best scouts go first.
-        scouts.sort_by(|a, b| b.1.cmp(&a.1));
+        scouts.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         let mut dispatched = 0;
         let mut scout_idx = 0;
@@ -1487,6 +1491,7 @@ impl AISystem {
     ///
     /// - Fleets not already in a contested system → attack the enemy's weakest system
     /// - Friendly systems with no fleet and high popularity → reinforce
+    ///
     /// Compute a garrison strength score for a system.
     /// Counts ships (hull total), troop regiments, and defense facilities.
     /// Higher = more heavily defended.
@@ -1631,6 +1636,10 @@ impl AISystem {
     /// Score an enemy system as an attack target for a specific fleet.
     /// Higher score = better target. Considers weakness, proximity,
     /// deconfliction (avoid piling), and battle freshness (avoid stagnation).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
     fn score_attack_target(
         world: &GameWorld,
         fleet_location: SystemKey,
@@ -2150,6 +2159,7 @@ impl AISystem {
     ///
     /// Pass 1: Assign each fleet its own target using scoring function.
     ///   - HQ garrison first, then per-fleet attack targeting.
+    ///
     /// Pass 2: Redistribute any idle fleets (no valid target in pass 1).
     fn evaluate_fleet_deployment(
         state: &AIState,
@@ -2216,7 +2226,7 @@ impl AISystem {
                     .iter()
                     .copied()
                     .filter(|fleet_key| {
-                        world.fleets.get(*fleet_key).map_or(false, |fleet| {
+                        world.fleets.get(*fleet_key).is_some_and(|fleet| {
                             fleet.is_alliance == is_alliance
                                 && !fleet.has_death_star
                                 && !fleet.is_empty()
@@ -2499,8 +2509,8 @@ mod tests {
     use crate::tick::TickEvent;
     use crate::tuning::GameConfig;
     use crate::world::{
-        CapitalShipClass, Character, FighterClass, Fleet, ForceTier, GameWorld, Sector,
-        ShipInstance, SkillPair, System,
+        CapitalShipClass, Character, FighterClass, Fleet, GameWorld, Sector, ShipInstance,
+        SkillPair, System,
     };
 
     // -----------------------------------------------------------------------
@@ -2551,13 +2561,6 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
         })
-    }
-
-    fn zero_skills() -> SkillPair {
-        SkillPair {
-            base: 0,
-            variance: 0,
-        }
     }
 
     fn add_character(
@@ -3974,7 +3977,7 @@ mod tests {
         });
 
         // Interior receiver: 0 troops, far from enemy.
-        let interior_sys = world.systems.insert(System {
+        let _interior_sys = world.systems.insert(System {
             dat_id: DatId(2),
             name: "Interior".into(),
             sector,

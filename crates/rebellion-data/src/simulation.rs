@@ -148,10 +148,10 @@ pub fn run_simulation_tick(
     let combat_triggers: Vec<_> = world
         .systems
         .keys()
-        .filter_map(|sys_key| {
+        .filter(|&sys_key| {
             if let Some(&last_battle) = states.combat_cooldowns.get(&sys_key) {
                 if combat_is_on_cooldown(last_battle, current_tick) {
-                    return None;
+                    return false;
                 }
             }
             let sys = &world.systems[sys_key];
@@ -165,7 +165,7 @@ pub fn run_simulation_tick(
                 .iter()
                 .copied()
                 .any(|k| world.fleets.get(k).map(|f| !f.is_alliance).unwrap_or(false));
-            (has_alliance && has_empire).then_some(sys_key)
+            has_alliance && has_empire
         })
         .collect();
 
@@ -708,7 +708,7 @@ pub fn run_simulation_tick(
     }
 
     // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────
-    if current_tick % 250 == 0 && current_tick > 0 {
+    if current_tick.is_multiple_of(250) && current_tick > 0 {
         integrator.emit_campaign_snapshot(world, states.movement.len(), &states.economy);
     }
 
@@ -781,7 +781,8 @@ mod tests {
             control: ControlKind::Uncontrolled,
             espionage_rating: 0.0,
         });
-        let states = SimulationStates {
+
+        SimulationStates {
             clock: GameClock::new(),
             manufacturing: ManufacturingState::new(),
             missions: MissionState::new(),
@@ -802,8 +803,7 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
-        };
-        states
+        }
     }
 
     #[test]

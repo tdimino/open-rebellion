@@ -1026,7 +1026,7 @@ fn dispatch_facility_item(
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
-        f if f >= FAM_DEF_MIN && f <= FAM_DEF_MAX => {
+        f if (FAM_DEF_MIN..=FAM_DEF_MAX).contains(&f) => {
             let inst = DefenseFacilityInstance {
                 class_dat_id,
                 is_alliance,
@@ -1034,7 +1034,7 @@ fn dispatch_facility_item(
             let key = world.defense_facilities.insert(inst);
             world.systems[system_key].defense_facilities.push(key);
         }
-        f if f >= FAM_MFG_MIN && f <= FAM_MFG_MAX => {
+        f if (FAM_MFG_MIN..=FAM_MFG_MAX).contains(&f) => {
             // Family 0x28 = shipyard, 0x29 = training center, 0x2A = construction yard
             let is_shipyard = f == 0x28;
             let inst = ManufacturingFacilityInstance {
@@ -1045,7 +1045,7 @@ fn dispatch_facility_item(
             let key = world.manufacturing_facilities.insert(inst);
             world.systems[system_key].manufacturing_facilities.push(key);
         }
-        f if f >= FAM_PROD_MIN && f <= FAM_PROD_MAX => {
+        f if (FAM_PROD_MIN..=FAM_PROD_MAX).contains(&f) => {
             // Family 0x2D = mine, 0x2C = refinery
             let is_mine = f == 0x2D;
             let inst = ProductionFacilityInstance {
@@ -1871,8 +1871,8 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
     _rng: &mut R,
 ) {
     let diff = seed_options.gnprtb_index();
-    let threshold = world.gnprtb.value(7761, diff) as i32; // 60
-    let divisor = world.gnprtb.value(7762, diff).abs().max(1) as i32; // 10
+    let threshold = world.gnprtb.value(7761, diff); // 60
+    let divisor = world.gnprtb.value(7762, diff).abs().max(1); // 10
 
     // Alliance regiment DatId: family 0x10, index 2 (ALLIANCE_ARMY_REGIMENT per TheArchitect2018)
     let alliance_regiment = DatId::new(0x10000002);
@@ -2027,11 +2027,11 @@ fn place_named_characters(world: &mut GameWorld, special: &SpecialSystems) {
     for (_, character) in world.characters.iter_mut() {
         let name = character.name.as_str();
 
-        if YAVIN_CHARACTERS.iter().any(|&n| name == n) {
+        if YAVIN_CHARACTERS.contains(&name) {
             character.current_system = Some(special.yavin);
-        } else if REBEL_HQ_CHARACTERS.iter().any(|&n| name == n) {
+        } else if REBEL_HQ_CHARACTERS.contains(&name) {
             character.current_system = Some(special.rebel_hq);
-        } else if CORUSCANT_CHARACTERS.iter().any(|&n| name == n) {
+        } else if CORUSCANT_CHARACTERS.contains(&name) {
             character.current_system = Some(special.coruscant);
         }
     }
@@ -2117,8 +2117,7 @@ mod tests {
         let coruscant = world
             .systems
             .iter()
-            .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
-            .map(|(k, s)| (k, s));
+            .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID);
         assert!(coruscant.is_some(), "Coruscant must exist");
         let (_ck, cs) = coruscant.unwrap();
         assert!(cs.is_populated, "Coruscant must be populated");
@@ -2144,8 +2143,7 @@ mod tests {
         let yavin = world
             .systems
             .iter()
-            .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
-            .map(|(k, s)| (k, s));
+            .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID);
         assert!(yavin.is_some(), "Yavin must exist");
         let (yk, ys) = yavin.unwrap();
         assert!(ys.is_populated, "Yavin must be populated");
@@ -2244,7 +2242,7 @@ mod tests {
             .filter(|(_, s)| {
                 s.fleets
                     .iter()
-                    .any(|&fk| world.fleets.get(fk).map_or(false, |f| !f.is_alliance))
+                    .any(|&fk| world.fleets.get(fk).is_some_and(|f| !f.is_alliance))
             })
             .count();
         assert!(
@@ -2525,7 +2523,7 @@ mod tests {
         // (weak base = 20, strong base + extra = 90, plus special at 100)
         for (_, sys) in world.systems.iter() {
             let sector = world.sectors.get(sys.sector);
-            if sector.map_or(false, |s| s.group == SectorGroup::Core) {
+            if sector.is_some_and(|s| s.group == SectorGroup::Core) {
                 match sys.control {
                     ControlKind::Controlled(Faction::Alliance) => {
                         assert!(
@@ -2604,7 +2602,7 @@ mod tests {
                 continue;
             }
             let sector = world.sectors.get(sys.sector);
-            if !sector.map_or(false, |s| s.group == SectorGroup::Core) {
+            if !sector.is_some_and(|s| s.group == SectorGroup::Core) {
                 continue;
             }
             total_core += 1;

@@ -1185,7 +1185,7 @@ impl PerceptionIntegrator {
                 serde_json::json!({
                     "character": char_name(world, *character),
                     "original_faction": if world.characters.get(*character)
-                        .map_or(false, |c| c.is_alliance) { "alliance" } else { "empire" },
+                        .is_some_and(|c| c.is_alliance) { "alliance" } else { "empire" },
                 }),
             );
 
@@ -1869,6 +1869,10 @@ pub fn apply_event_action_to_world(
 // AI action helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep the existing explicit simulation state inputs at this integration boundary."
+)]
 fn apply_ai_actions_inner(
     actions: &[AIAction],
     rolls: &[f64],

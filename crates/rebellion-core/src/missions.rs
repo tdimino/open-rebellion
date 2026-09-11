@@ -472,6 +472,10 @@ impl MissionState {
     ///
     /// Returns `None` if the character is already on a mission or has a
     /// mandatory mission assignment (prevents double-dispatch).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
     pub fn dispatch_guarded(
         &mut self,
         kind: MissionKind,
@@ -684,6 +688,10 @@ pub fn total_success_prob(agent_prob_pct: f64, foil_prob_pct: f64) -> f64 {
 ///
 /// Coefficients from Mission.cs FoilProbability: -0.001999·d² + 0.8879·d + 84.61.
 /// Returns 0.0 if the mission is in a friendly system (no counter-intel threat).
+#[expect(
+    clippy::manual_clamp,
+    reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
+)]
 pub fn foil_prob(defense_score: f64, own_system: bool) -> f64 {
     if own_system {
         return 0.0;
@@ -909,6 +917,10 @@ impl MissionSystem {
     /// For covert missions, `defense_score` and `own_system` determine the
     /// foil probability from enemy counter-intelligence. Non-covert missions
     /// ignore the foil path entirely.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
     fn determine_outcome(
         mission: &ActiveMission,
         character: Option<&Character>,
@@ -1153,7 +1165,7 @@ impl MissionSystem {
 mod tests {
     use super::*;
     use crate::ids::{CharacterKey, SectorKey, SystemKey};
-    use crate::world::{Character, ForceTier, GameWorld, SkillPair};
+    use crate::world::{Character, GameWorld, SkillPair};
 
     // --- Probability formula tests ---
 
@@ -1182,7 +1194,7 @@ mod tests {
         let p = quadratic_prob(0.0, a, b, c);
         let clamped = clamp_prob(p, 1.0, 100.0);
         // c = 11.923 — low but above min
-        assert!(clamped >= 1.0 && clamped <= 100.0);
+        assert!((1.0..=100.0).contains(&clamped));
     }
 
     #[test]

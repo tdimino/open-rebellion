@@ -58,7 +58,7 @@ impl BombardmentSystem {
     /// # Advance contract
     /// - Does NOT mutate world.
     /// - `difficulty`: 0=development, 1=alliance_easy, 2=alliance_medium, 3=alliance_hard,
-    ///                  4=empire_easy, 5=empire_medium, 6=empire_hard, 7=multiplayer.
+    ///   4=empire_easy, 5=empire_medium, 6=empire_hard, 7=multiplayer.
     ///   Matches the C++ `difficulty_packed` bits 4-5 mapping from `GnprtbParams::value()`.
     pub fn resolve_bombardment(
         world: &GameWorld,
@@ -140,7 +140,7 @@ impl BombardmentSystem {
     ///
     /// - `[0]` = aggregate bombardment_modifier across all capital ships + fighters.
     /// - `[1]` = aggregate maneuverability (secondary stat proxy pending decompile
-    ///           of FUN_00509620's exact secondary field selection).
+    ///   of FUN_00509620's exact secondary field selection).
     fn fleet_bombardment_stats(world: &GameWorld, fleet: FleetKey) -> (i32, i32) {
         let f = &world.fleets[fleet];
         let mut brd: i32 = 0;
@@ -168,7 +168,7 @@ impl BombardmentSystem {
     /// Maps to `FUN_00509620` called for the defender side.
     ///
     /// - `[0]` = sum of defense facility bombardment_defense (placeholder: 10 each).
-    ///           Full implementation deferred pending `DefenseFacilityClass` world model.
+    ///   Full implementation deferred pending `DefenseFacilityClass` world model.
     /// - `[1]` = sum of troop regiment_strength as secondary defense contribution.
     fn system_bombardment_defense(world: &GameWorld, system: SystemKey) -> (i32, i32) {
         let sys = &world.systems[system];

@@ -362,9 +362,8 @@ impl ResearchSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{CharacterKey, DatId};
+    use crate::ids::CharacterKey;
     use crate::tick::TickEvent;
-    use crate::world::ControlKind;
     use crate::world::{CapitalShipClass, Character, GameWorld, SkillPair};
 
     fn ticks(n: u32) -> Vec<TickEvent> {
@@ -557,7 +556,6 @@ mod tests {
 
     #[test]
     fn is_unlocked_respects_current_level() {
-        let world = GameWorld::default();
         let mut state = ResearchState::new();
 
         // Level 0 — order-0 classes are available (pre-game units), order-1 are not.

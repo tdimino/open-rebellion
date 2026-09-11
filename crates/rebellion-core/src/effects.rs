@@ -361,8 +361,8 @@ impl GameEffect {
             }),
             Self::ControlChanged { system, from, to } => Some(Self::ControlChanged {
                 system: *system,
-                from: to.clone(),
-                to: from.clone(),
+                from: *to,
+                to: *from,
             }),
             // Effects that create/destroy entities require full entity snapshots
             // for inversion. Use full-state clone for these.

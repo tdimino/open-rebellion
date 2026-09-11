@@ -156,7 +156,7 @@ impl FogSystem {
         // In-transit fleets reveal their *destination* on the tick they
         // arrive. We check the destination of every active order whose
         // fleet belongs to this faction.
-        for (_fleet_key, order) in movement_state.orders().iter() {
+        for order in movement_state.orders().values() {
             // Look up the fleet to determine faction.
             let fleet = match world.fleets.get(order.fleet) {
                 Some(f) => f,

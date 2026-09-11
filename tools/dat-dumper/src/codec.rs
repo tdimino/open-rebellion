@@ -105,3 +105,9 @@ impl ByteWriter {
         self.buf
     }
 }
+
+impl Default for ByteWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}

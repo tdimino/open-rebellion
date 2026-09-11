@@ -208,7 +208,7 @@ pub fn draw_game_setup(ctx: &egui::Context, state: &mut GameSetupState) -> Optio
                                 Color32::from_rgb(40, 42, 56)
                             })
                             .stroke(egui::Stroke::new(
-                                1.0,
+                                1.0_f32,
                                 if can_start {
                                     theme::GOLD_BRIGHT
                                 } else {
@@ -237,7 +237,7 @@ pub fn draw_game_setup(ctx: &egui::Context, state: &mut GameSetupState) -> Optio
                                         .size(12.0),
                                 )
                                 .fill(Color32::TRANSPARENT)
-                                .stroke(egui::Stroke::new(0.5, theme::TEXT_DISABLED)),
+                                .stroke(egui::Stroke::new(0.5_f32, theme::TEXT_DISABLED)),
                             )
                             .clicked()
                         {
@@ -293,7 +293,7 @@ fn galaxy_size_button(
     )
     .fill(fill)
     .stroke(egui::Stroke::new(
-        if selected { 1.5 } else { 0.5 },
+        if selected { 1.5 } else { 0.5_f32 },
         stroke_color,
     ));
 
@@ -327,7 +327,7 @@ fn difficulty_button(ui: &mut egui::Ui, value: Difficulty, current: &mut Difficu
     )
     .fill(fill)
     .stroke(egui::Stroke::new(
-        if selected { 1.5 } else { 0.5 },
+        if selected { 1.5 } else { 0.5_f32 },
         stroke_color,
     ));
 
@@ -364,7 +364,7 @@ fn faction_button(
             rect,
             egui::CornerRadius::same(4),
             fill,
-            egui::Stroke::new(if selected { 2.0 } else { 1.0 }, stroke_color),
+            egui::Stroke::new(if selected { 2.0 } else { 1.0_f32 }, stroke_color),
             egui::StrokeKind::Outside,
         );
 

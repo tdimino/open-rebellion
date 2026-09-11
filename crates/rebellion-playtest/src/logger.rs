@@ -49,7 +49,7 @@ impl EventLogger {
             *counts.entry(event.event_type).or_default() += 1;
         }
         let mut sorted: Vec<_> = counts.iter().map(|(&k, &v)| (k, v)).collect();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         println!("\n=== Playtest Summary ===");
         println!("Total events: {}", self.events.len());
@@ -94,7 +94,7 @@ impl EventLogger {
         // ── Fleets in transit ─────────────────────────────────────────
         if !movement.is_empty() {
             println!("\nFleets in transit: {}", movement.len());
-            for (_, order) in movement.orders() {
+            for order in movement.orders().values() {
                 let origin = world
                     .systems
                     .get(order.origin)

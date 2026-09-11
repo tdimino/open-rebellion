@@ -336,7 +336,6 @@ impl JediSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::DatId;
     use crate::tick::TickEvent;
     use crate::world::{Character, ForceTier, GameWorld, SkillPair};
 

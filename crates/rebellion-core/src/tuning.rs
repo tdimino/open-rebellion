@@ -12,24 +12,13 @@
 use serde::{Deserialize, Serialize};
 
 /// Root configuration for all tunable game parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct GameConfig {
     pub ai: AiConfig,
     pub movement: MovementConfig,
     pub production: ProductionConfig,
     pub scoring: ScoringConfig,
-}
-
-impl Default for GameConfig {
-    fn default() -> Self {
-        Self {
-            ai: AiConfig::default(),
-            movement: MovementConfig::default(),
-            production: ProductionConfig::default(),
-            scoring: ScoringConfig::default(),
-        }
-    }
 }
 
 /// AI behavior tuning parameters.

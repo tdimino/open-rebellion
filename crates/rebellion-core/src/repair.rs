@@ -154,7 +154,6 @@ impl RepairSystem {
 mod tests {
     use super::*;
     use crate::dat::{ExplorationStatus, Faction};
-    use crate::ids::*;
     use crate::world::*;
 
     fn make_shipyard_system(world: &mut GameWorld) -> SystemKey {
@@ -173,7 +172,8 @@ mod tests {
                 is_alliance: false,
                 is_shipyard: false,
             });
-        let sys_key = world.systems.insert(System {
+
+        world.systems.insert(System {
             dat_id: DatId::new(0x9000_0000),
             name: "Kuat".into(),
             sector,
@@ -195,8 +195,7 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Controlled(Faction::Empire),
-        });
-        sys_key
+        })
     }
 
     fn add_fleet_with_ship(world: &mut GameWorld, sys_key: SystemKey) -> FleetKey {

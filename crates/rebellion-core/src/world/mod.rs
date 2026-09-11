@@ -21,9 +21,10 @@ use crate::ids::*;
 ///
 /// Characters start as `None`. Those with `jedi_probability > 0` may advance
 /// through tiers via the Jedi training system (`jedi.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub enum ForceTier {
     /// No Force sensitivity detected.
+    #[default]
     None = 0,
     /// Force potential recognized — character is Force-aware but untrained.
     Aware = 1,
@@ -33,20 +34,15 @@ pub enum ForceTier {
     Experienced = 3,
 }
 
-impl Default for ForceTier {
-    fn default() -> Self {
-        ForceTier::None
-    }
-}
-
 /// Control state of a star system.
 ///
 /// Maps to the 2-bit `faction_side` field at `entity+0x24 bits 6-7` in REBEXE.EXE:
 /// 0=Uncontrolled, 1=Alliance, 2=Empire, 3=Contested.
 /// Extended with `Uprising` for active uprising state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ControlKind {
     /// No faction controls this system (neutral / unclaimed).
+    #[default]
     Uncontrolled,
     /// A single faction holds this system.
     Controlled(crate::dat::Faction),
@@ -54,12 +50,6 @@ pub enum ControlKind {
     Contested,
     /// An uprising is in progress — faction control is unstable.
     Uprising(crate::dat::Faction),
-}
-
-impl Default for ControlKind {
-    fn default() -> Self {
-        ControlKind::Uncontrolled
-    }
 }
 
 impl ControlKind {
@@ -82,17 +72,12 @@ impl ControlKind {
 ///
 /// This stays in `rebellion-core` so headless crates can share setup values
 /// without depending on rendering/UI enums.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SeedDifficulty {
     Easy,
+    #[default]
     Medium,
     Hard,
-}
-
-impl Default for SeedDifficulty {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 impl SeedDifficulty {
@@ -132,19 +117,14 @@ impl SeedDifficulty {
 }
 
 /// Original new-game victory-condition selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VictoryConditions {
     /// Capturing the enemy headquarters only wins after the faction's two
     /// principal leaders are also held captive.
+    #[default]
     Standard,
     /// Capturing the enemy headquarters is sufficient by itself.
     HeadquartersOnly,
-}
-
-impl Default for VictoryConditions {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 impl VictoryConditions {
@@ -921,7 +901,7 @@ impl ShipInstance {
 /// The C++ `difficulty_packed` at offset +0x24 bits 4-5 is a 2-bit selector
 /// (0-3) used by `FUN_004fd600` to pick Alliance(1) or Empire(2). The full
 /// 8-level index is computed at the caller level.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GnprtbParams {
     /// All 213 entries, indexed by `parameter_id`.
     entries: Vec<GnprtbEntry>,
@@ -939,14 +919,6 @@ pub struct GnprtbEntry {
     pub empire_sp_medium: i32,
     pub empire_sp_hard: i32,
     pub multiplayer: i32,
-}
-
-impl Default for GnprtbParams {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
 }
 
 impl GnprtbParams {
@@ -979,7 +951,7 @@ impl GnprtbParams {
 }
 
 /// Side-aware seeding parameters loaded from SDPRTB.DAT.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SdprtbParams {
     entries: Vec<SdprtbEntry>,
 }
@@ -1004,14 +976,6 @@ pub struct SdprtbEntry {
     pub empire_sp_hard_empire: i32,
     pub multiplayer_alliance: i32,
     pub multiplayer_empire: i32,
-}
-
-impl Default for SdprtbParams {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
 }
 
 impl SdprtbParams {

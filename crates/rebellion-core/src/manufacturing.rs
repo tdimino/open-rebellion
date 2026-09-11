@@ -191,12 +191,7 @@ impl ProductionQueue {
         let mut completed = Vec::new();
         let mut remaining_ticks = ticks;
 
-        loop {
-            let front = match self.items.front_mut() {
-                Some(item) => item,
-                None => break,
-            };
-
+        while let Some(front) = self.items.front_mut() {
             if remaining_ticks >= front.ticks_remaining {
                 // This item completes; consume its cost and continue with leftover ticks.
                 remaining_ticks -= front.ticks_remaining;

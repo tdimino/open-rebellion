@@ -93,6 +93,10 @@ enum GameMode {
     /// Ground combat phase after space combat.
     GroundCombat,
     /// Victory/defeat modal overlay on the frozen galaxy map.
+    #[expect(
+        dead_code,
+        reason = "Victory modal rendering exists, but its transition is not wired yet."
+    )]
     VictoryModal { alliance_won: bool },
 }
 
@@ -974,19 +978,23 @@ async fn main() {
             macro_rules! toggle_panel {
                 ($key:expr, $flag:ident) => {
                     if is_key_pressed($key) {
-                        $flag = !$flag;
-                        if $flag {
-                            show_officers = false;
-                            show_fleets = false;
-                            show_manufacturing = false;
-                            show_missions = false;
-                            show_research = false;
-                            show_jedi = false;
-                            show_bombardment = false;
-                            show_death_star = false;
-                            show_loyalty = false;
-                            $flag = true; // restore after blanket clear
+                        let was_open = $flag;
+                        if !was_open {
+                            for panel in [
+                                &mut show_officers,
+                                &mut show_fleets,
+                                &mut show_manufacturing,
+                                &mut show_missions,
+                                &mut show_research,
+                                &mut show_jedi,
+                                &mut show_bombardment,
+                                &mut show_death_star,
+                                &mut show_loyalty,
+                            ] {
+                                *panel = false;
+                            }
                         }
+                        $flag = !was_open;
                     }
                 };
             }
@@ -1444,10 +1452,8 @@ async fn main() {
                                 None => counts,
                             }
                         });
-                    let attacker_is_alliance = match (alliance_fleet, empire_fleet) {
-                        (false, true) => false,
-                        _ => true,
-                    };
+                    let attacker_is_alliance =
+                        !matches!((alliance_fleet, empire_fleet), (false, true));
                     Some((system, attacker_is_alliance))
                 })
                 .collect();
@@ -1620,7 +1626,7 @@ async fn main() {
                     .characters
                     .values()
                     .find(|c| c.name.contains("Luke"))
-                    .map_or(false, |c| c.heritage_known);
+                    .is_some_and(|c| c.heritage_known);
 
                 for fired in &fired_events {
                     use rebellion_core::events::{
@@ -2745,7 +2751,7 @@ async fn main() {
                         && !is_mouse_button_down(macroquad::input::MouseButton::Right)
                         && map_state.right_click_start.is_some();
                     if (right_released || right_released_wasm) && cam.contains(mx, my) {
-                        let was_drag = map_state.right_click_start.map_or(true, |(sx, sy)| {
+                        let was_drag = map_state.right_click_start.is_none_or(|(sx, sy)| {
                             ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt() > 5.0
                         });
                         if !was_drag {
@@ -3655,6 +3661,10 @@ async fn main() {
 // Panel action handler
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and UI inputs at this existing integration boundary."
+)]
 fn apply_panel_action(
     action: PanelAction,
     world: &mut GameWorld,
@@ -3681,7 +3691,7 @@ fn apply_panel_action(
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
-    #[cfg(not(target_arch = "wasm32"))] sounds_dir: &Path,
+    #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
 ) {
     match action {
         PanelAction::SelectFaction(_) => {
@@ -4048,50 +4058,50 @@ fn apply_panel_action(
         }
         PanelAction::FireDeathStar { system } => {
             // Use DeathStarSystem::fire() for precondition validation (guards from Ghidra RE).
-            if let Some(evt) = DeathStarSystem::fire(&death_star_state, world, system, clock.tick) {
-                if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. } = evt {
-                    let name = world
-                        .systems
-                        .get(system)
-                        .map(|s| s.name.clone())
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    if let Some(sys) = world.systems.get_mut(system) {
-                        sys.is_destroyed = true;
-                    }
-                    victory_state.death_star_location = Some(system);
-                    // Drain the telemetry out-param into the message log so
-                    // interactive play surfaces the killed characters
-                    // immediately; the run_simulation_tick flow does the same
-                    // via the `PerceptionIntegrator`.
-                    let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
-                    rebellion_core::death_star::cleanup_destroyed_system(
-                        world,
-                        system,
-                        movement_state,
-                        death_star_state,
-                        mfg_state,
-                        blockade_state,
-                        &mut cleanup_effects,
-                    );
-                    for effect in cleanup_effects.drain(..) {
-                        if let rebellion_core::effects::GameEffect::CharacterKilled { character } =
-                            effect
-                        {
-                            if let Some(c) = world.characters.get(character) {
-                                msg_log.push(GameMessage::new(
-                                    clock.tick,
-                                    format!("{} has been killed.", c.name),
-                                    MessageCategory::Event,
-                                ));
-                            }
+            if let Some(rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. }) =
+                DeathStarSystem::fire(death_star_state, world, system, clock.tick)
+            {
+                let name = world
+                    .systems
+                    .get(system)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                if let Some(sys) = world.systems.get_mut(system) {
+                    sys.is_destroyed = true;
+                }
+                victory_state.death_star_location = Some(system);
+                // Drain the telemetry out-param into the message log so
+                // interactive play surfaces the killed characters
+                // immediately; the run_simulation_tick flow does the same
+                // via the `PerceptionIntegrator`.
+                let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
+                rebellion_core::death_star::cleanup_destroyed_system(
+                    world,
+                    system,
+                    movement_state,
+                    death_star_state,
+                    mfg_state,
+                    blockade_state,
+                    &mut cleanup_effects,
+                );
+                for effect in cleanup_effects.drain(..) {
+                    if let rebellion_core::effects::GameEffect::CharacterKilled { character } =
+                        effect
+                    {
+                        if let Some(c) = world.characters.get(character) {
+                            msg_log.push(GameMessage::new(
+                                clock.tick,
+                                format!("{} has been killed.", c.name),
+                                MessageCategory::Event,
+                            ));
                         }
                     }
-                    msg_log.push(GameMessage::new(
-                        clock.tick,
-                        format!("{} DESTROYED by Death Star superlaser!", name),
-                        MessageCategory::Combat,
-                    ));
                 }
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("{} DESTROYED by Death Star superlaser!", name),
+                    MessageCategory::Combat,
+                ));
             }
         }
         PanelAction::MoveDeathStar { system } => {
@@ -5066,6 +5076,10 @@ fn apply_tactical_results(
     troop_transport.destroy_untransportable_cargo(world);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and UI inputs at this existing integration boundary."
+)]
 fn apply_ai_actions(
     actions: &[AIAction],
     rolls: &[f64],

@@ -285,9 +285,7 @@ impl BattleSession {
         fighters: &mut Vec<TacticalFighter>,
     ) {
         let fleet = &world.fleets[fleet_key];
-        let mut ship_idx = 0;
-
-        for ship in fleet.capital_ships.iter().filter(|s| s.alive) {
+        for (ship_idx, ship) in fleet.capital_ships.iter().filter(|s| s.alive).enumerate() {
             let class = &world.capital_ship_classes[ship.class];
             let sprite_id = Self::class_to_sprite_id(class.dat_id.index());
 
@@ -326,7 +324,6 @@ impl BattleSession {
                 retreat_progress: 0.0,
                 retreated: false,
             });
-            ship_idx += 1;
         }
 
         for entry in &fleet.fighters {
@@ -531,7 +528,7 @@ impl BattleSession {
         self.weapon_effects.extend(new_effects);
 
         // Phase: Shield regeneration (every 3 ticks).
-        if self.combat_tick % 3 == 0 {
+        if self.combat_tick.is_multiple_of(3) {
             for ship in &mut self.ships {
                 if ship.alive && ship.shield < ship.shield_max {
                     // Regen ~5% of max shields per 3 ticks.
@@ -542,7 +539,7 @@ impl BattleSession {
         }
 
         // Phase: Fighter engagement (every 2 ticks).
-        if self.combat_tick % 2 == 0 {
+        if self.combat_tick.is_multiple_of(2) {
             self.fighter_step();
         }
 
@@ -1006,6 +1003,10 @@ pub fn draw_tactical_view(
             );
         }
 
+        #[expect(
+            clippy::manual_clamp,
+            reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
+        )]
         let font_size = (12.0 * scale).max(8.0).min(14.0) as u16;
         let label = &ship.name;
         let dims = measure_text(label, None, font_size, 1.0);
@@ -1060,6 +1061,10 @@ pub fn draw_tactical_view(
         );
 
         let label = format!("x{}", fighter.squad_count);
+        #[expect(
+            clippy::manual_clamp,
+            reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
+        )]
         let font_size = (10.0 * scale).max(7.0).min(12.0) as u16;
         draw_text(&label, fx + half + 2.0, fy + 4.0, font_size as f32, color);
     }
@@ -1118,7 +1123,7 @@ pub fn draw_tactical_view(
     }
 
     // Collect ship info for the selected ship before mutable borrow.
-    let selected_info: Option<(String, Option<u32>, i32, i32, i32, i32, bool)> = selected_ship
+    let selected_info = selected_ship
         .and_then(|idx| session.ships.get(idx))
         .map(|s| {
             (

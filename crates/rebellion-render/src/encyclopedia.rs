@@ -177,11 +177,9 @@ pub fn draw_encyclopedia(
                     ("Characters", EncyclopediaTab::Characters),
                     ("Systems", EncyclopediaTab::Systems),
                 ] {
-                    if ui.selectable_label(state.tab == tab, label).clicked() {
-                        if state.tab != tab {
-                            state.tab = tab;
-                            state.selected_index = 0;
-                        }
+                    if ui.selectable_label(state.tab == tab, label).clicked() && state.tab != tab {
+                        state.tab = tab;
+                        state.selected_index = 0;
                     }
                 }
             });
@@ -648,7 +646,7 @@ fn load_image_bytes(
     let color_image =
         egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
 
-    let handle = ctx.load_texture(&format!("edata_{}", edata_n), color_image, texture_options);
+    let handle = ctx.load_texture(format!("edata_{}", edata_n), color_image, texture_options);
 
     Some(handle)
 }

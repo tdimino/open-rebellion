@@ -137,12 +137,12 @@ fn draw_empire_view(
             // Find enemy systems at fleet location
             let current_system = world.systems.get(fleet.location);
             if let Some(system) = current_system {
-                let is_enemy = match system.control {
+                let is_enemy = matches!(
+                    system.control,
                     rebellion_core::world::ControlKind::Controlled(
                         rebellion_core::dat::Faction::Alliance,
-                    ) => true,
-                    _ => false,
-                };
+                    )
+                );
 
                 if system.is_destroyed {
                     ui.label(

@@ -15,7 +15,7 @@
 //!    - Target system is not already destroyed (`!system.is_destroyed`).
 //!    - Death Star fleet is present at that system.
 //!    - Target is enemy-controlled (Empire Death Star → non-Empire system).
-//!    On success emits `PlanetDestroyed`.  Caller sets `system.is_destroyed = true`.
+//!      On success emits `PlanetDestroyed`.  Caller sets `system.is_destroyed = true`.
 //!
 //! # Advance contract
 //! `DeathStarSystem::advance()` never mutates `GameWorld`.
@@ -391,7 +391,7 @@ pub fn cleanup_destroyed_system(
     if death_star
         .under_construction
         .as_ref()
-        .map_or(false, |c| c.system == system)
+        .is_some_and(|c| c.system == system)
     {
         death_star.under_construction = None;
     }

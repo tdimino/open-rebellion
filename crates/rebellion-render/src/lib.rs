@@ -382,7 +382,7 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
     if (right_released || right_released_wasm) && in_viewport {
         // Reset held counter on either release path.
         state.right_click_held_frames = 0;
-        let was_drag = state.right_click_start.map_or(true, |(sx, sy)| {
+        let was_drag = state.right_click_start.is_none_or(|(sx, sy)| {
             let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
             dist > 5.0
         });

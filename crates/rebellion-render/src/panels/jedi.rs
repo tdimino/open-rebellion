@@ -28,7 +28,7 @@ pub fn draw_jedi(
     ctx: &egui::Context,
     world: &GameWorld,
     jedi_state: &JediState,
-    state: &mut JediPanelState,
+    _state: &mut JediPanelState,
     player_faction: MissionFaction,
 ) -> Option<PanelAction> {
     let mut action = None;

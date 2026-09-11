@@ -140,9 +140,8 @@ impl BetrayalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::DatId;
     use crate::tick::TickEvent;
-    use crate::world::{Character, ForceTier, GameWorld, MstbEntry, MstbTable, SkillPair};
+    use crate::world::{Character, GameWorld, MstbEntry, MstbTable, SkillPair};
 
     fn skill_pair(base: u32) -> SkillPair {
         SkillPair { base, variance: 0 }

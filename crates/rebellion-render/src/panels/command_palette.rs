@@ -108,7 +108,7 @@ impl CommandPaletteState {
                     results.push((i, score));
                 }
             }
-            results.sort_by(|a, b| b.1.cmp(&a.1));
+            results.sort_by_key(|a| std::cmp::Reverse(a.1));
             self.filtered_indices = results;
         }
 
@@ -125,6 +125,12 @@ impl CommandPaletteState {
         self.filtered_indices
             .get(self.selected_index)
             .and_then(|(idx, _)| self.commands.get(*idx))
+    }
+}
+
+impl Default for CommandPaletteState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -826,7 +826,7 @@ mod tests {
     use crate::events::{EventState, EventSystem};
     use crate::tick::TickEvent;
     use crate::world::ControlKind;
-    use crate::world::{Character, Fleet, ForceTier, SkillPair};
+    use crate::world::{Character, Fleet, ForceTier};
 
     fn tick(n: u64) -> Vec<TickEvent> {
         vec![TickEvent { tick: n }]

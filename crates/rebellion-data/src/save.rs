@@ -581,7 +581,7 @@ impl From<&SaveState> for SaveStateV11 {
             repair: (),
             combat_cooldowns: current.combat_cooldowns.clone(),
             game_config: current.game_config.clone(),
-            campaign_config: current.campaign_config.clone(),
+            campaign_config: current.campaign_config,
         }
     }
 }

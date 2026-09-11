@@ -123,18 +123,13 @@ impl VictorySystem {
             return None;
         }
 
-        for outcome in Self::headquarters_objectives(state, world)
+        Self::headquarters_objectives(state, world)
             .into_iter()
             .flatten()
-        {
-            if victory_conditions == VictoryConditions::HeadquartersOnly
-                || Self::standard_leaders_captured(&outcome, world)
-            {
-                return Some(outcome);
-            }
-        }
-
-        None
+            .find(|outcome| {
+                victory_conditions == VictoryConditions::HeadquartersOnly
+                    || Self::standard_leaders_captured(outcome, world)
+            })
     }
 
     /// Apply the headquarters-specific effect of a resolved bombardment.

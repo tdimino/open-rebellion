@@ -685,7 +685,7 @@ fn evaluate_condition(
             // check is defense-in-depth.
             if characters
                 .iter()
-                .any(|c| world.characters.get(*c).map_or(true, |ch| ch.is_killed))
+                .any(|c| world.characters.get(*c).is_none_or(|ch| ch.is_killed))
             {
                 return false;
             }
@@ -700,7 +700,7 @@ fn evaluate_condition(
                         world
                             .fleets
                             .get(*fk)
-                            .map_or(false, |f| f.characters.contains(ch))
+                            .is_some_and(|f| f.characters.contains(ch))
                     });
                     if in_fleet {
                         return true;
@@ -709,7 +709,7 @@ fn evaluate_condition(
                     world
                         .characters
                         .get(*ch)
-                        .map_or(false, |c| c.current_system == Some(sys_key))
+                        .is_some_and(|c| c.current_system == Some(sys_key))
                 })
             })
         }
@@ -778,7 +778,7 @@ mod tests {
     use super::*;
     use crate::tick::TickEvent;
     use crate::world::ControlKind;
-    use crate::world::{Character, ForceTier, SkillPair};
+    use crate::world::{Character, ForceTier};
 
     fn make_world() -> GameWorld {
         GameWorld::default()
@@ -1504,8 +1504,6 @@ mod tests {
 
     #[test]
     fn characters_co_located_false_for_nonexistent_character() {
-        use crate::dat::{ExplorationStatus, Faction};
-
         let mut world = make_world();
         let luke = world
             .characters
@@ -1848,7 +1846,7 @@ mod tests {
         // clears current_system + current_fleet, so the fleet-roster and
         // current_system paths both fail — plus we explicitly short-circuit
         // at the top of the condition as defense-in-depth.
-        use crate::dat::{ExplorationStatus, Faction};
+        use crate::dat::ExplorationStatus;
 
         let mut world = make_world();
         let sector_key = world.sectors.insert(crate::world::Sector {

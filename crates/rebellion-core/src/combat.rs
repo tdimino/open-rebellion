@@ -168,6 +168,10 @@ impl CombatSystem {
     /// - Does NOT mutate `world`. All fleet state changes are returned as events.
     /// - `rng_rolls`: caller-provided uniform [0,1) values consumed in order.
     ///   Budget: ~4 rolls per ship per phase. Pass `fleet_size * 16` rolls minimum.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
     pub fn resolve_space(
         world: &GameWorld,
         attacker: FleetKey,
@@ -229,7 +233,7 @@ impl CombatSystem {
         let emperor_in_fleet = |fk: FleetKey| -> bool {
             let fleet = &world.fleets[fk];
             fleet.characters.iter().any(|&ck| {
-                world.characters.get(ck).map_or(false, |c| {
+                world.characters.get(ck).is_some_and(|c| {
                     !c.is_alliance && (c.name.contains("Palpatine") || c.name.contains("Emperor"))
                 })
             })
@@ -362,7 +366,7 @@ impl CombatSystem {
         world: &GameWorld,
         firing_fleet: FleetKey,
         firing: &[ShipSnap],
-        targets: &mut Vec<ShipSnap>,
+        targets: &mut [ShipSnap],
         rng: &mut impl Iterator<Item = f64>,
     ) {
         let fleet = &world.fleets[firing_fleet];
@@ -584,14 +588,18 @@ impl CombatSystem {
     ///
     /// Family 0x71 exactly entities trigger alt_shield_path (C++ +0x78 bit7 = true).
     /// Dead fighters with +0x50 & 0x08 still count for phase-7 alive check.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
     fn phase_fighter_engage(
         world: &GameWorld,
         attacker: FleetKey,
         defender: FleetKey,
-        atk_fighters: &mut Vec<u32>,
-        def_fighters: &mut Vec<u32>,
-        atk_ships: &mut Vec<ShipSnap>,
-        def_ships: &mut Vec<ShipSnap>,
+        atk_fighters: &mut [u32],
+        def_fighters: &mut [u32],
+        atk_ships: &mut [ShipSnap],
+        def_ships: &mut [ShipSnap],
         rng: &mut impl Iterator<Item = f64>,
     ) {
         let atk_system_based_fighters = atk_ships.is_empty();
@@ -663,7 +671,7 @@ impl CombatSystem {
     fn fighters_attack_ships(
         squadrons: &[u32],
         fleet: &crate::world::Fleet,
-        enemy_ships: &mut Vec<ShipSnap>,
+        enemy_ships: &mut [ShipSnap],
         world: &GameWorld,
         rng: &mut impl Iterator<Item = f64>,
     ) {
@@ -735,7 +743,7 @@ impl CombatSystem {
         world: &GameWorld,
         fleet_key: FleetKey,
         ship_snaps: &[ShipSnap],
-        enemy_fighters: &mut Vec<u32>,
+        enemy_fighters: &mut [u32],
         rng: &mut impl Iterator<Item = f64>,
     ) {
         if enemy_fighters.iter().all(|&count| count == 0) {
@@ -779,9 +787,9 @@ impl CombatSystem {
     /// The power ratio determines the loss rate for each side. Higher maneuverability
     /// grants evasion advantage, reducing losses taken.
     fn fighter_dogfight(
-        atk_launched: &mut Vec<u32>,
+        atk_launched: &mut [u32],
         atk_fleet: &crate::world::Fleet,
-        def_launched: &mut Vec<u32>,
+        def_launched: &mut [u32],
         def_fleet: &crate::world::Fleet,
         world: &GameWorld,
         rng: &mut impl Iterator<Item = f64>,
@@ -863,7 +871,7 @@ impl CombatSystem {
     /// `originally_launched`: per-squadron counts that were actually deployed (from
     /// `launch_fighters`). Squads with 0 launched were grounded and are preserved.
     fn recall_fighters(
-        fleet_fighters: &mut Vec<u32>,
+        fleet_fighters: &mut [u32],
         launched_survivors: &[u32],
         originally_launched: &[u32],
         carrier_capacity: u32,
@@ -883,7 +891,7 @@ impl CombatSystem {
         }
     }
 
-    fn apply_fighter_losses(squadrons: &mut Vec<u32>, mut losses: u32) {
+    fn apply_fighter_losses(squadrons: &mut [u32], mut losses: u32) {
         for count in squadrons.iter_mut().rev() {
             if losses == 0 {
                 break;
@@ -894,6 +902,10 @@ impl CombatSystem {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
+    )]
     fn build_space_result(
         attacker: FleetKey,
         defender: FleetKey,
@@ -2761,10 +2773,6 @@ mod tests {
         let def2_2 = make_troop(&mut world2, sys2, false);
 
         // Add a fleet with an officer (combat.base = 80)
-        let sp = SkillPair {
-            base: 0,
-            variance: 0,
-        };
         let officer = world2.characters.insert(Character {
             dat_id: DatId::new(0x08000001),
             name: "Admiral Ackbar".into(),
@@ -2862,7 +2870,7 @@ mod tests {
             ..CapitalShipClass::default()
         });
 
-        let target_class = make_class(&mut world, 200, 1);
+        let _target_class = make_class(&mut world, 200, 1);
 
         // Strong attacker
         let strong_fleet = make_fleet(&mut world, sys, strong_class, 1, false);

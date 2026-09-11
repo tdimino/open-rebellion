@@ -53,7 +53,6 @@ const GNPRTB_KDY_CAPSHIP_PENALTY: u16 = 7684; // =5: KDY production penalty per 
 const GNPRTB_KDY_FIGHTER_PENALTY: u16 = 7685; // =2: KDY production penalty per fighter
 const GNPRTB_ENERGY_CONTROL_THRESHOLD: u16 = 7760; // =60: energy needed for control eligibility
 const GNPRTB_MAINTENANCE_RATE_CONTROLLED: u16 = 7694; // =30: ticks between maintenance checks (controlled)
-const GNPRTB_MAINTENANCE_RATE_NEUTRAL: u16 = 7696; // =30: ticks between maintenance checks (neutral)
 
 // ---------------------------------------------------------------------------
 // Economy state
@@ -432,16 +431,15 @@ impl EconomySystem {
             // We apply to all controlled systems — modifier is 100 when no ships, harmless.
             // Note: uses alive ship counts per fleet, not fleet object counts.
             // The original iterates fleet ship lists and sums individual hull entries.
-            let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty) as i32;
-            let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty) as i32;
+            let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty);
+            let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty);
             let total_capships =
                 presence.alliance_capships as i32 + presence.empire_capships as i32;
             let total_fighters =
                 presence.alliance_fighters as i32 + presence.empire_fighters as i32;
             let new_prod_mod =
                 (100 - total_capships * capship_penalty - total_fighters * fighter_penalty)
-                    .max(0)
-                    .min(100) as i8;
+                    .clamp(0, 100) as i8;
 
             // 5. Troop-based side resolution (FUN_0050a780_system_join_side).
             // Original resolves controlling faction every tick from troop presence.
@@ -479,7 +477,7 @@ impl EconomySystem {
             // transition is detected against the PREVIOUS tick's flag, then
             // the flag is updated. This prevents panic-reemission if the
             // downstream handler flips state back (SF-#8).
-            let new_flags = evaluate_incident_flags(sys, &eco.summary, &eco);
+            let new_flags = evaluate_incident_flags(sys, &eco.summary, eco);
             let old_flags = &eco.incident_flags;
             if new_flags.uprising && !old_flags.uprising {
                 events.push(EconomyEvent::IncidentTriggered {
@@ -697,15 +695,15 @@ fn calculate_support_drift(
 ) -> (f32, f32) {
     // All computation in integer 0-100 to match original (FUN_005583c0).
     // Our popularity fields are f32 0.0-1.0; convert at boundary.
-    let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1) as i32;
-    let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1) as i32;
-    let troop_influence = gnprtb.value(GNPRTB_TROOP_INFLUENCE, difficulty).max(1) as i32;
-    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty) as i32; // 40
-    let threshold_1 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_1, difficulty) as i32; // 20
-    let threshold_2 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_2, difficulty) as i32; // 30
-    let base_low = gnprtb.value(GNPRTB_DRIFT_BASE_LOW, difficulty) as i32; // 75
-    let base_low_mid = gnprtb.value(GNPRTB_DRIFT_BASE_LOW_MID, difficulty) as i32; // 50
-    let base_mid = gnprtb.value(GNPRTB_DRIFT_BASE_MID, difficulty) as i32; // 25
+    let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1);
+    let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1);
+    let troop_influence = gnprtb.value(GNPRTB_TROOP_INFLUENCE, difficulty).max(1);
+    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty); // 40
+    let threshold_1 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_1, difficulty); // 20
+    let threshold_2 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_2, difficulty); // 30
+    let base_low = gnprtb.value(GNPRTB_DRIFT_BASE_LOW, difficulty); // 75
+    let base_low_mid = gnprtb.value(GNPRTB_DRIFT_BASE_LOW_MID, difficulty); // 50
+    let base_mid = gnprtb.value(GNPRTB_DRIFT_BASE_MID, difficulty); // 25
 
     let is_alliance_controlled = matches!(
         sys.control,
@@ -764,7 +762,7 @@ fn calculate_support_drift(
     // troop count is multiplied by GNPRTB[7680] (=2).
     // This doubles troop suppression effectiveness for the Empire.
     let adjusted_troops = if is_empire_controlled && strong_support {
-        let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1) as i32;
+        let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1);
         friendly_troops as i32 * empire_mult
     } else {
         friendly_troops as i32
@@ -792,15 +790,6 @@ fn calculate_support_drift(
 }
 
 // ---------------------------------------------------------------------------
-// Collection rate (FUN_00558390)
-// ---------------------------------------------------------------------------
-
-/// Calculate resource collection rate from popular support.
-///
-/// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`
-/// Higher support = lower collection rate (less taxation needed).
-/// Range: [1.0, 100.0]. At full support (1.0) rate = 1.0; at zero support rate = 100.0.
-// ---------------------------------------------------------------------------
 // Resource capacity (FUN_00509ed0 + FUN_00509ef0 + FUN_0050a220)
 // ---------------------------------------------------------------------------
 
@@ -824,7 +813,7 @@ fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) 
             world
                 .production_facilities
                 .get(**k)
-                .map_or(false, |f| f.is_mine)
+                .is_some_and(|f| f.is_mine)
         })
         .count() as u32;
 
@@ -903,7 +892,7 @@ fn compute_system_summary(
         world
             .manufacturing_facilities
             .get(*k)
-            .map_or(false, |f| f.is_shipyard)
+            .is_some_and(|f| f.is_shipyard)
     });
 
     // FUN_0050add0/af70/b4c0: fleet posture (3 passes)
@@ -923,7 +912,7 @@ fn compute_system_summary(
     // Bit 11 of field_0x88: "strong support" — set when controlling faction's
     // support exceeds the drift threshold. Controls Empire troop doubling in
     // FUN_005582e0_adjust_value_for_strong_support.
-    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty) as i32;
+    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty);
     let controlling_support = match sys.control {
         ControlKind::Controlled(crate::dat::Faction::Alliance) => {
             (sys.popularity_alliance * 100.0).round() as i32
@@ -986,13 +975,17 @@ fn evaluate_incident_flags(
     }
 }
 
+/// Calculate resource collection rate from popular support.
+///
+/// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`.
+/// Higher support means a lower collection rate (less taxation needed).
 fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8) -> f32 {
     // Original: FUN_0053c8d0_calculate_percentage(GNPRTB[7763], 100, support)
     //         = (100 * GNPRTB[7763]) / max(support_int, 1)
     //         = 10000 / support_int  (with stock GNPRTB[7763]=100)
     // Result: integer percentage (100 at full support, 10000 at near-zero).
     // Higher values = higher taxation burden on the system.
-    let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1) as i32;
+    let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1);
     let support_int = (support * 100.0).round() as i32;
     let support_clamped = support_int.max(1);
     let rate = (100 * base) / support_clamped;
@@ -1015,11 +1008,11 @@ fn calculate_garrison_requirement(
     // Integer arithmetic matching FUN_005587d0_uprising_threshold + FUN_00558760_garrison_requirement.
     // Our support is f32 0.0-1.0; convert to integer 0-100.
     let support_int = (support * 100.0).round() as i32;
-    let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty) as i32; // 60
+    let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty); // 60
     let divisor = gnprtb
         .value(GNPRTB_GARRISON_DIVISOR, difficulty)
         .abs()
-        .max(1) as i32; // 10
+        .max(1); // 10
 
     if support_int >= threshold {
         return 0;
@@ -1033,7 +1026,7 @@ fn calculate_garrison_requirement(
     // Original: if Empire + param_3: garrison /= GNPRTB[7680]
     let after_faction = match control {
         ControlKind::Controlled(crate::dat::Faction::Empire) => {
-            let empire_divisor = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1) as i32;
+            let empire_divisor = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1);
             raw / empire_divisor
         }
         _ => raw,
@@ -1046,7 +1039,7 @@ fn calculate_garrison_requirement(
         ControlKind::Uprising(_) => {
             let uprising_mult = gnprtb
                 .value(GNPRTB_UPRISING_GARRISON_MULT, difficulty)
-                .max(1) as i32;
+                .max(1);
             after_faction * uprising_mult
         }
         _ => after_faction,
@@ -1528,9 +1521,11 @@ mod tests {
     #[test]
     fn economy_advance_skips_destroyed_systems() {
         let mut state = EconomyState::default();
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
-        let sys_key = world.systems.insert(crate::world::System {
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
+        let _sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
             name: "Destroyed".into(),
             sector: SectorKey::default(),
@@ -1565,8 +1560,10 @@ mod tests {
     #[test]
     fn economy_advance_produces_telemetry() {
         let mut state = EconomyState::default();
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let _sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
             name: "Coruscant".into(),
@@ -1602,8 +1599,10 @@ mod tests {
 
     #[test]
     fn kdy_production_modifier_reduces_with_ships() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -1668,8 +1667,10 @@ mod tests {
 
     #[test]
     fn kdy_production_modifier_floors_at_zero() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -1733,8 +1734,10 @@ mod tests {
 
     #[test]
     fn energy_overcap_emits_event() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -1826,8 +1829,10 @@ mod tests {
 
     #[test]
     fn no_overcap_when_within_limits() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -1890,8 +1895,10 @@ mod tests {
 
     #[test]
     fn raw_material_overcap_emits_event() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -1990,8 +1997,10 @@ mod tests {
 
     #[test]
     fn incident_fires_on_state_transition() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -2051,8 +2060,10 @@ mod tests {
 
     #[test]
     fn informant_incident_on_garrison_shortfall() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -2106,8 +2117,10 @@ mod tests {
 
     #[test]
     fn system_summary_troop_surplus() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -2166,8 +2179,10 @@ mod tests {
 
     #[test]
     fn system_summary_fleet_posture() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),
@@ -2501,8 +2516,10 @@ mod tests {
     #[test]
     fn unpopulated_system_skipped_in_advance() {
         let gnprtb = stock_gnprtb();
-        let mut world = GameWorld::default();
-        world.gnprtb = gnprtb;
+        let mut world = GameWorld {
+            gnprtb,
+            ..Default::default()
+        };
         let _sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
             name: "Unpopulated".into(),
@@ -2637,8 +2654,10 @@ mod tests {
     #[test]
     fn fleet_posture_contested_requires_two_per_side() {
         let gnprtb = stock_gnprtb();
-        let mut world = GameWorld::default();
-        world.gnprtb = gnprtb;
+        let world = GameWorld {
+            gnprtb,
+            ..Default::default()
+        };
 
         let sys = crate::world::System {
             dat_id: DatId(0),
@@ -2716,8 +2735,10 @@ mod tests {
         control: ControlKind,
         is_populated: bool,
     ) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: DatId(0),
             name: "S".into(),

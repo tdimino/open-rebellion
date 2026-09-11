@@ -198,8 +198,7 @@ impl MessageLog {
         use std::io::Write;
         let mut file = std::fs::File::create(path)?;
         for msg in &self.messages {
-            let json = serde_json::to_string(msg)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let json = serde_json::to_string(msg).map_err(std::io::Error::other)?;
             writeln!(file, "{}", json)?;
         }
         Ok(())

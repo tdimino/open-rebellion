@@ -829,16 +829,8 @@ mod tests {
     use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::DatId;
     use crate::world::{
-        CapitalShipClass, Character, Fleet, ForceTier, GameWorld, Sector, ShipInstance, SkillPair,
-        System, TroopUnit,
+        CapitalShipClass, Character, Fleet, GameWorld, Sector, ShipInstance, System, TroopUnit,
     };
-
-    fn zero_skill() -> SkillPair {
-        SkillPair {
-            base: 0,
-            variance: 0,
-        }
-    }
 
     fn test_character(name: &str, hyperdrive_modifier: i16) -> Character {
         Character {
@@ -1115,7 +1107,7 @@ mod tests {
             has_death_star: false,
         };
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
-        assert!(t >= 10 && t <= 12, "expected ~11, got {}", t);
+        assert!((10..=12).contains(&t), "expected ~11, got {}", t);
     }
 
     #[test]
@@ -1208,7 +1200,11 @@ mod tests {
         };
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
         // No bonus, base ~11
-        assert!(t >= 10 && t <= 12, "expected ~11 with no bonus, got {}", t);
+        assert!(
+            (10..=12).contains(&t),
+            "expected ~11 with no bonus, got {}",
+            t
+        );
     }
 
     #[test]
