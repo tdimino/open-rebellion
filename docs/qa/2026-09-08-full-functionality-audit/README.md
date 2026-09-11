@@ -44,6 +44,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Main-menu semantics proof](evidence/2026-09-09-main-menu-semantics.md) | Fourteen authentic semantic hotspots, selection state, cyclic keyboard focus, shared actions/SFX, destination lifecycle, and Astra browser acceptance. |
 | [Main-menu music and final visual proof](evidence/2026-09-09-main-menu-music-toggle.md) | Original-button absence proof, documented holographic extension, native acceptance, and Astra 10/10 browser evidence. |
 | [Authentic faction-advisor proof](evidence/2026-09-10-authentic-droid-advisors.md) | Type-302 extraction and decoding, native/WASM transport, both factions, corruption containment, and Astra browser evidence. |
+| [Faithful-HD foundation proof](evidence/2026-09-10-faithful-hd-foundation.md) | Explicit render profiles, manifest provenance, verified-byte decoding, fail-closed fallback, and Astra browser-regression evidence for P45A. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

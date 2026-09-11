@@ -172,18 +172,23 @@ Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 - [x] Expose all 14 authentic controls through clipped browser semantics while preserving the bitmap-only presentation, exact Rust action/SFX paths, and four-request startup. All 502 tests pass; Astra-medium verified 84/84 focus transitions and all browser gates in [F-016D](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-semantics.md). The then-open native visual gate closes in F-016E below.
 - [x] Complete F-016E and P03: add a clearly documented, non-original 30×22 music-only cockpit control using Fable-reviewed Jiff Gorda/SWG Project Thorn cues; preserve SFX while muted; complete native visual acceptance; and pass Astra-medium 10/10 across four viewports, exact hit geometry, semantics, audio, navigation, and error gates. All 504 tests pass ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-music-toggle.md)).
 
-8-model shootout completed (2026-04-14). **UltraSharp V2** (DAT2, Spandrel+MPS) won all 5 categories (portraits, ships, sprites, UI, events). Batch pipeline built. 235/2,231 DLL BMPs upscaled so far.
+The April 2026 model shootout remains comparison evidence, but its universal
+UltraSharp conclusion is superseded by the
+[faithful-HD plan](../docs/plans/2026-09-10-faithful-hd-pipeline/). Original
+pixels are now the default parity profile. Optional HD uses reviewed manifests
+and family-specific routing.
 
 ```bash
-python3 scripts/local-upscale-batch.py          # Resume bulk upscale (skips existing)
+uv run scripts/faithful_hd_pipeline.py generate # Deterministic candidate generation
+uv run scripts/faithful_hd_pipeline.py verify   # Hash and reconstruction gates
 python3 scripts/model-shootout.py --html-only    # Regenerate comparison at data/hd/shootout/comparison.html
 ```
 
 | Item | Status |
 |------|--------|
-| Model shootout (8 models × 20 BMPs) | COMPLETE — UltraSharp V2 winner |
-| Batch pipeline (`local-upscale-batch.py`) | COMPLETE |
-| DLL BMP upscaling (2,231 total) | 235/2,231 (10.5%) |
+| Historical model shootout (8 models × 20 BMPs) | COMPLETE; preference evidence only |
+| Explicit profiles and manifest foundation | COMPLETE under P45A; [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-faithful-hd-foundation.md) |
+| Complete-family learned-model comparison | PENDING under P45B |
 | EData encyclopedia images (~330) | NOT STARTED |
 
 ### Knesset Kothar wa Khasis. Historical implementation (2026-04-07)
@@ -469,7 +474,11 @@ would tune around known simulation feedback defects.
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
 - [ ] Add Brotli compression plus bounded raw-byte and decoded-texture caches to the verified runtime-pack foundation.
-- [ ] Include HD assets; enable high DPI; use one egui pass; cache sector geometry.
+- [ ] Complete P45 faithful-HD modernization. P45A is complete: original parity
+  is separate from opt-in HD, manifests are source-bound, and deterministic
+  indexed scaling plus fail-closed fallback are verified. P45B-P45E own complete-family model evaluation, protected masks,
+  optional browser packs, and cross-browser acceptance.
+- [ ] Enable high DPI; use one egui pass; cache sector geometry.
 - [ ] Move saves from synchronous base64 `localStorage` to compressed asynchronous IndexedDB.
 - [ ] Add authored advisor voice and preemption after user gesture; advisor idle
   assets are now staged from a contributor-owned installation.

@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Tests-582%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-592%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>
@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-10):** All 582 workspace tests pass. The shuttle menu, save v13, native/WASM replay, troop dispatch, occupation, victory contract, and original faction-advisor idle frames are verified. The remaining replacement controls, galaxy drawing, system windows, advisor actions and voice, capture/evasion, multiplayer, and release gates are tracked in the [interface](docs/qa/2026-09-10-interface-parity-audit/) and [functionality](docs/qa/2026-09-08-full-functionality-audit/) audits.
+> **Verification (2026-09-10):** All 592 workspace tests pass. The shuttle menu, save v13, native/WASM replay, troop dispatch, occupation, victory contract, and original faction-advisor idle frames are verified. The remaining replacement controls, galaxy drawing, system windows, advisor actions and voice, capture/evasion, multiplayer, and release gates are tracked in the [interface](docs/qa/2026-09-10-interface-parity-audit/) and [functionality](docs/qa/2026-09-08-full-functionality-audit/) audits.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|
@@ -183,7 +183,7 @@ These rows record delivered implementation work, not final parity or release acc
 | **AI Behavior Coverage** | Implemented | 18/18 dispatch validators, troop deployment, Death Star multi-target, reconnaissance |
 | **UI Reconstruction** | In Progress | Shuttle menu verified; 43 original surface families and 370 references cataloged for exact reconstruction |
 | **Story and Runtime Integration** | Implemented | Cutscene state machine, Emperor modifier, type-302 advisor idle frames, mission telemetry |
-| **HD Visual Polish** | In Progress | UltraSharp V2 upscaling—235/2,231 DLL BMPs done |
+| **HD Visual Polish** | In Progress | Explicit original/HD profiles, reviewed manifests, and family-specific scaling |
 
 **Ghidra RE corpus.** 5,127 functions decompiled from `REBEXE.EXE`, combat formulas decoded, 111 GNPRTB parameters mapped, and the C++ class hierarchy reconstructed. See `ghidra/notes/` for the implementation-focused corpus (7 scholar documents, 4,179 lines).
 
@@ -217,7 +217,7 @@ The local extraction inventory converts the original game's resource DLLs and me
 | Entity names | 511 string bundles | UTF-16 → text | TEXTSTRA.DLL via pelite |
 | Encyclopedia text | 348 entries | RT_RCDATA | ENCYTEXT.DLL |
 
-HD upscaling uses **UltraSharp V2** (DAT2 architecture via Spandrel + Apple Silicon MPS)—selected via an 8-model shootout that tested Real-ESRGAN, PBRify, UltraSharp, GTAV_dither, FSDedither Riven, Vertex AI Imagen 4.0, Topaz Gigapixel CGI, and classical palette reconstruction. UltraSharp V2 won all five asset categories (portraits, ships, sprites, UI, events) by preserving the original 1998 pre-rendered CGI aesthetic without photorealizing. Free, local, ~0.5s/image on M4 Max.
+The [faithful-HD plan](docs/plans/2026-09-10-faithful-hd-pipeline/) keeps original pixels as the default parity profile. Optional HD assets require deterministic provenance, explicit review, and family-specific routing; generative restoration remains a separate experimental mode.
 
 Additional pipelines:
 

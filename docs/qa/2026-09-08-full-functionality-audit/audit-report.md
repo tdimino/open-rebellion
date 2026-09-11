@@ -190,24 +190,29 @@ cross-runtime proof remain open
   state, delete the slot, and verify disk/browser storage changes. Browser is
   verified; retain a native GUI restart smoke test in P31.
 
-### F-002: Native HD bitmap root does not match the asset layout
+### F-002: Native faithful-HD acceptance remains open
 
 - Severity: P1
-- Status: implemented; display/fallback acceptance pending
-- Evidence: the production HD root was corrected after the audit baseline, but
-  the required same-resource override/fallback visual proof remains open.
-- Acceptance: log and render a known HD override, then remove it and prove BMP
-  fallback on the same resource.
+- Status: profile and manifest foundation implemented; visual acceptance pending
+- Evidence: original-parity rendering is now the default, uses nearest sampling,
+  and ignores `data/hd`. Native faithful HD is opt-in and accepts only approved
+  source-bound manifest records. Verified-byte decode, mutation fallback, and
+  original-parity browser regression gates pass in
+  `evidence/2026-09-10-faithful-hd-foundation.md`. Visual acceptance using a
+  reviewed asset from the owned corpus remains open.
+- Acceptance: approve a provenance-complete HD asset, render it in the explicit
+  faithful-HD profile, revoke it, and prove original-BMP fallback on the same
+  resource without changing original-parity output.
 
-### F-003: WASM never prefetches HD override bytes
+### F-003: Browser faithful-HD packs remain absent
 
 - Severity: P1
 - Status: confirmed
-- Evidence: startup inserts `{dll}/{id}` BMP keys, while the renderer searches
-  for `hd/{dll}/{id}` first. The build script does not stage or manifest HD
-  entries.
-- Acceptance: observe a browser HTTP request for a known HD PNG, a successful
-  `hd/...` cache hit, correct dimensions, and the correct on-screen image.
+- Evidence: WASM now fails closed to original parity. The runtime pack does not
+  yet carry approved HD manifest records or optional surface chunks.
+- Acceptance: load a reviewed optional HD surface pack, verify its manifest and
+  source identity, render its approved asset, and atomically fall back to the
+  original family when approval or payload validation fails.
 
 ### F-004: WASM omits troop data prefetch
 

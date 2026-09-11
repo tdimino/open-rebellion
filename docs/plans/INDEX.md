@@ -3,7 +3,7 @@ title: "Plans Index"
 description: "All feature plans, ExecPlans, and design proposals for Open Rebellion"
 category: plan
 created: 2026-03-22
-updated: 2026-03-22
+updated: 2026-09-10
 tags: [index, plans]
 ---
 
@@ -32,6 +32,7 @@ Completed plans live in `completed/`.
 | [Create Your Own Character](2026-03-21-addon-create-your-own-character.md) | addon | planned | 2026-03-21 |
 | [AI Fog of War Proposal](2026-03-22-ai-fog-of-war-proposal.md) | design | draft | 2026-03-22 |
 | [AI Fog of War — Nomos Blueprint](2026-03-22-ai-fog-of-war-nomos-blueprint.md) | design | planned | 2026-03-22 |
+| [Faithful HD Pipeline](2026-09-10-faithful-hd-pipeline/) | feat | foundation complete; P45B–P45E pending | 2026-09-10 |
 
 ## Completed Plans
 

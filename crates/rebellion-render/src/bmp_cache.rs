@@ -15,11 +15,13 @@
 //! e.g. `data/base/ui/strategy-dll/BMP/10553.bmp` on native and
 //! `web/data/ui/strategy-dll/BMP/10553.bmp` on WASM (staged by `build-wasm.sh`)
 //!
-//! HD override PNGs (optional) live at:
+//! Approved HD PNGs (optional) live at:
 //! ```text
 //! {hd_path}/{dll-name}/{resource_id}.png
 //! ```
-//! HD PNGs take priority over original BMPs when present.
+//! They are considered only when [`AssetRenderProfile::FaithfulHd`] is selected.
+//! The default [`AssetRenderProfile::OriginalParity`] always renders the
+//! original staged bytes with nearest-neighbor sampling.
 //!
 //! # WASM
 //!
@@ -37,6 +39,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use egui_macroquad::egui::{self, TextureHandle, TextureOptions};
+#[cfg(not(target_arch = "wasm32"))]
+use serde::Deserialize;
+#[cfg(not(target_arch = "wasm32"))]
+use sha2::{Digest, Sha256};
 
 #[cfg(target_arch = "wasm32")]
 const DATA_PREFIX: &str = "web/data/base";
@@ -83,6 +89,223 @@ fn get_bmp_bytes(dll_dir: &str, resource_id: u32) -> Option<Vec<u8>> {
 fn get_hd_bytes(dll_dir: &str, resource_id: u32) -> Option<Vec<u8>> {
     let key = format!("hd/{}/{}", dll_dir, resource_id);
     WASM_BMP_CACHE.lock().unwrap().get(&key).cloned()
+}
+
+// ---------------------------------------------------------------------------
+// Render profile
+// ---------------------------------------------------------------------------
+
+/// Selects whether the renderer may substitute reviewed HD assets.
+///
+/// Original parity is intentionally the default. Merely placing a PNG in
+/// `data/hd` must never change parity screenshots or release acceptance.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AssetRenderProfile {
+    /// Decode the original resources and sample them without interpolation.
+    #[default]
+    OriginalParity,
+    /// Prefer manifest-approved HD resources, falling back to the originals.
+    FaithfulHd,
+}
+
+impl AssetRenderProfile {
+    /// Stable configuration value used by the native environment variable and
+    /// future browser-pack manifest.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OriginalParity => "original-parity",
+            Self::FaithfulHd => "faithful-hd",
+        }
+    }
+
+    /// Parse a stable profile value. Unknown values fail closed at the caller.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "original" | "original-parity" | "parity" => Some(Self::OriginalParity),
+            "faithful-hd" | "hd" => Some(Self::FaithfulHd),
+            _ => None,
+        }
+    }
+
+    const fn allows_hd(self) -> bool {
+        matches!(self, Self::FaithfulHd)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssetVariant {
+    Original,
+    FaithfulHd,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Deserialize)]
+struct HdApprovalManifest {
+    schema_version: u32,
+    profile: String,
+    assets: HashMap<String, HdApprovalRecord>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Deserialize)]
+struct HdApprovalRecord {
+    approved: bool,
+    review: Option<HdApprovalReview>,
+    gates: Option<HdApprovalGates>,
+    source: Option<HdApprovalSource>,
+    output: Option<HdApprovalOutput>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Deserialize)]
+struct HdApprovalReview {
+    reviewer: String,
+    evidence: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Deserialize)]
+struct HdApprovalGates {
+    human_review: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Deserialize)]
+struct HdApprovalSource {
+    sha256: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Deserialize)]
+struct HdApprovalOutput {
+    sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ApprovedHdAsset {
+    source_sha256: String,
+    output_sha256: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn approved_hd_assets_from_bytes(
+    bytes: &[u8],
+) -> Result<HashMap<String, ApprovedHdAsset>, String> {
+    let manifest: HdApprovalManifest =
+        serde_json::from_slice(bytes).map_err(|error| format!("invalid HD manifest: {error}"))?;
+    if manifest.schema_version != 1 {
+        return Err(format!(
+            "unsupported HD manifest schema {}",
+            manifest.schema_version
+        ));
+    }
+    if manifest.profile != AssetRenderProfile::FaithfulHd.as_str() {
+        return Err(format!(
+            "HD manifest profile {:?} is not faithful-hd",
+            manifest.profile
+        ));
+    }
+
+    let mut approved = HashMap::new();
+    for (key, record) in manifest.assets {
+        if !record.approved {
+            continue;
+        }
+        let review = record
+            .review
+            .ok_or_else(|| format!("approved HD asset {key:?} has no review record"))?;
+        if review.reviewer.trim().is_empty() || review.evidence.trim().is_empty() {
+            return Err(format!(
+                "approved HD asset {key:?} has incomplete review metadata"
+            ));
+        }
+        let gates = record
+            .gates
+            .ok_or_else(|| format!("approved HD asset {key:?} has no gate record"))?;
+        if gates.human_review != "pass" {
+            return Err(format!(
+                "approved HD asset {key:?} has not passed human review"
+            ));
+        }
+        let source = record
+            .source
+            .ok_or_else(|| format!("approved HD asset {key:?} has no source record"))?;
+        let source_digest = source.sha256.to_ascii_lowercase();
+        if !is_sha256(&source_digest) {
+            return Err(format!(
+                "approved HD asset {key:?} has an invalid source SHA-256"
+            ));
+        }
+        let output = record
+            .output
+            .ok_or_else(|| format!("approved HD asset {key:?} has no output record"))?;
+        let output_digest = output.sha256.to_ascii_lowercase();
+        if !is_sha256(&output_digest) {
+            return Err(format!(
+                "approved HD asset {key:?} has an invalid output SHA-256"
+            ));
+        }
+        approved.insert(
+            key,
+            ApprovedHdAsset {
+                source_sha256: source_digest,
+                output_sha256: output_digest,
+            },
+        );
+    }
+    Ok(approved)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn load_approved_hd_assets(hd_root: &Path) -> HashMap<String, ApprovedHdAsset> {
+    let manifest_path = hd_root.join("manifest.json");
+    match std::fs::read(&manifest_path) {
+        Ok(bytes) => match approved_hd_assets_from_bytes(&bytes) {
+            Ok(assets) => assets,
+            Err(error) => {
+                eprintln!(
+                    "[bmp_cache] ignoring HD manifest path={} error={}",
+                    manifest_path.display(),
+                    error
+                );
+                HashMap::new()
+            }
+        },
+        Err(_) => HashMap::new(),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_verified_file(path: &Path, expected_sha256: &str) -> Option<Vec<u8>> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return None;
+    };
+    let actual = format!("{:x}", Sha256::digest(&bytes));
+    (actual == expected_sha256).then_some(bytes)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn validated_hd_bytes(
+    source_path: &Path,
+    output_path: &Path,
+    approval: &ApprovedHdAsset,
+) -> Option<Vec<u8>> {
+    read_verified_file(source_path, &approval.source_sha256)?;
+    read_verified_file(output_path, &approval.output_sha256)
+}
+
+impl AssetVariant {
+    const fn texture_options(self) -> TextureOptions {
+        match self {
+            Self::Original => TextureOptions::NEAREST,
+            Self::FaithfulHd => TextureOptions::LINEAR,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -698,8 +921,12 @@ pub mod resources {
 pub struct BmpCache {
     /// Root directory containing staged `{dll-name}-dll/BMP/` trees.
     base_path: Option<PathBuf>,
-    /// Optional HD PNG override directory.  If `Some`, checked before `base_path`.
+    /// Optional HD PNG directory, consulted only by the faithful-HD profile.
     hd_path: Option<PathBuf>,
+    /// Explicit render profile. Original parity is the fail-closed default.
+    profile: AssetRenderProfile,
+    /// Asset keys explicitly approved by the faithful-HD manifest.
+    approved_hd_assets: HashMap<String, ApprovedHdAsset>,
     /// Cached textures.  `None` value means "attempted load, file not found".
     textures: HashMap<(DllSource, u32), Option<TextureHandle>>,
 }
@@ -710,6 +937,8 @@ impl BmpCache {
         Self {
             base_path: None,
             hd_path: None,
+            profile: AssetRenderProfile::OriginalParity,
+            approved_hd_assets: HashMap::new(),
             textures: HashMap::new(),
         }
     }
@@ -719,13 +948,46 @@ impl BmpCache {
     /// Call before any `get()` or `preload_range()` invocations.
     pub fn set_base_path(&mut self, path: impl Into<PathBuf>) {
         self.base_path = Some(path.into());
+        self.textures.clear();
     }
 
-    /// Set an optional HD PNG override directory.
+    /// Set an optional HD PNG directory.
     ///
-    /// Expected layout: `{hd_path}/{dll-name}/{resource_id}.png`
+    /// Expected layout: `{hd_path}/{dll-name}/{resource_id}.png`. Setting the
+    /// path does not enable substitutions; call [`Self::set_render_profile`]
+    /// with [`AssetRenderProfile::FaithfulHd`] explicitly.
     pub fn set_hd_path(&mut self, path: impl Into<PathBuf>) {
-        self.hd_path = Some(path.into());
+        let path = path.into();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.approved_hd_assets = load_approved_hd_assets(&path);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.approved_hd_assets.clear();
+        }
+        self.hd_path = Some(path);
+        self.textures.clear();
+    }
+
+    /// Change the render profile and invalidate textures loaded by the prior
+    /// profile.
+    pub fn set_render_profile(&mut self, profile: AssetRenderProfile) {
+        if self.profile != profile {
+            self.profile = profile;
+            self.textures.clear();
+        }
+    }
+
+    /// Return the active render profile.
+    pub const fn render_profile(&self) -> AssetRenderProfile {
+        self.profile
+    }
+
+    fn hd_asset_approval(&self, source: DllSource, resource_id: u32) -> Option<&ApprovedHdAsset> {
+        self.profile.allows_hd().then_some(())?;
+        self.approved_hd_assets
+            .get(&format!("{}/{}", source.dll_dir_name(), resource_id))
     }
 
     /// Retrieve a texture by source DLL and resource ID.
@@ -787,27 +1049,41 @@ impl BmpCache {
         source: DllSource,
         resource_id: u32,
     ) -> Option<TextureHandle> {
-        // 1. Check HD PNG override first.
-        if let Some(hd_dir) = &self.hd_path {
-            let hd_file = rebase_path_prefix(hd_dir, "data/hd", HD_PREFIX)
-                .join(source.dll_dir_name())
-                .join(format!("{}.png", resource_id));
-            if hd_file.exists() {
-                if let Some(handle) = load_image_as_texture(ctx, source, resource_id, &hd_file) {
-                    return Some(handle);
-                }
-            }
-        }
-
-        // 2. Fall back to original staged BMP.
         let base = self.base_path.as_deref()?;
         let bmp_file = rebase_path_prefix(base, "data/base", DATA_PREFIX)
             .join(source.dll_dir_name())
             .join("BMP")
             .join(format!("{}.bmp", resource_id));
 
+        // Faithful HD is opt-in. Original parity never probes the HD tree.
+        if let Some(approval) = self.hd_asset_approval(source, resource_id) {
+            if let Some(hd_dir) = &self.hd_path {
+                let hd_file = rebase_path_prefix(hd_dir, "data/hd", HD_PREFIX)
+                    .join(source.dll_dir_name())
+                    .join(format!("{}.png", resource_id));
+                if let Some(bytes) = validated_hd_bytes(&bmp_file, &hd_file, approval) {
+                    if let Some(handle) = load_image_bytes_as_texture(
+                        ctx,
+                        source,
+                        resource_id,
+                        &bytes,
+                        AssetVariant::FaithfulHd,
+                    ) {
+                        return Some(handle);
+                    }
+                } else if hd_file.exists() {
+                    eprintln!(
+                        "[bmp_cache] HD source/output digest mismatch for {}/{}; falling back to original",
+                        source.dll_dir_name(),
+                        resource_id
+                    );
+                }
+            }
+        }
+
+        // Original staged BMP is authoritative and is always the fallback.
         if bmp_file.exists() {
-            load_image_as_texture(ctx, source, resource_id, &bmp_file)
+            load_image_as_texture(ctx, source, resource_id, &bmp_file, AssetVariant::Original)
         } else {
             None
         }
@@ -822,17 +1098,37 @@ impl BmpCache {
     ) -> Option<TextureHandle> {
         let dll_dir = source.dll_dir_name();
 
-        // 1. Check HD PNG override first.
-        let bytes =
-            get_hd_bytes(dll_dir, resource_id).or_else(|| get_bmp_bytes(dll_dir, resource_id))?;
+        if self.hd_asset_approval(source, resource_id).is_some() {
+            if let Some(bytes) = get_hd_bytes(dll_dir, resource_id) {
+                match decode_color_image(&bytes, source, resource_id) {
+                    Ok(color_image) => {
+                        return Some(ctx.load_texture(
+                            &format!("{}_{}_hd", source.texture_prefix(), resource_id),
+                            color_image,
+                            AssetVariant::FaithfulHd.texture_options(),
+                        ));
+                    }
+                    Err(error) => {
+                        macroquad::logging::warn!(
+                            "[bmp_cache] WASM HD decode failed for {}/{}: {}; falling back to original",
+                            dll_dir,
+                            resource_id,
+                            error
+                        );
+                    }
+                }
+            }
+        }
 
-        // 2. Decode and register as egui texture (same as native path).
+        let bytes = get_bmp_bytes(dll_dir, resource_id)?;
         let color_image = match decode_color_image(&bytes, source, resource_id) {
-            Ok(i) => i,
-            Err(e) => {
-                eprintln!(
-                    "[bmp_cache] WASM decode failed for {}/{}: {}",
-                    dll_dir, resource_id, e
+            Ok(image) => image,
+            Err(error) => {
+                macroquad::logging::warn!(
+                    "[bmp_cache] WASM original decode failed for {}/{}: {}",
+                    dll_dir,
+                    resource_id,
+                    error
                 );
                 return None;
             }
@@ -841,7 +1137,7 @@ impl BmpCache {
         Some(ctx.load_texture(
             &format!("{}_{}", source.texture_prefix(), resource_id),
             color_image,
-            TextureOptions::default(),
+            AssetVariant::Original.texture_options(),
         ))
     }
 }
@@ -928,6 +1224,7 @@ fn load_image_as_texture(
     source: DllSource,
     resource_id: u32,
     path: &Path,
+    variant: AssetVariant,
 ) -> Option<TextureHandle> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
@@ -943,16 +1240,26 @@ fn load_image_as_texture(
         }
     };
 
+    load_image_bytes_as_texture(ctx, source, resource_id, &bytes, variant)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_image_bytes_as_texture(
+    ctx: &egui::Context,
+    source: DllSource,
+    resource_id: u32,
+    bytes: &[u8],
+    variant: AssetVariant,
+) -> Option<TextureHandle> {
     // `image` crate auto-detects format from magic bytes — handles both BMP
     // (which may be palette-indexed) and PNG.
-    let color_image = match decode_color_image(&bytes, source, resource_id) {
+    let color_image = match decode_color_image(bytes, source, resource_id) {
         Ok(image) => image,
         Err(error) => {
             eprintln!(
-                "[bmp_cache] decode failed source={} resource_id={} path={} error={}",
+                "[bmp_cache] decode failed source={} resource_id={} bytes=verified error={}",
                 source.dll_dir_name(),
                 resource_id,
-                path.display(),
                 error
             );
             return None;
@@ -962,7 +1269,7 @@ fn load_image_as_texture(
     let handle = ctx.load_texture(
         &format!("{}_{}", source.texture_prefix(), resource_id),
         color_image,
-        TextureOptions::default(),
+        variant.texture_options(),
     );
 
     Some(handle)
@@ -982,6 +1289,145 @@ mod tests {
         assert!(matches!(cache.textures.get(&key), Some(None)));
         assert!(cache.get(&ctx, key.0, key.1).is_none());
         assert_eq!(cache.textures.len(), 1);
+    }
+
+    #[test]
+    fn render_profile_defaults_to_original_and_parses_stable_names() {
+        let cache = BmpCache::new();
+        assert_eq!(cache.render_profile(), AssetRenderProfile::OriginalParity);
+        assert_eq!(
+            AssetRenderProfile::parse("original-parity"),
+            Some(AssetRenderProfile::OriginalParity)
+        );
+        assert_eq!(
+            AssetRenderProfile::parse("faithful-hd"),
+            Some(AssetRenderProfile::FaithfulHd)
+        );
+        assert_eq!(AssetRenderProfile::parse("experimental-remaster"), None);
+    }
+
+    #[test]
+    fn hd_manifest_accepts_only_explicit_faithful_approvals() {
+        let manifest = br#"{
+            "schema_version": 1,
+            "profile": "faithful-hd",
+            "assets": {
+                "common-dll/10001": {
+                    "approved": true,
+                    "review": {"reviewer": "tester", "evidence": "test-proof"},
+                    "gates": {"human_review": "pass"},
+                    "source": {"sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                    "output": {"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+                },
+                "common-dll/10002": {"approved": false}
+            }
+        }"#;
+
+        let approved = approved_hd_assets_from_bytes(manifest).unwrap();
+        assert_eq!(approved.len(), 1);
+        assert_eq!(
+            approved.get("common-dll/10001"),
+            Some(&ApprovedHdAsset {
+                source_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    .to_string(),
+                output_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
+            })
+        );
+        assert!(!approved.contains_key("common-dll/10002"));
+    }
+
+    #[test]
+    fn hd_manifest_rejects_unknown_schema_and_profile() {
+        let schema = br#"{"schema_version":2,"profile":"faithful-hd","assets":{}}"#;
+        let profile = br#"{"schema_version":1,"profile":"experimental-remaster","assets":{}}"#;
+
+        assert!(approved_hd_assets_from_bytes(schema).is_err());
+        assert!(approved_hd_assets_from_bytes(profile).is_err());
+    }
+
+    #[test]
+    fn hd_manifest_rejects_approval_without_review_and_digest() {
+        let manifest = br#"{
+            "schema_version": 1,
+            "profile": "faithful-hd",
+            "assets": {"common-dll/10001": {"approved": true}}
+        }"#;
+
+        assert!(approved_hd_assets_from_bytes(manifest).is_err());
+    }
+
+    #[test]
+    fn changing_render_profile_invalidates_cached_textures() {
+        let mut cache = BmpCache::new();
+        cache.textures.insert((DllSource::Common, 123), None);
+
+        cache.set_render_profile(AssetRenderProfile::FaithfulHd);
+
+        assert!(cache.textures.is_empty());
+        assert_eq!(cache.render_profile(), AssetRenderProfile::FaithfulHd);
+    }
+
+    #[test]
+    fn hd_requires_both_explicit_profile_and_manifest_approval() {
+        let mut cache = BmpCache::new();
+        cache.approved_hd_assets.insert(
+            "common-dll/123".to_string(),
+            ApprovedHdAsset {
+                source_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    .to_string(),
+                output_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
+            },
+        );
+
+        assert!(cache.hd_asset_approval(DllSource::Common, 123).is_none());
+        cache.set_render_profile(AssetRenderProfile::FaithfulHd);
+        assert!(cache.hd_asset_approval(DllSource::Common, 123).is_some());
+        assert!(cache.hd_asset_approval(DllSource::Common, 124).is_none());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn changed_source_or_hd_bytes_fail_and_verified_bytes_are_returned() {
+        let base = std::env::temp_dir().join(format!(
+            "open-rebellion-hd-digests-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.bmp");
+        let output = base.join("output.png");
+        std::fs::write(&source, b"abc").unwrap();
+        std::fs::write(&output, b"xyz").unwrap();
+        let approval = ApprovedHdAsset {
+            source_sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+                .to_string(),
+            output_sha256: "3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282"
+                .to_string(),
+        };
+        assert_eq!(
+            validated_hd_bytes(&source, &output, &approval),
+            Some(b"xyz".to_vec())
+        );
+        std::fs::write(&source, b"changed").unwrap();
+        assert!(validated_hd_bytes(&source, &output, &approval).is_none());
+        std::fs::write(&source, b"abc").unwrap();
+        std::fs::write(&output, b"changed").unwrap();
+        assert!(validated_hd_bytes(&source, &output, &approval).is_none());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn original_and_hd_variants_use_explicit_sampling() {
+        assert_eq!(
+            AssetVariant::Original.texture_options(),
+            TextureOptions::NEAREST
+        );
+        assert_eq!(
+            AssetVariant::FaithfulHd.texture_options(),
+            TextureOptions::LINEAR
+        );
     }
 
     #[test]

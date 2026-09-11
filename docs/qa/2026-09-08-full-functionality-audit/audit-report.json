@@ -208,25 +208,31 @@
     {
       "id": "F-002",
       "severity": "P1",
-      "status": "implemented_acceptance_pending",
-      "title": "Native HD override and fallback display proof remains open",
+      "status": "profile_manifest_foundation_implemented_acceptance_pending",
+      "title": "Native faithful-HD visual acceptance remains open",
       "evidence": [
-        "The production HD root was corrected after the audit baseline",
-        "crates/rebellion-render/src/bmp_cache.rs"
+        "Original-parity rendering is now the default and uses explicit nearest sampling",
+        "Native faithful HD is opt-in and accepts only approved data/hd/manifest.json records",
+        "Approved records bind source and output digests, and the renderer decodes the exact verified output bytes",
+        "Mutation fallback and original-parity browser regression gates pass",
+        "crates/rebellion-render/src/bmp_cache.rs",
+        "crates/rebellion-render/src/encyclopedia.rs",
+        "docs/plans/2026-09-10-faithful-hd-pipeline/",
+        "docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-faithful-hd-foundation.md"
       ],
-      "acceptance": "A known HD override renders from the production path and falls back to the original BMP when removed."
+      "acceptance": "A provenance-complete approved HD asset renders only in the explicit faithful-HD profile and falls back to the unchanged original resource when approval is revoked."
     },
     {
       "id": "F-003",
       "severity": "P1",
       "status": "confirmed",
-      "title": "WASM never prefetches HD override bytes",
+      "title": "Browser faithful-HD packs remain absent",
       "evidence": [
-        "crates/rebellion-app/src/main.rs:332",
-        "crates/rebellion-render/src/bmp_cache.rs:872",
-        "scripts/build-wasm.sh:80"
+        "WASM fails closed to original-parity rendering",
+        "runtime.orpk does not yet carry approved HD manifests or optional surface chunks",
+        "docs/plans/2026-09-10-faithful-hd-pipeline/"
       ],
-      "acceptance": "A browser requests, caches, decodes, and renders a known hd/{dll}/{id} resource with verified dimensions."
+      "acceptance": "A browser loads a reviewed optional HD surface pack, validates its manifest and source identity, renders the approved family, and atomically falls back when validation fails."
     },
     {
       "id": "F-004",

@@ -9,6 +9,11 @@ tags: [assets, upscaling, bmp, dll, hd, execplan]
 
 # Upscale All 2,231 DLL BMPs With Per-Asset Tool Routing
 
+> **Superseded 2026-09-10:** Retain this file as historical planning context.
+> New work follows the [faithful-HD pipeline](2026-09-10-faithful-hd-pipeline/),
+> which keeps original parity separate, requires reviewed manifests, and routes
+> complete asset families through deterministic or constrained methods.
+
 This ExecPlan is a living document. Sections Progress, Surprises &
 Discoveries, Decision Log, and Outcomes & Retrospective must be
 kept up to date as work proceeds.

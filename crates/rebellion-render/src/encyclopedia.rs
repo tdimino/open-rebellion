@@ -37,11 +37,15 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use egui_macroquad::egui::{self, Color32, RichText, ScrollArea, TextureHandle, TextureOptions, Vec2};
+#[cfg(not(target_arch = "wasm32"))]
+use egui_macroquad::egui::TextureOptions;
+use egui_macroquad::egui::{self, Color32, RichText, ScrollArea, TextureHandle, Vec2};
 use rebellion_core::ids::{CapitalShipKey, CharacterKey, FighterKey, SystemKey};
 use rebellion_core::world::GameWorld;
 
-use crate::bmp_cache::{BmpCache, DllSource};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::bmp_cache::{load_approved_hd_assets, validated_hd_bytes};
+use crate::bmp_cache::{ApprovedHdAsset, AssetRenderProfile, BmpCache, DllSource};
 
 // ---------------------------------------------------------------------------
 // Tab selection
@@ -71,8 +75,12 @@ pub struct EncyclopediaState {
     pub selected_index: usize,
     /// Path to the EData/ directory (original BMPs).
     pub edata_path: Option<PathBuf>,
-    /// Path to HD upscaled PNGs directory (checked first, falls back to BMPs).
+    /// Path to HD upscaled PNGs directory, used only by the faithful-HD profile.
     pub hd_path: Option<PathBuf>,
+    /// Explicit asset profile. Original parity is the default.
+    pub asset_profile: AssetRenderProfile,
+    /// EDATA keys explicitly approved by the faithful-HD manifest.
+    approved_hd_assets: HashMap<String, ApprovedHdAsset>,
     /// Cached textures keyed by EDATA file number (1-based).
     textures: HashMap<u16, Option<TextureHandle>>,
 }
@@ -85,12 +93,32 @@ impl EncyclopediaState {
     /// Configure the EData directory.  Call before opening the encyclopedia.
     pub fn set_edata_path(&mut self, path: impl Into<PathBuf>) {
         self.edata_path = Some(path.into());
+        self.textures.clear();
     }
 
-    /// Configure the HD upscaled PNGs directory.  Images here take priority
-    /// over original BMPs.  Expected naming: `EDATA_NNN.png`.
+    /// Configure the HD upscaled PNG directory. Expected naming:
+    /// `EDATA_NNN.png`. Setting a path does not enable HD substitution.
     pub fn set_hd_path(&mut self, path: impl Into<PathBuf>) {
-        self.hd_path = Some(path.into());
+        let path = path.into();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let manifest_root = path.parent().unwrap_or(&path);
+            self.approved_hd_assets = load_approved_hd_assets(manifest_root);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.approved_hd_assets.clear();
+        }
+        self.hd_path = Some(path);
+        self.textures.clear();
+    }
+
+    /// Change the explicit render profile and invalidate prior textures.
+    pub fn set_asset_profile(&mut self, profile: AssetRenderProfile) {
+        if self.asset_profile != profile {
+            self.asset_profile = profile;
+            self.textures.clear();
+        }
     }
 }
 
@@ -102,6 +130,8 @@ impl Default for EncyclopediaState {
             selected_index: 0,
             edata_path: None,
             hd_path: None,
+            asset_profile: AssetRenderProfile::OriginalParity,
+            approved_hd_assets: HashMap::new(),
             textures: HashMap::new(),
         }
     }
@@ -389,14 +419,19 @@ fn show_edata_image(
     edata_n: u16,
     state: &mut EncyclopediaState,
 ) {
-    // Lazy-load the texture if not yet cached.  HD PNGs take priority over
-    // original BMPs — check hd_path first, fall back to edata_path.
+    // Lazy-load the texture if not yet cached. HD is an explicit enhancement
+    // profile; original parity never probes the HD tree.
     if !state.textures.contains_key(&edata_n) {
         let handle = load_edata_texture(
             ctx,
             edata_n,
             state.hd_path.as_deref(),
             state.edata_path.as_deref(),
+            state.asset_profile,
+            state
+                .approved_hd_assets
+                .get(&format!("edata/EDATA_{:03}", edata_n))
+                .cloned(),
         );
         state.textures.insert(edata_n, handle);
     }
@@ -424,8 +459,9 @@ fn show_placeholder_image(ui: &mut egui::Ui) {
 
 /// Load an EDATA image and register it as an egui texture.
 ///
-/// Checks for an HD upscaled PNG first (`EDATA_NNN.png` in `hd_path`),
-/// then falls back to the original BMP (`EDATA.NNN` in `edata_path`).
+/// In faithful-HD mode, checks for an approved PNG first (`EDATA_NNN.png` in
+/// `hd_path`), then falls back to the original BMP (`EDATA.NNN` in
+/// `edata_path`). Original-parity mode never probes the HD path.
 /// Returns `None` if neither exists or decoding fails.
 /// On WASM targets, always returns `None` (filesystem access not available).
 #[cfg(not(target_arch = "wasm32"))]
@@ -434,22 +470,34 @@ fn load_edata_texture(
     edata_n: u16,
     hd_path: Option<&Path>,
     edata_path: Option<&Path>,
+    profile: AssetRenderProfile,
+    approved_hd: Option<ApprovedHdAsset>,
 ) -> Option<TextureHandle> {
-    // 1. Try HD upscaled PNG first.
-    if let Some(hd_dir) = hd_path {
-        let hd_file = hd_dir.join(format!("EDATA_{:03}.png", edata_n));
-        if hd_file.exists() {
-            if let Some(handle) = load_image_file(ctx, edata_n, &hd_file) {
-                return Some(handle);
+    let dir = edata_path?;
+    let bmp_file = dir.join(format!("EDATA.{:03}", edata_n));
+
+    if profile == AssetRenderProfile::FaithfulHd {
+        if let Some(hd_dir) = hd_path {
+            let hd_file = hd_dir.join(format!("EDATA_{:03}.png", edata_n));
+            if let Some(bytes) = approved_hd
+                .as_ref()
+                .and_then(|approval| validated_hd_bytes(&bmp_file, &hd_file, approval))
+            {
+                if let Some(handle) = load_image_bytes(ctx, edata_n, &bytes, TextureOptions::LINEAR)
+                {
+                    return Some(handle);
+                }
+            } else if approved_hd.is_some() && hd_file.exists() {
+                eprintln!(
+                    "[encyclopedia] HD source/output digest mismatch for EDATA_{edata_n:03}; falling back to original"
+                );
             }
         }
     }
 
-    // 2. Fall back to original BMP.
-    let dir = edata_path?;
-    let bmp_file = dir.join(format!("EDATA.{:03}", edata_n));
+    // Original data is authoritative and uses exact nearest sampling.
     if bmp_file.exists() {
-        return load_image_file(ctx, edata_n, &bmp_file);
+        return load_image_file(ctx, edata_n, &bmp_file, TextureOptions::NEAREST);
     }
 
     None
@@ -461,24 +509,29 @@ fn load_image_file(
     ctx: &egui::Context,
     edata_n: u16,
     path: &Path,
+    texture_options: TextureOptions,
 ) -> Option<TextureHandle> {
     let bytes = std::fs::read(path).ok()?;
 
+    load_image_bytes(ctx, edata_n, &bytes, texture_options)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_image_bytes(
+    ctx: &egui::Context,
+    edata_n: u16,
+    bytes: &[u8],
+    texture_options: TextureOptions,
+) -> Option<TextureHandle> {
     // image crate auto-detects format from magic bytes.
-    let img = image::load_from_memory(&bytes).ok()?;
+    let img = image::load_from_memory(bytes).ok()?;
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
 
-    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-        [w as usize, h as usize],
-        rgba.as_raw(),
-    );
+    let color_image =
+        egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
 
-    let handle = ctx.load_texture(
-        &format!("edata_{}", edata_n),
-        color_image,
-        TextureOptions::default(),
-    );
+    let handle = ctx.load_texture(&format!("edata_{}", edata_n), color_image, texture_options);
 
     Some(handle)
 }
@@ -489,6 +542,8 @@ fn load_edata_texture(
     _edata_n: u16,
     _hd_path: Option<&Path>,
     _edata_path: Option<&Path>,
+    _profile: AssetRenderProfile,
+    _approved_hd: Option<ApprovedHdAsset>,
 ) -> Option<TextureHandle> {
     None
 }
@@ -517,4 +572,26 @@ fn stat_row_pair(ui: &mut egui::Ui, label: &str, base: u32, variance: u32) {
         base.to_string()
     };
     stat_row(ui, label, &value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encyclopedia_defaults_to_original_parity() {
+        let state = EncyclopediaState::new();
+        assert_eq!(state.asset_profile, AssetRenderProfile::OriginalParity);
+    }
+
+    #[test]
+    fn changing_asset_profile_invalidates_cached_images() {
+        let mut state = EncyclopediaState::new();
+        state.textures.insert(42, None);
+
+        state.set_asset_profile(AssetRenderProfile::FaithfulHd);
+
+        assert!(state.textures.is_empty());
+        assert_eq!(state.asset_profile, AssetRenderProfile::FaithfulHd);
+    }
 }

@@ -12,6 +12,7 @@ bounded, auditable unit at a time.
 | Original interface implementation | [Interface parity guide](docs/qa/2026-09-10-interface-parity-audit/) and a required family or cell in `surface-ledger.json` |
 | Ghidra or resource recovery | An open `RE-*` package in the [reverse-engineering ledger](docs/qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md) |
 | Reference screenshot research | A missing state in the [screenshot ledger](docs/qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) |
+| Optional HD assets | A P45 milestone in the [faithful-HD plan](docs/plans/2026-09-10-faithful-hd-pipeline/) |
 | Milestone planning | [Roadmap](agent_docs/roadmap.md) |
 | Architecture and subsystem context | [Agent documentation index](agent_docs/INDEX.md) and [documentation index](docs/INDEX.md) |
 

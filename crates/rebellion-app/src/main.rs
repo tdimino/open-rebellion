@@ -59,13 +59,13 @@ use rebellion_render::{
     draw_manufacturing, draw_message_log, draw_missions, draw_multiplayer_setup, draw_officers,
     draw_save_load, draw_sector_boundaries, draw_status_bar, draw_system_context_menu,
     draw_system_info_panel, draw_tactical_view, hovered_fleet, show_event_screen,
-    update_event_screen, AdvisorFaction, AdvisorState, AudioVolumeState, BmpCache, CockpitButton,
-    CockpitFaction, CockpitState, CreditsState, EncyclopediaState, EventScreenState, FleetsState,
-    GalaxyMapState, GameMessage, GameSetupAction, GameSetupState, GroundAction, GroundCombatState,
-    MainMenuAction, MainMenuState, ManufacturingPanelState, MenuDestinationAction, MessageCategory,
-    MessageLog, MessageLogState, MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState,
-    MusicContext, OfficersState, PanelAction, SfxKind, TacticalAction, TacticalState, VideoError,
-    VideoPlayer, VoiceLine,
+    update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile, AudioVolumeState,
+    BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState, EncyclopediaState,
+    EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction, GameSetupState,
+    GroundAction, GroundCombatState, MainMenuAction, MainMenuState, ManufacturingPanelState,
+    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MissionsPanelState,
+    MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState, PanelAction,
+    SfxKind, TacticalAction, TacticalState, VideoError, VideoPlayer, VoiceLine,
 };
 
 /// Top-level game mode state machine.
@@ -154,6 +154,29 @@ fn original_game_dir() -> PathBuf {
                 .and_then(|directory| directory.parent().map(Path::to_path_buf))
         })
         .unwrap_or_else(|| PathBuf::from("../star-wars-rebellion"))
+}
+
+/// Resolve the explicit native asset profile. Browser builds remain on the
+/// original-parity profile until manifest-approved HD entries join the runtime
+/// pack, so a missing enhancement can never alter browser parity evidence.
+fn configured_asset_render_profile() -> AssetRenderProfile {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match std::env::var("OPEN_REBELLION_ASSET_PROFILE") {
+            Ok(value) => AssetRenderProfile::parse(&value).unwrap_or_else(|| {
+                eprintln!(
+                    "[assets] unknown OPEN_REBELLION_ASSET_PROFILE={value:?}; using original-parity"
+                );
+                AssetRenderProfile::OriginalParity
+            }),
+            Err(_) => AssetRenderProfile::OriginalParity,
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        AssetRenderProfile::OriginalParity
+    }
 }
 
 fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
@@ -592,6 +615,12 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let gdata_path = PathBuf::from("data/base");
 
+    let asset_render_profile = configured_asset_render_profile();
+    macroquad::logging::info!(
+        "[assets] render_profile={}",
+        asset_render_profile.as_str()
+    );
+
     #[cfg(target_arch = "wasm32")]
     if web_replay::requested() {
         web_replay::run(&gdata_path).await;
@@ -750,6 +779,7 @@ async fn main() {
     #[cfg(debug_assertions)]
     let mut command_palette_state = rebellion_render::CommandPaletteState::new();
     enc_state.set_edata_path(gdata_path.join("EData"));
+    enc_state.set_asset_profile(asset_render_profile);
     // HD upscaled PNGs live as a sibling of the base data directory.
     let hd_path = gdata_path
         .parent()
@@ -793,6 +823,7 @@ async fn main() {
             .unwrap_or(std::path::Path::new("."))
             .join("hd");
         bmp_cache.set_hd_path(hd_ui_path);
+        bmp_cache.set_render_profile(asset_render_profile);
     }
 
     // ── Droid advisor ──────────────────────────────────────────────────────
@@ -2500,6 +2531,7 @@ async fn main() {
                                     bombardment_panel_state = BombardmentPanelState::default();
                                     enc_state = EncyclopediaState::new();
                                     enc_state.set_edata_path(gdata_path.join("EData"));
+                                    enc_state.set_asset_profile(asset_render_profile);
                                     enc_state.set_hd_path(
                                         gdata_path
                                             .parent()
@@ -3549,6 +3581,7 @@ async fn main() {
                             bombardment_panel_state = BombardmentPanelState::default();
                             enc_state = EncyclopediaState::new();
                             enc_state.set_edata_path(gdata_path.join("EData"));
+                            enc_state.set_asset_profile(asset_render_profile);
                             enc_state.set_hd_path(
                                 gdata_path
                                     .parent()

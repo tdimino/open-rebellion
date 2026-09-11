@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "research_cutoff": "2026-09-10",
+  "status": "foundation_complete",
+  "decision": "Separate exact original parity from optional faithful HD and experimental remastering.",
+  "profiles": {
+    "original-parity": {
+      "default": true,
+      "sampling": "nearest",
+      "may_close_interface_parity": true,
+      "allows_hd_substitution": false
+    },
+    "faithful-hd": {
+      "default": false,
+      "sampling": "manifest-defined",
+      "may_close_interface_parity": false,
+      "allows_hd_substitution": "approved_manifest_records_only"
+    },
+    "experimental-remaster": {
+      "default": false,
+      "may_close_interface_parity": false,
+      "allows_generative_restoration": true,
+      "runtime_eligible": false
+    }
+  },
+  "method_routing": {
+    "text_controls_chrome_masks": ["nearest-4x", "scale2x-review-candidate"],
+    "indexed_animation": ["deterministic-family-transform"],
+    "small_decorative_sprites": ["nearest-4x", "scale2x-review-candidate", "xbrz-license-review"],
+    "painted_art": ["swinir-candidate", "hat-candidate", "real-esrgan-challenger", "ultrasharp-challenger"],
+    "generative": ["experimental-remaster-only"]
+  },
+  "implemented_foundation": [
+    "explicit_original_parity_default",
+    "nearest_sampling_for_original_resources",
+    "native_faithful_hd_opt_in",
+    "approved_manifest_only_hd_lookup",
+    "palette_preserving_nearest_4x_generator",
+    "source_palette_route_config_generator_and_output_hashes",
+    "explicit_human_review_approval",
+    "verified_output_byte_decode_without_reread",
+    "requested_source_and_output_identity_binding",
+    "browser_fail_closed_to_original_parity"
+  ],
+  "acceptance_gates": {
+    "logical_ssim_min": 0.995,
+    "logical_nmae_max": 0.0039215686,
+    "edge_iou_min": 0.98,
+    "protected_masks_exact": true,
+    "novel_components_max": 0,
+    "learned_model_repeat_hashes": 3,
+    "alpha_test_backgrounds": ["black", "white", "source-blue", "checkerboard"],
+    "human_review_required": true,
+    "native_browser_digest_match": true
+  },
+  "browser_budgets": {
+    "parity_startup_hd_bytes": 0,
+    "runtime_ml_allocations": 0,
+    "optional_chunk_compressed_mib_max": 8,
+    "desktop_texture_lru_mib_initial": 128,
+    "mobile_texture_lru_mib_initial": 64,
+    "warmed_frame_budget_ms": 16.7,
+    "upload_decode_ms_per_frame_max": 4
+  },
+  "milestones": [
+    {
+      "id": "P45A",
+      "title": "Explicit profiles and manifest foundation",
+      "status": "completed"
+    },
+    {
+      "id": "P45B",
+      "title": "Complete-family learned-model comparison",
+      "status": "pending"
+    },
+    {
+      "id": "P45C",
+      "title": "Protected masks, residual bounds, alpha, component, and temporal gates",
+      "status": "pending"
+    },
+    {
+      "id": "P45D",
+      "title": "Optional manifest-bound browser surface packs",
+      "status": "pending"
+    },
+    {
+      "id": "P45E",
+      "title": "Cross-browser and native faithful-HD acceptance",
+      "status": "pending"
+    }
+  ],
+  "sources": [
+    "https://www.scale2x.it/algorithm",
+    "https://openaccess.thecvf.com/content/ICCV2021W/AIM/html/Wang_Real-ESRGAN_Training_Real-World_Blind_Super-Resolution_With_Pure_Synthetic_Data_ICCVW_2021_paper.html",
+    "https://arxiv.org/abs/2108.10257",
+    "https://openaccess.thecvf.com/content/CVPR2023/html/Chen_Activating_More_Pixels_in_Image_Super-Resolution_Transformer_CVPR_2023_paper.html",
+    "https://openaccess.thecvf.com/content/CVPR2024/html/Wu_SeeSR_Towards_Semantics-Aware_Real-World_Image_Super-Resolution_CVPR_2024_paper.html",
+    "https://arxiv.org/abs/2308.15070",
+    "https://openaccess.thecvf.com/content/CVPR2026/html/Back_IFCSR_Inference-Free_Fidelity-Realism_Control_for_One-Step_Diffusion-based_Real-World_Image_Super-Resolution_CVPR_2026_paper.html",
+    "https://openaccess.thecvf.com/content/CVPR2026/html/Kim_FiDeSR_High-Fidelity_and_Detail-Preserving_One-Step_Diffusion_Super-Resolution_CVPR_2026_paper.html",
+    "https://openaccess.thecvf.com/content/CVPR2026/html/Luo_Restore_Text_First_Enhance_Image_Later_Two-Stage_Scene_Text_Image_CVPR_2026_paper.html",
+    "https://openaccess.thecvf.com/content/CVPR2022/html/Chan_BasicVSR_Improving_Video_Super-Resolution_With_Enhanced_Propagation_and_Alignment_CVPR_2022_paper.html",
+    "https://docs.pytorch.org/docs/2.14/notes/randomness.html",
+    "https://onnxruntime.ai/docs/tutorials/web/",
+    "https://www.w3.org/TR/webgpu/",
+    "https://registry.khronos.org/KTX/specs/2.0/ktxspec.v2.html"
+  ]
+}

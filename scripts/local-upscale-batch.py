@@ -3,14 +3,14 @@
 # requires-python = ">=3.11"
 # dependencies = ["pillow", "spandrel", "torch", "torchvision", "numpy"]
 # ///
-"""
-Batch HD upscale all DLL BMPs using UltraSharp V2 via Spandrel + MPS.
+"""Legacy UltraSharp experiment retained for comparison work.
 
 Processes all BMPs in data/base/ui/{dll}/BMP/ and outputs 4x PNG to
-data/hd/{dll}/{resource_id}.png. Skips already-processed files.
+data/hd/{dll}/{resource_id}.png. These files are unapproved by default and are
+not eligible for the faithful-HD render profile without a verified manifest.
 
-The BmpCache in bmp_cache.rs picks up HD overrides automatically:
-  data/hd/{dll-name}/{resource_id}.png
+Use faithful_hd_pipeline.py for deterministic generation, provenance, review,
+and runtime approval. Use this script only for model-comparison candidates.
 
 Usage:
     python3 scripts/local-upscale-batch.py                  # All DLLs
@@ -65,6 +65,10 @@ def tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 def main():
+    print(
+        "NOTICE: legacy model-comparison route; outputs remain runtime-ineligible "
+        "until imported, verified, and approved by faithful_hd_pipeline.py"
+    )
     parser = argparse.ArgumentParser(description="Batch HD upscale with UltraSharp V2")
     parser.add_argument("--dll", type=str, help="Process only this DLL (e.g., gokres-dll)")
     parser.add_argument("--dry-run", action="store_true", help="Count files only, don't process")

@@ -40,7 +40,7 @@ pub use audio::{
 };
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
-pub use bmp_cache::{BmpCache, DllSource};
+pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, CockpitButton,
     CockpitFaction, CockpitState, CockpitViewport,

@@ -35,34 +35,35 @@ Original BMPs from game's installed directories:
 
 **Prerequisite**: `data/base/EData/` must contain extracted BMPs from a legal game copy. Extracted game data also at `~/Desktop/Programming/star-wars-rebellion/GData/`.
 
-### Upscaling Tools
+### Faithful-HD contract
 
-**Primary: UltraSharp V2 via Spandrel + MPS** (WINNER — 8-model shootout, 2026-04-14)
+The [September 2026 plan](../docs/plans/2026-09-10-faithful-hd-pipeline/)
+supersedes universal model routing. `original-parity` is the default and only
+profile that counts toward interface parity. `faithful-hd` is optional and loads
+only manifest-approved assets. Generative restoration is experimental.
 
 ```bash
-# Batch all DLLs (resumes automatically, skips existing)
-python3 scripts/local-upscale-batch.py
+# Generate deterministic palette-preserving candidates
+uv run scripts/faithful_hd_pipeline.py generate --dll gokres-dll
 
-# Single DLL
-python3 scripts/local-upscale-batch.py --dll gokres-dll
+# Verify every recorded source and output hash plus exact reconstruction
+uv run scripts/faithful_hd_pipeline.py verify
 
-# Dry run (count only)
-python3 scripts/local-upscale-batch.py --dry-run
+# Approve one reviewed asset for the faithful-HD runtime profile
+uv run scripts/faithful_hd_pipeline.py approve gokres-dll/17001 \
+  --reviewer "reviewer-name" --evidence "docs/qa/evidence-path"
 ```
 
-DAT2 architecture, loaded via Spandrel 0.4.2 + PyTorch 2.7.1 MPS. ~0.5s/image on M4 Max. **$0 cost.**
-Won across all 5 asset categories (portraits, ships, sprites, UI, events) in an 8-model shootout
-comparing Real-ESRGAN, PBRify, UltraSharp, GTAV_dither, FSDedither Riven, Vertex AI, Topaz CGI,
-and palette reconstruction + PBRify. Comparison at `data/hd/shootout/comparison.html`.
-
-Model: `~/tools/upscale-models/4x-UltraSharpV2.pth` (134MB, DAT2, Kim2091, CC-BY-NC-SA-4.0)
-Script: `scripts/local-upscale-batch.py` — MPS memory management (`empty_cache` every 50 images)
+The first route is exact nearest 4x. It preserves indexed palettes and records
+source, palette, route, configuration, generator, and output hashes. Existing
+UltraSharp outputs are comparison artifacts until regenerated or imported with
+matching provenance and explicit review.
 
 **Available models** (all at `~/tools/upscale-models/`, all loadable via Spandrel):
 
 | Model | Architecture | Size | Best For |
 |-------|-------------|------|----------|
-| 4x-UltraSharpV2.pth | DAT2 | 134MB | **All categories** (shootout winner) |
+| 4x-UltraSharpV2.pth | DAT2 | 134MB | Painted-art comparison candidate |
 | 4x-PBRify_UpscalerV4.pth | DAT2 | 134MB | Game textures (runner-up) |
 | 4x-FSDedither-Riven.pth | ESRGAN | 64MB | Ordered-dithered art (fastest: 4.5s/20) |
 | 4xTextures_GTAV_rgt-s_dither.pth | RGT | 130MB | Dithered+JPEG game textures |
@@ -83,8 +84,8 @@ python3 scripts/model-shootout.py --html-only         # Regenerate comparison HT
 
 Test samples: `scripts/shootout-samples.json` (20 BMPs, 4 per category)
 
-**Important**: All source BMPs are 256-color indexed palette. `local-upscale-batch.py` handles
-conversion to RGB automatically via `Image.open(bmp).convert("RGB")`.
+**Important**: Do not flatten indexed source assets to RGB for deterministic
+routes. Preserve palette indices, transparency, and protected masks throughout.
 
 ### Gemini Generative Upscale (Method A — TESTED)
 
@@ -137,11 +138,17 @@ GOOGLE_CLOUD_PROJECT=dream-daimon uv run scripts/vertex-upscale.py --input-dir o
 
 ### Upscaling Strategy
 
-**Winner: UltraSharp V2 (local, free)** for all categories. Selected via 8-model shootout (2026-04-14) across portraits, ships, sprites, UI elements, and event scenes. UltraSharp V2 preserves the original 1998 pre-rendered CGI aesthetic better than any other model tested—it sharpens without photorealizing, maintains the baked-lighting look, and handles the 256-color indexed palette without introducing dithering artifacts. Single model, single script, no per-category routing needed.
+Use family-specific routes. Text, controls, chrome, masks, and indexed animation
+stay deterministic. SwinIR and HAT lead the next painted-art comparison;
+Real-ESRGAN and UltraSharp remain challengers. Diffusion outputs belong only to
+the experimental remaster profile.
 
 | Category | Method | Status |
 |----------|--------|--------|
-| All DLL BMPs (2,231) | UltraSharp V2 via Spandrel+MPS | IN PROGRESS — 235/2,231 done |
+| Text, controls, chrome, masks | Nearest 4x; Scale2x/4x challenger | Deterministic foundation implemented |
+| Indexed animation | Whole-sequence deterministic transform | Classification and temporal gates pending |
+| Painted art | SwinIR/HAT/Real-ESRGAN/UltraSharp family shootout | Pending |
+| Generative restoration | Experimental remaster only | Excluded from parity and faithful HD |
 
 **Other tools available** (tested, still installed, usable if needed):
 - **Vertex AI Imagen 4.0**: Non-generative super-resolution, zero hallucination. $0.005/img, 5 RPM quota. Requires `gcloud auth`. Script: `scripts/vertex-upscale.py`. Good fallback for any images where UltraSharp produces artifacts.
@@ -204,7 +211,10 @@ Entity mapping: `data/resource-entity-map.json` — 162 GOKRES resource IDs → 
 
 ### DLL Upscale Pipeline (2,231 BMPs)
 
-**HD override contract**: `data/hd/{dll-dir-name}/{resource_id}.png` — `BmpCache` checks here first, falls back to staged BMP.
+**HD override contract**: `data/hd/{dll-dir-name}/{resource_id}.png` plus
+`data/hd/manifest.json`. `BmpCache` checks reviewed entries only when
+`OPEN_REBELLION_ASSET_PROFILE=faithful-hd`, validates the source and output
+digests, then decodes those verified bytes. Otherwise it uses original BMPs.
 
 | DLL | Staged BMPs | Path |
 |-----|------------|------|
@@ -278,10 +288,12 @@ scripts/
 
 ### Code Integration
 
-`crates/rebellion-render/src/encyclopedia.rs` loads HD PNGs with BMP fallback:
+`crates/rebellion-render/src/encyclopedia.rs` follows the active asset profile:
 
-1. Check `data/hd/EData/EDATA_NNN.png` (HD upscaled)
-2. Fall back to `data/base/EData/EDATA.NNN` (original BMP)
+1. `original-parity` loads `data/base/EData/EDATA.NNN` with nearest sampling.
+2. `faithful-hd` may load `data/hd/EData/EDATA_NNN.png` only when the matching
+   `edata/EDATA_NNN` manifest record is approved.
+3. Missing, unapproved, or invalid HD content falls back to the original BMP.
 
 Requires `"png"` feature in `rebellion-render/Cargo.toml`:
 ```toml
@@ -527,7 +539,10 @@ See `agent_docs/dll-resource-catalog.md` for complete resource ID ranges, dimens
 
 ### Upscaling Strategy
 
-**Superseded by shootout results (2026-04-14).** UltraSharp V2 via Spandrel+MPS is now the single method for all categories. Run `python3 scripts/local-upscale-batch.py` to process all DLLs.
+**Superseded in September 2026.** Use the manifest-governed, family-specific
+[faithful-HD pipeline](../docs/plans/2026-09-10-faithful-hd-pipeline/).
+`scripts/local-upscale-batch.py` is retained only for UltraSharp comparison
+candidates; its raw outputs are not runtime-approved.
 
 **All game DLLs fully extracted.** Including 285 voice WAV files (153 Alliance + 132 Empire).
 
