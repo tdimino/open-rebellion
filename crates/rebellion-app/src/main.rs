@@ -54,18 +54,19 @@ use rebellion_render::{
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
     draw_blockade_indicators, draw_cockpit_background, draw_cockpit_chrome,
     draw_cockpit_egui_layer, draw_credits, draw_encyclopedia, draw_event_screen,
-    draw_facility_icons, draw_fleet_context_menu, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
+    draw_facility_icons, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
     draw_galaxy_map, draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing,
     draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_boundaries,
-    draw_system_context_menu, draw_system_info_panel,
-    draw_tactical_view, handle_cockpit_egui_input, hovered_fleet, set_cockpit_viewport_clip,
-    show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
-    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
-    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction,
-    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
-    ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog, MessageLogState,
-    MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
-    PanelAction, SfxKind, TacticalAction, TacticalState, VideoError, VideoPlayer, VoiceLine,
+    draw_sector_windows, draw_system_windows, draw_tactical_view, handle_cockpit_egui_input,
+    set_cockpit_viewport_clip, show_event_screen, update_event_screen, AdvisorFaction,
+    AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton, CockpitFaction,
+    CockpitState, CreditsState, EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState,
+    GameMessage, GameSetupAction, GameSetupState, GroundAction, GroundCombatState, MainMenuAction,
+    MainMenuState, ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog,
+    MessageLogState, MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState,
+    MusicContext, OfficersState, PanelAction, SectorWindowAction, SectorWindowState, SfxKind,
+    SystemWindowAction, SystemWindowState, TacticalAction, TacticalState, VideoError, VideoPlayer,
+    VoiceLine,
 };
 
 /// Top-level game mode state machine.
@@ -812,6 +813,8 @@ async fn main() {
 
     // ── Cockpit chrome ───────────────────────────────────────────────────────
     let mut cockpit_state = CockpitState::new(CockpitFaction::Alliance);
+    let mut sector_window_state = SectorWindowState::default();
+    let mut system_window_state = SystemWindowState::default();
     let mut bmp_cache = BmpCache::new();
     {
         // gdata_path is data/base; staged UI BMPs live at data/base/ui/
@@ -2240,6 +2243,8 @@ async fn main() {
             }
 
             GameMode::MainMenu => {
+                sector_window_state.clear();
+                system_window_state.clear();
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_music_for_context(
                     MusicContext::MainMenu,
@@ -2607,7 +2612,9 @@ async fn main() {
                                         CockpitFaction::Alliance
                                     } else {
                                         CockpitFaction::Empire
-                                    });
+                                });
+                                sector_window_state.clear();
+                                system_window_state.clear();
 
                                 // Initialize game state for chosen faction
                                 fog_alliance_state = FogState::new(Faction::Alliance);
@@ -2712,6 +2719,10 @@ async fn main() {
                     cockpit_vp.height,
                 ));
                 map_state.display_scale = cockpit_layout.scale;
+                let pointer = mouse_position();
+                map_state.pointer_blocked = sector_window_state
+                    .contains_screen_point(cockpit_layout, pointer)
+                    || system_window_state.contains_screen_point(cockpit_layout, pointer);
 
                 // Keep every macroquad map layer inside the shell's transparent
                 // galaxy aperture. The clip is cleared before the egui pass.
@@ -2719,6 +2730,13 @@ async fn main() {
 
                 // 2. Galaxy map (pure macroquad) — returns the shared transform
                 let cam = draw_galaxy_map(&world, &mut map_state);
+                if let Some(system) = map_state.activated_system {
+                    sector_window_state.open_for_system(
+                        &world,
+                        system,
+                        cockpit_state.faction,
+                    );
+                }
 
                 // 2. Fog overlay (pure macroquad) — dim non-visible systems
                 draw_fog_overlay(&world, fog_state, &cam);
@@ -2731,39 +2749,6 @@ async fn main() {
                 draw_facility_icons(&world, &cam);
                 draw_blockade_indicators(&world, &blockade_state, &cam);
                 set_cockpit_viewport_clip(None);
-
-                // 3b. Fleet hover detection — check if right-click landed on a fleet.
-                // Fleet takes priority over system — overrides the system menu set
-                // by draw_galaxy_map if both are under cursor.
-                {
-                    let (mx, my) = mouse_position();
-                    // WASM fallback: browsers swallow the mouseup on right-click so
-                    // is_mouse_button_released never fires. Detect the transition by
-                    // checking that we held ≥1 frame and button is now not down.
-                    let right_released =
-                        is_mouse_button_released(macroquad::input::MouseButton::Right);
-                    let right_released_wasm = !right_released
-                        && map_state.right_click_held_frames >= 1
-                        && !is_mouse_button_down(macroquad::input::MouseButton::Right)
-                        && map_state.right_click_start.is_some();
-                    if (right_released || right_released_wasm) && cam.contains(mx, my) {
-                        let was_drag = map_state.right_click_start.map_or(true, |(sx, sy)| {
-                            ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt() > 5.0
-                        });
-                        if !was_drag {
-                            if let Some(fleet_key) =
-                                hovered_fleet(&world, &movement_state, &cam, mx, my)
-                            {
-                                map_state.context_menu_fleet = Some((fleet_key, mx, my));
-                                map_state.context_menu_system = None;
-                            }
-                        }
-                        // Clear right_click_start after both draw_galaxy_map and this
-                        // check have had a chance to read it.
-                        map_state.right_click_start = None;
-                        map_state.right_click_held_frames = 0;
-                    }
-                }
 
                 // 4. All egui panels in a single ui() + draw() pass
                 egui_macroquad::ui(|ctx| {
@@ -2936,19 +2921,55 @@ async fn main() {
                         }
                     }
 
-                    // System info panel (right side)
-                    draw_system_info_panel(ctx, &world, &map_state);
-
-                    // Context menus (floating, triggered by right-click)
-                    if let Some(action) =
-                        draw_system_context_menu(ctx, &world, &mut map_state, player_faction)
-                    {
-                        panel_actions.push(action);
+                    for action in draw_sector_windows(
+                        ctx,
+                        &world,
+                        &mut sector_window_state,
+                        cockpit_state.faction,
+                        cockpit_layout,
+                        &mut bmp_cache,
+                    ) {
+                        match action {
+                            SectorWindowAction::SelectSystem(system) => {
+                                map_state.selected_system = Some(system);
+                            }
+                            SectorWindowAction::OpenSystemWindow {
+                                system,
+                                logical_position,
+                            } => {
+                                map_state.selected_system = Some(system);
+                                system_window_state.open(
+                                    &world,
+                                    system,
+                                    logical_position,
+                                    cockpit_state.faction,
+                                    cockpit_layout,
+                                );
+                            }
+                        }
                     }
-                    if let Some(action) =
-                        draw_fleet_context_menu(ctx, &world, &movement_state, &mut map_state)
-                    {
-                        panel_actions.push(action);
+
+                    for action in draw_system_windows(
+                        ctx,
+                        &world,
+                        &mut system_window_state,
+                        cockpit_state.faction,
+                        cockpit_layout,
+                        &mut bmp_cache,
+                    ) {
+                        match action {
+                            SystemWindowAction::FocusSector(system) => {
+                                sector_window_state.open_for_system(
+                                    &world,
+                                    system,
+                                    cockpit_state.faction,
+                                );
+                                map_state.selected_system = Some(system);
+                            }
+                            SystemWindowAction::SelectSystem(system) => {
+                                map_state.selected_system = Some(system);
+                            }
+                        }
                     }
 
                     // The replacement message and status bars covered the
@@ -3483,6 +3504,8 @@ async fn main() {
                             };
                             advisor_state.set_faction(AdvisorFaction::from(cockpit_state.faction));
                             map_state = GalaxyMapState::default();
+                            sector_window_state.clear();
+                            system_window_state.clear();
                             officers_state = OfficersState::default();
                             fleets_state = FleetsState::default();
                             mfg_panel_state = ManufacturingPanelState::default();

@@ -3,7 +3,7 @@ title: "Original Shuttle Cockpit Main Menu"
 description: "Binary-confirmed 640x480 geometry, bitmap resources, settings, actions, and acceptance criteria for the Star Wars Rebellion main menu"
 category: agent-docs
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-11
 tags: [main-menu, ui, common-dll, ghidra, parity, bitmap]
 ---
 
@@ -17,6 +17,12 @@ and every visual test of `crates/rebellion-render/src/main_menu.rs`.
 
 *The completed 640×480 composition: 14 original bitmap controls plus the
 documented Open Rebellion music-only extension in the upper-right corner.*
+
+![Small, medium, and large galaxy selections retaining their matching native bitmap scale](../docs/qa/2026-09-08-full-functionality-audit/evidence/main-menu-r3/galaxy-sizes-corrected-2026-09-11.png)
+
+*The three corrected selected states. Each screen now uses the matching
+small, medium, or large galaxy bitmap while the lever moves to its original
+detent.*
 
 ## Ground truth
 
@@ -70,9 +76,9 @@ inclusive resource sequences loaded by the original animated-control class.
 | Intermediate difficulty (Star Destroyer) | `(124,40,49,36)` | `11275` | `11091–11120` | `0x6f` | difficulty `1`; scenario `2` or `5` |
 | Expert difficulty (Death Star) | `(187,41,45,36)` | `11274` | `11121–11150` | `0x70` | difficulty `2`; scenario `3` or `6` |
 | Galaxy-size lever | `(242,271,44,47)` | `10001–10003`, `10014–10015` | n/a | `0x6a` | cycles galaxy size |
-| Small galaxy screen | `(290,293,24,21)` | `10017` | n/a | pointer region | encoded size `1` |
+| Small galaxy screen | `(290,293,24,21)` | `10019` | n/a | pointer region | encoded size `1` |
 | Medium galaxy screen | `(326,293,24,21)` | `10018` | n/a | pointer region | encoded size `2` |
-| Large galaxy screen | `(362,293,24,21)` | `10019` | n/a | pointer region | encoded size `3` |
+| Large galaxy screen | `(362,293,24,21)` | `10017` | n/a | pointer region | encoded size `3` |
 | Game type (Cloud City) | `(305,333,42,30)` | `10158–10159` | n/a | `0x71` | Standard / Headquarters Only |
 | Empire faction/start | `(153,308,62,55)` | `10009` | `11001–11015` | `0x66` | starts as Empire |
 | Alliance faction/start | `(437,307,62,55)` | `10007` | `11031–11045` | `0x65` | starts as Alliance |
@@ -85,6 +91,9 @@ The original labels galaxy sizes Small, Medium, and Large. The current Rust
 data enum retains the encoded values as `Standard = 1`, `Large = 2`, and
 `Huge = 3`; UI parity maps original Small/Medium/Large to current
 Standard/Large/Huge respectively without changing the data encoding.
+COMMON resources `10019`, `10018`, and `10017` contain the selected small,
+medium, and large screen art respectively. The descending resource order is
+intentional and covered by a focused mapping regression test.
 
 ## Documented Open Rebellion extension
 

@@ -960,7 +960,7 @@
       "phase": "strategy",
       "title": "Sector and system-management windows",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "ten-system sector",
         "neutral",
@@ -997,7 +997,7 @@
         123,
         124
       ],
-      "current_implementation": "System selection opens a custom right SidePanel instead of the original modeless window family.",
+      "current_implementation": "UIP-B01 replaces the custom right SidePanel with first-pass original 235x360 sector and 226x304 detailed-system shells. Original planet pictures, placement, relationship title art, six core tab resource families, close, sector return, double-click routing, focus, and pointer occlusion work in both factions. Complete item compositions, commands, indicators, uncommon states, and the full A0/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-003"
       ],
@@ -1092,7 +1092,7 @@
       "phase": "strategy",
       "title": "Window-reference rail and modeless window manager",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "active slot",
         "inactive slot",
@@ -1113,7 +1113,7 @@
         61,
         66
       ],
-      "current_implementation": "No original window manager. The command-center rail remains blank.",
+      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab and window position. Exact active and inactive rail thumbnails, multiple-window visual comparison, and the complete A0/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-011"

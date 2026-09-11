@@ -50,11 +50,16 @@
     {"id": "A4", "description": "Memory, inference, recreation, modded media, or unverified derivative", "can_close": []}
   ],
   "summary": {
+    "practical_scope_materially_tackled": "approximately_17_to_20_percent_planning_estimate",
+    "practical_scope_remaining": "approximately_80_to_83_percent_planning_estimate",
+    "required_family_status": "0_complete_7_partial_36_fail",
+    "strictly_accepted_required_cells": "0_of_564",
+    "current_execution_plan": "docs/plans/2026-09-11-feat-batched-interface-parity-plan.md",
     "main_menu_surface": "partial_complete_state_matrix_open",
     "campaign_interface": "fail",
-    "strategy_cockpit": "partial_exact_shell_and_primary_control_checkpoints_passed_full_control_matrix_gid_rail_windows_and_replacement_surfaces_open",
+    "strategy_cockpit": "partial_exact_shell_primary_controls_first_sector_system_shells_and_rail_lifecycle_passed_full_gid_item_contents_rail_thumbnails_and_replacement_surfaces_open",
     "galaxy_display": "fail",
-    "system_navigation": "fail",
+    "system_navigation": "partial_sector_system_shell_tabs_and_rail_lifecycle_work_item_compositions_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
     "tactical_interface": "fail",
@@ -69,7 +74,7 @@
       "id": "UIP-F-001",
       "severity": "P0",
       "status": "partial",
-      "title": "Strategic shell, viewport scaling, and six primary controls pass scoped checkpoints; the full control matrix, reference rail, and required aperture content remain incomplete",
+      "title": "Strategic shell, viewport scaling, six primary controls, and first rail lifecycle pass scoped checkpoints; the full control matrix, exact rail thumbnails, and required aperture content remain incomplete",
       "evidence": [
         "crates/rebellion-render/src/cockpit.rs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-shell-canvas.md",
@@ -88,9 +93,13 @@
     {
       "id": "UIP-F-003",
       "severity": "P0",
-      "status": "fail",
-      "title": "System selection opens an invented right sidebar",
-      "evidence": ["crates/rebellion-render/src/lib.rs:636"],
+      "status": "partial",
+      "title": "First-pass original sector and detailed-system shells replace the invented sidebar; complete tab contents, commands, indicators, and uncommon states remain open",
+      "evidence": [
+        "crates/rebellion-render/src/sector_window.rs",
+        "crates/rebellion-render/src/system_window.rs",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md"
+      ],
       "affected_surfaces": ["CMD-03", "OBJ-02", "OBJ-14"]
     },
     {
@@ -158,9 +167,12 @@
     {
       "id": "UIP-F-011",
       "severity": "P1",
-      "status": "fail",
-      "title": "Original modeless window and reference-rail behavior is absent",
-      "evidence": ["docs/reference/campaign-history/archive/star-wars-rebellion-manual.pdf#page=60"],
+      "status": "partial",
+      "title": "Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active and inactive rail thumbnails and the complete multiwindow matrix remain open",
+      "evidence": [
+        "crates/rebellion-render/src/system_window.rs",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md"
+      ],
       "affected_surfaces": ["CMD-04"]
     },
     {
@@ -223,9 +235,10 @@
     "reverse_engineering_report": "reverse-engineering-ledger.md",
     "p46a_strategic_shell": "evidence/2026-09-11-strategic-shell-canvas.md",
     "p46b_strategic_controls": "evidence/2026-09-11-strategic-command-controls.md",
+    "uip_b01_strategic_navigation": "evidence/2026-09-11-strategic-window-navigation.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Complete the RE-STR-01 window-reference rail and the remaining RE-STR-02 controls, then implement GID and map art, original system windows, advisor actions and voice, and replacement-surface removal without closing UIP-T01 early."
+  "next_action": "Complete UIP-B01 item-level system compositions, exact rail thumbnails, uncommon states, and multiwindow comparison, then implement UIP-B02 GID and map art without closing UIP-T01 early."
 }

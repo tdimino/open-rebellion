@@ -161,22 +161,24 @@
         "sources": ["REBEXE.EXE", "STRATEGY.DLL"],
         "anchors": ["FUN_00421c70", "FUN_00422ce0", "FUN_00429020"],
         "method": "Use the strategic-shell constructor, twelve rail rectangles, PtInRect routing, focus behavior, and child-window removal path.",
-        "next_proof": "Implement the twelve-slot reference rail, focus and child-window transitions, then compare the complete shell against A0 captures."
+        "next_proof": "Replace the provisional rail thumbnails with exact active and inactive compositions, exercise the complete multiwindow matrix, then compare against A0 captures."
       },
       "runtime_capture_required": true,
       "implementation_evidence": {
-        "status": "shell_canvas_and_galaxy_apertures_runtime_corroborated",
-        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-shell-canvas.md",
+        "status": "shell_canvas_apertures_and_first_rail_lifecycle_runtime_corroborated",
+        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md",
         "completed": [
           "centered uniform 640x480 canvas",
           "STRATEGY 900 and 901 cropped from 640x481 to 640x480",
           "Alliance and Empire galaxy apertures from FUN_00421c70",
           "shared map, hit-test, blockade, and advisor transform",
-          "native tests and packaged-browser viewport verification"
+          "native tests and packaged-browser viewport verification",
+          "faction-specific 12-slot rail geometry",
+          "modeless focus, close, minimize, restore, and oldest-entry eviction"
         ],
         "remaining": [
-          "twelve-slot window-reference rail",
-          "child-window focus, removal, minimize, and restore transitions",
+          "exact active and inactive rail thumbnail compositions",
+          "complete multiple-window and edge-state matrix",
           "complete A0 original-executable visual comparison"
         ]
       }
@@ -305,11 +307,28 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "GOKRES.DLL", "STRATEGY.DLL", "REBDLOG.DLL", "TEXTSTRA.DLL"],
-        "anchors": ["FUN_0044f670", "FUN_00442d70", "FUN_0044c410"],
+        "anchors": ["FUN_0044f670", "FUN_00442d70", "FUN_0044c410", "FUN_0045aac0", "FUN_00452fc0", "FUN_00455060", "FUN_004534f0"],
         "method": "Follow modeless constructors, object-family dispatch, tab creation, resource loads, population predicates, command trees, focus, and rail lifecycle.",
-        "next_proof": "Map each object family to exact tabs, resources, enabled states, commands, and return paths."
+        "next_proof": "Complete system-window item compositions, drag and command paths, indicators, and uncommon states, then map the remaining object families."
       },
-      "runtime_capture_required": true
+      "runtime_capture_required": true,
+      "implementation_evidence": {
+        "status": "sector_and_system_shells_runtime_corroborated_item_contents_open",
+        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md",
+        "completed": [
+          "235x360 modeless sector shell with original planet pictures and recovered placement",
+          "226x304 detailed-system shell with relationship title resources",
+          "six original tab resource families with available and disabled selection paths",
+          "single-click selection and double-click detailed-window routing",
+          "close, sector return, focus, pointer occlusion, minimize, and restore"
+        ],
+        "remaining": [
+          "exact item images, stacks, selection, drag, and command behavior",
+          "complete support, resource, facility, fleet, troop, personnel, and HQ indicators",
+          "unexplored, uninhabited, blockade, uprising, damage, destroyed, and transit variants",
+          "complete A0, native, browser, viewport, and multiwindow matrix"
+        ]
+      }
     },
     {
       "id": "RE-PACK-01",

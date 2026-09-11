@@ -1847,7 +1847,7 @@
       "acceptance": "Three difficulties, three original galaxy sizes, both game types, both faction starts, settings propagation, and clean second-campaign reset pass from the cockpit."
     },
     {"id":"P05","name":"Clock","status":"pending"},
-    {"id":"P06","name":"Galaxy navigation","status":"fail","interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["synthetic galaxy composition","invented system sidebar","missing original sector/system window navigation"]},
+    {"id":"P06","name":"Galaxy navigation","status":"partial","verified_tranches":["UIP-B01_first_sector_system_shells_and_rail_lifecycle"],"interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["synthetic galaxy composition","incomplete system-window item compositions and commands","approximate rail thumbnails","unverified uncommon sector and system states"]},
     {"id":"P07","name":"Fog and overlays","status":"fail","verified_tranches":["F-007B_transit_origin_exclusion"],"interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["synthetic system and facility markers","incomplete GID filters and legends","non-authoritative system color rules"]},
     {"id":"P08","name":"Personnel","status":"fail","interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["Officers replacement panel","missing Personnel Finder and original Character Status family"]},
     {"id":"P09","name":"Fleets","status":"fail","verified_tranches":["F-007C_validated_player_dispatch"],"interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["replacement Fleet panel and context menu","missing original Fleet/Ship Finder and status window families"]},

@@ -43,8 +43,10 @@ comparison.
 P46A implements the centered 640x480 strategic canvas, the 640x481 source
 crop, both faction galaxy apertures, and one shared map, hit-test, blockade,
 and advisor transform. Native tests and packaged-browser viewport checks
-corroborate this shell checkpoint. The twelve-slot reference rail and its
-window transitions remain open. See the
+corroborate this shell checkpoint. UIP-B01 now implements the faction-specific
+twelve-slot rail geometry and first focus, close, minimize, restore, and
+eviction lifecycle. Exact active and inactive rail thumbnails plus the full
+multiwindow matrix remain open. See the
 [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md).
 
 P46B restores the six primary faction controls from the recovered constructor,
@@ -54,6 +56,14 @@ all six destinations closed until their original windows exist. Full
 A0 captures, the disabled path, destination compositions, speed and GID
 controls, and the complete native/browser matrix remain open. See the
 [P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
+
+The first UIP-B01 checkpoint also replaces the invented sidebar with recovered
+235x360 sector and 226x304 detailed-system shells. Original planet pictures,
+relationship title art, six tab resource families, single and double-click
+routing, pointer occlusion, and rail transitions work in both faction shells.
+Exact item compositions, drag and command semantics, uncommon states, and the
+complete A0 matrix remain open. See the
+[navigation evidence](evidence/2026-09-11-strategic-window-navigation.md).
 
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a
@@ -96,13 +106,13 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-FE-01 | Boot, introduction, and credits routing | static-partial | Map media selection and every completion, failure, skip, and return callback |
 | RE-MENU-01 | Shuttle controls and destinations | static-proven | Capture remaining original interaction and edge-probe states |
 | RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
-| RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell checkpoint runtime-corroborated | Implement the twelve-slot rail and window transitions, then compare the complete shell against A0 captures |
+| RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell and first rail lifecycle runtime-corroborated | Replace provisional rail thumbnails, exercise the full multiwindow matrix, then compare against A0 captures |
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial; primary controls implemented | Capture the six primary controls in A0, implement original destinations, then recover speed and facility-indicator predicates |
 | RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial | Resolve TEXTSTRA captions and paint-resource branches |
 | RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |
 | RE-MSG-01 | Messages, Agent menus, alerts, and reports | untriaged | Join categories and event results to resources, audio, and navigation |
 | RE-ENC-01 | Encyclopedia index and topics | static-partial | Complete ENCYBMAP, ENCYTEXT, EData, and navigation mappings |
-| RE-OBJ-01 | System, sector, and object-window constructors | static-partial | Map each object type to tabs, resources, states, and return paths |
+| RE-OBJ-01 | System, sector, and object-window constructors | static-partial; sector and system shells runtime-corroborated | Complete system item compositions and commands, then map the remaining object families |
 | RE-ADV-01 | Type-302 advisor and briefing frame decoding | runtime-corroborated | Extend the verified advisor decoder/transport to briefings and compare with A0 captures |
 | RE-ADV-02 | SPT/BIN/FDT action semantics, cadence, and sound | static-partial | Replace inferred priority thirds with authored action mappings |
 | RE-PACK-01 | Complete native/WASM resource transport | implementation-needed | Version the pack for arbitrary resources, films, and EData |
@@ -136,8 +146,9 @@ routing, results, and strategic return. `EVT-02` owns Battle Alert entry;
 2. Extend the decoder and transport to ALBRIEF and EMBRIEF.
 3. Extend staging and the runtime pack with EData, dialogs,
    voices, and media without weakening deterministic manifests.
-4. Extend the recovered shell and six primary controls with the reference rail,
-   then replace the sidebar with managed original object windows.
+4. Complete the first recovered sector, system, and reference-rail checkpoint
+   with exact item compositions, commands, thumbnails, and uncommon states,
+   then continue through the remaining managed original object windows.
 5. Resolve the full GID mapping before drawing any replacement marker or legend.
 6. Recover and implement the complete `TAC-01` through `TAC-07` space-battle
    path, including type-301/303 resources and Death Star controls.

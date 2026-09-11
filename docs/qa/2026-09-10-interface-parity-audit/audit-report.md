@@ -9,6 +9,20 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 
 # Original Interface Parity Audit Report
 
+## Progress snapshot
+
+| Measure | Current position |
+|---|---:|
+| Practical interface scope materially tackled | approximately 17 to 20% |
+| Practical interface scope remaining | approximately 80 to 83% |
+| Required surface families | 43 |
+| Family status | 0 complete, 7 partial, 36 fail |
+| Strictly accepted required cells | 0 of 564 |
+
+The practical percentage measures scoped implementation work and guides the
+[current batched plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md).
+It is not a parity score. The strict cell denominator remains authoritative.
+
 ## Conclusion
 
 The user-visible campaign interface currently fails parity with the 1998
@@ -27,14 +41,18 @@ This explains the observed symptoms:
   the replacement primary text-button strip and restores all six normal and
   captured-press bitmap pairs, exact hotspots, and command recognition. Their
   original destination windows remain closed instead of opening replacement
-  panels. The replacement message and status bars are also withheld because
+  panels. First-pass original sector and detailed system shells now replace
+  the invented sidebar, including double-click routing, core tabs, and the
+  rail lifecycle. Their item-level compositions remain open. The replacement
+  message and status bars are also withheld because
   they covered the original controls. Their authentic versions remain open.
 - The galaxy is drawn from a dark fill, vector circles, text labels, sector
   outlines, and 5×5 facility squares instead of the original starfield,
   Galactic Information Display rules, and bitmap marker families.
-- Selecting a system opens a custom right `egui::SidePanel`. The original opens
-  modeless sector/system windows with illustrated systems, tabbed contents,
-  support/resources, and bitmap actions.
+- Selecting a system now opens a recovered modeless sector shell. Double-click
+  opens the original detailed-system shell and core bitmap tabs. Illustrated
+  item contents, drag actions, complete state variants, and exact rail
+  thumbnails remain incomplete.
 - The four original advisor idle runs now follow the shared canvas transform in
   native and WASM. Original action, voice, and chrome behavior remains
   unimplemented.
@@ -53,7 +71,7 @@ The local source inspection establishes the implementation causes:
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
 | Synthetic galaxy and glyphs | `crates/rebellion-render/src/lib.rs` | Manual pp. 66–73 and official Steam faction captures |
-| Invented system sidebar | `crates/rebellion-render/src/lib.rs` | Manual pp. 67–68, 97–100, and 122–124 |
+| Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors and [UIP-B01 evidence](evidence/2026-09-11-strategic-window-navigation.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
@@ -83,9 +101,9 @@ replace required original-runtime visual acceptance.
 
 | ID | Severity | Finding | Status |
 |----|----------|---------|--------|
-| UIP-F-001 | P0 | The shell, viewport scaling, and six primary controls pass their scoped checkpoints, but the full control matrix, reference rail, and required aperture content remain incomplete. | partial |
+| UIP-F-001 | P0 | The shell, viewport scaling, six primary controls, and first rail lifecycle pass scoped checkpoints; the full control matrix, exact rail thumbnails, and required aperture content remain incomplete. | partial |
 | UIP-F-002 | P0 | Galaxy, stars, system markers, sector hulls, and facility indicators use synthetic primitives and incomplete rules. | fail |
-| UIP-F-003 | P0 | System selection routes to an invented right sidebar instead of the original modeless sector/system surface. | fail |
+| UIP-F-003 | P0 | First-pass original sector and detailed-system shells replace the invented sidebar; complete tab contents, commands, indicators, and uncommon states remain open. | partial |
 | UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
 | UIP-F-005 | P0 | Runtime pack v2 includes ALSPRITE and EMSPRITE BMP/type-302 content; ALBRIEF, EMBRIEF, REBDLOG, EDATA, action controls, and voice remain omitted. | partial |
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
@@ -93,7 +111,7 @@ replace required original-runtime visual acceptance.
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
 | UIP-F-009 | P1 | Tactical HUD uses partial original art inside a replacement composition. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
-| UIP-F-011 | P1 | Original modeless-window minimize, restore, close, focus, and reference-rail behavior is absent. | fail |
+| UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
 
 Existing browser checks that proved a bitmap decoded, a panel opened, or no HTTP

@@ -23,6 +23,10 @@ functional; historical parity percentages are estimates, not acceptance proof.
   user explicitly changes the main-only policy.
 - Browser acceptance must use `codex-orchestrator` with Astra at medium effort.
   Retain inspected screenshots, console/network logs, and artifact hashes.
+- Launch every Open Rebellion browser-test session with Chromium
+  `--mute-audio`, and keep the in-game music control muted unless the test
+  explicitly verifies audio. Close the test browser and local server when the
+  run finishes.
 - GitHub Actions workflow definitions are intentionally local and untracked as
   of 2026-09-08. Verification is manual until M5 restores a reviewed CI provider.
 

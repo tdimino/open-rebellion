@@ -447,6 +447,13 @@ pub mod resources {
         /// Imperial Encyclopedia, normal.
         pub const EMPIRE_ENCYCLOPEDIA_NORMAL: u32 = 10026;
 
+        /// Original sector-window planet pictures 1 through 23.
+        pub const SECTOR_PLANET_FIRST: u32 = 10212;
+        pub const SECTOR_PLANET_LAST: u32 = 10234;
+        /// Non-contiguous sector-window planet pictures 25, 26, and 24.
+        pub const SECTOR_PLANET_SPECIAL_FIRST: u32 = 10237;
+        pub const SECTOR_PLANET_SPECIAL_LAST: u32 = 10239;
+
         /// Generic strategy UI frame variant A.
         pub const UI_PANEL_FRAME_A: u32 = 10553;
         /// Generic strategy UI frame variant B.
@@ -1349,7 +1356,12 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
     match source {
         DllSource::Strategy => matches!(
             resource_id,
-            resources::strategy::GALAXY_BACKGROUND | resources::strategy::GALAXY_BACKGROUND_EMPIRE
+            resources::strategy::GALAXY_BACKGROUND
+                | resources::strategy::GALAXY_BACKGROUND_EMPIRE
+                | resources::strategy::SECTOR_PLANET_FIRST
+                    ..=resources::strategy::SECTOR_PLANET_LAST
+                | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
+                    ..=resources::strategy::SECTOR_PLANET_SPECIAL_LAST
         ),
         DllSource::Gokres => matches!(
             resource_id,
@@ -1667,6 +1679,27 @@ mod tests {
         assert_eq!(decoded.pixels[0].a(), 0);
         assert_eq!(decoded.pixels[1].a(), 0);
         assert_eq!(decoded.pixels[2].a(), 255);
+    }
+
+    #[test]
+    fn sector_planet_blue_screen_becomes_transparent() {
+        let mut image = image::RgbaImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([120, 140, 180, 255]));
+
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        for resource_id in [10212, 10234, 10237, 10239] {
+            let decoded =
+                decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
+            assert_eq!(decoded.pixels[0].a(), 0);
+            assert_eq!(decoded.pixels[1].a(), 255);
+        }
     }
 
     #[test]

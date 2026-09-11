@@ -322,9 +322,9 @@ fn texture_for(
             GalaxySize::Large => 10002,
             GalaxySize::Huge => 10003,
         },
-        MainMenuControl::SmallGalaxy => 10017,
+        MainMenuControl::SmallGalaxy => 10019,
         MainMenuControl::MediumGalaxy => 10018,
-        MainMenuControl::LargeGalaxy => 10019,
+        MainMenuControl::LargeGalaxy => 10017,
         MainMenuControl::GameType => {
             if state.headquarters_only {
                 10159
@@ -845,6 +845,18 @@ mod tests {
         assert_eq!(
             texture_for(MainMenuControl::Alliance, &state, true, 0.0),
             11031
+        );
+        assert_eq!(
+            texture_for(MainMenuControl::SmallGalaxy, &state, false, 0.0),
+            10019
+        );
+        assert_eq!(
+            texture_for(MainMenuControl::MediumGalaxy, &state, false, 0.0),
+            10018
+        );
+        assert_eq!(
+            texture_for(MainMenuControl::LargeGalaxy, &state, false, 0.0),
+            10017
         );
         assert_eq!(texture_for(MainMenuControl::Quit, &state, true, 1.0), 11196);
     }
