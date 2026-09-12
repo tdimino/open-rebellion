@@ -1,4 +1,4 @@
-.PHONY: all check test fmt-check clippy build run fmt clean
+.PHONY: all check test test-assets fmt-check clippy build run fmt clean
 
 # Full workflow: validate first, then build. Stop on the first failure.
 all: check
@@ -13,6 +13,16 @@ check:
 # 1. Tests
 test:
 	cargo test --workspace
+	$(MAKE) test-assets
+
+# Only these integration suites require original DATs. Ignored doc examples
+# remain ignored. Any DAT presence opts in; incomplete/corrupt data must fail.
+test-assets:
+ifneq ($(wildcard data/base/*.[Dd][Aa][Tt]),)
+	cargo test -p rebellion-data --test replay_manifest --test state_fingerprint --test telemetry_coverage -- --ignored
+else
+	@echo "Skipping asset-dependent integration tests: no DAT files in data/base."
+endif
 
 # 2. Formatting validation
 fmt-check:
