@@ -10,6 +10,7 @@ mod audio;
 mod interface_test_fixture;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;
+mod tactical_flow;
 #[cfg(target_arch = "wasm32")]
 mod web_accessibility;
 #[cfg(target_arch = "wasm32")]
@@ -1413,24 +1414,25 @@ async fn main() {
                     } else {
                         !atk_is_alliance
                     };
-                    tactical_state.begin_battle(
+                    if let Err(error) = tactical_flow::begin_player_battle(
                         &world,
-                        sys_key,
-                        atk_fleet,
-                        def_fleet,
-                        player_is_attacker,
-                        current_tick,
-                    );
-                    combat_cooldowns.insert(sys_key, current_tick);
-                    msg_log.push(GameMessage::at_system(
-                        current_tick,
-                        format!("Battle at {} — entering tactical combat!", sys_name),
-                        MessageCategory::Combat,
-                        sys_key,
-                    ));
+                        tactical_flow::BattleEntry {
+                            system: sys_key,
+                            attacker: atk_fleet,
+                            defender: def_fleet,
+                            player_is_attacker,
+                            tick: current_tick,
+                        },
+                        &mut tactical_state,
+                        &mut combat_cooldowns,
+                        &mut msg_log,
+                        &mut game_mode,
+                    ) {
+                        eprintln!("Skipping invalid tactical battle at {sys_name}: {error:?}");
+                        continue;
+                    }
                     #[cfg(not(target_arch = "wasm32"))]
                     audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
-                    game_mode = GameMode::TacticalCombat;
                     break; // Handle one player battle at a time.
                 }
 
