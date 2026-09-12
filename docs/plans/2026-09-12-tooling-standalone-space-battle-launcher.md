@@ -14,7 +14,7 @@ This is a test harness for `UIP-B06` in the [batched interface plan](2026-09-11-
 
 It is not blocked on finishing the GID, system-window, or other strategic interface families. Start T0 and T1 after the current in-flight GID bundle is committed, then work on tactical asset proof and original HUD composition as a separate `UIP-B06` lane. The final 106-cell tactical acceptance gate still depends on original resources, screenshot baselines, and real browser interaction; a functioning launcher is not that gate.
 
-T0 is partially underway. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) now preserves surviving hull damage and exact fighter roster losses in the interactive path. Campaign entry now calls a validated production tactical-entry function that test fixtures can also call. Shared return/outcome routing, standalone fixtures, original HUD composition, and all 106 visual cells remain open.
+T0 is partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. Shared return/outcome routing, battle interactions, original HUD composition, and all 106 visual cells remain open.
 
 ## Current contract and limits
 
@@ -59,6 +59,8 @@ Gate: campaign battle behavior is unchanged except for demonstrated result-corre
 ### T1. Test-only entry and safety
 
 Add a tactical fixture namespace and scenario catalog beside `tools/interface-parity/scenarios/gid.catalog.json`. Extend `crates/rebellion-app/src/interface_test_fixture.rs` or add a gated sibling for tactical setup. Build a minimal two-faction fleet encounter, call the shared production battle entry, and emit a `battle-ready` record with scenario ID, faction, system, fleet IDs, and deterministic seed. Add a native CLI flag guarded by both `interface-test-fixtures` and an explicit opt-in environment variable. Update `tools/interface-parity/verify-production-exclusion.mjs` to reject every new marker in production HTML and WASM.
+
+Status: browser-only entry fixture and production-exclusion checks are implemented. Both factions and both viewports passed the four-request, muted startup gate. The ready record does not yet contain fleet IDs or a seed, and no native CLI flag exists. Those contract details and battle interactions remain T1/T2 work. The current synthetic battle HUD is not accepted as original bitmap parity.
 
 Gate: both factions open the actual tactical view from the test-only page; production exclusion, fixture validation, muted audio, and four-request startup pass. Do not mark `TAC-01` complete.
 

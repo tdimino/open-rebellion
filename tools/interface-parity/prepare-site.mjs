@@ -60,6 +60,7 @@ fs.mkdirSync(path.join(artifacts, "data"), { recursive: true });
 for (const [source, destination] of [
   [path.join(web, "gl.js"), path.join(artifacts, "gl.js")],
   [path.join(web, "data/runtime.orpk"), path.join(artifacts, "data/runtime.orpk")],
+  [path.join(here, "battle-launcher.html"), path.join(artifacts, "battle.html")],
 ]) {
   fs.copyFileSync(source, destination);
 }

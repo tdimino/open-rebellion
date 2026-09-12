@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "family": "TAC-01",
+  "fixture_namespace": 1,
+  "status": "entry-fixture-only",
+  "factions": ["alliance", "empire"],
+  "viewports": [
+    { "id": "640x480", "width": 640, "height": 480, "device_scale_factor": 1 },
+    { "id": "1280x800-letterboxed", "width": 1280, "height": 800, "device_scale_factor": 1 }
+  ],
+  "scenarios": [
+    {
+      "slug": "battle-entry",
+      "description": "Deterministic opposing one-ship, one-squadron encounter through the production tactical entry function",
+      "fixture_codes": { "alliance": 65793, "empire": 66049 },
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "Functional entry fixture only. No original tactical interface cell is accepted."
+    }
+  ]
+}

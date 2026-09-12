@@ -11,6 +11,15 @@ mod interface_test_fixture;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;
 mod tactical_flow;
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+#[cfg_attr(
+    all(test, not(target_arch = "wasm32")),
+    expect(
+        dead_code,
+        reason = "Native tests cover fixture code decoding; the bridge is called only by WASM."
+    )
+)]
+mod tactical_test_fixture;
 #[cfg(target_arch = "wasm32")]
 mod web_accessibility;
 #[cfg(target_arch = "wasm32")]
@@ -966,11 +975,39 @@ async fn main() {
         );
     }
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let tactical_fixture_request = tactical_test_fixture::requested();
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let tactical_fixture_failed = if let Some(request) = tactical_fixture_request {
+        cutscene_player = None;
+        audio_vol.muted = true;
+        audio_vol.music_muted = true;
+        audio_vol.dirty = true;
+        match tactical_test_fixture::apply(
+            request,
+            &mut world,
+            &mut tactical_state,
+            &mut combat_cooldowns,
+            &mut msg_log,
+            &mut player_faction,
+            &mut cockpit_state,
+            &mut game_mode,
+        ) {
+            Ok(()) => false,
+            Err(error) => {
+                tactical_test_fixture::emit_failed(request, &error);
+                true
+            }
+        }
+    } else {
+        false
+    };
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     let mut interface_fixture_frames = 0_u32;
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-    let mut interface_fixture_emitted = false;
+    let mut interface_fixture_emitted = tactical_fixture_failed;
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-    let interface_fixture_active = interface_fixture_request.is_some();
+    let interface_fixture_active =
+        interface_fixture_request.is_some() || tactical_fixture_request.is_some();
     #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
     let interface_fixture_active = false;
 
@@ -3799,6 +3836,16 @@ async fn main() {
                 interface_fixture_frames += 1;
                 if interface_fixture_frames >= 3 {
                     interface_test_fixture::emit_ready(request, &world, &map_state);
+                    interface_fixture_emitted = true;
+                }
+            }
+        }
+        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+        if let Some(request) = tactical_fixture_request {
+            if game_mode == GameMode::TacticalCombat && !interface_fixture_emitted {
+                interface_fixture_frames += 1;
+                if interface_fixture_frames >= 3 {
+                    tactical_test_fixture::emit_ready(request, &tactical_state);
                     interface_fixture_emitted = true;
                 }
             }

@@ -13,6 +13,9 @@ const forbidden = [
   "fixture-code",
   "__openRebellionInterfaceReady",
   "gid/alliance/popular-support",
+  "tactical_test_fixture",
+  "battle-ready",
+  "Tactical test launcher",
 ];
 
 if (!fs.existsSync(productionWasm)) {

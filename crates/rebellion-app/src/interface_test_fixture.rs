@@ -152,7 +152,7 @@ impl Scenario {
 
 pub fn requested() -> Option<FixtureRequest> {
     let code = unsafe { open_rebellion_interface_fixture_code() };
-    if code == FIXTURE_ABSENT {
+    if code == FIXTURE_ABSENT || code >> 16 != 0 {
         return None;
     }
     let scenario = Scenario::decode(((code & 0xff) as u8).checked_sub(1)?)?;

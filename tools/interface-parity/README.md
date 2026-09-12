@@ -24,6 +24,13 @@ and the tools used by `scripts/build-wasm.sh`. The runner serves only on
 four-request ledgers, and results go to the ignored
 `.artifacts/interface-parity/<run-id>/` directory. Failed cases exit nonzero.
 
+The generated test site also contains `battle.html`, a test-only launcher for the
+real tactical scene. Its two links use the versioned codes in
+[`tactical.catalog.json`](scenarios/tactical.catalog.json) and start muted. The
+fixture currently proves battle entry only. Run `node run.mjs --battle --all --no-build`
+to check both factions at both viewports. Tactical controls and images have no
+original-game baselines yet. See the [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
+
 The PNG comparison directory contains *implementation regression* baselines,
 not original-game truth. `--update-goldens` creates only missing implementation
 baselines, never overwrites a mismatch, and requires an accepted, SHA-verified

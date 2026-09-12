@@ -15,10 +15,13 @@ import { PNG } from "pngjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const site = path.join(root, ".artifacts/interface-parity/site");
-const catalog = JSON.parse(fs.readFileSync(path.join(here, "scenarios/gid.catalog.json"), "utf8"));
 const browserManifest = JSON.parse(fs.readFileSync(path.join(here, "browser.json"), "utf8"));
 const schemaVersion = 1;
 const options = new Set(process.argv.slice(2));
+const battle = options.has("--battle");
+const catalog = JSON.parse(fs.readFileSync(path.join(
+  here, battle ? "scenarios/tactical.catalog.json" : "scenarios/gid.catalog.json",
+), "utf8"));
 const all = options.has("--all");
 const smoke = options.has("--smoke") || !all;
 const scenarioFilter = process.argv.find((argument) => argument.startsWith("--scenario="))?.slice(11);
@@ -91,7 +94,7 @@ function browserExecutable() {
 }
 
 function scenarioId(scenario, faction, viewport) {
-  return `gid/${faction}/${scenario.slug}/${viewport.id}`;
+  return `${battle ? "tactical" : "gid"}/${faction}/${scenario.slug}/${viewport.id}`;
 }
 
 function writeContactSheet(results) {
@@ -100,16 +103,17 @@ function writeContactSheet(results) {
     return `<figure><a href="${safe}/actual.png"><img src="${safe}/actual.png" alt="${id}"></a><figcaption>${status}: ${id}</figcaption></figure>`;
   }).join("\n");
   fs.writeFileSync(path.join(runDir, "contact-sheet.html"), `<!doctype html>
-<html lang="en"><meta charset="utf-8"><title>CMD-02 interface contact sheet</title>
+<html lang="en"><meta charset="utf-8"><title>${catalog.family} interface contact sheet</title>
 <style>body{background:#141822;color:#e7ebf5;font:14px system-ui;margin:16px}
 main{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px}
 figure{margin:0;background:#202638;padding:8px}img{width:100%;height:240px;object-fit:contain}
 figcaption{overflow-wrap:anywhere;margin-top:7px}</style>
-<h1>CMD-02 interface contact sheet</h1><p>Previews link to original lossless PNGs.
+<h1>${catalog.family} interface contact sheet</h1><p>Previews link to original lossless PNGs.
 Passing harness probes are not original-game parity acceptance.</p><main>${cards}</main></html>\n`);
 }
 
 function fixtureCode(scenario, faction) {
+  if (battle) return scenario.fixture_codes[faction];
   return (scenario.index + 1) | ((faction === "alliance" ? 1 : 2) << 8);
 }
 
@@ -484,14 +488,24 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       timeout: 30_000,
     });
     const ready = await page.evaluate(() => window.__openRebellionInterfaceReady);
-    assert.equal(ready.status, "ready", JSON.stringify(ready));
-    assert.equal(ready.code, code);
+    assert.equal(ready.status, battle ? "battle-ready" : "ready", JSON.stringify(ready));
+    assert.equal(battle ? ready.fixture_code : ready.code, code);
     await page.evaluate(() => document.fonts.ready);
     await page.waitForTimeout(250);
     const stable = await stableFrame(page, folder);
     assert.equal(stable.first, stable.second, `unstable screenshot for ${id}`);
-    const messageIndexRail = verifyMessageIndexRail(faction, viewport, stable.bytes);
-    const probes = await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
+    const messageIndexRail = battle ? null : verifyMessageIndexRail(faction, viewport, stable.bytes);
+    const probes = battle
+      ? [{ type: "production-tactical-entry", system: ready.system,
+        attacker_ships: ready.attacker_ships, defender_ships: ready.defender_ships,
+        fighters: ready.fighters }]
+      : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
+    if (battle) {
+      assert.equal(ready.family, "tactical");
+      assert.equal(ready.faction, faction);
+      assert.ok(ready.attacker_ships > 0 && ready.defender_ships > 0);
+      assert.ok(ready.fighters > 0);
+    }
     const comparison = compareScreenshot(id, stable.bytes, folder);
     const interactionComparisons = {};
     for (const capture of fs.readdirSync(folder)
@@ -570,7 +584,14 @@ async function runScenario(server, executable, scenario, faction, viewport) {
 
 async function main() {
   fs.mkdirSync(runDir, { recursive: true });
-  execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });
+  if (battle) {
+    assert.equal(catalog.family, "TAC-01");
+    assert.equal(catalog.fixture_namespace, 1);
+    assert.deepEqual(catalog.scenarios.map(({ slug }) => slug), ["battle-entry"]);
+    assert.deepEqual(catalog.factions, ["alliance", "empire"]);
+  } else {
+    execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });
+  }
   if (!noBuild) {
     const build = spawnSync("bash", [path.join(root, "scripts/build-interface-test-wasm.sh")], {
       cwd: root,
@@ -589,10 +610,12 @@ async function main() {
     server = await startServer();
     const scenarios = scenarioFilter
       ? catalog.scenarios.filter(({ slug }) => slug === scenarioFilter)
+      : battle
+      ? catalog.scenarios
       : smoke
       ? catalog.scenarios.filter(({ slug }) => ["popular-support", "galaxy"].includes(slug))
       : catalog.scenarios;
-    if (!scenarios.length) fail(`unknown GID scenario: ${scenarioFilter}`);
+    if (!scenarios.length) fail(`unknown ${battle ? "tactical" : "GID"} scenario: ${scenarioFilter}`);
     const factions = smoke ? ["alliance", "empire"] : catalog.factions;
     const viewports = smoke ? [catalog.viewports[0]] : catalog.viewports;
     for (const scenario of scenarios) {
