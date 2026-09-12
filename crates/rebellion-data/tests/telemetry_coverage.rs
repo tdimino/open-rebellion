@@ -17,6 +17,7 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 
 use rebellion_core::ai::{AIState, AiFaction};
 use rebellion_core::dat::Faction;
+use rebellion_core::events::{EventAction, EventCondition, GameEvent, SystemTag};
 use rebellion_core::fog::{FogState, FogSystem};
 use rebellion_core::game_events::*;
 use rebellion_core::tick::{GameClock, GameSpeed};
@@ -53,6 +54,9 @@ const OPTIONAL_SYSTEMS: &[&str] = &[
     SYS_UPRISING, // Needs UPRIS1TB table + specific RNG + control stability
     SYS_BETRAYAL, // Needs UPRIS1TB table + character survival + RNG alignment
 ];
+
+// Test-only ID, outside the original story-event range.
+const TELEMETRY_FIXTURE_EVENT_ID: u32 = u32::MAX;
 
 fn data_dir() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -133,6 +137,19 @@ fn telemetry_coverage_all_sys_constants_emit() {
     // Seed fog and story events
     FogSystem::seed(&mut states.fog, &world);
     rebellion_core::story_events::define_story_events(&mut states.events, &world);
+    // Story definitions emit SYS_STORY. Exercise the separate generic event
+    // route through EventSystem and the integrator without mutating the world.
+    states.events.define(GameEvent {
+        id: TELEMETRY_FIXTURE_EVENT_ID,
+        name: "telemetry_coverage_fixture".into(),
+        conditions: vec![EventCondition::TickReached { tick: 1 }],
+        actions: vec![EventAction::DisplayMessage {
+            text: "Telemetry fixture event".into(),
+        }],
+        is_repeatable: false,
+        enabled: true,
+        system_tag: SystemTag::Events,
+    });
     states.clock.set_speed(GameSpeed::Faster);
 
     // ── Fixture injections to guarantee all 17 systems fire ─────────────
@@ -181,6 +198,7 @@ fn telemetry_coverage_all_sys_constants_emit() {
     // Run 1000 ticks, collect all events
     let mut system_counts: HashMap<&str, usize> = HashMap::new();
     let mut total_events = 0usize;
+    let mut fixture_event_count = 0usize;
 
     for tick in 1..=1000u64 {
         let tick_events = vec![rebellion_core::tick::TickEvent { tick }];
@@ -189,6 +207,13 @@ fn telemetry_coverage_all_sys_constants_emit() {
             run_simulation_tick(&mut world, &mut states, &tick_events, &rolls, tick, &config);
 
         for evt in &events {
+            if evt.system == SYS_EVENTS
+                && evt.event_type == EVT_EVENT_FIRED
+                && evt.details["event_id"].as_u64() == Some(u64::from(TELEMETRY_FIXTURE_EVENT_ID))
+            {
+                assert_eq!(evt.tick, 1, "fixture event must fire on its scheduled tick");
+                fixture_event_count += 1;
+            }
             *system_counts.entry(evt.system).or_insert(0) += 1;
         }
         total_events += events.len();
@@ -199,6 +224,11 @@ fn telemetry_coverage_all_sys_constants_emit() {
             break;
         }
     }
+
+    assert_eq!(
+        fixture_event_count, 1,
+        "generic event must emit exactly once"
+    );
 
     // Report coverage
     eprintln!(
