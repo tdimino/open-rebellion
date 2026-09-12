@@ -3,7 +3,7 @@ title: "Plans Index"
 description: "All feature plans, ExecPlans, and design proposals for Open Rebellion"
 category: plan
 created: 2026-03-22
-updated: 2026-09-11
+updated: 2026-09-12
 tags: [index, plans]
 ---
 
@@ -37,6 +37,7 @@ defines the deterministic harness and one-gate family cadence.
 |------|------|--------|------|
 | [Batched Interface Parity](2026-09-11-feat-batched-interface-parity-plan.md) | feat | active, P47B accepted; complete GID family next | 2026-09-11 |
 | [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md) | tooling | active, GID pilot next | 2026-09-11 |
+| [Standalone Space-Battle Test Launcher](2026-09-12-tooling-standalone-space-battle-launcher.md) | tooling | active, T0 result identity verified; entry and visuals open | 2026-09-12 |
 | [AI Attack Target Variety](2026-03-21-feat-ai-attack-target-variety-plan.md) | feat | complete | 2026-03-21 |
 | [Autoresearch Metrics](2026-03-21-autoresearch-metrics-plan.md) | feat | planned | 2026-03-21 |
 | [Create Your Own Character](2026-03-21-addon-create-your-own-character.md) | addon | planned | 2026-03-21 |

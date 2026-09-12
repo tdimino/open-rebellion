@@ -217,6 +217,8 @@ The local extraction inventory converts the original game's resource DLLs and me
 | Entity names | 511 string bundles | UTF-16 → text | TEXTSTRA.DLL via pelite |
 | Encyclopedia text | 348 entries | RT_RCDATA | ENCYTEXT.DLL |
 
+The [graphic reference library](docs/reference/asset-library/README.md) indexes every decoded entity and staged bitmap, and identifies which original entity-to-art mappings still need proof.
+
 The [faithful-HD plan](docs/plans/2026-09-10-faithful-hd-pipeline/) keeps original pixels as the default parity profile. Optional HD assets require deterministic provenance, explicit review, and family-specific routing; generative restoration remains a separate experimental mode.
 
 Additional pipelines:

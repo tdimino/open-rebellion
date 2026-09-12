@@ -22,6 +22,10 @@ geometry, and unverified asset mappings do not count as parity.
   its original resources, executable paths, and named `RE-*` work package.
 - Check the [screenshot ledger](screenshot-ledger.md) for available reference
   captures and known evidence gaps.
+- Use the [original graphic reference library](../../reference/asset-library/README.md)
+  for every decoded entity, staged resource ID, battle-art gap, and Ghidra
+  proof route. The [standalone space-battle launcher plan](../../plans/2026-09-12-tooling-standalone-space-battle-launcher.md)
+  scopes test-only tactical entry and the `TAC-01` through `TAC-07` gate.
 - Read the [audit report](audit-report.md) for findings, thresholds, and the
   six-tranche implementation order.
 - Review the [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md)

@@ -1,0 +1,1317 @@
+{
+  "schema_version": 1,
+  "scope": "metadata for EData files in the contributor-owned GOG installation; IDs are not semantic mappings",
+  "key_format": "EData/EDATA.NNN",
+  "count": 187,
+  "bitmaps": [
+    {
+      "id": 1,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 2,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 3,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 4,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 5,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 6,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 7,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 8,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 9,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 10,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 11,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 12,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 13,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 14,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 15,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 16,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 17,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 18,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 19,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 20,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 21,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 22,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 23,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 24,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 25,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 26,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 27,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 28,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 29,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 30,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 31,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 32,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 33,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 34,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 35,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 36,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 37,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 38,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 39,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 40,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 41,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 42,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 43,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 44,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 45,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 46,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 47,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 48,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 49,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 50,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 51,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 52,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 53,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 54,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 55,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 56,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 57,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 58,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 59,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 60,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 61,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 62,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 63,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 64,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 65,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 66,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 67,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 68,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 69,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 70,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 71,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 72,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 73,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 74,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 75,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 76,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 77,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 78,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 79,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 80,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 81,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 82,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 83,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 84,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 85,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 86,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 87,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 88,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 89,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 90,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 91,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 92,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 93,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 94,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 95,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 96,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 97,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 98,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 99,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 100,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 101,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 102,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 103,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 104,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 105,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 106,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 107,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 108,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 109,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 110,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 111,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 112,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 113,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 114,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 115,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 116,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 117,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 118,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 119,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 120,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 121,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 122,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 123,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 124,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 125,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 126,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 127,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 128,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 129,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 130,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 131,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 132,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 133,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 134,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 135,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 136,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 137,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 138,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 139,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 140,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 141,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 142,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 143,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 146,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 148,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 149,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 150,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 151,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 152,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 153,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 154,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 155,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 156,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 157,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 158,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 160,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 161,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 162,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 163,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 164,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81080
+    },
+    {
+      "id": 166,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 167,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 168,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 169,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 170,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 171,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 172,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 173,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 174,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 175,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 176,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 177,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 178,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 179,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 180,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 181,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 182,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 183,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 184,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 185,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 186,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 187,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 188,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 189,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 190,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 191,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    },
+    {
+      "id": 192,
+      "width": 400,
+      "height": 200,
+      "bits_per_pixel": 8,
+      "bytes": 81078
+    }
+  ]
+}
