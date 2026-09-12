@@ -32,9 +32,11 @@ original lossless captures does not complete a strict interface-parity cell.
 At native 640x480, every run also checks all nine Message Index rail icons
 pixel-for-pixel against the corresponding original STRATEGY BMPs. This proves
 resting-art identity only, not the unread states or Message Index interactions.
-For unoccluded native-size GID menu captures, the runner also checks all 634
-root-border pixels against STRATEGY 10100 through 10107. A foreground system
-window records the border as occluded instead of asserting hidden pixels.
+For native-size GID menu captures, the runner checks all 634 root-border pixels
+against STRATEGY 10100 through 10107 when unobscured. With a foreground system
+window, it first confirms the overlap, then checks every still-visible border
+pixel and records the covered remainder separately. A root-row hover probe
+also guards against reintroducing the unsupported synthetic color wash.
 Menu interior, typography, and original geometry remain separate acceptance work.
 The runner compares captured menu, hover, legend, and pan/zoom states as well as
 the initial frame once each state has its own reviewed original reference and

@@ -141,6 +141,12 @@ typography, exact original geometry, remaining predicates, and A0 captures
 still gate `CMD-02`. See the
 [P50 frame evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-menu-frame.md).
 
+P51 removes the unsupported row-hover wash while keeping menu routing active.
+The harness now confirms detailed-system-window overlap and checks the GID
+frame pixels that remain visible, rather than skipping the entire frame. The
+[P51 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-hover-and-occlusion.md)
+keeps native hover/focus art and complete stacking acceptance open.
+
 ## Bundle acceptance record
 
 For each bundle, its evidence file must record:

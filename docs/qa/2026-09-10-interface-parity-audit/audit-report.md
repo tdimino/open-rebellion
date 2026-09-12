@@ -61,6 +61,8 @@ This explains the observed symptoms:
   fog, and blockade primitives are withheld from this parity view. The
   P48 restores the original-command GID menu tree. P50 replaces its synthetic
   stroke with the eight original STRATEGY frame tiles and removes the fade.
+  P51 removes an unsupported hover wash and checks visible frame pixels under
+  the detailed system window.
   Menu interior, typography, detailed legend, remaining modes and overlays,
   and exact map interaction remain open.
 - Selecting a system now opens a recovered modeless sector shell. Double-click
@@ -120,7 +122,9 @@ native marker families, and support thresholds. P48 adds the code-built GID
 command tree. P50 restores its eight source frame tiles and instant display,
 with exact source-pixel checks at native size. Menu interior, typography,
 geometry, detailed legend, remaining modes and overlays, sector art, and exact
-map input remain open. Static discoveries do not replace required original-runtime visual
+map input remain open. P51 removes a provisional hover wash and checks the
+frame pixels visible under a foreground system window. Static discoveries do
+not replace required original-runtime visual
 acceptance.
 
 ## Immediate findings
@@ -312,7 +316,8 @@ P46A completes the strategic canvas checkpoint within `UIP-T01`. P46B restores
 the six primary controls. P46C and P46D restore the first sector-to-system
 journey plus source-mapped core-tab items and bounded scrolling. P47A and P47B
 restore the source-aligned galaxy backdrops and default Popular Support GID.
-P48 and P50 add the GID command tree and original tiled frame. Its interior,
+P48 and P50 add the GID command tree and original tiled frame. P51 removes the
+unproven hover wash and tests partially covered frame edges. Its interior,
 typography, detailed legend, remaining modes and map art, other controls,
 exact rail thumbnails, nested object compositions,
 commands, uncommon states, replacement message and status surfaces, and the A0

@@ -85,11 +85,14 @@ marker families, and support-size thresholds. It also establishes that the
 nine tall side controls are Message Index categories, not GID filters. P48
 maps the code-built GID command tree. P50 restores the STRATEGY 10100 through
 10107 menu-frame tiles with instant display and source-pixel browser checks.
+P51 withholds an unsupported hover wash and verifies frame pixels still visible
+beneath the detailed system window.
 The menu interior, typography, exact geometry, expanded 180x240 legend,
 remaining modes and overlays, and exact map input remain open. See the
 [galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) and
 [Popular Support evidence](evidence/2026-09-11-popular-support-gid.md), plus the
-[P50 frame record](evidence/2026-09-12-gid-menu-frame.md).
+[P50 frame record](evidence/2026-09-12-gid-menu-frame.md) and
+[P51 overlap record](evidence/2026-09-12-gid-hover-and-occlusion.md).
 
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a

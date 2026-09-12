@@ -203,7 +203,7 @@ function decodeIndexedBmp(bytes) {
   };
 }
 
-function verifyGidRootFrame(viewport, screenshotBytes) {
+function verifyGidRootFrame(viewport, screenshotBytes, systemWindowOpen = false) {
   if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
     return { status: "non-native-scale", pixels_checked: 0 };
   }
@@ -215,7 +215,22 @@ function verifyGidRootFrame(viewport, screenshotBytes) {
     ))));
   }
   let pixelsChecked = 0;
+  let pixelsOccluded = 0;
+  if (systemWindowOpen) {
+    const covered = (230 * screenshot.width + 425) * 4;
+    assert.notDeepEqual(
+      Array.from(screenshot.data.subarray(covered, covered + 3)),
+      resources.get(10100).pixel(0, 0),
+      "system fixture did not occlude the GID root at its known overlap",
+    );
+  }
   const check = (sx, sy, id, bx, by) => {
+    // The detailed system window and its edge span x=226..455, y=75..379. It is in front
+    // of the GID popup, so compare the authored frame everywhere else.
+    if (systemWindowOpen && sx <= 455 && sy <= 379) {
+      pixelsOccluded++;
+      return;
+    }
     const source = resources.get(id);
     const offset = (sy * screenshot.width + sx) * 4;
     assert.deepEqual(
@@ -226,7 +241,7 @@ function verifyGidRootFrame(viewport, screenshotBytes) {
     pixelsChecked++;
   };
   // The root rectangle is 158x159 at native 640x480, from the recovered
-  // GID anchor and seven rows. This checks every painted border pixel.
+  // GID anchor and seven rows. Check every visible painted border pixel.
   for (const [id, x, y] of [
     [10100, 425, 230], [10101, 581, 230],
     [10102, 425, 387], [10103, 581, 387],
@@ -243,7 +258,12 @@ function verifyGidRootFrame(viewport, screenshotBytes) {
     check(425, y, 10105, 0, (y - 232) % 2);
     check(582, y, 10106, 0, (y - 232) % 2);
   }
-  return { status: "source-bitmap-exact", source_bitmaps_checked: 8, pixels_checked: pixelsChecked };
+  return {
+    status: systemWindowOpen ? "source-bitmap-visible-partial" : "source-bitmap-exact",
+    source_bitmaps_checked: 8,
+    pixels_checked: pixelsChecked,
+    pixels_occluded: pixelsOccluded,
+  };
 }
 
 function verifyMessageIndexRail(faction, viewport, screenshotBytes) {
@@ -306,9 +326,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   assert.ok(commandLines().some((line) => line.includes("destination=gid_menu status=opened")),
     `${faction}: interior did not open the GID menu`);
   const rootCapture = await page.screenshot({ path: path.join(folder, "menu-root.png"), animations: "disabled" });
-  const rootFrame = scenario.slug === "system"
-    ? { status: "occluded-by-system-window", pixels_checked: 0 }
-    : verifyGidRootFrame(viewport, rootCapture);
+  const rootFrame = verifyGidRootFrame(viewport, rootCapture, scenario.slug === "system");
   probes.push({ type: "control-click", x: interior.x, y: interior.y, opened: true,
     screenshot_sha256: sha256(rootCapture), root_frame: rootFrame });
 
@@ -317,6 +335,15 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     const alternatePoint = point(470, 246);
     await page.mouse.move(alternatePoint.x, alternatePoint.y);
     await page.waitForTimeout(50);
+    const hoveredRoot = await page.screenshot({ path: path.join(folder, "menu-root-hover.png"), animations: "disabled" });
+    if (viewport.width === 640 && viewport.height === 480 && viewport.device_scale_factor === 1
+        && scenario.slug !== "system") {
+      const before = PNG.sync.read(rootCapture);
+      const after = PNG.sync.read(hoveredRoot);
+      const pixel = (png, x, y) => Array.from(png.data.subarray((y * png.width + x) * 4, (y * png.width + x) * 4 + 3));
+      assert.deepEqual(pixel(after, 450, 245), pixel(before, 450, 245),
+        "GID root added an unproven synthetic row hover wash");
+    }
     const alternateLeaf = point(222, 246 + (alternate === "Uprisings" ? 21 : 0));
     await page.mouse.click(alternateLeaf.x, alternateLeaf.y);
     await page.waitForFunction((expected) => window.__openRebellionInterfaceSelection?.mode === expected,

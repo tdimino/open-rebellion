@@ -1112,13 +1112,6 @@ fn gid_menu_row(
         egui::vec2(ui.available_width(), height),
         egui::Sense::click(),
     );
-    if response.hovered() {
-        ui.painter().rect_filled(
-            rect,
-            0.0,
-            egui::Color32::from_rgba_premultiplied(70, 84, 83, 185),
-        );
-    }
     if let Some(resource_id) = icon_resource {
         paint_gid_icon(
             ui,

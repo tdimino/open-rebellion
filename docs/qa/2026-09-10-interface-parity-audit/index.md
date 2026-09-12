@@ -74,6 +74,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md) | Code-built GID command tree, test-only fixture isolation, muted browser matrix, and unaccepted visual states. |
 | [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md) | Original faction rail positions and BMPs, exact resting-pixel checks, and open category/index behavior. |
 | [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md) | Eight source frame tiles, instant menu display, source-pixel border checks, and remaining menu gaps. |
+| [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) | Unsupported hover-wash removal and source-pixel checks on visible frame edges beneath a system window. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -131,6 +132,10 @@ matrix open. P48 restores the code-built GID command tree. P50 adds its eight
 original frame tiles and removes the non-native fade. The
 [frame evidence](evidence/2026-09-12-gid-menu-frame.md) leaves menu interior,
 typography, and exact geometry open.
+P51 removes the provisional row-hover wash and verifies the part of the GID
+frame still visible beneath a detailed system window. Its
+[evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) leaves original
+hover/focus presentation and full stacking acceptance open.
 Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

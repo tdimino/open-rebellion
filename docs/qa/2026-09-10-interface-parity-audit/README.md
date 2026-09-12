@@ -47,6 +47,8 @@ geometry, and unverified asset mappings do not count as parity.
   for exact faction resting bitmaps and the still-open index behavior.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
+- Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)
+  for removal of the unsupported wash and visible-border checks under windows.
 
 ## Suggested contribution lanes
 
@@ -116,6 +118,10 @@ remain open. See the [rail evidence](evidence/2026-09-12-message-index-rail.md).
 P50 restores the eight original GID frame tiles to the root and submenu and
 removes the invented fade. Its native-size root border matches the source BMPs
 where unobscured. See the [frame evidence](evidence/2026-09-12-gid-menu-frame.md).
+P51 removes a provisional hover wash and extends those checks to the visible
+frame border beneath a foreground system window. Its
+[evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) keeps original hover
+and focus states open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

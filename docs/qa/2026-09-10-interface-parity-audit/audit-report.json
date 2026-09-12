@@ -94,7 +94,8 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-authored-galaxy-backdrop.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-menu-frame.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-menu-frame.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-hover-and-occlusion.md"
       ],
       "affected_surfaces": ["CMD-02", "CMD-09"]
     },

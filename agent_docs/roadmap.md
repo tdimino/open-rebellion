@@ -532,6 +532,9 @@ would tune around known simulation feedback defects.
   fade, and check native-size root pixels against the source BMPs in both
   factions. Menu interior, typography, exact geometry, remaining GID rules,
   original-executable captures, and `CMD-02` acceptance remain open.
+- [x] Remove the P51 unproven GID row-hover wash, retain submenu routing, and
+  verify every visible source-frame pixel under the detailed system window.
+  Original hover/focus art and full window-stacking acceptance remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
