@@ -220,14 +220,14 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL"],
-        "anchors": ["FUN_00427010", "FUN_00425d00", "FUN_00426d00", "FUN_00426e70", "FUN_00426ee0", "FUN_00427270", "FUN_0042b330"],
+        "anchors": ["FUN_00427010", "FUN_00425d00", "FUN_00426d00", "FUN_00426e70", "FUN_00426ee0", "FUN_00427270", "FUN_0042b330", "FUN_004511e0"],
         "method": "Follow GID mode branches, captions, bitmap loads, map paint predicates, marker resources, viewport transforms, and input handlers.",
-        "next_proof": "Recover the code-built GID menu, expanded legend, remaining faction filters and overlay predicates, then selection, pan, zoom, and keyboard branches."
+        "next_proof": "Recover native GID menu interior, typography, exact geometry, expanded legend, remaining faction filters and overlay predicates, then selection, pan, zoom, and keyboard branches."
       },
       "runtime_capture_required": true,
       "implementation_evidence": {
-        "status": "default_popular_support_implemented_pending_complete_gid_matrix",
-        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md",
+        "status": "source_tiled_gid_frame_implemented_pending_complete_gid_matrix",
+        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-menu-frame.md",
         "completed": [
           "STRATEGY 902 Display Off and STRATEGY 903 active GID predicates",
           "source-aligned Alliance and Imperial aperture crops",
@@ -237,10 +237,13 @@
           "native 10146 through 10158 marker families and Popular Support thresholds",
           "transparent blue matte and fixed display-scaled marker sizes",
           "dark fail-closed fallback and negative-cache diagnostic",
-          "synthetic overlay removal from the default parity surface"
+          "synthetic overlay removal from the default parity surface",
+          "source-mapped 22-command GID menu tree and faction menu icons",
+          "STRATEGY 10100 through 10107 root and submenu frame tiles with instant display",
+          "native-size root border source-pixel checks and deterministic muted browser catalog"
         ],
         "remaining": [
-          "original code-built GID menu and expanded 180x240 legend",
+          "original menu interior, typography, exact geometry, and expanded 180x240 legend",
           "every non-default GID filter and matching overlay predicates",
           "original sector, fleet, mission, facility, resource, HQ, blockade, and intelligence overlays",
           "exact hover, selection, pan, zoom, and keyboard semantics",

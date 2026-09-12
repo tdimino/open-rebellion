@@ -993,8 +993,98 @@ fn gid_submenu_items(category: GidCategory, faction: CockpitFaction) -> Vec<GidM
 fn gid_popup_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(egui::Color32::from_rgba_premultiplied(45, 47, 48, 218))
-        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_gray(185)))
+        // Keep the stroke's layout inset, but paint its visible edge from the
+        // eight original STRATEGY bitmap tiles below.
+        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::TRANSPARENT))
         .inner_margin(egui::Margin::same(5))
+}
+
+/// `FUN_004511e0` passes STRATEGY 10100..10107 to the native GID frame
+/// constructor. Corners are 2x2; the four one-pixel strips repeat between
+/// them. The video reference also shows the characteristic alternating edge.
+fn paint_gid_frame_border(ui: &egui::Ui, cache: &mut BmpCache, rect: egui::Rect, scale: f32) {
+    let corner = 2.0 * scale;
+    let tile = |ui: &egui::Ui, cache: &mut BmpCache, id, target: egui::Rect| {
+        if let Some(texture) = cache.get(ui.ctx(), DllSource::Strategy, id) {
+            ui.painter().image(
+                texture.id(),
+                target,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+    };
+    for (id, pos) in [
+        (10100, rect.min),
+        (10101, egui::pos2(rect.max.x - corner, rect.min.y)),
+        (10102, egui::pos2(rect.min.x, rect.max.y - corner)),
+        (10103, rect.max - egui::vec2(corner, corner)),
+    ] {
+        tile(
+            ui,
+            cache,
+            id,
+            egui::Rect::from_min_size(pos, egui::vec2(corner, corner)),
+        );
+    }
+    for (id, start, end, horizontal) in [
+        (
+            10104,
+            egui::pos2(rect.min.x + corner, rect.min.y),
+            egui::pos2(rect.max.x - corner, rect.min.y),
+            true,
+        ),
+        (
+            10107,
+            egui::pos2(rect.min.x + corner, rect.max.y - scale),
+            egui::pos2(rect.max.x - corner, rect.max.y - scale),
+            true,
+        ),
+        (
+            10105,
+            egui::pos2(rect.min.x, rect.min.y + corner),
+            egui::pos2(rect.min.x, rect.max.y - corner),
+            false,
+        ),
+        (
+            10106,
+            egui::pos2(rect.max.x - scale, rect.min.y + corner),
+            egui::pos2(rect.max.x - scale, rect.max.y - corner),
+            false,
+        ),
+    ] {
+        let Some(texture) = cache.get(ui.ctx(), DllSource::Strategy, id) else {
+            continue;
+        };
+        let mut mesh = egui::Mesh::with_texture(texture.id());
+        let mut position = if horizontal { start.x } else { start.y };
+        let limit = if horizontal { end.x } else { end.y };
+        while position < limit {
+            let remaining = (limit - position).min(corner);
+            let target = if horizontal {
+                egui::Rect::from_min_size(
+                    egui::pos2(position, start.y),
+                    egui::vec2(remaining, scale),
+                )
+            } else {
+                egui::Rect::from_min_size(
+                    egui::pos2(start.x, position),
+                    egui::vec2(scale, remaining),
+                )
+            };
+            let uv = egui::Rect::from_min_max(
+                egui::Pos2::ZERO,
+                if horizontal {
+                    egui::pos2(remaining / corner, 1.0)
+                } else {
+                    egui::pos2(1.0, remaining / corner)
+                },
+            );
+            mesh.add_rect_with_uv(target, uv, egui::Color32::WHITE);
+            position += corner;
+        }
+        ui.painter().add(egui::Shape::mesh(mesh));
+    }
 }
 
 fn paint_gid_icon(ui: &egui::Ui, cache: &mut BmpCache, resource_id: u32, rect: egui::Rect) {
@@ -1095,41 +1185,42 @@ fn draw_gid_menu(
     );
     let root = egui::Area::new(egui::Id::new("original_gid_root_menu"))
         .order(egui::Order::Foreground)
+        .fade_in(false)
         .fixed_pos(root_pos)
         .show(ctx, |ui| {
             ui.set_width(158.0 * scale);
-            gid_popup_frame()
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    for category in GidCategory::ALL {
-                        let response = gid_menu_row(
-                            ui,
-                            cache,
-                            category.label(),
-                            Some(gid_category_resource(category, state.faction)),
-                            Some(gid_arrow_resource(state.faction)),
-                            None,
-                            scale,
-                        );
-                        if response.hovered() || response.clicked() {
-                            state.gid_ui.category = Some(category);
-                        }
-                    }
-                    let checked = (state.gid_mode == GidMode::DisplayOff)
-                        .then_some(gid_check_resource(state.faction));
-                    gid_menu_row(
+            let menu = gid_popup_frame().show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for category in GidCategory::ALL {
+                    let response = gid_menu_row(
                         ui,
                         cache,
-                        GidMode::DisplayOff.label(),
+                        category.label(),
+                        Some(gid_category_resource(category, state.faction)),
+                        Some(gid_arrow_resource(state.faction)),
                         None,
-                        None,
-                        checked,
                         scale,
-                    )
-                    .clicked()
-                    .then_some(GidMode::DisplayOff)
-                })
-                .inner
+                    );
+                    if response.hovered() || response.clicked() {
+                        state.gid_ui.category = Some(category);
+                    }
+                }
+                let checked = (state.gid_mode == GidMode::DisplayOff)
+                    .then_some(gid_check_resource(state.faction));
+                gid_menu_row(
+                    ui,
+                    cache,
+                    GidMode::DisplayOff.label(),
+                    None,
+                    None,
+                    checked,
+                    scale,
+                )
+                .clicked()
+                .then_some(GidMode::DisplayOff)
+            });
+            paint_gid_frame_border(ui, cache, menu.response.rect, scale);
+            menu.inner
         });
 
     let mut selected = root.inner;
@@ -1147,33 +1238,34 @@ fn draw_gid_menu(
         let submenu_pos = egui::pos2(root_pos.x - 246.0 * scale, submenu_y);
         let submenu = egui::Area::new(egui::Id::new("original_gid_submenu"))
             .order(egui::Order::Foreground)
+            .fade_in(false)
             .fixed_pos(submenu_pos)
             .show(ctx, |ui| {
                 ui.set_width(238.0 * scale);
-                gid_popup_frame()
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        let mut chosen = None;
-                        for item in items {
-                            let checked = (state.gid_mode == item.mode)
-                                .then_some(gid_check_resource(state.faction));
-                            if gid_menu_row(
-                                ui,
-                                cache,
-                                item.mode.label(),
-                                Some(item.resource_id),
-                                None,
-                                checked,
-                                scale,
-                            )
-                            .clicked()
-                            {
-                                chosen = Some(item.mode);
-                            }
+                let menu = gid_popup_frame().show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let mut chosen = None;
+                    for item in items {
+                        let checked = (state.gid_mode == item.mode)
+                            .then_some(gid_check_resource(state.faction));
+                        if gid_menu_row(
+                            ui,
+                            cache,
+                            item.mode.label(),
+                            Some(item.resource_id),
+                            None,
+                            checked,
+                            scale,
+                        )
+                        .clicked()
+                        {
+                            chosen = Some(item.mode);
                         }
-                        chosen
-                    })
-                    .inner
+                    }
+                    chosen
+                });
+                paint_gid_frame_border(ui, cache, menu.response.rect, scale);
+                menu.inner
             });
         submenu_rect = submenu.response.rect;
         selected = selected.or(submenu.inner);

@@ -59,8 +59,10 @@ This explains the observed symptoms:
   the default Popular Support caption, compact legend, and native marker
   families. Synthetic labels, circles, glows, facility squares, fleet glyphs,
   fog, and blockade primitives are withheld from this parity view. The
-  original GID menu, detailed legend, remaining modes and overlays, and exact
-  map interaction remain open.
+  P48 restores the original-command GID menu tree. P50 replaces its synthetic
+  stroke with the eight original STRATEGY frame tiles and removes the fade.
+  Menu interior, typography, detailed legend, remaining modes and overlays,
+  and exact map interaction remain open.
 - Selecting a system now opens a recovered modeless sector shell. Double-click
   opens the original detailed-system shell and core bitmap tabs. Illustrated
   first-pass item contents, bounded scrollbar navigation, and selection work.
@@ -83,7 +85,7 @@ The local source inspection establishes the implementation causes:
 |---------|---------------------|-------------------|
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
-| Partial authored galaxy and default Popular Support GID | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-render/src/cockpit.rs` | STRATEGY 902/903, 10013/10014, 10027/10028, 10146 through 10158, 10168, manual pp. 66–73, [P47A evidence](evidence/2026-09-11-authored-galaxy-backdrop.md), and [P47B evidence](evidence/2026-09-11-popular-support-gid.md) |
+| Partial authored galaxy and GID | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-render/src/cockpit.rs` | STRATEGY 902/903, 10013/10014, 10027/10028, 10100 through 10107, 10146 through 10158, 10168, manual pp. 66–73, [P47B evidence](evidence/2026-09-11-popular-support-gid.md), and [P50 evidence](evidence/2026-09-12-gid-menu-frame.md) |
 | Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
@@ -114,9 +116,11 @@ intelligence semantics, commands, other controls, and uncommon states remain ope
 P47A restores the bright STRATEGY 902 galaxy at its source-aligned canvas
 origin beneath both faction shells. P47B proves 902 is Display Off and restores
 the active 903 Popular Support view, exact faction GID control, compact legend,
-native marker families, and support thresholds. The original GID menu, detailed
-legend, remaining modes and overlays, sector art, and exact map input remain
-open. Static discoveries do not replace required original-runtime visual
+native marker families, and support thresholds. P48 adds the code-built GID
+command tree. P50 restores its eight source frame tiles and instant display,
+with exact source-pixel checks at native size. Menu interior, typography,
+geometry, detailed legend, remaining modes and overlays, sector art, and exact
+map input remain open. Static discoveries do not replace required original-runtime visual
 acceptance.
 
 ## Immediate findings
@@ -308,7 +312,8 @@ P46A completes the strategic canvas checkpoint within `UIP-T01`. P46B restores
 the six primary controls. P46C and P46D restore the first sector-to-system
 journey plus source-mapped core-tab items and bounded scrolling. P47A and P47B
 restore the source-aligned galaxy backdrops and default Popular Support GID.
-The GID menu, detailed legend, remaining modes and map art, other controls,
+P48 and P50 add the GID command tree and original tiled frame. Its interior,
+typography, detailed legend, remaining modes and map art, other controls,
 exact rail thumbnails, nested object compositions,
 commands, uncommon states, replacement message and status surfaces, and the A0
 matrix remain open. `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, `OBJ-02`,

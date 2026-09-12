@@ -80,7 +80,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P48 tooling checkpoint; UIP-B02 continues
+## Current execution focus: P50 GID frame checkpoint; UIP-B02 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -131,6 +131,15 @@ with exact 640x480 source-pixel checks in the muted harness. This is a UIP-B03
 visual slice, not a completed `CMD-08` workflow. The illuminated state,
 original index window, category routing, and interaction matrix remain open.
 See the [P49 rail evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-message-index-rail.md).
+
+P50 replaces the GID root and submenu's synthetic gray stroke with the eight
+original STRATEGY frame tiles, drawn as four corners and four batched repeating
+edges. Both menus open without egui's non-native fade. The native-size harness
+checks every visible root-border pixel against the source BMPs; system-window
+occlusion remains a separate state, not a failed frame. The menu interior,
+typography, exact original geometry, remaining predicates, and A0 captures
+still gate `CMD-02`. See the
+[P50 frame evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-menu-frame.md).
 
 ## Bundle acceptance record
 

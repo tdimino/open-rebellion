@@ -181,13 +181,13 @@ async function stableFrame(page, folder) {
 }
 
 function decodeIndexedBmp(bytes) {
-  assert.equal(bytes.toString("ascii", 0, 2), "BM", "rail resource is not a BMP");
+  assert.equal(bytes.toString("ascii", 0, 2), "BM", "source resource is not a BMP");
   const dataOffset = bytes.readUInt32LE(10);
   const headerSize = bytes.readUInt32LE(14);
   const width = bytes.readInt32LE(18);
   const height = bytes.readInt32LE(22);
-  assert.equal(bytes.readUInt16LE(28), 8, "rail resource is not indexed 8-bit BMP");
-  assert.equal(bytes.readUInt32LE(30), 0, "rail resource has unsupported compression");
+  assert.equal(bytes.readUInt16LE(28), 8, "source resource is not indexed 8-bit BMP");
+  assert.equal(bytes.readUInt32LE(30), 0, "source resource has unsupported compression");
   assert.ok(width > 0 && height > 0 && headerSize >= 40);
   const paletteOffset = 14 + headerSize;
   const stride = (width + 3) & ~3;
@@ -201,6 +201,49 @@ function decodeIndexedBmp(bytes) {
       return [bytes[entry + 2], bytes[entry + 1], bytes[entry]];
     },
   };
+}
+
+function verifyGidRootFrame(viewport, screenshotBytes) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", pixels_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const resources = new Map();
+  for (let id = 10100; id <= 10107; id++) {
+    resources.set(id, decodeIndexedBmp(fs.readFileSync(path.join(
+      root, `data/base/ui/strategy-dll/BMP/${id}.bmp`,
+    ))));
+  }
+  let pixelsChecked = 0;
+  const check = (sx, sy, id, bx, by) => {
+    const source = resources.get(id);
+    const offset = (sy * screenshot.width + sx) * 4;
+    assert.deepEqual(
+      Array.from(screenshot.data.subarray(offset, offset + 3)),
+      source.pixel(bx, by),
+      `GID root border (${sx}, ${sy}) differs from STRATEGY ${id} (${bx}, ${by})`,
+    );
+    pixelsChecked++;
+  };
+  // The root rectangle is 158x159 at native 640x480, from the recovered
+  // GID anchor and seven rows. This checks every painted border pixel.
+  for (const [id, x, y] of [
+    [10100, 425, 230], [10101, 581, 230],
+    [10102, 425, 387], [10103, 581, 387],
+  ]) {
+    for (let by = 0; by < 2; by++) {
+      for (let bx = 0; bx < 2; bx++) check(x + bx, y + by, id, bx, by);
+    }
+  }
+  for (let x = 427; x <= 580; x++) {
+    check(x, 230, 10104, (x - 427) % 2, 0);
+    check(x, 388, 10107, (x - 427) % 2, 0);
+  }
+  for (let y = 232; y <= 386; y++) {
+    check(425, y, 10105, 0, (y - 232) % 2);
+    check(582, y, 10106, 0, (y - 232) % 2);
+  }
+  return { status: "source-bitmap-exact", source_bitmaps_checked: 8, pixels_checked: pixelsChecked };
 }
 
 function verifyMessageIndexRail(faction, viewport, screenshotBytes) {
@@ -263,8 +306,11 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   assert.ok(commandLines().some((line) => line.includes("destination=gid_menu status=opened")),
     `${faction}: interior did not open the GID menu`);
   const rootCapture = await page.screenshot({ path: path.join(folder, "menu-root.png"), animations: "disabled" });
+  const rootFrame = scenario.slug === "system"
+    ? { status: "occluded-by-system-window", pixels_checked: 0 }
+    : verifyGidRootFrame(viewport, rootCapture);
   probes.push({ type: "control-click", x: interior.x, y: interior.y, opened: true,
-    screenshot_sha256: sha256(rootCapture) });
+    screenshot_sha256: sha256(rootCapture), root_frame: rootFrame });
 
   if (scenario.category !== null) {
     const alternate = scenario.mode === "Uprisings" ? "Popular Support" : "Uprisings";

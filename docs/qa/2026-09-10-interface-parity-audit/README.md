@@ -45,6 +45,8 @@ geometry, and unverified asset mappings do not count as parity.
   original-reference and filter-predicate gaps.
 - Review the [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md)
   for exact faction resting bitmaps and the still-open index behavior.
+- Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
+  for original frame tiles, source-pixel checks, and the remaining menu gaps.
 
 ## Suggested contribution lanes
 
@@ -111,6 +113,9 @@ original-executable capture acceptance open.
 P49 restores the nine original Message Index rail icons per faction. Their
 resting pixels match the source BMPs, but the index window and unread states
 remain open. See the [rail evidence](evidence/2026-09-12-message-index-rail.md).
+P50 restores the eight original GID frame tiles to the root and submenu and
+removes the invented fade. Its native-size root border matches the source BMPs
+where unobscured. See the [frame evidence](evidence/2026-09-12-gid-menu-frame.md).
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

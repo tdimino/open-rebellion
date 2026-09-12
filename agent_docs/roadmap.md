@@ -527,6 +527,11 @@ would tune around known simulation feedback defects.
   pixel-for-pixel in the muted 640x480 browser harness. `CMD-08` remains open
   for illuminated/unread states, pointer routing, the original index window,
   categories, navigation, and its full acceptance matrix.
+- [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
+  10107. Paint repeated edges in four batched meshes, remove the invented menu
+  fade, and check native-size root pixels against the source BMPs in both
+  factions. Menu interior, typography, exact geometry, remaining GID rules,
+  original-executable captures, and `CMD-02` acceptance remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

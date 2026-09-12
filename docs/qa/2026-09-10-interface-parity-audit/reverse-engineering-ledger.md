@@ -82,11 +82,14 @@ the bright and dim galaxy resources. P47B proves 902 belongs to Display Off and
 903 to every active GID mode, then restores the default Popular Support caption,
 exact faction GID control, compact 10168 legend, native 10146 through 10158
 marker families, and support-size thresholds. It also establishes that the
-nine tall side controls are Message Index categories, not GID filters. The
-code-built GID menu, expanded 180x240 legend, remaining modes and overlays, and
-exact map input remain open. See the
+nine tall side controls are Message Index categories, not GID filters. P48
+maps the code-built GID command tree. P50 restores the STRATEGY 10100 through
+10107 menu-frame tiles with instant display and source-pixel browser checks.
+The menu interior, typography, exact geometry, expanded 180x240 legend,
+remaining modes and overlays, and exact map input remain open. See the
 [galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) and
-[Popular Support evidence](evidence/2026-09-11-popular-support-gid.md).
+[Popular Support evidence](evidence/2026-09-11-popular-support-gid.md), plus the
+[P50 frame record](evidence/2026-09-12-gid-menu-frame.md).
 
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a
@@ -131,7 +134,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
 | RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell and first rail lifecycle runtime-corroborated | Replace provisional rail thumbnails, exercise the full multiwindow matrix, then compare against A0 captures |
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial; primary controls implemented | Capture the six primary controls in A0, implement original destinations, then recover speed and facility-indicator predicates |
-| RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial; Display Off and default Popular Support runtime-corroborated | Recover the code-built menu, expanded legend, remaining filter predicates and overlays, and exact map input |
+| RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial; default GID and source frame runtime-corroborated | Recover menu interior and geometry, expanded legend, remaining filter predicates and overlays, and exact map input |
 | RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |
 | RE-MSG-01 | Messages, Agent menus, alerts, and reports | static-partial; rail controls recovered | Decompile `FUN_0042a240`, map unread states and the original index window, then join reports, audio, and navigation |
 | RE-ENC-01 | Encyclopedia index and topics | static-partial | Complete ENCYBMAP, ENCYTEXT, EData, and navigation mappings |

@@ -86,14 +86,15 @@
       "id": "UIP-F-002",
       "severity": "P0",
       "status": "partial",
-      "title": "Source-mapped GID menu commands and 152 muted browser probes extend the original backdrops and compact legend; non-support metrics, rare overlays, expanded legend, and original capture acceptance remain open",
+      "title": "Source-mapped GID commands, original tiled menu frames, and 152 muted browser probes extend the original backdrops and compact legend; menu interior, non-support metrics, rare overlays, expanded legend, and original capture acceptance remain open",
       "evidence": [
         "crates/rebellion-render/src/bmp_cache.rs",
         "crates/rebellion-render/src/lib.rs",
         "crates/rebellion-render/src/cockpit.rs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-authored-galaxy-backdrop.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-menu-frame.md"
       ],
       "affected_surfaces": ["CMD-02", "CMD-09"]
     },
@@ -251,5 +252,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Continue UIP-B02 by recovering the code-built GID menu, expanded legend, remaining filter predicates and original overlays, then exact map input and sector art while keeping evidence-blocked UIP-B01 work open until its complete matrix passes."
+  "next_action": "Continue UIP-B02 by resolving the native GID menu interior and geometry, expanded legend, remaining filter predicates and original overlays, then exact map input and sector art while keeping evidence-blocked UIP-B01 work open until its complete matrix passes."
 }

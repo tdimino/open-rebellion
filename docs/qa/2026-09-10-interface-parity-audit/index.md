@@ -73,6 +73,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md) | Active STRATEGY 903 predicate, faction GID control, compact legend, native marker families, support thresholds, tests, and browser acceptance. |
 | [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md) | Code-built GID command tree, test-only fixture isolation, muted browser matrix, and unaccepted visual states. |
 | [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md) | Original faction rail positions and BMPs, exact resting-pixel checks, and open category/index behavior. |
+| [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md) | Eight source frame tiles, instant menu display, source-pixel border checks, and remaining menu gaps. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -124,9 +125,12 @@ strategic canvas origin for both factions. P47B then proves that 902 is Display
 Off and restores the default active Popular Support view with STRATEGY 903,
 the exact faction GID control, compact legend, native marker families, and
 support thresholds. Its
-[evidence record](evidence/2026-09-11-popular-support-gid.md) keeps the original
-GID menu, detailed legend, other modes and overlays, exact map input, and the
-complete acceptance matrix open.
+[evidence record](evidence/2026-09-11-popular-support-gid.md) keeps the detailed
+legend, other modes and overlays, exact map input, and complete acceptance
+matrix open. P48 restores the code-built GID command tree. P50 adds its eight
+original frame tiles and removes the non-native fade. The
+[frame evidence](evidence/2026-09-12-gid-menu-frame.md) leaves menu interior,
+typography, and exact geometry open.
 Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain
