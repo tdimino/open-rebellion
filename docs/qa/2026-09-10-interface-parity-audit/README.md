@@ -43,6 +43,8 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md)
   for the code-built menu, isolated fixtures, browser matrix, and remaining
   original-reference and filter-predicate gaps.
+- Review the [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md)
+  for exact faction resting bitmaps and the still-open index behavior.
 
 ## Suggested contribution lanes
 
@@ -106,6 +108,9 @@ P48 adds the original-command GID menu tree and a test-only muted browser
 matrix. The [P48 evidence](evidence/2026-09-12-gid-browser-harness.md) keeps
 non-support filter rules, expanded legend, special state overlays, and
 original-executable capture acceptance open.
+P49 restores the nine original Message Index rail icons per faction. Their
+resting pixels match the source BMPs, but the index window and unread states
+remain open. See the [rail evidence](evidence/2026-09-12-message-index-rail.md).
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

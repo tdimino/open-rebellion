@@ -52,6 +52,9 @@ This explains the observed symptoms:
   and commands remain open. The replacement message and status
   bars are also withheld because
   they covered the original controls. Their authentic versions remain open.
+- P49 restores the original nine Message Index side-rail resting icons for
+  each faction. Their browser pixels match the source STRATEGY bitmaps at
+  640x480. The unread state, input, and original index window remain open.
 - P47A and P47B restore the bright Display Off and dim active galaxy resources,
   the default Popular Support caption, compact legend, and native marker
   families. Synthetic labels, circles, glows, facility squares, fleet glyphs,

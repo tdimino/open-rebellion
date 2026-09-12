@@ -41,8 +41,10 @@ rail lifecycle for both factions. The original galaxy resources now back both
 Display Off and the default active Popular Support view. Popular Support uses
 the exact faction GID control, compact legend, native marker families, and
 recovered size thresholds. Other GID modes, sector and object overlays,
-incomplete system contents, approximate rail thumbnails, authentic message and
-status surfaces, and other controls remain open.
+incomplete system contents, approximate window thumbnails, authentic message
+and status surfaces, and other controls remain open. The nine Message Index
+side-rail resting icons per faction now match their original bitmaps exactly;
+their unread states and destination window remain open.
 Original advisor idle frames render in the scaled
 apertures, but their authored actions, voice, and chrome remain open.
 
@@ -70,6 +72,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P47A galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) | STRATEGY 902 identity, source-aligned placement, native/WASM texture transport, tests, captures, and open GID boundaries. |
 | [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md) | Active STRATEGY 903 predicate, faction GID control, compact legend, native marker families, support thresholds, tests, and browser acceptance. |
 | [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md) | Code-built GID command tree, test-only fixture isolation, muted browser matrix, and unaccepted visual states. |
+| [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md) | Original faction rail positions and BMPs, exact resting-pixel checks, and open category/index behavior. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |

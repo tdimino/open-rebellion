@@ -522,6 +522,11 @@ would tune around known simulation feedback defects.
   original-executable captures are accepted. The original floating legend,
   non-support filter predicates, special markers, native comparison, and
   complete `CMD-02` acceptance remain open.
+- [x] Restore the P49 Message Index rail resting artwork: map nine controls
+  per faction from `FUN_00427270` and verify all eighteen STRATEGY BMPs
+  pixel-for-pixel in the muted 640x480 browser harness. `CMD-08` remains open
+  for illuminated/unread states, pointer routing, the original index window,
+  categories, navigation, and its full acceptance matrix.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

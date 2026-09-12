@@ -230,6 +230,19 @@ pub struct StrategicControlSpec {
     pub pressed_resource: u32,
 }
 
+/// One original Message Index category control on the command-center rail.
+///
+/// `FUN_00427270` constructs these nine 27x22 controls for each faction.
+/// The resting and illuminated resources are separate; the latter is not
+/// selected until the original message-state predicate is recovered.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MessageIndexControlSpec {
+    pub command_id: u16,
+    pub rect: CockpitViewport,
+    pub resting_resource: u32,
+    pub illuminated_resource: u32,
+}
+
 /// Pixel viewport the galaxy map should render into.
 ///
 /// All coordinates are in macroquad screen pixels.
@@ -448,6 +461,50 @@ const EMPIRE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
     pressed_resource: resources::strategy::EMPIRE_GID_PRESSED,
 };
 
+const ALLIANCE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
+    message_index_control(0x136, 3.0, 109.0, 10050, 10060),
+    message_index_control(0x137, 3.0, 134.0, 10051, 10061),
+    message_index_control(0x138, 3.0, 159.0, 10052, 10062),
+    message_index_control(0x139, 3.0, 184.0, 10053, 10063),
+    message_index_control(0x13a, 3.0, 209.0, 10054, 10064),
+    message_index_control(0x13b, 3.0, 234.0, 10055, 10065),
+    message_index_control(0x13c, 3.0, 259.0, 10056, 10066),
+    message_index_control(0x13d, 3.0, 284.0, 10057, 10067),
+    message_index_control(0x13e, 3.0, 309.0, 10058, 10068),
+];
+
+const EMPIRE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
+    message_index_control(0x136, 611.0, 110.0, 10030, 10040),
+    message_index_control(0x137, 611.0, 135.0, 10031, 10041),
+    message_index_control(0x138, 611.0, 160.0, 10032, 10042),
+    message_index_control(0x139, 611.0, 185.0, 10033, 10043),
+    message_index_control(0x13a, 611.0, 210.0, 10034, 10044),
+    message_index_control(0x13b, 611.0, 235.0, 10035, 10045),
+    message_index_control(0x13c, 611.0, 260.0, 10036, 10046),
+    message_index_control(0x13d, 611.0, 285.0, 10037, 10047),
+    message_index_control(0x13e, 611.0, 310.0, 10038, 10048),
+];
+
+const fn message_index_control(
+    command_id: u16,
+    x: f32,
+    y: f32,
+    resting_resource: u32,
+    illuminated_resource: u32,
+) -> MessageIndexControlSpec {
+    MessageIndexControlSpec {
+        command_id,
+        rect: CockpitViewport {
+            x,
+            y,
+            width: 27.0,
+            height: 22.0,
+        },
+        resting_resource,
+        illuminated_resource,
+    }
+}
+
 /// Exact primary-control table created by `FUN_00427270` for a faction.
 pub fn strategic_primary_controls(faction: CockpitFaction) -> &'static [StrategicControlSpec; 6] {
     match faction {
@@ -461,6 +518,16 @@ pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicContr
     match faction {
         CockpitFaction::Alliance => &ALLIANCE_GID_CONTROL,
         CockpitFaction::Empire => &EMPIRE_GID_CONTROL,
+    }
+}
+
+/// Exact Message Index rail records constructed by `FUN_00427270`.
+pub fn strategic_message_index_controls(
+    faction: CockpitFaction,
+) -> &'static [MessageIndexControlSpec; 9] {
+    match faction {
+        CockpitFaction::Alliance => &ALLIANCE_MESSAGE_INDEX_CONTROLS,
+        CockpitFaction::Empire => &EMPIRE_MESSAGE_INDEX_CONTROLS,
     }
 }
 
@@ -656,6 +723,7 @@ pub fn draw_cockpit_egui_layer(
         strategic_gid_control(state.faction),
         primary_down,
     );
+    draw_message_index_rail(ctx, cache, &painter, layout, state.faction);
 
     if state.gid_mode != GidMode::DisplayOff {
         draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
@@ -668,6 +736,29 @@ pub fn draw_cockpit_egui_layer(
         state.gid_ui.category = None;
     }
     selected
+}
+
+fn draw_message_index_rail(
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    painter: &egui::Painter,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+) {
+    for control in strategic_message_index_controls(faction) {
+        let Some(texture_id) = cache
+            .get(ctx, DllSource::Strategy, control.resting_resource)
+            .map(|texture| texture.id())
+        else {
+            continue;
+        };
+        painter.image(
+            texture_id,
+            logical_rect_to_screen(layout, control.rect),
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
 }
 
 fn draw_control(
@@ -1501,6 +1592,37 @@ mod tests {
         );
         assert_eq!(empire.normal_resource, 10027);
         assert_eq!(empire.pressed_resource, 10028);
+    }
+
+    #[test]
+    fn message_index_rails_match_recovered_constructor_records() {
+        for (faction, x, first_y, resting_first, illuminated_first) in [
+            (CockpitFaction::Alliance, 3.0, 109.0, 10050, 10060),
+            (CockpitFaction::Empire, 611.0, 110.0, 10030, 10040),
+        ] {
+            let controls = strategic_message_index_controls(faction);
+            for (index, control) in controls.iter().enumerate() {
+                assert_eq!(control.command_id, 0x136 + index as u16);
+                assert_viewport(control.rect, x, first_y + index as f32 * 25.0, 27.0, 22.0);
+                assert_eq!(control.resting_resource, resting_first + index as u32);
+                assert_eq!(
+                    control.illuminated_resource,
+                    illuminated_first + index as u32
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn message_index_rail_follows_letterboxed_canvas() {
+        let layout = CockpitState::new(CockpitFaction::Empire).layout_for(1280.0, 800.0);
+        let first = strategic_message_index_controls(CockpitFaction::Empire)[0];
+        let rect = logical_rect_to_screen(layout, first.rect);
+
+        assert_close(rect.min.x, layout.canvas.x + 611.0 * layout.scale);
+        assert_close(rect.min.y, layout.canvas.y + 110.0 * layout.scale);
+        assert_close(rect.width(), 27.0 * layout.scale);
+        assert_close(rect.height(), 22.0 * layout.scale);
     }
 
     #[test]

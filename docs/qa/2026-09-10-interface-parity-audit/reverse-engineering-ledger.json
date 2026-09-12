@@ -302,11 +302,11 @@
       "id": "RE-MSG-01",
       "surface_ids": ["CMD-07", "CMD-08", "OBJ-12", "EVT-01"],
       "title": "Strategic messages, Agent menus, alerts, and report routing",
-      "status": "untriaged",
+      "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL", "REBDLOG.DLL", "VOICEFXA.DLL", "VOICEFXE.DLL"],
         "method": "Cross-reference category labels, report strings, sound IDs, and navigate/delete commands to constructors, filters, item menus, and destination handlers.",
-        "next_proof": "Produce the complete message category, advisor action, report resource, and navigation matrix."
+        "next_proof": "Decompile FUN_0042a240 and the rail state predicate, then recover the original Message Index constructor, category mapping, report navigation, clear/delete actions, and A0 captures."
       },
       "runtime_capture_required": true
     },

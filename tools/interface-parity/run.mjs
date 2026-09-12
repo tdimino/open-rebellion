@@ -180,6 +180,60 @@ async function stableFrame(page, folder) {
   return { first: sha256(first), second: sha256(second), bytes: second };
 }
 
+function decodeIndexedBmp(bytes) {
+  assert.equal(bytes.toString("ascii", 0, 2), "BM", "rail resource is not a BMP");
+  const dataOffset = bytes.readUInt32LE(10);
+  const headerSize = bytes.readUInt32LE(14);
+  const width = bytes.readInt32LE(18);
+  const height = bytes.readInt32LE(22);
+  assert.equal(bytes.readUInt16LE(28), 8, "rail resource is not indexed 8-bit BMP");
+  assert.equal(bytes.readUInt32LE(30), 0, "rail resource has unsupported compression");
+  assert.ok(width > 0 && height > 0 && headerSize >= 40);
+  const paletteOffset = 14 + headerSize;
+  const stride = (width + 3) & ~3;
+  assert.ok(bytes.length >= dataOffset + stride * height);
+  return {
+    width,
+    height,
+    pixel(x, y) {
+      const index = bytes[dataOffset + (height - 1 - y) * stride + x];
+      const entry = paletteOffset + index * 4;
+      return [bytes[entry + 2], bytes[entry + 1], bytes[entry]];
+    },
+  };
+}
+
+function verifyMessageIndexRail(faction, viewport, screenshotBytes) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", source_bitmaps_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  assert.equal(screenshot.width, 640);
+  assert.equal(screenshot.height, 480);
+  const x0 = faction === "alliance" ? 3 : 611;
+  const y0 = faction === "alliance" ? 109 : 110;
+  const firstResource = faction === "alliance" ? 10050 : 10030;
+  for (let control = 0; control < 9; control++) {
+    const resource = firstResource + control;
+    const source = decodeIndexedBmp(fs.readFileSync(path.join(
+      root, `data/base/ui/strategy-dll/BMP/${resource}.bmp`,
+    )));
+    assert.equal(source.width, 27);
+    assert.equal(source.height, 22);
+    for (let y = 0; y < source.height; y++) {
+      for (let x = 0; x < source.width; x++) {
+        const actualOffset = ((y0 + control * 25 + y) * screenshot.width + x0 + x) * 4;
+        assert.deepEqual(
+          Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)),
+          source.pixel(x, y),
+          `${faction} rail ${resource} pixel (${x}, ${y}) differs from its original BMP`,
+        );
+      }
+    }
+  }
+  return { status: "source-bitmap-exact", source_bitmaps_checked: 9, pixels_checked: 9 * 27 * 22 };
+}
+
 async function probeGid(page, faction, scenario, viewport, folder, consoleLines, ready) {
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
   const offsetX = (viewport.width - 640 * scale) / 2;
@@ -363,6 +417,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     await page.waitForTimeout(250);
     const stable = await stableFrame(page, folder);
     assert.equal(stable.first, stable.second, `unstable screenshot for ${id}`);
+    const messageIndexRail = verifyMessageIndexRail(faction, viewport, stable.bytes);
     const probes = await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     const comparison = compareScreenshot(id, stable.bytes, folder);
     const interactionComparisons = {};
@@ -403,6 +458,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       ready,
       screenshot_sha256: stable.second,
       two_frame_hashes: { first: stable.first, second: stable.second, equal: stable.first === stable.second },
+      message_index_rail: messageIndexRail,
       wasm_sha256: sha256(fs.readFileSync(path.join(site, "open-rebellion-test.wasm"))),
       runtime_pack_sha256: sha256(fs.readFileSync(path.join(site, "data/runtime.orpk"))),
       requests,

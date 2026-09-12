@@ -1517,7 +1517,7 @@
         158,
         159
       ],
-      "current_implementation": "Custom status/filter bar and message window replace the original family.",
+      "current_implementation": "P49 restores the nine original resting Message Index rail BMPs for each faction at the exact constructor rectangles. Both 640x480 browser rails match all source BMP pixels. The illuminated/unread predicate, control input, original Message Index window, category filtering, report routing, clear/delete actions, and A0 state matrix remain open. Replacement message interfaces elsewhere do not count as parity.",
       "finding_ids": [
         "UIP-F-007"
       ],

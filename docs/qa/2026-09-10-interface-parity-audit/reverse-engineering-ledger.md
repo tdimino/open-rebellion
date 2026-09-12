@@ -37,6 +37,7 @@ comparison.
 | `FUN_005fca00`, `FUN_005fd170`, and `FUN_005fc140` | Strict four-edge rejection, bottom-left palette-key hit mask, natural-size paint, and control-window clipping | CMD-10 |
 | `FUN_00422ce0` and freshly recovered `FUN_00429020` | `WM_COMMAND`, double-click routing, exact rail hit testing, child-window focus, and rail removal | CMD-03, CMD-04 |
 | `FUN_00427010`, `FUN_00425d00`, `FUN_00426d00`, `FUN_00426e70`, `FUN_00426ee0`, `FUN_00427270`, and `FUN_0042b330` | Active 903 versus Display Off 902, GID captions, exact faction control, compact and expanded legends, native marker families, Popular Support thresholds, and floating 180×240 display-window path | CMD-02 |
+| `FUN_00427270` and `FUN_00422ce0` | Nine Message Index rail controls per faction, exact 27x22 rectangles, resting and illuminated resource pairs, command IDs `0x136..0x13e`, and dispatch to `FUN_0042a240` | CMD-08 |
 | `FUN_0044f670`, `FUN_00442d70`, and `FUN_0044c410` | Code-built, modeless object windows using GOKRES rather than an invented sidebar | CMD-03, OBJ-02–OBJ-14 |
 | `FUN_0042d650` and freshly recovered `FUN_0042adb0` | Faction advisor/briefing DLL selection and exact advisor apertures | PRE-05, CMD-07 |
 
@@ -70,6 +71,11 @@ gating for opposing objects. Nested compositions, exact intelligence rules,
 drag and command semantics, uncommon states, and the complete A0 matrix remain open. See the
 [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) and
 [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md).
+
+P49 restores the eighteen source-mapped Message Index rail resting BMPs. Both
+faction rails match their original 8-bit resources pixel-for-pixel at 640x480.
+The illuminated predicate and original Message Index destination remain open.
+See the [rail evidence](evidence/2026-09-12-message-index-rail.md).
 
 P47A identifies STRATEGY 900 and 901 as the faction shells, with 902 and 903 as
 the bright and dim galaxy resources. P47B proves 902 belongs to Display Off and
@@ -127,7 +133,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial; primary controls implemented | Capture the six primary controls in A0, implement original destinations, then recover speed and facility-indicator predicates |
 | RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial; Display Off and default Popular Support runtime-corroborated | Recover the code-built menu, expanded legend, remaining filter predicates and overlays, and exact map input |
 | RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |
-| RE-MSG-01 | Messages, Agent menus, alerts, and reports | untriaged | Join categories and event results to resources, audio, and navigation |
+| RE-MSG-01 | Messages, Agent menus, alerts, and reports | static-partial; rail controls recovered | Decompile `FUN_0042a240`, map unread states and the original index window, then join reports, audio, and navigation |
 | RE-ENC-01 | Encyclopedia index and topics | static-partial | Complete ENCYBMAP, ENCYTEXT, EData, and navigation mappings |
 | RE-OBJ-01 | System, sector, and object-window constructors | static-partial; sector and system shells runtime-corroborated | Complete system item compositions and commands, then map the remaining object families |
 | RE-ADV-01 | Type-302 advisor and briefing frame decoding | runtime-corroborated | Extend the verified advisor decoder/transport to briefings and compare with A0 captures |

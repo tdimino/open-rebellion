@@ -29,6 +29,9 @@ not original-game truth. `--update-goldens` creates only missing implementation
 baselines, never overwrites a mismatch, and requires an accepted, SHA-verified
 original source in `baselines/accepted-original.json`. A passing browser run without
 original lossless captures does not complete a strict interface-parity cell.
+At native 640x480, every run also checks all nine Message Index rail icons
+pixel-for-pixel against the corresponding original STRATEGY BMPs. This proves
+resting-art identity only, not the unread states or Message Index interactions.
 The runner compares captured menu, hover, legend, and pan/zoom states as well as
 the initial frame once each state has its own reviewed original reference and
 implementation regression baseline. Until then their comparison is recorded as

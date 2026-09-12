@@ -125,6 +125,13 @@ special-marker compositions and an enlarged legend. The
 records the remaining original-capture, exact-filter, native, and keyboard
 gates. No `CMD-02` acceptance cell is marked passed.
 
+P49 also closes the blank resting-art gap on both Message Index side rails.
+All eighteen source-mapped faction BMPs render at their constructor rectangles,
+with exact 640x480 source-pixel checks in the muted harness. This is a UIP-B03
+visual slice, not a completed `CMD-08` workflow. The illuminated state,
+original index window, category routing, and interaction matrix remain open.
+See the [P49 rail evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-message-index-rail.md).
+
 ## Bundle acceptance record
 
 For each bundle, its evidence file must record:
