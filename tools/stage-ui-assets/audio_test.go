@@ -132,14 +132,14 @@ func TestAudioCLIStagesAndVerifiesWithoutSources(t *testing.T) {
 	writeAudioFixture(t, source)
 	var out, errs bytes.Buffer
 	args := []string{"--source", source, "--output", filepath.Join(output, "ui"), "--audio-output", filepath.Join(output, "sounds")}
-	if err := runCLI(args, &out, &errs, nil); err != nil {
+	if err := runTestCLI(args, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "Staged 28 audio files (28 written, 0 unchanged)") {
 		t.Fatal(out.String())
 	}
 	out.Reset()
-	if err := runCLI(args, &out, &errs, nil); err != nil {
+	if err := runTestCLI(args, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "0 written, 28 unchanged") {
@@ -147,30 +147,30 @@ func TestAudioCLIStagesAndVerifiesWithoutSources(t *testing.T) {
 	}
 	// Verify must operate on staged files without consulting source DLLs/MDATA.
 	verify := []string{"--verify", "--source", filepath.Join(source, "missing"), "--output", filepath.Join(output, "ui"), "--audio-output", filepath.Join(output, "sounds")}
-	if err := runCLI(verify, &out, &errs, nil); err != nil {
+	if err := runTestCLI(verify, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 	voice := filepath.Join(output, "sounds", "voice", "alliance", "14002-voicefxa.wav")
 	if err := os.Remove(voice); err != nil {
 		t.Fatal(err)
 	}
-	if err := runCLI(verify, &out, &errs, nil); err == nil {
+	if err := runTestCLI(verify, &out, &errs, nil); err == nil {
 		t.Fatal("verification missed deleted voice")
 	}
-	if err := runCLI(args, &out, &errs, nil); err != nil {
+	if err := runTestCLI(args, &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 	track := filepath.Join(output, "sounds", "music", "main_theme.wav")
 	if err := os.WriteFile(track, []byte("broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := runCLI(verify, &out, &errs, nil); err == nil {
+	if err := runTestCLI(verify, &out, &errs, nil); err == nil {
 		t.Fatal("accepted corrupt audio")
 	}
-	if err := runCLI(args, &out, &errs, nil); err == nil {
+	if err := runTestCLI(args, &out, &errs, nil); err == nil {
 		t.Fatal("replaced corrupt audio without force")
 	}
-	if err := runCLI(append(args, "--force"), &out, &errs, nil); err != nil {
+	if err := runTestCLI(append(args, "--force"), &out, &errs, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -204,9 +204,16 @@ func TestRIFFPaddingCannotContainSampleData(t *testing.T) {
 }
 
 func writeAudioFixture(t *testing.T, source string) {
+	text := buildTestPE32WithResource(t, 6, 1, 1033, stringBundle(map[int]string{1: "Luke"}))
+	if err := os.WriteFile(filepath.Join(source, "TEXTSTRA.DLL"), text, 0600); err != nil {
+		t.Fatal(err)
+	}
 	t.Helper()
 	mdata := filepath.Join(source, "MDATA")
 	if err := os.Mkdir(mdata, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mdata, "MDATA.000"), []byte("SMK2fixture"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	writeWaveDLL(t, source, "VOICEFXA.DLL", 14001, 14002)

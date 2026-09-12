@@ -1,11 +1,11 @@
 # stage-ui-assets
 
-Extract original Star Wars Rebellion UI resources into the directory layout
+Extract original Star Wars Rebellion assets into the directory layout
 Open Rebellion loads at runtime. One command stages 2,303 standard BMPs and
 3,988 custom advisor frames from six game DLLs, plus voices, menu effects,
-and soundtrack WAVs. It then verifies both UI and audio outputs. It
-uses only the Go standard library. No Python environment, third-party package,
-or Windows runtime is needed.
+and soundtrack WAVs, 15 cutscenes, and original text strings. It then verifies
+all outputs. The Go code uses only its standard library; cutscene conversion
+requires `ffmpeg` and `ffprobe`. No Python environment or Windows runtime is needed.
 
 For standard bitmaps, the extractor preserves the original DIB bytes and adds a
 BMP file header. For advisor animations, it preserves each custom PE type-302
@@ -14,9 +14,11 @@ resource byte for byte. It does not resize or re-encode the artwork.
 ## Requirements
 
 - Go 1.22 or later to build or use `go run`.
+- `ffmpeg` (with VP9/Opus encoding and Smacker decoding) and `ffprobe` on PATH
+  for extraction. Verification needs neither tool.
 - Your own copy of the six UI DLLs listed below plus `VOICEFXA.DLL` and
-  `VOICEFXE.DLL`, together in one source directory, and the original
-  `MDATA.300`–`MDATA.315` soundtrack files in `source/MDATA` or `--mdata`. Extraction reads these files without modifying them.
+  `VOICEFXE.DLL` and `TEXTSTRA.DLL`, together in one source directory, and the original
+  `MDATA.300`–`MDATA.315` soundtrack files and the 15 movies listed below in `source/MDATA` or `--mdata`. Extraction reads these files without modifying them.
 
 The compiled executable does not require Go to run. Game files are not included
 in this repository.
@@ -43,7 +45,7 @@ Alternatively, build and execute in one step:
 go run ./tools/stage-ui-assets --source "/path/to/Star Wars - Rebellion"
 ```
 
-If the DLLs are in `data/base/` and the soundtrack is in `data/base/MDATA/`,
+If the DLLs are in `data/base/` and the soundtrack and movies are in `data/base/MDATA/`,
 no flags are needed:
 
 ```sh
@@ -52,7 +54,7 @@ go run ./tools/stage-ui-assets
 
 All relative paths, including the defaults, resolve from the current working
 directory—not from the executable's location. The output directory is created
-as needed. A successful extraction ends with:
+as needed. A successful extraction reports:
 
 ```text
 Staged 6291 UI resources from 6 DLLs (6291 written, 0 unchanged)
@@ -60,6 +62,11 @@ Staged 6291 UI resources from 6 DLLs (6291 written, 0 unchanged)
 Verified 6291 UI resources across 6 DLLs
 Staged 310 audio files (310 written, 0 unchanged)
 Verified 310 audio files
+Staged 1347 TEXTSTRA strings
+...
+Verified 1347 TEXTSTRA strings
+Verified cutscene 000 (259 frames)
+...
 ```
 
 Write and unchanged counts depend on what is already staged.
@@ -139,8 +146,12 @@ make the final count check fail even with `--force`.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--source` | `data/base` | Directory containing the six DLLs |
-| `--output` | `data/base/ui` | Root of the staged asset directories |
+| `--source` | `data/base` | Directory containing UI, voice, and TEXTSTRA DLLs |
+| `--output` | `data/base/ui` | Root of the staged UI directories |
+| `--audio-output` | `data/sounds` | Audio output directory |
+| `--mdata` | `source/MDATA` | Original soundtrack and cutscene directory |
+| `--strings-output` | `data/base/textstra.json` | Original string JSON output |
+| `--cutscene-output` | `assets/references` | Parent for `ref-videos` and `cutscene-frames` |
 | `--verify` | `false` | Check existing output without extraction |
 | `--force` | `false` | Replace files whose contents differ |
 | `--help` | | Print usage |
@@ -157,8 +168,8 @@ Successful runs and help exit with status 0. Errors exit with status 1 and an
 - **Verification fails:** inspect the reported file or directory. Rerun
   extraction to restore missing files; use `--force` for differing files.
 
-This tool stages standard bitmaps and advisor type-302 animation frames. It does
-not extract sound, SPT/BIN/FDT control data, briefing animation, tactical meshes
+This tool stages UI resources, audio, cutscenes, and original text strings. It does
+not extract SPT/BIN/FDT control data, briefing animation, tactical meshes
 or textures, DAT tables, or EData images. It does not generate the browser
 manifest or runtime pack. The repository's
 [WASM build script](../../scripts/build-wasm.sh) consumes `data/base/ui/` for
@@ -183,8 +194,8 @@ temporary-file cleanup, and CLI staging with verification.
 ## Audio extraction
 
 Every extraction stages the original voice lines, four menu effects, and all
-16 soundtrack files alongside the UI assets. Verification checks both UI and
-audio by default. No audio opt-in flag is needed. Audio extraction also uses
+16 soundtrack files alongside the UI assets, cutscenes, and strings. Verification
+checks all of these by default. No audio opt-in flag is needed. Audio extraction also uses
 only the Go standard library.
 
 From the repository root:
@@ -193,9 +204,9 @@ From the repository root:
 make extract-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
 ```
 
-`GAME_SOURCE` must contain the six UI DLLs plus `VOICEFXA.DLL` and
-`VOICEFXE.DLL`. `MDATA_DIR` defaults to `GAME_SOURCE/MDATA`. If the DLLs have
-already been copied into `data/base`, point at the original soundtrack directory:
+`GAME_SOURCE` must contain the six UI DLLs plus `VOICEFXA.DLL`,
+`VOICEFXE.DLL`, and `TEXTSTRA.DLL`. `MDATA_DIR` defaults to `GAME_SOURCE/MDATA`.
+If the DLLs have already been copied into `data/base`, point at the original media directory:
 
 ```sh
 make extract-assets MDATA_DIR="/path/to/Star Wars - Rebellion/MDATA"
@@ -238,8 +249,8 @@ paths, so missing clips fail even without the original DLLs. It validates
 structure, not playback, byte identity against the originals, or a canonical
 voice ID inventory independent of the extraction.
 
-Victory/defeat music from Smacker movies (`MDATA.201`/`.202`) remains part of the
-cutscene decoder. Generic gameplay SFX without established source mappings are
+Audio from Smacker movies (`MDATA.201`/`.202` included) is extracted with the
+cutscenes into their WAV sidecars. Generic gameplay SFX without established source mappings are
 not fabricated. Extraction does not change which voice lines or music cues the
 app currently plays. Original audio files must never be committed or distributed
 with the source code.
@@ -249,3 +260,46 @@ Validate changes to this tool with:
 ```sh
 make fmt-go test-go vet-go
 ```
+
+
+## Cutscenes and original strings
+
+Normal extraction includes these assets, and `make verify-assets` checks them
+along with UI and audio. There are no per-family enable flags.
+
+`TEXTSTRA.DLL` RT_STRING bundles become `data/base/textstra.json`, using the same
+numeric string IDs and JSON object shape as the browser's existing string loader.
+UTF-16 and bundle bounds are checked; duplicate language bundles are rejected.
+A `.manifest.json` sidecar records the output count and SHA-256 so verification
+can detect missing or changed text without reopening the DLL. Browser packaging
+can use `--strings-output web/data/base/textstra.json` for its staging directory.
+
+The supported movie IDs are `000`, `001`, `003`, `004`, `005`, `101`, `102`, `103`,
+`104`, `105`, `106`, `107`, `108`, `201`, and `202`. For each original `MDATA.ID`,
+the tool uses ffmpeg/ffprobe to produce:
+
+- `assets/references/ref-videos/ID.webm`: VP9 video with Opus audio for browser playback.
+- `assets/references/cutscene-frames/ID/frame-00001.png` onward: native playback frames.
+- `assets/references/cutscene-frames/ID/metadata.json`: dimensions, FPS, and frame count.
+- `assets/references/cutscene-frames/ID.wav`: decoded PCM audio for native playback.
+- `assets/references/cutscene-frames/ID/extraction.json`: source SHA-256, extraction
+  version, metadata, and output file hashes for verification and reuse.
+
+PNG frames and WAV sidecars are decoded from the generated WebM, matching the
+existing native pipeline. Decoding and validation finish in a temporary output
+before publication. A decoder failure leaves prior assets in place. Individual
+outputs are published by rename and the frame directory/completion record last.
+A reported publication error rolls back all three outputs; if restoration itself
+fails, backups are retained and their location is reported. A process crash
+during publication may still leave an incomplete set, which verification rejects.
+
+Verified cutscenes with an unchanged source are reused, including when `--force`
+is supplied. Changed, damaged, or legacy outputs without an extraction record
+require `--force` before replacement. The first complete run can take tens of
+minutes and uses additional disk space for decoded PNG frames.
+
+Verification checks expected movie IDs, metadata, every recorded frame, WebM,
+and WAV checksum without accessing the original media or invoking ffmpeg.
+This is file integrity validation, not proof of visible or audible playback.
+Generic gameplay SFX without known mappings and other unlisted original resources
+remain outside the supported extraction inventory.
