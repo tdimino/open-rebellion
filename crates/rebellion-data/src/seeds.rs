@@ -1,4 +1,4 @@
-//! Seed table loading — populates the GameWorld with starting forces.
+//! Seed table loading — populates the `GameWorld` with starting forces.
 //!
 //! # Overview
 //!
@@ -23,7 +23,7 @@
 //! | 0x22..0x25 | Defense facility classes   |
 //! | 0x28..0x2A | Manufacturing fac. classes |
 //! | 0x2C..0x2D | Production fac. classes    |
-//! | 0x90/0x92  | System (by DatId)          |
+//! | 0x90/0x92  | System (by `DatId`)          |
 //! | 0x00  | Null / placeholder (skip)       |
 //!
 //! # Placement logic (3-system model)
@@ -50,8 +50,12 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
-use rebellion_core::ids::*;
-use rebellion_core::world::*;
+use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey, SystemKey};
+use rebellion_core::world::{
+    ControlKind, DefenseFacilityInstance, FighterEntry, Fleet, ForceTier, GameWorld,
+    ManufacturingFacilityInstance, ProductionFacilityInstance, SeedOptions, ShipInstance,
+    SkillPair, SpecialForceUnit, TroopUnit,
+};
 
 use crate::read_dat_file;
 
@@ -88,14 +92,14 @@ pub struct SpecialSystems {
     /// Rebel HQ — random rim system (not Yavin). Receives CMUNAFTB group 2,
     /// CMUNHQTB, FACLHQTB. Mon Mothma placed here.
     pub rebel_hq: SystemKey,
-    /// The sequential DatId of the rebel HQ system (for lookup purposes).
+    /// The sequential `DatId` of the rebel HQ system (for lookup purposes).
     pub rebel_hq_seq_id: u32,
 }
 
 /// Select the 3 special systems for seeding: Coruscant, Yavin, and a random
 /// rim system as the Rebel HQ.
 ///
-/// The Rebel HQ is chosen by shuffling all rim systems (RimInner + RimOuter)
+/// The Rebel HQ is chosen by shuffling all rim systems (`RimInner` + `RimOuter`)
 /// and picking the first one that is not Yavin. This matches the original
 /// game's behavior of selecting the first eligible rim system from a shuffled
 /// system list.
@@ -200,12 +204,20 @@ type FighterIndex = HashMap<u32, FighterKey>;
 
 /// Select starting systems for each faction based on proximity to their HQ.
 ///
-/// Empire: Coruscant + N nearest systems (EMPIRE_STARTING_SYSTEMS total).
-/// Alliance: Yavin + N nearest systems (ALLIANCE_STARTING_SYSTEMS total),
+/// Empire: Coruscant + N nearest systems (`EMPIRE_STARTING_SYSTEMS` total).
+/// Alliance: Yavin + N nearest systems (`ALLIANCE_STARTING_SYSTEMS` total),
 /// excluding systems already claimed by the Empire.
 ///
-/// Returns `(empire_systems, alliance_systems)` as sequential DatId arrays
+/// Returns `(empire_systems, alliance_systems)` as sequential `DatId` arrays
 /// suitable for passing as `system_rotation` to the seed functions.
+#[must_use]
+#[expect(
+    clippy::implicit_hasher,
+    reason = "This API uses the same concrete map type as the loaded world and callers."
+)]
+///
+/// # Panics
+/// Panics if a candidate system has NaN popularity, which cannot be ordered.
 pub fn select_starting_systems(
     world: &GameWorld,
     system_key_map: &HashMap<u32, SystemKey>,
@@ -216,20 +228,18 @@ pub fn select_starting_systems(
 
     let coruscant_pos = coruscant_key
         .and_then(|k| world.systems.get(k))
-        .map(|s| (s.x as f64, s.y as f64))
-        .unwrap_or((500.0, 500.0));
+        .map_or((500.0, 500.0), |s| (f64::from(s.x), f64::from(s.y)));
     let yavin_pos = yavin_key
         .and_then(|k| world.systems.get(k))
-        .map(|s| (s.x as f64, s.y as f64))
-        .unwrap_or((100.0, 200.0));
+        .map_or((100.0, 200.0), |s| (f64::from(s.x), f64::from(s.y)));
 
     // Sort all systems by distance to Coruscant
     let mut empire_candidates: Vec<(u32, f64)> = system_key_map
         .iter()
         .filter_map(|(&seq, &key)| {
             let sys = world.systems.get(key)?;
-            let dx = sys.x as f64 - coruscant_pos.0;
-            let dy = sys.y as f64 - coruscant_pos.1;
+            let dx = f64::from(sys.x) - coruscant_pos.0;
+            let dy = f64::from(sys.y) - coruscant_pos.1;
             Some((seq, (dx * dx + dy * dy).sqrt()))
         })
         .collect();
@@ -250,8 +260,8 @@ pub fn select_starting_systems(
                 return None;
             }
             let sys = world.systems.get(key)?;
-            let dx = sys.x as f64 - yavin_pos.0;
-            let dy = sys.y as f64 - yavin_pos.1;
+            let dx = f64::from(sys.x) - yavin_pos.0;
+            let dy = f64::from(sys.y) - yavin_pos.1;
             Some((seq, (dx * dx + dy * dy).sqrt()))
         })
         .collect();
@@ -269,8 +279,15 @@ pub fn select_starting_systems(
 /// Apply all 9 seed tables to the already-populated `world`.
 ///
 /// Missing files are silently ignored (stripped installs, test environments).
-/// Unresolvable item_ids are silently skipped with a debug log rather than
+/// Unresolvable `item_ids` are silently skipped with a debug log rather than
 /// aborting — the game can start in a degraded state if needed.
+///
+/// # Errors
+/// Returns an error if a present seed table cannot be read or parsed.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "This API uses the same concrete map type as the loaded world and callers."
+)]
 pub fn apply_seeds(
     gdata_path: &Path,
     world: &mut GameWorld,
@@ -286,6 +303,17 @@ pub fn apply_seeds(
 /// Uses the 3-system model: Coruscant (Empire HQ), Yavin (Alliance base),
 /// and a random rim system as the Rebel HQ. Fixed seed tables are routed
 /// only to these 3 systems, matching the original 1998 game behavior.
+///
+/// # Errors
+/// Returns an error if a present seed table cannot be read or parsed.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "This API uses the same concrete map type as the loaded world and callers."
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     gdata_path: &Path,
     world: &mut GameWorld,
@@ -307,19 +335,16 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // Select the 3 special systems. If Coruscant or Yavin are missing from the
     // data files, fall back to the legacy proximity model.
-    let special = match select_special_systems(world, system_key_map, rng) {
-        Some(s) => s,
-        None => {
-            // Fallback: use old proximity model if special systems can't be resolved.
-            // This should only happen with incomplete data files.
-            return apply_seeds_legacy(
-                gdata_path,
-                world,
-                system_key_map,
-                &capship_index,
-                &fighter_index,
-            );
-        }
+    let Some(special) = select_special_systems(world, system_key_map, rng) else {
+        // Fallback: use old proximity model if special systems can't be resolved.
+        // This should only happen with incomplete data files.
+        return apply_seeds_legacy(
+            gdata_path,
+            world,
+            system_key_map,
+            &capship_index,
+            &fighter_index,
+        );
     };
 
     // Mark special systems as populated, charted, and controlled.
@@ -327,7 +352,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Empire fleet (CMUNEFTB) → Coruscant only ─────────────────────────────
     apply_fleet_seed(
-        &load_seed(gdata_path, "CMUNEFTB.DAT")?,
+        load_seed(gdata_path, "CMUNEFTB.DAT")?.as_ref(),
         system_key_map,
         &capship_index,
         &fighter_index,
@@ -338,7 +363,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Alliance fleet (CMUNAFTB) → group 1 at Yavin, group 2 at Rebel HQ ──
     apply_fleet_seed(
-        &load_seed(gdata_path, "CMUNAFTB.DAT")?,
+        load_seed(gdata_path, "CMUNAFTB.DAT")?.as_ref(),
         system_key_map,
         &capship_index,
         &fighter_index,
@@ -349,7 +374,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Empire army (CMUNEMTB) → Coruscant only ─────────────────────────────
     apply_army_seed(
-        &load_seed(gdata_path, "CMUNEMTB.DAT")?,
+        load_seed(gdata_path, "CMUNEMTB.DAT")?.as_ref(),
         system_key_map,
         &[CORUSCANT_SEQ_ID],
         false,
@@ -358,7 +383,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Alliance army (CMUNALTB) → Yavin + Rebel HQ ────────────────────────
     apply_army_seed(
-        &load_seed(gdata_path, "CMUNALTB.DAT")?,
+        load_seed(gdata_path, "CMUNALTB.DAT")?.as_ref(),
         system_key_map,
         &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
         true,
@@ -367,7 +392,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Empire Coruscant garrison (CMUNCRTB) → Coruscant ────────────────────
     apply_garrison_seed(
-        &load_seed(gdata_path, "CMUNCRTB.DAT")?,
+        load_seed(gdata_path, "CMUNCRTB.DAT")?.as_ref(),
         system_key_map,
         CORUSCANT_SEQ_ID,
         false,
@@ -376,7 +401,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Alliance HQ garrison (CMUNHQTB) → Rebel HQ (NOT Yavin) ─────────────
     apply_garrison_seed(
-        &load_seed(gdata_path, "CMUNHQTB.DAT")?,
+        load_seed(gdata_path, "CMUNHQTB.DAT")?.as_ref(),
         system_key_map,
         special.rebel_hq_seq_id,
         true,
@@ -385,7 +410,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Alliance Yavin garrison (CMUNYVTB) → Yavin ──────────────────────────
     apply_garrison_seed(
-        &load_seed(gdata_path, "CMUNYVTB.DAT")?,
+        load_seed(gdata_path, "CMUNYVTB.DAT")?.as_ref(),
         system_key_map,
         YAVIN_SEQ_ID,
         true,
@@ -394,7 +419,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Empire Coruscant facilities (FACLCRTB) → Coruscant ──────────────────
     apply_facility_seed(
-        &load_seed(gdata_path, "FACLCRTB.DAT")?,
+        load_seed(gdata_path, "FACLCRTB.DAT")?.as_ref(),
         system_key_map,
         CORUSCANT_SEQ_ID,
         false,
@@ -403,7 +428,7 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
 
     // ── Alliance HQ facilities (FACLHQTB) → Rebel HQ (NOT Yavin) ───────────
     apply_facility_seed(
-        &load_seed(gdata_path, "FACLHQTB.DAT")?,
+        load_seed(gdata_path, "FACLHQTB.DAT")?.as_ref(),
         system_key_map,
         special.rebel_hq_seq_id,
         true,
@@ -423,12 +448,12 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
     initialize_energy_and_raw_materials(world, seed_options, rng);
     let syfccr = load_syfc_table(gdata_path, "SYFCCRTB.DAT")?;
     let syfcrm = load_syfc_table(gdata_path, "SYFCRMTB.DAT")?;
-    generate_procedural_facilities(world, seed_options, &syfccr, &syfcrm, rng);
+    generate_procedural_facilities(world, seed_options, syfccr.as_ref(), syfcrm.as_ref(), rng);
 
     // ── M7: Maintenance-budget common unit seeding ───────────────────────
     let cmunem = load_seed(gdata_path, "CMUNEMTB.DAT")?;
     let cmunal = load_seed(gdata_path, "CMUNALTB.DAT")?;
-    seed_maintenance_budget_units(world, seed_options, &cmunem, &cmunal, rng);
+    seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
     seed_low_support_garrisons(world, seed_options, rng);
 
     Ok(())
@@ -446,7 +471,7 @@ fn apply_seeds_legacy(
     let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
 
     apply_fleet_seed(
-        &load_seed(gdata_path, "CMUNEFTB.DAT")?,
+        load_seed(gdata_path, "CMUNEFTB.DAT")?.as_ref(),
         system_key_map,
         capship_index,
         fighter_index,
@@ -455,7 +480,7 @@ fn apply_seeds_legacy(
         world,
     );
     apply_fleet_seed(
-        &load_seed(gdata_path, "CMUNAFTB.DAT")?,
+        load_seed(gdata_path, "CMUNAFTB.DAT")?.as_ref(),
         system_key_map,
         capship_index,
         fighter_index,
@@ -464,21 +489,21 @@ fn apply_seeds_legacy(
         world,
     );
     apply_army_seed(
-        &load_seed(gdata_path, "CMUNEMTB.DAT")?,
+        load_seed(gdata_path, "CMUNEMTB.DAT")?.as_ref(),
         system_key_map,
         &empire_systems,
         false,
         world,
     );
     apply_army_seed(
-        &load_seed(gdata_path, "CMUNALTB.DAT")?,
+        load_seed(gdata_path, "CMUNALTB.DAT")?.as_ref(),
         system_key_map,
         &alliance_systems,
         true,
         world,
     );
     apply_garrison_seed(
-        &load_seed(gdata_path, "CMUNCRTB.DAT")?,
+        load_seed(gdata_path, "CMUNCRTB.DAT")?.as_ref(),
         system_key_map,
         CORUSCANT_SEQ_ID,
         false,
@@ -488,28 +513,28 @@ fn apply_seeds_legacy(
     // model (which randomizes Rebel HQ) requires Coruscant to be present.
     // This fallback only runs when special systems can't be identified.
     apply_garrison_seed(
-        &load_seed(gdata_path, "CMUNHQTB.DAT")?,
+        load_seed(gdata_path, "CMUNHQTB.DAT")?.as_ref(),
         system_key_map,
         YAVIN_SEQ_ID,
         true,
         world,
     );
     apply_garrison_seed(
-        &load_seed(gdata_path, "CMUNYVTB.DAT")?,
+        load_seed(gdata_path, "CMUNYVTB.DAT")?.as_ref(),
         system_key_map,
         YAVIN_SEQ_ID,
         true,
         world,
     );
     apply_facility_seed(
-        &load_seed(gdata_path, "FACLCRTB.DAT")?,
+        load_seed(gdata_path, "FACLCRTB.DAT")?.as_ref(),
         system_key_map,
         CORUSCANT_SEQ_ID,
         false,
         world,
     );
     apply_facility_seed(
-        &load_seed(gdata_path, "FACLHQTB.DAT")?,
+        load_seed(gdata_path, "FACLHQTB.DAT")?.as_ref(),
         system_key_map,
         YAVIN_SEQ_ID,
         true,
@@ -520,7 +545,14 @@ fn apply_seeds_legacy(
 }
 
 /// Apply seed tables from pre-loaded file bytes. Same logic as `apply_seeds` but
-/// reads from a HashMap instead of the filesystem.
+/// reads from a `HashMap` instead of the filesystem.
+///
+/// # Errors
+/// Returns an error if a supplied seed table cannot be parsed.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "This API uses the same concrete map type as the loaded world and callers."
+)]
 pub fn apply_seeds_from_files(
     files: &std::collections::HashMap<String, Vec<u8>>,
     world: &mut GameWorld,
@@ -532,6 +564,17 @@ pub fn apply_seeds_from_files(
 }
 
 /// Apply seed tables from pre-loaded file bytes with an injected RNG.
+///
+/// # Errors
+/// Returns an error if a supplied seed table cannot be parsed.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "This API uses the same concrete map type as the loaded world and callers."
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     files: &std::collections::HashMap<String, Vec<u8>>,
     world: &mut GameWorld,
@@ -551,87 +594,84 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
         .collect();
 
     // Use 3-system model when possible.
-    let special = match select_special_systems(world, system_key_map, rng) {
-        Some(s) => s,
-        None => {
-            // Fallback to proximity model for incomplete data
-            let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
-            apply_fleet_seed(
-                &load_seed_from_files(files, "CMUNEFTB.DAT")?,
-                system_key_map,
-                &capship_index,
-                &fighter_index,
-                &empire_systems,
-                false,
-                world,
-            );
-            apply_fleet_seed(
-                &load_seed_from_files(files, "CMUNAFTB.DAT")?,
-                system_key_map,
-                &capship_index,
-                &fighter_index,
-                &alliance_systems,
-                true,
-                world,
-            );
-            apply_army_seed(
-                &load_seed_from_files(files, "CMUNEMTB.DAT")?,
-                system_key_map,
-                &empire_systems,
-                false,
-                world,
-            );
-            apply_army_seed(
-                &load_seed_from_files(files, "CMUNALTB.DAT")?,
-                system_key_map,
-                &alliance_systems,
-                true,
-                world,
-            );
-            apply_garrison_seed(
-                &load_seed_from_files(files, "CMUNCRTB.DAT")?,
-                system_key_map,
-                CORUSCANT_SEQ_ID,
-                false,
-                world,
-            );
-            // NOTE: WASM legacy fallback collapses Alliance HQ to Yavin (same as filesystem fallback).
-            apply_garrison_seed(
-                &load_seed_from_files(files, "CMUNHQTB.DAT")?,
-                system_key_map,
-                YAVIN_SEQ_ID,
-                true,
-                world,
-            );
-            apply_garrison_seed(
-                &load_seed_from_files(files, "CMUNYVTB.DAT")?,
-                system_key_map,
-                YAVIN_SEQ_ID,
-                true,
-                world,
-            );
-            apply_facility_seed(
-                &load_seed_from_files(files, "FACLCRTB.DAT")?,
-                system_key_map,
-                CORUSCANT_SEQ_ID,
-                false,
-                world,
-            );
-            apply_facility_seed(
-                &load_seed_from_files(files, "FACLHQTB.DAT")?,
-                system_key_map,
-                YAVIN_SEQ_ID,
-                true,
-                world,
-            );
-            return Ok(());
-        }
+    let Some(special) = select_special_systems(world, system_key_map, rng) else {
+        // Fallback to proximity model for incomplete data
+        let (empire_systems, alliance_systems) = select_starting_systems(world, system_key_map);
+        apply_fleet_seed(
+            load_seed_from_files(files, "CMUNEFTB.DAT")?.as_ref(),
+            system_key_map,
+            &capship_index,
+            &fighter_index,
+            &empire_systems,
+            false,
+            world,
+        );
+        apply_fleet_seed(
+            load_seed_from_files(files, "CMUNAFTB.DAT")?.as_ref(),
+            system_key_map,
+            &capship_index,
+            &fighter_index,
+            &alliance_systems,
+            true,
+            world,
+        );
+        apply_army_seed(
+            load_seed_from_files(files, "CMUNEMTB.DAT")?.as_ref(),
+            system_key_map,
+            &empire_systems,
+            false,
+            world,
+        );
+        apply_army_seed(
+            load_seed_from_files(files, "CMUNALTB.DAT")?.as_ref(),
+            system_key_map,
+            &alliance_systems,
+            true,
+            world,
+        );
+        apply_garrison_seed(
+            load_seed_from_files(files, "CMUNCRTB.DAT")?.as_ref(),
+            system_key_map,
+            CORUSCANT_SEQ_ID,
+            false,
+            world,
+        );
+        // NOTE: WASM legacy fallback collapses Alliance HQ to Yavin (same as filesystem fallback).
+        apply_garrison_seed(
+            load_seed_from_files(files, "CMUNHQTB.DAT")?.as_ref(),
+            system_key_map,
+            YAVIN_SEQ_ID,
+            true,
+            world,
+        );
+        apply_garrison_seed(
+            load_seed_from_files(files, "CMUNYVTB.DAT")?.as_ref(),
+            system_key_map,
+            YAVIN_SEQ_ID,
+            true,
+            world,
+        );
+        apply_facility_seed(
+            load_seed_from_files(files, "FACLCRTB.DAT")?.as_ref(),
+            system_key_map,
+            CORUSCANT_SEQ_ID,
+            false,
+            world,
+        );
+        apply_facility_seed(
+            load_seed_from_files(files, "FACLHQTB.DAT")?.as_ref(),
+            system_key_map,
+            YAVIN_SEQ_ID,
+            true,
+            world,
+        );
+        return Ok(());
     };
 
     initialize_special_systems(world, &special);
 
     apply_fleet_seed(
-        &load_seed_from_files(files, "CMUNEFTB.DAT")?,
+        load_seed_from_files(files, "CMUNEFTB.DAT")?.as_ref(),
         system_key_map,
         &capship_index,
         &fighter_index,
@@ -640,7 +680,7 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
         world,
     );
     apply_fleet_seed(
-        &load_seed_from_files(files, "CMUNAFTB.DAT")?,
+        load_seed_from_files(files, "CMUNAFTB.DAT")?.as_ref(),
         system_key_map,
         &capship_index,
         &fighter_index,
@@ -649,49 +689,49 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
         world,
     );
     apply_army_seed(
-        &load_seed_from_files(files, "CMUNEMTB.DAT")?,
+        load_seed_from_files(files, "CMUNEMTB.DAT")?.as_ref(),
         system_key_map,
         &[CORUSCANT_SEQ_ID],
         false,
         world,
     );
     apply_army_seed(
-        &load_seed_from_files(files, "CMUNALTB.DAT")?,
+        load_seed_from_files(files, "CMUNALTB.DAT")?.as_ref(),
         system_key_map,
         &[YAVIN_SEQ_ID, special.rebel_hq_seq_id],
         true,
         world,
     );
     apply_garrison_seed(
-        &load_seed_from_files(files, "CMUNCRTB.DAT")?,
+        load_seed_from_files(files, "CMUNCRTB.DAT")?.as_ref(),
         system_key_map,
         CORUSCANT_SEQ_ID,
         false,
         world,
     );
     apply_garrison_seed(
-        &load_seed_from_files(files, "CMUNHQTB.DAT")?,
+        load_seed_from_files(files, "CMUNHQTB.DAT")?.as_ref(),
         system_key_map,
         special.rebel_hq_seq_id,
         true,
         world,
     );
     apply_garrison_seed(
-        &load_seed_from_files(files, "CMUNYVTB.DAT")?,
+        load_seed_from_files(files, "CMUNYVTB.DAT")?.as_ref(),
         system_key_map,
         YAVIN_SEQ_ID,
         true,
         world,
     );
     apply_facility_seed(
-        &load_seed_from_files(files, "FACLCRTB.DAT")?,
+        load_seed_from_files(files, "FACLCRTB.DAT")?.as_ref(),
         system_key_map,
         CORUSCANT_SEQ_ID,
         false,
         world,
     );
     apply_facility_seed(
-        &load_seed_from_files(files, "FACLHQTB.DAT")?,
+        load_seed_from_files(files, "FACLHQTB.DAT")?.as_ref(),
         system_key_map,
         special.rebel_hq_seq_id,
         true,
@@ -710,12 +750,12 @@ pub fn apply_seeds_from_files_with_rng<R: Rng + ?Sized>(
     initialize_energy_and_raw_materials(world, seed_options, rng);
     let syfccr = load_syfc_table_from_files(files, "SYFCCRTB.DAT")?;
     let syfcrm = load_syfc_table_from_files(files, "SYFCRMTB.DAT")?;
-    generate_procedural_facilities(world, seed_options, &syfccr, &syfcrm, rng);
+    generate_procedural_facilities(world, seed_options, syfccr.as_ref(), syfcrm.as_ref(), rng);
 
     // M7: Maintenance-budget common unit seeding
     let cmunem = load_seed_from_files(files, "CMUNEMTB.DAT")?;
     let cmunal = load_seed_from_files(files, "CMUNALTB.DAT")?;
-    seed_maintenance_budget_units(world, seed_options, &cmunem, &cmunal, rng);
+    seed_maintenance_budget_units(world, seed_options, cmunem.as_ref(), cmunal.as_ref(), rng);
     seed_low_support_garrisons(world, seed_options, rng);
 
     Ok(())
@@ -725,13 +765,16 @@ fn make_seed_rng(seed_options: &SeedOptions) -> Xoshiro256PlusPlus {
     Xoshiro256PlusPlus::seed_from_u64(seed_options.rng_seed.unwrap_or_else(default_seed))
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn default_seed() -> u64 {
     #[cfg(not(target_arch = "wasm32"))]
     {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_nanos() as u64)
-            .unwrap_or(0)
+            .map_or(0, |duration| duration.as_nanos() as u64)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -750,7 +793,7 @@ fn load_seed(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<SeedTab
         return Ok(None);
     }
     let file: SeedTableFile =
-        read_dat_file(&path).with_context(|| format!("parsing seed table {}", filename))?;
+        read_dat_file(&path).with_context(|| format!("parsing seed table {filename}"))?;
     Ok(Some(file))
 }
 
@@ -769,10 +812,10 @@ fn load_seed_from_files(
 }
 
 /// Apply a fleet seed table.  Each `SeedGroup` becomes one `Fleet`.
-/// `system_rotation` lists the system DatIds to cycle through when assigning
+/// `system_rotation` lists the system `DatIds` to cycle through when assigning
 /// fleets; if there are more groups than systems the last system is reused.
 fn apply_fleet_seed(
-    seed: &Option<SeedTableFile>,
+    seed: Option<&SeedTableFile>,
     system_key_map: &HashMap<u32, SystemKey>,
     capship_index: &CapShipIndex,
     fighter_index: &FighterIndex,
@@ -780,10 +823,7 @@ fn apply_fleet_seed(
     is_alliance: bool,
     world: &mut GameWorld,
 ) {
-    let seed = match seed {
-        Some(s) => s,
-        None => return,
-    };
+    let Some(seed) = seed else { return };
 
     for (group_idx, group) in seed.groups.iter().enumerate() {
         // Pick the target system for this fleet group.
@@ -792,9 +832,8 @@ fn apply_fleet_seed(
             .copied()
             .unwrap_or_else(|| *system_rotation.last().unwrap_or(&CORUSCANT_SEQ_ID));
 
-        let system_key = match system_key_map.get(&system_dat_id) {
-            Some(&k) => k,
-            None => continue, // System not loaded — skip.
+        let Some(&system_key) = system_key_map.get(&system_dat_id) else {
+            continue;
         };
 
         let mut fleet_capital_ships: Vec<ShipInstance> = Vec::new();
@@ -836,16 +875,13 @@ fn apply_fleet_seed(
 /// Items can mix capital ships (fleet component) and ground units.
 /// All groups are placed at the given system rotation.
 fn apply_army_seed(
-    seed: &Option<SeedTableFile>,
+    seed: Option<&SeedTableFile>,
     system_key_map: &HashMap<u32, SystemKey>,
     system_rotation: &[u32],
     is_alliance: bool,
     world: &mut GameWorld,
 ) {
-    let seed = match seed {
-        Some(s) => s,
-        None => return,
-    };
+    let Some(seed) = seed else { return };
 
     for (group_idx, group) in seed.groups.iter().enumerate() {
         let system_dat_id = system_rotation
@@ -853,9 +889,8 @@ fn apply_army_seed(
             .copied()
             .unwrap_or_else(|| *system_rotation.last().unwrap_or(&CORUSCANT_SEQ_ID));
 
-        let system_key = match system_key_map.get(&system_dat_id) {
-            Some(&k) => k,
-            None => continue,
+        let Some(&system_key) = system_key_map.get(&system_dat_id) else {
+            continue;
         };
 
         for item in &group.items {
@@ -870,19 +905,15 @@ fn apply_army_seed(
 /// Apply a single-system garrison seed (CMUNCRTB / CMUNHQTB / CMUNYVTB).
 /// The first item in each group is always `0x00000000` (skip it).
 fn apply_garrison_seed(
-    seed: &Option<SeedTableFile>,
+    seed: Option<&SeedTableFile>,
     system_key_map: &HashMap<u32, SystemKey>,
     system_dat_id: u32,
     is_alliance: bool,
     world: &mut GameWorld,
 ) {
-    let seed = match seed {
-        Some(s) => s,
-        None => return,
-    };
-    let system_key = match system_key_map.get(&system_dat_id) {
-        Some(&k) => k,
-        None => return,
+    let Some(seed) = seed else { return };
+    let Some(&system_key) = system_key_map.get(&system_dat_id) else {
+        return;
     };
 
     for group in &seed.groups {
@@ -897,19 +928,15 @@ fn apply_garrison_seed(
 
 /// Apply a facility seed table (FACLCRTB / FACLHQTB).
 fn apply_facility_seed(
-    seed: &Option<SeedTableFile>,
+    seed: Option<&SeedTableFile>,
     system_key_map: &HashMap<u32, SystemKey>,
     system_dat_id: u32,
     is_alliance: bool,
     world: &mut GameWorld,
 ) {
-    let seed = match seed {
-        Some(s) => s,
-        None => return,
-    };
-    let system_key = match system_key_map.get(&system_dat_id) {
-        Some(&k) => k,
-        None => return,
+    let Some(seed) = seed else { return };
+    let Some(&system_key) = system_key_map.get(&system_dat_id) else {
+        return;
     };
 
     for group in &seed.groups {
@@ -949,8 +976,7 @@ fn dispatch_fleet_item(
                 let hull = world
                     .capital_ship_classes
                     .get(class)
-                    .map(|c| c.hull as i32)
-                    .unwrap_or(100);
+                    .map_or(100, |c| c.hull.cast_signed());
                 capital_ships.push(ShipInstance::new(class, hull, is_alliance));
             }
         }
@@ -1088,6 +1114,12 @@ enum ControlBucket {
 /// 5. Shuffles all systems, then drains buckets in order.
 ///
 /// Returns the bucket assignment map so `initialize_support` can use it.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn assign_control_buckets<R: Rng + ?Sized>(
     world: &mut GameWorld,
     special: &SpecialSystems,
@@ -1099,13 +1131,12 @@ fn assign_control_buckets<R: Rng + ?Sized>(
 
     // Collect core systems that are NOT one of the 3 special systems.
     let mut core_systems: Vec<SystemKey> = Vec::new();
-    for (sys_key, sys) in world.systems.iter() {
+    for (sys_key, sys) in &world.systems {
         if sys_key == special.coruscant || sys_key == special.yavin || sys_key == special.rebel_hq {
             continue;
         }
-        let sector = match world.sectors.get(sys.sector) {
-            Some(s) => s,
-            None => continue,
+        let Some(sector) = world.sectors.get(sys.sector) else {
+            continue;
         };
         if sector.group == SectorGroup::Core {
             core_systems.push(sys_key);
@@ -1189,6 +1220,10 @@ fn assign_control_buckets<R: Rng + ?Sized>(
 /// Original: core systems have param 7730 = 100 (always populated).
 /// Rim systems have param 7731 = 31 (31% chance of populated).
 /// Special systems are already marked populated by `initialize_special_systems`.
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn initialize_population<R: Rng + ?Sized>(
     world: &mut GameWorld,
     seed_options: &SeedOptions,
@@ -1206,8 +1241,7 @@ fn initialize_population<R: Rng + ?Sized>(
             let group = world
                 .sectors
                 .get(sys.sector)
-                .map(|s| s.group)
-                .unwrap_or(SectorGroup::RimOuter);
+                .map_or(SectorGroup::RimOuter, |s| s.group);
             (k, group, sys.is_populated)
         })
         .collect();
@@ -1247,6 +1281,15 @@ fn initialize_population<R: Rng + ?Sized>(
 /// - Core neutral:           `random(0..spread(7764)) + (50 - spread/2)` → ~41-59
 /// - Rim populated:          `random(0..spread(7765)) + 50` → 50 (7765=0 in stock)
 /// - Unpopulated:            50 (hard-coded neutral)
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn initialize_support<R: Rng + ?Sized>(
     world: &mut GameWorld,
     special: &SpecialSystems,
@@ -1254,18 +1297,19 @@ fn initialize_support<R: Rng + ?Sized>(
     bucket_map: &HashMap<SystemKey, ControlBucket>,
     rng: &mut R,
 ) {
-    let diff = seed_options.gnprtb_index();
-
-    let core_neutral_spread = world.gnprtb.value(7764, diff).max(0) as u32;
-    let rim_pop_spread = world.gnprtb.value(7765, diff).max(0) as u32;
-
-    // Collect system info to avoid borrow issues.
     struct SysInfo {
         key: SystemKey,
         group: SectorGroup,
         is_populated: bool,
         is_special: bool,
     }
+
+    let diff = seed_options.gnprtb_index();
+
+    let core_neutral_spread = world.gnprtb.value(7764, diff).max(0) as u32;
+    let rim_pop_spread = world.gnprtb.value(7765, diff).max(0) as u32;
+
+    // Collect system info to avoid borrow issues.
     let sys_infos: Vec<SysInfo> = world
         .systems
         .iter()
@@ -1273,8 +1317,7 @@ fn initialize_support<R: Rng + ?Sized>(
             let group = world
                 .sectors
                 .get(sys.sector)
-                .map(|s| s.group)
-                .unwrap_or(SectorGroup::RimOuter);
+                .map_or(SectorGroup::RimOuter, |s| s.group);
             let is_special = k == special.coruscant || k == special.yavin || k == special.rebel_hq;
             SysInfo {
                 key: k,
@@ -1342,8 +1385,9 @@ fn initialize_support<R: Rng + ?Sized>(
                 }
                 Some(ControlBucket::Neutral) | None => {
                     let support = if core_neutral_spread > 0 {
-                        let r = rng.gen_range(0..core_neutral_spread) as i32;
-                        (50 - (core_neutral_spread as i32) / 2 + r).clamp(0, 100) as f32 / 100.0
+                        let r = rng.gen_range(0..core_neutral_spread).cast_signed();
+                        (50 - core_neutral_spread.cast_signed() / 2 + r).clamp(0, 100) as f32
+                            / 100.0
                     } else {
                         0.5
                     };
@@ -1353,7 +1397,7 @@ fn initialize_support<R: Rng + ?Sized>(
             SectorGroup::RimInner | SectorGroup::RimOuter => {
                 if info.is_populated {
                     let support = if rim_pop_spread > 0 {
-                        let r = rng.gen_range(0..rim_pop_spread) as i32;
+                        let r = rng.gen_range(0..rim_pop_spread).cast_signed();
                         (50 + r).clamp(0, 100) as f32 / 100.0
                     } else {
                         0.5
@@ -1383,7 +1427,7 @@ fn load_syfc_table(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<S
         return Ok(None);
     }
     let file: SyfcTableFile =
-        read_dat_file(&path).with_context(|| format!("parsing syfc table {}", filename))?;
+        read_dat_file(&path).with_context(|| format!("parsing syfc table {filename}"))?;
     Ok(Some(file))
 }
 
@@ -1411,6 +1455,11 @@ fn load_syfc_table_from_files(
 ///
 /// Stock values: core energy base=10, rand=4; core raw base=5, rand=9;
 /// rim energy base=1, rand1=4, rand2=9.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn initialize_energy_and_raw_materials<R: Rng + ?Sized>(
     world: &mut GameWorld,
     seed_options: &SeedOptions,
@@ -1436,8 +1485,7 @@ fn initialize_energy_and_raw_materials<R: Rng + ?Sized>(
             let group = world
                 .sectors
                 .get(sys.sector)
-                .map(|s| s.group)
-                .unwrap_or(SectorGroup::RimOuter);
+                .map_or(SectorGroup::RimOuter, |s| s.group);
             (k, group, sys.is_populated)
         })
         .collect();
@@ -1499,11 +1547,10 @@ struct FacilityWeight {
     facility_id: u32,
 }
 
-/// Parse SYFC table entries into a sorted list of (cumulative_weight, facility_id).
-fn parse_facility_weights(table: &Option<SyfcTableFile>) -> Vec<FacilityWeight> {
-    let table = match table {
-        Some(t) => t,
-        None => return Vec::new(),
+/// Parse SYFC table entries into a sorted list of (`cumulative_weight`, `facility_id`).
+fn parse_facility_weights(table: Option<&SyfcTableFile>) -> Vec<FacilityWeight> {
+    let Some(table) = table else {
+        return Vec::new();
     };
     table
         .entries
@@ -1522,7 +1569,7 @@ fn pick_weighted_facility<R: Rng + ?Sized>(weights: &[FacilityWeight], rng: &mut
     if weights.is_empty() {
         return None;
     }
-    let max_weight = weights.last().map(|w| w.cumulative_weight).unwrap_or(100);
+    let max_weight = weights.last().map_or(100, |w| w.cumulative_weight);
     if max_weight == 0 {
         return None;
     }
@@ -1536,17 +1583,21 @@ fn pick_weighted_facility<R: Rng + ?Sized>(weights: &[FacilityWeight], rng: &mut
 
 /// Generate procedural facilities for all populated systems based on energy slots.
 ///
-/// Original algorithm: for each energy slot (0..total_energy):
+/// Original algorithm: for each energy slot (`0..total_energy)`:
 /// 1. Compute mine chance: `(total_raw - current_mines) * mine_multiplier`
-///    where mine_multiplier is GNPRTB 7766 (core=4) or 7767 (rim=2).
-/// 2. If random(0..100) < mine_chance, place a mine (production facility).
+///    where `mine_multiplier` is GNPRTB 7766 (core=4) or 7767 (rim=2).
+/// 2. If random(0..100) < `mine_chance`, place a mine (production facility).
 /// 3. Otherwise, pick a weighted random facility from SYFCCRTB (core) or SYFCRMTB (rim).
-/// 4. Post-adjust: ensure energy >= used_energy, raw >= mine_count.
+/// 4. Post-adjust: ensure energy >= `used_energy`, raw >= `mine_count`.
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn generate_procedural_facilities<R: Rng + ?Sized>(
     world: &mut GameWorld,
     seed_options: &SeedOptions,
-    syfccr: &Option<SyfcTableFile>,
-    syfcrm: &Option<SyfcTableFile>,
+    syfccr: Option<&SyfcTableFile>,
+    syfcrm: Option<&SyfcTableFile>,
     rng: &mut R,
 ) {
     let diff = seed_options.gnprtb_index();
@@ -1564,8 +1615,7 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
             let group = world
                 .sectors
                 .get(sys.sector)
-                .map(|s| s.group)
-                .unwrap_or(SectorGroup::RimOuter);
+                .map_or(SectorGroup::RimOuter, |s| s.group);
             (
                 k,
                 group,
@@ -1594,14 +1644,14 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
 
         for _ in 0..total_energy {
             // Mine chance
-            let mine_chance = (raw_materials as u32).saturating_sub(mine_count) * mine_mult;
+            let mine_chance = u32::from(raw_materials).saturating_sub(mine_count) * mine_mult;
             let is_mine = mine_chance > 0 && rng.gen_range(0u32..100) < mine_chance;
 
             if is_mine {
                 // Place a mine (production facility — family 0x2D = mine)
                 // Use a generic mine DatId. The original uses a specific mine class.
                 // Family 0x2D index 1 = first mine type.
-                let mine_dat_id = DatId::new(0x2D000001);
+                let mine_dat_id = DatId::new(0x2D00_0001);
                 let inst = ProductionFacilityInstance {
                     class_dat_id: mine_dat_id,
                     is_alliance: false, // Mines are neutral/faction-inherited
@@ -1627,7 +1677,7 @@ fn generate_procedural_facilities<R: Rng + ?Sized>(
 /// Compute total maintenance cost of all units belonging to a faction.
 fn compute_faction_maintenance(world: &GameWorld, is_alliance: bool) -> u32 {
     let mut total = 0u32;
-    for (_, fleet) in world.fleets.iter() {
+    for (_, fleet) in &world.fleets {
         if fleet.is_alliance != is_alliance {
             continue;
         }
@@ -1645,7 +1695,7 @@ fn compute_faction_maintenance(world: &GameWorld, is_alliance: bool) -> u32 {
         }
     }
     // Troops have a flat maintenance cost of 1 each in the original.
-    for (_, troop) in world.troops.iter() {
+    for (_, troop) in &world.troops {
         if troop.is_alliance == is_alliance {
             total += 1;
         }
@@ -1735,8 +1785,7 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
                     let hull = world
                         .capital_ship_classes
                         .get(class)
-                        .map(|c| c.hull as i32)
-                        .unwrap_or(100);
+                        .map_or(100, |c| c.hull.cast_signed());
                     fleet_capital_ships.push(ShipInstance::new(class, hull, is_alliance));
                 }
             }
@@ -1779,14 +1828,19 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
 /// 1. Compute total maintenance from all existing placed assets per faction.
 /// 2. Look up available budget percentage from SDPRTB 5168 (standard), 5169 (large),
 ///    or 5170 (huge) — side-aware and difficulty-aware.
-/// 3. Available = floor(total_maintenance * budget_pct / 100).
+/// 3. Available = `floor(total_maintenance` * `budget_pct` / 100).
 /// 4. Repeatedly pick a random owned system, roll a random bundle from CMUNEMTB
 ///    (Empire) or CMUNALTB (Alliance), deploy if affordable, repeat until exhausted.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn seed_maintenance_budget_units<R: Rng + ?Sized>(
     world: &mut GameWorld,
     seed_options: &SeedOptions,
-    cmunem: &Option<SeedTableFile>,
-    cmunal: &Option<SeedTableFile>,
+    cmunem: Option<&SeedTableFile>,
+    cmunal: Option<&SeedTableFile>,
     rng: &mut R,
 ) {
     let diff = seed_options.gnprtb_index();
@@ -1798,10 +1852,7 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
 
     // Seed each faction independently.
     for (is_alliance, seed_table) in [(true, cmunal), (false, cmunem)] {
-        let table = match seed_table {
-            Some(t) => t,
-            None => continue,
-        };
+        let Some(table) = seed_table else { continue };
         if table.groups.is_empty() {
             continue;
         }
@@ -1817,7 +1868,7 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
         }
 
         let existing_maint = compute_faction_maintenance(world, is_alliance);
-        let mut budget = (existing_maint as i64 * budget_pct as i64 / 100).max(0) as u32;
+        let mut budget = (i64::from(existing_maint) * i64::from(budget_pct) / 100).max(0) as u32;
 
         // Collect eligible owned systems for this faction.
         let mut owned_systems: Vec<SystemKey> = world
@@ -1865,19 +1916,29 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
 /// Original formula: if support < threshold (GNPRTB 7761 = 60),
 /// add `ceil((threshold - support) / -divisor)` troops (GNPRTB 7762 = -10).
 /// i.e., `floor((threshold - support + 9) / 10)` troops.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn seed_low_support_garrisons<R: Rng + ?Sized>(
     world: &mut GameWorld,
     seed_options: &SeedOptions,
     _rng: &mut R,
 ) {
+    struct GarrisonInfo {
+        key: SystemKey,
+        support_value: i32, // 0-100 original-scale support for the controlling faction
+        is_alliance: bool,
+    }
+
     let diff = seed_options.gnprtb_index();
     let threshold = world.gnprtb.value(7761, diff); // 60
     let divisor = world.gnprtb.value(7762, diff).abs().max(1); // 10
 
     // Alliance regiment DatId: family 0x10, index 2 (ALLIANCE_ARMY_REGIMENT per TheArchitect2018)
-    let alliance_regiment = DatId::new(0x10000002);
+    let alliance_regiment = DatId::new(0x1000_0002);
     // Empire regiment DatId: family 0x10, index 8 (IMPERIAL_ARMY_REGIMENT per TheArchitect2018)
-    let empire_regiment = DatId::new(0x10000008);
+    let empire_regiment = DatId::new(0x1000_0008);
     // Guard: if these troop classes don't exist in the data, skip garrison seeding.
     let alliance_exists = world
         .troops
@@ -1892,11 +1953,6 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
     }
 
     // Collect system info.
-    struct GarrisonInfo {
-        key: SystemKey,
-        support_value: i32, // 0-100 original-scale support for the controlling faction
-        is_alliance: bool,
-    }
     let infos: Vec<GarrisonInfo> = world
         .systems
         .iter()
@@ -1959,14 +2015,14 @@ fn seed_low_support_garrisons<R: Rng + ?Sized>(
 
 /// Roll concrete stats from SkillPair{base, variance} for all characters.
 ///
-/// After rolling, each SkillPair is normalized: `base = rolled_value`, `variance = 0`.
+/// After rolling, each `SkillPair` is normalized: `base = rolled_value`, `variance = 0`.
 /// This matches the original game's `setup_character()` which generates concrete
 /// stats at game start from the DAT base+variance templates.
 ///
 /// Jedi probability is also rolled here: characters with `jedi_probability > 0`
 /// have a chance to become Force-sensitive based on their probability value.
 fn roll_character_stats<R: Rng + ?Sized>(world: &mut GameWorld, rng: &mut R) {
-    for (_, character) in world.characters.iter_mut() {
+    for (_, character) in &mut world.characters {
         roll_skill_pair(&mut character.diplomacy, rng);
         roll_skill_pair(&mut character.espionage, rng);
         roll_skill_pair(&mut character.ship_design, rng);
@@ -1990,7 +2046,7 @@ fn roll_character_stats<R: Rng + ?Sized>(world: &mut GameWorld, rng: &mut R) {
     }
 }
 
-/// Roll a single SkillPair into a concrete value: base + random(0..=variance).
+/// Roll a single `SkillPair` into a concrete value: base + random(0..=variance).
 /// After rolling, variance is set to 0 so the value is fixed.
 fn roll_skill_pair<R: Rng + ?Sized>(pair: &mut SkillPair, rng: &mut R) {
     if pair.variance > 0 {
@@ -2024,7 +2080,7 @@ fn place_named_characters(world: &mut GameWorld, special: &SpecialSystems) {
     // Empire characters at Coruscant
     const CORUSCANT_CHARACTERS: &[&str] = &["Emperor Palpatine", "Darth Vader"];
 
-    for (_, character) in world.characters.iter_mut() {
+    for (_, character) in &mut world.characters {
         let name = character.name.as_str();
 
         if YAVIN_CHARACTERS.contains(&name) {
@@ -2058,7 +2114,7 @@ mod tests {
     fn seeds_load_and_populate_world() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let world = crate::load_game_data(&path).expect("load_game_data failed");
@@ -2103,7 +2159,7 @@ mod tests {
     fn special_systems_match_original_roles() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2192,8 +2248,7 @@ mod tests {
         let group = hq_sector.unwrap().group;
         assert!(
             group == SectorGroup::RimInner || group == SectorGroup::RimOuter,
-            "Rebel HQ must be a rim system, got {:?}",
-            group
+            "Rebel HQ must be a rim system, got {group:?}"
         );
 
         // FACLHQTB should be at Rebel HQ, NOT at Yavin
@@ -2209,7 +2264,7 @@ mod tests {
     fn fixed_fleet_tables_only_target_special_systems() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2247,8 +2302,7 @@ mod tests {
             .count();
         assert!(
             empire_fleet_system_count <= 3,
-            "Empire fleets should be at <= 3 systems (3-system model), found {}",
-            empire_fleet_system_count
+            "Empire fleets should be at <= 3 systems (3-system model), found {empire_fleet_system_count}"
         );
     }
 
@@ -2256,7 +2310,7 @@ mod tests {
     fn deterministic_rebel_hq_with_same_seed() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2294,7 +2348,7 @@ mod tests {
     fn fixed_named_characters_spawn_at_expected_systems() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2377,7 +2431,7 @@ mod tests {
     fn character_stats_are_rolled_not_raw() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2388,7 +2442,7 @@ mod tests {
             .expect("load_game_data_with_options failed");
 
         // After rolling, all character skill variances should be 0
-        for (_, character) in world.characters.iter() {
+        for (_, character) in &world.characters {
             assert_eq!(
                 character.diplomacy.variance, 0,
                 "Character {} diplomacy variance should be 0 after rolling",
@@ -2421,7 +2475,7 @@ mod tests {
     fn deterministic_stat_rolls_with_same_seed() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2492,7 +2546,7 @@ mod tests {
     fn support_ranges_match_original_rules() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2506,7 +2560,7 @@ mod tests {
         // Special systems have 1.0/0.0 or 0.0/1.0; others should have non-zero values.
         let mut zero_pop_count = 0;
         let mut total_count = 0;
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             total_count += 1;
             if sys.popularity_alliance == 0.0 && sys.popularity_empire == 0.0 {
                 zero_pop_count += 1;
@@ -2514,14 +2568,12 @@ mod tests {
         }
         assert!(
             zero_pop_count == 0,
-            "No system should have both popularity values at 0.0, found {} of {} systems",
-            zero_pop_count,
-            total_count
+            "No system should have both popularity values at 0.0, found {zero_pop_count} of {total_count} systems"
         );
 
         // Core controlled systems should have support in [0.2, 1.0] range
         // (weak base = 20, strong base + extra = 90, plus special at 100)
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             let sector = world.sectors.get(sys.sector);
             if sector.is_some_and(|s| s.group == SectorGroup::Core) {
                 match sys.control {
@@ -2556,7 +2608,7 @@ mod tests {
     fn core_bucket_counts_follow_sdprtb_percentages() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2597,7 +2649,7 @@ mod tests {
         let mut neutral = 0;
         let mut total_core = 0;
 
-        for (key, sys) in world.systems.iter() {
+        for (key, sys) in &world.systems {
             if special_keys.contains(&key) {
                 continue;
             }
@@ -2621,24 +2673,16 @@ mod tests {
         assert!(total_core > 0, "Should have core systems");
         assert!(
             alliance_controlled + empire_controlled + neutral == total_core,
-            "Control buckets should sum to total core: A={} E={} N={} total={}",
-            alliance_controlled,
-            empire_controlled,
-            neutral,
-            total_core
+            "Control buckets should sum to total core: A={alliance_controlled} E={empire_controlled} N={neutral} total={total_core}"
         );
         // With medium difficulty, both sides should have some controlled systems.
         assert!(
             alliance_controlled > 0,
-            "Alliance should control some core systems (got {}/{})",
-            alliance_controlled,
-            total_core
+            "Alliance should control some core systems (got {alliance_controlled}/{total_core})"
         );
         assert!(
             empire_controlled > 0,
-            "Empire should control some core systems (got {}/{})",
-            empire_controlled,
-            total_core
+            "Empire should control some core systems (got {empire_controlled}/{total_core})"
         );
     }
 
@@ -2646,7 +2690,7 @@ mod tests {
     fn populated_systems_follow_gnprtb_rules() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2661,9 +2705,9 @@ mod tests {
         let mut core_populated = 0;
         let mut rim_count = 0;
         let mut rim_populated = 0;
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             let sector = world.sectors.get(sys.sector);
-            let group = sector.map(|s| s.group).unwrap_or(SectorGroup::RimOuter);
+            let group = sector.map_or(SectorGroup::RimOuter, |s| s.group);
             match group {
                 SectorGroup::Core => {
                     core_count += 1;
@@ -2682,20 +2726,16 @@ mod tests {
 
         assert_eq!(
             core_count, core_populated,
-            "All {} core systems should be populated, but only {} are",
-            core_count, core_populated
+            "All {core_count} core systems should be populated, but only {core_populated} are"
         );
 
         // Rim: ~31% should be populated (GNPRTB 7731 = 31).
         // With enough systems, expect 15-50% range (statistical variability).
         if rim_count > 5 {
-            let pct = rim_populated as f64 / rim_count as f64 * 100.0;
+            let pct = f64::from(rim_populated) / f64::from(rim_count) * 100.0;
             assert!(
                 pct > 10.0 && pct < 60.0,
-                "Rim populated percentage should be roughly ~31%, got {:.1}% ({}/{})",
-                pct,
-                rim_populated,
-                rim_count
+                "Rim populated percentage should be roughly ~31%, got {pct:.1}% ({rim_populated}/{rim_count})"
             );
         }
     }
@@ -2706,7 +2746,7 @@ mod tests {
     fn energy_and_raw_materials_respect_param_ranges() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2719,7 +2759,7 @@ mod tests {
         let mut populated_with_energy = 0;
         let mut populated_count = 0;
 
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             if sys.is_populated {
                 populated_count += 1;
                 // Energy should be in [1, 15] for populated systems.
@@ -2761,7 +2801,7 @@ mod tests {
     fn procedural_facilities_placed_at_populated_systems() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2774,7 +2814,7 @@ mod tests {
         // Count total facilities across all systems (excluding special HQ facilities).
         let mut total_facilities = 0;
         let mut systems_with_facilities = 0;
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             let fac_count = sys.defense_facilities.len()
                 + sys.manufacturing_facilities.len()
                 + sys.production_facilities.len();
@@ -2788,13 +2828,11 @@ mod tests {
         // than just the HQ ones (which would be ~10-20 from FACLCRTB + FACLHQTB).
         assert!(
             total_facilities > 30,
-            "Procedural facility generation should produce many facilities, got {}",
-            total_facilities
+            "Procedural facility generation should produce many facilities, got {total_facilities}"
         );
         assert!(
             systems_with_facilities > 10,
-            "Multiple systems should have facilities, got {} systems",
-            systems_with_facilities
+            "Multiple systems should have facilities, got {systems_with_facilities} systems"
         );
     }
 
@@ -2804,7 +2842,7 @@ mod tests {
     fn maintenance_budget_seeding_spends_without_overshoot() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2820,8 +2858,7 @@ mod tests {
         let total_fleets = world.fleets.len();
         assert!(
             total_fleets >= 4,
-            "Budget seeding should produce at least 4 fleets (3 fixed + budget), got {}",
-            total_fleets
+            "Budget seeding should produce at least 4 fleets (3 fixed + budget), got {total_fleets}"
         );
 
         // Both factions should have at least 1 fleet each (from fixed tables at minimum).
@@ -2829,29 +2866,30 @@ mod tests {
         let empire_fleets = world.fleets.values().filter(|f| !f.is_alliance).count();
         assert!(
             alliance_fleets >= 1,
-            "Alliance should have fleets, got {}",
-            alliance_fleets
+            "Alliance should have fleets, got {alliance_fleets}"
         );
         assert!(
             empire_fleets >= 1,
-            "Empire should have fleets, got {}",
-            empire_fleets
+            "Empire should have fleets, got {empire_fleets}"
         );
 
         // Total ground troops should exist (from fixed garrison + bundles + garrison pass).
         let total_troops = world.troops.len();
         assert!(
             total_troops > 5,
-            "Should have ground troops from fixed garrisons + budget + garrison pass, got {}",
-            total_troops
+            "Should have ground troops from fixed garrisons + budget + garrison pass, got {total_troops}"
         );
     }
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     fn low_support_systems_get_garrison_troops() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
         let seed_options = SeedOptions {
@@ -2867,7 +2905,7 @@ mod tests {
         let mut low_support_with_troops = 0;
         let mut low_support_total = 0;
 
-        for (_, sys) in world.systems.iter() {
+        for (_, sys) in &world.systems {
             let (support, is_controlled) = match sys.control {
                 ControlKind::Controlled(Faction::Alliance) => (sys.popularity_alliance, true),
                 ControlKind::Controlled(Faction::Empire) => (sys.popularity_empire, true),
@@ -2888,9 +2926,7 @@ mod tests {
         if low_support_total > 0 {
             assert!(
                 low_support_with_troops > 0,
-                "Low-support controlled systems should have garrison troops ({}/{})",
-                low_support_with_troops,
-                low_support_total
+                "Low-support controlled systems should have garrison troops ({low_support_with_troops}/{low_support_total})"
             );
         }
     }
@@ -2899,7 +2935,7 @@ mod tests {
     fn budget_differs_by_galaxy_size() {
         let path = gdata_path();
         if !path.exists() {
-            eprintln!("skipping: data/base not found at {:?}", path);
+            eprintln!("skipping: data/base not found at {path:?}");
             return;
         }
 

@@ -24,6 +24,14 @@ pub struct JediPanelState {
 }
 
 /// Draw the Jedi training panel as a left-side egui panel.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 pub fn draw_jedi(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -48,7 +56,7 @@ pub fn draw_jedi(
 
             // Collect Force-sensitive characters for this faction
             let mut sensitives: Vec<(CharacterKey, &Character, Option<u32>)> = Vec::new();
-            for (key, character) in world.characters.iter() {
+            for (key, character) in &world.characters {
                 let owns = if is_alliance {
                     character.is_alliance
                 } else {
@@ -104,17 +112,17 @@ pub fn draw_jedi(
 
             ui.horizontal(|ui| {
                 ui.label(
-                    RichText::new(format!("Training: {}", training_count))
+                    RichText::new(format!("Training: {training_count}"))
                         .color(theme::WARNING_AMBER)
                         .size(11.0),
                 );
                 ui.label(
-                    RichText::new(format!("Ready: {}", experienced_count))
+                    RichText::new(format!("Ready: {experienced_count}"))
                         .color(theme::SUCCESS_GREEN)
                         .size(11.0),
                 );
                 ui.label(
-                    RichText::new(format!("Aware: {}", aware_count))
+                    RichText::new(format!("Aware: {aware_count}"))
                         .color(theme::TEXT_SECONDARY)
                         .size(11.0),
                 );
@@ -149,8 +157,7 @@ pub fn draw_jedi(
                                     ui.add(
                                         ProgressBar::new(progress.min(1.0))
                                             .text(format!(
-                                                "{}/{} XP to Training",
-                                                current_xp, XP_TO_TRAINING
+                                                "{current_xp}/{XP_TO_TRAINING} XP to Training"
                                             ))
                                             .fill(Color32::from_rgb(60, 100, 180)),
                                     );
@@ -161,8 +168,7 @@ pub fn draw_jedi(
                                     ui.add(
                                         ProgressBar::new(progress.min(1.0))
                                             .text(format!(
-                                                "{}/{} XP to Experienced",
-                                                current_xp, XP_TO_EXPERIENCED
+                                                "{current_xp}/{XP_TO_EXPERIENCED} XP to Experienced"
                                             ))
                                             .fill(Color32::from_rgb(100, 60, 180)),
                                     );

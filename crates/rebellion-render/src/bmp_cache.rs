@@ -112,6 +112,7 @@ pub enum AssetRenderProfile {
 impl AssetRenderProfile {
     /// Stable configuration value used by the native environment variable and
     /// future browser-pack manifest.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::OriginalParity => "original-parity",
@@ -120,6 +121,7 @@ impl AssetRenderProfile {
     }
 
     /// Parse a stable profile value. Unknown values fail closed at the caller.
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "original" | "original-parity" | "parity" => Some(Self::OriginalParity),
@@ -333,6 +335,7 @@ impl DllSource {
     /// Lowercase DLL name used as the staging directory prefix.
     ///
     /// Staging layout: `{base_path}/{dll_dir_name}/BMP/{id}.bmp`
+    #[must_use]
     pub fn dll_dir_name(self) -> &'static str {
         match self {
             DllSource::Strategy => "strategy-dll",
@@ -343,6 +346,7 @@ impl DllSource {
     }
 
     /// Egui texture name prefix (for debug labels).
+    #[must_use]
     pub fn texture_prefix(self) -> &'static str {
         match self {
             DllSource::Strategy => "strategy",
@@ -997,7 +1001,7 @@ pub mod resources {
         pub const MINI_SHIP_VISCOUNT_STAR_DEFENDER: u32 = 18251;
         /// Ship mini-icon: Liberator cruiser.
         pub const MINI_SHIP_LIBERATOR_CRUISER: u32 = 18252;
-        /// Ship mini-icon: CC-9600 frigate / MC30c frigate.
+        /// Ship mini-icon: CC-9600 frigate / `MC30c` frigate.
         pub const MINI_SHIP_MC30C_FRIGATE: u32 = 18253;
         /// Ship mini-icon: Dauntless cruiser / MC80A Home One type.
         pub const MINI_SHIP_MC80A_HOME_ONE_CRUISER: u32 = 18254;
@@ -1137,6 +1141,7 @@ impl BitmapHitMask {
 
 impl BmpCache {
     /// Create an empty cache with no path configured.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             base_path: None,
@@ -1188,6 +1193,7 @@ impl BmpCache {
     }
 
     /// Return the active render profile.
+    #[must_use]
     pub const fn render_profile(&self) -> AssetRenderProfile {
         self.profile
     }
@@ -1326,7 +1332,7 @@ impl BmpCache {
         let bmp_file = rebase_path_prefix(base, "data/base", DATA_PREFIX)
             .join(source.dll_dir_name())
             .join("BMP")
-            .join(format!("{}.bmp", resource_id));
+            .join(format!("{resource_id}.bmp"));
         std::fs::read(bmp_file).ok()
     }
 
@@ -1346,14 +1352,14 @@ impl BmpCache {
         let bmp_file = rebase_path_prefix(base, "data/base", DATA_PREFIX)
             .join(source.dll_dir_name())
             .join("BMP")
-            .join(format!("{}.bmp", resource_id));
+            .join(format!("{resource_id}.bmp"));
 
         // Faithful HD is opt-in. Original parity never probes the HD tree.
         if let Some(approval) = self.hd_asset_approval(source, resource_id) {
             if let Some(hd_dir) = &self.hd_path {
                 let hd_file = rebase_path_prefix(hd_dir, "data/hd", HD_PREFIX)
                     .join(source.dll_dir_name())
-                    .join(format!("{}.png", resource_id));
+                    .join(format!("{resource_id}.png"));
                 if let Some(bytes) = validated_hd_bytes(&bmp_file, &hd_file, approval) {
                     if let Some(handle) = load_image_bytes_as_texture(
                         ctx,
@@ -1442,9 +1448,10 @@ impl Default for BmpCache {
 }
 
 fn rebase_path_prefix(path: &Path, from_prefix: &str, to_prefix: &str) -> PathBuf {
-    path.strip_prefix(from_prefix)
-        .map(|suffix| PathBuf::from(to_prefix).join(suffix))
-        .unwrap_or_else(|_| path.to_path_buf())
+    path.strip_prefix(from_prefix).map_or_else(
+        |_| path.to_path_buf(),
+        |suffix| PathBuf::from(to_prefix).join(suffix),
+    )
 }
 
 /// Return whether a staged resource uses the original game's palette-blue
@@ -1894,6 +1901,11 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn native_hit_mask_uses_bottom_left_palette_key_and_strict_edges() {
         let width = 4usize;
         let height = 4usize;

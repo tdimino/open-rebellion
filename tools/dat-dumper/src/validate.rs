@@ -1,4 +1,7 @@
 /// Compare original bytes against re-serialized bytes for round-trip validation.
+///
+/// # Errors
+/// Returns an error if the lengths differ or any byte differs.
 pub fn compare_bytes(original: &[u8], reserialized: &[u8], filename: &str) -> anyhow::Result<()> {
     if original.len() != reserialized.len() {
         anyhow::bail!(

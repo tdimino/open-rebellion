@@ -2,7 +2,7 @@
 //!
 //! # Design
 //!
-//! Follows the same stateless advance() pattern as manufacturing and missions:
+//! Follows the same stateless `advance()` pattern as manufacturing and missions:
 //! - `ResearchState` holds all active research projects and per-faction tech levels.
 //! - `ResearchSystem::advance(state, world, tick_events) -> Vec<ResearchResult>`
 //! - Results are pure data; the caller applies them to `ResearchState` and logs messages.
@@ -28,7 +28,7 @@
 //! # Dispatch
 //!
 //! The caller creates a `ResearchProject` and inserts it via `ResearchState::dispatch`.
-//! Only one project per (faction × TechType) is active at a time — a new dispatch
+//! Only one project per (faction × `TechType`) is active at a time — a new dispatch
 //! replaces the previous one.
 
 use serde::{Deserialize, Serialize};
@@ -86,6 +86,11 @@ pub struct ResearchProject {
 
 impl ResearchProject {
     /// Progress fraction [0.0, 1.0].
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn progress(&self) -> f32 {
         if self.total_ticks == 0 {
             return 1.0;
@@ -108,6 +113,7 @@ pub struct ResearchLevels {
 
 impl ResearchLevels {
     /// Return the current level for a specific tech tree.
+    #[must_use]
     pub fn level(&self, tech: TechType) -> u32 {
         match tech {
             TechType::Ship => self.ship,
@@ -143,12 +149,13 @@ pub struct ResearchState {
 }
 
 impl ResearchState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Dispatch a research project. Replaces any existing project for the same
-    /// (faction × tech_type) combination.
+    /// (faction × `tech_type`) combination.
     pub fn dispatch(&mut self, project: ResearchProject) {
         self.projects.retain(|p| {
             !(p.faction_is_alliance == project.faction_is_alliance
@@ -165,6 +172,7 @@ impl ResearchState {
     }
 
     /// Return the current research level for a faction + tech tree.
+    #[must_use]
     pub fn level(&self, faction_is_alliance: bool, tech: TechType) -> u32 {
         if faction_is_alliance {
             self.alliance.level(tech)
@@ -175,6 +183,7 @@ impl ResearchState {
 
     /// True if `class_research_order <= current level` — i.e. the class is
     /// buildable by this faction.
+    #[must_use]
     pub fn is_unlocked(
         &self,
         faction_is_alliance: bool,
@@ -214,7 +223,7 @@ impl ResearchSystem {
     /// Returns a `ResearchResult::TechUnlocked` for each project that completes.
     ///
     /// **IMPORTANT**: As of v0.6.0, this function no longer applies level-ups internally.
-    /// The caller must apply each TechUnlocked result:
+    /// The caller must apply each `TechUnlocked` result:
     /// ```ignore
     /// for result in &results {
     ///     let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, .. } = result;
@@ -222,6 +231,10 @@ impl ResearchSystem {
     ///     else { state.empire.advance(*tech_type); }
     /// }
     /// ```
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn advance(
         state: &mut ResearchState,
         _world: &GameWorld,
@@ -275,6 +288,7 @@ impl ResearchSystem {
     /// (from `CapitalShipClass::research_difficulty`). Troop and Facility trees
     /// fall back to `RESEARCH_DEFAULT_TICKS` until those class types expose
     /// `research_difficulty` in the world model.
+    #[must_use]
     pub fn ticks_for_next_level(
         world: &GameWorld,
         faction_is_alliance: bool,
@@ -307,6 +321,7 @@ impl ResearchSystem {
 
     /// True if a capital ship class is available for this faction at the given
     /// research level.
+    #[must_use]
     pub fn ship_class_is_available(
         world: &GameWorld,
         state: &ResearchState,
@@ -330,6 +345,7 @@ impl ResearchSystem {
     /// True if a fighter class is available at the current research level.
     ///
     /// Fighter classes use `research_order` the same way as capital ships.
+    #[must_use]
     pub fn fighter_class_is_available(
         world: &GameWorld,
         state: &ResearchState,
@@ -367,7 +383,7 @@ mod tests {
     use crate::world::{CapitalShipClass, Character, GameWorld, SkillPair};
 
     fn ticks(n: u32) -> Vec<TickEvent> {
-        (1..=n as u64).map(|t| TickEvent { tick: t }).collect()
+        (1..=u64::from(n)).map(|t| TickEvent { tick: t }).collect()
     }
 
     fn make_char_key(world: &mut GameWorld) -> CharacterKey {

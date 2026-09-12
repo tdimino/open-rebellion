@@ -30,7 +30,7 @@ fmt-check:
 
 # 3. Static analysis
 clippy:
-	cargo clippy --workspace --all-targets -- -D warnings
+	cargo clippy --workspace --all-targets -- -W clippy::pedantic -D warnings
 
 # 4. Build and run
 build:

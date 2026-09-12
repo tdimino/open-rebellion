@@ -45,13 +45,13 @@ pub enum SectorGroup {
     RimOuter = 3,
 }
 
-/// Exploration status derived from the SYSTEMSD family_id byte.
+/// Exploration status derived from the SYSTEMSD `family_id` byte.
 ///
 /// Explored systems are fully visible; unexplored systems reveal name only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExplorationStatus {
-    /// family_id = 0x90 (144)
+    /// `family_id` = 0x90 (144)
     Explored,
-    /// family_id = 0x92 (146)
+    /// `family_id` = 0x92 (146)
     Unexplored,
 }

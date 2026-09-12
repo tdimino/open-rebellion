@@ -22,10 +22,10 @@
 //! It returns `Vec<DeathStarEvent>` for the caller to apply.
 //!
 //! # Source
-//! - `ghidra/notes/annotated-functions.md` § FUN_005617b0
-//! - `ghidra/notes/economy-systems.md` § SystemDeathStarNearbyNotif
+//! - `ghidra/notes/annotated-functions.md` § `FUN_005617b0`
+//! - `ghidra/notes/economy-systems.md` § `SystemDeathStarNearbyNotif`
 //! - `ghidra/notes/rust-implementation-guide.md` §3.3, §2.4
-//! - `entity-system.md §4.2` — alive_flag inverted semantics for systems
+//! - `entity-system.md §4.2` — `alive_flag` inverted semantics for systems
 
 use serde::{Deserialize, Serialize};
 
@@ -76,7 +76,7 @@ pub enum DeathStarEvent {
 
     /// A Death Star fleet is within `NEARBY_WARNING_RADIUS` of `system`.
     ///
-    /// Maps to `SystemDeathStarNearbyNotif` (FUN_00512480).
+    /// Maps to `SystemDeathStarNearbyNotif` (`FUN_00512480`).
     /// Used to trigger Alliance intelligence messages.
     NearbyWarning { system: SystemKey, tick: u64 },
 }
@@ -106,7 +106,7 @@ pub struct DeathStarState {
     /// Whether the Death Star's shield generator (entity family 0x25) is active.
     /// The shield must be destroyed before the Death Star can be damaged or fire
     /// its superlaser. From community disassembly: 4 functions manage the shield
-    /// entity at FUN_0051b2c0 through FUN_0051b460.
+    /// entity at `FUN_0051b2c0` through `FUN_0051b460`.
     #[serde(default = "default_shield_active")]
     pub shield_generator_active: bool,
 }
@@ -132,7 +132,7 @@ impl DeathStarState {
         self.shield_generator_active = false;
     }
 
-    /// Add construction delay from sabotage (increases ticks_remaining).
+    /// Add construction delay from sabotage (increases `ticks_remaining`).
     pub fn add_sabotage_delay(&mut self, ticks: u32) {
         if let Some(ref mut construction) = self.under_construction {
             construction.ticks_remaining = construction.ticks_remaining.saturating_add(ticks);
@@ -157,6 +157,11 @@ impl DeathStarSystem {
     ///    that elapsed.  When it reaches 0, emits `ConstructionCompleted`.
     /// 2. If `death_star_fleet` is set and present in the world, scans all Alliance
     ///    systems within `NEARBY_WARNING_RADIUS` and emits `NearbyWarning`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn advance(
         state: &mut DeathStarState,
         world: &GameWorld,
@@ -164,12 +169,12 @@ impl DeathStarSystem {
     ) -> Vec<DeathStarEvent> {
         let mut events = Vec::new();
 
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return events;
-        }
+        };
 
         let tick_count = tick_events.len() as u32;
-        let last_tick = tick_events.last().unwrap().tick;
+        let last_tick = last_tick_event.tick;
 
         // --- 1. Construction countdown ---
         if let Some(ref mut construction) = state.under_construction {
@@ -189,10 +194,10 @@ impl DeathStarSystem {
             if let Some(fleet) = world.fleets.get(fleet_key) {
                 let ds_system = fleet.location;
                 if let Some(ds_sys) = world.systems.get(ds_system) {
-                    let ds_x = ds_sys.x as i32;
-                    let ds_y = ds_sys.y as i32;
+                    let ds_x = i32::from(ds_sys.x);
+                    let ds_y = i32::from(ds_sys.y);
 
-                    for (sys_key, sys) in world.systems.iter() {
+                    for (sys_key, sys) in &world.systems {
                         // Only warn about Alliance-controlled systems.
                         if sys.control != ControlKind::Controlled(Faction::Alliance) {
                             continue;
@@ -200,10 +205,10 @@ impl DeathStarSystem {
                         if sys_key == ds_system {
                             continue; // already at this system
                         }
-                        let dx = sys.x as i32 - ds_x;
-                        let dy = sys.y as i32 - ds_y;
+                        let dx = i32::from(sys.x) - ds_x;
+                        let dy = i32::from(sys.y) - ds_y;
                         let dist_sq = (dx * dx + dy * dy) as u64;
-                        let radius_sq = (NEARBY_WARNING_RADIUS as u64).pow(2);
+                        let radius_sq = u64::from(NEARBY_WARNING_RADIUS).pow(2);
                         if dist_sq <= radius_sq {
                             events.push(DeathStarEvent::NearbyWarning {
                                 system: sys_key,
@@ -228,6 +233,7 @@ impl DeathStarSystem {
     /// Returns `Some(PlanetDestroyed)` on success; `None` if preconditions fail.
     /// The caller must apply `world.systems[target].is_destroyed = true` and
     /// update `VictoryState` after receiving this event.
+    #[must_use]
     pub fn fire(
         state: &DeathStarState,
         world: &GameWorld,
@@ -478,7 +484,7 @@ mod tests {
 
         // Advance almost to completion.
         let almost = DEATH_STAR_CONSTRUCTION_TICKS - 1;
-        let ticks: Vec<TickEvent> = (1..=almost as u64).map(tick).collect();
+        let ticks: Vec<TickEvent> = (1..=u64::from(almost)).map(tick).collect();
         let events = DeathStarSystem::advance(&mut state, &world, &ticks);
         assert!(events.is_empty(), "should not complete yet");
         assert_eq!(
@@ -490,7 +496,7 @@ mod tests {
         let events = DeathStarSystem::advance(
             &mut state,
             &world,
-            &[tick(DEATH_STAR_CONSTRUCTION_TICKS as u64)],
+            &[tick(u64::from(DEATH_STAR_CONSTRUCTION_TICKS))],
         );
         assert!(
             events
@@ -531,7 +537,7 @@ mod tests {
 
     // ── Planet destruction tests ─────────────────────────────────────────────
 
-    /// A DeathStarState with shield destroyed (can fire).
+    /// A `DeathStarState` with shield destroyed (can fire).
     fn state_shield_down() -> DeathStarState {
         DeathStarState {
             under_construction: None,
@@ -622,6 +628,10 @@ mod tests {
     // ── Nearby-warning tests ─────────────────────────────────────────────────
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
+    )]
     fn test_nearby_warning_emitted_for_close_system() {
         let (mut world, ds_sys) = make_world();
         // Add a second Alliance system within radius.
@@ -668,6 +678,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
+    )]
     fn test_no_nearby_warning_for_distant_system() {
         let (mut world, ds_sys) = make_world();
         let sector = world.systems[ds_sys].sector;

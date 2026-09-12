@@ -56,6 +56,10 @@ impl CreditsState {
         clippy::manual_clamp,
         reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
     )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn advance(&mut self, dt: f32, viewport_height: f32) {
         if !self.initialized {
             self.scroll_y = viewport_height * 0.25;
@@ -71,6 +75,10 @@ impl CreditsState {
 
 /// Draw the scrolling credits destination. Escape is handled by the app's
 /// shared screen-transition logic; the Back button is keyboard reachable.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 pub fn draw_credits(
     ctx: &egui::Context,
     state: &mut CreditsState,
@@ -132,6 +140,7 @@ pub enum MultiplayerTransport {
 }
 
 impl MultiplayerTransport {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Lan => "LAN",
@@ -165,6 +174,7 @@ pub enum MultiplayerSetupAction {
 }
 
 impl MultiplayerSetupState {
+    #[must_use]
     pub fn unavailable_message(&self) -> String {
         format!(
             "{} sessions are not available in this build; authoritative multiplayer is tracked for M4.",
@@ -237,6 +247,14 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
+    #[expect(
+        clippy::float_cmp,
+        reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
+    )]
     fn credits_restart_after_last_line_leaves_viewport() {
         let mut state = CreditsState::default();
         state.advance(0.0, 480.0);

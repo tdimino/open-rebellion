@@ -34,7 +34,7 @@ use super::PanelAction;
 /// the two crates. This keeps `rebellion-render` free of the data layer dep.
 #[derive(Debug, Clone)]
 pub struct SaveSlotInfo {
-    /// Slot index (0..MAX_SAVE_SLOTS).
+    /// Slot index (`0..MAX_SAVE_SLOTS`).
     pub slot: usize,
     /// Human-readable save name.
     pub name: String,
@@ -119,6 +119,13 @@ fn confirm_is_enabled(saves: &[SaveSlotInfo], state: &SaveLoadPanelState) -> boo
 /// or closes the window; returns `None` while the player is still browsing.
 ///
 /// The maximum number of save slots is `MAX_DISPLAY_SLOTS`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+///
+/// # Panics
+/// Panics if an enabled confirmation action has no selected slot.
 pub fn draw_save_load(
     ctx: &egui::Context,
     saves: &[SaveSlotInfo],
@@ -186,7 +193,7 @@ pub fn draw_save_load(
                         // Pre-fill name with existing save name if loading
                         if let Some(info) = existing {
                             if state.save_mode {
-                                state.name_input = info.name.clone();
+                                state.name_input.clone_from(&info.name);
                             }
                         }
                     }

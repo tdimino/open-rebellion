@@ -108,6 +108,7 @@ impl SectorWindowState {
 
     /// True when the pointer lies inside any visible window. Logical right and
     /// bottom edges remain exclusive, as in the recovered Win32 rectangles.
+    #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
         self.windows.iter().any(|window| {
             let rect = window_screen_rect(self.faction, window.column, layout);
@@ -118,6 +119,7 @@ impl SectorWindowState {
         })
     }
 
+    #[must_use]
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }
@@ -240,6 +242,10 @@ pub fn draw_sector_windows(
     actions
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn draw_sector_window(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -447,6 +453,10 @@ fn logical_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::Pos2 {
     egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn screen_to_logical(layout: CockpitLayout, point: egui::Pos2) -> (i16, i16) {
     let scale = layout.scale.max(f32::EPSILON);
     (
@@ -472,8 +482,8 @@ fn sector_planet_position(
     system_x: u16,
     system_y: u16,
 ) -> (f32, f32) {
-    let relative_x = system_x.saturating_sub(sector_x) as f32;
-    let relative_y = system_y.saturating_sub(sector_y) as f32;
+    let relative_x = f32::from(system_x.saturating_sub(sector_x));
+    let relative_y = f32::from(system_y.saturating_sub(sector_y));
     (
         (relative_x / 13.0 * 37.0).round(),
         (relative_y / 10.0 * 37.0).round(),
@@ -538,12 +548,10 @@ fn sector_title_color(
             None => counts,
         }
     });
-    if friendly > hostile {
-        egui::Color32::from_rgb(0, 255, 64)
-    } else if hostile > friendly {
-        egui::Color32::from_rgb(255, 32, 32)
-    } else {
-        egui::Color32::YELLOW
+    match friendly.cmp(&hostile) {
+        std::cmp::Ordering::Greater => egui::Color32::from_rgb(0, 255, 64),
+        std::cmp::Ordering::Less => egui::Color32::from_rgb(255, 32, 32),
+        std::cmp::Ordering::Equal => egui::Color32::YELLOW,
     }
 }
 
@@ -556,7 +564,7 @@ fn paint_resource(
 ) {
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
-        .map(|texture| texture.id())
+        .map(egui_macroquad::egui::TextureHandle::id)
     else {
         return;
     };
@@ -670,7 +678,7 @@ fn paint_tiled_horizontal(
 ) {
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
-        .map(|texture| texture.id())
+        .map(egui_macroquad::egui::TextureHandle::id)
     else {
         return;
     };
@@ -702,7 +710,7 @@ fn paint_tiled_vertical(
 ) {
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
-        .map(|texture| texture.id())
+        .map(egui_macroquad::egui::TextureHandle::id)
     else {
         return;
     };

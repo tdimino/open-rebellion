@@ -8,7 +8,7 @@
 //!
 //! Production state is kept in a `ManufacturingState` map that lives alongside
 //! `GameWorld` rather than inside it. `GameWorld` stores entity class templates
-//! (CapitalShipClass, FighterClass, etc.); `ManufacturingState` stores the
+//! (`CapitalShipClass`, `FighterClass`, etc.); `ManufacturingState` stores the
 //! per-system work-in-progress queues.
 //!
 //! Each tick, the caller feeds the `Vec<TickEvent>` from `GameClock::advance`
@@ -95,6 +95,7 @@ pub struct QueueItem {
 
 impl QueueItem {
     /// Create a new queue item with the given cost and build duration.
+    #[must_use]
     pub fn new(kind: BuildableKind, ticks_remaining: u32, total_cost: u32) -> Self {
         QueueItem {
             kind,
@@ -104,11 +105,17 @@ impl QueueItem {
     }
 
     /// How many ticks have been spent so far (for progress bar rendering).
+    #[must_use]
     pub fn ticks_spent(&self) -> u32 {
         self.total_cost.saturating_sub(self.ticks_remaining)
     }
 
     /// Progress fraction in [0.0, 1.0].
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn progress_fraction(&self) -> f32 {
         if self.total_cost == 0 {
             return 1.0;
@@ -134,6 +141,7 @@ pub struct ProductionQueue {
 }
 
 impl ProductionQueue {
+    #[must_use]
     pub fn new() -> Self {
         ProductionQueue {
             items: VecDeque::new(),
@@ -164,20 +172,24 @@ impl ProductionQueue {
     }
 
     /// The item currently under construction, if any.
+    #[must_use]
     pub fn active(&self) -> Option<&QueueItem> {
         self.items.front()
     }
 
     /// All items in queue order (index 0 = active).
+    #[must_use]
     pub fn items(&self) -> &VecDeque<QueueItem> {
         &self.items
     }
 
     /// Total items, including the active one.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -225,6 +237,7 @@ pub struct ManufacturingState {
 }
 
 impl ManufacturingState {
+    #[must_use]
     pub fn new() -> Self {
         ManufacturingState {
             queues: HashMap::new(),
@@ -242,6 +255,7 @@ impl ManufacturingState {
     }
 
     /// Get the queue for a system (read-only). Returns `None` if empty.
+    #[must_use]
     pub fn queue(&self, system: SystemKey) -> Option<&ProductionQueue> {
         self.queues.get(&system)
     }
@@ -252,6 +266,7 @@ impl ManufacturingState {
     }
 
     /// All system queues (including empty ones that were created lazily).
+    #[must_use]
     pub fn queues(&self) -> &HashMap<SystemKey, ProductionQueue> {
         &self.queues
     }
@@ -281,7 +296,7 @@ pub struct CompletionEvent {
 ///
 /// `newly_idle` is the set of system keys whose production queue
 /// transitioned from non-empty to empty during this advance call. Detection
-/// is intra-tick (pre/post length compare — no persistent "was_empty" bit).
+/// is intra-tick (pre/post length compare — no persistent "`was_empty`" bit).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ManufacturingAdvance {
     pub completions: Vec<CompletionEvent>,
@@ -341,19 +356,26 @@ impl ManufacturingSystem {
     /// advance). Detection is purely intra-tick — pre/post length compare
     /// against a local snapshot. No persistent `was_empty` bit on world
     /// state (SIMP-H4).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
+    ///
+    /// # Panics
+    /// Panics if a queue key collected for this batch is absent when its queue is advanced.
     pub fn advance_tracked(
         state: &mut ManufacturingState,
         tick_events: &[TickEvent],
         blocked_systems: &HashSet<SystemKey>,
     ) -> ManufacturingAdvance {
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return ManufacturingAdvance::default();
-        }
+        };
 
         // Batch all ticks that fired this frame into a single advance.
         let tick_count = tick_events.len() as u32;
         // The last tick number in this batch (used as the completion timestamp).
-        let final_tick = tick_events.last().unwrap().tick;
+        let final_tick = last_tick_event.tick;
 
         // K6 intra-tick detection: capture `pre_len` inside the iter loop
         // itself — no scratch HashMap, no per-tick allocation. A system that

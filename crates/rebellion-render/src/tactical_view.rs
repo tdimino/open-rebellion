@@ -88,10 +88,14 @@ pub enum BattlePhase {
 
 /// One individual ship hull participating in the battle.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 pub struct TacticalShip {
     /// Which capital ship class this hull belongs to.
     pub class_key: CapitalShipKey,
-    /// Display name (from CapitalShipClass).
+    /// Display name (from `CapitalShipClass`).
     pub name: String,
     /// Position on the battlefield (logical coords).
     pub x: f32,
@@ -109,7 +113,7 @@ pub struct TacticalShip {
     pub alive: bool,
     /// Whether this ship is currently selected by the player.
     pub selected: bool,
-    /// Index into the fleet's capital_ships for damage application.
+    /// Index into the fleet's `capital_ships` for damage application.
     pub fleet_ship_index: usize,
     /// Sprite resource ID in TACTICAL.DLL (if known).
     pub sprite_id: Option<u32>,
@@ -153,9 +157,9 @@ pub struct BattleSession {
     /// System where the battle takes place.
     pub system: SystemKey,
     pub system_name: String,
-    /// Attacker fleet key (in GameWorld).
+    /// Attacker fleet key (in `GameWorld`).
     pub attacker_fleet: FleetKey,
-    /// Defender fleet key (in GameWorld).
+    /// Defender fleet key (in `GameWorld`).
     pub defender_fleet: FleetKey,
     /// True if the player controls the attacker side.
     pub player_is_attacker: bool,
@@ -208,6 +212,7 @@ pub enum WeaponKind {
 }
 
 impl WeaponKind {
+    #[must_use]
     pub fn color(self) -> Color {
         match self {
             WeaponKind::Turbolaser => Color::new(0.0, 1.0, 0.0, 0.8), // green
@@ -231,6 +236,7 @@ impl BattleSession {
     ///
     /// Expands fleet composition into individual ship hulls and positions them
     /// in deployment zones (attacker left, defender right).
+    #[must_use]
     pub fn new(
         world: &GameWorld,
         system: SystemKey,
@@ -242,8 +248,7 @@ impl BattleSession {
         let system_name = world
             .systems
             .get(system)
-            .map(|s| s.name.clone())
-            .unwrap_or_else(|| "Unknown".into());
+            .map_or_else(|| "Unknown".into(), |s| s.name.clone());
 
         let mut ships = Vec::new();
         let mut fighters = Vec::new();
@@ -294,15 +299,18 @@ impl BattleSession {
             let turbolaser_total = (class.turbolaser_fore
                 + class.turbolaser_aft
                 + class.turbolaser_port
-                + class.turbolaser_starboard) as i32;
+                + class.turbolaser_starboard)
+                .cast_signed();
             let ion_cannon_total = (class.ion_cannon_fore
                 + class.ion_cannon_aft
                 + class.ion_cannon_port
-                + class.ion_cannon_starboard) as i32;
+                + class.ion_cannon_starboard)
+                .cast_signed();
             let laser_cannon_total = (class.laser_cannon_fore
                 + class.laser_cannon_aft
                 + class.laser_cannon_port
-                + class.laser_cannon_starboard) as i32;
+                + class.laser_cannon_starboard)
+                .cast_signed();
 
             ships.push(TacticalShip {
                 class_key: ship.class,
@@ -310,9 +318,9 @@ impl BattleSession {
                 x: 0.0,
                 y: 0.0,
                 hull_current: ship.hull_current,
-                hull_max: class.hull as i32,
-                shield: class.shield_strength as i32,
-                shield_max: class.shield_strength as i32,
+                hull_max: class.hull.cast_signed(),
+                shield: class.shield_strength.cast_signed(),
+                shield_max: class.shield_strength.cast_signed(),
                 is_attacker,
                 alive: true,
                 selected: false,
@@ -343,7 +351,7 @@ impl BattleSession {
         }
     }
 
-    /// Map a ship class DatId index to a TACTICAL.DLL sprite resource ID.
+    /// Map a ship class `DatId` index to a TACTICAL.DLL sprite resource ID.
     ///
     /// The original game uses a lookup table; we approximate with a linear
     /// mapping into the 2001-2130 range. Each class gets ~2 sprites
@@ -361,6 +369,10 @@ impl BattleSession {
     ///
     /// Attacker ships go on the left side, defender ships on the right.
     /// Ships are stacked vertically, centered.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn auto_place_ships(ships: &mut [TacticalShip]) {
         let atk_ships: Vec<usize> = ships
             .iter()
@@ -393,6 +405,10 @@ impl BattleSession {
     }
 
     /// Auto-place fighter squadrons near their side's capital ships.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn auto_place_fighters(fighters: &mut [TacticalFighter], ships: &[TacticalShip]) {
         // Find average Y position for each side's capital ships.
         let atk_center = Self::side_center(ships, true);
@@ -428,6 +444,10 @@ impl BattleSession {
         }
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn side_center(ships: &[TacticalShip], is_attacker: bool) -> f32 {
         let side: Vec<f32> = ships
             .iter()
@@ -572,6 +592,10 @@ impl BattleSession {
     }
 
     /// One side's ships fire at the other side.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn fire_side(
         ships: &mut [TacticalShip],
         firing: &[usize],
@@ -622,7 +646,7 @@ impl BattleSession {
 
             // Variance: +-30% using tick-based pseudo-random.
             let variance_seed = tick.wrapping_mul(31).wrapping_add(fire_idx as u32 * 17);
-            let variance = ((variance_seed % 60) as i32 - 30) * fire_power / 100;
+            let variance = ((variance_seed % 60).cast_signed() - 30) * fire_power / 100;
             let damage = (fire_power + variance).max(1);
 
             // Apply damage: shields first, then hull.
@@ -672,7 +696,7 @@ impl BattleSession {
                 .collect();
             if !def_ships.is_empty() {
                 let target = def_ships[self.combat_tick as usize % def_ships.len()];
-                let damage = ((atk_fighter_power / 5) as i32).max(1);
+                let damage = (atk_fighter_power / 5).cast_signed().max(1);
                 // Shields absorb fighter damage first (consistent with auto-resolve path).
                 let shield_absorb = damage.min(self.ships[target].shield);
                 self.ships[target].shield -= shield_absorb;
@@ -694,7 +718,7 @@ impl BattleSession {
                 .collect();
             if !atk_ships.is_empty() {
                 let target = atk_ships[(self.combat_tick as usize + 3) % atk_ships.len()];
-                let damage = ((def_fighter_power / 5) as i32).max(1);
+                let damage = (def_fighter_power / 5).cast_signed().max(1);
                 // Shields absorb fighter damage first (consistent with auto-resolve path).
                 let shield_absorb = damage.min(self.ships[target].shield);
                 self.ships[target].shield -= shield_absorb;
@@ -776,6 +800,7 @@ impl Default for TacticalState {
 }
 
 impl TacticalState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -813,6 +838,7 @@ impl TacticalState {
     }
 
     /// Returns true if a battle is currently active.
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.session.is_some()
     }
@@ -845,6 +871,19 @@ pub enum TacticalAction {
 ///
 /// Call this when `GameMode::TacticalCombat`. Returns a `TacticalAction`
 /// indicating whether the main loop should transition modes.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
+///
+/// # Panics
+/// Panics if the active battle session disappears during drawing.
 pub fn draw_tactical_view(
     state: &mut TacticalState,
     bmp_cache: &mut BmpCache,
@@ -1017,7 +1056,7 @@ pub fn draw_tactical_view(
             label,
             sx - dims.width / 2.0,
             bar_y + bar_h + dims.height + 2.0,
-            font_size as f32,
+            f32::from(font_size),
             WHITE,
         );
 
@@ -1069,7 +1108,13 @@ pub fn draw_tactical_view(
             reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
         )]
         let font_size = (10.0 * scale).max(7.0).min(12.0) as u16;
-        draw_text(&label, fx + half + 2.0, fy + 4.0, font_size as f32, color);
+        draw_text(
+            &label,
+            fx + half + 2.0,
+            fy + 4.0,
+            f32::from(font_size),
+            color,
+        );
     }
 
     // 6. Draw weapon fire effects (laser lines between ships).
@@ -1084,7 +1129,7 @@ pub fn draw_tactical_view(
             let ty = offset_y + tgt.y * scale;
 
             let base_color = effect.kind.color();
-            let alpha = (effect.ttl as f32 / 8.0).min(1.0);
+            let alpha = (f32::from(effect.ttl) / 8.0).min(1.0);
             let color = Color::new(base_color.r, base_color.g, base_color.b, alpha);
 
             // Main beam.
@@ -1092,7 +1137,7 @@ pub fn draw_tactical_view(
 
             // Impact flash at target (brief bright circle).
             if effect.ttl > 5 {
-                let flash_r = 4.0 + (8 - effect.ttl) as f32 * 2.0;
+                let flash_r = 4.0 + f32::from(8 - effect.ttl) * 2.0;
                 draw_circle(tx, ty, flash_r, Color::new(1.0, 1.0, 0.8, alpha * 0.6));
             }
         }
@@ -1230,7 +1275,7 @@ pub fn draw_tactical_view(
         egui::TopBottomPanel::top("tactical_top").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading(
-                    RichText::new(format!("Battle of {}", system_name))
+                    RichText::new(format!("Battle of {system_name}"))
                         .color(Color32::from_rgb(255, 200, 60))
                         .strong(),
                 );
@@ -1253,8 +1298,7 @@ pub fn draw_tactical_view(
                     BattlePhase::Placement => {
                         ui.label(
                             RichText::new(format!(
-                                "Your ships: {}  |  Enemy ships: {}",
-                                player_ship_count, enemy_ship_count,
+                                "Your ships: {player_ship_count}  |  Enemy ships: {enemy_ship_count}",
                             ))
                             .color(Color32::from_rgb(180, 180, 180)),
                         );
@@ -1289,8 +1333,7 @@ pub fn draw_tactical_view(
                     BattlePhase::Combat => {
                         ui.label(
                             RichText::new(format!(
-                                "Your ships: {}  |  Enemy ships: {}  |  Tick: {}",
-                                player_ship_count, enemy_ship_count, combat_tick,
+                                "Your ships: {player_ship_count}  |  Enemy ships: {enemy_ship_count}  |  Tick: {combat_tick}",
                             ))
                             .color(Color32::from_rgb(180, 180, 180)),
                         );
@@ -1321,7 +1364,7 @@ pub fn draw_tactical_view(
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Speed controls.
-                            let speed_label = format!("{}x", combat_speed);
+                            let speed_label = format!("{combat_speed}x");
                             if ui
                                 .button(
                                     RichText::new("Faster").color(Color32::from_rgb(120, 200, 120)),
@@ -1380,10 +1423,10 @@ pub fn draw_tactical_view(
                                 }
                             }
                             Some(CombatWinner::Defender) => {
-                                if !player_is_attacker {
-                                    ("VICTORY!", Color32::from_rgb(60, 220, 60))
-                                } else {
+                                if player_is_attacker {
                                     ("DEFEAT", Color32::from_rgb(220, 60, 60))
+                                } else {
+                                    ("VICTORY!", Color32::from_rgb(60, 220, 60))
                                 }
                             }
                             Some(CombatWinner::Draw) | None => {
@@ -1399,8 +1442,7 @@ pub fn draw_tactical_view(
                         ui.separator();
                         ui.label(
                             RichText::new(format!(
-                                "Your ships: {} remaining  |  Enemy ships: {} remaining",
-                                player_ship_count, enemy_ship_count,
+                                "Your ships: {player_ship_count} remaining  |  Enemy ships: {enemy_ship_count} remaining",
                             ))
                             .color(Color32::from_rgb(180, 180, 180)),
                         );
@@ -1470,8 +1512,7 @@ pub fn draw_tactical_view(
                                 Color32::from_rgb(220, 100, 60)
                             };
                         ui.label(
-                            RichText::new(format!("{}/{}", hull_current, hull_max))
-                                .color(hull_color),
+                            RichText::new(format!("{hull_current}/{hull_max}")).color(hull_color),
                         );
                     });
 
@@ -1479,7 +1520,7 @@ pub fn draw_tactical_view(
                         ui.horizontal(|ui| {
                             ui.label("Shields:");
                             ui.label(
-                                RichText::new(format!("{}/{}", shield, shield_max))
+                                RichText::new(format!("{shield}/{shield_max}"))
                                     .color(Color32::from_rgb(100, 150, 255)),
                             );
                         });
@@ -1516,8 +1557,8 @@ pub fn draw_tactical_view(
 /// - R key: retreat selected ships.
 fn handle_combat_input(session: &mut BattleSession, scale: f32, offset_x: f32, offset_y: f32) {
     let (mx, my) = mouse_position();
-    let arena_mx = (mx - offset_x) / scale;
-    let arena_my = (my - offset_y) / scale;
+    let arena_pointer_x = (mx - offset_x) / scale;
+    let arena_pointer_y = (my - offset_y) / scale;
     let hit_radius = DEFAULT_SHIP_SIZE * 0.6;
 
     // Left-click: select player's ship.
@@ -1530,8 +1571,8 @@ fn handle_combat_input(session: &mut BattleSession, scale: f32, offset_x: f32, o
             if ship.is_attacker != session.player_is_attacker {
                 continue;
             }
-            let dx = arena_mx - ship.x;
-            let dy = arena_my - ship.y;
+            let dx = arena_pointer_x - ship.x;
+            let dy = arena_pointer_y - ship.y;
             if dx * dx + dy * dy < hit_radius * hit_radius {
                 hit = Some(i);
                 break;
@@ -1569,8 +1610,8 @@ fn handle_combat_input(session: &mut BattleSession, scale: f32, offset_x: f32, o
             if ship.is_attacker == session.player_is_attacker {
                 continue;
             }
-            let dx = arena_mx - ship.x;
-            let dy = arena_my - ship.y;
+            let dx = arena_pointer_x - ship.x;
+            let dy = arena_pointer_y - ship.y;
             if dx * dx + dy * dy < hit_radius * hit_radius {
                 target_hit = Some(i);
                 break;
@@ -1621,8 +1662,8 @@ fn handle_placement_input(
     let (mx, my) = mouse_position();
 
     // Convert mouse to arena coordinates.
-    let arena_mx = (mx - offset_x) / scale;
-    let arena_my = (my - offset_y) / scale;
+    let arena_pointer_x = (mx - offset_x) / scale;
+    let arena_pointer_y = (my - offset_y) / scale;
 
     // Deployment zone bounds for the player's side.
     let (zone_min_x, zone_max_x) = if session.player_is_attacker {
@@ -1641,8 +1682,8 @@ fn handle_placement_input(
             if ship.is_attacker != session.player_is_attacker {
                 continue;
             }
-            let dx = arena_mx - ship.x;
-            let dy = arena_my - ship.y;
+            let dx = arena_pointer_x - ship.x;
+            let dy = arena_pointer_y - ship.y;
             if dx * dx + dy * dy < (DEFAULT_SHIP_SIZE * 0.6).powi(2) {
                 hit = Some(i);
                 break;
@@ -1652,8 +1693,8 @@ fn handle_placement_input(
         if let Some(idx) = hit {
             *dragging_ship = Some(idx);
             *drag_offset = (
-                session.ships[idx].x - arena_mx,
-                session.ships[idx].y - arena_my,
+                session.ships[idx].x - arena_pointer_x,
+                session.ships[idx].y - arena_pointer_y,
             );
             // Select this ship.
             for s in &mut session.ships {
@@ -1672,11 +1713,11 @@ fn handle_placement_input(
 
     if is_mouse_button_down(MouseButton::Left) {
         if let Some(idx) = *dragging_ship {
-            let new_x = (arena_mx + drag_offset.0).clamp(
+            let new_x = (arena_pointer_x + drag_offset.0).clamp(
                 zone_min_x + DEFAULT_SHIP_SIZE * 0.5,
                 zone_max_x - DEFAULT_SHIP_SIZE * 0.5,
             );
-            let new_y = (arena_my + drag_offset.1).clamp(
+            let new_y = (arena_pointer_y + drag_offset.1).clamp(
                 DEFAULT_SHIP_SIZE * 0.5,
                 ARENA_HEIGHT - DEFAULT_SHIP_SIZE * 0.5,
             );
@@ -1695,6 +1736,12 @@ fn handle_placement_input(
 // ---------------------------------------------------------------------------
 
 /// Draw a simple starfield background.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn draw_starfield() {
     // Deterministic "random" star positions based on screen dimensions.
     // Use a simple LCG to scatter stars.
@@ -1704,11 +1751,11 @@ fn draw_starfield() {
     let mut seed: u64 = 0xDEAD_BEEF;
 
     for _ in 0..star_count {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         let x = (seed % (sw as u64 * 100)) as f32 / 100.0;
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         let y = (seed % (sh as u64 * 100)) as f32 / 100.0;
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         let brightness = 0.3 + (seed % 70) as f32 / 100.0;
 
         draw_circle(

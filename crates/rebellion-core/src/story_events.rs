@@ -1,9 +1,16 @@
 //! Scripted story events from the original game.
 //!
-//! Defines the 4 story event chains as GameEvent data structures.
-//! Called at game start to register events in EventState.
+//! Defines the 4 story event chains as `GameEvent` data structures.
+//! Called at game start to register events in `EventState`.
 
-use crate::events::*;
+use crate::events::{
+    EventAction, EventCondition, EventState, GameEvent, SystemTag, EVT_BOUNTY_ATTACK,
+    EVT_CHARACTER_FORCE, EVT_DAGOBAH_COMPLETED, EVT_EMPEROR_ARRIVAL, EVT_FINAL_BATTLE,
+    EVT_FORCE_TRAINING, EVT_HAN_CARBONITE_FAIL_1, EVT_HAN_CARBONITE_FAIL_2,
+    EVT_HAN_CARBONITE_FAIL_3, EVT_HAN_CARBONITE_FAIL_4, EVT_HAN_CARBONITE_FAIL_5,
+    EVT_HAN_PERMANENT_FREEZE, EVT_HAN_RESCUE, EVT_JABBA_CAPTURES_CHEWIE, EVT_JABBA_PRISONERS,
+    EVT_LEIA_FORCE, EVT_LUKE_DAGOBAH,
+};
 use crate::ids::CharacterKey;
 use crate::world::{ForceTier, GameWorld};
 
@@ -22,7 +29,19 @@ fn find_character(world: &GameWorld, needle: &str) -> Option<CharacterKey> {
 /// Characters are looked up by name from `world`. If a required character
 /// is not found, that chain is silently skipped (graceful degradation for
 /// mods or scenarios without those characters).
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
+    const CARBONITE_STAGES: [(u32, u32, u64); 5] = [
+        (EVT_HAN_CARBONITE_FAIL_1, 0x398, 145),
+        (EVT_HAN_CARBONITE_FAIL_2, EVT_HAN_CARBONITE_FAIL_1, 160),
+        (EVT_HAN_CARBONITE_FAIL_3, EVT_HAN_CARBONITE_FAIL_2, 175),
+        (EVT_HAN_CARBONITE_FAIL_4, EVT_HAN_CARBONITE_FAIL_3, 190),
+        (EVT_HAN_CARBONITE_FAIL_5, EVT_HAN_CARBONITE_FAIL_4, 205),
+    ];
+
     let luke = find_character(world, "Luke");
     let vader = find_character(world, "Vader");
     let han = find_character(world, "Han");
@@ -400,7 +419,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         // -------------------------------------------------------------------
 
         // Event 0x380: Luke senses Han's capture
-        if let Some(_han) = han {
+        if let Some(han_key) = han {
             state.define(GameEvent {
                 id: 0x380,
                 name: "Luke Senses Han's Capture".into(),
@@ -433,11 +452,11 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 ],
                 actions: vec![
                     EventAction::SetCarboniteState {
-                        character: _han,
+                        character: han_key,
                         frozen: false,
                     },
                     EventAction::SetMandatoryMission {
-                        character: _han,
+                        character: han_key,
                         mandatory: false,
                     },
                     EventAction::DisplayMessage {
@@ -747,13 +766,6 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         // halt the chain. After all 5 stages pass, EVT_HAN_PERMANENT_FREEZE
         // fires as the terminal state.
         // -------------------------------------------------------------------
-        const CARBONITE_STAGES: [(u32, u32, u64); 5] = [
-            (EVT_HAN_CARBONITE_FAIL_1, 0x398, 145),
-            (EVT_HAN_CARBONITE_FAIL_2, EVT_HAN_CARBONITE_FAIL_1, 160),
-            (EVT_HAN_CARBONITE_FAIL_3, EVT_HAN_CARBONITE_FAIL_2, 175),
-            (EVT_HAN_CARBONITE_FAIL_4, EVT_HAN_CARBONITE_FAIL_3, 190),
-            (EVT_HAN_CARBONITE_FAIL_5, EVT_HAN_CARBONITE_FAIL_4, 205),
-        ];
         for (i, &(id, predecessor, tick_min)) in CARBONITE_STAGES.iter().enumerate() {
             state.define(GameEvent {
                 id,
@@ -823,6 +835,14 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::EVT_INFORMANT_INTEL;
+    use crate::events::EVT_MAINTENANCE_SHORTFALL_EVENT;
+    use crate::events::EVT_MANUFACTURING_IDLE;
+    use crate::events::EVT_NATURAL_DISASTER;
+    use crate::events::EVT_RESOURCE_DISCOVERY;
+    use crate::events::EVT_SABOTEUR_DETECTED;
+    use crate::events::EVT_SUPPORT_CHANGE;
+    use crate::events::EVT_TRAITOR_REVEALED;
     use crate::events::{EventState, EventSystem};
     use crate::tick::TickEvent;
     use crate::world::ControlKind;
@@ -1241,7 +1261,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1307,7 +1327,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1426,7 +1446,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1490,7 +1510,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1564,7 +1584,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1629,7 +1649,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1696,7 +1716,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1783,7 +1803,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -1869,7 +1889,7 @@ mod tests {
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -2066,7 +2086,7 @@ mod tests {
         for i in 0..110 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{}", i),
+                name: format!("System_{i}"),
                 sector: sector_key,
                 x: 0,
                 y: 0,
@@ -2099,11 +2119,11 @@ mod tests {
         );
     }
 
-    /// CI guard: notification events must NEVER use EventCondition::Random.
+    /// CI guard: notification events must NEVER use `EventCondition::Random`.
     ///
     /// The original game generates these on state transitions (bit-difference
     /// comparison against galaxy state), not random per-tick probability.
-    /// See the Phase 3b (Knesset Shamash) comment above define_story_events.
+    /// See the Phase 3b (Knesset Shamash) comment above `define_story_events`.
     #[test]
     fn notification_events_never_use_random() {
         let banned_ids: &[u32] = &[

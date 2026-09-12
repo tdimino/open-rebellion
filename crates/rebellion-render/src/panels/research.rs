@@ -23,6 +23,10 @@ pub struct ResearchPanelState {
 /// Draw the research panel as a left-side egui panel.
 ///
 /// Shows tech tree levels, active projects with progress, and assignable characters.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 pub fn draw_research(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -70,7 +74,7 @@ pub fn draw_research(
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Level:").color(theme::TEXT_SECONDARY));
                 ui.label(
-                    RichText::new(format!("{} / {}", current_level, RESEARCH_MAX_LEVEL))
+                    RichText::new(format!("{current_level} / {RESEARCH_MAX_LEVEL}"))
                         .color(theme::GOLD)
                         .strong(),
                 );
@@ -107,10 +111,9 @@ pub fn draw_research(
                     let char_name = world
                         .characters
                         .get(project.character)
-                        .map(|c| c.name.as_str())
-                        .unwrap_or("Unknown");
+                        .map_or("Unknown", |c| c.name.as_str());
                     ui.label(
-                        RichText::new(format!("Researcher: {}", char_name))
+                        RichText::new(format!("Researcher: {char_name}"))
                             .color(theme::TEXT_PRIMARY),
                     );
 
@@ -221,7 +224,7 @@ pub fn draw_research(
                                 );
 
                                 ui.label(
-                                    RichText::new(format!("{}: {}", skill_name, skill_val))
+                                    RichText::new(format!("{skill_name}: {skill_val}"))
                                         .color(theme::TEXT_SECONDARY)
                                         .size(11.0),
                                 );

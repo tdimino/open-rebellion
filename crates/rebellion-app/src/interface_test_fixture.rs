@@ -169,6 +169,10 @@ pub fn requested() -> Option<FixtureRequest> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the deterministic browser fixture setup in its existing order."
+)]
 pub fn apply(
     request: FixtureRequest,
     world: &mut GameWorld,
@@ -377,9 +381,11 @@ pub fn emit_ready(request: FixtureRequest, world: &GameWorld, map: &GalaxyMapSta
         .systems
         .iter()
         .map(|(_, system)| {
-            let x = (system.x as f32 - map.camera_x) * map.zoom + aperture.x + aperture.width / 2.0;
-            let y =
-                (system.y as f32 - map.camera_y) * map.zoom + aperture.y + aperture.height / 2.0;
+            let x =
+                (f32::from(system.x) - map.camera_x) * map.zoom + aperture.x + aperture.width / 2.0;
+            let y = (f32::from(system.y) - map.camera_y) * map.zoom
+                + aperture.y
+                + aperture.height / 2.0;
             (system, x, y)
         })
         .filter(|(_, x, y)| {

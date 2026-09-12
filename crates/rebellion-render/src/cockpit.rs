@@ -114,6 +114,7 @@ pub enum GidMode {
 
 impl GidMode {
     /// Native command identifier dispatched by the code-built GID menu.
+    #[must_use]
     pub const fn command_id(self) -> u8 {
         match self {
             Self::PopularSupport => 0x11,
@@ -142,6 +143,7 @@ impl GidMode {
     }
 
     /// English text carried by TEXTSTRA.DLL for the selected display.
+    #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::PopularSupport => "Popular Support",
@@ -169,6 +171,7 @@ impl GidMode {
         }
     }
 
+    #[must_use]
     pub const fn is_active(self) -> bool {
         !matches!(self, Self::DisplayOff)
     }
@@ -260,6 +263,7 @@ pub struct CockpitViewport {
 
 impl CockpitViewport {
     /// Viewport that fills the entire screen (no cockpit chrome).
+    #[must_use]
     pub fn fullscreen() -> Self {
         CockpitViewport {
             x: 0.0,
@@ -270,16 +274,19 @@ impl CockpitViewport {
     }
 
     /// Right edge in screen pixels.
+    #[must_use]
     pub fn right(self) -> f32 {
         self.x + self.width
     }
 
     /// Bottom edge in screen pixels.
+    #[must_use]
     pub fn bottom(self) -> f32 {
         self.y + self.height
     }
 
     /// Whether a screen-space point lies inside this viewport.
+    #[must_use]
     pub fn contains(self, x: f32, y: f32) -> bool {
         x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
     }
@@ -506,6 +513,7 @@ const fn message_index_control(
 }
 
 /// Exact primary-control table created by `FUN_00427270` for a faction.
+#[must_use]
 pub fn strategic_primary_controls(faction: CockpitFaction) -> &'static [StrategicControlSpec; 6] {
     match faction {
         CockpitFaction::Alliance => &ALLIANCE_PRIMARY_CONTROLS,
@@ -514,6 +522,7 @@ pub fn strategic_primary_controls(faction: CockpitFaction) -> &'static [Strategi
 }
 
 /// Exact GID control created by `FUN_00427270` for a faction.
+#[must_use]
 pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
     match faction {
         CockpitFaction::Alliance => &ALLIANCE_GID_CONTROL,
@@ -522,6 +531,7 @@ pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicContr
 }
 
 /// Exact Message Index rail records constructed by `FUN_00427270`.
+#[must_use]
 pub fn strategic_message_index_controls(
     faction: CockpitFaction,
 ) -> &'static [MessageIndexControlSpec; 9] {
@@ -572,6 +582,7 @@ impl Default for CockpitState {
 }
 
 impl CockpitState {
+    #[must_use]
     pub fn new(faction: CockpitFaction) -> Self {
         CockpitState {
             faction,
@@ -580,6 +591,7 @@ impl CockpitState {
     }
 
     /// Compute the recovered command-center layout for the current screen.
+    #[must_use]
     pub fn layout(&self) -> CockpitLayout {
         self.layout_for(screen_width(), screen_height())
     }
@@ -588,6 +600,7 @@ impl CockpitState {
     ///
     /// This pure variant keeps the 640×480 composition testable without a
     /// graphics context.
+    #[must_use]
     pub fn layout_for(&self, screen_width: f32, screen_height: f32) -> CockpitLayout {
         let scale = (screen_width / STRATEGIC_LOGICAL_WIDTH)
             .min(screen_height / STRATEGIC_LOGICAL_HEIGHT)
@@ -620,6 +633,7 @@ impl CockpitState {
     }
 
     /// Compute the galaxy map viewport for the current screen.
+    #[must_use]
     pub fn galaxy_viewport(&self) -> CockpitViewport {
         self.layout().galaxy
     }
@@ -633,6 +647,7 @@ impl CockpitState {
 ///
 /// Call before the macroquad galaxy layers. The authentic shell is painted in
 /// egui later in the same frame, above the clipped map and below other windows.
+#[must_use]
 pub fn draw_cockpit_chrome(state: &CockpitState) -> CockpitLayout {
     clear_background(BLACK);
     state.layout()
@@ -642,6 +657,10 @@ pub fn draw_cockpit_chrome(state: &CockpitState) -> CockpitLayout {
 ///
 /// All strategic map layers use this one clip, preventing synthetic map pixels
 /// from leaking into advisor and command-control apertures in the shell.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 pub fn set_cockpit_viewport_clip(viewport: Option<CockpitViewport>) {
     let clip = viewport.map(|viewport| {
         (
@@ -689,6 +708,10 @@ pub fn draw_cockpit_background(ctx: &egui::Context, state: &CockpitState, cache:
     );
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn cockpit_source_uv_max_y(texture_size: [usize; 2]) -> f32 {
     let visible_source_height = (texture_size[0] as f32 * STRATEGIC_LOGICAL_HEIGHT
         / STRATEGIC_LOGICAL_WIDTH)
@@ -748,7 +771,7 @@ fn draw_message_index_rail(
     for control in strategic_message_index_controls(faction) {
         let Some(texture_id) = cache
             .get(ctx, DllSource::Strategy, control.resting_resource)
-            .map(|texture| texture.id())
+            .map(egui_macroquad::egui::TextureHandle::id)
         else {
             continue;
         };
@@ -761,6 +784,10 @@ fn draw_message_index_rail(
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates."
+)]
 fn draw_control(
     ctx: &egui::Context,
     cache: &mut BmpCache,
@@ -779,7 +806,7 @@ fn draw_control(
     };
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
-        .map(|texture| texture.id())
+        .map(egui_macroquad::egui::TextureHandle::id)
     else {
         return;
     };
@@ -799,6 +826,10 @@ fn draw_control(
     );
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates."
+)]
 fn draw_compact_gid_legend(
     ctx: &egui::Context,
     cache: &mut BmpCache,
@@ -812,7 +843,7 @@ fn draw_compact_gid_legend(
     };
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
-        .map(|texture| texture.id())
+        .map(egui_macroquad::egui::TextureHandle::id)
     else {
         return;
     };
@@ -842,6 +873,10 @@ fn draw_compact_gid_legend(
     );
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The category index is bounded by the six-entry GidCategory table."
+)]
 fn gid_category_resource(category: GidCategory, faction: CockpitFaction) -> u32 {
     let offset = GidCategory::ALL
         .iter()
@@ -867,6 +902,10 @@ fn gid_check_resource(faction: CockpitFaction) -> u32 {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn gid_submenu_items(category: GidCategory, faction: CockpitFaction) -> Vec<GidMenuItem> {
     use resources::strategy;
     match category {
@@ -1161,6 +1200,11 @@ fn gid_menu_row(
     response
 }
 
+#[expect(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates. Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn draw_gid_menu(
     ctx: &egui::Context,
     state: &mut CockpitState,
@@ -1370,6 +1414,11 @@ fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewport) -> egui:
     )
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 fn resource_pixel_at_pointer(
     screen_rect: egui::Rect,
     scale: f32,
@@ -1687,12 +1736,19 @@ mod tests {
         ] {
             let controls = strategic_message_index_controls(faction);
             for (index, control) in controls.iter().enumerate() {
-                assert_eq!(control.command_id, 0x136 + index as u16);
-                assert_viewport(control.rect, x, first_y + index as f32 * 25.0, 27.0, 22.0);
-                assert_eq!(control.resting_resource, resting_first + index as u32);
+                let index = u16::try_from(index).expect("nine message controls fit in u16");
+                assert_eq!(control.command_id, 0x136 + index);
+                assert_viewport(
+                    control.rect,
+                    x,
+                    first_y + f32::from(index) * 25.0,
+                    27.0,
+                    22.0,
+                );
+                assert_eq!(control.resting_resource, resting_first + u32::from(index));
                 assert_eq!(
                     control.illuminated_resource,
-                    illuminated_first + index as u32
+                    illuminated_first + u32::from(index)
                 );
             }
         }

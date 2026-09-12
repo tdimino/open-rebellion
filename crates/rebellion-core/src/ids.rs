@@ -12,21 +12,25 @@ pub struct DatId(pub u32);
 
 impl DatId {
     /// Construct a `DatId` from a raw u32 read out of a .DAT file.
+    #[must_use]
     pub fn new(raw: u32) -> Self {
         Self(raw)
     }
 
     /// Return the raw u32 value.
+    #[must_use]
     pub fn raw(self) -> u32 {
         self.0
     }
 
     /// The high byte — identifies the entity class.
+    #[must_use]
     pub fn family(self) -> u8 {
         (self.0 >> 24) as u8
     }
 
     /// The lower 24 bits — sequential index within the family.
+    #[must_use]
     pub fn index(self) -> u32 {
         self.0 & 0x00FF_FFFF
     }

@@ -1,5 +1,5 @@
 //! Integration test: verify every SYS_* telemetry constant emits at least one
-//! GameEventRecord during a 1000-tick dual-AI playtest.
+//! `GameEventRecord` during a 1000-tick dual-AI playtest.
 //!
 //! This test requires game data files in `data/base/`. It is `#[ignore]`d by
 //! default so `cargo test` passes without DAT files. Run explicitly:
@@ -69,16 +69,19 @@ fn data_dir() -> PathBuf {
 }
 
 #[test]
-#[ignore] // requires data/base/ DAT files
+#[ignore = "requires data/base/ DAT files"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn telemetry_coverage_all_sys_constants_emit() {
     let data_path = data_dir();
-    if !data_path.exists() {
-        panic!(
-            "Game data directory not found at {}. \
-             This test requires the original DAT files in data/base/.",
-            data_path.display()
-        );
-    }
+    assert!(
+        data_path.exists(),
+        "Game data directory not found at {}. \
+         This test requires the original DAT files in data/base/.",
+        data_path.display()
+    );
 
     // Load game world with deterministic seed
     let seed_options = SeedOptions {
@@ -101,14 +104,13 @@ fn telemetry_coverage_all_sys_constants_emit() {
         .iter()
         .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Empire))
         .map(|(k, _)| k);
-    let (victory_a, victory_e) = match (a_hq, e_hq) {
-        (Some(a), Some(e)) => (a, e),
-        _ => {
-            let mut keys = world.systems.keys();
-            let a = keys.next().expect("need at least 2 systems");
-            let e = keys.next().expect("need at least 2 systems");
-            (a, e)
-        }
+    let (victory_a, victory_e) = if let (Some(a), Some(e)) = (a_hq, e_hq) {
+        (a, e)
+    } else {
+        let mut keys = world.systems.keys();
+        let a = keys.next().expect("need at least 2 systems");
+        let e = keys.next().expect("need at least 2 systems");
+        (a, e)
     };
 
     let mut states = SimulationStates {
@@ -157,7 +159,7 @@ fn telemetry_coverage_all_sys_constants_emit() {
     // UPRISING: Tank one non-HQ Empire system's loyalty so uprising triggers.
     // Set BOTH popularities low so that even if economy flips control, loyalty
     // remains below threshold for whichever faction ends up controlling it.
-    for (_, sys) in world.systems.iter_mut() {
+    for (_, sys) in &mut world.systems {
         if sys.control.is_controlled_by(Faction::Empire) && !sys.is_headquarters && sys.is_populated
         {
             sys.popularity_empire = 0.05; // loyalty if Empire controls: -45
@@ -184,7 +186,7 @@ fn telemetry_coverage_all_sys_constants_emit() {
     // Multiple characters increases likelihood that at least one survives to
     // the betrayal check window (every 50 ticks).
     let mut betrayal_count = 0;
-    for (_, character) in world.characters.iter_mut() {
+    for (_, character) in &mut world.characters {
         if !character.is_unable_to_betray && !character.is_major && betrayal_count < 5 {
             character.loyalty.base = 5; // score = 5 - 50 = -45, ~80% betrayal chance
             betrayal_count += 1;
@@ -220,7 +222,7 @@ fn telemetry_coverage_all_sys_constants_emit() {
 
         // Early exit if victory is reached
         if states.victory.resolved {
-            eprintln!("Victory reached at tick {} — stopping early", tick);
+            eprintln!("Victory reached at tick {tick} — stopping early");
             break;
         }
     }
@@ -231,10 +233,7 @@ fn telemetry_coverage_all_sys_constants_emit() {
     );
 
     // Report coverage
-    eprintln!(
-        "\n=== Telemetry Coverage Report ({} total events) ===",
-        total_events
-    );
+    eprintln!("\n=== Telemetry Coverage Report ({total_events} total events) ===");
     let optional: std::collections::HashSet<&str> = OPTIONAL_SYSTEMS.iter().copied().collect();
     let mut missing_required = Vec::new();
     let mut missing_optional = Vec::new();
@@ -248,7 +247,7 @@ fn telemetry_coverage_all_sys_constants_emit() {
         } else {
             "MISSING"
         };
-        eprintln!("  {:>8} {:20} {:>6} events", marker, sys, count);
+        eprintln!("  {marker:>8} {sys:20} {count:>6} events");
         if count == 0 {
             if optional.contains(sys) {
                 missing_optional.push(*sys);
@@ -260,16 +259,14 @@ fn telemetry_coverage_all_sys_constants_emit() {
 
     if !missing_optional.is_empty() {
         eprintln!(
-            "\nOptional systems with zero events (RNG-dependent, not a failure): {:?}",
-            missing_optional
+            "\nOptional systems with zero events (RNG-dependent, not a failure): {missing_optional:?}"
         );
     }
 
     assert!(
         missing_required.is_empty(),
-        "Required systems with zero telemetry events: {:?}. \
+        "Required systems with zero telemetry events: {missing_required:?}. \
          These systems must emit at least one GameEventRecord \
-         in a 1000-tick dual-AI playtest.",
-        missing_required
+         in a 1000-tick dual-AI playtest."
     );
 }

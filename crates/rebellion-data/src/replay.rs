@@ -34,8 +34,8 @@ pub const REPLAY_ROLLS_PER_TICK: u16 = 1024;
 pub const MAX_ADVANCE_TICKS_PER_COMMAND: u64 = 1_000_000;
 
 const FINGERPRINT_ALGORITHM: &str = "fnv1a64";
-const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-const FNV_PRIME: u64 = 0x100000001b3;
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
 /// JSON-safe representation of a versioned 64-bit fingerprint.
 ///
@@ -105,6 +105,10 @@ pub struct SimulationDataManifest {
 
 impl SimulationDataManifest {
     /// Reject unsupported, malformed, incomplete, or ambiguously ordered data.
+    ///
+    /// # Errors
+    /// Returns an error if the manifest violates its schema, identity, ordering,
+    /// or checkpoint consistency requirements.
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.format_version != DATA_MANIFEST_VERSION {
             bail!(
@@ -188,9 +192,7 @@ impl ReplayCommand {
         if let Self::AdvanceTicks { count } = self {
             if *count > MAX_ADVANCE_TICKS_PER_COMMAND {
                 bail!(
-                    "advance_ticks command count {} exceeds the format-v1 limit {}",
-                    count,
-                    MAX_ADVANCE_TICKS_PER_COMMAND
+                    "advance_ticks command count {count} exceeds the format-v1 limit {MAX_ADVANCE_TICKS_PER_COMMAND}"
                 );
             }
         }
@@ -249,6 +251,9 @@ pub struct ReplayManifest {
 }
 
 impl ReplayManifest {
+    ///
+    /// # Errors
+    /// Returns an error if configuration fingerprinting or initial manifest validation fails.
     pub fn new(
         engine_version: impl Into<String>,
         seed: u64,
@@ -274,6 +279,10 @@ impl ReplayManifest {
     }
 
     /// Append a command while assigning the only valid next sequence number.
+    ///
+    /// # Errors
+    /// Returns an error for a tick before the replay start, invalid actor permissions,
+    /// or a command that violates the required ordering.
     pub fn record_command(
         &mut self,
         tick: u64,
@@ -299,6 +308,9 @@ impl ReplayManifest {
     }
 
     /// Append a checkpoint after `command_count` commands have been applied.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid checkpoint position or ordering.
     pub fn record_checkpoint(
         &mut self,
         tick: u64,
@@ -328,6 +340,14 @@ impl ReplayManifest {
     }
 
     /// Validate the full replay before execution or comparison.
+    ///
+    /// # Errors
+    /// Returns an error if the manifest violates its schema, identity, ordering,
+    /// or checkpoint consistency requirements.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Checkpoint counts are validated against the command list before indexing."
+    )]
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.format != "open-rebellion-replay" {
             bail!("unsupported replay format {:?}", self.format);
@@ -407,12 +427,18 @@ impl ReplayManifest {
     }
 
     /// Serialize a validated replay using stable struct field ordering.
+    ///
+    /// # Errors
+    /// Returns an error if manifest validation or JSON serialization fails.
     pub fn to_json_pretty(&self) -> anyhow::Result<Vec<u8>> {
         self.validate()?;
         serde_json::to_vec_pretty(self).context("serializing replay manifest")
     }
 
     /// Decode and validate a replay before it reaches an executor.
+    ///
+    /// # Errors
+    /// Returns an error if JSON parsing or manifest validation fails.
     pub fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
         let manifest: Self =
             serde_json::from_slice(bytes).context("decoding replay manifest JSON")?;
@@ -450,6 +476,10 @@ pub struct ReplayRecording {
 ///
 /// Command ticks and sequence numbers come from the runtime, not the caller.
 /// This makes the resulting artifact suitable for strict playback.
+///
+/// # Errors
+/// Returns an error if the initial environment, command execution, state
+/// fingerprinting, or recording validation fails.
 pub fn record_replay<I>(
     environment: ReplayEnvironment<'_>,
     initial_state: SaveState,
@@ -502,6 +532,10 @@ where
 
 /// Execute a validated replay and fail at the first incompatible input,
 /// command position, or state checkpoint.
+///
+/// # Errors
+/// Returns an error if environment validation, command execution, or a
+/// state checkpoint comparison fails.
 pub fn execute_replay(
     environment: ReplayEnvironment<'_>,
     manifest: &ReplayManifest,
@@ -515,6 +549,10 @@ pub fn execute_replay(
 /// The observer preserves the checkpoint that caused a failure, which lets a
 /// native or browser gate explain the first divergent prefix without changing
 /// strict fail-fast execution semantics.
+///
+/// # Errors
+/// Returns an error if environment validation, command execution, or a
+/// state checkpoint comparison fails.
 pub fn execute_replay_observed<F>(
     environment: ReplayEnvironment<'_>,
     manifest: &ReplayManifest,
@@ -855,6 +893,9 @@ impl ReplayRuntime {
 }
 
 /// Hash an in-memory set of `.DAT` files identically on native and WASM.
+///
+/// # Errors
+/// Returns an error for missing, duplicate, or unexpected simulation DAT inputs.
 pub fn compute_simulation_data_manifest<I, K, V>(
     inputs: I,
 ) -> anyhow::Result<SimulationDataManifest>
@@ -932,6 +973,10 @@ fn aggregate_data_fingerprint(
 
 /// Read and fingerprint every `.DAT` file in a native game-data directory.
 #[cfg(not(target_arch = "wasm32"))]
+///
+/// # Errors
+/// Returns an error if a required simulation DAT file cannot be read
+/// or the resulting manifest is invalid.
 pub fn compute_simulation_data_manifest_from_dir(
     data_dir: &Path,
 ) -> anyhow::Result<SimulationDataManifest> {
@@ -962,6 +1007,9 @@ pub fn compute_simulation_data_manifest_from_dir(
 }
 
 /// Fingerprint the serialized tuning configuration embedded in a replay.
+///
+/// # Errors
+/// Returns an error if the configuration cannot be serialized for hashing.
 pub fn compute_config_fingerprint(config: &GameConfig) -> anyhow::Result<ContentFingerprint> {
     let bytes = serde_json::to_vec(config).context("serializing replay configuration")?;
     Ok(ContentFingerprint::fnv1a(
@@ -984,6 +1032,10 @@ fn canonical_data_name(name: &str) -> anyhow::Result<String> {
     Ok(canonical)
 }
 
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "Replay manifests require canonical uppercase DAT names for stable identity."
+)]
 fn validate_data_name(name: &str) -> anyhow::Result<()> {
     if name.is_empty()
         || !name.is_ascii()

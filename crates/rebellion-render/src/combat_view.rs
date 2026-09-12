@@ -73,6 +73,7 @@ pub enum BattleOutcome {
 }
 
 impl BattleOutcome {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             BattleOutcome::AttackerWon => "Attacker Won",
@@ -81,6 +82,7 @@ impl BattleOutcome {
         }
     }
 
+    #[must_use]
     pub fn color(self) -> Color32 {
         match self {
             BattleOutcome::AttackerWon => Color32::from_rgb(255, 120, 60), // orange-red
@@ -96,6 +98,7 @@ impl CombatResult {
     ///
     /// Always produces at least one message (the outcome line). Produces
     /// additional messages for casualty details and bombardment.
+    #[must_use]
     pub fn to_messages(&self) -> Vec<GameMessage> {
         let mut msgs = Vec::new();
 
@@ -182,6 +185,7 @@ pub struct CombatSummaryState {
 }
 
 impl CombatSummaryState {
+    #[must_use]
     pub fn new() -> Self {
         CombatSummaryState {
             pending: Vec::new(),
@@ -190,6 +194,7 @@ impl CombatSummaryState {
     }
 
     /// Returns `true` if there are unacknowledged results to display.
+    #[must_use]
     pub fn has_pending(&self) -> bool {
         !self.pending.is_empty()
     }

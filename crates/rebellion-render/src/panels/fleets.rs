@@ -100,6 +100,14 @@ pub struct FleetsState {
 ///
 /// `player_faction` filters which fleets are shown. Returns panel actions for
 /// character assignment, fleet merging, and map navigation.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+)]
 pub fn draw_fleets(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -136,8 +144,7 @@ pub fn draw_fleets(
                     let destination_name = world
                         .systems
                         .get(destination)
-                        .map(|system| system.name.as_str())
-                        .unwrap_or("Unavailable destination");
+                        .map_or("Unavailable destination", |system| system.name.as_str());
                     ui.label(
                         RichText::new("MOVE FLEET")
                             .color(theme::GOLD_DIM)
@@ -146,7 +153,7 @@ pub fn draw_fleets(
                     );
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new(format!("Destination: {}", destination_name))
+                            RichText::new(format!("Destination: {destination_name}"))
                                 .color(theme::TEXT_PRIMARY)
                                 .size(11.0),
                         );
@@ -176,20 +183,18 @@ pub fn draw_fleets(
                     let system_name = world
                         .systems
                         .get(fleet.location)
-                        .map(|s| s.name.as_str())
-                        .unwrap_or("Unknown");
+                        .map_or("Unknown", |s| s.name.as_str());
 
                     let ship_count: u32 = fleet.ship_count();
                     let fighter_count: u32 = fleet.fighters.iter().map(|e| e.count).sum();
                     let is_expanded = state.expanded_fleet == Some(fleet_key);
                     let location_text = movement_state.get(fleet_key).map_or_else(
-                        || format!("Fleet @ {}", system_name),
+                        || format!("Fleet @ {system_name}"),
                         |order| {
                             let destination_name = world
                                 .systems
                                 .get(order.destination)
-                                .map(|system| system.name.as_str())
-                                .unwrap_or("Unknown");
+                                .map_or("Unknown", |system| system.name.as_str());
                             format!(
                                 "En route to {} ({} days)",
                                 destination_name,
@@ -215,10 +220,10 @@ pub fn draw_fleets(
 
                             let mut parts = Vec::new();
                             if ship_count > 0 {
-                                parts.push(format!("{} ships", ship_count));
+                                parts.push(format!("{ship_count} ships"));
                             }
                             if fighter_count > 0 {
-                                parts.push(format!("{} sqns", fighter_count));
+                                parts.push(format!("{fighter_count} sqns"));
                             }
                             if fleet.has_death_star {
                                 parts.push("DS".to_string());
@@ -297,11 +302,10 @@ pub fn draw_fleets(
                                 let destination_name = world
                                     .systems
                                     .get(destination)
-                                    .map(|system| system.name.as_str())
-                                    .unwrap_or("destination");
+                                    .map_or("destination", |system| system.name.as_str());
                                 if ui
                                     .button(
-                                        RichText::new(format!("Dispatch to {}", destination_name,))
+                                        RichText::new(format!("Dispatch to {destination_name}"))
                                             .color(theme::GOLD)
                                             .size(11.0),
                                     )
@@ -359,8 +363,9 @@ pub fn draw_fleets(
                                     let (class_name, dat_id) = world
                                         .capital_ship_classes
                                         .get(class_key)
-                                        .map(|c| (c.name.as_str(), c.dat_id))
-                                        .unwrap_or(("Unknown", DatId::new(0)));
+                                        .map_or(("Unknown", DatId::new(0)), |c| {
+                                            (c.name.as_str(), c.dat_id)
+                                        });
                                     ui.horizontal(|ui| {
                                         // GOKRES.DLL 61x25 mini-icon for this ship class.
                                         if let Some(mini_id) = capital_ship_mini_id(dat_id) {
@@ -379,7 +384,7 @@ pub fn draw_fleets(
                                             }
                                         }
                                         ui.label(
-                                            RichText::new(format!("{} ×{}", class_name, count))
+                                            RichText::new(format!("{class_name} ×{count}"))
                                                 .color(theme::TEXT_PRIMARY)
                                                 .size(11.0),
                                         );
@@ -400,8 +405,9 @@ pub fn draw_fleets(
                                     let (class_name, dat_id) = world
                                         .fighter_classes
                                         .get(entry.class)
-                                        .map(|c| (c.name.as_str(), c.dat_id))
-                                        .unwrap_or(("Unknown", DatId::new(0)));
+                                        .map_or(("Unknown", DatId::new(0)), |c| {
+                                            (c.name.as_str(), c.dat_id)
+                                        });
                                     ui.horizontal(|ui| {
                                         // GOKRES.DLL 61x25 mini-icon for this fighter class.
                                         if let Some(mini_id) = fighter_mini_id(dat_id) {
@@ -447,12 +453,10 @@ pub fn draw_fleets(
                                 .unwrap_or_default();
                             ui.add_space(2.0);
                             ui.label(
-                                RichText::new(
-                                    format!("TROOP CARGO  {}/{}", cargo.len(), capacity,),
-                                )
-                                .color(theme::GOLD_DIM)
-                                .size(10.0)
-                                .strong(),
+                                RichText::new(format!("TROOP CARGO  {}/{}", cargo.len(), capacity))
+                                    .color(theme::GOLD_DIM)
+                                    .size(10.0)
+                                    .strong(),
                             );
 
                             // ── Assigned officers ────────────────────────
@@ -474,11 +478,10 @@ pub fn draw_fleets(
                                 let char_name = world
                                     .characters
                                     .get(char_key)
-                                    .map(|c| c.name.as_str())
-                                    .unwrap_or("Unknown");
+                                    .map_or("Unknown", |c| c.name.as_str());
                                 ui.horizontal(|ui| {
                                     ui.label(
-                                        RichText::new(format!("  {}", char_name))
+                                        RichText::new(format!("  {char_name}"))
                                             .color(theme::TEXT_PRIMARY)
                                             .size(11.0),
                                     );
@@ -590,8 +593,7 @@ pub fn draw_fleets(
                                     if ui
                                         .button(
                                             RichText::new(format!(
-                                                "Merge with fleet ({} ships)",
-                                                other_ships
+                                                "Merge with fleet ({other_ships} ships)"
                                             ))
                                             .color(theme::TEXT_PRIMARY)
                                             .size(11.0),
@@ -710,13 +712,12 @@ fn available_characters(
     fleet_key: FleetKey,
     player_faction: MissionFaction,
 ) -> Vec<(CharacterKey, String)> {
-    let fleet = match world.fleets.get(fleet_key) {
-        Some(f) => f,
-        None => return vec![],
+    let Some(fleet) = world.fleets.get(fleet_key) else {
+        return vec![];
     };
 
     let mut result = Vec::new();
-    for (ck, c) in world.characters.iter() {
+    for (ck, c) in &world.characters {
         // Faction filter
         let owns = match player_faction {
             MissionFaction::Alliance => c.is_alliance,
@@ -748,6 +749,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn maps_every_capital_ship_dat_record_to_its_gokres_miniature() {
         for (offset, &resource_id) in ALLIANCE_CAPITAL_SHIP_MINIS.iter().enumerate() {
             assert_eq!(
@@ -764,6 +769,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
+    )]
     fn maps_every_fighter_dat_record_to_its_gokres_miniature() {
         for (offset, &resource_id) in ALLIANCE_FIGHTER_MINIS.iter().enumerate() {
             assert_eq!(

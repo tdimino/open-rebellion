@@ -125,5 +125,5 @@ async fn run_seed42_from_runtime_pack(data_path: &Path) -> ReplayGateReport {
             return ReplayGateReport::failure("wasm32", "game_data", format!("{error:#}"))
         }
     };
-    run_seed42_gate("wasm32", SEED42_ARTIFACT_BYTES, data, world)
+    run_seed42_gate("wasm32", SEED42_ARTIFACT_BYTES, &data, world)
 }

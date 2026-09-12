@@ -1,6 +1,6 @@
 //! New Game Setup panel — galaxy size, difficulty, faction selection.
 //!
-//! Replaces the old faction_select.rs. Presented as a full-screen layout
+//! Replaces the old `faction_select.rs`. Presented as a full-screen layout
 //! before entering the galaxy view. Returns `GameSetupAction::StartGame`
 //! with the chosen configuration when the player confirms.
 
@@ -21,6 +21,7 @@ pub enum Difficulty {
 }
 
 impl Difficulty {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Difficulty::Easy => "Easy",
@@ -29,6 +30,7 @@ impl Difficulty {
         }
     }
 
+    #[must_use]
     pub fn description(self) -> &'static str {
         match self {
             Difficulty::Easy => "Relaxed pace. AI is less aggressive, combat favors the player.",
@@ -76,6 +78,13 @@ pub enum GameSetupAction {
 // ── Rendering ────────────────────────────────────────────────────────────────
 
 /// Render the game setup screen. Returns an action when the player confirms or goes back.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+///
+/// # Panics
+/// Panics if the enabled Start action has no selected faction.
 pub fn draw_game_setup(ctx: &egui::Context, state: &mut GameSetupState) -> Option<GameSetupAction> {
     let mut action = None;
 
@@ -283,7 +292,7 @@ fn galaxy_size_button(
     };
 
     let btn = egui::Button::new(
-        RichText::new(format!("{}\n{}", label, description))
+        RichText::new(format!("{label}\n{description}"))
             .color(if selected {
                 theme::GOLD_BRIGHT
             } else {

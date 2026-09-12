@@ -7,8 +7,7 @@ use rebellion_data::replay_fixture::{run_seed42_gate, SEED42_ARTIFACT_BYTES, SEE
 fn main() {
     let data_dir = std::env::args_os()
         .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("data/base"));
+        .map_or_else(|| PathBuf::from("data/base"), PathBuf::from);
     let data = match compute_simulation_data_manifest_from_dir(&data_dir) {
         Ok(data) => data,
         Err(error) => {
@@ -27,7 +26,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let report = run_seed42_gate("native", SEED42_ARTIFACT_BYTES, data, world);
+    let report = run_seed42_gate("native", SEED42_ARTIFACT_BYTES, &data, world);
     println!(
         "{}",
         serde_json::to_string(&report).expect("serialize native replay-gate report")

@@ -121,11 +121,11 @@ enum GameMode {
 /// Which cutscene is playing — determines post-cutscene transition.
 #[derive(Debug, Clone, PartialEq)]
 enum CutsceneKind {
-    /// Game intro (000.webm) → MainMenu.
+    /// Game intro (000.webm) → `MainMenu`.
     Intro,
-    /// Victory sequence (201.webm) → MainMenu.
+    /// Victory sequence (201.webm) → `MainMenu`.
     Victory,
-    /// Defeat sequence (202.webm) → MainMenu.
+    /// Defeat sequence (202.webm) → `MainMenu`.
     Defeat,
     /// In-game story cutscene (101–108.webm) → resume Galaxy.
     Story(u32),
@@ -153,7 +153,7 @@ fn story_event_to_cutscene(event_id: u32) -> Option<u32> {
 
 /// Build the cutscene asset path for a story cutscene number.
 fn story_cutscene_path(number: u32) -> String {
-    format!("assets/references/ref-videos/{}.webm", number)
+    format!("assets/references/ref-videos/{number}.webm")
 }
 
 fn window_conf() -> Conf {
@@ -204,7 +204,7 @@ fn configured_asset_render_profile() -> AssetRenderProfile {
 fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
     rebellion_data::save::list_saves(saves_dir)
         .into_iter()
-        .filter_map(|result| result.ok())
+        .filter_map(std::result::Result::ok)
         .map(|meta| rebellion_render::SaveSlotInfo {
             slot: meta.slot,
             name: meta.name,
@@ -213,7 +213,7 @@ fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
             } else {
                 let hours = (meta.timestamp_secs / 3600) % 24;
                 let minutes = (meta.timestamp_secs / 60) % 60;
-                format!("{:02}:{:02}", hours, minutes)
+                format!("{hours:02}:{minutes:02}")
             },
             game_tick: meta.game_tick,
         })
@@ -557,6 +557,11 @@ async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
 /// references the old texture. Pre-measuring the complete character set makes
 /// any resize happen at the safe start of the frame instead. Egui uses its own
 /// atlas and is unaffected.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Preserve the existing rounding and narrowing of bounded rendering font sizes."
+)]
 fn prewarm_galaxy_font_sizes(
     world: &GameWorld,
     map_state: &GalaxyMapState,
@@ -652,6 +657,10 @@ mod panel_toggle_tests {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    #![expect(
+        clippy::too_many_lines,
+        reason = "Keep the existing main loop together; extracting phases is a separate refactor."
+    )]
     // Accept an optional GData path as the first CLI argument.
     // On WASM there is no CLI, so always use the hardcoded default.
     #[cfg(not(target_arch = "wasm32"))]
@@ -730,7 +739,7 @@ async fn main() {
         );
         let mod_errors = mod_runtime.apply_enabled(&mut world);
         for err in &mod_errors {
-            eprintln!("Mod error: {:?}", err);
+            eprintln!("Mod error: {err:?}");
         }
     }
 
@@ -751,8 +760,7 @@ async fn main() {
         {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(42)
+                .map_or(42, |d| d.as_secs())
         }
         #[cfg(target_arch = "wasm32")]
         {
@@ -768,7 +776,7 @@ async fn main() {
     let mut game_config = rebellion_core::tuning::GameConfig::default();
     let mut campaign_config = CampaignConfig::default();
     let mut dual_ai_mode = false;
-    let mut ai2_state: Option<AIState> = None;
+    let mut secondary_ai_state: Option<AIState> = None;
     let mut movement_state = MovementState::new();
     let mut fog_alliance_state = FogState::new(Faction::Alliance);
     let mut fog_empire_state = FogState::new(Faction::Empire);
@@ -796,19 +804,18 @@ async fn main() {
         .iter()
         .find(|(_, s)| s.is_headquarters && s.control.is_controlled_by(Faction::Empire))
         .map(|(k, _)| k);
-    let mut victory_state = match (alliance_hq, empire_hq) {
-        (Some(a), Some(e)) => VictoryState::new(a, e),
-        _ => {
-            // Fallback: use first two systems if HQs not marked
-            let mut keys = world.systems.keys();
-            let a = keys
-                .next()
-                .expect("world must have at least 2 systems for victory");
-            let e = keys
-                .next()
-                .expect("world must have at least 2 systems for victory");
-            VictoryState::new(a, e)
-        }
+    let mut victory_state = if let (Some(a), Some(e)) = (alliance_hq, empire_hq) {
+        VictoryState::new(a, e)
+    } else {
+        // Fallback: use first two systems if HQs not marked
+        let mut keys = world.systems.keys();
+        let a = keys
+            .next()
+            .expect("world must have at least 2 systems for victory");
+        let e = keys
+            .next()
+            .expect("world must have at least 2 systems for victory");
+        VictoryState::new(a, e)
     };
 
     // Register scripted story events
@@ -1167,7 +1174,7 @@ async fn main() {
             // Used by the Dabora 2 notification paths that need to timestamp
             // message-log entries. `current_tick` is re-bound further down for
             // the rest of the tick loop; this earlier binding is read-only.
-            let economy_tick = tick_events.last().map(|e| e.tick).unwrap_or(0);
+            let economy_tick = tick_events.last().map_or(0, |e| e.tick);
 
             // Active movement orders are authoritative; repair stale orbit
             // indexes before economy and manufacturing inspect fleet presence.
@@ -1208,11 +1215,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             economy_tick,
-                            format!("Natural disaster strikes {}", name),
+                            format!("Natural disaster strikes {name}"),
                             MessageCategory::Event,
                             *system,
                         ));
@@ -1221,14 +1227,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             economy_tick,
-                            format!(
-                                "New resources discovered at {} ({} units)",
-                                name, new_output
-                            ),
+                            format!("New resources discovered at {name} ({new_output} units)"),
                             MessageCategory::Event,
                             *system,
                         ));
@@ -1245,8 +1247,7 @@ async fn main() {
                         msg_log.push(GameMessage::new(
                             economy_tick,
                             format!(
-                                "{} reports maintenance shortfall across {} systems",
-                                faction_str, deficit_system_count
+                                "{faction_str} reports maintenance shortfall across {deficit_system_count} systems"
                             ),
                             MessageCategory::Event,
                         ));
@@ -1269,11 +1270,10 @@ async fn main() {
                 let sys_name = world
                     .systems
                     .get(completion.system)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "unknown".into());
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
                 msg_log.push(GameMessage::at_system(
                     completion.tick,
-                    format!("Construction complete at {}", sys_name),
+                    format!("Construction complete at {sys_name}"),
                     MessageCategory::Manufacturing,
                     completion.system,
                 ));
@@ -1287,11 +1287,10 @@ async fn main() {
                 let sys_name_str = world
                     .systems
                     .get(system)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "unknown".into());
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
                 msg_log.push(GameMessage::at_system(
                     economy_tick,
-                    format!("Manufacturing queue idle at {}", sys_name_str),
+                    format!("Manufacturing queue idle at {sys_name_str}"),
                     MessageCategory::Manufacturing,
                     system,
                 ));
@@ -1306,11 +1305,10 @@ async fn main() {
                 let sys_name = world
                     .systems
                     .get(arrival.system)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "unknown".into());
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
                 msg_log.push(GameMessage::at_system(
                     arrival.tick,
-                    format!("Fleet arrived at {}", sys_name),
+                    format!("Fleet arrived at {sys_name}"),
                     MessageCategory::Mission,
                     arrival.system,
                 ));
@@ -1321,7 +1319,7 @@ async fn main() {
             // Unopposed troop transports can land immediately. Contested
             // orbits retain cargo until space combat produces a winner.
             let mut ground_resolved_systems = HashSet::new();
-            let current_tick = tick_events.last().map(|event| event.tick).unwrap_or(0);
+            let current_tick = tick_events.last().map_or(0, |event| event.tick);
             let landing_targets: Vec<_> = world
                 .systems
                 .iter()
@@ -1330,15 +1328,13 @@ async fn main() {
                         world
                             .fleets
                             .get(*fleet)
-                            .map(|value| value.is_alliance)
-                            .unwrap_or(false)
+                            .is_some_and(|value| value.is_alliance)
                     });
                     let has_empire = value.fleets.iter().any(|fleet| {
                         world
                             .fleets
                             .get(*fleet)
-                            .map(|value| !value.is_alliance)
-                            .unwrap_or(false)
+                            .is_some_and(|value| !value.is_alliance)
                     });
                     let faction = match (has_alliance, has_empire) {
                         (true, false) => Some(true),
@@ -1405,13 +1401,13 @@ async fn main() {
                         .fleets
                         .iter()
                         .copied()
-                        .filter(|&k| world.fleets.get(k).map(|f| f.is_alliance).unwrap_or(false))
+                        .filter(|&k| world.fleets.get(k).is_some_and(|f| f.is_alliance))
                         .collect();
                     let empire_fleets: Vec<_> = sys
                         .fleets
                         .iter()
                         .copied()
-                        .filter(|&k| world.fleets.get(k).map(|f| !f.is_alliance).unwrap_or(false))
+                        .filter(|&k| world.fleets.get(k).is_some_and(|f| !f.is_alliance))
                         .collect();
                     if !alliance_fleets.is_empty() && !empire_fleets.is_empty() {
                         Some((sys_key, alliance_fleets[0], empire_fleets[0]))
@@ -1425,21 +1421,12 @@ async fn main() {
                 let sys_name = world
                     .systems
                     .get(sys_key)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "Unknown".into());
+                    .map_or_else(|| "Unknown".into(), |s| s.name.clone());
 
                 // Check if the player is involved in this battle.
                 let player_is_alliance = player_faction == MissionFaction::Alliance;
-                let atk_is_alliance = world
-                    .fleets
-                    .get(atk_fleet)
-                    .map(|f| f.is_alliance)
-                    .unwrap_or(false);
-                let def_is_alliance = world
-                    .fleets
-                    .get(def_fleet)
-                    .map(|f| f.is_alliance)
-                    .unwrap_or(false);
+                let atk_is_alliance = world.fleets.get(atk_fleet).is_some_and(|f| f.is_alliance);
+                let def_is_alliance = world.fleets.get(def_fleet).is_some_and(|f| f.is_alliance);
                 // Player is involved if either fleet belongs to the player's faction.
                 let player_involved = (player_is_alliance == atk_is_alliance)
                     || (player_is_alliance == def_is_alliance);
@@ -1499,7 +1486,7 @@ async fn main() {
                 };
                 msg_log.push(GameMessage::at_system(
                     current_tick,
-                    format!("Space battle at {} — {}", sys_name, winner_str),
+                    format!("Space battle at {sys_name} — {winner_str}"),
                     MessageCategory::Combat,
                     sys_key,
                 ));
@@ -1606,11 +1593,10 @@ async fn main() {
                 let sys_name = world
                     .systems
                     .get(reveal.system)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "unknown".into());
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
                 msg_log.push(GameMessage::at_system(
                     tick_events.last().unwrap().tick,
-                    format!("System {} revealed", sys_name),
+                    format!("System {sys_name} revealed"),
                     MessageCategory::Event,
                     reveal.system,
                 ));
@@ -1662,17 +1648,16 @@ async fn main() {
                         c.captured_by = None;
                         c.capture_tick = None;
                     }
-                    for (_, fleet) in world.fleets.iter_mut() {
+                    for (_, fleet) in &mut world.fleets {
                         fleet.characters.retain(|&k| k != *character);
                     }
                     let name = world
                         .characters
                         .get(*character)
-                        .map(|c| c.name.clone())
-                        .unwrap_or_else(|| "Unknown".into());
+                        .map_or_else(|| "Unknown".into(), |c| c.name.clone());
                     msg_log.push(GameMessage::new(
                         current_tick,
-                        format!("{} has escaped captivity!", name),
+                        format!("{name} has escaped captivity!"),
                         MessageCategory::Event,
                     ));
                 }
@@ -1714,12 +1699,11 @@ async fn main() {
                         let name = world
                             .systems
                             .get(at_system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         let side = if is_alliance { "Alliance" } else { "Imperial" };
                         msg_log.push(GameMessage::at_system(
                             current_tick,
-                            format!("{} special force lands at {}", side, name),
+                            format!("{side} special force lands at {name}"),
                             MessageCategory::Event,
                             at_system,
                         ));
@@ -1855,7 +1839,7 @@ async fn main() {
                 &mut research_state,
                 &mut world,
                 &mut msg_log,
-                tick_events.last().map(|e| e.tick).unwrap_or(0),
+                tick_events.last().map_or(0, |e| e.tick),
                 #[cfg(not(target_arch = "wasm32"))]
                 &mut audio_engine,
                 #[cfg(not(target_arch = "wasm32"))]
@@ -1863,7 +1847,7 @@ async fn main() {
             );
 
             // ── Dual AI (second faction) ────────────────────────────────────
-            if let Some(ref mut second_ai) = ai2_state {
+            if let Some(ref mut second_ai) = secondary_ai_state {
                 let second_actions = AISystem::advance(
                     second_ai,
                     &world,
@@ -1886,7 +1870,7 @@ async fn main() {
                     &mut research_state,
                     &mut world,
                     &mut msg_log,
-                    tick_events.last().map(|e| e.tick).unwrap_or(0),
+                    tick_events.last().map_or(0, |e| e.tick),
                     #[cfg(not(target_arch = "wasm32"))]
                     &mut audio_engine,
                     #[cfg(not(target_arch = "wasm32"))]
@@ -1903,11 +1887,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Blockade established at {}", name),
+                            format!("Blockade established at {name}"),
                             MessageCategory::Combat,
                             *system,
                         ));
@@ -1916,11 +1899,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Blockade lifted at {}", name),
+                            format!("Blockade lifted at {name}"),
                             MessageCategory::Combat,
                             *system,
                         ));
@@ -1937,11 +1919,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Troops destroyed by blockade at {}", name),
+                            format!("Troops destroyed by blockade at {name}"),
                             MessageCategory::Combat,
                             *system,
                         ));
@@ -1989,11 +1970,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Uprising incident at {}", name),
+                            format!("Uprising incident at {name}"),
                             MessageCategory::Diplomacy,
                             *system,
                         ));
@@ -2030,11 +2010,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Uprising! {} has changed hands", name),
+                            format!("Uprising! {name} has changed hands"),
                             MessageCategory::Diplomacy,
                             *system,
                         ));
@@ -2044,11 +2023,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Uprising subdued at {}", name),
+                            format!("Uprising subdued at {name}"),
                             MessageCategory::Diplomacy,
                             *system,
                         ));
@@ -2082,14 +2060,13 @@ async fn main() {
                     c.is_empire = !*defected_to_alliance;
                 }
                 // Remove from current fleet
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
                 let name = world
                     .characters
                     .get(*character)
-                    .map(|c| c.name.clone())
-                    .unwrap_or_else(|| "Unknown".into());
+                    .map_or_else(|| "Unknown".into(), |c| c.name.clone());
                 let to_faction = if *defected_to_alliance {
                     "Alliance"
                 } else {
@@ -2097,7 +2074,7 @@ async fn main() {
                 };
                 msg_log.push(GameMessage::new(
                     current_tick,
-                    format!("{} has betrayed and defected to the {}!", name, to_faction),
+                    format!("{name} has betrayed and defected to the {to_faction}!"),
                     MessageCategory::Event,
                 ));
             }
@@ -2113,11 +2090,10 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Death Star construction complete at {}", name),
+                            format!("Death Star construction complete at {name}"),
                             MessageCategory::Event,
                             *system,
                         ));
@@ -2150,17 +2126,16 @@ async fn main() {
                         let name = world
                             .systems
                             .get(*system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "unknown".into());
+                            .map_or_else(|| "unknown".into(), |s| s.name.clone());
                         msg_log.push(GameMessage::at_system(
                             *tick,
-                            format!("Death Star detected near {}!", name),
+                            format!("Death Star detected near {name}!"),
                             MessageCategory::Event,
                             *system,
                         ));
                         advisor_death_star(
                             &mut advisor_state,
-                            &format!("Warning! Death Star detected near {}!", name),
+                            &format!("Warning! Death Star detected near {name}!"),
                         );
                     }
                 }
@@ -2187,10 +2162,7 @@ async fn main() {
                 };
                 msg_log.push(GameMessage::new(
                     current_tick,
-                    format!(
-                        "{} {} tech advanced to level {}",
-                        faction_name, tech_name, new_level
-                    ),
+                    format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
                     MessageCategory::Event,
                 ));
             }
@@ -2237,8 +2209,7 @@ async fn main() {
                         let name = world
                             .characters
                             .get(*character)
-                            .map(|c| c.name.clone())
-                            .unwrap_or_else(|| "Unknown".into());
+                            .map_or_else(|| "Unknown".into(), |c| c.name.clone());
                         let tier_str = match new_tier {
                             rebellion_core::world::ForceTier::None => "None",
                             rebellion_core::world::ForceTier::Aware => "Force Aware",
@@ -2247,7 +2218,7 @@ async fn main() {
                         };
                         msg_log.push(GameMessage::new(
                             current_tick,
-                            format!("{} has reached {} tier", name, tier_str),
+                            format!("{name} has reached {tier_str} tier"),
                             MessageCategory::Event,
                         ));
                     }
@@ -2261,11 +2232,10 @@ async fn main() {
                         let name = world
                             .characters
                             .get(*character)
-                            .map(|c| c.name.clone())
-                            .unwrap_or_else(|| "Unknown".into());
+                            .map_or_else(|| "Unknown".into(), |c| c.name.clone());
                         msg_log.push(GameMessage::new(
                             current_tick,
-                            format!("{}'s Force sensitivity discovered!", name),
+                            format!("{name}'s Force sensitivity discovered!"),
                             MessageCategory::Event,
                         ));
                     }
@@ -2285,8 +2255,7 @@ async fn main() {
                         winner, loser, ..
                     } => {
                         format!(
-                            "{:?} captured {:?} headquarters! {:?} wins!",
-                            winner, loser, winner
+                            "{winner:?} captured {loser:?} headquarters! {winner:?} wins!"
                         )
                     }
                     rebellion_core::victory::VictoryOutcome::HqDestroyed { .. } => {
@@ -2622,7 +2591,7 @@ async fn main() {
                                     world = w;
                                     campaign_generation += 1;
                                     sim_rng = Xoshiro256PlusPlus::seed_from_u64(
-                                        rng_seed.wrapping_add(campaign_generation as u64),
+                                        rng_seed.wrapping_add(u64::from(campaign_generation)),
                                     );
                                     clock = GameClock::new();
                                     mfg_state = ManufacturingState::new();
@@ -2645,7 +2614,7 @@ async fn main() {
                                     economy_state = EconomyState::default();
                                     game_config = rebellion_core::tuning::GameConfig::default();
                                     dual_ai_mode = false;
-                                    ai2_state = None;
+                                    secondary_ai_state = None;
 
                                     map_state = GalaxyMapState::default();
                                     warmed_galaxy_font_sizes.clear();
@@ -2703,20 +2672,19 @@ async fn main() {
                                                 && system.control.is_controlled_by(Faction::Empire)
                                         })
                                         .map(|(key, _)| key);
-                                    victory_state = match (alliance_hq, empire_hq) {
-                                        (Some(alliance), Some(empire)) => {
-                                            VictoryState::new(alliance, empire)
-                                        }
-                                        _ => {
-                                            let mut keys = world.systems.keys();
-                                            let alliance = keys.next().expect(
-                                                "world must have at least 2 systems for victory",
-                                            );
-                                            let empire = keys.next().expect(
-                                                "world must have at least 2 systems for victory",
-                                            );
-                                            VictoryState::new(alliance, empire)
-                                        }
+                                    victory_state = if let (Some(alliance), Some(empire)) =
+                                        (alliance_hq, empire_hq)
+                                    {
+                                        VictoryState::new(alliance, empire)
+                                    } else {
+                                        let mut keys = world.systems.keys();
+                                        let alliance = keys.next().expect(
+                                            "world must have at least 2 systems for victory",
+                                        );
+                                        let empire = keys.next().expect(
+                                            "world must have at least 2 systems for victory",
+                                        );
+                                        VictoryState::new(alliance, empire)
                                     };
                                     true
                                 }
@@ -2773,15 +2741,12 @@ async fn main() {
                                 movement_state.len(),
                                 combat_cooldowns.len(),
                                 dual_ai_mode,
-                                ai2_state.is_some(),
+                                secondary_ai_state.is_some(),
                                 event_state.events().len()
                             );
                                 msg_log.push(GameMessage::new(
                                     clock.tick,
-                                    format!(
-                                        "You command the {} — {}.",
-                                        faction_name, campaign_summary
-                                    ),
+                                    format!("You command the {faction_name} — {campaign_summary}."),
                                     MessageCategory::Event,
                                 ));
 
@@ -3029,7 +2994,7 @@ async fn main() {
                             let err = mod_runtime
                                 .errors
                                 .iter()
-                                .find(|e| format!("{:?}", e).contains(&m.name));
+                                .find(|e| format!("{e:?}").contains(&m.name));
                             rebellion_render::ModInfo {
                                 name: m.name.clone(),
                                 version: m.version.clone(),
@@ -3038,7 +3003,7 @@ async fn main() {
                                 enabled: m.enabled,
                                 dependencies: m.dependencies.keys().cloned().collect(),
                                 has_error: err.is_some(),
-                                error_message: err.map(|e| format!("{:?}", e)),
+                                error_message: err.map(|e| format!("{e:?}")),
                             }
                         })
                         .collect();
@@ -3340,7 +3305,7 @@ async fn main() {
                                                 def_idx += 1;
                                                 Some((
                                                     tk,
-                                                    format!("Defender Regiment {}", def_idx),
+                                                    format!("Defender Regiment {def_idx}"),
                                                     troop.regiment_strength,
                                                 ))
                                             } else {
@@ -3360,7 +3325,7 @@ async fn main() {
                                                 atk_idx += 1;
                                                 Some((
                                                     tk,
-                                                    format!("Attacker Regiment {}", atk_idx),
+                                                    format!("Attacker Regiment {atk_idx}"),
                                                     troop.regiment_strength,
                                                 ))
                                             } else {
@@ -3574,7 +3539,7 @@ async fn main() {
                         betrayal: &mut betrayal_state,
                         economy: &mut economy_state,
                         sim_rng: &mut sim_rng,
-                        ai2: &mut ai2_state,
+                        ai2: &mut secondary_ai_state,
                         repair: &mut repair_state,
                         troop_transport: &mut troop_transport_state,
                         combat_cooldowns: &mut combat_cooldowns,
@@ -3609,7 +3574,6 @@ async fn main() {
                             save_load_panel_state.error_message = Some(error.to_string());
                         }
                     }
-                    continue;
                 }
                 PanelAction::LoadGame { slot } => {
                     match rebellion_data::save::load_slot(&saves_dir, slot) {
@@ -3641,7 +3605,7 @@ async fn main() {
                                 betrayal: &mut betrayal_state,
                                 economy: &mut economy_state,
                                 sim_rng: &mut sim_rng,
-                                ai2: &mut ai2_state,
+                                ai2: &mut secondary_ai_state,
                                 repair: &mut repair_state,
                                 troop_transport: &mut troop_transport_state,
                                 combat_cooldowns: &mut combat_cooldowns,
@@ -3695,7 +3659,7 @@ async fn main() {
                             event_screen_state = EventScreenState::new();
                             tactical_state = TacticalState::new();
                             ground_combat_state = None;
-                            dual_ai_mode = ai2_state.is_some();
+                            dual_ai_mode = secondary_ai_state.is_some();
                             msg_log = MessageLog::default();
                             msg_log.push(GameMessage::new(
                                 clock.tick,
@@ -3708,7 +3672,6 @@ async fn main() {
                             save_load_panel_state.error_message = Some(error.to_string());
                         }
                     }
-                    continue;
                 }
                 PanelAction::DeleteSave { slot } => {
                     match rebellion_data::save::delete_slot(&saves_dir, slot) {
@@ -3726,7 +3689,6 @@ async fn main() {
                             save_load_panel_state.error_message = Some(error.to_string());
                         }
                     }
-                    continue;
                 }
                 PanelAction::CloseSaveLoadPanel => {
                     save_load_panel_state.close();
@@ -3734,7 +3696,6 @@ async fn main() {
                     if game_mode == GameMode::LoadGame {
                         game_mode = GameMode::MainMenu;
                     }
-                    continue;
                 }
                 action => {
                     // Handle actions that need local UI state not available in apply_panel_action.
@@ -3774,9 +3735,9 @@ async fn main() {
                         &mut player_faction,
                         &mut clock,
                         &mut dual_ai_mode,
-                        &mut ai2_state,
+                        &mut secondary_ai_state,
                         &mut victory_state,
-                        &campaign_config,
+                        campaign_config,
                         &game_config,
                         &mut blockade_state,
                         &event_state,
@@ -3824,8 +3785,8 @@ async fn main() {
         // 7. Handle focus requests from message log + encyclopedia
         if let Some(focus_key) = log_state.focus_system.take() {
             if let Some(system) = world.systems.get(focus_key) {
-                map_state.camera_x = system.x as f32;
-                map_state.camera_y = system.y as f32;
+                map_state.camera_x = f32::from(system.x);
+                map_state.camera_y = f32::from(system.y);
                 map_state.selected_system = Some(focus_key);
             }
         }
@@ -3863,6 +3824,14 @@ async fn main() {
     clippy::too_many_arguments,
     reason = "Keep explicit state and UI inputs at this existing integration boundary."
 )]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 fn apply_panel_action(
     action: PanelAction,
     world: &mut GameWorld,
@@ -3880,9 +3849,9 @@ fn apply_panel_action(
     player_faction: &mut MissionFaction,
     clock: &mut GameClock,
     dual_ai_mode: &mut bool,
-    ai2_state: &mut Option<AIState>,
+    secondary_ai_state: &mut Option<AIState>,
     victory_state: &mut VictoryState,
-    campaign_config: &CampaignConfig,
+    campaign_config: CampaignConfig,
     game_config: &rebellion_core::tuning::GameConfig,
     blockade_state: &mut BlockadeState,
     event_state: &EventState,
@@ -3892,17 +3861,10 @@ fn apply_panel_action(
     #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
 ) {
     match action {
-        PanelAction::SelectFaction(_) => {
-            // Faction selection now handled by GameSetup screen transition.
-            // This variant is kept for backwards compatibility but is a no-op.
-        }
-        PanelAction::FocusCharacter(_) => {
-            // Officers panel handles its own focus state internally
-        }
         PanelAction::FocusFleetSystem(sys_key) => {
             if let Some(system) = world.systems.get(sys_key) {
-                map_state.camera_x = system.x as f32;
-                map_state.camera_y = system.y as f32;
+                map_state.camera_x = f32::from(system.x);
+                map_state.camera_y = f32::from(system.y);
                 map_state.selected_system = Some(sys_key);
             }
         }
@@ -3917,7 +3879,7 @@ fn apply_panel_action(
                 c.current_fleet = Some(fleet);
                 msg_log.push(GameMessage::new(
                     clock.tick,
-                    format!("{} assigned to fleet", name),
+                    format!("{name} assigned to fleet"),
                     MessageCategory::Event,
                 ));
             }
@@ -3931,7 +3893,7 @@ fn apply_panel_action(
                 c.current_fleet = None;
                 msg_log.push(GameMessage::new(
                     clock.tick,
-                    format!("{} removed from fleet", name),
+                    format!("{name} removed from fleet"),
                     MessageCategory::Event,
                 ));
             }
@@ -4018,7 +3980,7 @@ fn apply_panel_action(
             ) {
                 msg_log.push(GameMessage::new(
                     clock.tick,
-                    format!("Fleet move rejected: {}", error),
+                    format!("Fleet move rejected: {error}"),
                     MessageCategory::Event,
                 ));
                 return;
@@ -4027,7 +3989,7 @@ fn apply_panel_action(
                 if !troops.is_empty() {
                     msg_log.push(GameMessage::new(
                         clock.tick,
-                        format!("Troop embarkation rejected: {}", error),
+                        format!("Troop embarkation rejected: {error}"),
                         MessageCategory::Event,
                     ));
                     return;
@@ -4045,13 +4007,11 @@ fn apply_panel_action(
                     let origin_name = world
                         .systems
                         .get(departure.origin)
-                        .map(|system| system.name.as_str())
-                        .unwrap_or("Unknown");
+                        .map_or("Unknown", |system| system.name.as_str());
                     let destination_name = world
                         .systems
                         .get(departure.destination)
-                        .map(|system| system.name.as_str())
-                        .unwrap_or("Unknown");
+                        .map_or("Unknown", |system| system.name.as_str());
                     msg_log.push(GameMessage::at_system(
                         clock.tick,
                         format!(
@@ -4084,7 +4044,7 @@ fn apply_panel_action(
                     }
                     msg_log.push(GameMessage::new(
                         clock.tick,
-                        format!("Fleet move rejected: {}", error),
+                        format!("Fleet move rejected: {error}"),
                         MessageCategory::Event,
                     ));
                 }
@@ -4123,13 +4083,11 @@ fn apply_panel_action(
             let char_name = world
                 .characters
                 .get(character)
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| "Unknown".into());
+                .map_or_else(|| "Unknown".into(), |c| c.name.clone());
             let sys_name = world
                 .systems
                 .get(target)
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| "unknown".into());
+                .map_or_else(|| "unknown".into(), |s| s.name.clone());
             let kind_name = match kind {
                 MissionKind::Diplomacy => "Diplomacy",
                 MissionKind::Recruitment => "Recruitment",
@@ -4145,10 +4103,7 @@ fn apply_panel_action(
             };
             msg_log.push(GameMessage::at_system(
                 clock.tick,
-                format!(
-                    "{} dispatched on {} mission to {}",
-                    char_name, kind_name, sys_name
-                ),
+                format!("{char_name} dispatched on {kind_name} mission to {sys_name}"),
                 MessageCategory::Mission,
                 target,
             ));
@@ -4159,23 +4114,21 @@ fn apply_panel_action(
         // Save/load actions are handled by the caller before dispatching here;
         // they require access to the full save state and are not routed through
         // this helper.
-        PanelAction::OpenSaveLoad => {
-            // Handled in the Galaxy mode egui block via show_save_load flag.
-            // This action is emitted by the cockpit button — no additional
-            // work needed here since the button handler is in the render loop.
-        }
-        PanelAction::SaveGame { .. }
+        PanelAction::SelectFaction(_)
+        | PanelAction::FocusCharacter(_)
+        | PanelAction::OpenSaveLoad
+        | PanelAction::SaveGame { .. }
         | PanelAction::LoadGame { .. }
         | PanelAction::DeleteSave { .. }
-        | PanelAction::CloseSaveLoadPanel => {}
-        PanelAction::OpenModManager => {
+        | PanelAction::CloseSaveLoadPanel
+        | PanelAction::OpenModManager => {
             // Handled by UI state toggle (not a world mutation)
         }
         PanelAction::ToggleMod { ref name } => {
             mod_runtime.toggle_mod(name);
             msg_log.push(GameMessage::new(
                 clock.tick,
-                format!("Toggled mod: {}", name),
+                format!("Toggled mod: {name}"),
                 MessageCategory::Event,
             ));
         }
@@ -4183,7 +4136,7 @@ fn apply_panel_action(
             mod_runtime.refresh();
             let mod_errors = mod_runtime.apply_enabled(world);
             for err in &mod_errors {
-                eprintln!("Mod reload error: {:?}", err);
+                eprintln!("Mod reload error: {err:?}");
             }
             msg_log.push(GameMessage::new(
                 clock.tick,
@@ -4244,11 +4197,10 @@ fn apply_panel_action(
                     let system_name = world
                         .systems
                         .get(system)
-                        .map(|system| system.name.as_str())
-                        .unwrap_or("Unknown");
+                        .map_or("Unknown", |system| system.name.as_str());
                     msg_log.push(GameMessage::new(
                         clock.tick,
-                        format!("Alliance headquarters destroyed at {}", system_name),
+                        format!("Alliance headquarters destroyed at {system_name}"),
                         MessageCategory::Combat,
                     ));
                 }
@@ -4262,8 +4214,7 @@ fn apply_panel_action(
                 let name = world
                     .systems
                     .get(system)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "Unknown".to_string());
+                    .map_or_else(|| "Unknown".to_string(), |s| s.name.clone());
                 if let Some(sys) = world.systems.get_mut(system) {
                     sys.is_destroyed = true;
                 }
@@ -4297,7 +4248,7 @@ fn apply_panel_action(
                 }
                 msg_log.push(GameMessage::new(
                     clock.tick,
-                    format!("{} DESTROYED by Death Star superlaser!", name),
+                    format!("{name} DESTROYED by Death Star superlaser!"),
                     MessageCategory::Combat,
                 ));
             }
@@ -4321,15 +4272,11 @@ fn apply_panel_action(
                         let dest_name = world
                             .systems
                             .get(system)
-                            .map(|s| s.name.clone())
-                            .unwrap_or_else(|| "Unknown".to_string());
+                            .map_or_else(|| "Unknown".to_string(), |s| s.name.clone());
                         if begin_fleet_transit(movement_state, world, fleet_key, system, ticks) {
                             msg_log.push(GameMessage::new(
                                 clock.tick,
-                                format!(
-                                    "Death Star fleet moving to {} ({} days)",
-                                    dest_name, ticks
-                                ),
+                                format!("Death Star fleet moving to {dest_name} ({ticks} days)"),
                                 MessageCategory::Event,
                             ));
                         }
@@ -4363,14 +4310,14 @@ fn apply_panel_action(
                     Some(AiFaction::Empire) => AiFaction::Alliance,
                     _ => AiFaction::Empire,
                 };
-                *ai2_state = Some(AIState::new(second_faction));
+                *secondary_ai_state = Some(AIState::new(second_faction));
             } else {
-                *ai2_state = None;
+                *secondary_ai_state = None;
             }
             let state_str = if *dual_ai_mode { "ENABLED" } else { "DISABLED" };
             msg_log.push(GameMessage::new(
                 clock.tick,
-                format!("Dual AI mode {}", state_str),
+                format!("Dual AI mode {state_str}"),
                 MessageCategory::Event,
             ));
         }
@@ -4385,7 +4332,7 @@ fn apply_panel_action(
             if let Some(outcome) = result {
                 msg_log.push(GameMessage::new(
                     clock.tick,
-                    format!("Victory check: {:?}", outcome),
+                    format!("Victory check: {outcome:?}"),
                     MessageCategory::Event,
                 ));
             } else {
@@ -4398,7 +4345,7 @@ fn apply_panel_action(
         }
         PanelAction::RevealAllFog => {
             // Reveal all systems in fog state
-            for (sys_key, _) in world.systems.iter() {
+            for (sys_key, _) in &world.systems {
                 fog_state.reveal(sys_key);
             }
         }
@@ -4415,7 +4362,7 @@ fn apply_panel_action(
                     ));
                 }
                 Err(e) => {
-                    eprintln!("Failed to export game log: {}", e);
+                    eprintln!("Failed to export game log: {e}");
                 }
             }
         }
@@ -4455,13 +4402,11 @@ fn apply_panel_action(
                     let char_name = world
                         .characters
                         .get(m.character)
-                        .map(|c| c.name.clone())
-                        .unwrap_or_else(|| "Unknown".into());
+                        .map_or_else(|| "Unknown".into(), |c| c.name.clone());
                     let sys_name = world
                         .systems
                         .get(m.target_system)
-                        .map(|s| s.name.clone())
-                        .unwrap_or_else(|| "unknown".into());
+                        .map_or_else(|| "unknown".into(), |s| s.name.clone());
                     msg_log.push(GameMessage::new(
                         clock.tick,
                         format!("  {:?} — {} at {}", m.kind, char_name, sys_name),
@@ -4476,12 +4421,11 @@ fn apply_panel_action(
                 format!("{} fleets:", world.fleets.len()),
                 MessageCategory::Event,
             ));
-            for (_, fleet) in world.fleets.iter() {
+            for (_, fleet) in &world.fleets {
                 let sys_name = world
                     .systems
                     .get(fleet.location)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "unknown".into());
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
                 let faction = if fleet.is_alliance {
                     "Alliance"
                 } else {
@@ -4495,7 +4439,7 @@ fn apply_panel_action(
                         .sum::<usize>();
                 msg_log.push(GameMessage::new(
                     clock.tick,
-                    format!("  {} fleet at {} — {} ships", faction, sys_name, ship_count),
+                    format!("  {faction} fleet at {sys_name} — {ship_count} ships"),
                     MessageCategory::Event,
                 ));
             }
@@ -4509,7 +4453,7 @@ fn apply_panel_action(
                 .count();
             msg_log.push(GameMessage::new(
                 clock.tick,
-                format!("Events: {} defined, {} fired", total, fired),
+                format!("Events: {total} defined, {fired} fired"),
                 MessageCategory::Event,
             ));
         }
@@ -4540,8 +4484,7 @@ fn apply_panel_action(
             let char_name = world
                 .characters
                 .get(character)
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| "Unknown".into());
+                .map_or_else(|| "Unknown".into(), |c| c.name.clone());
             let tree_name = match tech_type {
                 rebellion_core::research::TechType::Ship => "Ship",
                 rebellion_core::research::TechType::Troop => "Troop",
@@ -4570,7 +4513,7 @@ fn apply_panel_action(
             };
             msg_log.push(GameMessage::new(
                 clock.tick,
-                format!("{} research cancelled", tree_name),
+                format!("{tree_name} research cancelled"),
                 MessageCategory::Event,
             ));
         }
@@ -4582,11 +4525,10 @@ fn apply_panel_action(
             let char_name = world
                 .characters
                 .get(character)
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| "Unknown".into());
+                .map_or_else(|| "Unknown".into(), |c| c.name.clone());
             msg_log.push(GameMessage::new(
                 clock.tick,
-                format!("{} begins Force training", char_name),
+                format!("{char_name} begins Force training"),
                 MessageCategory::Event,
             ));
         }
@@ -4595,11 +4537,10 @@ fn apply_panel_action(
             let char_name = world
                 .characters
                 .get(character)
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| "Unknown".into());
+                .map_or_else(|| "Unknown".into(), |c| c.name.clone());
             msg_log.push(GameMessage::new(
                 clock.tick,
-                format!("{} Force training stopped", char_name),
+                format!("{char_name} Force training stopped"),
                 MessageCategory::Event,
             ));
         }
@@ -4610,6 +4551,10 @@ fn apply_panel_action(
 // Effect application helpers
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
 fn apply_mission_result(
     result: &rebellion_core::missions::MissionResult,
     world: &mut GameWorld,
@@ -4637,8 +4582,7 @@ fn apply_mission_result(
     let sys_name = world
         .systems
         .get(result.target_system)
-        .map(|s| s.name.clone())
-        .unwrap_or_else(|| "unknown".into());
+        .map_or_else(|| "unknown".into(), |s| s.name.clone());
     let outcome_str = match result.outcome {
         rebellion_core::missions::MissionOutcome::Success => "succeeded",
         rebellion_core::missions::MissionOutcome::Failure => "failed",
@@ -4660,33 +4604,27 @@ fn apply_mission_result(
     };
     log.push(GameMessage::at_system(
         result.tick,
-        format!(
-            "{} {} mission at {} {}",
-            faction_name, kind_name, sys_name, outcome_str
-        ),
+        format!("{faction_name} {kind_name} mission at {sys_name} {outcome_str}"),
         category,
         result.target_system,
     ));
 
     // SFX + voice lines for mission outcomes
     #[cfg(not(target_arch = "wasm32"))]
-    match result.outcome {
-        rebellion_core::missions::MissionOutcome::Success => {
-            audio_engine.play_sfx(SfxKind::MissionSuccess, audio_vol);
-            let voice = match result.faction {
-                MissionFaction::Alliance => VoiceLine::AllianceMissionSuccess,
-                MissionFaction::Empire => VoiceLine::EmpireMissionSuccess,
-            };
-            audio_engine.play_voice(voice, audio_vol);
-        }
-        _ => {
-            audio_engine.play_sfx(SfxKind::MissionFail, audio_vol);
-            let voice = match result.faction {
-                MissionFaction::Alliance => VoiceLine::AllianceMissionFail,
-                MissionFaction::Empire => VoiceLine::EmpireMissionFail,
-            };
-            audio_engine.play_voice(voice, audio_vol);
-        }
+    if result.outcome == rebellion_core::missions::MissionOutcome::Success {
+        audio_engine.play_sfx(SfxKind::MissionSuccess, audio_vol);
+        let voice = match result.faction {
+            MissionFaction::Alliance => VoiceLine::AllianceMissionSuccess,
+            MissionFaction::Empire => VoiceLine::EmpireMissionSuccess,
+        };
+        audio_engine.play_voice(voice, audio_vol);
+    } else {
+        audio_engine.play_sfx(SfxKind::MissionFail, audio_vol);
+        let voice = match result.faction {
+            MissionFaction::Alliance => VoiceLine::AllianceMissionFail,
+            MissionFaction::Empire => VoiceLine::EmpireMissionFail,
+        };
+        audio_engine.play_voice(voice, audio_vol);
     }
 
     for effect in &result.effects {
@@ -4753,7 +4691,7 @@ fn apply_mission_result(
             }
             MissionEffect::CharacterKilled { character, .. } => {
                 // Remove character from any fleet they're assigned to
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
                 world.characters.remove(*character);
@@ -4776,7 +4714,7 @@ fn apply_mission_result(
                     c.capture_tick = Some(result.tick);
                 }
                 // Remove from current fleet assignments
-                for (_, fleet) in world.fleets.iter_mut() {
+                for (_, fleet) in &mut world.fleets {
                     fleet.characters.retain(|&k| k != *character);
                 }
             }
@@ -4820,16 +4758,14 @@ fn apply_mission_result(
                 let sys_name = world
                     .systems
                     .get(*system)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "unknown".into());
+                    .map_or_else(|| "unknown".into(), |s| s.name.clone());
                 let char_name = world
                     .characters
                     .get(*decoy_character)
-                    .map(|c| c.name.clone())
-                    .unwrap_or_else(|| "Unknown".into());
+                    .map_or_else(|| "Unknown".into(), |c| c.name.clone());
                 log.push(GameMessage::at_system(
                     result.tick,
-                    format!("Mission intercepted by decoy {} at {}", char_name, sys_name),
+                    format!("Mission intercepted by decoy {char_name} at {sys_name}"),
                     MessageCategory::Mission,
                     *system,
                 ));
@@ -4848,28 +4784,22 @@ fn apply_mission_result(
                 let name = world
                     .characters
                     .get(*character)
-                    .map(|c| c.name.clone())
-                    .unwrap_or_else(|| "Unknown".into());
+                    .map_or_else(|| "Unknown".into(), |c| c.name.clone());
                 log.push(GameMessage::new(
                     result.tick,
-                    format!("{} has escaped captivity!", name),
+                    format!("{name} has escaped captivity!"),
                     MessageCategory::Event,
                 ));
             }
             MissionEffect::UprisingSubdued { system } => {
                 // Shift popularity toward controlling faction
                 if let Some(sys) = world.systems.get_mut(*system) {
-                    match sys.control {
-                        ControlKind::Controlled(Faction::Alliance) => {
-                            sys.popularity_alliance =
-                                (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
-                            sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
-                        }
-                        _ => {
-                            sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
-                            sys.popularity_alliance =
-                                (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
-                        }
+                    if let ControlKind::Controlled(Faction::Alliance) = sys.control {
+                        sys.popularity_alliance = (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
+                        sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
+                    } else {
+                        sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
+                        sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
                     }
                 }
                 // Clear uprising — uprising_state not accessible here, handled in simulation layer
@@ -4878,10 +4808,7 @@ fn apply_mission_result(
                 // Death Star delay applied in simulation layer (death_star_state.add_sabotage_delay)
                 log.push(GameMessage::new(
                     result.tick,
-                    format!(
-                        "Death Star construction sabotaged! {} ticks delayed.",
-                        ticks_delayed
-                    ),
+                    format!("Death Star construction sabotaged! {ticks_delayed} ticks delayed."),
                     MessageCategory::Mission,
                 ));
             }
@@ -4977,8 +4904,7 @@ fn land_faction_cargo(
                     world
                         .fleets
                         .get(*fleet)
-                        .map(|value| value.is_alliance == is_alliance)
-                        .unwrap_or(false)
+                        .is_some_and(|value| value.is_alliance == is_alliance)
                         && troop_transport.carried_count(*fleet) > 0
                 })
                 .collect()
@@ -4988,15 +4914,13 @@ fn land_faction_cargo(
     for fleet in fleets {
         landed += troop_transport
             .disembark_all(world, fleet, system)
-            .map(|troops| troops.len())
-            .unwrap_or(0);
+            .map_or(0, |troops| troops.len());
     }
     if landed > 0 {
         let name = world
             .systems
             .get(system)
-            .map(|value| value.name.as_str())
-            .unwrap_or("unknown");
+            .map_or("unknown", |value| value.name.as_str());
         log.push(GameMessage::at_system(
             tick,
             format!("{landed} regiment(s) landed at {name}"),
@@ -5035,8 +4959,7 @@ fn apply_automatic_bombardment(
     let system_name = world
         .systems
         .get(system)
-        .map(|value| value.name.as_str())
-        .unwrap_or("unknown");
+        .map_or("unknown", |value| value.name.as_str());
 
     if result.damage > 0 {
         log.push(GameMessage::at_system(
@@ -5052,7 +4975,7 @@ fn apply_automatic_bombardment(
     if headquarters_destroyed {
         log.push(GameMessage::at_system(
             tick,
-            format!("Alliance headquarters destroyed at {}", system_name),
+            format!("Alliance headquarters destroyed at {system_name}"),
             MessageCategory::Combat,
             system,
         ));
@@ -5074,8 +4997,7 @@ fn apply_system_occupation(
         let name = world
             .systems
             .get(system)
-            .map(|value| value.name.as_str())
-            .unwrap_or("unknown");
+            .map_or("unknown", |value| value.name.as_str());
         log.push(GameMessage::at_system(
             tick,
             format!("{name} occupied by {winner:?}"),
@@ -5084,7 +5006,7 @@ fn apply_system_occupation(
         ));
     }
 
-    for (_, character) in world.characters.iter_mut() {
+    for (_, character) in &mut world.characters {
         let is_enemy = match winner {
             Faction::Alliance => character.is_empire,
             Faction::Empire => character.is_alliance,
@@ -5162,8 +5084,7 @@ fn resolve_ground_campaign(
             let name = world
                 .systems
                 .get(system)
-                .map(|value| value.name.as_str())
-                .unwrap_or("unknown");
+                .map_or("unknown", |value| value.name.as_str());
             log.push(GameMessage::at_system(
                 tick,
                 format!("Ground battle at {name}: {final_winner:?} after {rounds} round(s)"),
@@ -5193,10 +5114,10 @@ fn resolve_ground_campaign(
     }
 }
 
-/// Apply tactical combat session results to GameWorld.
+/// Apply tactical combat session results to `GameWorld`.
 ///
-/// Compares each ship's final hull_current to hull_max.
-/// Ships with hull_current == 0 are destroyed (count decremented).
+/// Compares each ship's final `hull_current` to `hull_max`.
+/// Ships with `hull_current` == 0 are destroyed (count decremented).
 /// Fighter squadron losses are applied similarly.
 fn apply_tactical_results(
     session: &rebellion_render::BattleSession,
@@ -5211,7 +5132,7 @@ fn apply_tactical_results(
         if let Some(fleet) = world.fleets.get_mut(fleet_key) {
             // fleet_ship_index maps 1:1 to hulls alive at session start.
             let mut alive_idx = 0;
-            for ship_inst in fleet.capital_ships.iter_mut() {
+            for ship_inst in &mut fleet.capital_ships {
                 if !ship_inst.alive {
                     continue;
                 }
@@ -5244,8 +5165,7 @@ fn apply_tactical_results(
         let is_empty = world
             .fleets
             .get(fleet_key)
-            .map(|f| f.is_empty())
-            .unwrap_or(true);
+            .is_none_or(rebellion_core::world::Fleet::is_empty);
         if is_empty {
             if let Some(fleet) = world.fleets.get(fleet_key) {
                 let loc = fleet.location;
@@ -5262,6 +5182,10 @@ fn apply_tactical_results(
 #[expect(
     clippy::too_many_arguments,
     reason = "Keep explicit state and UI inputs at this existing integration boundary."
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
 fn apply_ai_actions(
     actions: &[AIAction],
@@ -5306,7 +5230,7 @@ fn apply_ai_actions(
                 };
                 log.push(GameMessage::at_system(
                     tick,
-                    format!("{} dispatched {:?} mission", faction_name, kind),
+                    format!("{faction_name} dispatched {kind:?} mission"),
                     MessageCategory::Ai,
                     *target_system,
                 ));
@@ -5385,8 +5309,7 @@ fn apply_ai_actions(
             } => {
                 let is_alliance = ai_state
                     .faction
-                    .map(|f| matches!(f, AiFaction::Alliance))
-                    .unwrap_or(false);
+                    .is_some_and(|f| matches!(f, AiFaction::Alliance));
                 research_state.dispatch(rebellion_core::research::ResearchProject {
                     tech_type: *tech_type,
                     character: *character,
@@ -5398,14 +5321,10 @@ fn apply_ai_actions(
                 let char_name = world
                     .characters
                     .get(*character)
-                    .map(|c| c.name.as_str())
-                    .unwrap_or("unknown");
+                    .map_or("unknown", |c| c.name.as_str());
                 log.push(GameMessage::new(
                     tick,
-                    format!(
-                        "{} assigned to {:?} research ({} ticks)",
-                        char_name, tech_type, ticks
-                    ),
+                    format!("{char_name} assigned to {tech_type:?} research ({ticks} ticks)"),
                     MessageCategory::Ai,
                 ));
             }
@@ -5482,7 +5401,7 @@ fn open_cutscene(
             None
         }
         Err(error) => {
-            let message = format!("cutscene skipped — {}", error);
+            let message = format!("cutscene skipped — {error}");
             eprintln!("[cutscene] {message}");
             msg_log.push(GameMessage::new(tick, message, MessageCategory::Event));
             None
@@ -5551,6 +5470,10 @@ mod tactical_ground_tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The tactical result regression keeps its opposing fleets and exact roster assertions together."
+    )]
     fn tactical_space_results_preserve_hull_damage_and_duplicate_fighter_roster_slots() {
         let mut world = GameWorld::default();
         let sector = world.sectors.insert(Sector {

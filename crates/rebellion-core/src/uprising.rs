@@ -4,9 +4,9 @@
 //! This module:
 //!
 //! 1. **Evaluates loyalty thresholds** each tick using UPRIS1TB (3 entries).
-//! 2. **Fires UprisingIncident** (`0x152`) as a precursor warning when loyalty
+//! 2. **Fires `UprisingIncident`** (`0x152`) as a precursor warning when loyalty
 //!    is trending low but hasn't triggered a full uprising yet.
-//! 3. **Fires Uprising** (`0x14b`) + **ControlKindUprising** (`0x151`) when an
+//! 3. **Fires Uprising** (`0x14b`) + **`ControlKindUprising`** (`0x151`) when an
 //!    uprising begins — transitioning `control` to `ControlKind::Uprising` on the system.
 //! 4. **Subdues uprisings** via the Subdue Uprising mission using UPRIS2TB
 //!    (4 entries) for probability lookup.
@@ -18,7 +18,7 @@
 //! ```
 //! RNG rolls are caller-supplied (`&[f64]`) for determinism and testability.
 //! The caller applies `UprisingEvent::UprisingBegan` by updating
-//! `System::control` (ControlKind) in `GameWorld`.
+//! `System::control` (`ControlKind`) in `GameWorld`.
 //!
 //! # Probability Tables
 //!
@@ -36,8 +36,8 @@
 //! - `FUN_005121e0` (`SystemUprisingNotif`), event `0x14b` (331).
 //! - `FUN_00511f40` (`SystemControlKindUprisingNotif`), event `0x151` (337).
 //! - `FUN_00512580` (`SystemUprisingIncidentNotif`), event `0x152` (338).
-//! - `FUN_00509c30`: loyalty write gate: `*(uint*)(this + 0x88) & 1` = is_populated.
-//! - UPRIS1TB.DAT: 3 IntTableEntry records; UPRIS2TB.DAT: 4 records.
+//! - `FUN_00509c30`: loyalty write gate: `*(uint*)(this + 0x88) & 1` = `is_populated`.
+//! - UPRIS1TB.DAT: 3 `IntTableEntry` records; UPRIS2TB.DAT: 4 records.
 
 use std::collections::HashMap;
 
@@ -77,7 +77,7 @@ pub enum UprisingEvent {
     /// An uprising has begun. The system's controlling faction flips.
     ///
     /// Corresponds to `Uprising` (event `0x14b`) + `ControlKindUprising`
-    /// (`0x151`). The caller must update `System::control` (ControlKind).
+    /// (`0x151`). The caller must update `System::control` (`ControlKind`).
     UprisingBegan { system: SystemKey, tick: u64 },
 
     /// An uprising has been subdued (Subdue Uprising mission succeeded).
@@ -102,7 +102,7 @@ pub struct UprisingState {
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
     )]
     pub active_uprisings: HashMap<SystemKey, ActiveUprising>,
-    /// Cooldown: last tick an UprisingIncident was fired per system (prevents spam).
+    /// Cooldown: last tick an `UprisingIncident` was fired per system (prevents spam).
     #[serde(
         serialize_with = "crate::serde_ordered::serialize_hash_map",
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
@@ -120,6 +120,7 @@ pub struct ActiveUprising {
 }
 
 impl UprisingState {
+    #[must_use]
     pub fn new() -> Self {
         UprisingState {
             active_uprisings: HashMap::new(),
@@ -128,11 +129,12 @@ impl UprisingState {
     }
 
     /// Returns `true` if the system is currently in revolt.
+    #[must_use]
     pub fn is_uprising(&self, system: SystemKey) -> bool {
         self.active_uprisings.contains_key(&system)
     }
 
-    /// Remove an active uprising at a system (e.g., after a successful SubdueUprising mission).
+    /// Remove an active uprising at a system (e.g., after a successful `SubdueUprising` mission).
     pub fn clear_uprising(&mut self, system: SystemKey) {
         self.active_uprisings.remove(&system);
     }
@@ -166,15 +168,15 @@ impl UprisingSystem {
         rng_rolls: &[f64],
         upris1tb: &MstbTable,
     ) -> Vec<UprisingEvent> {
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return Vec::new();
-        }
+        };
 
-        let tick = tick_events.last().unwrap().tick;
+        let tick = last_tick_event.tick;
         let mut events = Vec::new();
         let mut roll_idx = 0;
 
-        for (sys_key, sys) in world.systems.iter() {
+        for (sys_key, sys) in &world.systems {
             // Gate: system must be populated (Ghidra: `*(uint*)(this + 0x88) & 1`)
             if !sys.is_populated() {
                 continue;
@@ -193,11 +195,11 @@ impl UprisingSystem {
             // Loyalty >= 0 means the system is at or above neutral — no uprising risk.
             // The UPRIS1TB thresholds are all negative (below neutral), so any positive
             // loyalty value should produce zero probability.
-            let start_prob = if loyalty >= 0 {
+            let start_prob = f64::from(if loyalty >= 0 {
                 0u32
             } else {
                 upris1tb.lookup(loyalty)
-            } as f64;
+            });
 
             if start_prob > 0.0 {
                 // Fire incident warning with 10-tick cooldown to prevent spam.
@@ -256,10 +258,9 @@ impl UprisingSystem {
         let loyalty = world
             .systems
             .get(system)
-            .map(|s| s.loyalty_value())
-            .unwrap_or(50);
+            .map_or(50, SystemUprisingExt::loyalty_value);
 
-        let subdue_prob = upris2tb.lookup(loyalty) as f64 / 100.0;
+        let subdue_prob = f64::from(upris2tb.lookup(loyalty)) / 100.0;
         if rng_roll < subdue_prob {
             state.active_uprisings.remove(&system);
             Some(UprisingEvent::UprisingSubdued { system, tick })
@@ -296,6 +297,10 @@ impl SystemUprisingExt for crate::world::System {
         self.popularity_alliance + self.popularity_empire > 0.0
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     fn loyalty_value(&self) -> i32 {
         use crate::dat::Faction;
 

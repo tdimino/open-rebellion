@@ -96,12 +96,14 @@ impl ReplayGateReport {
         }
     }
 
+    #[must_use]
     pub fn passed(&self) -> bool {
         self.status == "passed"
     }
 }
 
 /// The reviewed command profile shared by the recorder and strict fixture validator.
+#[must_use]
 pub fn seed42_commands() -> Vec<(ReplayActor, ReplayCommand)> {
     let mut commands = vec![
         (
@@ -126,6 +128,9 @@ pub fn seed42_commands() -> Vec<(ReplayActor, ReplayCommand)> {
 }
 
 /// Build the seed-42 campaign state independently from the replay artifact.
+///
+/// # Errors
+/// Returns an error if the seeded world lacks entities required by the fixture.
 pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
     if world.systems.len() != 200 {
         bail!(
@@ -191,6 +196,9 @@ pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
 }
 
 /// Reject a syntactically valid replay that is not the complete reviewed fixture.
+///
+/// # Errors
+/// Returns an error if the manifest does not match the seed-42 fixture contract.
 pub fn validate_seed42_artifact(manifest: &ReplayManifest) -> anyhow::Result<()> {
     manifest.validate()?;
     if manifest.engine_version != SEED42_ENGINE_VERSION {
@@ -249,8 +257,7 @@ pub fn validate_seed42_artifact(manifest: &ReplayManifest) -> anyhow::Result<()>
             || checkpoint.state_fingerprint != *fingerprint
         {
             bail!(
-                "seed-42 fixture checkpoint after {} commands does not match the reviewed golden",
-                command_count
+                "seed-42 fixture checkpoint after {command_count} commands does not match the reviewed golden"
             );
         }
     }
@@ -258,10 +265,11 @@ pub fn validate_seed42_artifact(manifest: &ReplayManifest) -> anyhow::Result<()>
 }
 
 /// Execute the exact fixture bytes and retain structured diagnostics on failure.
+#[must_use]
 pub fn run_seed42_gate(
     platform: &str,
     artifact_bytes: &[u8],
-    data: SimulationDataManifest,
+    data: &SimulationDataManifest,
     world: GameWorld,
 ) -> ReplayGateReport {
     let artifact_text = String::from_utf8_lossy(artifact_bytes).into_owned();
@@ -302,9 +310,7 @@ pub fn run_seed42_gate(
         report.initial_fingerprint = Some(initial_fingerprint.clone());
         if initial_fingerprint != SEED42_INITIAL_FINGERPRINT {
             bail!(
-                "seed-42 initial fingerprint mismatch: expected {}, found {}",
-                SEED42_INITIAL_FINGERPRINT,
-                initial_fingerprint
+                "seed-42 initial fingerprint mismatch: expected {SEED42_INITIAL_FINGERPRINT}, found {initial_fingerprint}"
             );
         }
 
@@ -312,7 +318,7 @@ pub fn run_seed42_gate(
         let environment = ReplayEnvironment {
             engine_version: SEED42_ENGINE_VERSION,
             seed: SEED42_SEED,
-            data: &data,
+            data,
         };
         let execution = execute_replay_observed(environment, &manifest, initial, |checkpoint| {
             report.observed_checkpoints.push(checkpoint.clone());
@@ -326,11 +332,7 @@ pub fn run_seed42_gate(
         let final_tick = execution.final_state.clock.tick;
         if final_tick != SEED42_FINAL_TICK || final_fingerprint != SEED42_FINAL_FINGERPRINT {
             bail!(
-                "seed-42 final state mismatch: expected tick {} {}, found tick {} {}",
-                SEED42_FINAL_TICK,
-                SEED42_FINAL_FINGERPRINT,
-                final_tick,
-                final_fingerprint
+                "seed-42 final state mismatch: expected tick {SEED42_FINAL_TICK} {SEED42_FINAL_FINGERPRINT}, found tick {final_tick} {final_fingerprint}"
             );
         }
         report.final_tick = Some(final_tick);

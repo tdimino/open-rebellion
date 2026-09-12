@@ -139,6 +139,10 @@ pub enum VoiceLine {
 /// `dirty` is set to `true` whenever a slider or mute toggle changes so the
 /// app layer knows to call `apply_volume` without polling every frame.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 pub struct AudioVolumeState {
     /// Music volume in [0.0, 1.0].
     pub music_volume: f32,
@@ -170,25 +174,28 @@ impl Default for AudioVolumeState {
 }
 
 impl AudioVolumeState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Effective music volume: 0.0 when globally or music-only muted.
+    #[must_use]
     pub fn effective_music_volume(&self) -> f64 {
         if self.muted || self.music_muted {
             0.0
         } else {
-            self.music_volume as f64
+            f64::from(self.music_volume)
         }
     }
 
     /// Effective SFX volume: 0.0 when muted, otherwise `sfx_volume`.
+    #[must_use]
     pub fn effective_sfx_volume(&self) -> f64 {
         if self.muted {
             0.0
         } else {
-            self.sfx_volume as f64
+            f64::from(self.sfx_volume)
         }
     }
 
@@ -199,6 +206,7 @@ impl AudioVolumeState {
     }
 
     /// Whether the dedicated music path is enabled.
+    #[must_use]
     pub fn music_enabled(&self) -> bool {
         !self.music_muted
     }
@@ -267,14 +275,18 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
+    )]
     fn mute_and_gain_produce_exact_effective_levels() {
         let mut state = AudioVolumeState {
             music_volume: 0.35,
             sfx_volume: 0.6,
             ..Default::default()
         };
-        assert_eq!(state.effective_music_volume(), 0.35_f32 as f64);
-        assert_eq!(state.effective_sfx_volume(), 0.6_f32 as f64);
+        assert_eq!(state.effective_music_volume(), f64::from(0.35_f32));
+        assert_eq!(state.effective_sfx_volume(), f64::from(0.6_f32));
 
         state.muted = true;
         assert_eq!(state.effective_music_volume(), 0.0);
@@ -282,6 +294,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
+    )]
     fn music_toggle_preserves_sound_effects() {
         let mut state = AudioVolumeState::default();
         state.toggle_music();
@@ -293,6 +309,6 @@ mod tests {
 
         state.toggle_music();
         assert!(state.music_enabled());
-        assert_eq!(state.effective_music_volume(), 0.8_f32 as f64);
+        assert_eq!(state.effective_music_volume(), f64::from(0.8_f32));
     }
 }

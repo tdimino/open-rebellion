@@ -88,6 +88,7 @@ pub struct VictoryState {
 }
 
 impl VictoryState {
+    #[must_use]
     pub fn new(alliance_hq: SystemKey, empire_hq: SystemKey) -> Self {
         VictoryState {
             alliance_hq,
@@ -113,6 +114,7 @@ impl VictorySystem {
     /// detected; `None` otherwise. Skips frames without a simulation tick and
     /// already-resolved games. The original rules do not impose a minimum day.
     /// The caller must set `state.resolved = true` after acting on a result.
+    #[must_use]
     pub fn check(
         state: &VictoryState,
         world: &GameWorld,

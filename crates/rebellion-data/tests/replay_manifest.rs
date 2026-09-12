@@ -87,7 +87,7 @@ fn original_campaign_replay_matches_after_save_v13_reload() {
             (
                 checkpoint.command_count,
                 checkpoint.tick,
-                checkpoint.state_fingerprint.to_string(),
+                checkpoint.state_fingerprint.clone(),
             )
         })
         .collect();

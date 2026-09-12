@@ -74,7 +74,7 @@ pub struct SimulationStates {
 ///
 /// Advances each system in the canonical order (economy → manufacturing → movement →
 /// combat → fog → missions → events → AI → blockade → uprising → betrayal →
-/// death_star → research → jedi → victory), applies effects to `world`, and
+/// `death_star` → research → jedi → victory), applies effects to `world`, and
 /// returns a `Vec<GameEventRecord>` describing everything that happened.
 ///
 /// `tick_events` comes from `GameClock::advance()`. `rolls` is a pre-generated
@@ -83,6 +83,14 @@ pub struct SimulationStates {
 ///
 /// `wall_ms` is the wall-clock milliseconds since session start, used for
 /// the `wall_ms` field on each event record.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+)]
 pub fn run_simulation_tick(
     world: &mut GameWorld,
     states: &mut SimulationStates,
@@ -91,13 +99,13 @@ pub fn run_simulation_tick(
     wall_ms: u64,
     config: &rebellion_core::tuning::GameConfig,
 ) -> Vec<GameEventRecord> {
-    if tick_events.is_empty() {
+    let Some(last_tick_event) = tick_events.last() else {
         return Vec::new();
-    }
+    };
 
-    let mut integrator = PerceptionIntegrator::new(tick_events.last().unwrap().tick, wall_ms);
+    let mut integrator = PerceptionIntegrator::new(last_tick_event.tick, wall_ms);
     let mut roll_cursor = 0usize;
-    let current_tick = tick_events.last().unwrap().tick;
+    let current_tick = last_tick_event.tick;
 
     // `MovementState` is authoritative while a fleet is in hyperspace. Repair
     // stale save/index state before economy and manufacturing inspect orbits.
@@ -159,12 +167,12 @@ pub fn run_simulation_tick(
                 .fleets
                 .iter()
                 .copied()
-                .any(|k| world.fleets.get(k).map(|f| f.is_alliance).unwrap_or(false));
+                .any(|k| world.fleets.get(k).is_some_and(|f| f.is_alliance));
             let has_empire = sys
                 .fleets
                 .iter()
                 .copied()
-                .any(|k| world.fleets.get(k).map(|f| !f.is_alliance).unwrap_or(false));
+                .any(|k| world.fleets.get(k).is_some_and(|f| !f.is_alliance));
             has_alliance && has_empire
         })
         .collect();
@@ -202,7 +210,6 @@ pub fn run_simulation_tick(
         let winner_info = match (space_result.winner, space_result.winner_fleet) {
             (CombatSide::Attacker, Some(fleet)) => Some((fleet, true)), // Alliance won
             (CombatSide::Defender, Some(fleet)) => Some((fleet, false)), // Empire won
-            (CombatSide::Draw, _) => None,
             _ => None,
         };
         if let Some((winner_fleet, winner_is_alliance)) = winner_info {
@@ -246,15 +253,13 @@ pub fn run_simulation_tick(
             world
                 .fleets
                 .get(*fleet)
-                .map(|value| value.is_alliance)
-                .unwrap_or(false)
+                .is_some_and(|value| value.is_alliance)
         });
         let has_empire_fleet = orbiting.iter().any(|fleet| {
             world
                 .fleets
                 .get(*fleet)
-                .map(|value| !value.is_alliance)
-                .unwrap_or(false)
+                .is_some_and(|value| !value.is_alliance)
         });
         let orbital_winner = match (has_alliance_fleet, has_empire_fleet) {
             (true, false) => Some(Faction::Alliance),
@@ -270,8 +275,7 @@ pub fn run_simulation_tick(
                     world
                         .fleets
                         .get(*fleet)
-                        .map(|value| value.is_alliance == (faction == Faction::Alliance))
-                        .unwrap_or(false)
+                        .is_some_and(|value| value.is_alliance == (faction == Faction::Alliance))
                 })
                 .collect();
 
@@ -339,9 +343,8 @@ pub fn run_simulation_tick(
 
         let occupying_faction = match (alliance_troops > 0, empire_troops > 0) {
             (true, true) => {
-                let attacker_is_alliance = orbital_winner
-                    .map(|faction| faction == Faction::Alliance)
-                    .unwrap_or(true);
+                let attacker_is_alliance =
+                    orbital_winner.is_none_or(|faction| faction == Faction::Alliance);
                 let ground_rolls = take_rolls(256);
                 let mut final_winner = CombatSide::Draw;
                 let mut total_engagements = 0;
@@ -440,11 +443,10 @@ pub fn run_simulation_tick(
                     world.characters.contains_key(*character),
                     "EVT_CHARACTER_KILLED target missing from arena — R11 invariant break"
                 );
-                let (name, dat_id) = world
-                    .characters
-                    .get(*character)
-                    .map(|c| (c.name.clone(), c.dat_id.raw()))
-                    .unwrap_or_else(|| (String::from("<unknown>"), 0));
+                let (name, dat_id) = world.characters.get(*character).map_or_else(
+                    || (String::from("<unknown>"), 0),
+                    |c| (c.name.clone(), c.dat_id.raw()),
+                );
                 integrator.emit(
                     rebellion_core::game_events::SYS_MISSIONS,
                     rebellion_core::game_events::EVT_CHARACTER_KILLED,
@@ -473,13 +475,11 @@ pub fn run_simulation_tick(
                     let char_name = world
                         .characters
                         .get(result.character)
-                        .map(|c| c.name.clone())
-                        .unwrap_or_else(|| String::from("<unknown>"));
+                        .map_or_else(|| String::from("<unknown>"), |c| c.name.clone());
                     let sys_name = world
                         .systems
                         .get(result.target_system)
-                        .map(|s| s.name.clone())
-                        .unwrap_or_else(|| String::from("<unknown>"));
+                        .map_or_else(|| String::from("<unknown>"), |s| s.name.clone());
                     integrator.emit(
                         rebellion_core::game_events::SYS_MISSIONS,
                         rebellion_core::game_events::EVT_INFORMANT_INTEL,
@@ -495,8 +495,7 @@ pub fn run_simulation_tick(
                 let char_name = world
                     .characters
                     .get(result.character)
-                    .map(|c| c.name.clone())
-                    .unwrap_or_else(|| String::from("<unknown>"));
+                    .map_or_else(|| String::from("<unknown>"), |c| c.name.clone());
                 integrator.emit(
                     rebellion_core::game_events::SYS_MISSIONS,
                     rebellion_core::game_events::EVT_SABOTEUR_DETECTED,
@@ -517,8 +516,7 @@ pub fn run_simulation_tick(
                     let char_name = world
                         .characters
                         .get(result.character)
-                        .map(|c| c.name.clone())
-                        .unwrap_or_else(|| String::from("<unknown>"));
+                        .map_or_else(|| String::from("<unknown>"), |c| c.name.clone());
                     integrator.emit(
                         rebellion_core::game_events::SYS_MISSIONS,
                         rebellion_core::game_events::EVT_CHARACTER_HEALTH,
@@ -577,7 +575,7 @@ pub fn run_simulation_tick(
 
     // ── 7b. AI (second faction, dual-AI mode) ───────────────────────────
     if let Some(ref mut ai2) = states.ai2 {
-        let ai2_actions = AISystem::advance(
+        let secondary_actions = AISystem::advance(
             ai2,
             world,
             &states.manufacturing,
@@ -587,10 +585,10 @@ pub fn run_simulation_tick(
             config,
             &states.research,
         );
-        let ai2_rolls = take_rolls(8);
+        let secondary_rolls = take_rolls(8);
         integrator.apply_ai_actions(
-            &ai2_actions,
-            &ai2_rolls,
+            &secondary_actions,
+            &secondary_rolls,
             ai2,
             &mut states.missions,
             &mut states.manufacturing,
@@ -659,15 +657,13 @@ pub fn run_simulation_tick(
             let dest_sys_name = world
                 .systems
                 .get(*system)
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| String::from("<unknown>"));
+                .map_or_else(|| String::from("<unknown>"), |s| s.name.clone());
             for effect in cleanup_effects.drain(..) {
                 if let rebellion_core::effects::GameEffect::CharacterKilled { character } = effect {
-                    let (name, dat_id) = world
-                        .characters
-                        .get(character)
-                        .map(|c| (c.name.clone(), c.dat_id.raw()))
-                        .unwrap_or_else(|| (String::from("<unknown>"), 0));
+                    let (name, dat_id) = world.characters.get(character).map_or_else(
+                        || (String::from("<unknown>"), 0),
+                        |c| (c.name.clone(), c.dat_id.raw()),
+                    );
                     integrator.emit(
                         rebellion_core::game_events::SYS_MISSIONS,
                         rebellion_core::game_events::EVT_CHARACTER_KILLED,
@@ -726,6 +722,7 @@ mod tests {
         EVT_TROOP_MOVED, EVT_VICTORY,
     };
     use rebellion_core::ids::DatId;
+    use rebellion_core::ids::SectorKey;
     use rebellion_core::movement::begin_fleet_transit;
     use rebellion_core::world::{
         CapitalShipClass, Character, ControlKind, Fleet, ShipInstance, System, TroopClassDef,
@@ -738,7 +735,7 @@ mod tests {
         let s1 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(1),
             name: "System A".into(),
-            sector: Default::default(),
+            sector: SectorKey::default(),
             x: 0,
             y: 0,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
@@ -761,7 +758,7 @@ mod tests {
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
             name: "System B".into(),
-            sector: Default::default(),
+            sector: SectorKey::default(),
             x: 100,
             y: 100,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
@@ -818,7 +815,7 @@ mod tests {
         let s1 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(1),
             name: "A".into(),
-            sector: Default::default(),
+            sector: SectorKey::default(),
             x: 0,
             y: 0,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
@@ -841,7 +838,7 @@ mod tests {
         let s2 = world.systems.insert(rebellion_core::world::System {
             dat_id: rebellion_core::ids::DatId::new(2),
             name: "B".into(),
-            sector: Default::default(),
+            sector: SectorKey::default(),
             x: 0,
             y: 0,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
@@ -904,12 +901,20 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     fn surface_battle_continues_on_later_tick_after_transport_empties() {
         let mut world = GameWorld::default();
         let make_system = |dat_id, name: &str, control| System {
             dat_id: DatId::new(dat_id),
             name: name.into(),
-            sector: Default::default(),
+            sector: SectorKey::default(),
             x: dat_id as u16 * 100,
             y: 0,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
@@ -1031,12 +1036,20 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     fn decisive_imperial_bombardment_destroys_the_alliance_hq_facility() {
         let mut world = GameWorld::default();
         let make_system = |dat_id, name: &str, control, is_headquarters| System {
             dat_id: DatId::new(dat_id),
             name: name.into(),
-            sector: Default::default(),
+            sector: SectorKey::default(),
             x: dat_id as u16 * 100,
             y: 0,
             exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
@@ -1154,13 +1167,21 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     fn unopposed_imperial_invasion_bombards_before_occupying_alliance_hq() {
         let mut world = GameWorld::default();
         let add_system = |world: &mut GameWorld, dat_id, name: &str, control, is_headquarters| {
             world.systems.insert(System {
                 dat_id: DatId::new(dat_id),
                 name: name.into(),
-                sector: Default::default(),
+                sector: SectorKey::default(),
                 x: dat_id as u16 * 100,
                 y: 0,
                 exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
@@ -1287,13 +1308,21 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     fn troop_transport_arrives_lands_occupies_and_captures() {
         let mut world = GameWorld::default();
         let add_system = |world: &mut GameWorld, dat_id, name: &str, control, is_headquarters| {
             world.systems.insert(System {
                 dat_id: DatId::new(dat_id),
                 name: name.into(),
-                sector: Default::default(),
+                sector: SectorKey::default(),
                 x: dat_id as u16 * 100,
                 y: 0,
                 exploration_status: rebellion_core::dat::ExplorationStatus::Explored,

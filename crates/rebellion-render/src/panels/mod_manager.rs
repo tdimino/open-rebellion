@@ -147,7 +147,7 @@ pub fn draw_mod_manager(
                         ));
                     }
                     if let Some(err) = &mod_info.error_message {
-                        ui.colored_label(Color32::RED, format!("Error: {}", err));
+                        ui.colored_label(Color32::RED, format!("Error: {err}"));
                     }
                 }
             }

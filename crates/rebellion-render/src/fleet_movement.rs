@@ -133,6 +133,7 @@ pub fn draw_fleet_overlays(world: &GameWorld, movement_state: &MovementState, ca
 ///
 /// Checks stationary fleet diamonds and in-transit fleet dots.
 /// Returns `Some(FleetKey)` for the nearest fleet within hit radius.
+#[must_use]
 pub fn hovered_fleet(
     world: &GameWorld,
     movement_state: &MovementState,
@@ -149,15 +150,14 @@ pub fn hovered_fleet(
     let mut best: Option<(rebellion_core::ids::FleetKey, f32)> = None;
 
     // Check stationary fleets
-    for (fleet_key, fleet) in world.fleets.iter() {
+    for (fleet_key, fleet) in &world.fleets {
         if movement_state.get(fleet_key).is_some() {
             continue;
         }
-        let system = match world.systems.get(fleet.location) {
-            Some(s) => s,
-            None => continue,
+        let Some(system) = world.systems.get(fleet.location) else {
+            continue;
         };
-        let (sx, sy) = camera.to_screen(system.x as f32, system.y as f32);
+        let (sx, sy) = camera.to_screen(f32::from(system.x), f32::from(system.y));
         if !camera.contains_with_margin(sx, sy, camera.scale_pixels(20.0)) {
             continue;
         }
@@ -172,16 +172,14 @@ pub fn hovered_fleet(
 
     // Check in-transit fleets
     for order in movement_state.orders().values() {
-        let origin_sys = match world.systems.get(order.origin) {
-            Some(s) => s,
-            None => continue,
+        let Some(origin_sys) = world.systems.get(order.origin) else {
+            continue;
         };
-        let dest_sys = match world.systems.get(order.destination) {
-            Some(s) => s,
-            None => continue,
+        let Some(dest_sys) = world.systems.get(order.destination) else {
+            continue;
         };
-        let (ox, oy) = camera.to_screen(origin_sys.x as f32, origin_sys.y as f32);
-        let (dx, dy) = camera.to_screen(dest_sys.x as f32, dest_sys.y as f32);
+        let (ox, oy) = camera.to_screen(f32::from(origin_sys.x), f32::from(origin_sys.y));
+        let (dx, dy) = camera.to_screen(f32::from(dest_sys.x), f32::from(dest_sys.y));
         let t = order.progress();
         let fx = ox + (dx - ox) * t;
         let fy = oy + (dy - oy) * t;
@@ -196,18 +194,17 @@ pub fn hovered_fleet(
 
 /// Draw diamond icons for fleets that are NOT currently in transit.
 fn draw_stationary_fleets(world: &GameWorld, movement_state: &MovementState, camera: &CameraView) {
-    for (fleet_key, fleet) in world.fleets.iter() {
+    for (fleet_key, fleet) in &world.fleets {
         // Skip fleets that are currently in transit.
         if movement_state.get(fleet_key).is_some() {
             continue;
         }
 
-        let system = match world.systems.get(fleet.location) {
-            Some(s) => s,
-            None => continue,
+        let Some(system) = world.systems.get(fleet.location) else {
+            continue;
         };
 
-        let (sx, sy) = camera.to_screen(system.x as f32, system.y as f32);
+        let (sx, sy) = camera.to_screen(f32::from(system.x), f32::from(system.y));
 
         if !camera.contains_with_margin(sx, sy, camera.scale_pixels(20.0)) {
             continue;
@@ -234,17 +231,15 @@ fn draw_stationary_fleets(world: &GameWorld, movement_state: &MovementState, cam
 /// Draw route lines and transit dots for in-transit fleets.
 fn draw_transit_routes(world: &GameWorld, movement_state: &MovementState, camera: &CameraView) {
     for order in movement_state.orders().values() {
-        let origin_sys = match world.systems.get(order.origin) {
-            Some(s) => s,
-            None => continue,
+        let Some(origin_sys) = world.systems.get(order.origin) else {
+            continue;
         };
-        let dest_sys = match world.systems.get(order.destination) {
-            Some(s) => s,
-            None => continue,
+        let Some(dest_sys) = world.systems.get(order.destination) else {
+            continue;
         };
 
-        let (ox, oy) = camera.to_screen(origin_sys.x as f32, origin_sys.y as f32);
-        let (dx, dy) = camera.to_screen(dest_sys.x as f32, dest_sys.y as f32);
+        let (ox, oy) = camera.to_screen(f32::from(origin_sys.x), f32::from(origin_sys.y));
+        let (dx, dy) = camera.to_screen(f32::from(dest_sys.x), f32::from(dest_sys.y));
 
         // Draw dashed route from origin to destination.
         draw_dashed_line(ox, oy, dx, dy, camera.display_scale, ROUTE_COLOR);
@@ -259,14 +254,13 @@ fn draw_transit_routes(world: &GameWorld, movement_state: &MovementState, camera
             let color = world
                 .fleets
                 .get(order.fleet)
-                .map(|f| {
+                .map_or(NEUTRAL_FLEET_COLOR, |f| {
                     if f.is_alliance {
                         ALLIANCE_FLEET_COLOR
                     } else {
                         EMPIRE_FLEET_COLOR
                     }
-                })
-                .unwrap_or(NEUTRAL_FLEET_COLOR);
+                });
 
             let r = (TRANSIT_DOT_RADIUS * camera.logical_zoom).max(2.0) * camera.display_scale;
 

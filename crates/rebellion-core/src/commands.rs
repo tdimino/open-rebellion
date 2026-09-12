@@ -2,12 +2,12 @@
 //!
 //! Defines commands available to both the interactive command palette
 //! (rebellion-render) and the headless CLI (rebellion-playtest).
-//! Pure data — no IO, no PanelAction import.
+//! Pure data — no IO, no `PanelAction` import.
 
 /// A command definition shared between GUI palette and CLI.
 #[derive(Debug, Clone)]
 pub struct CommandDef {
-    /// Machine-readable identifier (e.g. "advance_1_tick").
+    /// Machine-readable identifier (e.g. "`advance_1_tick`").
     pub id: &'static str,
     /// Human-readable label shown in the palette.
     pub label: &'static str,
@@ -18,6 +18,7 @@ pub struct CommandDef {
 }
 
 /// All registered play-test commands.
+#[must_use]
 pub fn all_commands() -> Vec<CommandDef> {
     vec![
         // Time Control
@@ -132,7 +133,7 @@ mod tests {
         let cmds = all_commands();
         let mut ids: Vec<&str> = cmds.iter().map(|c| c.id).collect();
         let total = ids.len();
-        ids.sort();
+        ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), total, "Duplicate command IDs found");
     }

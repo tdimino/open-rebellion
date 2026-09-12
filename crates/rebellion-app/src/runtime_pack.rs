@@ -156,6 +156,10 @@ fn take<'a>(
 mod tests {
     use super::*;
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The test pack contains small literal entries that fit its fixed-width header."
+    )]
     fn pack(entries: &[(u8, &str, &[u8])]) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(MAGIC);

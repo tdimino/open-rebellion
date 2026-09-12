@@ -60,12 +60,12 @@ pub enum BlockadeEvent {
     /// A system has entered a blockaded state (hostile fleet, no defender).
     ///
     /// Manufacturing is halted for the controlling faction until blockade ends.
-    /// Corresponds to event `0x14e` (SystemBlockadeNotif) with state = enter.
+    /// Corresponds to event `0x14e` (`SystemBlockadeNotif`) with state = enter.
     BlockadeStarted { system: SystemKey, tick: u64 },
 
     /// A system's blockade has ended (defending fleet arrived or attacker withdrew).
     ///
-    /// Corresponds to event `0x14e` (SystemBlockadeNotif) with state = exit.
+    /// Corresponds to event `0x14e` (`SystemBlockadeNotif`) with state = exit.
     BlockadeEnded { system: SystemKey, tick: u64 },
 
     /// A troop regiment was destroyed while being transported through a blockaded system.
@@ -81,11 +81,12 @@ pub enum BlockadeEvent {
 }
 
 impl BlockadeEvent {
+    #[must_use]
     pub fn tick(&self) -> u64 {
         match self {
-            BlockadeEvent::BlockadeStarted { tick, .. } => *tick,
-            BlockadeEvent::BlockadeEnded { tick, .. } => *tick,
-            BlockadeEvent::TroopDestroyed { tick, .. } => *tick,
+            BlockadeEvent::BlockadeStarted { tick, .. }
+            | BlockadeEvent::BlockadeEnded { tick, .. }
+            | BlockadeEvent::TroopDestroyed { tick, .. } => *tick,
         }
     }
 }
@@ -110,6 +111,7 @@ pub struct BlockadeState {
 }
 
 impl BlockadeState {
+    #[must_use]
     pub fn new() -> Self {
         BlockadeState {
             blockaded: HashSet::new(),
@@ -124,11 +126,13 @@ impl BlockadeState {
     /// Returns `true` if `system` is currently blockaded.
     ///
     /// Called by `ManufacturingSystem::advance` to halt production.
+    #[must_use]
     pub fn is_blockaded(&self, system: SystemKey) -> bool {
         self.blockaded.contains(&system)
     }
 
     /// All currently blockaded systems.
+    #[must_use]
     pub fn blockaded_systems(&self) -> &HashSet<SystemKey> {
         &self.blockaded
     }
@@ -158,11 +162,11 @@ impl BlockadeSystem {
         world: &GameWorld,
         tick_events: &[TickEvent],
     ) -> Vec<BlockadeEvent> {
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return Vec::new();
-        }
+        };
 
-        let tick = tick_events.last().unwrap().tick;
+        let tick = last_tick_event.tick;
         let mut events = Vec::new();
 
         // Compute current blockade set from world fleet disposition
@@ -217,7 +221,7 @@ impl BlockadeSystem {
     /// A system is blockaded if it has at least one hostile fleet AND zero
     /// defending fleets.
     ///
-    /// "Hostile" is relative to the system's `control` (ControlKind). A neutral
+    /// "Hostile" is relative to the system's `control` (`ControlKind`). A neutral
     /// system cannot be blockaded (no faction to defend it).
     fn system_is_blockaded(world: &GameWorld, sys: &crate::world::System) -> bool {
         use crate::dat::Faction;

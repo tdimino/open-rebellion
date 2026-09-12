@@ -60,6 +60,7 @@ pub struct FogState {
 }
 
 impl FogState {
+    #[must_use]
     pub fn new(faction: Faction) -> Self {
         FogState {
             faction,
@@ -69,6 +70,7 @@ impl FogState {
 
     /// Returns true if `system` is currently visible to this faction.
     #[inline]
+    #[must_use]
     pub fn is_visible(&self, system: SystemKey) -> bool {
         self.visible.contains(&system)
     }
@@ -78,10 +80,12 @@ impl FogState {
         self.visible.insert(system);
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.visible.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.visible.is_empty()
     }
@@ -115,7 +119,7 @@ impl FogSystem {
     /// Idempotent — safe to call multiple times.
     pub fn seed(fog: &mut FogState, world: &GameWorld) {
         let is_alliance = fog.faction == Faction::Alliance;
-        for (_fleet_key, fleet) in world.fleets.iter() {
+        for (_fleet_key, fleet) in &world.fleets {
             if fleet.is_alliance == is_alliance {
                 fog.reveal(fleet.location);
             }
@@ -133,11 +137,13 @@ impl FogSystem {
         world: &GameWorld,
         movement_state: &MovementState,
     ) -> Vec<RevealEvent> {
+        const SENSOR_MULTIPLIER: f32 = 15.0; // coordinate units per detection point
+
         let is_alliance = fog.faction == Faction::Alliance;
         let mut events = Vec::new();
 
         // Stationary fleets reveal their current location.
-        for (fleet_key, fleet) in world.fleets.iter() {
+        for (fleet_key, fleet) in &world.fleets {
             if fleet.is_alliance != is_alliance {
                 continue;
             }
@@ -158,9 +164,8 @@ impl FogSystem {
         // fleet belongs to this faction.
         for order in movement_state.orders().values() {
             // Look up the fleet to determine faction.
-            let fleet = match world.fleets.get(order.fleet) {
-                Some(f) => f,
-                None => continue,
+            let Some(fleet) = world.fleets.get(order.fleet) else {
+                continue;
             };
             if fleet.is_alliance != is_alliance {
                 continue;
@@ -177,8 +182,7 @@ impl FogSystem {
         }
 
         // Sensor-radius reveals: fleets with detection capability reveal nearby systems.
-        const SENSOR_MULTIPLIER: f32 = 15.0; // coordinate units per detection point
-        for (fleet_key, fleet) in world.fleets.iter() {
+        for (fleet_key, fleet) in &world.fleets {
             if fleet.is_alliance != is_alliance {
                 continue; // skip enemy fleets
             }
@@ -198,18 +202,18 @@ impl FogSystem {
                 continue;
             }
             // Use f64 to avoid i64 overflow at extreme detection values.
-            let radius = max_detection as f64 * SENSOR_MULTIPLIER as f64;
+            let radius = f64::from(max_detection) * f64::from(SENSOR_MULTIPLIER);
             let radius_sq = radius * radius;
 
             if let Some(fleet_sys) = world.systems.get(fleet.location) {
-                let fx = fleet_sys.x as f64;
-                let fy = fleet_sys.y as f64;
-                for (sys_key, sys) in world.systems.iter() {
+                let fx = f64::from(fleet_sys.x);
+                let fy = f64::from(fleet_sys.y);
+                for (sys_key, sys) in &world.systems {
                     if fog.is_visible(sys_key) {
                         continue; // already visible
                     }
-                    let dx = sys.x as f64 - fx;
-                    let dy = sys.y as f64 - fy;
+                    let dx = f64::from(sys.x) - fx;
+                    let dy = f64::from(sys.y) - fy;
                     if dx * dx + dy * dy <= radius_sq {
                         fog.reveal(sys_key);
                         events.push(RevealEvent {
@@ -238,6 +242,10 @@ mod tests {
     use crate::world::{Fleet, GameWorld};
 
     // Build a minimal GameWorld with N systems and M alliance fleets.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
+    )]
     fn make_world_with_fleets(
         n_systems: usize,
         fleet_locations: &[usize], // indices into systems vec
@@ -259,7 +267,7 @@ mod tests {
             .map(|i| {
                 world.systems.insert(crate::world::System {
                     dat_id: crate::ids::DatId(i as u32),
-                    name: format!("System {}", i),
+                    name: format!("System {i}"),
                     sector,
                     x: i as u16 * 10,
                     y: 0,
@@ -444,6 +452,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
+    )]
     fn sensor_radius_reveals_nearby_systems() {
         use crate::ids::DatId;
         use crate::world::{CapitalShipClass, ShipInstance};

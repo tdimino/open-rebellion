@@ -66,28 +66,33 @@ impl fmt::Display for TroopTransportError {
 }
 
 impl TroopTransportState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Troops currently carried by `fleet`, in stable key order.
     pub fn cargo(&self, fleet: FleetKey) -> &[TroopKey] {
-        self.cargo.get(&fleet).map(Vec::as_slice).unwrap_or(&[])
+        self.cargo.get(&fleet).map_or(&[], Vec::as_slice)
     }
 
+    #[must_use]
     pub fn carried_count(&self, fleet: FleetKey) -> usize {
         self.cargo(fleet).len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.cargo.is_empty()
     }
 
+    #[must_use]
     pub fn is_embarked(&self, troop: TroopKey) -> bool {
         self.cargo.values().any(|cargo| cargo.contains(&troop))
     }
 
     /// Fleet identities currently carrying at least one regiment.
+    #[must_use]
     pub fn fleet_keys(&self) -> Vec<FleetKey> {
         let mut fleets: Vec<_> = self.cargo.keys().copied().collect();
         fleets.sort_unstable();
@@ -113,6 +118,14 @@ impl TroopTransportState {
     /// Validation is atomic: no regiment leaves the surface when any requested
     /// key is invalid, duplicated, already carried, off-system, wrong-faction,
     /// or above the living ships' capacity.
+    ///
+    /// # Errors
+    /// Returns a transport error for an empty selection, missing entities, duplicate
+    /// or already embarked troops, faction/location mismatches, or insufficient capacity.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn embark(
         &mut self,
         world: &mut GameWorld,
@@ -174,6 +187,10 @@ impl TroopTransportState {
     }
 
     /// Land every carried regiment at the fleet's current system.
+    ///
+    /// # Errors
+    /// Returns a transport error if the fleet or destination is missing,
+    /// or the fleet is not at the destination.
     pub fn disembark_all(
         &mut self,
         world: &mut GameWorld,
@@ -207,6 +224,10 @@ impl TroopTransportState {
     /// This is primarily the atomic rollback path for a player departure that
     /// becomes invalid after embarkation. Cargo not named in `troops` remains
     /// aboard.
+    ///
+    /// # Errors
+    /// Returns a transport error if the fleet or destination is missing,
+    /// or the fleet is not at the destination.
     pub fn disembark_selected(
         &mut self,
         world: &mut GameWorld,

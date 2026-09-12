@@ -11,13 +11,17 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::dat::{ExplorationStatus, Faction, GalaxySize};
-use crate::ids::*;
+use crate::ids::{
+    CapitalShipKey, CharacterKey, DatId, DefenseFacilityKey, FighterKey, FleetKey,
+    ManufacturingFacilityKey, ProductionFacilityKey, SectorKey, SpecialForceKey, SystemKey,
+    TroopKey,
+};
 
 /// Force sensitivity tier for a character.
 ///
 /// Maps to the 2-bit value at `entity[9] >> 6 & 3` in REBEXE.EXE's C++ layout:
-/// 0=None/Low, 1=Aware (ForcePotential tier), 2=Training (ForceTraining tier),
-/// 3=Experienced (ForceExperience tier).
+/// 0=None/Low, 1=Aware (`ForcePotential` tier), 2=Training (`ForceTraining` tier),
+/// 3=Experienced (`ForceExperience` tier).
 ///
 /// Characters start as `None`. Those with `jedi_probability > 0` may advance
 /// through tiers via the Jedi training system (`jedi.rs`).
@@ -54,15 +58,16 @@ pub enum ControlKind {
 
 impl ControlKind {
     /// Returns the controlling faction, if any single faction controls.
+    #[must_use]
     pub fn faction(&self) -> Option<crate::dat::Faction> {
         match self {
-            ControlKind::Controlled(f) => Some(*f),
-            ControlKind::Uprising(f) => Some(*f), // still nominally controlled
+            ControlKind::Controlled(f) | ControlKind::Uprising(f) => Some(*f), // still nominally controlled
             _ => None,
         }
     }
 
     /// True if the given faction controls this system (including during uprising).
+    #[must_use]
     pub fn is_controlled_by(&self, faction: crate::dat::Faction) -> bool {
         self.faction() == Some(faction)
     }
@@ -82,23 +87,22 @@ pub enum SeedDifficulty {
 
 impl SeedDifficulty {
     /// Convert to the original GNPRTB difficulty column for the chosen player side.
+    #[must_use]
     pub fn gnprtb_index(self, player_faction: Faction) -> u8 {
         match (player_faction, self) {
-            (Faction::Alliance, SeedDifficulty::Easy) => 1,
-            (Faction::Alliance, SeedDifficulty::Medium) => 2,
-            (Faction::Alliance, SeedDifficulty::Hard) => 3,
+            (Faction::Alliance | Faction::Neutral, SeedDifficulty::Medium) => 2,
+            (Faction::Alliance | Faction::Neutral, SeedDifficulty::Hard) => 3,
             (Faction::Empire, SeedDifficulty::Easy) => 4,
             (Faction::Empire, SeedDifficulty::Medium) => 5,
             (Faction::Empire, SeedDifficulty::Hard) => 6,
-            (Faction::Neutral, SeedDifficulty::Easy) => 1,
-            (Faction::Neutral, SeedDifficulty::Medium) => 2,
-            (Faction::Neutral, SeedDifficulty::Hard) => 3,
+            (Faction::Alliance | Faction::Neutral, SeedDifficulty::Easy) => 1,
         }
     }
 
     /// Recover the difficulty tier from an existing world's side-aware
     /// GNPRTB column. This is used only when migrating saves created before
     /// campaign setup was persisted explicitly.
+    #[must_use]
     pub fn from_gnprtb_index(index: u8) -> Self {
         match index {
             1 | 4 => Self::Easy,
@@ -107,6 +111,7 @@ impl SeedDifficulty {
         }
     }
 
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Easy => "Easy",
@@ -128,6 +133,7 @@ pub enum VictoryConditions {
 }
 
 impl VictoryConditions {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Standard => "Standard Game",
@@ -160,6 +166,7 @@ impl Default for CampaignConfig {
 }
 
 impl CampaignConfig {
+    #[must_use]
     pub fn from_seed_options(options: SeedOptions, victory_conditions: VictoryConditions) -> Self {
         Self {
             galaxy_size: options.galaxy_size,
@@ -171,6 +178,7 @@ impl CampaignConfig {
 
     /// Best-effort migration for saves that predate explicit campaign setup.
     /// Galaxy size and game type were not recoverable from those bodies.
+    #[must_use]
     pub fn from_legacy_world(world: &GameWorld, player_is_alliance: bool) -> Self {
         Self {
             galaxy_size: GalaxySize::Standard,
@@ -184,6 +192,7 @@ impl CampaignConfig {
         }
     }
 
+    #[must_use]
     pub fn summary(self) -> String {
         let galaxy_size = match self.galaxy_size {
             GalaxySize::Standard => "Small Galaxy",
@@ -221,6 +230,7 @@ impl Default for SeedOptions {
 }
 
 impl SeedOptions {
+    #[must_use]
     pub fn gnprtb_index(self) -> u8 {
         self.difficulty.gnprtb_index(self.player_faction)
     }
@@ -241,7 +251,7 @@ pub struct System {
     pub x: u16,
     /// Galactic map Y coordinate (in sector-relative units).
     pub y: u16,
-    /// Whether this system has been explored (from SYSTEMSD family_id).
+    /// Whether this system has been explored (from SYSTEMSD `family_id`).
     /// Unexplored systems reveal name only; facilities and units are hidden.
     pub exploration_status: ExplorationStatus,
     /// Alliance popularity fraction in [0.0, 1.0].
@@ -282,12 +292,12 @@ pub struct System {
     pub is_headquarters: bool,
     /// True if this system's planet has been destroyed (Death Star fired; `alive_flag` bit0 == 0).
     ///
-    /// From RE: the Death Star fires when the target's alive_flag bit0 == 0 — inverted from
+    /// From RE: the Death Star fires when the target's `alive_flag` bit0 == 0 — inverted from
     /// normal combat units. A destroyed planet cannot produce resources or be colonized.
     pub is_destroyed: bool,
     /// Control state of this system — who holds it and whether it's contested.
     ///
-    /// Derived from the 2-bit faction_side field (`entity+0x24 bits 6-7`):
+    /// Derived from the 2-bit `faction_side` field (`entity+0x24 bits 6-7`):
     /// 0 = neutral, 1 = Alliance, 2 = Empire, 3 = contested.
     pub control: ControlKind,
 }
@@ -552,6 +562,10 @@ impl Default for FighterClass {
 /// Their skills are stored as `SkillPair` (base + variance) to support
 /// both fixed major characters and procedurally-generated minors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These independent flags preserve the existing state and serialization model."
+)]
 pub struct Character {
     pub dat_id: DatId,
     pub name: String,
@@ -577,7 +591,7 @@ pub struct Character {
 
     // ── Force / Jedi fields (entity-system.md §1.3) ───────────────────────────
     /// Current Force sensitivity tier (None → Aware → Training → Experienced).
-    /// Driven by `jedi.rs` JediSystem.
+    /// Driven by `jedi.rs` `JediSystem`.
     #[serde(default)]
     pub force_tier: ForceTier,
     /// Accumulated Force experience points. Increments via Jedi training missions;
@@ -796,12 +810,18 @@ pub struct Fleet {
 
 impl Fleet {
     /// Total number of alive capital ships in this fleet.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn ship_count(&self) -> u32 {
         self.capital_ships.iter().filter(|s| s.alive).count() as u32
     }
 
     /// Group alive ships by class, returning `(class_key, count)` pairs.
     /// Used by render panels for "Star Destroyer ×3" display.
+    #[must_use]
     pub fn ship_counts_by_class(&self) -> Vec<(CapitalShipKey, u32)> {
         let mut counts: Vec<(CapitalShipKey, u32)> = Vec::new();
         for ship in &self.capital_ships {
@@ -818,6 +838,7 @@ impl Fleet {
     }
 
     /// True if this fleet has no alive capital ships and no fighter squadrons.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         !self.capital_ships.iter().any(|s| s.alive) && self.fighters.iter().all(|e| e.count == 0)
     }
@@ -846,15 +867,16 @@ pub struct ShipInstance {
     pub class: CapitalShipKey,
     /// Current hull. Starts at `CapitalShipClass::hull`, reduced by combat.
     pub hull_current: i32,
-    /// Packed nibbles: bits 0-3 = shield_recharge_allocated, bits 4-7 = weapon_recharge_allocated.
+    /// Packed nibbles: bits 0-3 = `shield_recharge_allocated`, bits 4-7 = `weapon_recharge_allocated`.
     /// The C++ binary uses XOR-mask writes `(new ^ old) & 0xf ^ old` — functionally a nibble store.
     pub shield_weapon_packed: u8,
-    /// True while hull_current > 0 and the ship has not been destroyed.
+    /// True while `hull_current` > 0 and the ship has not been destroyed.
     pub alive: bool,
 }
 
 impl ShipInstance {
     /// Create a new ship at full hull strength.
+    #[must_use]
     pub fn new(class: CapitalShipKey, hull: i32, _is_alliance: bool) -> Self {
         ShipInstance {
             class,
@@ -865,6 +887,7 @@ impl ShipInstance {
     }
 
     /// Create `count` instances of the same class at full hull.
+    #[must_use]
     pub fn make(class: CapitalShipKey, hull: i32, is_alliance: bool, count: u32) -> Vec<Self> {
         (0..count)
             .map(|_| Self::new(class, hull, is_alliance))
@@ -872,11 +895,13 @@ impl ShipInstance {
     }
 
     /// Shield recharge allocation nibble (bits 0-3).
+    #[must_use]
     pub fn shield_nibble(&self) -> u8 {
         self.shield_weapon_packed & 0x0f
     }
 
     /// Weapon recharge allocation nibble (bits 4-7).
+    #[must_use]
     pub fn weapon_nibble(&self) -> u8 {
         (self.shield_weapon_packed >> 4) & 0x0f
     }
@@ -923,20 +948,22 @@ pub struct GnprtbEntry {
 
 impl GnprtbParams {
     /// Construct from raw entries (called by `rebellion-data` loader).
+    #[must_use]
     pub fn new(entries: Vec<GnprtbEntry>) -> Self {
         Self { entries }
     }
 
     /// Return the parameter value for `param_id` at `difficulty`.
     ///
-    /// `difficulty`: 0=development, 1=alliance_easy, 2=alliance_medium, 3=alliance_hard,
-    ///               4=empire_easy, 5=empire_medium, 6=empire_hard, 7=multiplayer.
+    /// `difficulty`: 0=development, `1=alliance_easy`, `2=alliance_medium`, `3=alliance_hard`,
+    ///               `4=empire_easy`, `5=empire_medium`, `6=empire_hard`, 7=multiplayer.
     /// Returns 0 if `param_id` is out of range.
+    #[must_use]
     pub fn value(&self, param_id: u16, difficulty: u8) -> i32 {
         self.entries
             .iter()
-            .find(|e| e.parameter_id == param_id as u32)
-            .map(|e| match difficulty {
+            .find(|e| e.parameter_id == u32::from(param_id))
+            .map_or(0, |e| match difficulty {
                 0 => e.development,
                 1 => e.alliance_sp_easy,
                 2 => e.alliance_sp_medium,
@@ -946,7 +973,6 @@ impl GnprtbParams {
                 6 => e.empire_sp_hard,
                 _ => e.multiplayer,
             })
-            .unwrap_or(0)
     }
 }
 
@@ -979,16 +1005,18 @@ pub struct SdprtbEntry {
 }
 
 impl SdprtbParams {
+    #[must_use]
     pub fn new(entries: Vec<SdprtbEntry>) -> Self {
         Self { entries }
     }
 
     /// Return a side-aware seeding parameter for the requested difficulty column.
+    #[must_use]
     pub fn value(&self, param_id: u16, difficulty: u8, faction: Faction) -> i32 {
         self.entries
             .iter()
-            .find(|e| e.parameter_id == param_id as u32)
-            .map(|entry| match (difficulty, faction) {
+            .find(|e| e.parameter_id == u32::from(param_id))
+            .map_or(0, |entry| match (difficulty, faction) {
                 (0, Faction::Alliance) => entry.dev_alliance,
                 (0, Faction::Empire) => entry.dev_empire,
                 (1, Faction::Alliance) => entry.alliance_sp_easy_alliance,
@@ -1007,7 +1035,6 @@ impl SdprtbParams {
                 (_, Faction::Empire) => entry.multiplayer_empire,
                 (_, Faction::Neutral) => 0,
             })
-            .unwrap_or(0)
     }
 }
 
@@ -1032,6 +1059,7 @@ pub struct MstbEntry {
 
 impl MstbTable {
     /// Construct from raw `(threshold, value)` pairs. Sorts by threshold.
+    #[must_use]
     pub fn new(mut entries: Vec<MstbEntry>) -> Self {
         entries.sort_by_key(|e| e.threshold);
         Self { entries }
@@ -1042,16 +1070,21 @@ impl MstbTable {
     /// - If `skill_score` is below the lowest threshold, returns the lowest value.
     /// - If `skill_score` is above the highest threshold, returns the highest value.
     /// - Otherwise interpolates between the two bracketing entries.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
+    )]
     pub fn lookup(&self, skill_score: i32) -> u32 {
-        if self.entries.is_empty() {
+        let Some(last) = self.entries.last() else {
             return 0;
-        }
+        };
         // Below minimum
         if skill_score <= self.entries[0].threshold {
             return self.entries[0].value;
         }
         // Above maximum
-        let last = self.entries.last().unwrap();
         if skill_score >= last.threshold {
             return last.value;
         }
@@ -1064,9 +1097,9 @@ impl MstbTable {
                 if span == 0 {
                     return lo.value;
                 }
-                let frac = (skill_score - lo.threshold) as f64 / span as f64;
+                let frac = f64::from(skill_score - lo.threshold) / f64::from(span);
                 let interpolated =
-                    lo.value as f64 + frac * (hi.value as i64 - lo.value as i64) as f64;
+                    f64::from(lo.value) + frac * (f64::from(hi.value) - f64::from(lo.value));
                 return interpolated.round().max(0.0) as u32;
             }
         }
@@ -1170,13 +1203,13 @@ pub struct GameWorld {
         slotmap::SlotMap<ManufacturingFacilityKey, ManufacturingFacilityInstance>,
     /// Production facilities (mines, refineries).
     pub production_facilities: slotmap::SlotMap<ProductionFacilityKey, ProductionFacilityInstance>,
-    /// Troop class definitions keyed by DatId (from TROOPSD.DAT).
+    /// Troop class definitions keyed by `DatId` (from TROOPSD.DAT).
     /// Used by ground combat to look up per-class attack/defense values.
     /// Repopulated from DAT on load; default to empty for save compatibility.
     #[serde(default)]
     pub troop_classes: HashMap<crate::ids::DatId, TroopClassDef>,
-    /// Defense facility class definitions keyed by DatId (from DEFFACSD.DAT).
-    /// Used by bombardment to look up per-class bombardment_defense values.
+    /// Defense facility class definitions keyed by `DatId` (from DEFFACSD.DAT).
+    /// Used by bombardment to look up per-class `bombardment_defense` values.
     /// Repopulated from DAT on load; default to empty for save compatibility.
     #[serde(default)]
     pub defense_facility_classes: HashMap<crate::ids::DatId, DefenseFacilityClassDef>,

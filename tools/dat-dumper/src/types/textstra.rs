@@ -1,6 +1,6 @@
-//! TEXTSTRA.DLL — Win32 PE RT_STRING resource extraction.
+//! TEXTSTRA.DLL — Win32 PE `RT_STRING` resource extraction.
 //!
-//! RT_STRING resources store strings in bundles of 16. Bundle with resource ID N
+//! `RT_STRING` resources store strings in bundles of 16. Bundle with resource ID N
 //! holds string IDs (N-1)*16 through (N-1)*16+15. Each string entry is a u16
 //! length (in UTF-16 code units) followed by that many little-endian UTF-16LE
 //! code units. A length of 0 means the slot is empty.
@@ -12,13 +12,17 @@ use anyhow::Context;
 use pelite::resources::{Entry, Name};
 use pelite::{FileMap, PeFile};
 
-/// RT_STRING resource type ID.
+/// `RT_STRING` resource type ID.
 const RT_STRING_ID: u32 = 6;
 
-/// Load all RT_STRING entries from a Win32 PE DLL into a `HashMap<string_id, name>`.
+/// Load all `RT_STRING` entries from a Win32 PE DLL into a `HashMap<string_id, name>`.
 ///
 /// Works on both 32-bit and 64-bit PE images. Empty string slots (length == 0)
 /// are omitted from the result.
+///
+/// # Errors
+/// Returns an error if the DLL cannot be read, its PE resource tree is invalid,
+/// or a string bundle is truncated or malformed.
 pub fn load_strings(path: &Path) -> anyhow::Result<HashMap<u16, String>> {
     let map = FileMap::open(path).with_context(|| format!("opening {}", path.display()))?;
 
@@ -63,9 +67,8 @@ pub fn load_strings(path: &Path) -> anyhow::Result<HashMap<u16, String>> {
                 Entry::DataEntry(_) => continue,
             };
 
-            let lang_entry = match lang_dir.entries().next() {
-                Some(e) => e,
-                None => continue,
+            let Some(lang_entry) = lang_dir.entries().next() else {
+                continue;
             };
 
             let data = match lang_entry.entry()? {
@@ -83,7 +86,11 @@ pub fn load_strings(path: &Path) -> anyhow::Result<HashMap<u16, String>> {
     Ok(strings)
 }
 
-/// Parse one RT_STRING bundle (raw bytes) and insert decoded strings into `out`.
+/// Parse one `RT_STRING` bundle (raw bytes) and insert decoded strings into `out`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Preserve the existing fixed-width DAT/resource encoding and its low-bit conversions."
+)]
 fn parse_string_bundle(
     raw: &[u8],
     base_id: u32,

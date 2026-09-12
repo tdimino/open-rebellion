@@ -4,7 +4,7 @@
 //! is looked up from UPRIS1TB (same table used for uprising thresholds).
 //! Characters with `is_unable_to_betray = true` (Luke, Vader) are immune.
 //!
-//! Follows the same stateless advance() pattern as other simulation systems:
+//! Follows the same stateless `advance()` pattern as other simulation systems:
 //! - `BetrayalState` holds per-character cooldown timers
 //! - `BetrayalSystem::advance(state, world, tick_events, rng_rolls, loyalty_table)`
 //!   returns `Vec<BetrayalEvent>`
@@ -50,6 +50,7 @@ pub struct BetrayalState {
 }
 
 impl BetrayalState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -77,15 +78,15 @@ impl BetrayalSystem {
         rng_rolls: &[f64],
         loyalty_table: &MstbTable,
     ) -> Vec<BetrayalEvent> {
-        if tick_events.is_empty() {
+        let Some(last_tick_event) = tick_events.last() else {
             return Vec::new();
-        }
+        };
 
-        let current_tick = tick_events.last().unwrap().tick;
+        let current_tick = last_tick_event.tick;
         let mut events = Vec::new();
         let mut roll_iter = rng_rolls.iter().copied();
 
-        for (ck, character) in world.characters.iter() {
+        for (ck, character) in &world.characters {
             // Knesset Shamash-Bet #R11: killed characters remain in the arena
             // for reactive story events but cannot defect.
             if character.is_killed {
@@ -105,13 +106,13 @@ impl BetrayalSystem {
 
             // Loyalty score: base - 50 (same scale as uprising).
             // Positive = loyal enough, skip.
-            let loyalty_score = character.loyalty.base as i32 - 50;
+            let loyalty_score = character.loyalty.base.cast_signed() - 50;
             if loyalty_score >= 0 {
                 continue;
             }
 
             // Look up betrayal probability from the table.
-            let prob = loyalty_table.lookup(loyalty_score) as f64 / 100.0;
+            let prob = f64::from(loyalty_table.lookup(loyalty_score)) / 100.0;
 
             // Consume a roll. If exhausted, default to 1.0 (no betrayal) — safe conservative fallback.
             let roll = roll_iter.next().unwrap_or(1.0);
