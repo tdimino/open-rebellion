@@ -55,7 +55,8 @@ use rebellion_render::{
     draw_blockade_indicators, draw_cockpit_background, draw_cockpit_chrome,
     draw_cockpit_egui_layer, draw_credits, draw_encyclopedia, draw_event_screen,
     draw_facility_icons, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
-    draw_galaxy_map, draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing,
+    draw_galaxy_backdrop, draw_galaxy_map, draw_game_setup, draw_ground_combat, draw_main_menu,
+    draw_manufacturing,
     draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_boundaries,
     draw_sector_windows, draw_system_windows, draw_tactical_view, handle_cockpit_egui_input,
     set_cockpit_viewport_clip, show_event_screen, update_event_screen, AdvisorFaction,
@@ -2729,6 +2730,7 @@ async fn main() {
                 set_cockpit_viewport_clip(Some(cockpit_vp));
 
                 // 2. Galaxy map (pure macroquad) — returns the shared transform
+                draw_galaxy_backdrop(cockpit_layout, &mut bmp_cache);
                 let cam = draw_galaxy_map(&world, &mut map_state);
                 if let Some(system) = map_state.activated_system {
                     sector_window_state.open_for_system(

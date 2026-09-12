@@ -416,9 +416,9 @@ pub fn set_cockpit_viewport_clip(viewport: Option<CockpitViewport>) {
 /// layer of the frame. Panels rendered afterward remain readable above it.
 pub fn draw_cockpit_background(ctx: &egui::Context, state: &CockpitState, cache: &mut BmpCache) {
     let background_id = if state.faction == CockpitFaction::Alliance {
-        resources::strategy::GALAXY_BACKGROUND
+        resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL
     } else {
-        resources::strategy::GALAXY_BACKGROUND_EMPIRE
+        resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
     };
     let Some(texture) = cache.get(ctx, DllSource::Strategy, background_id) else {
         return;

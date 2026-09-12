@@ -30,6 +30,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P46D detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items.md)
   for source-mapped item miniatures, bounded scrolling, selection, coarse
   current-intelligence gating, and the remaining object-window boundaries.
+- Review the [P47A galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md)
+  for STRATEGY 902 identity, canvas-origin placement, native/WASM transport,
+  browser captures, and the remaining GID boundaries.
 
 ## Suggested contribution lanes
 
@@ -54,9 +57,9 @@ stage them from a contributor-owned installation.
 
 ## Progress snapshot
 
-The practical implementation estimate is approximately 19 to 22% tackled and
-78 to 81% remaining. Formally, the ledger has 43 required families: 0 complete,
-8 partial, and 35 failing. All 564 required cells remain pending until their
+The practical implementation estimate is approximately 20 to 23% tackled and
+77 to 80% remaining. Formally, the ledger has 43 required families: 0 complete,
+9 partial, and 34 failing. All 564 required cells remain pending until their
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
@@ -77,7 +80,10 @@ P46D populates all six system tabs with source-mapped GOKRES miniatures,
 displayed entity labels, recovered scrollbar art, bounded interaction,
 preserved selection, and coarse current-intelligence gating.
 See the [detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items.md).
+P47A replaces the strategic map's flat fill with the source-aligned bright
+STRATEGY 902 galaxy in native and packaged WASM. See the
+[galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md).
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
-full control matrix, GID and map art, nested object compositions and commands,
+full control matrix, remaining GID and map art, nested object compositions and commands,
 exact rail thumbnails, original destination windows, and replacement surfaces
 are not complete.

@@ -32,7 +32,7 @@ strict acceptance authority.
 
 | Plan | Type | Status | Date |
 |------|------|--------|------|
-| [Batched Interface Parity](2026-09-11-feat-batched-interface-parity-plan.md) | feat | active, UIP-B01 tab-item checkpoint | 2026-09-11 |
+| [Batched Interface Parity](2026-09-11-feat-batched-interface-parity-plan.md) | feat | active, P47A accepted; UIP-B02 markers next | 2026-09-11 |
 | [AI Attack Target Variety](2026-03-21-feat-ai-attack-target-variety-plan.md) | feat | complete | 2026-03-21 |
 | [Autoresearch Metrics](2026-03-21-autoresearch-metrics-plan.md) | feat | planned | 2026-03-21 |
 | [Create Your Own Character](2026-03-21-addon-create-your-own-character.md) | addon | planned | 2026-03-21 |

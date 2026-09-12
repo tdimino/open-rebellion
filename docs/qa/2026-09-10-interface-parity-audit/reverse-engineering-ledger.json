@@ -67,7 +67,7 @@
     {"module": "ALBRIEF.DLL", "standard_bmp": 20, "rcdata_bin": 366, "custom_type_302_frames": 2684, "wav": 17},
     {"module": "EMBRIEF.DLL", "standard_bmp": 18, "rcdata_bin": 471, "custom_type_302_frames": 2738, "wav": 22},
     {"module": "TACTICAL.DLL", "standard_bmp": 288, "rcdata_bin": 1, "custom_type_301_meshes": 87, "custom_type_303_textures": 397, "wav": 66},
-    {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66, "primary_control_bitmaps": {"Alliance": "10001-10012", "Empire": "10015-10026"}},
+    {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66, "primary_control_bitmaps": {"Alliance": "10001-10012", "Empire": "10015-10026"}, "command_center_composition": {"Alliance shell": 900, "Imperial shell": 901, "bright galaxy": 902, "dim galaxy, predicate open": 903}},
     {"module": "EData", "images": 187, "dimensions": [400, 200]}
   ],
   "static_discoveries": [
@@ -222,9 +222,26 @@
         "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL"],
         "anchors": ["FUN_00425d00", "FUN_00426d00"],
         "method": "Follow GID mode branches, captions, bitmap loads, map paint predicates, marker resources, viewport transforms, and input handlers.",
-        "next_proof": "Resolve every faction filter, matching legend, marker predicate, selection, pan, and zoom branch."
+        "next_proof": "Resolve the STRATEGY 903 predicate plus every faction filter, matching legend, marker predicate, selection, pan, and zoom branch."
       },
-      "runtime_capture_required": true
+      "runtime_capture_required": true,
+      "implementation_evidence": {
+        "status": "bright_starfield_implemented_pending_complete_gid_matrix",
+        "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-authored-galaxy-backdrop.md",
+        "completed": [
+          "STRATEGY 902 bright starfield identity and canvas-origin placement",
+          "source-aligned Alliance and Imperial aperture crops",
+          "nearest-neighbor native and runtime-pack bitmap transport",
+          "dark fail-closed fallback and negative-cache diagnostic"
+        ],
+        "remaining": [
+          "STRATEGY 903 original display predicate",
+          "every GID filter and matching legend",
+          "original system, sector, fleet, mission, facility, resource, HQ, blockade, and intelligence markers",
+          "exact hover, selection, pan, and zoom semantics",
+          "A0 original-runtime captures and the full native/browser matrix"
+        ]
+      }
     },
     {
       "id": "RE-OVR-01",

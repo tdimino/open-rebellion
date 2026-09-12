@@ -716,7 +716,7 @@
       "phase": "strategy",
       "title": "Galaxy display and Galactic Information Display modes",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "galaxy",
         "sector",
@@ -769,7 +769,7 @@
         71,
         73
       ],
-      "current_implementation": "Custom background, vector stars and labels, popularity-derived colors, and incomplete overlays.",
+      "current_implementation": "P47A restores the original bright STRATEGY 902 galaxy at the 640x480 canvas origin with source-aligned faction crops, nearest-neighbor native/WASM sampling, and a dark fail-closed fallback. STRATEGY 903 selection, system and facility markers, sector hulls and labels, GID modes and legends, hover, selection, pan, zoom, and exact display predicates remain synthetic or incomplete.",
       "finding_ids": [
         "UIP-F-002",
         "UIP-F-012"

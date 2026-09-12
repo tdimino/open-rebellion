@@ -39,6 +39,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use egui_macroquad::egui::{self, TextureHandle, TextureOptions};
+use macroquad::prelude::{FilterMode, Texture2D};
 #[cfg(not(target_arch = "wasm32"))]
 use serde::Deserialize;
 #[cfg(not(target_arch = "wasm32"))]
@@ -388,14 +389,14 @@ pub mod resources {
     /// Covers galaxy-map backgrounds, panel chrome, and the most common event
     /// screens surfaced by the current render layer and curated reference set.
     pub mod strategy {
-        /// Main galaxy map starfield background.
-        pub const GALAXY_BACKGROUND: u32 = 900;
-        /// Imperial galaxy-map cockpit background.
-        pub const GALAXY_BACKGROUND_EMPIRE: u32 = 901;
-        /// Galaxy display toggle: off.
-        pub const GALAXY_DISPLAY_OFF: u32 = 902;
-        /// Galaxy display toggle: on.
-        pub const GALAXY_DISPLAY_ON: u32 = 903;
+        /// Alliance strategic command-center shell.
+        pub const ALLIANCE_COMMAND_CENTER_SHELL: u32 = 900;
+        /// Imperial strategic command-center shell.
+        pub const EMPIRE_COMMAND_CENTER_SHELL: u32 = 901;
+        /// Bright authored galaxy starfield used by the default GID view.
+        pub const GALAXY_STARFIELD_BRIGHT: u32 = 902;
+        /// Dim authored galaxy starfield. Its original display predicate is open.
+        pub const GALAXY_STARFIELD_DIM: u32 = 903;
 
         /// Alliance System Finder, pressed.
         pub const ALLIANCE_SYSTEM_FINDER_PRESSED: u32 = 10001;
@@ -986,6 +987,8 @@ pub struct BmpCache {
     approved_hd_assets: HashMap<String, ApprovedHdAsset>,
     /// Cached textures.  `None` value means "attempted load, file not found".
     textures: HashMap<(DllSource, u32), Option<TextureHandle>>,
+    /// Macroquad textures used below the egui interface layers.
+    macroquad_textures: HashMap<(DllSource, u32), Option<Texture2D>>,
     /// Native-style per-pixel hit masks decoded from the original BMPs.
     hit_masks: HashMap<(DllSource, u32), Option<BitmapHitMask>>,
 }
@@ -1077,6 +1080,7 @@ impl BmpCache {
             profile: AssetRenderProfile::OriginalParity,
             approved_hd_assets: HashMap::new(),
             textures: HashMap::new(),
+            macroquad_textures: HashMap::new(),
             hit_masks: HashMap::new(),
         }
     }
@@ -1087,6 +1091,7 @@ impl BmpCache {
     pub fn set_base_path(&mut self, path: impl Into<PathBuf>) {
         self.base_path = Some(path.into());
         self.textures.clear();
+        self.macroquad_textures.clear();
         self.hit_masks.clear();
     }
 
@@ -1187,6 +1192,34 @@ impl BmpCache {
             .get(&(source, resource_id))
             .and_then(Option::as_ref)
             .map(|mask| [mask.width, mask.height])
+    }
+
+    /// Retrieve an original bitmap as a nearest-neighbor Macroquad texture.
+    ///
+    /// This path is for authored bitmap layers painted beneath Macroquad
+    /// primitives before egui paints the original interface chrome. It uses
+    /// the original resource even when the optional HD profile is active.
+    pub fn get_macroquad_original(
+        &mut self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<&Texture2D> {
+        let key = (source, resource_id);
+        if !self.macroquad_textures.contains_key(&key) {
+            let texture = self
+                .load_original_bytes(source, resource_id)
+                .and_then(|bytes| decode_macroquad_texture(&bytes));
+            if texture.is_none() {
+                eprintln!(
+                    "[bmp_cache] macroquad asset unavailable source={} resource_id={}",
+                    source.dll_dir_name(),
+                    resource_id
+                );
+            }
+            self.macroquad_textures.insert(key, texture);
+        }
+
+        self.macroquad_textures.get(&key)?.as_ref()
     }
 
     fn ensure_hit_mask(&mut self, source: DllSource, resource_id: u32) {
@@ -1356,8 +1389,8 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
     match source {
         DllSource::Strategy => matches!(
             resource_id,
-            resources::strategy::GALAXY_BACKGROUND
-                | resources::strategy::GALAXY_BACKGROUND_EMPIRE
+            resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL
+                | resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
                 | resources::strategy::SECTOR_PLANET_FIRST
                     ..=resources::strategy::SECTOR_PLANET_LAST
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
@@ -1379,6 +1412,15 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
         ),
         DllSource::Tactical => false,
     }
+}
+
+fn decode_macroquad_texture(bytes: &[u8]) -> Option<Texture2D> {
+    let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let width = u16::try_from(rgba.width()).ok()?;
+    let height = u16::try_from(rgba.height()).ok()?;
+    let texture = Texture2D::from_rgba8(width, height, rgba.as_raw());
+    texture.set_filter(FilterMode::Nearest);
+    Some(texture)
 }
 
 /// Decode a staged image and apply the original game's palette-blue
@@ -1480,6 +1522,17 @@ mod tests {
         assert!(matches!(cache.textures.get(&key), Some(None)));
         assert!(cache.get(&ctx, key.0, key.1).is_none());
         assert_eq!(cache.textures.len(), 1);
+    }
+
+    #[test]
+    fn missing_macroquad_resource_is_negatively_cached_without_a_context() {
+        let mut cache = BmpCache::new();
+        let key = (DllSource::Strategy, 999_998);
+
+        assert!(cache.get_macroquad_original(key.0, key.1).is_none());
+        assert!(matches!(cache.macroquad_textures.get(&key), Some(None)));
+        assert!(cache.get_macroquad_original(key.0, key.1).is_none());
+        assert_eq!(cache.macroquad_textures.len(), 1);
     }
 
     #[test]
@@ -1637,12 +1690,34 @@ mod tests {
         let decoded = decode_color_image(
             &encoded,
             DllSource::Strategy,
-            resources::strategy::GALAXY_BACKGROUND,
+            resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL,
         )
         .unwrap();
 
         assert_eq!(decoded.pixels[0].a(), 0);
         assert_eq!(decoded.pixels[1].a(), 255);
+    }
+
+    #[test]
+    fn galaxy_starfield_preserves_deep_blue_pixels() {
+        let mut image = image::RgbaImage::new(1, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let decoded = decode_color_image(
+            &encoded,
+            DllSource::Strategy,
+            resources::strategy::GALAXY_STARFIELD_BRIGHT,
+        )
+        .unwrap();
+
+        assert_eq!(decoded.pixels[0].a(), 255);
     }
 
     #[test]

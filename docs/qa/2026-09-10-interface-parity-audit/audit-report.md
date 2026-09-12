@@ -13,10 +13,10 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 19 to 22% |
-| Practical interface scope remaining | approximately 78 to 81% |
+| Practical interface scope materially tackled | approximately 20 to 23% |
+| Practical interface scope remaining | approximately 77 to 80% |
 | Required surface families | 43 |
-| Family status | 0 complete, 8 partial, 35 fail |
+| Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
 
 The practical percentage measures scoped implementation work and guides the
@@ -75,7 +75,7 @@ The local source inspection establishes the implementation causes:
 |---------|---------------------|-------------------|
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
-| Synthetic galaxy and glyphs | `crates/rebellion-render/src/lib.rs` | Manual pp. 66–73 and official Steam faction captures |
+| Partial authored galaxy and synthetic glyphs | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs` | STRATEGY 902, manual pp. 66–73, original command-center captures, and [P47A evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) |
 | Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
@@ -102,7 +102,10 @@ and command paths. P46C and P46D add the first reference-rail lifecycle,
 sector/system window journey, source-mapped tab items, coarse
 current-intelligence gating, and recovered scrollbar art. Exact rail
 thumbnails, destination-window compositions, nested object contents, exact
-intelligence semantics, commands, other controls, and uncommon states remain open. Static
+intelligence semantics, commands, other controls, and uncommon states remain open.
+P47A restores the bright STRATEGY 902 galaxy at its source-aligned canvas
+origin beneath both faction shells. The dim STRATEGY 903 state, original GID
+modes, legends, markers, sector hulls, and map input remain open. Static
 discoveries do not replace required original-runtime visual acceptance.
 
 ## Immediate findings
@@ -110,7 +113,7 @@ discoveries do not replace required original-runtime visual acceptance.
 | ID | Severity | Finding | Status |
 |----|----------|---------|--------|
 | UIP-F-001 | P0 | The shell, viewport scaling, six primary controls, and first rail lifecycle pass scoped checkpoints; the full control matrix, exact rail thumbnails, and required aperture content remain incomplete. | partial |
-| UIP-F-002 | P0 | Galaxy, stars, system markers, sector hulls, and facility indicators use synthetic primitives and incomplete rules. | fail |
+| UIP-F-002 | P0 | The original bright galaxy backdrop now renders in native and WASM; system markers, sector hulls, facilities, GID modes, and map-input rules remain synthetic or incomplete. | partial |
 | UIP-F-003 | P0 | Original sector and detailed-system shells replace the invented sidebar; all six tabs have first-pass source-mapped items, while nested contents, commands, indicators, and uncommon states remain open. | partial |
 | UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
 | UIP-F-005 | P0 | Runtime pack v2 includes ALSPRITE and EMSPRITE BMP/type-302 content; ALBRIEF, EMBRIEF, REBDLOG, EDATA, action controls, and voice remain omitted. | partial |
@@ -292,8 +295,9 @@ atomic commit as each verified implementation tranche.
 
 P46A completes the strategic canvas checkpoint within `UIP-T01`. P46B restores
 the six primary controls. P46C and P46D restore the first sector-to-system
-journey plus source-mapped core-tab items and bounded scrolling. GID and map
-art, other controls, exact rail thumbnails, nested object compositions,
+journey plus source-mapped core-tab items and bounded scrolling. P47A restores
+the source-aligned bright galaxy backdrop. Remaining GID and map art, other
+controls, exact rail thumbnails, nested object compositions,
 commands, uncommon states, replacement message and status surfaces, and the A0
 matrix remain open. `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, `OBJ-02`,
 `UIP-T01`, and project-wide interface parity do not pass.

@@ -205,6 +205,55 @@ impl Default for GalaxyMapState {
     }
 }
 
+/// Paint the original bright STRATEGY galaxy at the strategic canvas origin.
+///
+/// The 607x437 bitmap is not fitted to either faction aperture. The original
+/// command-center shells reveal different source-aligned crops through their
+/// transparent openings. A dark fill remains underneath as a fail-closed
+/// fallback when the original resource is unavailable.
+pub fn draw_galaxy_backdrop(layout: CockpitLayout, cache: &mut BmpCache) -> bool {
+    let viewport = layout.galaxy;
+    draw_rectangle(
+        viewport.x,
+        viewport.y,
+        viewport.width,
+        viewport.height,
+        Color::new(0.02, 0.02, 0.08, 1.0),
+    );
+
+    let Some(texture) = cache.get_macroquad_original(
+        DllSource::Strategy,
+        bmp_cache::resources::strategy::GALAXY_STARFIELD_BRIGHT,
+    ) else {
+        return false;
+    };
+    let destination = galaxy_backdrop_destination(layout, texture.width(), texture.height());
+    draw_texture_ex(
+        texture,
+        destination.x,
+        destination.y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(destination.width, destination.height)),
+            ..Default::default()
+        },
+    );
+    true
+}
+
+fn galaxy_backdrop_destination(
+    layout: CockpitLayout,
+    source_width: f32,
+    source_height: f32,
+) -> CockpitViewport {
+    CockpitViewport {
+        x: layout.canvas.x,
+        y: layout.canvas.y,
+        width: source_width * layout.scale,
+        height: source_height * layout.scale,
+    }
+}
+
 /// Render the galaxy star map for one frame.
 ///
 /// Handles all input (pan, zoom, click-to-select) and draws every system as a
@@ -271,14 +320,6 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         viewport_width,
         viewport_height,
     };
-
-    draw_rectangle(
-        viewport_x,
-        viewport_y,
-        viewport_width,
-        viewport_height,
-        Color::new(0.02, 0.02, 0.08, 1.0),
-    );
 
     // ── Coordinate transform helpers ─────────────────────────────────────────
     let zoom = cam.zoom;
@@ -1393,6 +1434,27 @@ pub fn draw_status_bar(
 #[cfg(test)]
 mod interaction_tests {
     use super::*;
+
+    #[test]
+    fn galaxy_backdrop_uses_canvas_origin_and_native_resource_size() {
+        let alliance = CockpitState::new(CockpitFaction::Alliance).layout_for(640.0, 480.0);
+        let destination = galaxy_backdrop_destination(alliance, 607.0, 437.0);
+        assert_eq!(destination.x, 0.0);
+        assert_eq!(destination.y, 0.0);
+        assert_eq!(destination.width, 607.0);
+        assert_eq!(destination.height, 437.0);
+        assert_eq!(alliance.galaxy.x, 55.0);
+        assert_eq!(alliance.galaxy.y, 40.0);
+
+        let empire = CockpitState::new(CockpitFaction::Empire).layout_for(1280.0, 960.0);
+        let destination = galaxy_backdrop_destination(empire, 607.0, 437.0);
+        assert_eq!(destination.x, 0.0);
+        assert_eq!(destination.y, 0.0);
+        assert_eq!(destination.width, 1214.0);
+        assert_eq!(destination.height, 874.0);
+        assert_eq!(empire.galaxy.x, 240.0);
+        assert_eq!(empire.galaxy.y, 80.0);
+    }
 
     #[test]
     fn camera_transform_includes_aperture_offset() {

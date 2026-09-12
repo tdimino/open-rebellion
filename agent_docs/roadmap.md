@@ -496,6 +496,12 @@ would tune around known simulation feedback defects.
   opposing objects without current system intelligence. Nested compositions,
   drag and command paths, exact original intelligence semantics, uncommon
   states, exact rail thumbnails, and A0 acceptance remain open.
+- [x] Complete P47A / the first `UIP-B02` checkpoint: draw the original bright
+  STRATEGY 902 galaxy at canvas origin beneath the strategic layers, preserve
+  source-aligned faction crops, use the same original bytes in native and
+  packaged WASM, and pass muted Astra browser acceptance with no findings.
+  STRATEGY 903, GID modes, markers, sector hulls, and exact map input remain
+  open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

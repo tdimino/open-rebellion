@@ -70,6 +70,13 @@ drag and command semantics, uncommon states, and the complete A0 matrix remain o
 [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) and
 [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md).
 
+P47A identifies STRATEGY 900 and 901 as the faction shells, 902 as the bright
+galaxy, and 903 as its dim companion state. It restores 902 at the strategic
+canvas origin through the native and runtime-pack paths. The original 903
+predicate and every GID marker, filter, legend, and map-input branch remain
+open. See the
+[galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md).
+
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a
 complete interface corpus: of 4,934 canonical `FUN_????????.c` files, 2,790 are
@@ -113,7 +120,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
 | RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell and first rail lifecycle runtime-corroborated | Replace provisional rail thumbnails, exercise the full multiwindow matrix, then compare against A0 captures |
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial; primary controls implemented | Capture the six primary controls in A0, implement original destinations, then recover speed and facility-indicator predicates |
-| RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial | Resolve TEXTSTRA captions and paint-resource branches |
+| RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial; bright starfield runtime-corroborated | Resolve STRATEGY 903, TEXTSTRA captions, paint-resource branches, markers, and map input |
 | RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |
 | RE-MSG-01 | Messages, Agent menus, alerts, and reports | untriaged | Join categories and event results to resources, audio, and navigation |
 | RE-ENC-01 | Encyclopedia index and topics | static-partial | Complete ENCYBMAP, ENCYTEXT, EData, and navigation mappings |
