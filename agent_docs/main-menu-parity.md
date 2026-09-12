@@ -58,10 +58,10 @@ space, and apply the same scale and offset to drawing and hit testing.
 ┌────────────────────────────── 640 ──────────────────────────────┐
 │  [Easy] [Intermediate] [Expert]                    [OR music]   │
 │                                                                 │
-│                              [Credits] [Multiplayer]             │
+│                              [Load/options] [Credits]             │
 │                         [galaxy size screens]                    │
 │             [Empire/start] [game type] [Alliance/start]         │
-│ [Load/options]                                  [Quit/eject]     │
+│ [Multiplayer]                                   [Quit/eject]     │
 └────────────────────────────── 480 ──────────────────────────────┘
 ```
 
@@ -82,9 +82,9 @@ inclusive resource sequences loaded by the original animated-control class.
 | Game type (Cloud City) | `(305,333,42,30)` | `10158–10159` | n/a | `0x71` | Standard / Headquarters Only |
 | Empire faction/start | `(153,308,62,55)` | `10009` | `11001–11015` | `0x66` | starts as Empire |
 | Alliance faction/start | `(437,307,62,55)` | `10007` | `11031–11045` | `0x65` | starts as Alliance |
-| Save/load and options | `(67,381,51,61)` | `10005` | `11151–11180` | `0x67` | opens save/options |
-| Credits (CD) | `(411,232,40,37)` | `10013` | `11241–11255` | `0x68` | opens credits |
-| Multiplayer hologram | `(459,242,33,28)` | `11271–11272` | two-state | `0x73` | enters head-to-head setup |
+| Multiplayer | `(67,381,51,61)` | `10005` | `11151–11180` | `0x67` | enters head-to-head setup |
+| Save/load (CD-ROM) | `(411,232,40,37)` | `10013` | `11241–11255` | `0x68` | opens save/load |
+| Credits (LucasArts logo) | `(459,242,33,28)` | `11271–11272` | two-state | `0x73` | opens credits |
 | Quit/ejection handle | `(536,393,63,64)` | `10011` | `11181–11210` | `0x69` | exits the game |
 
 The original labels galaxy sizes Small, Medium, and Large. The current Rust
@@ -186,9 +186,9 @@ they remain ignored by Git.
 | WAVE resource | Staged file | Original control family | Duration | SHA-256 |
 |---:|---|---|---:|---|
 | `8000` | `menu_galaxy_size.wav` | galaxy lever and size screens | 0.334 s | `c54c5be5081943b35f41fd5be268b211e895cbd3c26fcad840823968df5d4905` |
-| `8001` | `menu_load_options.wav` | Load/Options | 0.360 s | `14963ae2154a8caa3a6fc6492ad742c21ff4957fe5c28b6eaa61dd11b842a420` |
+| `8001` | `menu_load_options.wav` | Lower-left multiplayer button | 0.360 s | `14963ae2154a8caa3a6fc6492ad742c21ff4957fe5c28b6eaa61dd11b842a420` |
 | `8002` | `menu_quit.wav` | Quit | 1.036 s | `4482e8415f306480e2a5ddbf73cef943202ff2aa2b99c7096511559a55338ffa` |
-| `8004` | `menu_select.wav` | difficulty, faction, game type, Credits, Multiplayer | 0.357 s | `791165a1ad0cc579357e2248e5d71e463fd77e75634db70deb3bbec09653063f` |
+| `8004` | `menu_select.wav` | difficulty, faction, game type, Credits, Save/load | 0.357 s | `791165a1ad0cc579357e2248e5d71e463fd77e75634db70deb3bbec09653063f` |
 
 ## Astra acceptance matrix
 

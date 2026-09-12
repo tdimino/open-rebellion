@@ -145,15 +145,15 @@ pub const CONTROL_RECTS: &[(MainMenuControl, LogicalRect)] = &[
     ),
     (
         MainMenuControl::LoadOptions,
-        LogicalRect::new(67.0, 381.0, 51.0, 61.0),
-    ),
-    (
-        MainMenuControl::Credits,
         LogicalRect::new(411.0, 232.0, 40.0, 37.0),
     ),
     (
-        MainMenuControl::Multiplayer,
+        MainMenuControl::Credits,
         LogicalRect::new(459.0, 242.0, 33.0, 28.0),
+    ),
+    (
+        MainMenuControl::Multiplayer,
+        LogicalRect::new(67.0, 381.0, 51.0, 61.0),
     ),
     (
         MainMenuControl::Quit,
@@ -346,21 +346,21 @@ fn texture_for(
                 10007
             }
         }
-        MainMenuControl::LoadOptions => {
+        MainMenuControl::Multiplayer => {
             if hovered {
                 animation_resource(11151, 30, elapsed)
             } else {
                 10005
             }
         }
-        MainMenuControl::Credits => {
+        MainMenuControl::LoadOptions => {
             if hovered {
                 animation_resource(11241, 15, elapsed)
             } else {
                 10013
             }
         }
-        MainMenuControl::Multiplayer => {
+        MainMenuControl::Credits => {
             if hovered && ((elapsed * 5.0) as u32 % 2 == 1) {
                 11272
             } else {
@@ -440,7 +440,7 @@ fn sfx_for(control: MainMenuControl) -> SfxKind {
         | MainMenuControl::SmallGalaxy
         | MainMenuControl::MediumGalaxy
         | MainMenuControl::LargeGalaxy => SfxKind::MenuGalaxySize,
-        MainMenuControl::LoadOptions => SfxKind::MenuLoadOptions,
+        MainMenuControl::Multiplayer => SfxKind::MenuLoadOptions,
         MainMenuControl::Quit => SfxKind::MenuQuit,
         _ => SfxKind::MenuSelect,
     }
@@ -791,6 +791,43 @@ mod tests {
     }
 
     #[test]
+    fn cockpit_destination_hotspots_match_their_artwork() {
+        for scale in [1.0, 2.0] {
+            let canvas = main_menu_canvas_rect(viewport(640.0 * scale, 480.0 * scale));
+            for (point, control, action, bitmap) in [
+                (
+                    Pos2::new(92.0, 411.0),
+                    MainMenuControl::Multiplayer,
+                    MainMenuAction::Multiplayer,
+                    10005,
+                ),
+                (
+                    Pos2::new(431.0, 250.0),
+                    MainMenuControl::LoadOptions,
+                    MainMenuAction::LoadGame,
+                    10013,
+                ),
+                (
+                    Pos2::new(475.0, 256.0),
+                    MainMenuControl::Credits,
+                    MainMenuAction::Credits,
+                    11271,
+                ),
+            ] {
+                let hit = hit_test(canvas, Pos2::new(point.x * scale, point.y * scale));
+                assert_eq!(hit, Some(control));
+                let mut state = MainMenuState::default();
+                assert_eq!(state.activate_control(hit.unwrap()), Some(action));
+                assert_eq!(texture_for(control, &state, false, 0.0), bitmap);
+                assert_eq!(
+                    MainMenuControl::from_index(control.index() as u32),
+                    Some(control)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn expert_hit_region_does_not_leak_into_adjacent_pixels() {
         let canvas = Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
 
@@ -911,7 +948,7 @@ mod tests {
             state.activate_control(MainMenuControl::LoadOptions),
             Some(MainMenuAction::LoadGame)
         );
-        assert_eq!(state.take_sfx(), Some(SfxKind::MenuLoadOptions));
+        assert_eq!(state.take_sfx(), Some(SfxKind::MenuSelect));
         state.set_semantic_focus(None);
         assert_eq!(state.semantic_focus(), None);
 
@@ -970,7 +1007,7 @@ mod tests {
             SfxKind::MenuGalaxySize
         );
         assert_eq!(
-            sfx_for(MainMenuControl::LoadOptions),
+            sfx_for(MainMenuControl::Multiplayer),
             SfxKind::MenuLoadOptions
         );
         assert_eq!(sfx_for(MainMenuControl::Quit), SfxKind::MenuQuit);
