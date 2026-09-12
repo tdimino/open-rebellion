@@ -21,14 +21,14 @@ func TestRunCLIStagesAndVerifiesConfiguredTargets(t *testing.T) {
 	writeAudioFixture(t, sourceDir)
 	var stdout, stderr bytes.Buffer
 
-	err := runCLI(
+	err := runTestCLI(
 		[]string{"--source", sourceDir, "--output", outputDir, "--audio-output", filepath.Join(outputDir, "sounds")},
 		&stdout,
 		&stderr,
 		[]dllTarget{{Filename: "TEST.DLL", Directory: "test-dll", Expected: 1}},
 	)
 	if err != nil {
-		t.Fatalf("runCLI() error = %v; stderr = %s", err, stderr.String())
+		t.Fatalf("runTestCLI() error = %v; stderr = %s", err, stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "test-dll", "BMP", "88.bmp")); err != nil {
 		t.Fatalf("staged runtime asset: %v", err)

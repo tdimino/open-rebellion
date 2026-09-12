@@ -47,6 +47,7 @@ web/open-rebellion.wasm
 # Reference videos (decoded from Smacker, large)
 assets/references/ref-videos/
 assets/references/cutscene-frames/
+assets/references/.cutscene-*/
 assets/references/ref-ui-full/
 
 # Autoresearch intermediate outputs
