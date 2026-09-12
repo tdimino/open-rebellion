@@ -7,6 +7,12 @@ edition = "2021"
 name = "open-rebellion"
 path = "src/main.rs"
 
+[features]
+default = []
+# Compiled only into the isolated browser-acceptance artifact. Production
+# packaging rejects this feature and its JavaScript bridge exports.
+interface-test-fixtures = []
+
 [dependencies]
 rebellion-core = { path = "../rebellion-core" }
 rebellion-data = { path = "../rebellion-data" }

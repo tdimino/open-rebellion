@@ -40,6 +40,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md)
   for the active 903 predicate, exact faction GID control, compact legend,
   original marker families, and recovered support thresholds.
+- Review the [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md)
+  for the code-built menu, isolated fixtures, browser matrix, and remaining
+  original-reference and filter-predicate gaps.
 
 ## Suggested contribution lanes
 
@@ -63,6 +66,11 @@ Do not commit copyrighted game assets. Extraction and runtime-pack tooling must
 stage them from a contributor-owned installation.
 
 ## Progress snapshot
+
+<!-- interface-parity-status:start -->
+Required interface families: 43. Complete: 0. Partial: 9. Failing: 34. Blocked: 0. Strictly accepted cells: 0/564.
+The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
+<!-- interface-parity-status:end -->
 
 The practical implementation estimate is approximately 20 to 23% tackled and
 77 to 80% remaining. Formally, the ledger has 43 required families: 0 complete,
@@ -94,6 +102,10 @@ P47B restores the default active Popular Support baseline with STRATEGY 903,
 the exact faction GID control, compact legend, and native marker families. It
 also withholds the prior synthetic map overlays from this parity view. See the
 [Popular Support evidence](evidence/2026-09-11-popular-support-gid.md).
+P48 adds the original-command GID menu tree and a test-only muted browser
+matrix. The [P48 evidence](evidence/2026-09-12-gid-browser-harness.md) keeps
+non-support filter rules, expanded legend, special state overlays, and
+original-executable capture acceptance open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

@@ -58,7 +58,7 @@
     "main_menu_surface": "partial_complete_state_matrix_open",
     "campaign_interface": "fail",
     "strategy_cockpit": "partial_exact_shell_primary_and_gid_controls_authored_galaxy_default_popular_support_sector_system_shells_first_tab_item_compositions_coarse_intelligence_gating_and_rail_lifecycle_passed_full_gid_nested_contents_exact_intelligence_commands_rail_thumbnails_and_replacement_surfaces_open",
-    "galaxy_display": "partial_display_off_and_active_popular_support_backdrops_exact_gid_control_compact_legend_native_marker_families_and_thresholds_passed_gid_menu_detailed_legend_remaining_modes_overlays_sector_art_and_exact_input_open",
+    "galaxy_display": "partial_original_backdrops_and_gid_menu_22_commands_browser_matrix_passed_no_original_acceptance_provisional_metrics_special_overlays_expanded_legend_and_exact_input_open",
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
@@ -86,13 +86,14 @@
       "id": "UIP-F-002",
       "severity": "P0",
       "status": "partial",
-      "title": "Original Display Off and active Popular Support backdrops, GID control, compact legend, marker families, and thresholds are restored while the menu, remaining modes and overlays, sector art, and exact input remain incomplete",
+      "title": "Source-mapped GID menu commands and 152 muted browser probes extend the original backdrops and compact legend; non-support metrics, rare overlays, expanded legend, and original capture acceptance remain open",
       "evidence": [
         "crates/rebellion-render/src/bmp_cache.rs",
         "crates/rebellion-render/src/lib.rs",
         "crates/rebellion-render/src/cockpit.rs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-authored-galaxy-backdrop.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md"
       ],
       "affected_surfaces": ["CMD-02", "CMD-09"]
     },

@@ -3,7 +3,7 @@ title: "Interface Parity Acceleration Sidecar"
 description: "A deterministic browser, fixture, evidence, and documentation workflow for completing larger original-interface bundles"
 category: plan
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-09-12
 tags: [interface, parity, browser, fixtures, screenshots, astra, automation]
 status: active
 parent: 2026-09-11-feat-batched-interface-parity-plan.md
@@ -22,6 +22,17 @@ Instead of accepting another narrow GID patch, the next bundle closes the
 code-built menu, compact and expanded legends, every recovered filter and
 overlay, selection, pan, zoom, and both faction variants together. Astra
 medium reviews the complete generated evidence packet once at the bundle gate.
+
+Implementation checkpoint, September 12: the
+[repository-owned harness](../../tools/interface-parity/README.md) now builds
+separate production and test-only WASM artifacts, validates 29 baseline GID
+states plus nine additional native filter variants, launches fresh muted Chrome
+processes, probes GID input and compact-legend art, and records local lossless PNGs,
+complete browser console diagnostics, and separate interaction-comparison slots.
+The original reference acceptance and complete GID family gate
+remain open. Source review withheld unsupported special-marker composites and
+an invented expanded legend. Passing automated probes alone cannot establish
+visual parity.
 
 ## Research basis as of September 2026
 
@@ -129,8 +140,8 @@ visible in the comparison report. Bitmap-only deterministic regions use zero
 pixel tolerance. Any justified tolerance is narrow, named, and recorded by
 region.
 
-For each required capture, generate `actual.png`, `expected.png`, `diff.png`,
-and one JSON metric record locally. Astra receives contact sheets plus direct
+For each required capture, generate the actual image, an expected image and diff
+when its reviewed baseline exists, and one JSON metric record locally. Astra receives contact sheets plus direct
 access to the lossless images, not recompressed video frames.
 
 ## ACC-04: Canonical JSON and generated status prose
@@ -184,9 +195,11 @@ packaged WASM, menu opening and dismissal, compact and expanded legends, and
 all applicable control states are part of the same gate. P47A and P47B are
 inputs to this bundle, not evidence that `CMD-02` is already complete.
 
-The work may use internal implementation checkpoints, but no checkpoint gets
-its own Astra run, acceptance claim, commit, or push. The passing family is
-committed and pushed once.
+The tooling itself may be committed as a separately verified infrastructure
+feature, with provisional GID renderer changes documented as such. No
+implementation checkpoint earns a `CMD-02` acceptance claim. The passing
+family receives its own acceptance commit and push only after original visual,
+native, interaction, and browser gates are satisfied.
 
 ## Verification ladder
 

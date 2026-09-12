@@ -14,6 +14,15 @@ const auditDir = path.join(
 const surfacePath = path.join(auditDir, "surface-ledger.json");
 const reversePath = path.join(auditDir, "reverse-engineering-ledger.json");
 const auditPath = path.join(auditDir, "audit-report.json");
+const catalogPath = path.join(root, "tools/interface-parity/scenarios/gid.catalog.json");
+const generatedDocuments = [
+  path.join(auditDir, "README.md"),
+  path.join(auditDir, "index.md"),
+  path.join(root, "docs/plans/2026-09-11-feat-batched-interface-parity-plan.md"),
+  path.join(root, "agent_docs/roadmap.md"),
+];
+const generatedStart = "<!-- interface-parity-status:start -->";
+const generatedEnd = "<!-- interface-parity-status:end -->";
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const fail = (message) => {
@@ -22,6 +31,66 @@ const fail = (message) => {
 const assert = (condition, message) => {
   if (!condition) fail(message);
 };
+
+function generatedStatus(surfaceLedger, reverseLedger, auditReport, catalog) {
+  const required = surfaceLedger.surfaces.filter((surface) => surface.required);
+  const accepted = required.flatMap((surface) => surface.acceptance_cells)
+    .filter((cell) => cell.status === "passed").length;
+  const counts = Object.fromEntries(
+    ["complete", "partial", "fail", "blocked"].map((status) => [
+      status,
+      required.filter((surface) => surface.status === status).length,
+    ]),
+  );
+  const gid = surfaceLedger.surfaces.find((surface) => surface.id === catalog.family);
+  assert(gid, `missing scenario family ${catalog.family}`);
+  const matches = gid.required_states.every(
+    (requirement, index) => catalog.scenarios[index]?.requirement === requirement,
+  );
+  assert(matches, "GID catalog requirements do not match canonical CMD-02 cells");
+  assert(
+    auditReport.summary.strictly_accepted_required_cells ===
+      `${accepted}_of_${surfaceLedger.acceptance_summary.required_baseline_cells}`,
+    "strictly accepted cell count disagrees with canonical surface statuses",
+  );
+  assert(
+    reverseLedger.work_packages.length > 0,
+    "reverse-engineering ledger has no packages",
+  );
+
+  const total = surfaceLedger.acceptance_summary.required_baseline_cells;
+  const executions = catalog.scenarios.length * catalog.factions.length * catalog.viewports.length;
+  return [
+    generatedStart,
+    `Required interface families: ${required.length}. Complete: ${counts.complete}. ` +
+      `Partial: ${counts.partial}. Failing: ${counts.fail}. Blocked: ${counts.blocked}. ` +
+      `Strictly accepted cells: ${accepted}/${total}.`,
+    `The current CMD-02 GID catalog has ${catalog.scenarios.length} scenarios (29 baseline cells and nine additional native filter variants) ` +
+      `and ${executions} faction/viewport executions. Its strict original-evidence ` +
+      `and cross-browser gate remains ${gid.status === "complete" ? "complete" : "open"}.`,
+    generatedEnd,
+  ].join("\n");
+}
+
+function synchronizeDocuments(block, mode) {
+  for (const file of generatedDocuments) {
+    const current = fs.readFileSync(file, "utf8");
+    const start = current.indexOf(generatedStart);
+    const end = current.indexOf(generatedEnd);
+    assert(start >= 0 && end > start, `missing generated block in ${path.relative(root, file)}`);
+    assert(
+      current.indexOf(generatedStart, start + 1) < 0 &&
+        current.indexOf(generatedEnd, end + 1) < 0,
+      `duplicate generated markers in ${path.relative(root, file)}`,
+    );
+    const next = `${current.slice(0, start)}${block}${current.slice(end + generatedEnd.length)}`;
+    if (mode === "--write") {
+      if (next !== current) fs.writeFileSync(file, next);
+    } else {
+      assert(next === current, `generated status is stale in ${path.relative(root, file)}`);
+    }
+  }
+}
 
 function packageIdsForSurface(reverseLedger, surfaceId) {
   return reverseLedger.work_packages
@@ -284,6 +353,7 @@ const mode = process.argv[2] ?? "--check";
 const surfaceLedger = readJson(surfacePath);
 const reverseLedger = readJson(reversePath);
 const auditReport = readJson(auditPath);
+const catalog = readJson(catalogPath);
 
 if (mode === "--write") {
   hydrate(surfaceLedger, reverseLedger);
@@ -293,4 +363,6 @@ if (mode === "--write") {
 }
 
 const result = validate(surfaceLedger, reverseLedger, auditReport);
+assert(catalog.scenarios.length === 38, "GID catalog must cover 29 baseline cells and nine native filter variants");
+synchronizeDocuments(generatedStatus(surfaceLedger, reverseLedger, auditReport, catalog), mode);
 process.stdout.write(`${JSON.stringify({ status: "pass", ...result }, null, 2)}\n`);

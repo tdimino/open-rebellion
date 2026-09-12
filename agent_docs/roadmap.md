@@ -3,11 +3,16 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-09-11
+updated: 2026-09-12
 tags: [roadmap, planning, milestones, parity]
 ---
 
 # Roadmap
+
+<!-- interface-parity-status:start -->
+Required interface families: 43. Complete: 0. Partial: 9. Failing: 34. Blocked: 0. Strictly accepted cells: 0/564.
+The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
+<!-- interface-parity-status:end -->
 
 The delivery notes before “Audit-Driven Parity” are historical implementation
 records. They do not establish current parity or release acceptance; the active
@@ -512,7 +517,11 @@ would tune around known simulation feedback defects.
   family, build one permanent fresh-process muted browser harness, use
   deterministic test-only fixtures, generate repeated status prose from
   canonical JSON, and reserve full workspace, WASM, and Astra verification for
-  the family gate. Harness and fixture implementation remains the next step.
+  the family gate. The first test-only 38-scenario harness and code-built GID
+  command tree are implemented. All 152 muted browser probes pass, but no
+  original-executable captures are accepted. The original floating legend,
+  non-support filter predicates, special markers, native comparison, and
+  complete `CMD-02` acceptance remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

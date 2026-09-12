@@ -456,6 +456,30 @@ pub mod resources {
         /// Imperial Galactic Information Display, pressed.
         pub const EMPIRE_GID_PRESSED: u32 = 10028;
 
+        /// Code-built GID menu frame tiles, checkmarks, category icons, and arrows.
+        pub const GID_FRAME_FIRST: u32 = 10100;
+        pub const GID_FRAME_LAST: u32 = 10107;
+        pub const GID_CHECK_ALLIANCE: u32 = 10108;
+        pub const GID_CHECK_EMPIRE: u32 = 10109;
+        pub const GID_ALLIANCE_CATEGORY_FIRST: u32 = 10110;
+        pub const GID_ALLIANCE_CATEGORY_LAST: u32 = 10115;
+        pub const GID_ALLIANCE_ARROW: u32 = 10117;
+        pub const GID_EMPIRE_CATEGORY_FIRST: u32 = 10119;
+        pub const GID_EMPIRE_CATEGORY_LAST: u32 = 10124;
+        pub const GID_EMPIRE_ARROW: u32 = 10128;
+        pub const GID_SHIPYARDS: u32 = 10131;
+        pub const GID_TRAINING_FACILITIES: u32 = 10132;
+        pub const GID_CONSTRUCTION_YARDS: u32 = 10133;
+        pub const GID_AVAILABLE_ENERGY: u32 = 10134;
+        pub const GID_AVAILABLE_RAW_MATERIAL: u32 = 10135;
+        pub const GID_MINES: u32 = 10136;
+        pub const GID_REFINERIES: u32 = 10137;
+        pub const GID_IDLE_PERSONNEL_ALLIANCE: u32 = 10138;
+        pub const GID_ACTIVE_PERSONNEL_ALLIANCE: u32 = 10140;
+        pub const GID_FIGHTER_SQUADRONS_ALLIANCE: u32 = 10141;
+        pub const GID_DEATH_STAR_SHIELDS: u32 = 10142;
+        pub const GID_PLANETARY_SHIELDS_ALLIANCE: u32 = 10143;
+
         /// Alliance GID system markers, largest through smallest.
         pub const GID_ALLIANCE_LARGEST: u32 = 10146;
         pub const GID_ALLIANCE_LARGE: u32 = 10147;
@@ -477,6 +501,16 @@ pub mod resources {
         pub const GID_SPECIAL: u32 = 10166;
         /// Compact strategic-map legend control.
         pub const GID_COMPACT_LEGEND: u32 = 10168;
+        pub const GID_MULTI_FACTION_FLEET: u32 = 10160;
+        pub const GID_SELECTION: u32 = 10166;
+        pub const GID_HOVER: u32 = 10167;
+        pub const GID_SPECIAL_ALLIANCE: u32 = 10169;
+        pub const GID_SPECIAL_EMPIRE: u32 = 10170;
+        pub const GID_UPRISING_ALLIANCE: u32 = 11608;
+        pub const GID_UPRISING_EMPIRE: u32 = 11609;
+        pub const GID_PLANETARY_BATTERIES: u32 = 11610;
+        pub const GID_FLEETS_EN_ROUTE_ALLIANCE: u32 = 11613;
+        pub const GID_FLEETS_EN_ROUTE_EMPIRE: u32 = 11614;
 
         /// Original sector-window planet pictures 1 through 23.
         pub const SECTOR_PLANET_FIRST: u32 = 10212;
@@ -1423,7 +1457,8 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 | resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
                 | resources::strategy::GID_ALLIANCE_LARGEST
                     ..=resources::strategy::GID_UNEXPLORED
-                | resources::strategy::GID_SPECIAL
+                | 10159..=10167
+                | 10169..=10170
                 | resources::strategy::SECTOR_PLANET_FIRST
                     ..=resources::strategy::SECTOR_PLANET_LAST
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
@@ -1835,8 +1870,7 @@ mod tests {
             )
             .unwrap();
         for resource_id in [10212, 10234, 10237, 10239] {
-            let decoded =
-                decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
+            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
             assert_eq!(decoded.pixels[0].a(), 0);
             assert_eq!(decoded.pixels[1].a(), 255);
         }

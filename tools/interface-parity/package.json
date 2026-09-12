@@ -1,0 +1,19 @@
+{
+  "name": "open-rebellion-interface-parity",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash ../../scripts/build-interface-test-wasm.sh",
+    "test:smoke": "node run.mjs --smoke",
+    "test:gid": "node run.mjs --all",
+    "test:gid:no-build": "node run.mjs --all --no-build",
+    "check": "node validate-catalog.mjs && node verify-production-exclusion.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.17.1",
+    "pixelmatch": "7.1.0",
+    "playwright-core": "1.63.0",
+    "pngjs": "7.0.0"
+  }
+}

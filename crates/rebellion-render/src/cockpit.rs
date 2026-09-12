@@ -84,12 +84,140 @@ pub enum CockpitButton {
 }
 
 /// Strategic map overlay selected through the original GID menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GidMode {
     /// Default campaign view, sized by the player's popular support.
     PopularSupport,
+    Uprisings,
+    IdleFleets,
+    FleetsEnRoute,
+    IdlePersonnel,
+    ActivePersonnel,
+    AvailableEnergy,
+    AvailableRawMaterial,
+    Mines,
+    Refineries,
+    Shipyards,
+    IdleShipyards,
+    TrainingFacilities,
+    IdleTrainingFacilities,
+    ConstructionYards,
+    IdleConstructionYards,
+    Troopers,
+    FighterSquadrons,
+    DeathStarShields,
+    PlanetaryShieldGenerators,
+    PlanetaryDefenseBatteries,
     /// Native Display Off item, which removes markers and uses bright resource 902.
     DisplayOff,
+}
+
+impl GidMode {
+    /// Native command identifier dispatched by the code-built GID menu.
+    pub const fn command_id(self) -> u8 {
+        match self {
+            Self::PopularSupport => 0x11,
+            Self::Uprisings => 0x12,
+            Self::IdleFleets => 0x21,
+            Self::FleetsEnRoute => 0x22,
+            Self::IdlePersonnel => 0x43,
+            Self::ActivePersonnel => 0x44,
+            Self::AvailableEnergy => 0x51,
+            Self::AvailableRawMaterial => 0x52,
+            Self::Mines => 0x53,
+            Self::Refineries => 0x54,
+            Self::Shipyards => 0x62,
+            Self::IdleShipyards => 0x65,
+            Self::TrainingFacilities => 0x63,
+            Self::IdleTrainingFacilities => 0x66,
+            Self::ConstructionYards => 0x64,
+            Self::IdleConstructionYards => 0x67,
+            Self::Troopers => 0x71,
+            Self::FighterSquadrons => 0x72,
+            Self::DeathStarShields => 0x73,
+            Self::PlanetaryShieldGenerators => 0x74,
+            Self::PlanetaryDefenseBatteries => 0x75,
+            Self::DisplayOff => 0x80,
+        }
+    }
+
+    /// English text carried by TEXTSTRA.DLL for the selected display.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::PopularSupport => "Popular Support",
+            Self::Uprisings => "Uprisings",
+            Self::IdleFleets => "Idle Fleets",
+            Self::FleetsEnRoute => "Fleets Enroute",
+            Self::IdlePersonnel => "Idle Personnel",
+            Self::ActivePersonnel => "Active Personnel",
+            Self::AvailableEnergy => "Available Energy",
+            Self::AvailableRawMaterial => "Available Raw Material",
+            Self::Mines => "Mines",
+            Self::Refineries => "Refineries",
+            Self::Shipyards => "Shipyards",
+            Self::IdleShipyards => "Idle Shipyards",
+            Self::TrainingFacilities => "Training Facilities",
+            Self::IdleTrainingFacilities => "Idle Training Facilities",
+            Self::ConstructionYards => "Construction Yards",
+            Self::IdleConstructionYards => "Idle Construction Yards",
+            Self::Troopers => "Troopers",
+            Self::FighterSquadrons => "Fighter Squadrons",
+            Self::DeathStarShields => "Death Star Shields",
+            Self::PlanetaryShieldGenerators => "Planetary Shield Generators",
+            Self::PlanetaryDefenseBatteries => "Planetary Defense Batteries",
+            Self::DisplayOff => "Display Off",
+        }
+    }
+
+    pub const fn is_active(self) -> bool {
+        !matches!(self, Self::DisplayOff)
+    }
+}
+
+/// Root branches built by `FUN_004511e0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GidCategory {
+    Loyalty,
+    Fleets,
+    Personnel,
+    Resources,
+    Manufacturing,
+    Defense,
+}
+
+impl GidCategory {
+    const ALL: [Self; 6] = [
+        Self::Loyalty,
+        Self::Fleets,
+        Self::Personnel,
+        Self::Resources,
+        Self::Manufacturing,
+        Self::Defense,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Loyalty => "Loyalty",
+            Self::Fleets => "Fleets",
+            Self::Personnel => "Personnel",
+            Self::Resources => "Resources",
+            Self::Manufacturing => "Manufacturing",
+            Self::Defense => "Defense",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GidMenuItem {
+    mode: GidMode,
+    resource_id: u32,
+}
+
+/// State for the original code-built GID menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GidUiState {
+    pub menu_open: bool,
+    pub category: Option<GidCategory>,
 }
 
 /// Recovered native control record for one strategic command button.
@@ -356,6 +484,8 @@ pub struct CockpitState {
     pub side_gutter_w: f32,
     /// Active Galactic Information Display overlay.
     pub gid_mode: GidMode,
+    /// Original GID popup and detailed-legend state.
+    pub gid_ui: GidUiState,
     /// Strategic control currently holding native-style pointer capture.
     pressed_control: Option<CockpitButton>,
 }
@@ -368,6 +498,7 @@ impl Default for CockpitState {
             bottom_bar_h: 40.0,
             side_gutter_w: 0.0, // no side gutters for now — full width
             gid_mode: GidMode::PopularSupport,
+            gid_ui: GidUiState::default(),
             pressed_control: None,
         }
     }
@@ -503,7 +634,11 @@ fn cockpit_source_uv_max_y(texture_size: [usize; 2]) -> f32 {
 /// `FUN_00602d30` paints the normal resource at rest and the pressed resource
 /// only while a valid press is captured. The original control
 /// has no separate hover or persistent-selected bitmap state.
-pub fn draw_cockpit_egui_layer(ctx: &egui::Context, state: &CockpitState, cache: &mut BmpCache) {
+pub fn draw_cockpit_egui_layer(
+    ctx: &egui::Context,
+    state: &mut CockpitState,
+    cache: &mut BmpCache,
+) -> Option<GidMode> {
     let layout = state.layout();
     let controls = strategic_primary_controls(state.faction);
     let primary_down = ctx.input(|input| input.pointer.button_down(egui::PointerButton::Primary));
@@ -525,6 +660,14 @@ pub fn draw_cockpit_egui_layer(ctx: &egui::Context, state: &CockpitState, cache:
     if state.gid_mode != GidMode::DisplayOff {
         draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
     }
+
+    let selected = draw_gid_menu(ctx, state, cache, layout);
+    if let Some(mode) = selected {
+        state.gid_mode = mode;
+        state.gid_ui.menu_open = false;
+        state.gid_ui.category = None;
+    }
+    selected
 }
 
 fn draw_control(
@@ -606,6 +749,363 @@ fn draw_compact_gid_legend(
         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
         egui::Color32::WHITE,
     );
+}
+
+fn gid_category_resource(category: GidCategory, faction: CockpitFaction) -> u32 {
+    let offset = GidCategory::ALL
+        .iter()
+        .position(|candidate| *candidate == category)
+        .unwrap_or_default() as u32;
+    match faction {
+        CockpitFaction::Alliance => resources::strategy::GID_ALLIANCE_CATEGORY_FIRST + offset,
+        CockpitFaction::Empire => resources::strategy::GID_EMPIRE_CATEGORY_FIRST + offset,
+    }
+}
+
+fn gid_arrow_resource(faction: CockpitFaction) -> u32 {
+    match faction {
+        CockpitFaction::Alliance => resources::strategy::GID_ALLIANCE_ARROW,
+        CockpitFaction::Empire => resources::strategy::GID_EMPIRE_ARROW,
+    }
+}
+
+fn gid_check_resource(faction: CockpitFaction) -> u32 {
+    match faction {
+        CockpitFaction::Alliance => resources::strategy::GID_CHECK_ALLIANCE,
+        CockpitFaction::Empire => resources::strategy::GID_CHECK_EMPIRE,
+    }
+}
+
+fn gid_submenu_items(category: GidCategory, faction: CockpitFaction) -> Vec<GidMenuItem> {
+    use resources::strategy;
+    match category {
+        GidCategory::Loyalty => vec![
+            GidMenuItem {
+                mode: GidMode::PopularSupport,
+                resource_id: gid_category_resource(GidCategory::Loyalty, faction),
+            },
+            GidMenuItem {
+                mode: GidMode::Uprisings,
+                resource_id: match faction {
+                    CockpitFaction::Alliance => strategy::GID_UPRISING_ALLIANCE,
+                    CockpitFaction::Empire => strategy::GID_UPRISING_EMPIRE,
+                },
+            },
+        ],
+        GidCategory::Fleets => vec![
+            GidMenuItem {
+                mode: GidMode::IdleFleets,
+                resource_id: gid_category_resource(GidCategory::Fleets, faction),
+            },
+            GidMenuItem {
+                mode: GidMode::FleetsEnRoute,
+                resource_id: match faction {
+                    CockpitFaction::Alliance => strategy::GID_FLEETS_EN_ROUTE_ALLIANCE,
+                    CockpitFaction::Empire => strategy::GID_FLEETS_EN_ROUTE_EMPIRE,
+                },
+            },
+        ],
+        GidCategory::Personnel => vec![
+            GidMenuItem {
+                mode: GidMode::IdlePersonnel,
+                resource_id: match faction {
+                    CockpitFaction::Alliance => strategy::GID_IDLE_PERSONNEL_ALLIANCE,
+                    CockpitFaction::Empire => strategy::GID_EMPIRE_CATEGORY_FIRST + 2,
+                },
+            },
+            GidMenuItem {
+                mode: GidMode::ActivePersonnel,
+                resource_id: match faction {
+                    CockpitFaction::Alliance => strategy::GID_ACTIVE_PERSONNEL_ALLIANCE,
+                    CockpitFaction::Empire => strategy::GID_EMPIRE_CATEGORY_LAST + 3,
+                },
+            },
+        ],
+        GidCategory::Resources => vec![
+            GidMenuItem {
+                mode: GidMode::AvailableEnergy,
+                resource_id: strategy::GID_AVAILABLE_ENERGY,
+            },
+            GidMenuItem {
+                mode: GidMode::AvailableRawMaterial,
+                resource_id: strategy::GID_AVAILABLE_RAW_MATERIAL,
+            },
+            GidMenuItem {
+                mode: GidMode::Mines,
+                resource_id: strategy::GID_MINES,
+            },
+            GidMenuItem {
+                mode: GidMode::Refineries,
+                resource_id: strategy::GID_REFINERIES,
+            },
+        ],
+        GidCategory::Manufacturing => vec![
+            GidMenuItem {
+                mode: GidMode::Shipyards,
+                resource_id: strategy::GID_SHIPYARDS,
+            },
+            GidMenuItem {
+                mode: GidMode::IdleShipyards,
+                resource_id: strategy::GID_SHIPYARDS,
+            },
+            GidMenuItem {
+                mode: GidMode::TrainingFacilities,
+                resource_id: strategy::GID_TRAINING_FACILITIES,
+            },
+            GidMenuItem {
+                mode: GidMode::IdleTrainingFacilities,
+                resource_id: strategy::GID_TRAINING_FACILITIES,
+            },
+            GidMenuItem {
+                mode: GidMode::ConstructionYards,
+                resource_id: strategy::GID_CONSTRUCTION_YARDS,
+            },
+            GidMenuItem {
+                mode: GidMode::IdleConstructionYards,
+                resource_id: strategy::GID_CONSTRUCTION_YARDS,
+            },
+        ],
+        GidCategory::Defense => vec![
+            GidMenuItem {
+                mode: GidMode::PlanetaryDefenseBatteries,
+                resource_id: strategy::GID_PLANETARY_BATTERIES,
+            },
+            GidMenuItem {
+                mode: GidMode::PlanetaryShieldGenerators,
+                resource_id: match faction {
+                    CockpitFaction::Alliance => strategy::GID_PLANETARY_SHIELDS_ALLIANCE,
+                    CockpitFaction::Empire => strategy::GID_EMPIRE_CATEGORY_LAST,
+                },
+            },
+            GidMenuItem {
+                mode: GidMode::FighterSquadrons,
+                resource_id: match faction {
+                    CockpitFaction::Alliance => strategy::GID_FIGHTER_SQUADRONS_ALLIANCE,
+                    CockpitFaction::Empire => strategy::GID_EMPIRE_CATEGORY_LAST + 2,
+                },
+            },
+            GidMenuItem {
+                mode: GidMode::Troopers,
+                resource_id: match faction {
+                    CockpitFaction::Alliance => strategy::GID_ACTIVE_PERSONNEL_ALLIANCE,
+                    CockpitFaction::Empire => strategy::GID_EMPIRE_CATEGORY_LAST + 3,
+                },
+            },
+            GidMenuItem {
+                mode: GidMode::DeathStarShields,
+                resource_id: strategy::GID_DEATH_STAR_SHIELDS,
+            },
+        ],
+    }
+}
+
+fn gid_popup_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(egui::Color32::from_rgba_premultiplied(45, 47, 48, 218))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(185)))
+        .inner_margin(egui::Margin::same(5))
+}
+
+fn paint_gid_icon(ui: &egui::Ui, cache: &mut BmpCache, resource_id: u32, rect: egui::Rect) {
+    if let Some(texture) = cache.get(ui.ctx(), DllSource::Strategy, resource_id) {
+        ui.painter().image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+}
+
+fn gid_menu_row(
+    ui: &mut egui::Ui,
+    cache: &mut BmpCache,
+    label: &str,
+    icon_resource: Option<u32>,
+    arrow_resource: Option<u32>,
+    checked_resource: Option<u32>,
+    scale: f32,
+) -> egui::Response {
+    let height = 21.0 * scale;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::click(),
+    );
+    if response.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            0.0,
+            egui::Color32::from_rgba_premultiplied(70, 84, 83, 185),
+        );
+    }
+    if let Some(resource_id) = icon_resource {
+        paint_gid_icon(
+            ui,
+            cache,
+            resource_id,
+            egui::Rect::from_min_size(
+                egui::pos2(
+                    rect.min.x + if arrow_resource.is_some() { 22.0 } else { 2.0 } * scale,
+                    rect.min.y + scale,
+                ),
+                egui::vec2(20.0 * scale, 20.0 * scale),
+            ),
+        );
+    }
+    if let Some(resource_id) = checked_resource {
+        paint_gid_icon(
+            ui,
+            cache,
+            resource_id,
+            egui::Rect::from_min_size(
+                egui::pos2(rect.min.x + 22.0 * scale, rect.min.y + 4.0 * scale),
+                egui::vec2(14.0 * scale, 14.0 * scale),
+            ),
+        );
+    }
+    ui.painter().text(
+        egui::pos2(
+            rect.min.x + if arrow_resource.is_some() { 45.0 } else { 39.0 } * scale,
+            rect.center().y,
+        ),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional((11.0 * scale).max(8.0)),
+        egui::Color32::WHITE,
+    );
+    if let Some(resource_id) = arrow_resource {
+        paint_gid_icon(
+            ui,
+            cache,
+            resource_id,
+            egui::Rect::from_min_size(
+                egui::pos2(rect.min.x + 2.0 * scale, rect.min.y + scale),
+                egui::vec2(17.0 * scale, 20.0 * scale),
+            ),
+        );
+    }
+    response
+}
+
+fn draw_gid_menu(
+    ctx: &egui::Context,
+    state: &mut CockpitState,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+) -> Option<GidMode> {
+    if !state.gid_ui.menu_open {
+        return None;
+    }
+
+    let scale = layout.scale.max(0.5);
+    let root_pos = egui::pos2(
+        layout.canvas.x + 425.0 * layout.scale,
+        layout.canvas.y + 230.0 * layout.scale,
+    );
+    let root = egui::Area::new(egui::Id::new("original_gid_root_menu"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(root_pos)
+        .show(ctx, |ui| {
+            ui.set_width(158.0 * scale);
+            gid_popup_frame()
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for category in GidCategory::ALL {
+                        let response = gid_menu_row(
+                            ui,
+                            cache,
+                            category.label(),
+                            Some(gid_category_resource(category, state.faction)),
+                            Some(gid_arrow_resource(state.faction)),
+                            None,
+                            scale,
+                        );
+                        if response.hovered() || response.clicked() {
+                            state.gid_ui.category = Some(category);
+                        }
+                    }
+                    let checked = (state.gid_mode == GidMode::DisplayOff)
+                        .then_some(gid_check_resource(state.faction));
+                    gid_menu_row(
+                        ui,
+                        cache,
+                        GidMode::DisplayOff.label(),
+                        None,
+                        None,
+                        checked,
+                        scale,
+                    )
+                    .clicked()
+                    .then_some(GidMode::DisplayOff)
+                })
+                .inner
+        });
+
+    let mut selected = root.inner;
+    let mut submenu_rect = egui::Rect::NOTHING;
+    if let Some(category) = state.gid_ui.category {
+        let items = gid_submenu_items(category, state.faction);
+        let category_index = GidCategory::ALL
+            .iter()
+            .position(|candidate| *candidate == category)
+            .unwrap_or_default() as f32;
+        let submenu_y = (root_pos.y + category_index * 21.0 * scale).min(
+            layout.canvas.y + (STRATEGIC_LOGICAL_HEIGHT - 10.0) * layout.scale
+                - items.len() as f32 * 21.0 * scale,
+        );
+        let submenu_pos = egui::pos2(root_pos.x - 246.0 * scale, submenu_y);
+        let submenu = egui::Area::new(egui::Id::new("original_gid_submenu"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(submenu_pos)
+            .show(ctx, |ui| {
+                ui.set_width(238.0 * scale);
+                gid_popup_frame()
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        let mut chosen = None;
+                        for item in items {
+                            let checked = (state.gid_mode == item.mode)
+                                .then_some(gid_check_resource(state.faction));
+                            if gid_menu_row(
+                                ui,
+                                cache,
+                                item.mode.label(),
+                                Some(item.resource_id),
+                                None,
+                                checked,
+                                scale,
+                            )
+                            .clicked()
+                            {
+                                chosen = Some(item.mode);
+                            }
+                        }
+                        chosen
+                    })
+                    .inner
+            });
+        submenu_rect = submenu.response.rect;
+        selected = selected.or(submenu.inner);
+    }
+
+    if selected.is_none() {
+        let (pressed, pointer, escape) = ctx.input(|input| {
+            (
+                input.pointer.button_pressed(egui::PointerButton::Primary),
+                input.pointer.interact_pos(),
+                input.key_pressed(egui::Key::Escape),
+            )
+        });
+        let outside = pressed
+            && pointer.is_some_and(|pointer| {
+                !root.response.rect.contains(pointer) && !submenu_rect.contains(pointer)
+            });
+        if outside || escape {
+            state.gid_ui.menu_open = false;
+            state.gid_ui.category = None;
+        }
+    }
+    selected
 }
 
 /// Resolve control input after floating panels have registered their areas.
@@ -975,24 +1475,30 @@ mod tests {
         let alliance = strategic_gid_control(CockpitFaction::Alliance);
         assert_eq!(alliance.button, CockpitButton::GalacticInformationDisplay);
         assert_eq!(alliance.command_id, 0x133);
-        assert_eq!(alliance.rect, CockpitViewport {
-            x: 3.0,
-            y: 355.0,
-            width: 27.0,
-            height: 41.0,
-        });
+        assert_eq!(
+            alliance.rect,
+            CockpitViewport {
+                x: 3.0,
+                y: 355.0,
+                width: 27.0,
+                height: 41.0,
+            }
+        );
         assert_eq!(alliance.normal_resource, 10013);
         assert_eq!(alliance.pressed_resource, 10014);
 
         let empire = strategic_gid_control(CockpitFaction::Empire);
         assert_eq!(empire.button, CockpitButton::GalacticInformationDisplay);
         assert_eq!(empire.command_id, 0x133);
-        assert_eq!(empire.rect, CockpitViewport {
-            x: 79.0,
-            y: 192.0,
-            width: 35.0,
-            height: 57.0,
-        });
+        assert_eq!(
+            empire.rect,
+            CockpitViewport {
+                x: 79.0,
+                y: 192.0,
+                width: 35.0,
+                height: 57.0,
+            }
+        );
         assert_eq!(empire.normal_resource, 10027);
         assert_eq!(empire.pressed_resource, 10028);
     }
@@ -1091,6 +1597,25 @@ mod tests {
             None
         );
         assert_eq!(captured, None);
+    }
+
+    #[test]
+    fn recovered_gid_menu_covers_distinct_native_commands_for_both_factions() {
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut commands = std::collections::HashSet::new();
+            for category in GidCategory::ALL {
+                let items = gid_submenu_items(category, faction);
+                assert!(!items.is_empty());
+                for item in items {
+                    assert!(commands.insert(item.mode.command_id()));
+                    assert!(item.mode.is_active());
+                    assert!(item.resource_id >= 10_000);
+                }
+            }
+            assert_eq!(commands.len(), 21);
+            assert!(!commands.contains(&GidMode::DisplayOff.command_id()));
+            assert_eq!(GidMode::DisplayOff.command_id(), 0x80);
+        }
     }
 
     #[test]

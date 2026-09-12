@@ -23,6 +23,11 @@ one-commit family gates used to execute this plan more quickly.
 
 ## Progress snapshot
 
+<!-- interface-parity-status:start -->
+Required interface families: 43. Complete: 0. Partial: 9. Failing: 34. Blocked: 0. Strictly accepted cells: 0/564.
+The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
+<!-- interface-parity-status:end -->
+
 | Measure | Current position |
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 23% |
@@ -75,7 +80,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P47B accepted; UIP-B02 continues
+## Current execution focus: P48 tooling checkpoint; UIP-B02 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -112,6 +117,13 @@ original overlay, all known and intelligence states, selection, pan, zoom,
 and both faction variants. The acceleration sidecar supplies deterministic
 fixtures and one browser and Astra bundle gate. No replacement marker, menu,
 or legend will be introduced.
+
+P48 now supplies a 38-scenario, 152-execution muted harness and the first
+source-mapped GID command tree. Independent source review withheld unproven
+special-marker compositions and an enlarged legend. The
+[checkpoint evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md)
+records the remaining original-capture, exact-filter, native, and keyboard
+gates. No `CMD-02` acceptance cell is marked passed.
 
 ## Bundle acceptance record
 

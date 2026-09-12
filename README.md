@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-11):** All 629 workspace tests pass. The shuttle, strategic shell, six primary bitmap controls, sector windows, and first detailed-system tab compositions are verified checkpoints. Galaxy/GID art, complete object and command windows, advisor actions and voice, tactical parity, multiplayer, and release gates remain open in the [interface](docs/qa/2026-09-10-interface-parity-audit/) and [functionality](docs/qa/2026-09-08-full-functionality-audit/) audits.
+> **Verification (2026-09-12):** Workspace tests and the muted GID browser matrix pass. The shuttle, strategic shell, bitmap controls, sector windows, and first system tabs are implementation checkpoints. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks original-reference, filter, tactical, multiplayer, and release gates that remain open.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|

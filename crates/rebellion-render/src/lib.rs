@@ -25,8 +25,10 @@ use egui_macroquad::egui;
 use macroquad::prelude::*;
 use rebellion_core::blockade::BlockadeState;
 use rebellion_core::dat::ExplorationStatus;
+use rebellion_core::economy::EconomyState;
 use rebellion_core::ids::{FleetKey, SystemKey};
-use rebellion_core::missions::MissionFaction;
+use rebellion_core::manufacturing::ManufacturingState;
+use rebellion_core::missions::{MissionFaction, MissionState};
 use rebellion_core::movement::MovementState;
 use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::{ControlKind, GameWorld, System};
@@ -81,8 +83,7 @@ pub use sector_window::{
 };
 pub use system_window::{
     draw_system_windows, SystemWindowAction, SystemWindowState, SystemWindowTab,
-    REFERENCE_RAIL_SLOTS, SYSTEM_WINDOW_CLIENT_WIDTH, SYSTEM_WINDOW_HEIGHT,
-    SYSTEM_WINDOW_WIDTH,
+    REFERENCE_RAIL_SLOTS, SYSTEM_WINDOW_CLIENT_WIDTH, SYSTEM_WINDOW_HEIGHT, SYSTEM_WINDOW_WIDTH,
 };
 pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
@@ -184,6 +185,18 @@ pub struct GalaxyMapState {
     pub right_click_held_frames: u32,
 }
 
+/// Simulation views needed to reproduce the original GID filters.
+///
+/// The renderer reads these canonical systems directly. Deterministic browser
+/// fixtures therefore exercise the same resource cache, metrics, marker
+/// selection, and drawing path as a production campaign.
+pub struct GidOverlayContext<'a> {
+    pub movement: &'a MovementState,
+    pub manufacturing: &'a ManufacturingState,
+    pub economy: &'a EconomyState,
+    pub missions: &'a MissionState,
+}
+
 impl Default for GalaxyMapState {
     fn default() -> Self {
         Self {
@@ -227,10 +240,9 @@ pub fn draw_galaxy_backdrop(
         Color::new(0.02, 0.02, 0.08, 1.0),
     );
 
-    let Some(texture) = cache.get_macroquad_original(
-        DllSource::Strategy,
-        gid_backdrop_resource(gid_mode),
-    ) else {
+    let Some(texture) =
+        cache.get_macroquad_original(DllSource::Strategy, gid_backdrop_resource(gid_mode))
+    else {
         return false;
     };
     let destination = galaxy_backdrop_destination(layout, texture.width(), texture.height());
@@ -248,9 +260,10 @@ pub fn draw_galaxy_backdrop(
 }
 
 fn gid_backdrop_resource(gid_mode: GidMode) -> u32 {
-    match gid_mode {
-        GidMode::DisplayOff => bmp_cache::resources::strategy::GALAXY_STARFIELD_BRIGHT,
-        GidMode::PopularSupport => bmp_cache::resources::strategy::GALAXY_STARFIELD_DIM,
+    if gid_mode.is_active() {
+        bmp_cache::resources::strategy::GALAXY_STARFIELD_DIM
+    } else {
+        bmp_cache::resources::strategy::GALAXY_STARFIELD_BRIGHT
     }
 }
 
@@ -277,6 +290,7 @@ pub fn draw_galaxy_map(
     cache: &mut BmpCache,
     gid_mode: GidMode,
     faction: CockpitFaction,
+    gid: &GidOverlayContext<'_>,
 ) -> CameraView {
     discard_stale_context_menus(world, state);
     state.activated_system = None;
@@ -339,8 +353,8 @@ pub fn draw_galaxy_map(
         viewport_height,
     };
 
-    if gid_mode == GidMode::PopularSupport {
-        draw_gid_caption(cam, faction);
+    if gid_mode.is_active() {
+        draw_gid_caption(cam, faction, gid_mode);
     }
 
     // ── Find hovered system (reset each frame) ────────────────────────────────
@@ -367,13 +381,15 @@ pub fn draw_galaxy_map(
     // Draw the native fixed-size marker bitmaps. Selection and hover
     // remain input states, but the replacement circles, glows, and labels are
     // deliberately absent from the parity surface.
-    if gid_mode == GidMode::PopularSupport {
-        for (_, system) in &world.systems {
+    if gid_mode.is_active() {
+        for (key, system) in &world.systems {
             let (sx, sy) = cam.to_screen(system.x as f32, system.y as f32);
             if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
                 continue;
             }
-            draw_gid_marker(cache, system, faction, cam, sx, sy);
+            draw_gid_marker(
+                cache, world, key, system, faction, gid_mode, gid, cam, sx, sy,
+            );
         }
     }
 
@@ -402,8 +418,8 @@ pub fn draw_galaxy_map(
     cam
 }
 
-fn draw_gid_caption(cam: CameraView, faction: CockpitFaction) {
-    let caption = "Popular Support";
+fn draw_gid_caption(cam: CameraView, faction: CockpitFaction, mode: GidMode) {
+    let caption = mode.label();
     let font_size = cam.scale_pixels(11.0);
     let text_width = measure_text(caption, None, font_size.round() as u16, 1.0).width;
     let color = match faction {
@@ -421,13 +437,17 @@ fn draw_gid_caption(cam: CameraView, faction: CockpitFaction) {
 
 fn draw_gid_marker(
     cache: &mut BmpCache,
+    world: &GameWorld,
+    system_key: SystemKey,
     system: &System,
     faction: CockpitFaction,
+    mode: GidMode,
+    gid: &GidOverlayContext<'_>,
     cam: CameraView,
     center_x: f32,
     center_y: f32,
 ) {
-    let resource_id = popular_support_marker_resource(system, faction);
+    let resource_id = gid_marker_for_system(world, system_key, system, faction, mode, gid);
     let Some(texture) = cache.get_macroquad_original(DllSource::Strategy, resource_id) else {
         return;
     };
@@ -454,20 +474,249 @@ fn popular_support_marker_resource(system: &System, faction: CockpitFaction) -> 
     gid_marker_resource(system.control, explored, popularity)
 }
 
-fn gid_marker_resource(control: ControlKind, explored: bool, popularity: f32) -> u32 {
+fn gid_marker_for_system(
+    world: &GameWorld,
+    system_key: SystemKey,
+    system: &System,
+    faction: CockpitFaction,
+    mode: GidMode,
+    gid: &GidOverlayContext<'_>,
+) -> u32 {
+    if mode == GidMode::PopularSupport {
+        return popular_support_marker_resource(system, faction);
+    }
+    if system.exploration_status != ExplorationStatus::Explored || !system.is_populated {
+        return bmp_cache::resources::strategy::GID_UNEXPLORED;
+    }
+
+    let player_is_alliance = faction == CockpitFaction::Alliance;
+    let value = gid_metric(world, system_key, system, player_is_alliance, mode, gid);
+    let size = gid_metric_size(mode, value);
+    gid_marker_resource_for_size(system.control, true, size)
+}
+
+fn gid_metric(
+    world: &GameWorld,
+    system_key: SystemKey,
+    system: &System,
+    player_is_alliance: bool,
+    mode: GidMode,
+    gid: &GidOverlayContext<'_>,
+) -> u32 {
+    let same_faction = |is_alliance: bool| is_alliance == player_is_alliance;
+    let queue_idle = gid
+        .manufacturing
+        .queue(system_key)
+        .is_none_or(|queue| queue.is_empty());
+    match mode {
+        GidMode::PopularSupport => 0,
+        GidMode::Uprisings => matches!(system.control, ControlKind::Uprising(_)) as u32,
+        GidMode::IdleFleets => system
+            .fleets
+            .iter()
+            .filter(|key| {
+                world
+                    .fleets
+                    .get(**key)
+                    .is_some_and(|fleet| same_faction(fleet.is_alliance))
+            })
+            .count() as u32,
+        GidMode::FleetsEnRoute => gid
+            .movement
+            .orders()
+            .iter()
+            .filter(|(key, order)| {
+                order.destination == system_key
+                    && world
+                        .fleets
+                        .get(**key)
+                        .is_some_and(|fleet| same_faction(fleet.is_alliance))
+            })
+            .count() as u32,
+        GidMode::IdlePersonnel | GidMode::ActivePersonnel => world
+            .characters
+            .iter()
+            .filter(|(character_key, character)| {
+                let belongs = if player_is_alliance {
+                    character.is_alliance
+                } else {
+                    character.is_empire
+                };
+                let at_system = character.current_system == Some(system_key)
+                    || character.current_fleet.is_some_and(|fleet_key| {
+                        world.fleets.get(fleet_key).is_some_and(|fleet| {
+                            fleet.location == system_key && !gid.movement.is_in_transit(fleet_key)
+                        })
+                    });
+                let active = character.on_mission
+                    || gid
+                        .missions
+                        .missions()
+                        .iter()
+                        .any(|mission| mission.character == *character_key);
+                belongs
+                    && at_system
+                    && if mode == GidMode::ActivePersonnel {
+                        active
+                    } else {
+                        !active
+                    }
+            })
+            .count() as u32,
+        GidMode::AvailableEnergy => {
+            let used = gid
+                .economy
+                .per_system
+                .get(&system_key)
+                .map_or(0, |economy| economy.energy_allocated);
+            u32::from(system.total_energy).saturating_sub(used)
+        }
+        GidMode::AvailableRawMaterial => {
+            let used = gid
+                .economy
+                .per_system
+                .get(&system_key)
+                .map_or(0, |economy| economy.raw_material_allocated);
+            u32::from(system.raw_materials).saturating_sub(used)
+        }
+        GidMode::Mines | GidMode::Refineries => system
+            .production_facilities
+            .iter()
+            .filter(|key| {
+                world
+                    .production_facilities
+                    .get(**key)
+                    .is_some_and(|facility| {
+                        same_faction(facility.is_alliance)
+                            && (facility.is_mine == (mode == GidMode::Mines))
+                    })
+            })
+            .count() as u32,
+        GidMode::Shipyards
+        | GidMode::IdleShipyards
+        | GidMode::TrainingFacilities
+        | GidMode::IdleTrainingFacilities
+        | GidMode::ConstructionYards
+        | GidMode::IdleConstructionYards => system
+            .manufacturing_facilities
+            .iter()
+            .filter(|key| {
+                world
+                    .manufacturing_facilities
+                    .get(**key)
+                    .is_some_and(|facility| {
+                        let family = facility.class_dat_id.family();
+                        let correct_type = match mode {
+                            GidMode::Shipyards | GidMode::IdleShipyards => {
+                                facility.is_shipyard || family == 0x28
+                            }
+                            GidMode::TrainingFacilities | GidMode::IdleTrainingFacilities => {
+                                family == 0x29
+                            }
+                            GidMode::ConstructionYards | GidMode::IdleConstructionYards => {
+                                matches!(family, 0x20 | 0x2a)
+                            }
+                            _ => false,
+                        };
+                        let idle_mode = matches!(
+                            mode,
+                            GidMode::IdleShipyards
+                                | GidMode::IdleTrainingFacilities
+                                | GidMode::IdleConstructionYards
+                        );
+                        same_faction(facility.is_alliance)
+                            && correct_type
+                            && (!idle_mode || queue_idle)
+                    })
+            })
+            .count() as u32,
+        GidMode::Troopers => system
+            .ground_units
+            .iter()
+            .filter(|key| {
+                world
+                    .troops
+                    .get(**key)
+                    .is_some_and(|troop| same_faction(troop.is_alliance))
+            })
+            .count() as u32,
+        GidMode::FighterSquadrons => system
+            .fleets
+            .iter()
+            .filter_map(|key| world.fleets.get(*key))
+            .filter(|fleet| same_faction(fleet.is_alliance))
+            .flat_map(|fleet| fleet.fighters.iter())
+            .map(|fighters| fighters.count)
+            .sum(),
+        GidMode::DeathStarShields => system
+            .defense_facilities
+            .iter()
+            .filter(|key| {
+                world.defense_facilities.get(**key).is_some_and(|facility| {
+                    same_faction(facility.is_alliance) && facility.class_dat_id.index() == 4
+                })
+            })
+            .count() as u32,
+        GidMode::PlanetaryShieldGenerators => system
+            .defense_facilities
+            .iter()
+            .filter(|key| {
+                world.defense_facilities.get(**key).is_some_and(|facility| {
+                    same_faction(facility.is_alliance)
+                        && matches!(facility.class_dat_id.index(), 3 | 6)
+                })
+            })
+            .count() as u32,
+        GidMode::PlanetaryDefenseBatteries => system
+            .defense_facilities
+            .iter()
+            .filter(|key| {
+                world.defense_facilities.get(**key).is_some_and(|facility| {
+                    same_faction(facility.is_alliance)
+                        && matches!(facility.class_dat_id.index(), 1 | 2 | 5)
+                })
+            })
+            .count() as u32,
+        GidMode::DisplayOff => 0,
+    }
+}
+
+fn gid_metric_size(mode: GidMode, value: u32) -> usize {
+    match mode {
+        GidMode::Uprisings | GidMode::DeathStarShields => usize::from(value > 0) * 3,
+        GidMode::IdleFleets | GidMode::FleetsEnRoute => match value {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            _ => 3,
+        },
+        GidMode::Shipyards
+        | GidMode::IdleShipyards
+        | GidMode::TrainingFacilities
+        | GidMode::IdleTrainingFacilities
+        | GidMode::ConstructionYards
+        | GidMode::IdleConstructionYards => match value {
+            0 => 0,
+            1 => 1,
+            2..=4 => 2,
+            _ => 3,
+        },
+        _ => match value {
+            0 => 0,
+            1..=2 => 1,
+            3..=5 => 2,
+            _ => 3,
+        },
+    }
+}
+
+fn gid_marker_resource_for_size(control: ControlKind, explored: bool, size: usize) -> u32 {
     use bmp_cache::resources::strategy;
 
     if !explored {
         return strategy::GID_UNEXPLORED;
     }
-
-    let support = (popularity.clamp(0.0, 1.0) * 100.0).round() as u8;
-    let size = match support {
-        81..=u8::MAX => 3,
-        60..=80 => 2,
-        50..=59 => 1,
-        _ => 0,
-    };
+    let size = size.min(3);
     match control.faction() {
         Some(rebellion_core::dat::Faction::Alliance) => [
             strategy::GID_ALLIANCE_SMALLEST,
@@ -488,6 +737,23 @@ fn gid_marker_resource(control: ControlKind, explored: bool, popularity: f32) ->
             strategy::GID_NEUTRAL_LARGEST,
         ][size],
     }
+}
+
+fn gid_marker_resource(control: ControlKind, explored: bool, popularity: f32) -> u32 {
+    use bmp_cache::resources::strategy;
+
+    if !explored {
+        return strategy::GID_UNEXPLORED;
+    }
+
+    let support = (popularity.clamp(0.0, 1.0) * 100.0).round() as u8;
+    let size = match support {
+        81..=u8::MAX => 3,
+        60..=80 => 2,
+        50..=59 => 1,
+        _ => 0,
+    };
+    gid_marker_resource_for_size(control, explored, size)
 }
 
 /// An open egui context menu receives the click before the map may select a
@@ -1629,5 +1895,17 @@ mod interaction_tests {
         discard_stale_context_menus(&world, &mut state);
 
         assert!(!context_menu_owns_pointer(&state));
+    }
+
+    #[test]
+    fn gid_mode_marker_bands_cover_zero_threshold_and_high_values() {
+        assert_eq!(gid_metric_size(GidMode::Uprisings, 0), 0);
+        assert_eq!(gid_metric_size(GidMode::Uprisings, 1), 3);
+        assert_eq!(gid_metric_size(GidMode::IdleFleets, 2), 2);
+        assert_eq!(gid_metric_size(GidMode::IdleFleets, 3), 3);
+        assert_eq!(gid_metric_size(GidMode::Shipyards, 4), 2);
+        assert_eq!(gid_metric_size(GidMode::Shipyards, 5), 3);
+        assert_eq!(gid_metric_size(GidMode::AvailableEnergy, 5), 2);
+        assert_eq!(gid_metric_size(GidMode::AvailableEnergy, 6), 3);
     }
 }
