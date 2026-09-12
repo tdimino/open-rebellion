@@ -1,5 +1,12 @@
 mod audio;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+#[cfg_attr(
+    all(test, not(target_arch = "wasm32")),
+    expect(
+        dead_code,
+        reason = "Native tests cover fixture helpers; the browser bridge is called only by WASM."
+    )
+)]
 mod interface_test_fixture;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;

@@ -424,7 +424,7 @@ fn draw_reference_rail(
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "original window renderer needs explicit world, fog, layout, and bitmap context"
+    reason = "Keep explicit state and rendering inputs at this existing UI boundary."
 )]
 fn draw_system_window(
     ctx: &egui::Context,
@@ -611,7 +611,7 @@ struct TabContentDrawResult {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "original tab painter keeps rendering and intelligence inputs explicit"
+    reason = "Keep explicit state and rendering inputs at this existing UI boundary."
 )]
 fn paint_tab_content(
     ui: &mut egui::Ui,

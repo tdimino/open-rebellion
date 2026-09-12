@@ -3,10 +3,6 @@
 //! This module is compiled for the dedicated WASM acceptance artifact and
 //! native unit tests. Production builds contain no fixture bridge.
 
-// The native test build exercises the scenario table and hash only. The bridge
-// exports are invoked by the dedicated WASM artifact, so they appear unused here.
-#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::economy::EconomyState;

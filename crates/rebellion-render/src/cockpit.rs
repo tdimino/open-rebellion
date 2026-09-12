@@ -902,7 +902,7 @@ fn gid_submenu_items(category: GidCategory, faction: CockpitFaction) -> Vec<GidM
 fn gid_popup_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(egui::Color32::from_rgba_premultiplied(45, 47, 48, 218))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(185)))
+        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_gray(185)))
         .inner_margin(egui::Margin::same(5))
 }
 
