@@ -5154,54 +5154,39 @@ fn apply_tactical_results(
     world: &mut GameWorld,
     troop_transport: &mut TroopTransportState,
 ) {
-    // Apply capital ship losses for both fleets.
+    // Apply each surviving hull's damage and each destroyed hull's loss.
     for (fleet_key, is_attacker) in [
         (session.attacker_fleet, true),
         (session.defender_fleet, false),
     ] {
-        // Mark destroyed ships by fleet_ship_index (1:1 with alive ships).
-        // Collect destroyed indices from tactical session results.
-        let mut destroyed_indices: Vec<usize> = Vec::new();
-        for ship in &session.ships {
-            if ship.is_attacker != is_attacker {
-                continue;
-            }
-            if ship.retreated {
-                continue;
-            }
-            if !ship.alive {
-                destroyed_indices.push(ship.fleet_ship_index);
-            }
-        }
-
-        // Apply hull damage: mark destroyed ships as dead.
         if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-            // fleet_ship_index maps 1:1 to alive ships at session start.
+            // fleet_ship_index maps 1:1 to hulls alive at session start.
             let mut alive_idx = 0;
             for ship_inst in fleet.capital_ships.iter_mut() {
                 if !ship_inst.alive {
                     continue;
                 }
-                if destroyed_indices.contains(&alive_idx) {
-                    ship_inst.alive = false;
-                    ship_inst.hull_current = 0;
+                if let Some(result) = session.ships.iter().find(|ship| {
+                    ship.is_attacker == is_attacker && ship.fleet_ship_index == alive_idx
+                }) {
+                    ship_inst.hull_current = result.hull_current.clamp(0, result.hull_max);
+                    ship_inst.alive = result.alive && ship_inst.hull_current > 0;
+                    if !ship_inst.alive {
+                        ship_inst.hull_current = 0;
+                    }
                 }
                 alive_idx += 1;
             }
             fleet.capital_ships.retain(|s| s.alive);
-        }
 
-        // Apply fighter squadron losses.
-        for fighter in &session.fighters {
-            if fighter.is_attacker != is_attacker {
-                continue;
-            }
-            if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-                for entry in &mut fleet.fighters {
-                    if entry.class == fighter.class_key {
-                        entry.count = fighter.squad_count;
-                        break;
-                    }
+            // Match roster slots, not class. A fleet may contain the same class twice.
+            for fighter in session
+                .fighters
+                .iter()
+                .filter(|f| f.is_attacker == is_attacker)
+            {
+                if let Some(entry) = fleet.fighters.get_mut(fighter.fleet_fighter_index) {
+                    entry.count = fighter.squad_count;
                 }
             }
         }
@@ -5460,8 +5445,8 @@ fn open_cutscene(
 mod tactical_ground_tests {
     use super::*;
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
-    use rebellion_core::ids::DatId;
-    use rebellion_core::world::{Sector, System, TroopUnit};
+    use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey};
+    use rebellion_core::world::{FighterEntry, Fleet, Sector, ShipInstance, System, TroopUnit};
 
     #[test]
     fn tactical_ground_results_persist_survivor_damage_and_remove_losses() {
@@ -5514,5 +5499,155 @@ mod tactical_ground_tests {
         assert_eq!(world.troops[survivor].regiment_strength, 37);
         assert!(!world.troops.contains_key(destroyed));
         assert_eq!(world.systems[system].ground_units, vec![survivor]);
+    }
+
+    #[test]
+    fn tactical_space_results_preserve_hull_damage_and_duplicate_fighter_roster_slots() {
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector {
+            dat_id: DatId::new(1),
+            name: "Test Sector".into(),
+            group: SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        let system = world.systems.insert(System {
+            dat_id: DatId::new(2),
+            name: "Test System".into(),
+            sector,
+            x: 0,
+            y: 0,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Uncontrolled,
+        });
+        let ship_class = CapitalShipKey::default();
+        let fighter_class = FighterKey::default();
+        let attacker = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![
+                ShipInstance::new(ship_class, 100, true),
+                ShipInstance::new(ship_class, 100, true),
+            ],
+            fighters: vec![
+                FighterEntry {
+                    class: fighter_class,
+                    count: 12,
+                },
+                FighterEntry {
+                    class: fighter_class,
+                    count: 12,
+                },
+            ],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        let defender = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![ShipInstance::new(ship_class, 100, false)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        world.systems[system].fleets = vec![attacker, defender];
+        let session = rebellion_render::BattleSession {
+            system,
+            system_name: "Test System".into(),
+            attacker_fleet: attacker,
+            defender_fleet: defender,
+            player_is_attacker: true,
+            phase: rebellion_render::BattlePhase::Results,
+            ships: vec![
+                test_tactical_ship(ship_class, true, 0, 43, true),
+                test_tactical_ship(ship_class, true, 1, 0, false),
+                test_tactical_ship(ship_class, false, 0, 91, true),
+            ],
+            fighters: vec![
+                rebellion_render::tactical_view::TacticalFighter {
+                    class_key: fighter_class,
+                    fleet_fighter_index: 0,
+                    name: "Fighter".into(),
+                    x: 0.0,
+                    y: 0.0,
+                    squad_count: 4,
+                    is_attacker: true,
+                    alive: true,
+                },
+                rebellion_render::tactical_view::TacticalFighter {
+                    class_key: fighter_class,
+                    fleet_fighter_index: 1,
+                    name: "Fighter".into(),
+                    x: 0.0,
+                    y: 0.0,
+                    squad_count: 9,
+                    is_attacker: true,
+                    alive: true,
+                },
+            ],
+            selected_ship: None,
+            placement_confirmed: true,
+            start_tick: 1,
+            combat_tick: 1,
+            weapon_effects: vec![],
+            paused: false,
+            combat_speed: 1,
+            step_accumulator: 0.0,
+            winner: Some(rebellion_render::CombatWinner::Attacker),
+        };
+
+        apply_tactical_results(&session, &mut world, &mut TroopTransportState::default());
+
+        assert_eq!(world.fleets[attacker].capital_ships.len(), 1);
+        assert_eq!(world.fleets[attacker].capital_ships[0].hull_current, 43);
+        assert_eq!(world.fleets[attacker].fighters[0].count, 4);
+        assert_eq!(world.fleets[attacker].fighters[1].count, 9);
+        assert_eq!(world.fleets[defender].capital_ships[0].hull_current, 91);
+    }
+
+    fn test_tactical_ship(
+        class_key: CapitalShipKey,
+        is_attacker: bool,
+        fleet_ship_index: usize,
+        hull_current: i32,
+        alive: bool,
+    ) -> rebellion_render::tactical_view::TacticalShip {
+        rebellion_render::tactical_view::TacticalShip {
+            class_key,
+            name: "Ship".into(),
+            x: 0.0,
+            y: 0.0,
+            hull_current,
+            hull_max: 100,
+            shield: 0,
+            shield_max: 0,
+            is_attacker,
+            alive,
+            selected: false,
+            fleet_ship_index,
+            sprite_id: None,
+            turbolaser_power: 0,
+            ion_cannon_power: 0,
+            laser_cannon_power: 0,
+            focus_target: None,
+            retreating: false,
+            retreat_progress: 0.0,
+            retreated: false,
+        }
     }
 }

@@ -133,6 +133,8 @@ pub struct TacticalShip {
 #[derive(Debug, Clone)]
 pub struct TacticalFighter {
     pub class_key: FighterKey,
+    /// Index into the originating fleet's fighter roster. Classes may repeat.
+    pub fleet_fighter_index: usize,
     pub name: String,
     pub x: f32,
     pub y: f32,
@@ -326,10 +328,11 @@ impl BattleSession {
             });
         }
 
-        for entry in &fleet.fighters {
+        for (fighter_idx, entry) in fleet.fighters.iter().enumerate() {
             let class = &world.fighter_classes[entry.class];
             fighters.push(TacticalFighter {
                 class_key: entry.class,
+                fleet_fighter_index: fighter_idx,
                 name: class.name.clone(),
                 x: 0.0,
                 y: 0.0,
