@@ -716,6 +716,20 @@ pub mod resources {
         /// Dim Empire ships (gray Imperial glyph).
         pub const DIM_EMPIRE_SHIPS: u32 = 1036;
 
+        /// Tactical combat is running; clicking pauses it.
+        pub const BTN_PAUSE_RUNNING: u32 = 1060;
+        /// Tactical combat is paused; clicking resumes it.
+        pub const BTN_PAUSE_PAUSED: u32 = 1061;
+
+        /// Camera zoom-in control, normal state.
+        pub const BTN_CAMERA_ZOOM_IN_NORMAL: u32 = 1044;
+        /// Camera zoom-in control, pressed state.
+        pub const BTN_CAMERA_ZOOM_IN_PRESSED: u32 = 1045;
+        /// Camera zoom-out control, normal state.
+        pub const BTN_CAMERA_ZOOM_OUT_NORMAL: u32 = 1046;
+        /// Camera zoom-out control, pressed state.
+        pub const BTN_CAMERA_ZOOM_OUT_PRESSED: u32 = 1047;
+
         /// Tactical command button: Maneuvers/Tactics, normal state.
         pub const BTN_MANEUVERS_TACTICS_NORMAL: u32 = 1105;
         /// Tactical command button: Maneuvers/Tactics, pressed state.

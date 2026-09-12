@@ -56,6 +56,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P52 tactical shell evidence](evidence/2026-09-12-tactical-shell-controls.md)
   for the first original 640×480 battle composition, native-coordinate pause,
   highlight, and zoom controls, and the remaining 106-cell tactical boundary.
+- Review the [P53 tactical control-state evidence](evidence/2026-09-12-tactical-control-hit-states.md)
+  for source-shaped hit masks, zoom pressed art, browser round trips, and the
+  states that remain deliberately unclaimed.
 
 ## Suggested contribution lanes
 

@@ -541,6 +541,11 @@ would tune around known simulation feedback defects.
   verify both factions and viewports
   in fresh muted browser sessions. Procedural battle contents and all 106
   `TAC-01` through `TAC-07` cells remain open.
+- [x] Complete the P53 tactical input-state checkpoint: apply the original
+  palette-key hit mask and outer-edge exclusion to each working tactical
+  control, render zoom pressed resources 1045/1047 while held, and verify
+  inert matte pixels plus exact zoom round-trip restoration in both factions
+  and viewports. Drag/repeat semantics and all 106 tactical cells remain open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
   states. Stage and map original type-301/type-303 battle graphics before

@@ -595,6 +595,14 @@ async function probeTactical(page, viewport, folder, stable) {
   assert.equal(sha256(stable.bytes), sha256(outsideFrame), "outside-edge changed paused battle");
   probes.push({ type: "pause-outside-edge", unchanged: true });
 
+  const pauseMatte = point(561.5, 308.5);
+  await page.mouse.click(pauseMatte.x, pauseMatte.y);
+  await page.waitForTimeout(80);
+  const pauseMatteFrame = await capture("pause-transparent-matte");
+  assert.equal(sha256(stable.bytes), sha256(pauseMatteFrame),
+    "transparent pause-control matte pixel changed paused battle");
+  probes.push({ type: "pause-transparent-matte", source_pixel: [1, 1], unchanged: true });
+
   const pause = point(574, 318);
   await page.mouse.click(pause.x, pause.y);
   await page.waitForTimeout(80);
@@ -647,13 +655,50 @@ async function probeTactical(page, viewport, folder, stable) {
   probes.push({ type: "empire-highlight-restored",
     ...verifyTacticalBitmap(viewport, highlightsRestored, 1037, 482, 304) });
 
+  const zoomInMatte = point(487.5, 344.5);
+  await page.mouse.click(zoomInMatte.x, zoomInMatte.y);
+  await page.waitForTimeout(80);
+  const zoomInMatteFrame = await capture("zoom-in-transparent-matte");
+  assert.equal(sha256(highlightsRestored), sha256(zoomInMatteFrame),
+    "transparent zoom-in matte pixel changed paused battle");
+  probes.push({ type: "zoom-in-transparent-matte", source_pixel: [1, 1], unchanged: true });
+
   const zoomIn = point(498, 355);
-  await page.mouse.click(zoomIn.x, zoomIn.y);
+  await page.mouse.move(zoomIn.x, zoomIn.y);
+  await page.mouse.down({ button: "left" });
+  await page.waitForTimeout(80);
+  const zoomInPressed = await capture("zoom-in-pressed");
+  probes.push({ type: "zoom-in-pressed",
+    ...verifyTacticalBitmap(viewport, zoomInPressed, 1045, 486, 343) });
+  await page.mouse.up({ button: "left" });
   await page.waitForTimeout(80);
   const zoomed = await capture("zoomed-in");
   assert.notEqual(sha256(highlightsRestored), sha256(zoomed), "zoom-in control did not redraw battle");
   probes.push({ type: "zoom-in", ...verifyTacticalBitmap(viewport, zoomed, 1044, 486, 343),
     aperture_isolation: verifyTacticalApertureIsolation(viewport, highlightsRestored, zoomed) });
+
+  const zoomOutMatte = point(604.5, 344.5);
+  await page.mouse.click(zoomOutMatte.x, zoomOutMatte.y);
+  await page.waitForTimeout(80);
+  const zoomOutMatteFrame = await capture("zoom-out-transparent-matte");
+  assert.equal(sha256(zoomed), sha256(zoomOutMatteFrame),
+    "transparent zoom-out matte pixel changed zoomed battle");
+  probes.push({ type: "zoom-out-transparent-matte", source_pixel: [1, 1], unchanged: true });
+
+  const zoomOut = point(615, 355);
+  await page.mouse.move(zoomOut.x, zoomOut.y);
+  await page.mouse.down({ button: "left" });
+  await page.waitForTimeout(80);
+  const zoomOutPressed = await capture("zoom-out-pressed");
+  probes.push({ type: "zoom-out-pressed",
+    ...verifyTacticalBitmap(viewport, zoomOutPressed, 1047, 603, 343) });
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(80);
+  const zoomRestored = await capture("zoom-restored");
+  assert.equal(sha256(highlightsRestored), sha256(zoomRestored),
+    "zoom-out did not restore the original paused battlefield");
+  probes.push({ type: "zoom-out", ...verifyTacticalBitmap(viewport, zoomRestored, 1046, 603, 343),
+    aperture_isolation: verifyTacticalApertureIsolation(viewport, zoomed, zoomRestored) });
   return probes;
 }
 

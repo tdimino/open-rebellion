@@ -12,8 +12,11 @@ headers `1001`/`1004`; fighter headers `1008`/`1010`; task-force states
 `1026`–`1033` and `1044`–`1059`; Alliance dim/highlight `1034`/`1035`;
 Imperial dim/highlight `1036`/`1037`; battle options `1038`/`1039`; pause `1060`/`1061`;
 and empty/selected capital-ship panels `1301`/`1302`. Only pause, highlight,
-and zoom semantics are wired in this checkpoint. See the
+and zoom semantics are wired in this checkpoint. Those working controls use
+the original palette-key hit masks; zoom also renders pressed resources
+`1045`/`1047` while held. See the
 [P52 evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md)
+and [P53 evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md)
 for current positions, browser source-pixel proof, and open mappings.
 
 The current renderer calls IDs `2001`–`2130` a tactical ship-sprite block, but the extracted BMP inventory contains only **43** IDs inside that range: `2001`–`2038` and `2101`–`2105`. Its `class_to_sprite_id` formula is explicitly approximate. The original battle manager instead holds a [29-ship, eight-fighter ordinal lookup](tactical-lookup.json) into custom type-301 meshes and type-303 fighter graphics. An ordinal is not yet a proven DAT class identity. Missing BMP numbers must not be synthesized or mistaken for missing custom resource types.

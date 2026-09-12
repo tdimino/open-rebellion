@@ -969,31 +969,76 @@ enum TacticalHudControl {
     HighlightEmpire,
 }
 
-fn tactical_hud_control_at(x: f32, y: f32) -> Option<TacticalHudControl> {
-    [
-        (
-            TacticalHudControl::Pause,
-            NativeRect::new(560.0, 307.0, 28.0, 21.0),
-        ),
-        (
-            TacticalHudControl::ZoomIn,
-            NativeRect::new(486.0, 343.0, 24.0, 24.0),
-        ),
-        (
-            TacticalHudControl::ZoomOut,
-            NativeRect::new(603.0, 343.0, 24.0, 24.0),
-        ),
-        (
-            TacticalHudControl::HighlightAlliance,
-            NativeRect::new(517.0, 304.0, 30.0, 26.0),
-        ),
-        (
-            TacticalHudControl::HighlightEmpire,
-            NativeRect::new(482.0, 304.0, 30.0, 26.0),
-        ),
-    ]
-    .into_iter()
-    .find_map(|(control, rect)| rect.contains(x, y).then_some(control))
+#[derive(Debug, Clone, Copy)]
+struct TacticalHudControlSpec {
+    control: TacticalHudControl,
+    rect: NativeRect,
+    hit_resource: u32,
+}
+
+const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 5] = [
+    TacticalHudControlSpec {
+        control: TacticalHudControl::Pause,
+        rect: NativeRect::new(560.0, 307.0, 28.0, 21.0),
+        hit_resource: resources::tactical::BTN_PAUSE_RUNNING,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::ZoomIn,
+        rect: NativeRect::new(486.0, 343.0, 24.0, 24.0),
+        hit_resource: resources::tactical::BTN_CAMERA_ZOOM_IN_NORMAL,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::ZoomOut,
+        rect: NativeRect::new(603.0, 343.0, 24.0, 24.0),
+        hit_resource: resources::tactical::BTN_CAMERA_ZOOM_OUT_NORMAL,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::HighlightAlliance,
+        rect: NativeRect::new(517.0, 304.0, 30.0, 26.0),
+        hit_resource: resources::tactical::DIM_ALLIANCE_SHIPS,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::HighlightEmpire,
+        rect: NativeRect::new(482.0, 304.0, 30.0, 26.0),
+        hit_resource: resources::tactical::DIM_EMPIRE_SHIPS,
+    },
+];
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "A containing native bitmap rectangle guarantees finite nonnegative local pixels."
+)]
+fn tactical_hud_control_at(cache: &mut BmpCache, x: f32, y: f32) -> Option<TacticalHudControl> {
+    TACTICAL_HUD_CONTROLS.iter().find_map(|spec| {
+        if !spec.rect.contains(x, y) {
+            return None;
+        }
+        let pixel_x = (x - spec.rect.x).floor() as usize;
+        let pixel_y = (y - spec.rect.y).floor() as usize;
+        cache
+            .is_resource_hit(DllSource::Tactical, spec.hit_resource, pixel_x, pixel_y)
+            .then_some(spec.control)
+    })
+}
+
+fn pressed_tactical_hud_control(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+) -> Option<TacticalHudControl> {
+    if !is_mouse_button_down(MouseButton::Left) {
+        return None;
+    }
+    let (mouse_x, mouse_y) = mouse_position();
+    let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
+    tactical_hud_control_at(cache, x, y)
+}
+
+#[cfg(test)]
+fn tactical_hud_rect_control_at(x: f32, y: f32) -> Option<TacticalHudControl> {
+    TACTICAL_HUD_CONTROLS
+        .iter()
+        .find_map(|spec| spec.rect.contains(x, y).then_some(spec.control))
 }
 
 fn draw_tactical_bitmap(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x: f32, y: f32) {
@@ -1055,6 +1100,7 @@ fn draw_original_tactical_hud(
     paused: bool,
     highlight_alliance: bool,
     highlight_empire: bool,
+    pressed_control: Option<TacticalHudControl>,
 ) {
     use resources::tactical as art;
 
@@ -1154,15 +1200,39 @@ fn draw_original_tactical_hud(
     );
     draw_tactical_bitmap(
         cache,
-        if paused { 1061 } else { 1060 },
+        if paused {
+            art::BTN_PAUSE_PAUSED
+        } else {
+            art::BTN_PAUSE_RUNNING
+        },
         canvas,
         560.0,
         307.0,
     );
     draw_tactical_bitmap(cache, 1038, canvas, 606.0, 308.0);
 
-    draw_tactical_bitmap(cache, 1044, canvas, 486.0, 343.0);
-    draw_tactical_bitmap(cache, 1046, canvas, 603.0, 343.0);
+    draw_tactical_bitmap(
+        cache,
+        if pressed_control == Some(TacticalHudControl::ZoomIn) {
+            art::BTN_CAMERA_ZOOM_IN_PRESSED
+        } else {
+            art::BTN_CAMERA_ZOOM_IN_NORMAL
+        },
+        canvas,
+        486.0,
+        343.0,
+    );
+    draw_tactical_bitmap(
+        cache,
+        if pressed_control == Some(TacticalHudControl::ZoomOut) {
+            art::BTN_CAMERA_ZOOM_OUT_PRESSED
+        } else {
+            art::BTN_CAMERA_ZOOM_OUT_NORMAL
+        },
+        canvas,
+        603.0,
+        343.0,
+    );
     for (id, x, y) in [
         (1048, 511.0, 376.0),
         (1050, 557.0, 376.0),
@@ -1176,12 +1246,13 @@ fn draw_original_tactical_hud(
 
 fn handle_original_tactical_controls(
     state: &mut TacticalState,
+    cache: &mut BmpCache,
     canvas: TacticalCanvas,
 ) -> TacticalAction {
     let (mouse_x, mouse_y) = mouse_position();
     if is_mouse_button_pressed(MouseButton::Left) {
         let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
-        match tactical_hud_control_at(x, y) {
+        match tactical_hud_control_at(cache, x, y) {
             Some(TacticalHudControl::Pause) => return TacticalAction::TogglePause,
             Some(TacticalHudControl::ZoomIn) => state.zoom = (state.zoom * 1.25).min(2.0),
             Some(TacticalHudControl::ZoomOut) => state.zoom = (state.zoom / 1.25).max(0.5),
@@ -1577,7 +1648,8 @@ pub fn draw_tactical_view(
     }
 
     if phase == BattlePhase::Combat {
-        action = handle_original_tactical_controls(state, canvas);
+        action = handle_original_tactical_controls(state, bmp_cache, canvas);
+        let pressed_control = pressed_tactical_hud_control(bmp_cache, canvas);
         let player_is_alliance = state
             .session
             .as_ref()
@@ -1597,6 +1669,7 @@ pub fn draw_tactical_view(
             paused,
             state.highlight_alliance,
             state.highlight_empire,
+            pressed_control,
         );
         if paused {
             let (x, y) = canvas.point(25.0, 48.0);
@@ -2196,33 +2269,72 @@ mod tests {
     }
 
     #[test]
-    fn original_tactical_control_hits_stop_at_bitmap_edges() {
+    fn original_tactical_control_rects_stop_at_bitmap_edges() {
         assert_eq!(
-            tactical_hud_control_at(560.0, 307.0),
+            tactical_hud_rect_control_at(560.0, 307.0),
             Some(TacticalHudControl::Pause)
         );
         assert_eq!(
-            tactical_hud_control_at(587.9, 327.9),
+            tactical_hud_rect_control_at(587.9, 327.9),
             Some(TacticalHudControl::Pause)
         );
-        assert_eq!(tactical_hud_control_at(588.0, 317.0), None);
-        assert_eq!(tactical_hud_control_at(559.9, 317.0), None);
+        assert_eq!(tactical_hud_rect_control_at(588.0, 317.0), None);
+        assert_eq!(tactical_hud_rect_control_at(559.9, 317.0), None);
         assert_eq!(
-            tactical_hud_control_at(486.0, 343.0),
+            tactical_hud_rect_control_at(486.0, 343.0),
             Some(TacticalHudControl::ZoomIn)
         );
-        assert_eq!(tactical_hud_control_at(510.0, 355.0), None);
+        assert_eq!(tactical_hud_rect_control_at(510.0, 355.0), None);
         assert_eq!(
-            tactical_hud_control_at(603.0, 343.0),
+            tactical_hud_rect_control_at(603.0, 343.0),
             Some(TacticalHudControl::ZoomOut)
         );
         assert_eq!(
-            tactical_hud_control_at(517.0, 304.0),
+            tactical_hud_rect_control_at(517.0, 304.0),
             Some(TacticalHudControl::HighlightAlliance)
         );
         assert_eq!(
-            tactical_hud_control_at(482.0, 304.0),
+            tactical_hud_rect_control_at(482.0, 304.0),
             Some(TacticalHudControl::HighlightEmpire)
         );
+    }
+
+    #[test]
+    fn original_tactical_controls_use_source_bitmap_hit_masks() {
+        let mut cache = BmpCache::new();
+        cache.set_base_path(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/base/ui"),
+        );
+
+        // Original control hit testing excludes every outer edge, even when
+        // the containing rectangle starts there.
+        assert_eq!(tactical_hud_control_at(&mut cache, 560.0, 307.0), None);
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 562.1, 308.1),
+            Some(TacticalHudControl::Pause)
+        );
+
+        // Both zoom controls contain transparent matte pixels inside their
+        // bounding rectangles. Those pixels must pass through untouched.
+        assert_eq!(tactical_hud_control_at(&mut cache, 487.1, 344.1), None);
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 491.1, 344.1),
+            Some(TacticalHudControl::ZoomIn)
+        );
+        assert_eq!(tactical_hud_control_at(&mut cache, 604.1, 344.1), None);
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 609.1, 344.1),
+            Some(TacticalHudControl::ZoomOut)
+        );
+
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 518.1, 305.1),
+            Some(TacticalHudControl::HighlightAlliance)
+        );
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 483.1, 305.1),
+            Some(TacticalHudControl::HighlightEmpire)
+        );
+        assert_eq!(tactical_hud_control_at(&mut cache, 588.0, 317.0), None);
     }
 }

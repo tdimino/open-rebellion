@@ -27,9 +27,12 @@ four-request ledgers, and results go to the ignored
 The generated test site also contains `battle.html`, a test-only launcher for the
 real tactical scene. Its two links use the versioned codes in
 [`tactical.catalog.json`](scenarios/tactical.catalog.json) and start muted. The
-fixture currently proves battle entry only. Run `node run.mjs --battle --all --no-build`
-to check both factions at both viewports. Tactical controls and images have no
-original-game baselines yet. See the [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
+fixture proves deterministic production-path battle entry and the current
+shell/control checkpoint only. Run `node run.mjs --battle --all --no-build` to
+check both factions at both viewports. The tactical probes cover pause stability,
+faction highlights, zoom round trips, source-shaped control misses, held pressed
+art, and aperture isolation. Tactical controls and images still have no lossless
+original-game baselines. See the [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 
 The PNG comparison directory contains *implementation regression* baselines,
 not original-game truth. `--update-goldens` creates only missing implementation

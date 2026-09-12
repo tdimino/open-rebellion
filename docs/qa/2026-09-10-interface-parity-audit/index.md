@@ -76,6 +76,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md) | Eight source frame tiles, instant menu display, source-pixel border checks, and remaining menu gaps. |
 | [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) | Unsupported hover-wash removal and source-pixel checks on visible frame edges beneath a system window. |
 | [P52 tactical shell and controls evidence](evidence/2026-09-12-tactical-shell-controls.md) | Original 640×480 shell, first working bitmap controls, exact source-pixel probes, and explicit tactical gaps. |
+| [P53 tactical control-state evidence](evidence/2026-09-12-tactical-control-hit-states.md) | Original palette-key hit masks, zoom pressed/resting resources, round-trip browser proof, and explicit limits. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -141,6 +142,10 @@ P52 replaces the active combat replacement panels with the original tactical
 shell and first working bitmap pause, highlight, and zoom controls. Its
 [evidence](evidence/2026-09-12-tactical-shell-controls.md) keeps procedural
 battle contents and all 106 tactical cells open.
+P53 applies the original palette-key hit rule to those working controls and
+adds the extracted zoom pressed states. Its
+[evidence](evidence/2026-09-12-tactical-control-hit-states.md) keeps drag,
+repeat, camera, battle-content, A0, and complete tactical acceptance open.
 Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain
