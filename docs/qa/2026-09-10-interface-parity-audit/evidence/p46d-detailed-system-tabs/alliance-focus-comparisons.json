@@ -1,0 +1,70 @@
+[
+  {
+    "width": 640,
+    "height": 480,
+    "yavin_detail_box": [
+      170,
+      86,
+      401,
+      391
+    ],
+    "covered_item_box": [
+      316,
+      161,
+      385,
+      189
+    ],
+    "foreground_click_logical": [
+      350,
+      175
+    ],
+    "foreground_click_screen": [
+      350.0,
+      175
+    ],
+    "background_detail_identical": true,
+    "background_item_identical": true,
+    "foreground_empty_click_identical": true,
+    "title_raise_changes_overlap": true,
+    "direct_selection_difference": [
+      146,
+      75,
+      214,
+      102
+    ]
+  },
+  {
+    "width": 1000,
+    "height": 700,
+    "yavin_detail_box": [
+      281,
+      125,
+      618,
+      570
+    ],
+    "covered_item_box": [
+      494,
+      235,
+      595,
+      276
+    ],
+    "foreground_click_logical": [
+      350,
+      175
+    ],
+    "foreground_click_screen": [
+      543.75,
+      255.20833333333331
+    ],
+    "background_detail_identical": true,
+    "background_item_identical": true,
+    "foreground_empty_click_identical": true,
+    "title_raise_changes_overlap": true,
+    "direct_selection_difference": [
+      213,
+      110,
+      312,
+      149
+    ]
+  }
+]

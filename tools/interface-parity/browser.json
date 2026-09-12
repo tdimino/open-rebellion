@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "driver": "playwright-core",
+  "driver_version": "1.63.0",
+  "product": "Chrome for Testing",
+  "version": "151.0.7922.34",
+  "platform": "mac-arm64",
+  "executable_candidates": [
+    "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+  ],
+  "launch_arguments": [
+    "--mute-audio",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--no-first-run"
+  ]
+}

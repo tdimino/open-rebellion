@@ -1,0 +1,196 @@
+[
+  {
+    "width": 640,
+    "pair": [
+      "bottom",
+      "bottom-clamped"
+    ],
+    "identical": true,
+    "difference_bounds": null
+  },
+  {
+    "width": 640,
+    "pair": [
+      "top-return",
+      "top-clamped"
+    ],
+    "identical": true,
+    "difference_bounds": null
+  },
+  {
+    "width": 640,
+    "pair": [
+      "selected",
+      "restored"
+    ],
+    "identical": true,
+    "difference_bounds": null
+  },
+  {
+    "width": 640,
+    "pair": [
+      "top",
+      "down-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      14,
+      76,
+      203,
+      261
+    ]
+  },
+  {
+    "width": 640,
+    "pair": [
+      "bottom",
+      "up-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      14,
+      76,
+      203,
+      261
+    ]
+  },
+  {
+    "width": 640,
+    "pair": [
+      "bottom",
+      "selected"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      5,
+      215,
+      73,
+      242
+    ]
+  },
+  {
+    "width": 640,
+    "pair": [
+      "down-pressed",
+      "down-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      14,
+      76,
+      225,
+      294
+    ]
+  },
+  {
+    "width": 640,
+    "pair": [
+      "up-pressed",
+      "up-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      5,
+      76,
+      225,
+      261
+    ]
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "bottom",
+      "bottom-clamped"
+    ],
+    "identical": true,
+    "difference_bounds": null
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "top-return",
+      "top-clamped"
+    ],
+    "identical": true,
+    "difference_bounds": null
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "selected",
+      "restored"
+    ],
+    "identical": true,
+    "difference_bounds": null
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "top",
+      "down-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      20,
+      111,
+      296,
+      369
+    ]
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "bottom",
+      "up-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      20,
+      111,
+      296,
+      383
+    ]
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "bottom",
+      "selected"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      8,
+      314,
+      107,
+      353
+    ]
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "down-pressed",
+      "down-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      20,
+      111,
+      329,
+      429
+    ]
+  },
+  {
+    "width": 1000,
+    "pair": [
+      "up-pressed",
+      "up-1"
+    ],
+    "identical": false,
+    "difference_bounds": [
+      8,
+      111,
+      329,
+      383
+    ]
+  }
+]

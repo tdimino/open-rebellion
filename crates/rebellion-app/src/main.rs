@@ -1,4 +1,13 @@
 mod audio;
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+#[cfg_attr(
+    all(test, not(target_arch = "wasm32")),
+    expect(
+        dead_code,
+        reason = "Native tests cover fixture helpers; the browser bridge is called only by WASM."
+    )
+)]
+mod interface_test_fixture;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;
 #[cfg(target_arch = "wasm32")]
@@ -52,21 +61,19 @@ use rebellion_render::panels::research::{draw_research, ResearchPanelState};
 use rebellion_render::{
     advisor_combat_result, advisor_death_star, advisor_greet, advisor_manufacturing_complete,
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
-    draw_blockade_indicators, draw_cockpit_background, draw_cockpit_chrome,
-    draw_cockpit_egui_layer, draw_credits, draw_encyclopedia, draw_event_screen,
-    draw_facility_icons, draw_fleet_overlays, draw_fleets, draw_fog_overlay, draw_galaxy_map,
+    draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits,
+    draw_encyclopedia, draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map,
     draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing, draw_missions,
-    draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_boundaries,
-    draw_sector_windows, draw_system_windows, draw_tactical_view, handle_cockpit_egui_input,
-    set_cockpit_viewport_clip, show_event_screen, update_event_screen, AdvisorFaction,
-    AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton, CockpitFaction,
-    CockpitState, CreditsState, EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState,
-    GameMessage, GameSetupAction, GameSetupState, GroundAction, GroundCombatState, MainMenuAction,
-    MainMenuState, ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog,
-    MessageLogState, MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState,
-    MusicContext, OfficersState, PanelAction, SectorWindowAction, SectorWindowState, SfxKind,
-    SystemWindowAction, SystemWindowState, TacticalAction, TacticalState, VideoError, VideoPlayer,
-    VoiceLine,
+    draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
+    draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
+    show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
+    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
+    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction,
+    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
+    ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog, MessageLogState,
+    MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
+    PanelAction, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
+    SystemWindowState, TacticalAction, TacticalState, VideoError, VideoPlayer, VoiceLine,
 };
 
 /// Top-level game mode state machine.
@@ -895,6 +902,39 @@ async fn main() {
         };
     }
 
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let interface_fixture_request = interface_test_fixture::requested();
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    if let Some(request) = interface_fixture_request {
+        cutscene_player = None;
+        audio_vol.muted = true;
+        audio_vol.music_muted = true;
+        audio_vol.dirty = true;
+        interface_test_fixture::apply(
+            request,
+            &mut world,
+            &mut game_mode,
+            &mut player_faction,
+            &mut cockpit_state,
+            &mut map_state,
+            &mut movement_state,
+            &mut mfg_state,
+            &mut economy_state,
+            &mut mission_state,
+            &mut blockade_state,
+            &mut sector_window_state,
+            &mut system_window_state,
+        );
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let mut interface_fixture_frames = 0_u32;
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let mut interface_fixture_emitted = false;
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let interface_fixture_active = interface_fixture_request.is_some();
+    #[cfg(not(all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+    let interface_fixture_active = false;
+
     // ── Apply Star Wars theme ────────────────────────────────────────────
     // Must happen inside the macroquad async context, after first frame init.
     let mut theme_applied = false;
@@ -913,7 +953,9 @@ async fn main() {
         }
 
         // ── Advisor animation timer ────────────────────────────────────────
-        advisor_state.update(dt);
+        if !interface_fixture_active {
+            advisor_state.update(dt);
+        }
 
         // ── Event screen overlay timer ────────────────────────────────────
         update_event_screen(&mut event_screen_state, dt);
@@ -932,22 +974,27 @@ async fn main() {
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
                 game_mode = GameMode::MainMenu;
             } else if game_mode == GameMode::Galaxy {
-                show_officers = false;
-                show_fleets = false;
-                show_manufacturing = false;
-                show_missions = false;
-                show_research = false;
-                show_jedi = false;
-                show_bombardment = false;
-                show_death_star = false;
-                show_loyalty = false;
-                show_save_load = false;
-                save_load_panel_state.close();
-                game_mode = GameMode::MainMenu;
-                macroquad::logging::info!(
-                    "[main_menu] returned_from_campaign generation={} audio_context=main_menu",
-                    campaign_generation
-                );
+                if cockpit_state.gid_ui.menu_open {
+                    cockpit_state.gid_ui.menu_open = false;
+                    cockpit_state.gid_ui.category = None;
+                } else {
+                    show_officers = false;
+                    show_fleets = false;
+                    show_manufacturing = false;
+                    show_missions = false;
+                    show_research = false;
+                    show_jedi = false;
+                    show_bombardment = false;
+                    show_death_star = false;
+                    show_loyalty = false;
+                    show_save_load = false;
+                    save_load_panel_state.close();
+                    game_mode = GameMode::MainMenu;
+                    macroquad::logging::info!(
+                        "[main_menu] returned_from_campaign generation={} audio_context=main_menu",
+                        campaign_generation
+                    );
+                }
             } else {
                 #[cfg(target_arch = "wasm32")]
                 web_accessibility::sync_menu(false, &main_menu_state, audio_vol.music_enabled());
@@ -2726,28 +2773,40 @@ async fn main() {
                 let pointer = mouse_position();
                 map_state.pointer_blocked = sector_window_state
                     .contains_screen_point(cockpit_layout, pointer)
-                    || system_window_state.contains_screen_point(cockpit_layout, pointer);
+                    || system_window_state.contains_screen_point(cockpit_layout, pointer)
+                    || cockpit_state.gid_ui.menu_open;
 
                 // Keep every macroquad map layer inside the shell's transparent
                 // galaxy aperture. The clip is cleared before the egui pass.
                 set_cockpit_viewport_clip(Some(cockpit_vp));
 
-                // 2. Galaxy map (pure macroquad) — returns the shared transform
-                let cam = draw_galaxy_map(&world, &mut map_state);
+                // 2. Recovered GID baseline. Replacement fog, fleet, sector,
+                // facility, and blockade primitives stay off the parity surface
+                // until their original GID modes are reconstructed.
+                draw_galaxy_backdrop(cockpit_layout, &mut bmp_cache, cockpit_state.gid_mode);
+                draw_galaxy_map(
+                    &world,
+                    &mut map_state,
+                    &mut bmp_cache,
+                    cockpit_state.gid_mode,
+                    cockpit_state.faction,
+                    &rebellion_render::GidOverlayContext {
+                        movement: &movement_state,
+                        manufacturing: &mfg_state,
+                        economy: &economy_state,
+                        missions: &mission_state,
+                    },
+                );
+                #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                if let Some(request) = interface_fixture_request {
+                    if request.scenario == interface_test_fixture::Scenario::Hover {
+                        interface_test_fixture::emit_hover(request, &world, &map_state);
+                    }
+                }
                 if let Some(system) = map_state.activated_system {
                     sector_window_state.open_for_system(&world, system, cockpit_state.faction);
                 }
 
-                // 2. Fog overlay (pure macroquad) — dim non-visible systems
-                draw_fog_overlay(&world, fog_state, &cam);
-
-                // 3. Fleet overlays (pure macroquad) — on top of fog
-                draw_fleet_overlays(&world, &movement_state, &cam);
-
-                // 3c. Galaxy map overlays (pure macroquad) — sector boundaries, facility icons, blockades
-                draw_sector_boundaries(&world, &cam, map_state.show_sector_labels);
-                draw_facility_icons(&world, &cam);
-                draw_blockade_indicators(&world, &blockade_state, &cam);
                 set_cockpit_viewport_clip(None);
 
                 // 4. All egui panels in a single ui() + draw() pass
@@ -2757,7 +2816,19 @@ async fn main() {
                     draw_cockpit_background(ctx, &cockpit_state, &mut bmp_cache);
                     // Paint the native primary controls before floating
                     // windows. Input resolves after those windows register.
-                    draw_cockpit_egui_layer(ctx, &cockpit_state, &mut bmp_cache);
+                    if let Some(mode) =
+                        draw_cockpit_egui_layer(ctx, &mut cockpit_state, &mut bmp_cache)
+                    {
+                        macroquad::logging::info!(
+                            "[interface] command=0x{:x} destination=gid status=selected label={}",
+                            mode.command_id(),
+                            mode.label()
+                        );
+                        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                        if let Some(request) = interface_fixture_request {
+                            interface_test_fixture::emit_selected(request, cockpit_state.gid_mode);
+                        }
+                    }
 
                     // War Room panels (mutually exclusive left panels)
                     if show_officers {
@@ -2952,6 +3023,7 @@ async fn main() {
                     for action in draw_system_windows(
                         ctx,
                         &world,
+                        fog_state,
                         &mut system_window_state,
                         cockpit_state.faction,
                         cockpit_layout,
@@ -2993,6 +3065,19 @@ async fn main() {
                             CockpitButton::TroopFinder => (0x130, "troop_finder"),
                             CockpitButton::GameOptions => (0x131, "game_options"),
                             CockpitButton::Encyclopedia => (0x132, "encyclopedia"),
+                            CockpitButton::GalacticInformationDisplay => {
+                                cockpit_state.gid_ui.menu_open = !cockpit_state.gid_ui.menu_open;
+                                cockpit_state.gid_ui.category = None;
+                                macroquad::logging::info!(
+                                    "[interface] command=0x133 destination=gid_menu status={}",
+                                    if cockpit_state.gid_ui.menu_open {
+                                        "opened_original"
+                                    } else {
+                                        "closed"
+                                    }
+                                );
+                                return;
+                            }
                         };
                         macroquad::logging::info!(
                             "[interface] command=0x{:x} destination={} status=pending_original_window",
@@ -3669,6 +3754,17 @@ async fn main() {
                 map_state.camera_x = system.x as f32;
                 map_state.camera_y = system.y as f32;
                 map_state.selected_system = Some(focus_key);
+            }
+        }
+
+        #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+        if let Some(request) = interface_fixture_request {
+            if game_mode == GameMode::Galaxy && !interface_fixture_emitted {
+                interface_fixture_frames += 1;
+                if interface_fixture_frames >= 3 {
+                    interface_test_fixture::emit_ready(request, &world, &map_state);
+                    interface_fixture_emitted = true;
+                }
             }
         }
 

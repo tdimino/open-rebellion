@@ -36,7 +36,7 @@ comparison.
 | `FUN_006028c0`, `FUN_00602d30`, `FUN_006030c0`, `FUN_006030f0`, and `FUN_006035f0` | Normal and captured-press paint states, pointer capture, release cancellation, dispatch, and disabled flags | CMD-10 |
 | `FUN_005fca00`, `FUN_005fd170`, and `FUN_005fc140` | Strict four-edge rejection, bottom-left palette-key hit mask, natural-size paint, and control-window clipping | CMD-10 |
 | `FUN_00422ce0` and freshly recovered `FUN_00429020` | `WM_COMMAND`, double-click routing, exact rail hit testing, child-window focus, and rail removal | CMD-03, CMD-04 |
-| `FUN_00425d00` and freshly recovered `FUN_00426d00` | GID mode/caption branches and the original floating 180×240 display window path | CMD-02 |
+| `FUN_00427010`, `FUN_00425d00`, `FUN_00426d00`, `FUN_00426e70`, `FUN_00426ee0`, `FUN_00427270`, and `FUN_0042b330` | Active 903 versus Display Off 902, GID captions, exact faction control, compact and expanded legends, native marker families, Popular Support thresholds, and floating 180×240 display-window path | CMD-02 |
 | `FUN_0044f670`, `FUN_00442d70`, and `FUN_0044c410` | Code-built, modeless object windows using GOKRES rather than an invented sidebar | CMD-03, OBJ-02–OBJ-14 |
 | `FUN_0042d650` and freshly recovered `FUN_0042adb0` | Faction advisor/briefing DLL selection and exact advisor apertures | PRE-05, CMD-07 |
 
@@ -53,17 +53,34 @@ P46B restores the six primary faction controls from the recovered constructor,
 paint, hit-test, capture, and `WM_COMMAND` paths. It removes the replacement
 text strip, renders the exact normal and captured-press bitmap pairs, and keeps
 all six destinations closed until their original windows exist. Full
-A0 captures, the disabled path, destination compositions, speed and GID
-controls, and the complete native/browser matrix remain open. See the
+A0 captures, the disabled path, destination compositions, and speed controls
+remain open. P47B adds the exact faction GID control under the same native
+input contract, while its destination menu remains open. See the
 [P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
 
 The first UIP-B01 checkpoint also replaces the invented sidebar with recovered
 235x360 sector and 226x304 detailed-system shells. Original planet pictures,
 relationship title art, six tab resource families, single and double-click
 routing, pointer occlusion, and rail transitions work in both faction shells.
-Exact item compositions, drag and command semantics, uncommon states, and the
-complete A0 matrix remain open. See the
-[navigation evidence](evidence/2026-09-11-strategic-window-navigation.md).
+P46D maps characters, fleet representatives, facilities, regiments, special
+forces, mines, and refineries to their GOKRES miniatures. It also restores the
+three-column item viewport, STRATEGY `10365` through `10369` scrollbar art,
+selection, displayed labels, bounded input, and coarse current-intelligence
+gating for opposing objects. Nested compositions, exact intelligence rules,
+drag and command semantics, uncommon states, and the complete A0 matrix remain open. See the
+[navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) and
+[tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md).
+
+P47A identifies STRATEGY 900 and 901 as the faction shells, with 902 and 903 as
+the bright and dim galaxy resources. P47B proves 902 belongs to Display Off and
+903 to every active GID mode, then restores the default Popular Support caption,
+exact faction GID control, compact 10168 legend, native 10146 through 10158
+marker families, and support-size thresholds. It also establishes that the
+nine tall side controls are Message Index categories, not GID filters. The
+code-built GID menu, expanded 180x240 legend, remaining modes and overlays, and
+exact map input remain open. See the
+[galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) and
+[Popular Support evidence](evidence/2026-09-11-popular-support-gid.md).
 
 The read-only Ghidra pass also recovered six formerly empty high-priority UI
 exports and the `CoolStrobeButton` paint/input path. The text export is not a
@@ -108,7 +125,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
 | RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell and first rail lifecycle runtime-corroborated | Replace provisional rail thumbnails, exercise the full multiwindow matrix, then compare against A0 captures |
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial; primary controls implemented | Capture the six primary controls in A0, implement original destinations, then recover speed and facility-indicator predicates |
-| RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial | Resolve TEXTSTRA captions and paint-resource branches |
+| RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial; Display Off and default Popular Support runtime-corroborated | Recover the code-built menu, expanded legend, remaining filter predicates and overlays, and exact map input |
 | RE-OVR-01 | Galaxy Overview | untriaged | Recover geometry, category formulas, resources, and destinations |
 | RE-MSG-01 | Messages, Agent menus, alerts, and reports | untriaged | Join categories and event results to resources, audio, and navigation |
 | RE-ENC-01 | Encyclopedia index and topics | static-partial | Complete ENCYBMAP, ENCYTEXT, EData, and navigation mappings |
@@ -149,7 +166,9 @@ routing, results, and strategic return. `EVT-02` owns Battle Alert entry;
 4. Complete the first recovered sector, system, and reference-rail checkpoint
    with exact item compositions, commands, thumbnails, and uncommon states,
    then continue through the remaining managed original object windows.
-5. Resolve the full GID mapping before drawing any replacement marker or legend.
+5. Continue the full GID mapping without replacement art: recover the code-built
+   menu, expanded legend, remaining filter predicates and overlays, and exact
+   map input.
 6. Recover and implement the complete `TAC-01` through `TAC-07` space-battle
    path, including type-301/303 resources and Death Star controls.
 7. Use original-runtime capture only for the remaining dynamic proof boundary.

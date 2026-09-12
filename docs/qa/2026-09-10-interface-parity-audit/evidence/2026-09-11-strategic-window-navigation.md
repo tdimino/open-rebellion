@@ -13,7 +13,9 @@ This checkpoint replaces the invented right sidebar with the first recovered
 sector-to-system window journey. It is a partial implementation checkpoint for
 `CMD-03` and `CMD-04`, not complete interface acceptance. The original shells,
 resource families, geometry, routing, and first rail lifecycle work. Exact
-item-level contents and several state variants remain open.
+item-level contents and several state variants were left open at this
+checkpoint. P46D continues the work in the
+[detailed-system tab evidence](2026-09-11-detailed-system-tab-items.md).
 
 ## Recovered contract
 
@@ -75,8 +77,9 @@ failed request, panic, missing-asset diagnostic, or WebGL failure.
 This checkpoint does not mark a `CMD-03` or `CMD-04` baseline cell passed.
 The following work remains:
 
-- exact personnel, fleet, troop, defense, manufacturing, and production item
-  bitmaps, stacks, labels, selection, drag, drop, and command behavior;
+- nested personnel, fleet, troop, defense, manufacturing, and production
+  stacks, drag, drop, status, and command behavior beyond P46D's first
+  source-mapped item composition;
 - support, resource, facility, HQ, blockade, uprising, construction, transit,
   damage, unexplored, uninhabited, and destroyed compositions;
 - exact active and inactive rail thumbnails instead of the current

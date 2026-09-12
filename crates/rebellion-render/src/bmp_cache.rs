@@ -39,6 +39,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use egui_macroquad::egui::{self, TextureHandle, TextureOptions};
+use macroquad::prelude::{FilterMode, Texture2D};
 #[cfg(not(target_arch = "wasm32"))]
 use serde::Deserialize;
 #[cfg(not(target_arch = "wasm32"))]
@@ -388,14 +389,14 @@ pub mod resources {
     /// Covers galaxy-map backgrounds, panel chrome, and the most common event
     /// screens surfaced by the current render layer and curated reference set.
     pub mod strategy {
-        /// Main galaxy map starfield background.
-        pub const GALAXY_BACKGROUND: u32 = 900;
-        /// Imperial galaxy-map cockpit background.
-        pub const GALAXY_BACKGROUND_EMPIRE: u32 = 901;
-        /// Galaxy display toggle: off.
-        pub const GALAXY_DISPLAY_OFF: u32 = 902;
-        /// Galaxy display toggle: on.
-        pub const GALAXY_DISPLAY_ON: u32 = 903;
+        /// Alliance strategic command-center shell.
+        pub const ALLIANCE_COMMAND_CENTER_SHELL: u32 = 900;
+        /// Imperial strategic command-center shell.
+        pub const EMPIRE_COMMAND_CENTER_SHELL: u32 = 901;
+        /// Bright authored galaxy starfield used only when GID display is off.
+        pub const GALAXY_STARFIELD_BRIGHT: u32 = 902;
+        /// Dim authored galaxy starfield used by every active GID mode.
+        pub const GALAXY_STARFIELD_DIM: u32 = 903;
 
         /// Alliance System Finder, pressed.
         pub const ALLIANCE_SYSTEM_FINDER_PRESSED: u32 = 10001;
@@ -421,6 +422,10 @@ pub mod resources {
         pub const ALLIANCE_ENCYCLOPEDIA_PRESSED: u32 = 10011;
         /// Alliance Encyclopedia, normal.
         pub const ALLIANCE_ENCYCLOPEDIA_NORMAL: u32 = 10012;
+        /// Alliance Galactic Information Display, normal.
+        pub const ALLIANCE_GID_NORMAL: u32 = 10013;
+        /// Alliance Galactic Information Display, pressed.
+        pub const ALLIANCE_GID_PRESSED: u32 = 10014;
 
         /// Imperial System Finder, pressed.
         pub const EMPIRE_SYSTEM_FINDER_PRESSED: u32 = 10015;
@@ -446,6 +451,66 @@ pub mod resources {
         pub const EMPIRE_ENCYCLOPEDIA_PRESSED: u32 = 10025;
         /// Imperial Encyclopedia, normal.
         pub const EMPIRE_ENCYCLOPEDIA_NORMAL: u32 = 10026;
+        /// Imperial Galactic Information Display, normal.
+        pub const EMPIRE_GID_NORMAL: u32 = 10027;
+        /// Imperial Galactic Information Display, pressed.
+        pub const EMPIRE_GID_PRESSED: u32 = 10028;
+
+        /// Code-built GID menu frame tiles, checkmarks, category icons, and arrows.
+        pub const GID_FRAME_FIRST: u32 = 10100;
+        pub const GID_FRAME_LAST: u32 = 10107;
+        pub const GID_CHECK_ALLIANCE: u32 = 10108;
+        pub const GID_CHECK_EMPIRE: u32 = 10109;
+        pub const GID_ALLIANCE_CATEGORY_FIRST: u32 = 10110;
+        pub const GID_ALLIANCE_CATEGORY_LAST: u32 = 10115;
+        pub const GID_ALLIANCE_ARROW: u32 = 10117;
+        pub const GID_EMPIRE_CATEGORY_FIRST: u32 = 10119;
+        pub const GID_EMPIRE_CATEGORY_LAST: u32 = 10124;
+        pub const GID_EMPIRE_ARROW: u32 = 10128;
+        pub const GID_SHIPYARDS: u32 = 10131;
+        pub const GID_TRAINING_FACILITIES: u32 = 10132;
+        pub const GID_CONSTRUCTION_YARDS: u32 = 10133;
+        pub const GID_AVAILABLE_ENERGY: u32 = 10134;
+        pub const GID_AVAILABLE_RAW_MATERIAL: u32 = 10135;
+        pub const GID_MINES: u32 = 10136;
+        pub const GID_REFINERIES: u32 = 10137;
+        pub const GID_IDLE_PERSONNEL_ALLIANCE: u32 = 10138;
+        pub const GID_ACTIVE_PERSONNEL_ALLIANCE: u32 = 10140;
+        pub const GID_FIGHTER_SQUADRONS_ALLIANCE: u32 = 10141;
+        pub const GID_DEATH_STAR_SHIELDS: u32 = 10142;
+        pub const GID_PLANETARY_SHIELDS_ALLIANCE: u32 = 10143;
+
+        /// Alliance GID system markers, largest through smallest.
+        pub const GID_ALLIANCE_LARGEST: u32 = 10146;
+        pub const GID_ALLIANCE_LARGE: u32 = 10147;
+        pub const GID_ALLIANCE_MEDIUM: u32 = 10148;
+        pub const GID_ALLIANCE_SMALLEST: u32 = 10149;
+        /// Imperial GID system markers, smallest through largest.
+        pub const GID_EMPIRE_SMALLEST: u32 = 10150;
+        pub const GID_EMPIRE_MEDIUM: u32 = 10151;
+        pub const GID_EMPIRE_LARGE: u32 = 10152;
+        pub const GID_EMPIRE_LARGEST: u32 = 10153;
+        /// Neutral GID system markers, smallest through largest.
+        pub const GID_NEUTRAL_SMALLEST: u32 = 10154;
+        pub const GID_NEUTRAL_MEDIUM: u32 = 10155;
+        pub const GID_NEUTRAL_LARGE: u32 = 10156;
+        pub const GID_NEUTRAL_LARGEST: u32 = 10157;
+        /// Unexplored or unpopulated GID system marker.
+        pub const GID_UNEXPLORED: u32 = 10158;
+        /// Additional native GID selection/special marker, not yet assigned.
+        pub const GID_SPECIAL: u32 = 10166;
+        /// Compact strategic-map legend control.
+        pub const GID_COMPACT_LEGEND: u32 = 10168;
+        pub const GID_MULTI_FACTION_FLEET: u32 = 10160;
+        pub const GID_SELECTION: u32 = 10166;
+        pub const GID_HOVER: u32 = 10167;
+        pub const GID_SPECIAL_ALLIANCE: u32 = 10169;
+        pub const GID_SPECIAL_EMPIRE: u32 = 10170;
+        pub const GID_UPRISING_ALLIANCE: u32 = 11608;
+        pub const GID_UPRISING_EMPIRE: u32 = 11609;
+        pub const GID_PLANETARY_BATTERIES: u32 = 11610;
+        pub const GID_FLEETS_EN_ROUTE_ALLIANCE: u32 = 11613;
+        pub const GID_FLEETS_EN_ROUTE_EMPIRE: u32 = 11614;
 
         /// Original sector-window planet pictures 1 through 23.
         pub const SECTOR_PLANET_FIRST: u32 = 10212;
@@ -986,6 +1051,8 @@ pub struct BmpCache {
     approved_hd_assets: HashMap<String, ApprovedHdAsset>,
     /// Cached textures.  `None` value means "attempted load, file not found".
     textures: HashMap<(DllSource, u32), Option<TextureHandle>>,
+    /// Macroquad textures used below the egui interface layers.
+    macroquad_textures: HashMap<(DllSource, u32), Option<Texture2D>>,
     /// Native-style per-pixel hit masks decoded from the original BMPs.
     hit_masks: HashMap<(DllSource, u32), Option<BitmapHitMask>>,
 }
@@ -1077,6 +1144,7 @@ impl BmpCache {
             profile: AssetRenderProfile::OriginalParity,
             approved_hd_assets: HashMap::new(),
             textures: HashMap::new(),
+            macroquad_textures: HashMap::new(),
             hit_masks: HashMap::new(),
         }
     }
@@ -1087,6 +1155,7 @@ impl BmpCache {
     pub fn set_base_path(&mut self, path: impl Into<PathBuf>) {
         self.base_path = Some(path.into());
         self.textures.clear();
+        self.macroquad_textures.clear();
         self.hit_masks.clear();
     }
 
@@ -1187,6 +1256,34 @@ impl BmpCache {
             .get(&(source, resource_id))
             .and_then(Option::as_ref)
             .map(|mask| [mask.width, mask.height])
+    }
+
+    /// Retrieve an original bitmap as a nearest-neighbor Macroquad texture.
+    ///
+    /// This path is for authored bitmap layers painted beneath Macroquad
+    /// primitives before egui paints the original interface chrome. It uses
+    /// the original resource even when the optional HD profile is active.
+    pub fn get_macroquad_original(
+        &mut self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<&Texture2D> {
+        let key = (source, resource_id);
+        if !self.macroquad_textures.contains_key(&key) {
+            let texture = self
+                .load_original_bytes(source, resource_id)
+                .and_then(|bytes| decode_macroquad_texture(&bytes, source, resource_id));
+            if texture.is_none() {
+                eprintln!(
+                    "[bmp_cache] macroquad asset unavailable source={} resource_id={}",
+                    source.dll_dir_name(),
+                    resource_id
+                );
+            }
+            self.macroquad_textures.insert(key, texture);
+        }
+
+        self.macroquad_textures.get(&key)?.as_ref()
     }
 
     fn ensure_hit_mask(&mut self, source: DllSource, resource_id: u32) {
@@ -1356,24 +1453,18 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
     match source {
         DllSource::Strategy => matches!(
             resource_id,
-            resources::strategy::GALAXY_BACKGROUND
-                | resources::strategy::GALAXY_BACKGROUND_EMPIRE
+            resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL
+                | resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
+                | resources::strategy::GID_ALLIANCE_LARGEST
+                    ..=resources::strategy::GID_UNEXPLORED
+                | 10159..=10167
+                | 10169..=10170
                 | resources::strategy::SECTOR_PLANET_FIRST
                     ..=resources::strategy::SECTOR_PLANET_LAST
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
                     ..=resources::strategy::SECTOR_PLANET_SPECIAL_LAST
         ),
-        DllSource::Gokres => matches!(
-            resource_id,
-            resources::gokres::MINI_FIGHTER_A_WING
-                ..=resources::gokres::MINI_FIGHTER_Y_WING
-                | resources::gokres::MINI_FIGHTER_TIE_FIGHTER
-                    ..=resources::gokres::MINI_FIGHTER_TIE_DEFENDER
-                | resources::gokres::MINI_SHIP_MC80_LIBERTY_CRUISER
-                    ..=resources::gokres::MINI_SHIP_MC80A_HOME_ONE_CRUISER
-                | resources::gokres::MINI_SHIP_STRIKE_CRUISER
-                    ..=resources::gokres::MINI_SHIP_IMPERIAL_DREADNOUGHT
-        ),
+        DllSource::Gokres => matches!(resource_id, 16_000..=19_999),
         DllSource::Common => matches!(
             resource_id,
             10001..=10003
@@ -1391,6 +1482,19 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
     }
 }
 
+fn decode_macroquad_texture(
+    bytes: &[u8],
+    source: DllSource,
+    resource_id: u32,
+) -> Option<Texture2D> {
+    let rgba = decode_rgba_image(bytes, source, resource_id).ok()?;
+    let width = u16::try_from(rgba.width()).ok()?;
+    let height = u16::try_from(rgba.height()).ok()?;
+    let texture = Texture2D::from_rgba8(width, height, rgba.as_raw());
+    texture.set_filter(FilterMode::Nearest);
+    Some(texture)
+}
+
 /// Decode a staged image and apply the original game's palette-blue
 /// transparency to resources whose extracted bitmaps contain that matte.
 fn decode_color_image(
@@ -1398,6 +1502,20 @@ fn decode_color_image(
     source: DllSource,
     resource_id: u32,
 ) -> image::ImageResult<egui::ColorImage> {
+    let rgba = decode_rgba_image(bytes, source, resource_id)?;
+
+    let (w, h) = rgba.dimensions();
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [w as usize, h as usize],
+        rgba.as_raw(),
+    ))
+}
+
+fn decode_rgba_image(
+    bytes: &[u8],
+    source: DllSource,
+    resource_id: u32,
+) -> image::ImageResult<image::RgbaImage> {
     let mut rgba = image::load_from_memory(bytes)?.to_rgba8();
     if uses_blue_screen_transparency(source, resource_id) {
         for pixel in rgba.pixels_mut() {
@@ -1406,12 +1524,7 @@ fn decode_color_image(
             }
         }
     }
-
-    let (w, h) = rgba.dimensions();
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
-        [w as usize, h as usize],
-        rgba.as_raw(),
-    ))
+    Ok(rgba)
 }
 
 // ---------------------------------------------------------------------------
@@ -1490,6 +1603,17 @@ mod tests {
         assert!(matches!(cache.textures.get(&key), Some(None)));
         assert!(cache.get(&ctx, key.0, key.1).is_none());
         assert_eq!(cache.textures.len(), 1);
+    }
+
+    #[test]
+    fn missing_macroquad_resource_is_negatively_cached_without_a_context() {
+        let mut cache = BmpCache::new();
+        let key = (DllSource::Strategy, 999_998);
+
+        assert!(cache.get_macroquad_original(key.0, key.1).is_none());
+        assert!(matches!(cache.macroquad_textures.get(&key), Some(None)));
+        assert!(cache.get_macroquad_original(key.0, key.1).is_none());
+        assert_eq!(cache.macroquad_textures.len(), 1);
     }
 
     #[test]
@@ -1647,7 +1771,7 @@ mod tests {
         let decoded = decode_color_image(
             &encoded,
             DllSource::Strategy,
-            resources::strategy::GALAXY_BACKGROUND,
+            resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL,
         )
         .unwrap();
 
@@ -1656,7 +1780,53 @@ mod tests {
     }
 
     #[test]
-    fn fleet_miniature_blue_screen_becomes_transparent() {
+    fn galaxy_starfield_preserves_deep_blue_pixels() {
+        let mut image = image::RgbaImage::new(1, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let decoded = decode_color_image(
+            &encoded,
+            DllSource::Strategy,
+            resources::strategy::GALAXY_STARFIELD_BRIGHT,
+        )
+        .unwrap();
+
+        assert_eq!(decoded.pixels[0].a(), 255);
+    }
+
+    #[test]
+    fn gid_marker_blue_screen_becomes_transparent() {
+        let mut image = image::RgbaImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([225, 20, 20, 255]));
+
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let decoded = decode_rgba_image(
+            &encoded,
+            DllSource::Strategy,
+            resources::strategy::GID_ALLIANCE_LARGEST,
+        )
+        .unwrap();
+
+        assert_eq!(decoded.get_pixel(0, 0)[3], 0);
+        assert_eq!(decoded.get_pixel(1, 0)[3], 255);
+    }
+
+    #[test]
+    fn gokres_miniature_blue_screen_becomes_transparent() {
         let mut image = image::RgbaImage::new(3, 1);
         image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
         image.put_pixel(1, 0, image::Rgba([20, 20, 220, 255]));
@@ -1669,16 +1839,21 @@ mod tests {
                 image::ImageFormat::Png,
             )
             .unwrap();
-        let decoded = decode_color_image(
-            &encoded,
-            DllSource::Gokres,
+        for resource_id in [
+            16_385,
+            16_640,
+            16_896,
+            17_472,
+            17_728,
             resources::gokres::MINI_FIGHTER_X_WING,
-        )
-        .unwrap();
-
-        assert_eq!(decoded.pixels[0].a(), 0);
-        assert_eq!(decoded.pixels[1].a(), 0);
-        assert_eq!(decoded.pixels[2].a(), 255);
+            resources::gokres::MINI_SHIP_CORELLIAN_CORVETTE,
+            19_008,
+        ] {
+            let decoded = decode_color_image(&encoded, DllSource::Gokres, resource_id).unwrap();
+            assert_eq!(decoded.pixels[0].a(), 0);
+            assert_eq!(decoded.pixels[1].a(), 0);
+            assert_eq!(decoded.pixels[2].a(), 255);
+        }
     }
 
     #[test]
@@ -1713,7 +1888,7 @@ mod tests {
                 image::ImageFormat::Png,
             )
             .unwrap();
-        let decoded = decode_color_image(&encoded, DllSource::Gokres, 19008).unwrap();
+        let decoded = decode_color_image(&encoded, DllSource::Gokres, 2112).unwrap();
 
         assert_eq!(decoded.pixels[0].a(), 255);
     }

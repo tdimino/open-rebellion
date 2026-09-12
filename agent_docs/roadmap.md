@@ -3,11 +3,16 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-09-11
+updated: 2026-09-12
 tags: [roadmap, planning, milestones, parity]
 ---
 
 # Roadmap
+
+<!-- interface-parity-status:start -->
+Required interface families: 43. Complete: 0. Partial: 9. Failing: 34. Blocked: 0. Strictly accepted cells: 0/564.
+The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
+<!-- interface-parity-status:end -->
 
 The delivery notes before “Audit-Driven Parity” are historical implementation
 records. They do not establish current parity or release acceptance; the active
@@ -485,9 +490,38 @@ would tune around known simulation feedback defects.
 - [x] Complete the first UIP-B01 strategic-navigation checkpoint: replace the
   invented sidebar with recovered sector and detailed-system shells, original
   planet and tab resources, double-click routing, modeless focus and close,
-  plus both factions' 12-slot minimize/restore rail geometry. Item-level tab
+  plus both factions' 12-slot minimize/restore rail geometry. Nested tab
   compositions, commands, exact rail thumbnails, uncommon states, and the
   complete `CMD-03` and `CMD-04` acceptance matrices remain open.
+- [x] Complete P46D / the detailed-system item checkpoint: populate all six
+  core tabs with source-mapped GOKRES miniatures and displayed entity labels;
+  restore selection, foreground focus, and the three-column scrolled viewport
+  with STRATEGY `10365` through `10369`; preserve tab, item, and scroll state
+  through rail restoration; and prevent stale hostile views from exposing
+  opposing objects without current system intelligence. Nested compositions,
+  drag and command paths, exact original intelligence semantics, uncommon
+  states, exact rail thumbnails, and A0 acceptance remain open.
+- [x] Complete P47A / the first `UIP-B02` checkpoint: draw the original bright
+  STRATEGY 902 galaxy at canvas origin beneath the strategic layers, preserve
+  source-aligned faction crops, use the same original bytes in native and
+  packaged WASM, and pass muted Astra browser acceptance with no findings.
+  P47B later proves this is the Display Off resource.
+- [x] Complete P47B / the default Popular Support checkpoint: select STRATEGY
+  903 for active GID, restore the exact faction GID control, compact legend,
+  native marker families and support thresholds, remove synthetic overlays
+  from the default parity view, preserve system activation, and pass four
+  muted Astra faction/viewport campaigns with no product findings. The
+  code-built menu, expanded legend, remaining modes and overlays, sector art,
+  exact map input, and complete `CMD-02` matrix remain open.
+- [x] Adopt the interface-parity acceleration sidecar: bundle the complete GID
+  family, build one permanent fresh-process muted browser harness, use
+  deterministic test-only fixtures, generate repeated status prose from
+  canonical JSON, and reserve full workspace, WASM, and Astra verification for
+  the family gate. The first test-only 38-scenario harness and code-built GID
+  command tree are implemented. All 152 muted browser probes pass, but no
+  original-executable captures are accepted. The original floating legend,
+  non-support filter predicates, special markers, native comparison, and
+  complete `CMD-02` acceptance remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

@@ -15,14 +15,25 @@ turns the [interface audit](../qa/2026-09-10-interface-parity-audit/) into
 larger user-visible workflows so focused development can proceed without a
 full WASM build, Astra review, commit, and push after every small control.
 
+The active
+[acceleration sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
+defines the permanent muted browser harness, deterministic test-only fixtures,
+visual comparisons, evidence-first Astra review, generated status prose, and
+one-commit family gates used to execute this plan more quickly.
+
 ## Progress snapshot
+
+<!-- interface-parity-status:start -->
+Required interface families: 43. Complete: 0. Partial: 9. Failing: 34. Blocked: 0. Strictly accepted cells: 0/564.
+The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
+<!-- interface-parity-status:end -->
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 17 to 20% |
-| Practical interface scope remaining | approximately 80 to 83% |
+| Practical interface scope materially tackled | approximately 20 to 23% |
+| Practical interface scope remaining | approximately 77 to 80% |
 | Required surface families | 43 |
-| Family status | 0 complete, 7 partial, 36 fail |
+| Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
 
 The practical percentage is a planning estimate based on scoped implementation
@@ -46,7 +57,8 @@ one original-game workflow.
    640x480 and letterboxed viewports.
 6. Ask Astra medium to inspect the complete browser journey, bitmap identity,
    interactions, request log, console, and open parity boundaries.
-7. Ask independent subagents for read-only code and documentation review.
+7. Run one consolidated read-only code and documentation review at the bundle
+   boundary when the change warrants independent review.
 8. Run the full workspace suite, scoped clippy, ledger validator, JSON checks,
    artifact hashes, and diff checks once at the bundle boundary.
 9. Commit and push the passing bundle with its code, screenshots, evidence,
@@ -68,23 +80,50 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current bundle: UIP-B01
+## Current execution focus: P48 tooling checkpoint; UIP-B02 continues
 
-P46C and P46D implement the first UIP-B01 checkpoint. Selecting a galaxy system
-opens the recovered 235x360 modeless sector window instead of the invented
-right sidebar. Original planet resources, picture mapping, placement, faction
-columns, close and side-switch controls, stacking, exact pointer boundaries,
-and system double-click routing are present. The original 226x304 system shell,
-relationship title art, six core tab resource families, close, sector return,
-minimize, and both faction rail geometries are also active. The rail preserves
-the selected tab and window position when restored.
+P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
+the recovered 235x360 modeless sector window instead of the invented right
+sidebar. Original planet resources, placement, faction columns, controls,
+stacking, pointer boundaries, system double-click routing, the 226x304 system
+shell, and both faction rail geometries are active.
 
-The checkpoint has passed the primary browser journey for both factions at
-640x480 and a responsive viewport. UIP-B01 remains open for complete tab-item
-compositions, drag and command behavior, exact active and inactive rail
-thumbnails, multiple-window A0 comparison, complete sector indicators, and
-uncommon system states. No pending cell is promoted solely by this partial
-checkpoint.
+P46D adds source-mapped GOKRES miniatures and displayed entity labels to all
+six system tabs, including personnel, fleets, defenses, manufacturing, troops,
+special forces, and production. Three-column overflow is bounded by the
+recovered STRATEGY scrollbar art. Selection, tab clearing, foreground focus,
+rail restoration, and coarse current-intelligence gating are preserved. Both
+checkpoints pass their scoped browser journeys for both factions at 640x480
+and a responsive viewport.
+
+UIP-B01 remains open for nested fleet and object compositions, drag and command
+behavior, exact hostile-intelligence semantics, active and inactive rail
+thumbnails, complete sector indicators, uncommon system states, and the A0
+matrix. No pending cell is promoted solely by these partial checkpoints.
+
+The evidence-blocked rail art and uncommon-state work remains queued inside
+UIP-B01. P47A starts `UIP-B02` with the original STRATEGY 902 bright galaxy.
+P47B proves that 902 is Display Off and restores the default active Popular
+Support view with STRATEGY 903, the exact faction GID control, compact 10168
+legend, native marker families, and recovered size thresholds. Synthetic map
+labels and primitives are withheld from this view. Renderer, workspace,
+packaged WASM, parity-ledger, and muted four-campaign Astra gates pass with no
+product findings. See the
+[P47B evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md).
+
+The next `UIP-B02` execution bundle completes the whole `CMD-02` GID family:
+the code-built menu, compact and expanded legends, every remaining filter and
+original overlay, all known and intelligence states, selection, pan, zoom,
+and both faction variants. The acceleration sidecar supplies deterministic
+fixtures and one browser and Astra bundle gate. No replacement marker, menu,
+or legend will be introduced.
+
+P48 now supplies a 38-scenario, 152-execution muted harness and the first
+source-mapped GID command tree. Independent source review withheld unproven
+special-marker compositions and an enlarged legend. The
+[checkpoint evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md)
+records the remaining original-capture, exact-filter, native, and keyboard
+gates. No `CMD-02` acceptance cell is marked passed.
 
 ## Bundle acceptance record
 
