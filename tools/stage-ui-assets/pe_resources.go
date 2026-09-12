@@ -93,6 +93,10 @@ func parseBitmapResources(resourceData []byte, resolveRVA func(uint32, uint32) (
 }
 
 func parseRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32) ([]rawResource, error) {
+	return parseTypedRawResources(resourceData, resolveRVA, resourceTypeID, "")
+}
+
+func parseTypedRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, typeName string) ([]rawResource, error) {
 	types, err := readResourceDirectory(resourceData, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read resource types: %w", err)
@@ -100,7 +104,18 @@ func parseRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]b
 
 	var resources []rawResource
 	for _, resourceType := range types {
-		if resourceType.name&resourceSubdirectory != 0 || resourceType.name != resourceTypeID {
+		if typeName != "" {
+			if resourceType.name&resourceSubdirectory == 0 {
+				continue
+			}
+			name, err := resourceName(resourceData, resourceType.name)
+			if err != nil {
+				return nil, err
+			}
+			if name != typeName {
+				continue
+			}
+		} else if resourceType.name&resourceSubdirectory != 0 || resourceType.name != resourceTypeID {
 			continue
 		}
 		if resourceType.target&resourceSubdirectory == 0 {
@@ -158,21 +173,10 @@ func bitmapResourceID(resourceData []byte, rawName uint32, namedIDs map[string]u
 	if rawName&resourceSubdirectory == 0 {
 		return rawName, nil
 	}
-	offset := rawName &^ resourceSubdirectory
-	if uint64(offset)+2 > uint64(len(resourceData)) {
-		return 0, fmt.Errorf("bitmap resource name at offset %#x is outside resource data", offset)
+	name, err := resourceName(resourceData, rawName)
+	if err != nil {
+		return 0, err
 	}
-	length := binary.LittleEndian.Uint16(resourceData[offset : offset+2])
-	end := uint64(offset) + 2 + uint64(length)*2
-	if end > uint64(len(resourceData)) {
-		return 0, fmt.Errorf("bitmap resource name at offset %#x is truncated", offset)
-	}
-	codeUnits := make([]uint16, length)
-	for i := range codeUnits {
-		start := uint64(offset) + 2 + uint64(i)*2
-		codeUnits[i] = binary.LittleEndian.Uint16(resourceData[start : start+2])
-	}
-	name := string(utf16.Decode(codeUnits))
 	id, ok := namedIDs[name]
 	if !ok {
 		return 0, fmt.Errorf("unsupported named bitmap resource %q", name)
@@ -228,6 +232,14 @@ func readPEBitmapResources(path string, namedIDs map[string]uint32) ([]bitmapRes
 }
 
 func readPERawResources(path string, resourceTypeID uint32) ([]rawResource, error) {
+	return readPETypedRawResources(path, resourceTypeID, "")
+}
+
+func readPEWaveResources(path string) ([]rawResource, error) {
+	return readPETypedRawResources(path, 0, "WAVE")
+}
+
+func readPETypedRawResources(path string, resourceTypeID uint32, typeName string) ([]rawResource, error) {
 	file, err := pe.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open PE file: %w", err)
@@ -246,9 +258,9 @@ func readPERawResources(path string, resourceTypeID uint32) ([]rawResource, erro
 	if err != nil {
 		return nil, fmt.Errorf("read resource directory: %w", err)
 	}
-	return parseRawResources(resourceData, func(rva, size uint32) ([]byte, error) {
+	return parseTypedRawResources(resourceData, func(rva, size uint32) ([]byte, error) {
 		return readPERange(file, rva, size)
-	}, resourceTypeID)
+	}, resourceTypeID, typeName)
 }
 
 func peDataDirectory(file *pe.File, index int) (pe.DataDirectory, error) {
@@ -293,4 +305,22 @@ func readPERange(file *pe.File, rva, size uint32) ([]byte, error) {
 		return data[offset : offset+uint64(size)], nil
 	}
 	return nil, fmt.Errorf("RVA %#x size %d is not contained in a PE section", rva, size)
+}
+
+func resourceName(resourceData []byte, rawName uint32) (string, error) {
+	offset := rawName &^ resourceSubdirectory
+	if uint64(offset)+2 > uint64(len(resourceData)) {
+		return "", fmt.Errorf("bitmap resource name at offset %#x is outside resource data", offset)
+	}
+	length := binary.LittleEndian.Uint16(resourceData[offset : offset+2])
+	end := uint64(offset) + 2 + uint64(length)*2
+	if end > uint64(len(resourceData)) {
+		return "", fmt.Errorf("bitmap resource name at offset %#x is truncated", offset)
+	}
+	codeUnits := make([]uint16, length)
+	for i := range codeUnits {
+		start := uint64(offset) + 2 + uint64(i)*2
+		codeUnits[i] = binary.LittleEndian.Uint16(resourceData[start : start+2])
+	}
+	return string(utf16.Decode(codeUnits)), nil
 }

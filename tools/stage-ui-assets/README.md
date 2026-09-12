@@ -2,7 +2,8 @@
 
 Extract original Star Wars Rebellion UI resources into the directory layout
 Open Rebellion loads at runtime. One command stages 2,303 standard BMPs and
-3,988 custom advisor frames from six game DLLs, then checks all 6,291 files. It
+3,988 custom advisor frames from six game DLLs, plus voices, menu effects,
+and soundtrack WAVs. It then verifies both UI and audio outputs. It
 uses only the Go standard library. No Python environment, third-party package,
 or Windows runtime is needed.
 
@@ -13,8 +14,9 @@ resource byte for byte. It does not resize or re-encode the artwork.
 ## Requirements
 
 - Go 1.22 or later to build or use `go run`.
-- Your own copy of the six original game DLLs listed below, together in one
-  source directory. Extraction reads these files without modifying them.
+- Your own copy of the six UI DLLs listed below plus `VOICEFXA.DLL` and
+  `VOICEFXE.DLL`, together in one source directory, and the original
+  `MDATA.300`–`MDATA.315` soundtrack files in `source/MDATA` or `--mdata`. Extraction reads these files without modifying them.
 
 The compiled executable does not require Go to run. Game files are not included
 in this repository.
@@ -41,7 +43,8 @@ Alternatively, build and execute in one step:
 go run ./tools/stage-ui-assets --source "/path/to/Star Wars - Rebellion"
 ```
 
-If the DLLs are already in `data/base/`, no flags are needed:
+If the DLLs are in `data/base/` and the soundtrack is in `data/base/MDATA/`,
+no flags are needed:
 
 ```sh
 go run ./tools/stage-ui-assets
@@ -55,6 +58,8 @@ as needed. A successful extraction ends with:
 Staged 6291 UI resources from 6 DLLs (6291 written, 0 unchanged)
 ...
 Verified 6291 UI resources across 6 DLLs
+Staged 310 audio files (310 written, 0 unchanged)
+Verified 310 audio files
 ```
 
 Write and unchanged counts depend on what is already staged.
@@ -174,3 +179,73 @@ without proprietary game files. They cover resource traversal, named-ID
 mappings, BMP headers, sparse-frame validation, dimension limits, runtime output
 paths, duplicate-ID rejection, preserving or replacing existing files,
 temporary-file cleanup, and CLI staging with verification.
+
+## Audio extraction
+
+Every extraction stages the original voice lines, four menu effects, and all
+16 soundtrack files alongside the UI assets. Verification checks both UI and
+audio by default. No audio opt-in flag is needed. Audio extraction also uses
+only the Go standard library.
+
+From the repository root:
+
+```sh
+make extract-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
+```
+
+`GAME_SOURCE` must contain the six UI DLLs plus `VOICEFXA.DLL` and
+`VOICEFXE.DLL`. `MDATA_DIR` defaults to `GAME_SOURCE/MDATA`. If the DLLs have
+already been copied into `data/base`, point at the original soundtrack directory:
+
+```sh
+make extract-assets MDATA_DIR="/path/to/Star Wars - Rebellion/MDATA"
+```
+
+For custom outputs or overwrite/verification options, use the extractor flags:
+
+```sh
+go run ./tools/stage-ui-assets --source "/path/to/game" \
+  --mdata "/path/to/game/MDATA" --audio-output data/sounds
+
+make verify-assets
+```
+
+`--audio-output` defaults to `data/sounds`, which is already ignored by Git.
+`--output` continues to control UI output only. With `--verify`, neither
+source DLLs nor MDATA files are read, and no files are written.
+
+| Source | Audio output under `--audio-output` |
+| --- | --- |
+| `VOICEFXA.DLL` named `WAVE` resources | `voice/alliance/{id}-voicefxa.wav` |
+| `VOICEFXE.DLL` named `WAVE` resources | `voice/empire/{id}-voicefxe.wav` |
+| `COMMON.DLL` WAVE 8000, 8001, 8002, 8004 | `sfx/menu_galaxy_size.wav`, `menu_load_options.wav`, `menu_quit.wav`, `menu_select.wav` |
+| `MDATA.300` through `MDATA.315` | `music/300.wav` through `music/315.wav` |
+| `MDATA.300` | Also `music/main_theme.wav` and `music/endor.wav` |
+| `MDATA.306`, `.307`, `.312` | Also `music/imperial.wav`, `music/battle.wav`, `music/hoth.wav` |
+
+The soundtrack source files are already WAVs despite their numeric extensions.
+All audio is copied byte for byte, without resampling or transcoding. The tool
+checks RIFF/WAVE signatures, declared file size, chunk boundaries/padding, and
+nonempty format/data chunks. The original Empire voice 15053 has one zero
+padding byte outside its odd RIFF length; that padding is accepted and retained. It rejects duplicate DLL resource IDs across
+languages. Identical output files remain untouched; differing files require
+`--force`, and replacements use atomic file writes. A failed extraction can
+leave earlier completed files; rerunning safely resumes them.
+
+Extraction records both factions’ voice IDs in `voice-inventory.json`.
+Verification requires every recorded voice clip and the fixed soundtrack/menu
+paths, so missing clips fail even without the original DLLs. It validates
+structure, not playback, byte identity against the originals, or a canonical
+voice ID inventory independent of the extraction.
+
+Victory/defeat music from Smacker movies (`MDATA.201`/`.202`) remains part of the
+cutscene decoder. Generic gameplay SFX without established source mappings are
+not fabricated. Extraction does not change which voice lines or music cues the
+app currently plays. Original audio files must never be committed or distributed
+with the source code.
+
+Validate changes to this tool with:
+
+```sh
+make fmt-go test-go vet-go
+```

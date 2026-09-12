@@ -41,20 +41,21 @@ done
 DAT_COUNT=$(find data/base -maxdepth 1 -iname '*.DAT' | wc -l | tr -d ' ')
 echo "Staged $DAT_COUNT .DAT files."
 
-echo "=== [2/6] Staging UI bitmaps (tools/stage-ui-assets) ==="
-if go run ./tools/stage-ui-assets --verify --output data/base/ui >/dev/null 2>&1; then
-    echo "data/base/ui already verified — skipping extraction."
-else
-    go run ./tools/stage-ui-assets --source data/base --output data/base/ui
-fi
-
-echo "=== [3/6] Converting Smacker cutscenes to WebM ==="
 MDATA_SRC_DIR="$ORIGINAL_GAME_DIR/MDATA"
 if [ ! -d "$MDATA_SRC_DIR" ]; then
     found_marker="$(find "$ORIGINAL_GAME_DIR" -iname 'MDATA.101' -print -quit)"
     MDATA_SRC_DIR=""
     [ -n "$found_marker" ] && MDATA_SRC_DIR="$(dirname "$found_marker")"
 fi
+
+echo "=== [2/6] Staging UI and audio assets (tools/stage-ui-assets) ==="
+if go run ./tools/stage-ui-assets --verify --output data/base/ui >/dev/null 2>&1; then
+    echo "UI and audio assets already verified — skipping extraction."
+else
+    go run ./tools/stage-ui-assets --source data/base --output data/base/ui --mdata "$MDATA_SRC_DIR"
+fi
+
+echo "=== [3/6] Converting Smacker cutscenes to WebM ==="
 
 REF_VIDEOS="assets/references/ref-videos"
 mkdir -p "$REF_VIDEOS"

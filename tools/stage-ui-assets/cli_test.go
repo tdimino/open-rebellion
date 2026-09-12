@@ -18,10 +18,11 @@ func TestRunCLIStagesAndVerifiesConfiguredTargets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sourceDir, "TEST.DLL"), buildTestPE32WithBitmap(t, 88, 1033, dib), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeAudioFixture(t, sourceDir)
 	var stdout, stderr bytes.Buffer
 
 	err := runCLI(
-		[]string{"--source", sourceDir, "--output", outputDir},
+		[]string{"--source", sourceDir, "--output", outputDir, "--audio-output", filepath.Join(outputDir, "sounds")},
 		&stdout,
 		&stderr,
 		[]dllTarget{{Filename: "TEST.DLL", Directory: "test-dll", Expected: 1}},

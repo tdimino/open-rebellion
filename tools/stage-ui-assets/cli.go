@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 )
 
 func runCLI(args []string, stdout, stderr io.Writer, targets []dllTarget) error {
@@ -11,8 +12,10 @@ func runCLI(args []string, stdout, stderr io.Writer, targets []dllTarget) error 
 	flags.SetOutput(stderr)
 	sourceDir := flags.String("source", "data/base", "directory containing the original game DLLs")
 	outputDir := flags.String("output", "data/base/ui", "runtime UI asset directory")
-	force := flags.Bool("force", false, "replace staged BMPs whose contents differ")
-	verifyOnly := flags.Bool("verify", false, "verify staged BMPs without extracting DLLs")
+	audioOutput := flags.String("audio-output", "data/sounds", "runtime audio directory")
+	mdata := flags.String("mdata", "", "original MDATA directory (default: source/MDATA)")
+	force := flags.Bool("force", false, "replace staged assets whose contents differ")
+	verifyOnly := flags.Bool("verify", false, "verify staged assets without reading source files")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -33,5 +36,16 @@ func runCLI(args []string, stdout, stderr io.Writer, targets []dllTarget) error 
 		return err
 	}
 	fmt.Fprintf(stdout, "Verified %d UI resources across %d DLLs\n", verified.Resources, verified.DLLs)
+	if !*verifyOnly {
+		if *mdata == "" {
+			*mdata = filepath.Join(*sourceDir, "MDATA")
+		}
+		if err := stageAudio(*sourceDir, *mdata, *audioOutput, *force, stdout); err != nil {
+			return err
+		}
+	}
+	if err := verifyAudio(*audioOutput, stdout); err != nil {
+		return err
+	}
 	return nil
 }

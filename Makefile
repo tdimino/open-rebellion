@@ -35,3 +35,22 @@ fmt:
 
 clean:
 	cargo clean
+
+# Go asset extractor
+.PHONY: test-go fmt-go vet-go
+test-go:
+	go test ./tools/stage-ui-assets
+fmt-go:
+	gofmt -w tools/stage-ui-assets/*.go
+vet-go:
+	go vet ./tools/stage-ui-assets
+
+GAME_SOURCE ?= data/base
+MDATA_DIR ?= $(GAME_SOURCE)/MDATA
+.PHONY: extract-assets
+extract-assets:
+	go run ./tools/stage-ui-assets --source "$(GAME_SOURCE)" --mdata "$(MDATA_DIR)"
+
+.PHONY: verify-assets
+verify-assets:
+	go run ./tools/stage-ui-assets --verify
