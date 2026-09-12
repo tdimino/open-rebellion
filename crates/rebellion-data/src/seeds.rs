@@ -2921,20 +2921,19 @@ mod tests {
         let world_huge =
             crate::load_game_data_with_options(&path, &opts_huge).expect("huge load failed");
 
-        // The huge galaxy should have a different fleet count than standard
-        // (different SDPRTB 5168 vs 5170 percentages).
-        let std_fleets = world_std.fleets.len();
-        let huge_fleets = world_huge.fleets.len();
-
-        // They shouldn't be identical (different budget percentages: 33% vs 20%).
-        // Standard gets more budget percentage so should have more budget-seeded units.
-        // But since the same seed produces the same base units, the difference is
-        // in the budget-seeded additions.
-        assert!(
-            std_fleets != huge_fleets || true, // Allow equal as a valid outcome
-            "Fleet counts should differ between standard ({}) and huge ({}) galaxy sizes",
-            std_fleets,
-            huge_fleets
-        );
+        // Fleet totals may coincide because budget spending is randomized. The
+        // underlying SDPRTB budget percentages must still differ by galaxy size.
+        for faction in [Faction::Alliance, Faction::Empire] {
+            let standard_pct = world_std
+                .sdprtb
+                .value(5168, opts_standard.gnprtb_index(), faction);
+            let huge_pct = world_huge
+                .sdprtb
+                .value(5170, opts_huge.gnprtb_index(), faction);
+            assert_ne!(
+                standard_pct, huge_pct,
+                "{faction:?} budget percentages must differ between standard and huge galaxies"
+            );
+        }
     }
 }

@@ -9,14 +9,19 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 
 # Original Interface Parity Audit
 
+<!-- interface-parity-status:start -->
+Required interface families: 43. Complete: 0. Partial: 9. Failing: 34. Blocked: 0. Strictly accepted cells: 0/564.
+The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
+<!-- interface-parity-status:end -->
+
 ## Progress snapshot
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 17 to 20% |
-| Practical interface scope remaining | approximately 80 to 83% |
+| Practical interface scope materially tackled | approximately 20 to 23% |
+| Practical interface scope remaining | approximately 77 to 80% |
 | Required surface families | 43 |
-| Family status | 0 complete, 7 partial, 36 fail |
+| Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
 
 The practical percentage is an implementation-planning estimate. The strict
@@ -32,9 +37,12 @@ strategic shell now uses the recovered faction bitmaps, exact apertures, and a
 centered 640x480 canvas. Its six primary faction controls use their recovered
 bitmap pairs, geometry, input masks, and command routing. First-pass original
 sector and system shells replace the invented sidebar, with working tabs and
-rail lifecycle for both factions. The strategy screen still uses synthetic GID
-and map art, incomplete system contents, approximate rail thumbnails,
-replacement message and status surfaces, and other incomplete controls.
+rail lifecycle for both factions. The original galaxy resources now back both
+Display Off and the default active Popular Support view. Popular Support uses
+the exact faction GID control, compact legend, native marker families, and
+recovered size thresholds. Other GID modes, sector and object overlays,
+incomplete system contents, approximate rail thumbnails, authentic message and
+status surfaces, and other controls remain open.
 Original advisor idle frames render in the scaled
 apertures, but their authored actions, voice, and chrome remain open.
 
@@ -50,14 +58,18 @@ navigation, animation, audio presentation, and the absence of invented UI.
 |------|---------|
 | [Audit report](audit-report.md) | Findings, acceptance rules, immediate implementation order, and the answer to why the current UI looks synthetic or blank. |
 | [Audit data](audit-report.json) | Machine-readable baseline, thresholds, findings, tranches, and release gates. |
-| [Surface ledger](surface-ledger.json) | Stable inventory of every known original surface family, 569 baseline cells, retrieval-package links, and the derived execution contract. |
+| [Surface ledger](surface-ledger.json) | Stable inventory of every known original surface family, 564 required cells plus five excluded extension cells, retrieval-package links, and the derived execution contract. |
 | [Screenshot ledger](screenshot-ledger.md) | Human-readable map of the 370 retained reference images and the still-missing owned-executable captures. |
 | [Reference ledger](reference-ledger.json) | Source URLs, provenance, confidence, locale, local paths, and coverage. |
 | [Reverse-engineering ledger](reverse-engineering-ledger.md) | Ghidra and original-resource findings, proof boundaries, and the implementation evidence queue. |
 | [Reverse-engineering data](reverse-engineering-ledger.json) | Machine-readable artifacts, discoveries, resource omissions, and work-package status. |
 | [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md) | Durable canvas, aperture, shared-transform, test, artifact-hash, and Astra acceptance record. |
 | [P46B strategic-control evidence](evidence/2026-09-11-strategic-command-controls.md) | Recovered six-control geometry, bitmap pairs, input masks, command mapping, tests, and browser acceptance. |
-| [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) | First-pass sector and system windows, tab resources, modeless lifecycle, rail routing, browser evidence, and open item-level work. |
+| [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) | First-pass sector and system shells, tab resources, modeless lifecycle, rail routing, and browser evidence. |
+| [P46D detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items.md) | Source-mapped GOKRES tab items, displayed labels, bounded scrollbar navigation, intelligence gating, selection state, tests, and browser acceptance. |
+| [P47A galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) | STRATEGY 902 identity, source-aligned placement, native/WASM texture transport, tests, captures, and open GID boundaries. |
+| [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md) | Active STRATEGY 903 predicate, faction GID control, compact legend, native marker families, support thresholds, tests, and browser acceptance. |
+| [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md) | Code-built GID command tree, test-only fixture isolation, muted browser matrix, and unaccepted visual states. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -97,8 +109,21 @@ paint, capture, hit-mask, and routing paths. Its durable evidence is
 The UIP-B01 checkpoint adds recovered modeless sector and system shells,
 double-click routing, core tabs, and rail minimize/restore. Its
 [evidence record](evidence/2026-09-11-strategic-window-navigation.md) keeps
-item contents, active/inactive rail thumbnails, and uncommon state coverage
-open.
+active/inactive rail thumbnails and uncommon state coverage open. P46D adds
+the first item composition for every core tab with GOKRES miniatures, displayed
+labels, selection, bounded scrolling, foreground focus, and coarse
+current-intelligence gating. Its
+[evidence record](evidence/2026-09-11-detailed-system-tab-items.md) keeps nested
+object contents, exact intelligence semantics, commands, uncommon states, and
+complete A0 coverage open.
+P47A starts UIP-B02 with the original bright STRATEGY 902 starfield at the
+strategic canvas origin for both factions. P47B then proves that 902 is Display
+Off and restores the default active Popular Support view with STRATEGY 903,
+the exact faction GID control, compact legend, native marker families, and
+support thresholds. Its
+[evidence record](evidence/2026-09-11-popular-support-gid.md) keeps the original
+GID menu, detailed legend, other modes and overlays, exact map input, and the
+complete acceptance matrix open.
 Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain
@@ -109,7 +134,7 @@ path.
 
 The denominator is required surface-state cells, not an estimated percentage.
 The ledger currently instantiates 564 required baseline cells and five excluded
-extension cells. P46A and P46B verify scoped Chromium checkpoints, but all
+extension cells. P46A through P47B verify scoped Chromium checkpoints, but all
 baseline cells remain pending until their complete execution matrix passes.
 Compound requirements split into stable child cells before
 their implementation starts, and each cell then runs through its applicable
@@ -132,12 +157,18 @@ this order:
 
 1. exact 640×480 display composition and uniform scaling, with the 481-row
    faction sources cropped to 480 display rows, completed by P46A;
-2. original galaxy/starfield and Galactic Information Display modes;
+2. original galaxy/starfield and Galactic Information Display modes; P47A
+   restores the bright STRATEGY 902 Display Off backdrop, and P47B restores the
+   default active Popular Support view with 903, the faction GID control,
+   compact legend, and native markers; the menu, detailed legend, remaining
+   modes and overlays, and exact map interactions remain open;
 3. the six primary cockpit controls, state art, hotspots, and routing, completed
-   by P46B; remaining speed and GID controls;
-4. first-pass original sector and system shells plus rail lifecycle, completed
-   as a partial UIP-B01 checkpoint; remaining item compositions, commands,
-   rail thumbnails, and uncommon states;
+   by P46B; P47B adds the recovered GID control while speed controls and the
+   GID destination menu remain open;
+4. first-pass original sector and system shells, rail lifecycle, and core-tab
+   GOKRES item compositions, completed as partial UIP-B01 checkpoints;
+   remaining nested compositions, commands, rail thumbnails, and uncommon
+   states;
 5. complete Alliance and Imperial droid actions, BIN sequences, voice, chrome,
    and unobscured apertures on top of the packaged idle-frame foundation;
 6. authoritative system, facility, fleet, HQ, blockade, and intelligence glyphs.

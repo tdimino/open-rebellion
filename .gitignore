@@ -55,6 +55,8 @@ progress.json
 
 # Subdaimon outputs
 .subdaimon-output/
+.artifacts/
+tools/interface-parity/node_modules/
 
 # Local-only automation definitions and machine-local test links
 .github/workflows/

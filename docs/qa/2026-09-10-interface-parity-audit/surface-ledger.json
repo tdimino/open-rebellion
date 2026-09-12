@@ -716,7 +716,7 @@
       "phase": "strategy",
       "title": "Galaxy display and Galactic Information Display modes",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "galaxy",
         "sector",
@@ -769,7 +769,7 @@
         71,
         73
       ],
-      "current_implementation": "Custom background, vector stars and labels, popularity-derived colors, and incomplete overlays.",
+      "current_implementation": "P47A and P47B restore original STRATEGY 902/903 Display Off and Popular Support backdrops, exact faction GID control pairs, compact 10168 legend, and supported marker families and thresholds. P48 adds a source-mapped code-built GID root and submenu with all 22 recovered commands, original faction menu icons, provisional non-support filter metrics, and a test-only 38-scenario browser matrix. The 152 muted faction/viewport probes pass, but no original capture has been accepted. Unsupported special marker overlays and an invented expanded legend were withheld after independent review. Exact non-support predicates, mixed-fleet allegiance, type-specific idle facilities, original floating legend, HQ/blockade/mission/Death Star states, native equivalence, keyboard focus, and full A0 composition remain open.",
       "finding_ids": [
         "UIP-F-002",
         "UIP-F-012"
@@ -997,7 +997,7 @@
         123,
         124
       ],
-      "current_implementation": "UIP-B01 replaces the custom right SidePanel with first-pass original 235x360 sector and 226x304 detailed-system shells. Original planet pictures, placement, relationship title art, six core tab resource families, close, sector return, double-click routing, focus, and pointer occlusion work in both factions. Complete item compositions, commands, indicators, uncommon states, and the full A0/browser matrix remain open.",
+      "current_implementation": "UIP-B01 replaces the custom right SidePanel with original 235x360 sector and 226x304 detailed-system shells. Original planet pictures, placement, relationship title art, six core tab resource families, close, sector return, double-click routing, foreground focus, and pointer occlusion work in both factions. P46D adds source-mapped GOKRES miniatures, displayed entity labels, bounded original-scrollbar navigation, and coarse current-intelligence gating. Nested compositions, exact intelligence semantics, commands, indicators, uncommon states, and the full A0/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-003"
       ],
@@ -1113,7 +1113,7 @@
         61,
         66
       ],
-      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab and window position. Exact active and inactive rail thumbnails, multiple-window visual comparison, and the complete A0/browser matrix remain open.",
+      "current_implementation": "UIP-B01 implements modeless focus and close plus faction-specific 12-slot minimize and restore routing with preserved tab, selected item, scroll row, and window position. Detailed-system windows retain foreground ownership over sector windows. Exact active and inactive rail thumbnails and the complete A0 multiwindow/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-011"
@@ -1772,17 +1772,13 @@
       "manual_pages": [
         71
       ],
-      "current_implementation": "P46B removes the synthetic text-button strip and renders the six faction-specific STRATEGY bitmap pairs at the exact recovered control rectangles. Press capture, release cancellation, strict outer-edge rejection, indexed palette-key hit masks, F2 through F5, and F7 follow the native state machine. Input resolves after floating content so covered controls do not receive clicks. All six commands are recognized, but none opens a replacement panel while its original destination window remains pending. The replacement message and status bars are withheld because they covered the original control apertures.",
+      "current_implementation": "P46B removes the synthetic text-button strip and renders the six faction-specific primary STRATEGY bitmap pairs at their exact recovered rectangles. Press capture, release cancellation, strict outer-edge rejection, indexed palette-key hit masks, F2 through F5, and F7 follow the native state machine. P47B adds the exact faction GID control pairs and rectangles under the same input contract and recognizes command 0x133 without inventing its still-open destination menu. Input resolves after floating content so covered controls do not receive clicks. The six primary commands are recognized, but none opens a replacement panel while its original destination window remains pending. The replacement message and status bars are withheld because they covered original control apertures.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-007"
       ],
       "reverse_engineering_package_ids": [
-        "RE-A0-01",
-        "RE-STR-02",
-        "RE-OBJ-01",
-        "RE-OPT-01",
-        "RE-ENC-01"
+        "RE-STR-02"
       ],
       "acceptance_cells": [
         {
@@ -2036,7 +2032,7 @@
       "phase": "object_management",
       "title": "System Finder, System window, and System Defenses",
       "required": true,
-      "status": "fail",
+      "status": "partial",
       "required_states": [
         "finder",
         "filtered",
@@ -2071,7 +2067,7 @@
         123,
         124
       ],
-      "current_implementation": "Original finder and tabbed windows are absent; the system sidebar is a replacement.",
+      "current_implementation": "The replacement system sidebar is removed. The original detailed-system shell and six bitmap tabs render source-mapped character, fleet, defense, manufacturing, troop, special-force, and production miniatures with displayed labels, selection, bounded scrollbar navigation, and coarse current-intelligence gating. Nested object status, contents, drag and command paths, finder windows, exact intelligence semantics, uncommon states, and the complete A0/browser matrix remain open.",
       "finding_ids": [
         "UIP-F-003",
         "UIP-F-007"

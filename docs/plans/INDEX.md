@@ -20,6 +20,7 @@ All plans use: `YYYY-MM-DD-{type}-{descriptive-name}.md`
 | `refactor` | Code improvement without behavior change |
 | `design` | Architecture/design proposal (not yet scheduled) |
 | `addon` | Post-release addon feature |
+| `tooling` | Test, evidence, and developer-workflow implementation |
 
 Completed plans live in `completed/`.
 
@@ -28,11 +29,14 @@ Completed plans live in `completed/`.
 The [Batched Interface Parity Execution Plan](2026-09-11-feat-batched-interface-parity-plan.md)
 is the current primary implementation plan. It groups related original-game
 surfaces into browser-verifiable bundles while the interface audit remains the
-strict acceptance authority.
+strict acceptance authority. Its
+[acceleration sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
+defines the deterministic harness and one-gate family cadence.
 
 | Plan | Type | Status | Date |
 |------|------|--------|------|
-| [Batched Interface Parity](2026-09-11-feat-batched-interface-parity-plan.md) | feat | active, UIP-B01 in progress | 2026-09-11 |
+| [Batched Interface Parity](2026-09-11-feat-batched-interface-parity-plan.md) | feat | active, P47B accepted; complete GID family next | 2026-09-11 |
+| [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md) | tooling | active, GID pilot next | 2026-09-11 |
 | [AI Attack Target Variety](2026-03-21-feat-ai-attack-target-variety-plan.md) | feat | complete | 2026-03-21 |
 | [Autoresearch Metrics](2026-03-21-autoresearch-metrics-plan.md) | feat | planned | 2026-03-21 |
 | [Create Your Own Character](2026-03-21-addon-create-your-own-character.md) | addon | planned | 2026-03-21 |

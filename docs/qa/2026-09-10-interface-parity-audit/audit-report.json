@@ -50,16 +50,16 @@
     {"id": "A4", "description": "Memory, inference, recreation, modded media, or unverified derivative", "can_close": []}
   ],
   "summary": {
-    "practical_scope_materially_tackled": "approximately_17_to_20_percent_planning_estimate",
-    "practical_scope_remaining": "approximately_80_to_83_percent_planning_estimate",
-    "required_family_status": "0_complete_7_partial_36_fail",
+    "practical_scope_materially_tackled": "approximately_20_to_23_percent_planning_estimate",
+    "practical_scope_remaining": "approximately_77_to_80_percent_planning_estimate",
+    "required_family_status": "0_complete_9_partial_34_fail",
     "strictly_accepted_required_cells": "0_of_564",
     "current_execution_plan": "docs/plans/2026-09-11-feat-batched-interface-parity-plan.md",
     "main_menu_surface": "partial_complete_state_matrix_open",
     "campaign_interface": "fail",
-    "strategy_cockpit": "partial_exact_shell_primary_controls_first_sector_system_shells_and_rail_lifecycle_passed_full_gid_item_contents_rail_thumbnails_and_replacement_surfaces_open",
-    "galaxy_display": "fail",
-    "system_navigation": "partial_sector_system_shell_tabs_and_rail_lifecycle_work_item_compositions_and_complete_matrix_open",
+    "strategy_cockpit": "partial_exact_shell_primary_and_gid_controls_authored_galaxy_default_popular_support_sector_system_shells_first_tab_item_compositions_coarse_intelligence_gating_and_rail_lifecycle_passed_full_gid_nested_contents_exact_intelligence_commands_rail_thumbnails_and_replacement_surfaces_open",
+    "galaxy_display": "partial_original_backdrops_and_gid_menu_22_commands_browser_matrix_passed_no_original_acceptance_provisional_metrics_special_overlays_expanded_legend_and_exact_input_open",
+    "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
     "tactical_interface": "fail",
@@ -85,20 +85,28 @@
     {
       "id": "UIP-F-002",
       "severity": "P0",
-      "status": "fail",
-      "title": "Galaxy, stars, sector hulls, systems, and facilities use synthetic primitives",
-      "evidence": ["crates/rebellion-render/src/lib.rs:145", "crates/rebellion-render/src/lib.rs:253", "crates/rebellion-render/src/lib.rs:388"],
+      "status": "partial",
+      "title": "Source-mapped GID menu commands and 152 muted browser probes extend the original backdrops and compact legend; non-support metrics, rare overlays, expanded legend, and original capture acceptance remain open",
+      "evidence": [
+        "crates/rebellion-render/src/bmp_cache.rs",
+        "crates/rebellion-render/src/lib.rs",
+        "crates/rebellion-render/src/cockpit.rs",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-authored-galaxy-backdrop.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-browser-harness.md"
+      ],
       "affected_surfaces": ["CMD-02", "CMD-09"]
     },
     {
       "id": "UIP-F-003",
       "severity": "P0",
       "status": "partial",
-      "title": "First-pass original sector and detailed-system shells replace the invented sidebar; complete tab contents, commands, indicators, and uncommon states remain open",
+      "title": "Original sector and detailed-system shells replace the invented sidebar; all six tabs have first-pass source-mapped items while nested contents, commands, indicators, and uncommon states remain open",
       "evidence": [
         "crates/rebellion-render/src/sector_window.rs",
         "crates/rebellion-render/src/system_window.rs",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-detailed-system-tab-items.md"
       ],
       "affected_surfaces": ["CMD-03", "OBJ-02", "OBJ-14"]
     },
@@ -236,9 +244,12 @@
     "p46a_strategic_shell": "evidence/2026-09-11-strategic-shell-canvas.md",
     "p46b_strategic_controls": "evidence/2026-09-11-strategic-command-controls.md",
     "uip_b01_strategic_navigation": "evidence/2026-09-11-strategic-window-navigation.md",
+    "p46d_detailed_system_tab_items": "evidence/2026-09-11-detailed-system-tab-items.md",
+    "p47a_authored_galaxy_backdrop": "evidence/2026-09-11-authored-galaxy-backdrop.md",
+    "p47b_popular_support_gid": "evidence/2026-09-11-popular-support-gid.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Complete UIP-B01 item-level system compositions, exact rail thumbnails, uncommon states, and multiwindow comparison, then implement UIP-B02 GID and map art without closing UIP-T01 early."
+  "next_action": "Continue UIP-B02 by recovering the code-built GID menu, expanded legend, remaining filter predicates and original overlays, then exact map input and sector art while keeping evidence-blocked UIP-B01 work open until its complete matrix passes."
 }

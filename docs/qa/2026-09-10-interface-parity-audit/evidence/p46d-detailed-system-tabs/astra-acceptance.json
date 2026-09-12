@@ -1,0 +1,57 @@
+{
+  "findings": {
+    "P0": [],
+    "P1": [],
+    "P2": [],
+    "P3": []
+  },
+  "render_tests_passed": 137,
+  "adversarial_tests_passed": 17,
+  "app_check": "pass_with_warnings",
+  "scoped_clippy": "exit_0_with_warnings",
+  "browser_runs": {
+    "browser": {
+      "requests": 4,
+      "responses": 4,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "errors": 0,
+      "browser_closed": true,
+      "served_hashes_match": true
+    },
+    "alliance-overflow": {
+      "requests": 4,
+      "responses": 4,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "errors": 0,
+      "browser_closed": true,
+      "served_hashes_match": true
+    },
+    "alliance-focus": {
+      "requests": 4,
+      "responses": 4,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "errors": 0,
+      "browser_closed": true,
+      "served_hashes_match": true
+    }
+  },
+  "source_and_artifacts_unchanged": true,
+  "partial_checkpoint": true,
+  "full_CMD_03_CMD_04_OBJ_02_parity": false,
+  "ready_to_commit": true
+}

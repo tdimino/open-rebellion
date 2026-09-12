@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.example/schemas/interface-scenario-catalog-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "family", "viewports", "factions", "scenarios"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": 1 },
+    "family": { "const": "CMD-02" },
+    "viewports": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "width", "height", "device_scale_factor"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "width": { "type": "integer", "minimum": 640 },
+          "height": { "type": "integer", "minimum": 480 },
+          "device_scale_factor": { "type": "number", "minimum": 1 }
+        }
+      }
+    },
+    "factions": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [{ "const": "alliance" }, { "const": "empire" }],
+      "items": false
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 29,
+      "maxItems": 38,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "slug", "requirement", "mode", "category", "leaf"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0, "maximum": 37 },
+          "slug": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "requirement": { "type": "string", "minLength": 1 },
+          "mode": { "type": ["string", "null"] },
+          "category": { "type": ["integer", "null"], "minimum": 0, "maximum": 5 },
+          "leaf": { "type": ["integer", "null"], "minimum": 0, "maximum": 5 }
+        }
+      }
+    }
+  }
+}

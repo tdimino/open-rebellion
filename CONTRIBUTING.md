@@ -36,8 +36,8 @@ request. Do not mark a partial, inferred, or static-only result complete.
 ## Core checks
 
 ```sh
+make all
 cargo check --workspace
-cargo test --workspace --all-targets
 go test -count=1 ./tools/stage-ui-assets
 go vet ./tools/stage-ui-assets
 python3 -m unittest scripts/test_build_runtime_pack.py
@@ -45,9 +45,10 @@ node scripts/validate-interface-parity-ledgers.mjs --check
 ./scripts/build-wasm.sh
 ```
 
-Formatting and strict Clippy have known repository-wide audit findings. Run
-scoped checks on touched code and avoid reformatting unrelated files. Platform
-notes and the macOS compiler-path workaround are documented in [AGENTS.md](AGENTS.md).
+`make all` runs workspace tests, formatting, strict all-target Clippy, and the
+native build in order. Complete local checks need a staged owned `data/base`;
+the Makefile does not replace packaged WASM, browser, or release acceptance.
+Platform notes and the macOS compiler-path workaround are in [AGENTS.md](AGENTS.md).
 
 ## Interface acceptance
 
