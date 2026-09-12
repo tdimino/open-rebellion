@@ -5543,6 +5543,7 @@ mod tactical_ground_tests {
             system_name: "Test System".into(),
             attacker_fleet: attacker,
             defender_fleet: defender,
+            attacker_is_alliance: true,
             player_is_attacker: true,
             phase: rebellion_render::BattlePhase::Results,
             ships: vec![

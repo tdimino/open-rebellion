@@ -27,7 +27,7 @@ use macroquad::prelude::*;
 use rebellion_core::ids::{CapitalShipKey, FighterKey, FleetKey, SystemKey};
 use rebellion_core::world::GameWorld;
 
-use crate::bmp_cache::{BmpCache, DllSource};
+use crate::bmp_cache::{resources, BmpCache, DllSource};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,6 +36,12 @@ use crate::bmp_cache::{BmpCache, DllSource};
 /// Battlefield dimensions (logical units).
 const ARENA_WIDTH: f32 = 1200.0;
 const ARENA_HEIGHT: f32 = 800.0;
+
+/// The original TACTICAL.DLL background is a complete 640×480 composition.
+const TACTICAL_WIDTH: f32 = 640.0;
+const TACTICAL_HEIGHT: f32 = 480.0;
+/// Measured black aperture inside bitmap 1000. All battle primitives stay here.
+const BATTLE_APERTURE: NativeRect = NativeRect::new(16.0, 28.0, 444.0, 439.0);
 
 /// Deployment zone width (fraction of arena width per side).
 const DEPLOY_ZONE_FRACTION: f32 = 0.3;
@@ -66,6 +72,76 @@ const FIGHTER_SIZE: f32 = 16.0;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct NativeRect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl NativeRect {
+    const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn contains(self, x: f32, y: f32) -> bool {
+        x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height
+    }
+}
+
+/// One uniformly scaled, letterboxed copy of the original tactical canvas.
+#[derive(Debug, Clone, Copy)]
+struct TacticalCanvas {
+    x: f32,
+    y: f32,
+    scale: f32,
+}
+
+impl TacticalCanvas {
+    fn new(width: f32, height: f32) -> Self {
+        let scale = (width / TACTICAL_WIDTH)
+            .min(height / TACTICAL_HEIGHT)
+            .max(0.01);
+        Self {
+            x: (width - TACTICAL_WIDTH * scale) * 0.5,
+            y: (height - TACTICAL_HEIGHT * scale) * 0.5,
+            scale,
+        }
+    }
+
+    fn point(self, x: f32, y: f32) -> (f32, f32) {
+        (self.x + x * self.scale, self.y + y * self.scale)
+    }
+
+    fn logical_pointer(self, x: f32, y: f32) -> (f32, f32) {
+        ((x - self.x) / self.scale, (y - self.y) / self.scale)
+    }
+
+    fn aperture(self) -> NativeRect {
+        let (x, y) = self.point(BATTLE_APERTURE.x, BATTLE_APERTURE.y);
+        NativeRect::new(
+            x,
+            y,
+            BATTLE_APERTURE.width * self.scale,
+            BATTLE_APERTURE.height * self.scale,
+        )
+    }
+
+    fn arena_transform(self, zoom: f32, camera_x: f32, camera_y: f32) -> (f32, f32, f32) {
+        let aperture = self.aperture();
+        let scale = (aperture.width / ARENA_WIDTH).min(aperture.height / ARENA_HEIGHT) * zoom;
+        let x = aperture.x + aperture.width * 0.5 - (ARENA_WIDTH * 0.5 + camera_x) * scale;
+        let y = aperture.y + aperture.height * 0.5 - (ARENA_HEIGHT * 0.5 + camera_y) * scale;
+        (scale, x, y)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Battle phase
@@ -161,6 +237,8 @@ pub struct BattleSession {
     pub attacker_fleet: FleetKey,
     /// Defender fleet key (in `GameWorld`).
     pub defender_fleet: FleetKey,
+    /// Faction identity is independent of the attacking role.
+    pub attacker_is_alliance: bool,
     /// True if the player controls the attacker side.
     pub player_is_attacker: bool,
     /// Current battle phase.
@@ -262,21 +340,32 @@ impl BattleSession {
         Self::auto_place_ships(&mut ships);
         Self::auto_place_fighters(&mut fighters, &ships);
 
+        // The original Tactical Display opens with the battle paused. The
+        // Battle Alert's Take Command choice is the entry action, not a second
+        // invented placement phase inside the battle viewport.
+        let selected_ship = ships
+            .iter()
+            .position(|ship| ship.is_attacker == player_is_attacker);
+        if let Some(index) = selected_ship {
+            ships[index].selected = true;
+        }
+
         BattleSession {
             system,
             system_name,
             attacker_fleet: attacker,
             defender_fleet: defender,
+            attacker_is_alliance: world.fleets[attacker].is_alliance,
             player_is_attacker,
-            phase: BattlePhase::Placement,
+            phase: BattlePhase::Combat,
             ships,
             fighters,
-            selected_ship: None,
-            placement_confirmed: false,
+            selected_ship,
+            placement_confirmed: true,
             start_tick: tick,
             combat_tick: 0,
             weapon_effects: Vec::new(),
-            paused: false,
+            paused: true,
             combat_speed: 1,
             step_accumulator: 0.0,
             winner: None,
@@ -781,8 +870,9 @@ pub struct TacticalState {
     pub camera_y: f32,
     /// Zoom level.
     pub zoom: f32,
-    /// Whether tactical sprites have been preloaded.
-    pub sprites_preloaded: bool,
+    /// Original Tactical Display faction-wireframe switches.
+    pub highlight_alliance: bool,
+    pub highlight_empire: bool,
 }
 
 impl Default for TacticalState {
@@ -794,7 +884,8 @@ impl Default for TacticalState {
             camera_x: 0.0,
             camera_y: 0.0,
             zoom: 1.0,
-            sprites_preloaded: false,
+            highlight_alliance: true,
+            highlight_empire: true,
         }
     }
 }
@@ -828,6 +919,8 @@ impl TacticalState {
         self.camera_x = 0.0;
         self.camera_y = 0.0;
         self.zoom = 1.0;
+        self.highlight_alliance = true;
+        self.highlight_empire = true;
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -867,6 +960,249 @@ pub enum TacticalAction {
     RetreatSelected,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TacticalHudControl {
+    Pause,
+    ZoomIn,
+    ZoomOut,
+    HighlightAlliance,
+    HighlightEmpire,
+}
+
+fn tactical_hud_control_at(x: f32, y: f32) -> Option<TacticalHudControl> {
+    [
+        (
+            TacticalHudControl::Pause,
+            NativeRect::new(560.0, 307.0, 28.0, 21.0),
+        ),
+        (
+            TacticalHudControl::ZoomIn,
+            NativeRect::new(486.0, 343.0, 24.0, 24.0),
+        ),
+        (
+            TacticalHudControl::ZoomOut,
+            NativeRect::new(603.0, 343.0, 24.0, 24.0),
+        ),
+        (
+            TacticalHudControl::HighlightAlliance,
+            NativeRect::new(517.0, 304.0, 30.0, 26.0),
+        ),
+        (
+            TacticalHudControl::HighlightEmpire,
+            NativeRect::new(482.0, 304.0, 30.0, 26.0),
+        ),
+    ]
+    .into_iter()
+    .find_map(|(control, rect)| rect.contains(x, y).then_some(control))
+}
+
+fn draw_tactical_bitmap(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x: f32, y: f32) {
+    let Some(texture) = cache.get_macroquad_original(DllSource::Tactical, id) else {
+        return;
+    };
+    let (screen_x, screen_y) = canvas.point(x, y);
+    draw_texture_ex(
+        texture,
+        screen_x,
+        screen_y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(
+                texture.width() * canvas.scale,
+                texture.height() * canvas.scale,
+            )),
+            ..Default::default()
+        },
+    );
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The 640x480 tactical source canvas uses integer device-pixel clipping."
+)]
+fn set_tactical_aperture_clip(aperture: Option<NativeRect>) {
+    let clip = aperture.map(|rect| {
+        (
+            rect.x.round() as i32,
+            rect.y.round() as i32,
+            rect.width.round() as i32,
+            rect.height.round() as i32,
+        )
+    });
+    // SAFETY: macroquad exposes its immediate drawing state through this API.
+    // The clip is always reset before original HUD controls are painted.
+    unsafe {
+        get_internal_gl().quad_gl.scissor(clip);
+    }
+}
+
+/// Paint only resource-backed battle chrome. Unmapped command groups remain
+/// visible but are not passed off as implemented interactions.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The original HUD paints one fixed canvas from explicit battle state."
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The authored tactical chrome is one fixed 640×480 source composition."
+)]
+fn draw_original_tactical_hud(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    player_is_alliance: bool,
+    player_has_fighters: bool,
+    selected_name: Option<&str>,
+    paused: bool,
+    highlight_alliance: bool,
+    highlight_empire: bool,
+) {
+    use resources::tactical as art;
+
+    // The top task-force and fighter-group strips occupy slots in bitmap 1000.
+    draw_tactical_bitmap(
+        cache,
+        if player_is_alliance {
+            art::TASK_FORCES_ALLIANCE
+        } else {
+            art::TASK_FORCES_EMPIRE
+        },
+        canvas,
+        10.0,
+        1.0,
+    );
+    for index in 0..8_u8 {
+        let assigned = index == 0 && selected_name.is_some();
+        draw_tactical_bitmap(
+            cache,
+            if assigned {
+                art::BTN_TASK_FORCE_PRESSED
+            } else {
+                art::BTN_TASK_FORCE_UNASSIGNED
+            },
+            canvas,
+            60.0 + f32::from(index) * 26.0,
+            2.0,
+        );
+        if assigned {
+            let (x, y) = canvas.point(69.0, 16.0);
+            draw_text("1", x, y, 13.0 * canvas.scale, BLACK);
+        }
+    }
+    draw_tactical_bitmap(
+        cache,
+        if player_is_alliance {
+            art::FIGHTER_SQUADRONS_ALLIANCE
+        } else {
+            art::FIGHTER_SQUADRONS_EMPIRE
+        },
+        canvas,
+        275.0,
+        1.0,
+    );
+    for index in 0..4_u8 {
+        draw_tactical_bitmap(
+            cache,
+            if index == 0 && player_has_fighters {
+                art::BTN_RED_SQUADRON_NORMAL
+            } else {
+                art::SQUADRON_UNASSIGNED
+            },
+            canvas,
+            330.0 + f32::from(index) * 26.0,
+            2.0,
+        );
+    }
+
+    draw_tactical_bitmap(
+        cache,
+        if selected_name.is_some() { 1302 } else { 1301 },
+        canvas,
+        481.0,
+        27.0,
+    );
+    if let Some(name) = selected_name {
+        let (x, y) = canvas.point(497.0, 48.0);
+        draw_text(name, x, y, 11.0 * canvas.scale, WHITE);
+        let (x, y) = canvas.point(497.0, 222.0);
+        draw_text("No Orders", x, y, 11.0 * canvas.scale, WHITE);
+    }
+
+    for (id, x) in [(1026, 485.0), (1027, 521.0), (1028, 560.0), (1029, 601.0)] {
+        draw_tactical_bitmap(cache, id, canvas, x, 272.0);
+    }
+    draw_tactical_bitmap(
+        cache,
+        if highlight_empire {
+            art::HIGHLIGHT_EMPIRE_SHIPS
+        } else {
+            art::DIM_EMPIRE_SHIPS
+        },
+        canvas,
+        482.0,
+        304.0,
+    );
+    draw_tactical_bitmap(
+        cache,
+        if highlight_alliance {
+            art::HIGHLIGHT_ALLIANCE_SHIPS
+        } else {
+            art::DIM_ALLIANCE_SHIPS
+        },
+        canvas,
+        517.0,
+        304.0,
+    );
+    draw_tactical_bitmap(
+        cache,
+        if paused { 1061 } else { 1060 },
+        canvas,
+        560.0,
+        307.0,
+    );
+    draw_tactical_bitmap(cache, 1038, canvas, 606.0, 308.0);
+
+    draw_tactical_bitmap(cache, 1044, canvas, 486.0, 343.0);
+    draw_tactical_bitmap(cache, 1046, canvas, 603.0, 343.0);
+    for (id, x, y) in [
+        (1048, 511.0, 376.0),
+        (1050, 557.0, 376.0),
+        (1052, 537.0, 344.0),
+        (1055, 537.0, 412.0),
+        (1058, 538.0, 379.0),
+    ] {
+        draw_tactical_bitmap(cache, id, canvas, x, y);
+    }
+}
+
+fn handle_original_tactical_controls(
+    state: &mut TacticalState,
+    canvas: TacticalCanvas,
+) -> TacticalAction {
+    let (mouse_x, mouse_y) = mouse_position();
+    if is_mouse_button_pressed(MouseButton::Left) {
+        let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
+        match tactical_hud_control_at(x, y) {
+            Some(TacticalHudControl::Pause) => return TacticalAction::TogglePause,
+            Some(TacticalHudControl::ZoomIn) => state.zoom = (state.zoom * 1.25).min(2.0),
+            Some(TacticalHudControl::ZoomOut) => state.zoom = (state.zoom / 1.25).max(0.5),
+            Some(TacticalHudControl::HighlightAlliance) => {
+                state.highlight_alliance = !state.highlight_alliance;
+            }
+            Some(TacticalHudControl::HighlightEmpire) => {
+                state.highlight_empire = !state.highlight_empire;
+            }
+            None => {}
+        }
+    }
+    if is_key_pressed(KeyCode::Equal) {
+        state.zoom = (state.zoom * 1.25).min(2.0);
+    }
+    if is_key_pressed(KeyCode::Minus) {
+        state.zoom = (state.zoom / 1.25).max(0.5);
+    }
+    TacticalAction::None
+}
+
 /// Draw the tactical combat view (macroquad + egui).
 ///
 /// Call this when `GameMode::TacticalCombat`. Returns a `TacticalAction`
@@ -893,12 +1229,6 @@ pub fn draw_tactical_view(
         return TacticalAction::ReturnToGalaxy;
     }
 
-    // Mark sprites as needing preload on first frame.
-    let needs_preload = !state.sprites_preloaded;
-    if needs_preload {
-        state.sprites_preloaded = true;
-    }
-
     let mut action = TacticalAction::None;
 
     // 0. Advance combat if in Combat phase (mutable borrow).
@@ -919,18 +1249,18 @@ pub fn draw_tactical_view(
         }
     }
 
-    // 1. Draw the starfield background (pure macroquad).
-    clear_background(Color::new(0.01, 0.01, 0.04, 1.0));
-    draw_starfield();
+    // 1. Paint the unscaled-source tactical shell first, then put the battle
+    // only inside its original black aperture. Bitmap 1000 includes every
+    // frame edge and the empty right-hand panel housing.
+    clear_background(BLACK);
+    let canvas = TacticalCanvas::new(screen_width(), screen_height());
+    draw_tactical_bitmap(bmp_cache, resources::tactical::BACKGROUND, canvas, 0.0, 0.0);
+    set_tactical_aperture_clip(Some(canvas.aperture()));
+    draw_starfield(canvas);
 
-    // 2. Compute arena-to-screen transform.
-    let sw = screen_width();
-    let sh = screen_height();
-    let scale_x = sw / ARENA_WIDTH;
-    let scale_y = sh / ARENA_HEIGHT;
-    let scale = scale_x.min(scale_y);
-    let offset_x = (sw - ARENA_WIDTH * scale) / 2.0;
-    let offset_y = (sh - ARENA_HEIGHT * scale) / 2.0;
+    // 2. Transform the provisional 2D battle into the original aperture.
+    let (scale, offset_x, offset_y) =
+        canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
 
     // Borrow session for rendering (immutable reads).
     let session = state.session.as_ref().unwrap();
@@ -981,12 +1311,16 @@ pub fn draw_tactical_view(
     }
 
     // 4. Draw ships (macroquad primitives).
+    let aperture = canvas.aperture();
     for ship in &session.ships {
         if !ship.alive {
             continue;
         }
         let sx = offset_x + ship.x * scale;
         let sy = offset_y + ship.y * scale;
+        if !aperture.contains(sx, sy) {
+            continue;
+        }
         let size = DEFAULT_SHIP_SIZE * scale;
 
         let color = if ship.is_attacker {
@@ -1012,6 +1346,28 @@ pub fn draw_tactical_view(
             macroquad::math::Vec2::new(sx, sy + half),
             color,
         );
+
+        let is_alliance = ship.is_attacker == session.attacker_is_alliance;
+        let highlighted = if is_alliance {
+            state.highlight_alliance
+        } else {
+            state.highlight_empire
+        };
+        if highlighted {
+            let wire_color = if is_alliance {
+                Color::new(0.1, 0.9, 0.2, 0.85)
+            } else {
+                Color::new(0.9, 0.15, 0.12, 0.85)
+            };
+            draw_rectangle_lines(
+                sx - half * 0.85,
+                sy - half * 0.85,
+                size * 0.85,
+                size * 0.85,
+                1.0,
+                wire_color,
+            );
+        }
 
         let bar_w = size * 0.8;
         let bar_h = 4.0;
@@ -1086,6 +1442,9 @@ pub fn draw_tactical_view(
         }
         let fx = offset_x + fighter.x * scale;
         let fy = offset_y + fighter.y * scale;
+        if !aperture.contains(fx, fy) {
+            continue;
+        }
         let size = FIGHTER_SIZE * scale;
 
         let color = if fighter.is_attacker {
@@ -1198,6 +1557,9 @@ pub fn draw_tactical_view(
     // End immutable borrow before mutable operations.
     let _ = session;
 
+    // Restore full-canvas painting before HUD controls and any later egui pass.
+    set_tactical_aperture_clip(None);
+
     // 6. Handle input per phase.
     if phase == BattlePhase::Placement {
         let session = state.session.as_mut().unwrap();
@@ -1211,88 +1573,109 @@ pub fn draw_tactical_view(
         );
     } else if phase == BattlePhase::Combat {
         let session = state.session.as_mut().unwrap();
-        handle_combat_input(session, scale, offset_x, offset_y);
+        handle_combat_input(session, scale, offset_x, offset_y, canvas.aperture());
     }
 
-    // 7. egui overlay: HUD, phase controls, ship info.
-    egui_macroquad::ui(|ctx| {
-        // Preload tactical sprites on first frame.
-        if needs_preload {
-            bmp_cache.preload_range(
-                ctx,
-                DllSource::Tactical,
-                TACTICAL_SHIP_SPRITE_START,
-                TACTICAL_SHIP_SPRITE_END,
-            );
-        }
-
-        // Task force info panel overlay (top-left floating window).
-        // Shows the faction-colored HUD panel from TACTICAL.DLL for both sides.
-        egui::Window::new("task_force_hud")
-            .title_bar(false)
-            .resizable(false)
-            .collapsible(false)
-            .frame(egui::Frame::NONE)
-            .fixed_pos(egui::pos2(8.0, 40.0))
-            .show(ctx, |ui| {
-                let atk_panel_id = if player_is_attacker {
-                    TACTICAL_TASKFORCE_PANEL_ATTACKER
-                } else {
-                    TACTICAL_TASKFORCE_PANEL_DEFENDER
-                };
-                let def_panel_id = if player_is_attacker {
-                    TACTICAL_TASKFORCE_PANEL_DEFENDER
-                } else {
-                    TACTICAL_TASKFORCE_PANEL_ATTACKER
-                };
-
-                // Attacker panel (player side).
-                if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, atk_panel_id) {
-                    let size = tex.size();
-                    let w = (size[0] as f32).min(160.0);
-                    let h = w * size[1] as f32 / size[0] as f32;
-                    ui.add(egui::Image::new(egui::load::SizedTexture::new(
-                        tex.id(),
-                        Vec2::new(w, h),
-                    )));
-                }
-
-                ui.add_space(4.0);
-
-                // Defender panel (enemy side).
-                if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, def_panel_id) {
-                    let size = tex.size();
-                    let w = (size[0] as f32).min(160.0);
-                    let h = w * size[1] as f32 / size[0] as f32;
-                    ui.add(egui::Image::new(egui::load::SizedTexture::new(
-                        tex.id(),
-                        Vec2::new(w, h),
-                    )));
-                }
-            });
-
-        // Top bar: battle title.
-        egui::TopBottomPanel::top("tactical_top").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading(
-                    RichText::new(format!("Battle of {system_name}"))
-                        .color(Color32::from_rgb(255, 200, 60))
-                        .strong(),
-                );
-                ui.separator();
-                ui.label(
-                    RichText::new(match phase {
-                        BattlePhase::Placement => "DEPLOYMENT PHASE",
-                        BattlePhase::Combat => "COMBAT",
-                        BattlePhase::Results => "BATTLE RESULTS",
-                    })
-                    .color(Color32::from_rgb(200, 200, 200)),
-                );
-            });
+    if phase == BattlePhase::Combat {
+        action = handle_original_tactical_controls(state, canvas);
+        let player_is_alliance = state
+            .session
+            .as_ref()
+            .is_some_and(|session| session.player_is_attacker == session.attacker_is_alliance);
+        let player_has_fighters = state.session.as_ref().is_some_and(|session| {
+            session
+                .fighters
+                .iter()
+                .any(|fighter| fighter.is_attacker == session.player_is_attacker && fighter.alive)
         });
+        draw_original_tactical_hud(
+            bmp_cache,
+            canvas,
+            player_is_alliance,
+            player_has_fighters,
+            selected_info.as_ref().map(|(name, ..)| name.as_str()),
+            paused,
+            state.highlight_alliance,
+            state.highlight_empire,
+        );
+        if paused {
+            let (x, y) = canvas.point(25.0, 48.0);
+            draw_text("Battle Paused.", x, y, 16.0 * canvas.scale, RED);
+        }
+    }
 
-        // Bottom panel: phase controls.
-        egui::TopBottomPanel::bottom("tactical_bottom").show(ctx, |ui| {
+    // The original battle-results composition is a separate pending surface.
+    // Preserve its existing functional route without painting replacement HUD
+    // panels over the active bitmap-driven combat view.
+    if phase == BattlePhase::Results {
+        egui_macroquad::ui(|ctx| {
+            // Task force info panel overlay (top-left floating window).
+            // Shows the faction-colored HUD panel from TACTICAL.DLL for both sides.
+            egui::Window::new("task_force_hud")
+                .title_bar(false)
+                .resizable(false)
+                .collapsible(false)
+                .frame(egui::Frame::NONE)
+                .fixed_pos(egui::pos2(8.0, 40.0))
+                .show(ctx, |ui| {
+                    let atk_panel_id = if player_is_attacker {
+                        TACTICAL_TASKFORCE_PANEL_ATTACKER
+                    } else {
+                        TACTICAL_TASKFORCE_PANEL_DEFENDER
+                    };
+                    let def_panel_id = if player_is_attacker {
+                        TACTICAL_TASKFORCE_PANEL_DEFENDER
+                    } else {
+                        TACTICAL_TASKFORCE_PANEL_ATTACKER
+                    };
+
+                    // Attacker panel (player side).
+                    if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, atk_panel_id) {
+                        let size = tex.size();
+                        let w = (size[0] as f32).min(160.0);
+                        let h = w * size[1] as f32 / size[0] as f32;
+                        ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                            tex.id(),
+                            Vec2::new(w, h),
+                        )));
+                    }
+
+                    ui.add_space(4.0);
+
+                    // Defender panel (enemy side).
+                    if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, def_panel_id) {
+                        let size = tex.size();
+                        let w = (size[0] as f32).min(160.0);
+                        let h = w * size[1] as f32 / size[0] as f32;
+                        ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                            tex.id(),
+                            Vec2::new(w, h),
+                        )));
+                    }
+                });
+
+            // Top bar: battle title.
+            egui::TopBottomPanel::top("tactical_top").show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading(
+                        RichText::new(format!("Battle of {system_name}"))
+                            .color(Color32::from_rgb(255, 200, 60))
+                            .strong(),
+                    );
+                    ui.separator();
+                    ui.label(
+                        RichText::new(match phase {
+                            BattlePhase::Placement => "DEPLOYMENT PHASE",
+                            BattlePhase::Combat => "COMBAT",
+                            BattlePhase::Results => "BATTLE RESULTS",
+                        })
+                        .color(Color32::from_rgb(200, 200, 200)),
+                    );
+                });
+            });
+
+            // Bottom panel: phase controls.
+            egui::TopBottomPanel::bottom("tactical_bottom").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 match phase {
                     BattlePhase::Placement => {
@@ -1464,84 +1847,88 @@ pub fn draw_tactical_view(
             });
         });
 
-        // Right panel: selected ship info.
-        if let Some((ref name, sprite_id, hull_current, hull_max, shield, shield_max, alive)) =
-            selected_info
-        {
-            egui::SidePanel::right("tactical_ship_info")
-                .default_width(200.0)
-                .show(ctx, |ui| {
-                    ui.heading(RichText::new(name).color(Color32::from_rgb(255, 220, 100)));
-                    ui.separator();
+            // Right panel: selected ship info.
+            if let Some((ref name, sprite_id, hull_current, hull_max, shield, shield_max, alive)) =
+                selected_info
+            {
+                egui::SidePanel::right("tactical_ship_info")
+                    .default_width(200.0)
+                    .show(ctx, |ui| {
+                        ui.heading(RichText::new(name).color(Color32::from_rgb(255, 220, 100)));
+                        ui.separator();
 
-                    // Hull/shield display panel background (TACTICAL.DLL ID 1302).
-                    if let Some(tex) =
-                        bmp_cache.get(ctx, DllSource::Tactical, TACTICAL_HULL_SHIELD_PANEL)
-                    {
-                        let size = tex.size();
-                        let w = 180.0_f32.min(size[0] as f32);
-                        let h = w * size[1] as f32 / size[0] as f32;
-                        ui.add(egui::Image::new(egui::load::SizedTexture::new(
-                            tex.id(),
-                            Vec2::new(w, h),
-                        )));
-                        ui.add_space(2.0);
-                    }
-
-                    // Try to show ship sprite from BmpCache.
-                    if let Some(sid) = sprite_id {
-                        if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, sid) {
+                        // Hull/shield display panel background (TACTICAL.DLL ID 1302).
+                        if let Some(tex) =
+                            bmp_cache.get(ctx, DllSource::Tactical, TACTICAL_HULL_SHIELD_PANEL)
+                        {
                             let size = tex.size();
-                            let aspect = size[0] as f32 / size[1] as f32;
-                            let display_w = 180.0_f32.min(size[0] as f32);
-                            let display_h = display_w / aspect;
-                            ui.image(egui::ImageSource::Texture(egui::load::SizedTexture::new(
+                            let w = 180.0_f32.min(size[0] as f32);
+                            let h = w * size[1] as f32 / size[0] as f32;
+                            ui.add(egui::Image::new(egui::load::SizedTexture::new(
                                 tex.id(),
-                                Vec2::new(display_w, display_h),
+                                Vec2::new(w, h),
                             )));
-                            ui.add_space(4.0);
+                            ui.add_space(2.0);
                         }
-                    }
 
-                    ui.horizontal(|ui| {
-                        ui.label("Hull:");
-                        let hull_color =
-                            if hull_max > 0 && hull_current as f32 / hull_max as f32 > 0.5 {
-                                Color32::from_rgb(100, 220, 100)
-                            } else {
-                                Color32::from_rgb(220, 100, 60)
-                            };
-                        ui.label(
-                            RichText::new(format!("{hull_current}/{hull_max}")).color(hull_color),
-                        );
-                    });
+                        // Try to show ship sprite from BmpCache.
+                        if let Some(sid) = sprite_id {
+                            if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, sid) {
+                                let size = tex.size();
+                                let aspect = size[0] as f32 / size[1] as f32;
+                                let display_w = 180.0_f32.min(size[0] as f32);
+                                let display_h = display_w / aspect;
+                                ui.image(egui::ImageSource::Texture(
+                                    egui::load::SizedTexture::new(
+                                        tex.id(),
+                                        Vec2::new(display_w, display_h),
+                                    ),
+                                ));
+                                ui.add_space(4.0);
+                            }
+                        }
 
-                    if shield_max > 0 {
                         ui.horizontal(|ui| {
-                            ui.label("Shields:");
-                            ui.label(
-                                RichText::new(format!("{shield}/{shield_max}"))
-                                    .color(Color32::from_rgb(100, 150, 255)),
-                            );
-                        });
-                    }
-
-                    ui.horizontal(|ui| {
-                        ui.label("Status:");
-                        ui.label(
-                            RichText::new(if alive { "Active" } else { "Destroyed" }).color(
-                                if alive {
+                            ui.label("Hull:");
+                            let hull_color =
+                                if hull_max > 0 && hull_current as f32 / hull_max as f32 > 0.5 {
                                     Color32::from_rgb(100, 220, 100)
                                 } else {
-                                    Color32::from_rgb(220, 60, 60)
-                                },
-                            ),
-                        );
+                                    Color32::from_rgb(220, 100, 60)
+                                };
+                            ui.label(
+                                RichText::new(format!("{hull_current}/{hull_max}"))
+                                    .color(hull_color),
+                            );
+                        });
+
+                        if shield_max > 0 {
+                            ui.horizontal(|ui| {
+                                ui.label("Shields:");
+                                ui.label(
+                                    RichText::new(format!("{shield}/{shield_max}"))
+                                        .color(Color32::from_rgb(100, 150, 255)),
+                                );
+                            });
+                        }
+
+                        ui.horizontal(|ui| {
+                            ui.label("Status:");
+                            ui.label(
+                                RichText::new(if alive { "Active" } else { "Destroyed" }).color(
+                                    if alive {
+                                        Color32::from_rgb(100, 220, 100)
+                                    } else {
+                                        Color32::from_rgb(220, 60, 60)
+                                    },
+                                ),
+                            );
+                        });
                     });
-                });
-        }
-    });
-    egui_macroquad::draw();
+            }
+        });
+        egui_macroquad::draw();
+    }
 
     action
 }
@@ -1555,14 +1942,21 @@ pub fn draw_tactical_view(
 /// - Left-click: select a player ship.
 /// - Right-click on enemy: issue focus-fire order to all selected player ships.
 /// - R key: retreat selected ships.
-fn handle_combat_input(session: &mut BattleSession, scale: f32, offset_x: f32, offset_y: f32) {
+fn handle_combat_input(
+    session: &mut BattleSession,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+    aperture: NativeRect,
+) {
     let (mx, my) = mouse_position();
+    let inside_battle = aperture.contains(mx, my);
     let arena_pointer_x = (mx - offset_x) / scale;
     let arena_pointer_y = (my - offset_y) / scale;
     let hit_radius = DEFAULT_SHIP_SIZE * 0.6;
 
     // Left-click: select player's ship.
-    if is_mouse_button_pressed(MouseButton::Left) {
+    if inside_battle && is_mouse_button_pressed(MouseButton::Left) {
         let mut hit = None;
         for (i, ship) in session.ships.iter().enumerate() {
             if !ship.alive || ship.retreating {
@@ -1600,7 +1994,7 @@ fn handle_combat_input(session: &mut BattleSession, scale: f32, offset_x: f32, o
     }
 
     // Right-click: issue focus-fire order to selected ships.
-    if is_mouse_button_pressed(MouseButton::Right) {
+    if inside_battle && is_mouse_button_pressed(MouseButton::Right) {
         let mut target_hit = None;
         for (i, ship) in session.ships.iter().enumerate() {
             if !ship.alive {
@@ -1742,26 +2136,25 @@ fn handle_placement_input(
     clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
-fn draw_starfield() {
-    // Deterministic "random" star positions based on screen dimensions.
-    // Use a simple LCG to scatter stars.
-    let sw = screen_width();
-    let sh = screen_height();
-    let star_count = 200;
+fn draw_starfield(canvas: TacticalCanvas) {
+    // A deterministic interim field inside the bitmap's black viewport. The
+    // original 3D star renderer is still a separate TAC-01 parity requirement.
+    let aperture = canvas.aperture();
+    let star_count = 120;
     let mut seed: u64 = 0xDEAD_BEEF;
 
     for _ in 0..star_count {
         seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
-        let x = (seed % (sw as u64 * 100)) as f32 / 100.0;
+        let x = aperture.x + (seed % 10_000) as f32 / 10_000.0 * aperture.width;
         seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
-        let y = (seed % (sh as u64 * 100)) as f32 / 100.0;
+        let y = aperture.y + (seed % 10_000) as f32 / 10_000.0 * aperture.height;
         seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         let brightness = 0.3 + (seed % 70) as f32 / 100.0;
 
         draw_circle(
             x,
             y,
-            1.0,
+            canvas.scale.max(0.5),
             Color::new(brightness, brightness, brightness * 1.1, 1.0),
         );
     }
@@ -1787,5 +2180,49 @@ mod tests {
     fn battle_phase_variants() {
         assert_ne!(BattlePhase::Placement, BattlePhase::Combat);
         assert_ne!(BattlePhase::Combat, BattlePhase::Results);
+    }
+
+    #[test]
+    fn original_tactical_canvas_letterboxes_without_distorting_controls() {
+        let native = TacticalCanvas::new(640.0, 480.0);
+        assert_eq!((native.x, native.y, native.scale), (0.0, 0.0, 1.0));
+        let wide = TacticalCanvas::new(1280.0, 800.0);
+        assert_eq!(wide.scale, 5.0 / 3.0);
+        assert_eq!(wide.x, (1280.0 - 640.0 * wide.scale) * 0.5);
+        let (screen_x, screen_y) = wide.point(574.0, 317.0);
+        let (logical_x, logical_y) = wide.logical_pointer(screen_x, screen_y);
+        assert!((logical_x - 574.0).abs() < 0.001);
+        assert!((logical_y - 317.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn original_tactical_control_hits_stop_at_bitmap_edges() {
+        assert_eq!(
+            tactical_hud_control_at(560.0, 307.0),
+            Some(TacticalHudControl::Pause)
+        );
+        assert_eq!(
+            tactical_hud_control_at(587.9, 327.9),
+            Some(TacticalHudControl::Pause)
+        );
+        assert_eq!(tactical_hud_control_at(588.0, 317.0), None);
+        assert_eq!(tactical_hud_control_at(559.9, 317.0), None);
+        assert_eq!(
+            tactical_hud_control_at(486.0, 343.0),
+            Some(TacticalHudControl::ZoomIn)
+        );
+        assert_eq!(tactical_hud_control_at(510.0, 355.0), None);
+        assert_eq!(
+            tactical_hud_control_at(603.0, 343.0),
+            Some(TacticalHudControl::ZoomOut)
+        );
+        assert_eq!(
+            tactical_hud_control_at(517.0, 304.0),
+            Some(TacticalHudControl::HighlightAlliance)
+        );
+        assert_eq!(
+            tactical_hud_control_at(482.0, 304.0),
+            Some(TacticalHudControl::HighlightEmpire)
+        );
     }
 }

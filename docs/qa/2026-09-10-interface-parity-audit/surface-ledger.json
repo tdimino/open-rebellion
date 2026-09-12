@@ -4287,7 +4287,7 @@
         149,
         150
       ],
-      "current_implementation": "Partial original assets are overlaid by custom generated starfield and custom panels.",
+      "current_implementation": "The original 640x480 TACTICAL 1000 shell, faction group headers, selected-unit panel frame, pause, highlight, zoom, and camera-control art replace the active combat replacement panels. Pause, highlights, and zoom work through native-coordinate controls. Procedural battle contents, incomplete panel data and commands, Battle Alert, results, audio, and rare states keep every TAC-01 cell pending.",
       "finding_ids": [
         "UIP-F-009"
       ],

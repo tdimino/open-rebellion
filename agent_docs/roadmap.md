@@ -535,6 +535,15 @@ would tune around known simulation feedback defects.
 - [x] Remove the P51 unproven GID row-hover wash, retain submenu routing, and
   verify every visible source-frame pixel under the detailed system window.
   Original hover/focus art and full window-stacking acceptance remain open.
+- [x] Complete the P52 first tactical-shell checkpoint: render TACTICAL 1000
+  on the 640×480 canvas, replace active-combat replacement panels, wire bitmap
+  pause, faction highlights, and zoom, and verify both factions and viewports
+  in fresh muted browser sessions. Procedural battle contents and all 106
+  `TAC-01` through `TAC-07` cells remain open.
+- [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
+  navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
+  states. Stage and map original type-301/type-303 battle graphics before
+  replacing procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

@@ -438,6 +438,144 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   return probes;
 }
 
+function verifyTacticalBitmap(viewport, screenshotBytes, id, x0, y0) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", pixels_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const source = decodeIndexedBmp(fs.readFileSync(path.join(
+    root, `data/base/ui/tactical-dll/BMP/${id}.bmp`,
+  )));
+  let pixelsChecked = 0;
+  for (let y = 0; y < source.height; y++) {
+    for (let x = 0; x < source.width; x++) {
+      const color = source.pixel(x, y);
+      if (color[0] < 32 && color[1] < 32 && color[2] > 192) continue;
+      const actualOffset = ((y0 + y) * screenshot.width + x0 + x) * 4;
+      assert.deepEqual(
+        Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
+        `tactical control ${id} pixel (${x}, ${y}) differs from its original BMP`,
+      );
+      pixelsChecked++;
+    }
+  }
+  return { status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked };
+}
+
+function verifyTacticalShell(viewport, screenshotBytes) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", pixels_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const source = decodeIndexedBmp(fs.readFileSync(path.join(
+    root, "data/base/ui/tactical-dll/BMP/1000.bmp",
+  )));
+  assert.equal(source.width, 640);
+  assert.equal(source.height, 480);
+  let pixelsChecked = 0;
+  // Uncovered corner and bottom-edge pixels must be the original shell. The
+  // aperture, group headers, selected panel, and controls are layered above it.
+  const points = [];
+  // The outermost two WebGL edge pixels are antialiased against the canvas
+  // backing color; compare the first fully covered source pixels instead.
+  for (let y = 2; y < 8; y++) {
+    for (let x = 2; x < 8; x++) {
+      points.push([x, y], [628 + x, y]);
+    }
+  }
+  for (let x = 2; x < 638; x++) points.push([x, 476]);
+  for (const [x, y] of points) {
+    const offset = (y * 640 + x) * 4;
+    assert.deepEqual(Array.from(screenshot.data.subarray(offset, offset + 3)), source.pixel(x, y),
+      `tactical shell pixel (${x}, ${y}) differs from TACTICAL 1000`);
+    pixelsChecked++;
+  }
+  return { status: "source-bitmap-exact", resource_id: 1000, pixels_checked: pixelsChecked };
+}
+
+function verifyTacticalApertureIsolation(viewport, beforeBytes, afterBytes) {
+  const before = PNG.sync.read(beforeBytes);
+  const after = PNG.sync.read(afterBytes);
+  assert.equal(before.width, after.width);
+  assert.equal(before.height, after.height);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const aperture = {
+    x0: Math.round(offsetX + 16 * scale),
+    y0: Math.round(offsetY + 28 * scale),
+    x1: Math.round(offsetX + 460 * scale),
+    y1: Math.round(offsetY + 467 * scale),
+  };
+  let pixelsChecked = 0;
+  for (let y = 0; y < before.height; y++) {
+    for (let x = 0; x < before.width; x++) {
+      if (x >= aperture.x0 && x < aperture.x1 && y >= aperture.y0 && y < aperture.y1) continue;
+      const offset = (y * before.width + x) * 4;
+      assert.deepEqual(
+        Array.from(after.data.subarray(offset, offset + 4)),
+        Array.from(before.data.subarray(offset, offset + 4)),
+        `battlefield redraw escaped tactical aperture at (${x}, ${y})`,
+      );
+      pixelsChecked++;
+    }
+  }
+  return { status: "isolated", pixels_checked: pixelsChecked };
+}
+
+async function probeTactical(page, viewport, folder, stable) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const capture = async (name) => page.screenshot({
+    path: path.join(folder, `${name}.png`), animations: "disabled",
+  });
+  const probes = [{ type: "tactical-shell", ...verifyTacticalShell(viewport, stable.bytes) }];
+  probes.push({ type: "paused-control-bitmap",
+    ...verifyTacticalBitmap(viewport, stable.bytes, 1061, 560, 307) });
+
+  const outside = point(558, 318);
+  await page.mouse.click(outside.x, outside.y);
+  await page.waitForTimeout(80);
+  const outsideFrame = await capture("pause-outside-edge");
+  assert.equal(sha256(stable.bytes), sha256(outsideFrame), "outside-edge changed paused battle");
+  probes.push({ type: "pause-outside-edge", unchanged: true });
+
+  const pause = point(574, 318);
+  await page.mouse.click(pause.x, pause.y);
+  await page.waitForTimeout(80);
+  const resumed = await capture("resumed");
+  assert.notEqual(sha256(stable.bytes), sha256(resumed), "pause control did not resume battle");
+  probes.push({ type: "resume", ...verifyTacticalBitmap(viewport, resumed, 1060, 560, 307) });
+  await page.mouse.click(pause.x, pause.y);
+  await page.waitForTimeout(80);
+  const pausedAgain = await capture("paused-again");
+  probes.push({ type: "pause", ...verifyTacticalBitmap(viewport, pausedAgain, 1061, 560, 307) });
+  await page.waitForTimeout(250);
+  const pauseStable = await capture("pause-stable");
+  assert.equal(sha256(pausedAgain), sha256(pauseStable), "battle continued after re-pause");
+  probes.push({ type: "paused-stability", stable: true,
+    screenshot_sha256: sha256(pauseStable) });
+
+  const allianceHighlight = point(532, 317);
+  await page.mouse.click(allianceHighlight.x, allianceHighlight.y);
+  await page.waitForTimeout(80);
+  const highlightOff = await capture("alliance-highlight-off");
+  assert.notEqual(sha256(pausedAgain), sha256(highlightOff), "Alliance highlight did not toggle");
+  probes.push({ type: "alliance-highlight-off",
+    ...verifyTacticalBitmap(viewport, highlightOff, 1035, 517, 304) });
+
+  const zoomIn = point(498, 355);
+  await page.mouse.click(zoomIn.x, zoomIn.y);
+  await page.waitForTimeout(80);
+  const zoomed = await capture("zoomed-in");
+  assert.notEqual(sha256(highlightOff), sha256(zoomed), "zoom-in control did not redraw battle");
+  probes.push({ type: "zoom-in", ...verifyTacticalBitmap(viewport, zoomed, 1044, 486, 343),
+    aperture_isolation: verifyTacticalApertureIsolation(viewport, highlightOff, zoomed) });
+  return probes;
+}
+
 async function runScenario(server, executable, scenario, faction, viewport) {
   const id = scenarioId(scenario, faction, viewport);
   const folder = path.resolve(runDir, id);
@@ -498,7 +636,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     const probes = battle
       ? [{ type: "production-tactical-entry", system: ready.system,
         attacker_ships: ready.attacker_ships, defender_ships: ready.defender_ships,
-        fighters: ready.fighters }]
+        fighters: ready.fighters }, ...await probeTactical(page, viewport, folder, stable)]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
       assert.equal(ready.family, "tactical");

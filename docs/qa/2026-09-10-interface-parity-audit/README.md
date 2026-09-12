@@ -53,6 +53,9 @@ geometry, and unverified asset mappings do not count as parity.
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)
   for removal of the unsupported wash and visible-border checks under windows.
+- Review the [P52 tactical shell evidence](evidence/2026-09-12-tactical-shell-controls.md)
+  for the first original 640×480 battle composition, native-coordinate pause,
+  highlight, and zoom controls, and the remaining 106-cell tactical boundary.
 
 ## Suggested contribution lanes
 

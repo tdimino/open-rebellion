@@ -14,7 +14,7 @@ This is a test harness for `UIP-B06` in the [batched interface plan](2026-09-11-
 
 It is not blocked on finishing the GID, system-window, or other strategic interface families. Start T0 and T1 after the current in-flight GID bundle is committed, then work on tactical asset proof and original HUD composition as a separate `UIP-B06` lane. The final 106-cell tactical acceptance gate still depends on original resources, screenshot baselines, and real browser interaction; a functioning launcher is not that gate.
 
-T0 is partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. Shared return/outcome routing, battle interactions, original HUD composition, and all 106 visual cells remain open.
+T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. [P52](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md) adds the original 640×480 shell and first working bitmap pause, highlight, and zoom controls. Shared return/outcome routing, complete battle interactions and art, and all 106 visual cells remain open.
 
 ## Current contract and limits
 
@@ -75,6 +75,13 @@ Gate: repeatable seeded results, no missing required assets or browser errors, s
 Use `RE-TAC-01`, `RE-TAC-02`, `RE-BAT-01`, the manual pages 139–150, the [asset reference library](../reference/asset-library/README.md), extracted `TACTICAL.DLL` resources, and the screenshot ledger to replace the current 1200×800 synthetic egui tactical HUD and results screen panel by panel. Map original resource ID, placement, state predicate, hit rectangle, and action for each control before implementation. Current camera fields and several tactical controls are not functional, so a rendered panel alone is insufficient. Keep the battle launcher fixed on the production renderer and expand its snapshot matrix as surfaces become authentic.
 
 Gate: source-mapped art and controls for the selected bundle, exact extracted-BMP pixels where unobscured, documented comparison limits for compressed screenshots, and an Astra medium review of both factions. Do not infer missing hover, disabled, Death Star, or result art from a modern replacement.
+
+Status: the first P52 slice passes this scoped gate for shell `1000`, faction
+group headers, the selected-unit frame, pause, highlights, zoom, and visible
+camera-control art. The active combat replacement panels are removed. Camera
+semantics beyond zoom, task-force and squadron assignment, selected-unit data,
+ships, fighters, planets, effects, commands, results, and audio remain T3 work.
+No `TAC-*` acceptance cell is closed.
 
 ### T4. Battle outcome and rare-state closure
 

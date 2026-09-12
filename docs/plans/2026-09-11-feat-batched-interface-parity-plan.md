@@ -80,7 +80,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md) and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P50 GID frame checkpoint; UIP-B02 continues
+## Current execution focus: P52 tactical shell checkpoint; UIP-B06 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -146,6 +146,14 @@ The harness now confirms detailed-system-window overlap and checks the GID
 frame pixels that remain visible, rather than skipping the entire frame. The
 [P51 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-gid-hover-and-occlusion.md)
 keeps native hover/focus art and complete stacking acceptance open.
+
+P52 begins UIP-B06 with the original 640×480 TACTICAL 1000 shell and working
+bitmap pause, faction-highlight, and zoom controls. The permanent muted battle
+harness checks both factions at native and letterboxed sizes, strict pause
+outside edges, state changes, and unobscured source pixels. Procedural stars,
+ships, fighters, panel data, navigation, assignments, commands, effects,
+results, Death Star paths, and audio keep every tactical cell open. See the
+[P52 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md).
 
 ## Bundle acceptance record
 

@@ -6,6 +6,16 @@ The original battle mode spans [106 required interface cells](../../qa/2026-09-1
 
 The [resource inventory](resource-inventory.json) records all 288 staged `TACTICAL.DLL` BMP IDs with dimensions. Current code names some task-force and squadron frames, command-button states, five weapon-recharge frames (`1206`–`1210`), a hull/shield panel (`1302`), and mission HUD buttons (`2151`–`2158`) in [bmp_cache.rs](../../../crates/rebellion-render/src/bmp_cache.rs). Those names are implementation mappings pending full original-state verification. The [331-entity catalog](entity-catalog.json) exposes the absent tactical roles per ship and fighter.
 
+The first runtime composition now maps full shell `1000`; faction task-force
+headers `1001`/`1004`; fighter headers `1008`/`1010`; task-force states
+`1005`–`1007`; squadron states `1012`–`1020`; camera/navigation art
+`1026`–`1033` and `1044`–`1059`; Alliance highlights `1034`/`1035`; Imperial
+highlights `1036`/`1037`; battle options `1038`/`1039`; pause `1060`/`1061`;
+and empty/selected capital-ship panels `1301`/`1302`. Only pause, highlight,
+and zoom semantics are wired in this checkpoint. See the
+[P52 evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md)
+for current positions, browser source-pixel proof, and open mappings.
+
 The current renderer calls IDs `2001`–`2130` a tactical ship-sprite block, but the extracted BMP inventory contains only **43** IDs inside that range: `2001`–`2038` and `2101`–`2105`. Its `class_to_sprite_id` formula is explicitly approximate. The original battle manager instead holds a [29-ship, eight-fighter ordinal lookup](tactical-lookup.json) into custom type-301 meshes and type-303 fighter graphics. An ordinal is not yet a proven DAT class identity. Missing BMP numbers must not be synthesized or mistaken for missing custom resource types.
 
 ## Ships, fighters, planets, and effects

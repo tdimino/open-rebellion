@@ -164,6 +164,8 @@ mod tests {
             assert_eq!(session.attacker_fleet, attacker);
             assert_eq!(session.defender_fleet, defender);
             assert_eq!(session.player_is_attacker, player_is_attacker);
+            assert_eq!(session.phase, rebellion_render::BattlePhase::Combat);
+            assert!(session.paused, "the original Tactical Display opens paused");
         }
     }
 

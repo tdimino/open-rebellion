@@ -1485,7 +1485,13 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
                 | resources::common::MAIN_MENU_ANIMATION_FIRST
                     ..=resources::common::MAIN_MENU_ANIMATION_LAST
         ),
-        DllSource::Tactical => false,
+        // The small tactical control overlays carry a pure-blue matte. The
+        // full shell and selected-ship panels do not: their blue display
+        // fields are authored pixels and must remain visible.
+        DllSource::Tactical => matches!(
+            resource_id,
+            1026..=1033 | 1038..=1039 | 1042..=1056 | 1060..=1061
+        ),
     }
 }
 
@@ -1784,6 +1790,24 @@ mod tests {
 
         assert_eq!(decoded.pixels[0].a(), 0);
         assert_eq!(decoded.pixels[1].a(), 255);
+    }
+
+    #[test]
+    fn tactical_control_matte_is_transparent_but_panel_blue_is_opaque() {
+        let mut image = image::RgbaImage::new(1, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let control = decode_color_image(&encoded, DllSource::Tactical, 1048).unwrap();
+        let panel = decode_color_image(&encoded, DllSource::Tactical, 1302).unwrap();
+        assert_eq!(control.pixels[0].a(), 0);
+        assert_eq!(panel.pixels[0].a(), 255);
     }
 
     #[test]
