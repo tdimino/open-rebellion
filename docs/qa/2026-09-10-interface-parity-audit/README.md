@@ -12,6 +12,10 @@ geometry, and unverified asset mappings do not count as parity.
 - Follow the current
   [batched execution plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md)
   for bundle boundaries, verification cadence, Astra review, and commit gates.
+- Use its
+  [acceleration sidecar](../../plans/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
+  for the permanent muted harness, deterministic fixtures, visual comparisons,
+  generated summaries, and complete-family GID pilot.
 - Choose a bounded surface and state from the
   [machine-readable surface ledger](surface-ledger.json).
 - Use the [reverse-engineering ledger](reverse-engineering-ledger.md) to find

@@ -15,6 +15,12 @@ turns the [interface audit](../qa/2026-09-10-interface-parity-audit/) into
 larger user-visible workflows so focused development can proceed without a
 full WASM build, Astra review, commit, and push after every small control.
 
+The active
+[acceleration sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
+defines the permanent muted browser harness, deterministic test-only fixtures,
+visual comparisons, evidence-first Astra review, generated status prose, and
+one-commit family gates used to execute this plan more quickly.
+
 ## Progress snapshot
 
 | Measure | Current position |
@@ -46,7 +52,8 @@ one original-game workflow.
    640x480 and letterboxed viewports.
 6. Ask Astra medium to inspect the complete browser journey, bitmap identity,
    interactions, request log, console, and open parity boundaries.
-7. Ask independent subagents for read-only code and documentation review.
+7. Run one consolidated read-only code and documentation review at the bundle
+   boundary when the change warrants independent review.
 8. Run the full workspace suite, scoped clippy, ledger validator, JSON checks,
    artifact hashes, and diff checks once at the bundle boundary.
 9. Commit and push the passing bundle with its code, screenshots, evidence,
@@ -99,9 +106,12 @@ packaged WASM, parity-ledger, and muted four-campaign Astra gates pass with no
 product findings. See the
 [P47B evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md).
 
-The next `UIP-B02` slice recovers the code-built GID menu, expanded legend,
-remaining filter predicates and original overlays, then the exact map input
-and sector art. No replacement marker, menu, or legend will be introduced.
+The next `UIP-B02` execution bundle completes the whole `CMD-02` GID family:
+the code-built menu, compact and expanded legends, every remaining filter and
+original overlay, all known and intelligence states, selection, pan, zoom,
+and both faction variants. The acceleration sidecar supplies deterministic
+fixtures and one browser and Astra bundle gate. No replacement marker, menu,
+or legend will be introduced.
 
 ## Bundle acceptance record
 

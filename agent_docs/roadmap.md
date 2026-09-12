@@ -508,6 +508,11 @@ would tune around known simulation feedback defects.
   muted Astra faction/viewport campaigns with no product findings. The
   code-built menu, expanded legend, remaining modes and overlays, sector art,
   exact map input, and complete `CMD-02` matrix remain open.
+- [x] Adopt the interface-parity acceleration sidecar: bundle the complete GID
+  family, build one permanent fresh-process muted browser harness, use
+  deterministic test-only fixtures, generate repeated status prose from
+  canonical JSON, and reserve full workspace, WASM, and Astra verification for
+  the family gate. Harness and fixture implementation remains the next step.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
