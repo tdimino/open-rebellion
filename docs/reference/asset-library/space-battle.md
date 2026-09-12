@@ -9,8 +9,8 @@ The [resource inventory](resource-inventory.json) records all 288 staged `TACTIC
 The first runtime composition now maps full shell `1000`; faction task-force
 headers `1001`/`1004`; fighter headers `1008`/`1010`; task-force states
 `1005`–`1007`; squadron states `1012`–`1020`; camera/navigation art
-`1026`–`1033` and `1044`–`1059`; Alliance highlights `1034`/`1035`; Imperial
-highlights `1036`/`1037`; battle options `1038`/`1039`; pause `1060`/`1061`;
+`1026`–`1033` and `1044`–`1059`; Alliance dim/highlight `1034`/`1035`;
+Imperial dim/highlight `1036`/`1037`; battle options `1038`/`1039`; pause `1060`/`1061`;
 and empty/selected capital-ship panels `1301`/`1302`. Only pause, highlight,
 and zoom semantics are wired in this checkpoint. See the
 [P52 evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md)

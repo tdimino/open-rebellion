@@ -523,6 +523,55 @@ function verifyTacticalApertureIsolation(viewport, beforeBytes, afterBytes) {
   return { status: "isolated", pixels_checked: pixelsChecked };
 }
 
+function tacticalApertureHash(viewport, screenshotBytes) {
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const x0 = Math.round(offsetX + 16 * scale);
+  const y0 = Math.round(offsetY + 28 * scale);
+  const x1 = Math.round(offsetX + 460 * scale);
+  const y1 = Math.round(offsetY + 467 * scale);
+  const hash = createHash("sha256");
+  for (let y = y0; y < y1; y++) {
+    hash.update(screenshot.data.subarray((y * screenshot.width + x0) * 4,
+      (y * screenshot.width + x1) * 4));
+  }
+  return hash.digest("hex");
+}
+
+function verifyWireframeColor(viewport, onBytes, offBytes, faction) {
+  const on = PNG.sync.read(onBytes);
+  const off = PNG.sync.read(offBytes);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const x0 = Math.round(offsetX + 16 * scale);
+  const y0 = Math.round(offsetY + 28 * scale);
+  const x1 = Math.round(offsetX + 460 * scale);
+  const y1 = Math.round(offsetY + 467 * scale);
+  let changedPixels = 0;
+  let factionColorPixels = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const offset = (y * on.width + x) * 4;
+      const onPixel = Array.from(on.data.subarray(offset, offset + 3));
+      const offPixel = Array.from(off.data.subarray(offset, offset + 3));
+      if (onPixel.every((channel, index) => channel === offPixel[index])) continue;
+      changedPixels++;
+      const [red, green, blue] = onPixel;
+      const factionColor = faction === "alliance"
+        ? red > 80 && red > green * 2 && red > blue * 2
+        : green > 80 && green > red * 2 && green > blue * 1.5;
+      if (factionColor) factionColorPixels++;
+    }
+  }
+  assert.ok(changedPixels > 0, `${faction} highlight changed no aperture pixels`);
+  assert.ok(factionColorPixels > 0, `${faction} highlight used the wrong wireframe color`);
+  return { status: "verified", changed_pixels: changedPixels,
+    faction_color_pixels: factionColorPixels };
+}
+
 async function probeTactical(page, viewport, folder, stable) {
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
   const offsetX = (viewport.width - 640 * scale) / 2;
@@ -534,6 +583,10 @@ async function probeTactical(page, viewport, folder, stable) {
   const probes = [{ type: "tactical-shell", ...verifyTacticalShell(viewport, stable.bytes) }];
   probes.push({ type: "paused-control-bitmap",
     ...verifyTacticalBitmap(viewport, stable.bytes, 1061, 560, 307) });
+  probes.push({ type: "alliance-highlight-on",
+    ...verifyTacticalBitmap(viewport, stable.bytes, 1035, 517, 304) });
+  probes.push({ type: "empire-highlight-on",
+    ...verifyTacticalBitmap(viewport, stable.bytes, 1037, 482, 304) });
 
   const outside = point(558, 318);
   await page.mouse.click(outside.x, outside.y);
@@ -563,16 +616,44 @@ async function probeTactical(page, viewport, folder, stable) {
   await page.waitForTimeout(80);
   const highlightOff = await capture("alliance-highlight-off");
   assert.notEqual(sha256(pausedAgain), sha256(highlightOff), "Alliance highlight did not toggle");
+  assert.notEqual(tacticalApertureHash(viewport, pauseStable),
+    tacticalApertureHash(viewport, highlightOff), "Alliance battle wireframe did not dim");
   probes.push({ type: "alliance-highlight-off",
-    ...verifyTacticalBitmap(viewport, highlightOff, 1035, 517, 304) });
+    ...verifyTacticalBitmap(viewport, highlightOff, 1034, 517, 304),
+    wireframe: verifyWireframeColor(viewport, pauseStable, highlightOff, "alliance") });
+  await page.mouse.click(allianceHighlight.x, allianceHighlight.y);
+  await page.waitForTimeout(80);
+  const allianceRestored = await capture("alliance-highlight-restored");
+  assert.equal(sha256(pauseStable), sha256(allianceRestored),
+    "Alliance highlight did not restore the paused display");
+  probes.push({ type: "alliance-highlight-restored",
+    ...verifyTacticalBitmap(viewport, allianceRestored, 1035, 517, 304) });
+
+  const empireHighlight = point(497, 317);
+  await page.mouse.click(empireHighlight.x, empireHighlight.y);
+  await page.waitForTimeout(80);
+  const empireOff = await capture("empire-highlight-off");
+  assert.notEqual(sha256(allianceRestored), sha256(empireOff), "Empire highlight did not toggle");
+  assert.notEqual(tacticalApertureHash(viewport, allianceRestored),
+    tacticalApertureHash(viewport, empireOff), "Empire battle wireframe did not dim");
+  probes.push({ type: "empire-highlight-off",
+    ...verifyTacticalBitmap(viewport, empireOff, 1036, 482, 304),
+    wireframe: verifyWireframeColor(viewport, allianceRestored, empireOff, "empire") });
+  await page.mouse.click(empireHighlight.x, empireHighlight.y);
+  await page.waitForTimeout(80);
+  const highlightsRestored = await capture("highlights-restored");
+  assert.equal(sha256(pauseStable), sha256(highlightsRestored),
+    "Empire highlight did not restore the paused display");
+  probes.push({ type: "empire-highlight-restored",
+    ...verifyTacticalBitmap(viewport, highlightsRestored, 1037, 482, 304) });
 
   const zoomIn = point(498, 355);
   await page.mouse.click(zoomIn.x, zoomIn.y);
   await page.waitForTimeout(80);
   const zoomed = await capture("zoomed-in");
-  assert.notEqual(sha256(highlightOff), sha256(zoomed), "zoom-in control did not redraw battle");
+  assert.notEqual(sha256(highlightsRestored), sha256(zoomed), "zoom-in control did not redraw battle");
   probes.push({ type: "zoom-in", ...verifyTacticalBitmap(viewport, zoomed, 1044, 486, 343),
-    aperture_isolation: verifyTacticalApertureIsolation(viewport, highlightOff, zoomed) });
+    aperture_isolation: verifyTacticalApertureIsolation(viewport, highlightsRestored, zoomed) });
   return probes;
 }
 

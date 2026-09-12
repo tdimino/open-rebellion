@@ -1355,9 +1355,9 @@ pub fn draw_tactical_view(
         };
         if highlighted {
             let wire_color = if is_alliance {
-                Color::new(0.1, 0.9, 0.2, 0.85)
-            } else {
                 Color::new(0.9, 0.15, 0.12, 0.85)
+            } else {
+                Color::new(0.1, 0.9, 0.2, 0.85)
             };
             draw_rectangle_lines(
                 sx - half * 0.85,

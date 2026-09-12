@@ -148,7 +148,8 @@ frame pixels that remain visible, rather than skipping the entire frame. The
 keeps native hover/focus art and complete stacking acceptance open.
 
 P52 begins UIP-B06 with the original 640×480 TACTICAL 1000 shell and working
-bitmap pause, faction-highlight, and zoom controls. The permanent muted battle
+bitmap pause, red Alliance and green Imperial highlight/dim states, and zoom
+controls. The permanent muted battle
 harness checks both factions at native and letterboxed sizes, strict pause
 outside edges, state changes, and unobscured source pixels. Procedural stars,
 ships, fighters, panel data, navigation, assignments, commands, effects,

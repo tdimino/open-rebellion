@@ -707,14 +707,14 @@ pub mod resources {
         /// Death Star laser control: gauge.
         pub const DEATH_STAR_LASER_GAUGE: u32 = 1024;
 
-        /// Highlight Alliance ships.
-        pub const HIGHLIGHT_ALLIANCE_SHIPS: u32 = 1034;
-        /// Dim Alliance ships.
-        pub const DIM_ALLIANCE_SHIPS: u32 = 1035;
-        /// Highlight Empire ships.
-        pub const HIGHLIGHT_EMPIRE_SHIPS: u32 = 1036;
-        /// Dim Empire ships.
-        pub const DIM_EMPIRE_SHIPS: u32 = 1037;
+        /// Highlight Alliance ships (red Alliance glyph).
+        pub const HIGHLIGHT_ALLIANCE_SHIPS: u32 = 1035;
+        /// Dim Alliance ships (gray Alliance glyph).
+        pub const DIM_ALLIANCE_SHIPS: u32 = 1034;
+        /// Highlight Empire ships (green Imperial glyph).
+        pub const HIGHLIGHT_EMPIRE_SHIPS: u32 = 1037;
+        /// Dim Empire ships (gray Imperial glyph).
+        pub const DIM_EMPIRE_SHIPS: u32 = 1036;
 
         /// Tactical command button: Maneuvers/Tactics, normal state.
         pub const BTN_MANEUVERS_TACTICS_NORMAL: u32 = 1105;

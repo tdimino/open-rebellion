@@ -537,7 +537,8 @@ would tune around known simulation feedback defects.
   Original hover/focus art and full window-stacking acceptance remain open.
 - [x] Complete the P52 first tactical-shell checkpoint: render TACTICAL 1000
   on the 640×480 canvas, replace active-combat replacement panels, wire bitmap
-  pause, faction highlights, and zoom, and verify both factions and viewports
+  pause, red Alliance and green Imperial highlight/dim states, and zoom, and
+  verify both factions and viewports
   in fresh muted browser sessions. Procedural battle contents and all 106
   `TAC-01` through `TAC-07` cells remain open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
