@@ -30,9 +30,11 @@ Coolhand Interactive and LucasArts release of *Star Wars: Rebellion*, titled
 *Supremacy* in the UK. The shuttle main menu passes its scoped implementation
 gate, but remains partial here until every original interaction-state cell has
 A0 or A1 evidence. Entering a campaign now reaches the recovered faction shell
-on an exact, centered 640x480 canvas. Its six primary faction controls now use
-the recovered STRATEGY resources and native input contract. Most other content
-within that shell remains a custom macroquad/egui reconstruction.
+on an exact, centered 640x480 canvas. Its six primary faction controls and GID
+control now use recovered STRATEGY resources and the native input contract.
+The default Popular Support view also uses its original active backdrop,
+compact legend, marker families, and support thresholds. Most other content
+within that shell remains incomplete.
 
 This explains the observed symptoms:
 
@@ -50,9 +52,12 @@ This explains the observed symptoms:
   and commands remain open. The replacement message and status
   bars are also withheld because
   they covered the original controls. Their authentic versions remain open.
-- The galaxy is drawn from a dark fill, vector circles, text labels, sector
-  outlines, and 5×5 facility squares instead of the original starfield,
-  Galactic Information Display rules, and bitmap marker families.
+- P47A and P47B restore the bright Display Off and dim active galaxy resources,
+  the default Popular Support caption, compact legend, and native marker
+  families. Synthetic labels, circles, glows, facility squares, fleet glyphs,
+  fog, and blockade primitives are withheld from this parity view. The
+  original GID menu, detailed legend, remaining modes and overlays, and exact
+  map interaction remain open.
 - Selecting a system now opens a recovered modeless sector shell. Double-click
   opens the original detailed-system shell and core bitmap tabs. Illustrated
   first-pass item contents, bounded scrollbar navigation, and selection work.
@@ -75,7 +80,7 @@ The local source inspection establishes the implementation causes:
 |---------|---------------------|-------------------|
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
-| Partial authored galaxy and synthetic glyphs | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs` | STRATEGY 902, manual pp. 66–73, original command-center captures, and [P47A evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) |
+| Partial authored galaxy and default Popular Support GID | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-render/src/cockpit.rs` | STRATEGY 902/903, 10013/10014, 10027/10028, 10146 through 10158, 10168, manual pp. 66–73, [P47A evidence](evidence/2026-09-11-authored-galaxy-backdrop.md), and [P47B evidence](evidence/2026-09-11-popular-support-gid.md) |
 | Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
@@ -104,16 +109,19 @@ current-intelligence gating, and recovered scrollbar art. Exact rail
 thumbnails, destination-window compositions, nested object contents, exact
 intelligence semantics, commands, other controls, and uncommon states remain open.
 P47A restores the bright STRATEGY 902 galaxy at its source-aligned canvas
-origin beneath both faction shells. The dim STRATEGY 903 state, original GID
-modes, legends, markers, sector hulls, and map input remain open. Static
-discoveries do not replace required original-runtime visual acceptance.
+origin beneath both faction shells. P47B proves 902 is Display Off and restores
+the active 903 Popular Support view, exact faction GID control, compact legend,
+native marker families, and support thresholds. The original GID menu, detailed
+legend, remaining modes and overlays, sector art, and exact map input remain
+open. Static discoveries do not replace required original-runtime visual
+acceptance.
 
 ## Immediate findings
 
 | ID | Severity | Finding | Status |
 |----|----------|---------|--------|
 | UIP-F-001 | P0 | The shell, viewport scaling, six primary controls, and first rail lifecycle pass scoped checkpoints; the full control matrix, exact rail thumbnails, and required aperture content remain incomplete. | partial |
-| UIP-F-002 | P0 | The original bright galaxy backdrop now renders in native and WASM; system markers, sector hulls, facilities, GID modes, and map-input rules remain synthetic or incomplete. | partial |
+| UIP-F-002 | P0 | The original Display Off and active Popular Support backdrops, GID control, compact legend, marker families, and size thresholds render in native and WASM; the original menu, detailed legend, remaining modes and overlays, sector art, and exact map input remain incomplete. | partial |
 | UIP-F-003 | P0 | Original sector and detailed-system shells replace the invented sidebar; all six tabs have first-pass source-mapped items, while nested contents, commands, indicators, and uncommon states remain open. | partial |
 | UIP-F-004 | P0 | Authentic advisor idle runs render for both factions in the scaled apertures, but complete action, voice, and chrome behavior is absent. | partial |
 | UIP-F-005 | P0 | Runtime pack v2 includes ALSPRITE and EMSPRITE BMP/type-302 content; ALBRIEF, EMBRIEF, REBDLOG, EDATA, action controls, and voice remain omitted. | partial |
@@ -295,9 +303,10 @@ atomic commit as each verified implementation tranche.
 
 P46A completes the strategic canvas checkpoint within `UIP-T01`. P46B restores
 the six primary controls. P46C and P46D restore the first sector-to-system
-journey plus source-mapped core-tab items and bounded scrolling. P47A restores
-the source-aligned bright galaxy backdrop. Remaining GID and map art, other
-controls, exact rail thumbnails, nested object compositions,
+journey plus source-mapped core-tab items and bounded scrolling. P47A and P47B
+restore the source-aligned galaxy backdrops and default Popular Support GID.
+The GID menu, detailed legend, remaining modes and map art, other controls,
+exact rail thumbnails, nested object compositions,
 commands, uncommon states, replacement message and status surfaces, and the A0
 matrix remain open. `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, `OBJ-02`,
 `UIP-T01`, and project-wide interface parity do not pass.

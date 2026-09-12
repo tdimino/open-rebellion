@@ -769,7 +769,7 @@
         71,
         73
       ],
-      "current_implementation": "P47A restores the original bright STRATEGY 902 galaxy at the 640x480 canvas origin with source-aligned faction crops, nearest-neighbor native/WASM sampling, and a dark fail-closed fallback. STRATEGY 903 selection, system and facility markers, sector hulls and labels, GID modes and legends, hover, selection, pan, zoom, and exact display predicates remain synthetic or incomplete.",
+      "current_implementation": "P47A restores the original bright STRATEGY 902 Display Off galaxy at the 640x480 canvas origin. P47B restores the default active Popular Support view with STRATEGY 903, exact faction GID control pairs and rectangles, compact 10168 legend, native 10146 through 10158 marker families, recovered support thresholds, transparent blue mattes, fixed display-scaled sizes, and working system activation. Synthetic map labels and primitives are withheld from this parity view. The original GID menu, detailed legend, every remaining mode and overlay, sector art, exact hover, selection, pan, zoom, keyboard semantics, and the complete A0 matrix remain open.",
       "finding_ids": [
         "UIP-F-002",
         "UIP-F-012"
@@ -1772,7 +1772,7 @@
       "manual_pages": [
         71
       ],
-      "current_implementation": "P46B removes the synthetic text-button strip and renders the six faction-specific STRATEGY bitmap pairs at the exact recovered control rectangles. Press capture, release cancellation, strict outer-edge rejection, indexed palette-key hit masks, F2 through F5, and F7 follow the native state machine. Input resolves after floating content so covered controls do not receive clicks. All six commands are recognized, but none opens a replacement panel while its original destination window remains pending. The replacement message and status bars are withheld because they covered the original control apertures.",
+      "current_implementation": "P46B removes the synthetic text-button strip and renders the six faction-specific primary STRATEGY bitmap pairs at their exact recovered rectangles. Press capture, release cancellation, strict outer-edge rejection, indexed palette-key hit masks, F2 through F5, and F7 follow the native state machine. P47B adds the exact faction GID control pairs and rectangles under the same input contract and recognizes command 0x133 without inventing its still-open destination menu. Input resolves after floating content so covered controls do not receive clicks. The six primary commands are recognized, but none opens a replacement panel while its original destination window remains pending. The replacement message and status bars are withheld because they covered original control apertures.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-007"

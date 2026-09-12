@@ -24,11 +24,12 @@ pub mod video_player;
 use egui_macroquad::egui;
 use macroquad::prelude::*;
 use rebellion_core::blockade::BlockadeState;
+use rebellion_core::dat::ExplorationStatus;
 use rebellion_core::ids::{FleetKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::movement::MovementState;
 use rebellion_core::tick::{GameClock, GameSpeed};
-use rebellion_core::world::GameWorld;
+use rebellion_core::world::{ControlKind, GameWorld, System};
 
 #[cfg(target_arch = "wasm32")]
 pub use advisor::set_advisor_asset_cache;
@@ -45,9 +46,10 @@ pub use bmp_cache::set_bmp_cache;
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
-    handle_cockpit_egui_input, set_cockpit_viewport_clip, strategic_primary_controls,
-    CockpitButton, CockpitFaction, CockpitLayout, CockpitState, CockpitViewport,
-    StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
+    handle_cockpit_egui_input, set_cockpit_viewport_clip, strategic_gid_control,
+    strategic_primary_controls, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
+    CockpitViewport, GidMode, StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT,
+    STRATEGIC_LOGICAL_WIDTH,
 };
 pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
@@ -211,7 +213,11 @@ impl Default for GalaxyMapState {
 /// command-center shells reveal different source-aligned crops through their
 /// transparent openings. A dark fill remains underneath as a fail-closed
 /// fallback when the original resource is unavailable.
-pub fn draw_galaxy_backdrop(layout: CockpitLayout, cache: &mut BmpCache) -> bool {
+pub fn draw_galaxy_backdrop(
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    gid_mode: GidMode,
+) -> bool {
     let viewport = layout.galaxy;
     draw_rectangle(
         viewport.x,
@@ -223,7 +229,7 @@ pub fn draw_galaxy_backdrop(layout: CockpitLayout, cache: &mut BmpCache) -> bool
 
     let Some(texture) = cache.get_macroquad_original(
         DllSource::Strategy,
-        bmp_cache::resources::strategy::GALAXY_STARFIELD_BRIGHT,
+        gid_backdrop_resource(gid_mode),
     ) else {
         return false;
     };
@@ -241,6 +247,13 @@ pub fn draw_galaxy_backdrop(layout: CockpitLayout, cache: &mut BmpCache) -> bool
     true
 }
 
+fn gid_backdrop_resource(gid_mode: GidMode) -> u32 {
+    match gid_mode {
+        GidMode::DisplayOff => bmp_cache::resources::strategy::GALAXY_STARFIELD_BRIGHT,
+        GidMode::PopularSupport => bmp_cache::resources::strategy::GALAXY_STARFIELD_DIM,
+    }
+}
+
 fn galaxy_backdrop_destination(
     layout: CockpitLayout,
     source_width: f32,
@@ -256,10 +269,15 @@ fn galaxy_backdrop_destination(
 
 /// Render the galaxy star map for one frame.
 ///
-/// Handles all input (pan, zoom, click-to-select) and draws every system as a
-/// colored dot sized by selection state. Returns a `CameraView` so fog and fleet
-/// overlays can use matching coordinates.
-pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraView {
+/// Handles all input and draws the recovered Popular Support GID baseline.
+/// Returns a `CameraView` so later authentic overlays can share its transform.
+pub fn draw_galaxy_map(
+    world: &GameWorld,
+    state: &mut GalaxyMapState,
+    cache: &mut BmpCache,
+    gid_mode: GidMode,
+    faction: CockpitFaction,
+) -> CameraView {
     discard_stale_context_menus(world, state);
     state.activated_system = None;
 
@@ -321,35 +339,16 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         viewport_height,
     };
 
-    // ── Coordinate transform helpers ─────────────────────────────────────────
-    let zoom = cam.zoom;
-
-    // ── Sector labels ─────────────────────────────────────────────────────────
-    if state.show_sector_labels {
-        for (_, sector) in &world.sectors {
-            let (sx, sy) = cam.to_screen(sector.x as f32, sector.y as f32);
-            if cam.contains_with_margin(sx, sy, cam.scale_pixels(100.0)) {
-                let font_size = (16.0 * cam.logical_zoom).clamp(10.0, 32.0) * cam.display_scale;
-                draw_text(
-                    &sector.name,
-                    sx - cam.scale_pixels(30.0),
-                    sy,
-                    font_size,
-                    Color::new(0.3, 0.3, 0.5, 0.6),
-                );
-            }
-        }
+    if gid_mode == GidMode::PopularSupport {
+        draw_gid_caption(cam, faction);
     }
 
     // ── Find hovered system (reset each frame) ────────────────────────────────
     state.hovered_system = None;
-    let hover_radius = 8.0 * zoom;
+    let hover_radius = cam.scale_pixels(8.5);
 
     // ── Draw systems ──────────────────────────────────────────────────────────
-    // Two-pass: first collect which system is hovered so the selected glow
-    // renders on top without requiring Z-sort.
-
-    // Pass 1: hover detection — pick the nearest system within hover_radius.
+    // Detect the nearest system for input without adding replacement hover art.
     if in_viewport {
         let mut best_dist = hover_radius;
         for (key, system) in &world.systems {
@@ -365,53 +364,16 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
         }
     }
 
-    // Pass 2: draw all visible systems.
-    for (key, system) in &world.systems {
-        let (sx, sy) = cam.to_screen(system.x as f32, system.y as f32);
-        if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
-            continue;
-        }
-
-        let is_selected = state.selected_system == Some(key);
-        let is_hovered = state.hovered_system == Some(key);
-
-        let color = if system.popularity_alliance > system.popularity_empire {
-            Color::new(0.2, 0.5, 1.0, 1.0)
-        } else if system.popularity_empire > system.popularity_alliance {
-            Color::new(0.8, 0.2, 0.2, 1.0)
-        } else {
-            Color::new(0.6, 0.6, 0.6, 1.0)
-        };
-
-        let radius = if is_selected {
-            5.0 * zoom
-        } else if is_hovered {
-            4.0 * zoom
-        } else {
-            3.0 * zoom
-        };
-
-        // Selection glow ring.
-        if is_selected {
-            draw_circle(
-                sx,
-                sy,
-                radius + cam.scale_pixels(3.0),
-                Color::new(1.0, 1.0, 0.3, 0.3),
-            );
-        }
-
-        draw_circle(sx, sy, radius, color);
-
-        // Name label on hover.
-        if is_hovered {
-            draw_text(
-                &system.name,
-                sx + cam.scale_pixels(10.0),
-                sy - cam.scale_pixels(5.0),
-                cam.scale_pixels(18.0),
-                WHITE,
-            );
+    // Draw the native fixed-size marker bitmaps. Selection and hover
+    // remain input states, but the replacement circles, glows, and labels are
+    // deliberately absent from the parity surface.
+    if gid_mode == GidMode::PopularSupport {
+        for (_, system) in &world.systems {
+            let (sx, sy) = cam.to_screen(system.x as f32, system.y as f32);
+            if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
+                continue;
+            }
+            draw_gid_marker(cache, system, faction, cam, sx, sy);
         }
     }
 
@@ -438,6 +400,94 @@ pub fn draw_galaxy_map(world: &GameWorld, state: &mut GalaxyMapState) -> CameraV
     }
 
     cam
+}
+
+fn draw_gid_caption(cam: CameraView, faction: CockpitFaction) {
+    let caption = "Popular Support";
+    let font_size = cam.scale_pixels(11.0);
+    let text_width = measure_text(caption, None, font_size.round() as u16, 1.0).width;
+    let color = match faction {
+        CockpitFaction::Alliance => Color::new(0.78, 0.16, 0.16, 1.0),
+        CockpitFaction::Empire => Color::new(0.16, 0.65, 0.20, 1.0),
+    };
+    draw_text(
+        caption,
+        cam.viewport_x + (cam.viewport_width - text_width) / 2.0,
+        cam.viewport_y + cam.scale_pixels(13.0),
+        font_size,
+        color,
+    );
+}
+
+fn draw_gid_marker(
+    cache: &mut BmpCache,
+    system: &System,
+    faction: CockpitFaction,
+    cam: CameraView,
+    center_x: f32,
+    center_y: f32,
+) {
+    let resource_id = popular_support_marker_resource(system, faction);
+    let Some(texture) = cache.get_macroquad_original(DllSource::Strategy, resource_id) else {
+        return;
+    };
+    let width = texture.width() * cam.display_scale;
+    let height = texture.height() * cam.display_scale;
+    draw_texture_ex(
+        texture,
+        center_x - width / 2.0,
+        center_y - height / 2.0,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(width, height)),
+            ..Default::default()
+        },
+    );
+}
+
+fn popular_support_marker_resource(system: &System, faction: CockpitFaction) -> u32 {
+    let explored = system.exploration_status == ExplorationStatus::Explored && system.is_populated;
+    let popularity = match faction {
+        CockpitFaction::Alliance => system.popularity_alliance,
+        CockpitFaction::Empire => system.popularity_empire,
+    };
+    gid_marker_resource(system.control, explored, popularity)
+}
+
+fn gid_marker_resource(control: ControlKind, explored: bool, popularity: f32) -> u32 {
+    use bmp_cache::resources::strategy;
+
+    if !explored {
+        return strategy::GID_UNEXPLORED;
+    }
+
+    let support = (popularity.clamp(0.0, 1.0) * 100.0).round() as u8;
+    let size = match support {
+        81..=u8::MAX => 3,
+        60..=80 => 2,
+        50..=59 => 1,
+        _ => 0,
+    };
+    match control.faction() {
+        Some(rebellion_core::dat::Faction::Alliance) => [
+            strategy::GID_ALLIANCE_SMALLEST,
+            strategy::GID_ALLIANCE_MEDIUM,
+            strategy::GID_ALLIANCE_LARGE,
+            strategy::GID_ALLIANCE_LARGEST,
+        ][size],
+        Some(rebellion_core::dat::Faction::Empire) => [
+            strategy::GID_EMPIRE_SMALLEST,
+            strategy::GID_EMPIRE_MEDIUM,
+            strategy::GID_EMPIRE_LARGE,
+            strategy::GID_EMPIRE_LARGEST,
+        ][size],
+        Some(rebellion_core::dat::Faction::Neutral) | None => [
+            strategy::GID_NEUTRAL_SMALLEST,
+            strategy::GID_NEUTRAL_MEDIUM,
+            strategy::GID_NEUTRAL_LARGE,
+            strategy::GID_NEUTRAL_LARGEST,
+        ][size],
+    }
 }
 
 /// An open egui context menu receives the click before the map may select a
@@ -1454,6 +1504,48 @@ mod interaction_tests {
         assert_eq!(destination.height, 874.0);
         assert_eq!(empire.galaxy.x, 240.0);
         assert_eq!(empire.galaxy.y, 80.0);
+    }
+
+    #[test]
+    fn active_gid_uses_dim_backdrop_and_display_off_uses_bright() {
+        assert_eq!(
+            gid_backdrop_resource(GidMode::PopularSupport),
+            bmp_cache::resources::strategy::GALAXY_STARFIELD_DIM
+        );
+        assert_eq!(
+            gid_backdrop_resource(GidMode::DisplayOff),
+            bmp_cache::resources::strategy::GALAXY_STARFIELD_BRIGHT
+        );
+    }
+
+    #[test]
+    fn popular_support_thresholds_select_native_marker_sizes() {
+        use bmp_cache::resources::strategy;
+        use rebellion_core::dat::Faction;
+
+        for (support, expected) in [
+            (0.49, strategy::GID_ALLIANCE_SMALLEST),
+            (0.50, strategy::GID_ALLIANCE_MEDIUM),
+            (0.60, strategy::GID_ALLIANCE_LARGE),
+            (0.81, strategy::GID_ALLIANCE_LARGEST),
+        ] {
+            assert_eq!(
+                gid_marker_resource(ControlKind::Controlled(Faction::Alliance), true, support),
+                expected
+            );
+        }
+        assert_eq!(
+            gid_marker_resource(ControlKind::Controlled(Faction::Empire), true, 0.81),
+            strategy::GID_EMPIRE_LARGEST
+        );
+        assert_eq!(
+            gid_marker_resource(ControlKind::Uncontrolled, true, 0.60),
+            strategy::GID_NEUTRAL_LARGE
+        );
+        assert_eq!(
+            gid_marker_resource(ControlKind::Controlled(Faction::Alliance), false, 1.0),
+            strategy::GID_UNEXPLORED
+        );
     }
 
     #[test]

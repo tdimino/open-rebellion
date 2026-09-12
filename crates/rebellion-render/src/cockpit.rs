@@ -79,6 +79,17 @@ pub enum CockpitButton {
     GameOptions,
     /// Open the Encyclopedia.
     Encyclopedia,
+    /// Open the Galactic Information Display menu.
+    GalacticInformationDisplay,
+}
+
+/// Strategic map overlay selected through the original GID menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GidMode {
+    /// Default campaign view, sized by the player's popular support.
+    PopularSupport,
+    /// Native Display Off item, which removes markers and uses bright resource 902.
+    DisplayOff,
 }
 
 /// Recovered native control record for one strategic command button.
@@ -283,11 +294,45 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
     },
 ];
 
+const ALLIANCE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::GalacticInformationDisplay,
+    command_id: 0x133,
+    rect: CockpitViewport {
+        x: 3.0,
+        y: 355.0,
+        width: 27.0,
+        height: 41.0,
+    },
+    normal_resource: resources::strategy::ALLIANCE_GID_NORMAL,
+    pressed_resource: resources::strategy::ALLIANCE_GID_PRESSED,
+};
+
+const EMPIRE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::GalacticInformationDisplay,
+    command_id: 0x133,
+    rect: CockpitViewport {
+        x: 79.0,
+        y: 192.0,
+        width: 35.0,
+        height: 57.0,
+    },
+    normal_resource: resources::strategy::EMPIRE_GID_NORMAL,
+    pressed_resource: resources::strategy::EMPIRE_GID_PRESSED,
+};
+
 /// Exact primary-control table created by `FUN_00427270` for a faction.
 pub fn strategic_primary_controls(faction: CockpitFaction) -> &'static [StrategicControlSpec; 6] {
     match faction {
         CockpitFaction::Alliance => &ALLIANCE_PRIMARY_CONTROLS,
         CockpitFaction::Empire => &EMPIRE_PRIMARY_CONTROLS,
+    }
+}
+
+/// Exact GID control created by `FUN_00427270` for a faction.
+pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
+    match faction {
+        CockpitFaction::Alliance => &ALLIANCE_GID_CONTROL,
+        CockpitFaction::Empire => &EMPIRE_GID_CONTROL,
     }
 }
 
@@ -309,7 +354,9 @@ pub struct CockpitState {
     pub bottom_bar_h: f32,
     /// Side gutters width in pixels (equal left/right).
     pub side_gutter_w: f32,
-    /// Primary control currently holding native-style pointer capture.
+    /// Active Galactic Information Display overlay.
+    pub gid_mode: GidMode,
+    /// Strategic control currently holding native-style pointer capture.
     pressed_control: Option<CockpitButton>,
 }
 
@@ -320,6 +367,7 @@ impl Default for CockpitState {
             top_bar_h: 32.0,
             bottom_bar_h: 40.0,
             side_gutter_w: 0.0, // no side gutters for now — full width
+            gid_mode: GidMode::PopularSupport,
             pressed_control: None,
         }
     }
@@ -450,10 +498,10 @@ fn cockpit_source_uv_max_y(texture_size: [usize; 2]) -> f32 {
     visible_source_height / texture_size[1] as f32
 }
 
-/// Paint the six native primary strategic controls over their shell apertures.
+/// Paint the native primary and GID controls over their shell apertures.
 ///
-/// `FUN_00602d30` paints the first resource in each pair at rest and the
-/// second only while a valid primary press is captured. The original control
+/// `FUN_00602d30` paints the normal resource at rest and the pressed resource
+/// only while a valid press is captured. The original control
 /// has no separate hover or persistent-selected bitmap state.
 pub fn draw_cockpit_egui_layer(ctx: &egui::Context, state: &CockpitState, cache: &mut BmpCache) {
     let layout = state.layout();
@@ -462,34 +510,102 @@ pub fn draw_cockpit_egui_layer(ctx: &egui::Context, state: &CockpitState, cache:
     let painter = ctx.layer_painter(egui::LayerId::background());
 
     for control in controls {
-        let pressed = primary_down && state.pressed_control == Some(control.button);
-        let resource_id = control_resource(control, pressed);
-        let Some(original_size) =
-            cache.original_resource_size(DllSource::Strategy, control.normal_resource)
-        else {
-            continue;
-        };
-        let Some(texture_id) = cache
-            .get(ctx, DllSource::Strategy, resource_id)
-            .map(|texture| texture.id())
-        else {
-            continue;
-        };
-        let screen_rect = logical_rect_to_screen(layout, control.rect);
-        let image_rect = egui::Rect::from_min_size(
-            screen_rect.min,
-            egui::vec2(
-                original_size[0] as f32 * layout.scale,
-                original_size[1] as f32 * layout.scale,
-            ),
-        );
-        painter.with_clip_rect(screen_rect).image(
-            texture_id,
-            image_rect,
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
+        draw_control(ctx, cache, &painter, layout, state, control, primary_down);
     }
+    draw_control(
+        ctx,
+        cache,
+        &painter,
+        layout,
+        state,
+        strategic_gid_control(state.faction),
+        primary_down,
+    );
+
+    if state.gid_mode != GidMode::DisplayOff {
+        draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
+    }
+}
+
+fn draw_control(
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    painter: &egui::Painter,
+    layout: CockpitLayout,
+    state: &CockpitState,
+    control: &StrategicControlSpec,
+    primary_down: bool,
+) {
+    let pressed = primary_down && state.pressed_control == Some(control.button);
+    let resource_id = control_resource(control, pressed);
+    let Some(original_size) =
+        cache.original_resource_size(DllSource::Strategy, control.normal_resource)
+    else {
+        return;
+    };
+    let Some(texture_id) = cache
+        .get(ctx, DllSource::Strategy, resource_id)
+        .map(|texture| texture.id())
+    else {
+        return;
+    };
+    let screen_rect = logical_rect_to_screen(layout, control.rect);
+    let image_rect = egui::Rect::from_min_size(
+        screen_rect.min,
+        egui::vec2(
+            original_size[0] as f32 * layout.scale,
+            original_size[1] as f32 * layout.scale,
+        ),
+    );
+    painter.with_clip_rect(screen_rect).image(
+        texture_id,
+        image_rect,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
+}
+
+fn draw_compact_gid_legend(
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    painter: &egui::Painter,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+) {
+    let resource_id = resources::strategy::GID_COMPACT_LEGEND;
+    let Some(original_size) = cache.original_resource_size(DllSource::Strategy, resource_id) else {
+        return;
+    };
+    let Some(texture_id) = cache
+        .get(ctx, DllSource::Strategy, resource_id)
+        .map(|texture| texture.id())
+    else {
+        return;
+    };
+    let logical_x = match faction {
+        CockpitFaction::Alliance => 55.0,
+        CockpitFaction::Empire => 113.0,
+    };
+    let image_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            layout.canvas.x + logical_x * layout.scale,
+            layout.canvas.y + 50.0 * layout.scale,
+        ),
+        egui::vec2(
+            original_size[0] as f32 * layout.scale,
+            original_size[1] as f32 * layout.scale,
+        ),
+    );
+    let canvas_clip = egui::Rect::from_min_size(
+        egui::pos2(layout.canvas.x, layout.canvas.y),
+        egui::vec2(layout.canvas.width, layout.canvas.height),
+    );
+    painter.with_clip_rect(canvas_clip).image(
+        texture_id,
+        image_rect,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
 }
 
 /// Resolve control input after floating panels have registered their areas.
@@ -514,7 +630,16 @@ pub fn handle_cockpit_egui_input(
     let pointer_hit = if ctx.is_pointer_over_area() {
         None
     } else {
-        pointer_pos.and_then(|pointer| control_at_pointer(cache, controls, layout, pointer))
+        pointer_pos.and_then(|pointer| {
+            control_at_pointer(cache, controls, layout, pointer).or_else(|| {
+                control_at_pointer(
+                    cache,
+                    std::slice::from_ref(strategic_gid_control(state.faction)),
+                    layout,
+                    pointer,
+                )
+            })
+        })
     };
 
     let clicked = update_control_capture(
@@ -842,6 +967,41 @@ mod tests {
                 (0x131, 465.0, 434.0, 35.0, 24.0, 10024, 10023),
                 (0x132, 519.0, 434.0, 37.0, 25.0, 10026, 10025),
             ]
+        );
+    }
+
+    #[test]
+    fn gid_controls_match_recovered_constructor_records() {
+        let alliance = strategic_gid_control(CockpitFaction::Alliance);
+        assert_eq!(alliance.button, CockpitButton::GalacticInformationDisplay);
+        assert_eq!(alliance.command_id, 0x133);
+        assert_eq!(alliance.rect, CockpitViewport {
+            x: 3.0,
+            y: 355.0,
+            width: 27.0,
+            height: 41.0,
+        });
+        assert_eq!(alliance.normal_resource, 10013);
+        assert_eq!(alliance.pressed_resource, 10014);
+
+        let empire = strategic_gid_control(CockpitFaction::Empire);
+        assert_eq!(empire.button, CockpitButton::GalacticInformationDisplay);
+        assert_eq!(empire.command_id, 0x133);
+        assert_eq!(empire.rect, CockpitViewport {
+            x: 79.0,
+            y: 192.0,
+            width: 35.0,
+            height: 57.0,
+        });
+        assert_eq!(empire.normal_resource, 10027);
+        assert_eq!(empire.pressed_resource, 10028);
+    }
+
+    #[test]
+    fn popular_support_is_the_default_gid_mode() {
+        assert_eq!(
+            CockpitState::new(CockpitFaction::Alliance).gid_mode,
+            GidMode::PopularSupport
         );
     }
 

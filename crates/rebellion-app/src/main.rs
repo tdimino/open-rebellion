@@ -52,13 +52,11 @@ use rebellion_render::panels::research::{draw_research, ResearchPanelState};
 use rebellion_render::{
     advisor_combat_result, advisor_death_star, advisor_greet, advisor_manufacturing_complete,
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
-    draw_blockade_indicators, draw_cockpit_background, draw_cockpit_chrome,
-    draw_cockpit_egui_layer, draw_credits, draw_encyclopedia, draw_event_screen,
-    draw_facility_icons, draw_fleet_overlays, draw_fleets, draw_fog_overlay,
-    draw_galaxy_backdrop, draw_galaxy_map, draw_game_setup, draw_ground_combat, draw_main_menu,
-    draw_manufacturing,
-    draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_boundaries,
-    draw_sector_windows, draw_system_windows, draw_tactical_view, handle_cockpit_egui_input,
+    draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits,
+    draw_encyclopedia, draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map,
+    draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing, draw_missions,
+    draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
+    draw_system_windows, draw_tactical_view, handle_cockpit_egui_input,
     set_cockpit_viewport_clip, show_event_screen, update_event_screen, AdvisorFaction,
     AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton, CockpitFaction,
     CockpitState, CreditsState, EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState,
@@ -2729,9 +2727,17 @@ async fn main() {
                 // galaxy aperture. The clip is cleared before the egui pass.
                 set_cockpit_viewport_clip(Some(cockpit_vp));
 
-                // 2. Galaxy map (pure macroquad) — returns the shared transform
-                draw_galaxy_backdrop(cockpit_layout, &mut bmp_cache);
-                let cam = draw_galaxy_map(&world, &mut map_state);
+                // 2. Recovered GID baseline. Replacement fog, fleet, sector,
+                // facility, and blockade primitives stay off the parity surface
+                // until their original GID modes are reconstructed.
+                draw_galaxy_backdrop(cockpit_layout, &mut bmp_cache, cockpit_state.gid_mode);
+                draw_galaxy_map(
+                    &world,
+                    &mut map_state,
+                    &mut bmp_cache,
+                    cockpit_state.gid_mode,
+                    cockpit_state.faction,
+                );
                 if let Some(system) = map_state.activated_system {
                     sector_window_state.open_for_system(
                         &world,
@@ -2740,16 +2746,6 @@ async fn main() {
                     );
                 }
 
-                // 2. Fog overlay (pure macroquad) — dim non-visible systems
-                draw_fog_overlay(&world, fog_state, &cam);
-
-                // 3. Fleet overlays (pure macroquad) — on top of fog
-                draw_fleet_overlays(&world, &movement_state, &cam);
-
-                // 3c. Galaxy map overlays (pure macroquad) — sector boundaries, facility icons, blockades
-                draw_sector_boundaries(&world, &cam, map_state.show_sector_labels);
-                draw_facility_icons(&world, &cam);
-                draw_blockade_indicators(&world, &blockade_state, &cam);
                 set_cockpit_viewport_clip(None);
 
                 // 4. All egui panels in a single ui() + draw() pass
@@ -2996,6 +2992,7 @@ async fn main() {
                             CockpitButton::TroopFinder => (0x130, "troop_finder"),
                             CockpitButton::GameOptions => (0x131, "game_options"),
                             CockpitButton::Encyclopedia => (0x132, "encyclopedia"),
+                            CockpitButton::GalacticInformationDisplay => (0x133, "gid_menu"),
                         };
                         macroquad::logging::info!(
                             "[interface] command=0x{:x} destination={} status=pending_original_window",

@@ -24,7 +24,7 @@ The owned STRATEGY extraction identifies four large command-center resources:
 | 900 | 640x481 | Alliance command-center shell |
 | 901 | 640x481 | Imperial command-center shell |
 | 902 | 607x437 | Bright authored galaxy starfield |
-| 903 | 607x437 | Dim authored galaxy starfield; exact display predicate still open |
+| 903 | 607x437 | Dim authored galaxy starfield used by every active GID mode; proven by P47B |
 
 Resource 902 has SHA-256
 `89188825234d29a14391f814f5dc6d6a593f6da608b46b2628cd512f9e44fb17`.
@@ -36,9 +36,9 @@ reveals a source-aligned crop through the recovered Alliance `55,40,485,350`
 or Imperial `120,40,480,355` aperture. The bitmap is not stretched to either
 opening.
 
-Resource 903 is visibly dimmer, but the current static corpus does not prove
-the exact original mode predicate. It is named and reserved rather than wired
-to an inferred control state.
+P47B subsequently recovered the exact predicate: resource 903 is used by every
+active GID mode, while 902 is the Display Off backdrop. See the
+[Popular Support evidence](2026-09-11-popular-support-gid.md).
 
 ## Implementation
 
@@ -89,7 +89,9 @@ the owned source resource.
 
 ## Deliberately open
 
-- STRATEGY 903 mode selection and every original GID filter and legend
+- every non-default GID filter, the original GID menu, and expanded legend;
+  P47B restores the active 903 predicate, default Popular Support markers, and
+  compact legend
 - original system, fleet, mission, HQ, blockade, intelligence, facility, and
   resource markers
 - exact sector hulls, labels, hover and selection art, pan and zoom rules

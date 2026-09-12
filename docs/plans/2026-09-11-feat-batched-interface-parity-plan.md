@@ -68,7 +68,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P47A accepted; UIP-B02 continues
+## Current execution focus: P47B accepted; UIP-B02 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -90,18 +90,18 @@ thumbnails, complete sector indicators, uncommon system states, and the A0
 matrix. No pending cell is promoted solely by these partial checkpoints.
 
 The evidence-blocked rail art and uncommon-state work remains queued inside
-UIP-B01. P47A starts the independently provable `UIP-B02` map slice by drawing
-the original STRATEGY 902 bright galaxy at the 640x480 canvas origin beneath
-all strategic layers. Native and packaged WASM use the same bytes and
-nearest-neighbor sampling. STRATEGY 903, original markers, sector hulls, GID
-filters and legends, and exact pan, zoom, hover, and selection behavior remain
-open. Its renderer, workspace, packaged WASM, parity-ledger, and muted
-two-faction Astra gates pass with no findings. See the
-[P47A evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-authored-galaxy-backdrop.md).
+UIP-B01. P47A starts `UIP-B02` with the original STRATEGY 902 bright galaxy.
+P47B proves that 902 is Display Off and restores the default active Popular
+Support view with STRATEGY 903, the exact faction GID control, compact 10168
+legend, native marker families, and recovered size thresholds. Synthetic map
+labels and primitives are withheld from this view. Renderer, workspace,
+packaged WASM, parity-ledger, and muted four-campaign Astra gates pass with no
+product findings. See the
+[P47B evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md).
 
-The next `UIP-B02` slice recovers the original marker and sector-display
-resources and their state predicates before replacing any remaining synthetic
-map glyphs. STRATEGY 903 stays unwired until its original trigger is proven.
+The next `UIP-B02` slice recovers the code-built GID menu, expanded legend,
+remaining filter predicates and original overlays, then the exact map input
+and sector art. No replacement marker, menu, or legend will be introduced.
 
 ## Bundle acceptance record
 

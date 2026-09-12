@@ -32,10 +32,12 @@ strategic shell now uses the recovered faction bitmaps, exact apertures, and a
 centered 640x480 canvas. Its six primary faction controls use their recovered
 bitmap pairs, geometry, input masks, and command routing. First-pass original
 sector and system shells replace the invented sidebar, with working tabs and
-rail lifecycle for both factions. The original bright galaxy now replaces the
-flat map fill in native and WASM. The strategy screen still uses synthetic GID
-markers, sector hulls and labels, incomplete system contents, approximate rail thumbnails,
-replacement message and status surfaces, and other incomplete controls.
+rail lifecycle for both factions. The original galaxy resources now back both
+Display Off and the default active Popular Support view. Popular Support uses
+the exact faction GID control, compact legend, native marker families, and
+recovered size thresholds. Other GID modes, sector and object overlays,
+incomplete system contents, approximate rail thumbnails, authentic message and
+status surfaces, and other controls remain open.
 Original advisor idle frames render in the scaled
 apertures, but their authored actions, voice, and chrome remain open.
 
@@ -61,6 +63,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) | First-pass sector and system shells, tab resources, modeless lifecycle, rail routing, and browser evidence. |
 | [P46D detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items.md) | Source-mapped GOKRES tab items, displayed labels, bounded scrollbar navigation, intelligence gating, selection state, tests, and browser acceptance. |
 | [P47A galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) | STRATEGY 902 identity, source-aligned placement, native/WASM texture transport, tests, captures, and open GID boundaries. |
+| [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md) | Active STRATEGY 903 predicate, faction GID control, compact legend, native marker families, support thresholds, tests, and browser acceptance. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -108,9 +111,12 @@ current-intelligence gating. Its
 object contents, exact intelligence semantics, commands, uncommon states, and
 complete A0 coverage open.
 P47A starts UIP-B02 with the original bright STRATEGY 902 starfield at the
-strategic canvas origin for both factions. Its
-[evidence record](evidence/2026-09-11-authored-galaxy-backdrop.md) keeps the dim
-903 state, original markers, GID modes, sector hulls, exact map input, and the
+strategic canvas origin for both factions. P47B then proves that 902 is Display
+Off and restores the default active Popular Support view with STRATEGY 903,
+the exact faction GID control, compact legend, native marker families, and
+support thresholds. Its
+[evidence record](evidence/2026-09-11-popular-support-gid.md) keeps the original
+GID menu, detailed legend, other modes and overlays, exact map input, and the
 complete acceptance matrix open.
 Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
@@ -122,7 +128,7 @@ path.
 
 The denominator is required surface-state cells, not an estimated percentage.
 The ledger currently instantiates 564 required baseline cells and five excluded
-extension cells. P46A through P47A verify scoped Chromium checkpoints, but all
+extension cells. P46A through P47B verify scoped Chromium checkpoints, but all
 baseline cells remain pending until their complete execution matrix passes.
 Compound requirements split into stable child cells before
 their implementation starts, and each cell then runs through its applicable
@@ -146,10 +152,13 @@ this order:
 1. exact 640×480 display composition and uniform scaling, with the 481-row
    faction sources cropped to 480 display rows, completed by P46A;
 2. original galaxy/starfield and Galactic Information Display modes; P47A
-   restores the bright STRATEGY 902 backdrop while the dim state, markers,
-   modes, legends, and map interactions remain open;
+   restores the bright STRATEGY 902 Display Off backdrop, and P47B restores the
+   default active Popular Support view with 903, the faction GID control,
+   compact legend, and native markers; the menu, detailed legend, remaining
+   modes and overlays, and exact map interactions remain open;
 3. the six primary cockpit controls, state art, hotspots, and routing, completed
-   by P46B; remaining speed and GID controls;
+   by P46B; P47B adds the recovered GID control while speed controls and the
+   GID destination menu remain open;
 4. first-pass original sector and system shells, rail lifecycle, and core-tab
    GOKRES item compositions, completed as partial UIP-B01 checkpoints;
    remaining nested compositions, commands, rail thumbnails, and uncommon

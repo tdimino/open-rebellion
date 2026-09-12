@@ -500,8 +500,14 @@ would tune around known simulation feedback defects.
   STRATEGY 902 galaxy at canvas origin beneath the strategic layers, preserve
   source-aligned faction crops, use the same original bytes in native and
   packaged WASM, and pass muted Astra browser acceptance with no findings.
-  STRATEGY 903, GID modes, markers, sector hulls, and exact map input remain
-  open.
+  P47B later proves this is the Display Off resource.
+- [x] Complete P47B / the default Popular Support checkpoint: select STRATEGY
+  903 for active GID, restore the exact faction GID control, compact legend,
+  native marker families and support thresholds, remove synthetic overlays
+  from the default parity view, preserve system activation, and pass four
+  muted Astra faction/viewport campaigns with no product findings. The
+  code-built menu, expanded legend, remaining modes and overlays, sector art,
+  exact map input, and complete `CMD-02` matrix remain open.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

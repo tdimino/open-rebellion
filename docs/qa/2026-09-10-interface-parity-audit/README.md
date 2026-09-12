@@ -33,6 +33,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P47A galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md)
   for STRATEGY 902 identity, canvas-origin placement, native/WASM transport,
   browser captures, and the remaining GID boundaries.
+- Review the [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md)
+  for the active 903 predicate, exact faction GID control, compact legend,
+  original marker families, and recovered support thresholds.
 
 ## Suggested contribution lanes
 
@@ -83,7 +86,11 @@ See the [detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items
 P47A replaces the strategic map's flat fill with the source-aligned bright
 STRATEGY 902 galaxy in native and packaged WASM. See the
 [galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md).
+P47B restores the default active Popular Support baseline with STRATEGY 903,
+the exact faction GID control, compact legend, and native marker families. It
+also withholds the prior synthetic map overlays from this parity view. See the
+[Popular Support evidence](evidence/2026-09-11-popular-support-gid.md).
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
-full control matrix, remaining GID and map art, nested object compositions and commands,
-exact rail thumbnails, original destination windows, and replacement surfaces
-are not complete.
+full control matrix, remaining GID modes and map art, nested object
+compositions and commands, exact rail thumbnails, original destination
+windows, and replacement surfaces are not complete.

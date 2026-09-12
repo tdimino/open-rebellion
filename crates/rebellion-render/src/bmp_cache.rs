@@ -393,9 +393,9 @@ pub mod resources {
         pub const ALLIANCE_COMMAND_CENTER_SHELL: u32 = 900;
         /// Imperial strategic command-center shell.
         pub const EMPIRE_COMMAND_CENTER_SHELL: u32 = 901;
-        /// Bright authored galaxy starfield used by the default GID view.
+        /// Bright authored galaxy starfield used only when GID display is off.
         pub const GALAXY_STARFIELD_BRIGHT: u32 = 902;
-        /// Dim authored galaxy starfield. Its original display predicate is open.
+        /// Dim authored galaxy starfield used by every active GID mode.
         pub const GALAXY_STARFIELD_DIM: u32 = 903;
 
         /// Alliance System Finder, pressed.
@@ -422,6 +422,10 @@ pub mod resources {
         pub const ALLIANCE_ENCYCLOPEDIA_PRESSED: u32 = 10011;
         /// Alliance Encyclopedia, normal.
         pub const ALLIANCE_ENCYCLOPEDIA_NORMAL: u32 = 10012;
+        /// Alliance Galactic Information Display, normal.
+        pub const ALLIANCE_GID_NORMAL: u32 = 10013;
+        /// Alliance Galactic Information Display, pressed.
+        pub const ALLIANCE_GID_PRESSED: u32 = 10014;
 
         /// Imperial System Finder, pressed.
         pub const EMPIRE_SYSTEM_FINDER_PRESSED: u32 = 10015;
@@ -447,6 +451,32 @@ pub mod resources {
         pub const EMPIRE_ENCYCLOPEDIA_PRESSED: u32 = 10025;
         /// Imperial Encyclopedia, normal.
         pub const EMPIRE_ENCYCLOPEDIA_NORMAL: u32 = 10026;
+        /// Imperial Galactic Information Display, normal.
+        pub const EMPIRE_GID_NORMAL: u32 = 10027;
+        /// Imperial Galactic Information Display, pressed.
+        pub const EMPIRE_GID_PRESSED: u32 = 10028;
+
+        /// Alliance GID system markers, largest through smallest.
+        pub const GID_ALLIANCE_LARGEST: u32 = 10146;
+        pub const GID_ALLIANCE_LARGE: u32 = 10147;
+        pub const GID_ALLIANCE_MEDIUM: u32 = 10148;
+        pub const GID_ALLIANCE_SMALLEST: u32 = 10149;
+        /// Imperial GID system markers, smallest through largest.
+        pub const GID_EMPIRE_SMALLEST: u32 = 10150;
+        pub const GID_EMPIRE_MEDIUM: u32 = 10151;
+        pub const GID_EMPIRE_LARGE: u32 = 10152;
+        pub const GID_EMPIRE_LARGEST: u32 = 10153;
+        /// Neutral GID system markers, smallest through largest.
+        pub const GID_NEUTRAL_SMALLEST: u32 = 10154;
+        pub const GID_NEUTRAL_MEDIUM: u32 = 10155;
+        pub const GID_NEUTRAL_LARGE: u32 = 10156;
+        pub const GID_NEUTRAL_LARGEST: u32 = 10157;
+        /// Unexplored or unpopulated GID system marker.
+        pub const GID_UNEXPLORED: u32 = 10158;
+        /// Additional native GID selection/special marker, not yet assigned.
+        pub const GID_SPECIAL: u32 = 10166;
+        /// Compact strategic-map legend control.
+        pub const GID_COMPACT_LEGEND: u32 = 10168;
 
         /// Original sector-window planet pictures 1 through 23.
         pub const SECTOR_PLANET_FIRST: u32 = 10212;
@@ -1208,7 +1238,7 @@ impl BmpCache {
         if !self.macroquad_textures.contains_key(&key) {
             let texture = self
                 .load_original_bytes(source, resource_id)
-                .and_then(|bytes| decode_macroquad_texture(&bytes));
+                .and_then(|bytes| decode_macroquad_texture(&bytes, source, resource_id));
             if texture.is_none() {
                 eprintln!(
                     "[bmp_cache] macroquad asset unavailable source={} resource_id={}",
@@ -1391,6 +1421,9 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
             resource_id,
             resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL
                 | resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
+                | resources::strategy::GID_ALLIANCE_LARGEST
+                    ..=resources::strategy::GID_UNEXPLORED
+                | resources::strategy::GID_SPECIAL
                 | resources::strategy::SECTOR_PLANET_FIRST
                     ..=resources::strategy::SECTOR_PLANET_LAST
                 | resources::strategy::SECTOR_PLANET_SPECIAL_FIRST
@@ -1414,8 +1447,12 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
     }
 }
 
-fn decode_macroquad_texture(bytes: &[u8]) -> Option<Texture2D> {
-    let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
+fn decode_macroquad_texture(
+    bytes: &[u8],
+    source: DllSource,
+    resource_id: u32,
+) -> Option<Texture2D> {
+    let rgba = decode_rgba_image(bytes, source, resource_id).ok()?;
     let width = u16::try_from(rgba.width()).ok()?;
     let height = u16::try_from(rgba.height()).ok()?;
     let texture = Texture2D::from_rgba8(width, height, rgba.as_raw());
@@ -1430,6 +1467,20 @@ fn decode_color_image(
     source: DllSource,
     resource_id: u32,
 ) -> image::ImageResult<egui::ColorImage> {
+    let rgba = decode_rgba_image(bytes, source, resource_id)?;
+
+    let (w, h) = rgba.dimensions();
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [w as usize, h as usize],
+        rgba.as_raw(),
+    ))
+}
+
+fn decode_rgba_image(
+    bytes: &[u8],
+    source: DllSource,
+    resource_id: u32,
+) -> image::ImageResult<image::RgbaImage> {
     let mut rgba = image::load_from_memory(bytes)?.to_rgba8();
     if uses_blue_screen_transparency(source, resource_id) {
         for pixel in rgba.pixels_mut() {
@@ -1438,12 +1489,7 @@ fn decode_color_image(
             }
         }
     }
-
-    let (w, h) = rgba.dimensions();
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
-        [w as usize, h as usize],
-        rgba.as_raw(),
-    ))
+    Ok(rgba)
 }
 
 // ---------------------------------------------------------------------------
@@ -1718,6 +1764,30 @@ mod tests {
         .unwrap();
 
         assert_eq!(decoded.pixels[0].a(), 255);
+    }
+
+    #[test]
+    fn gid_marker_blue_screen_becomes_transparent() {
+        let mut image = image::RgbaImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
+        image.put_pixel(1, 0, image::Rgba([225, 20, 20, 255]));
+
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let decoded = decode_rgba_image(
+            &encoded,
+            DllSource::Strategy,
+            resources::strategy::GID_ALLIANCE_LARGEST,
+        )
+        .unwrap();
+
+        assert_eq!(decoded.get_pixel(0, 0)[3], 0);
+        assert_eq!(decoded.get_pixel(1, 0)[3], 255);
     }
 
     #[test]
