@@ -10,8 +10,8 @@ use rebellion_core::missions::MissionFaction;
 use rebellion_core::research::{ResearchState, TechType, RESEARCH_MAX_LEVEL};
 use rebellion_core::world::{Character, GameWorld};
 
-use crate::theme;
 use super::PanelAction;
+use crate::theme;
 
 /// Mutable UI state for the research panel.
 #[derive(Debug, Clone, Default)]
@@ -45,7 +45,11 @@ pub fn draw_research(
                 for (i, label) in ["Ship", "Troop", "Facility"].iter().enumerate() {
                     let selected = state.selected_tree == i;
                     let text = RichText::new(*label)
-                        .color(if selected { theme::GOLD_BRIGHT } else { theme::TEXT_PRIMARY })
+                        .color(if selected {
+                            theme::GOLD_BRIGHT
+                        } else {
+                            theme::TEXT_PRIMARY
+                        })
                         .strong();
                     if ui.selectable_label(selected, text).clicked() {
                         state.selected_tree = i;
@@ -85,9 +89,10 @@ pub fn draw_research(
             ui.add_space(8.0);
 
             // ── Active project ───────────────────────────────────────────────
-            let active_project = research_state.projects.iter().find(|p| {
-                p.faction_is_alliance == is_alliance && p.tech_type == tech_type
-            });
+            let active_project = research_state
+                .projects
+                .iter()
+                .find(|p| p.faction_is_alliance == is_alliance && p.tech_type == tech_type);
 
             if let Some(project) = active_project {
                 ui.group(|ui| {
@@ -99,7 +104,9 @@ pub fn draw_research(
                     );
 
                     // Find the character name
-                    let char_name = world.characters.get(project.character)
+                    let char_name = world
+                        .characters
+                        .get(project.character)
                         .map(|c| c.name.as_str())
                         .unwrap_or("Unknown");
                     ui.label(
@@ -123,11 +130,14 @@ pub fn draw_research(
                     ui.add_space(4.0);
 
                     // Cancel button
-                    if ui.button(
-                        RichText::new("Cancel Research")
-                            .color(theme::DANGER_RED)
-                            .size(12.0),
-                    ).clicked() {
+                    if ui
+                        .button(
+                            RichText::new("Cancel Research")
+                                .color(theme::DANGER_RED)
+                                .size(12.0),
+                        )
+                        .clicked()
+                    {
                         action = Some(PanelAction::CancelResearch {
                             tech_type,
                             faction: player_faction,
@@ -155,9 +165,17 @@ pub fn draw_research(
                     .characters
                     .iter()
                     .filter(|(_, c)| {
-                        let owns = if is_alliance { c.is_alliance } else { !c.is_alliance };
-                        if !owns { return false; }
-                        if c.is_captive || c.on_mission || c.on_mandatory_mission { return false; }
+                        let owns = if is_alliance {
+                            c.is_alliance
+                        } else {
+                            !c.is_alliance
+                        };
+                        if !owns {
+                            return false;
+                        }
+                        if c.is_captive || c.on_mission || c.on_mandatory_mission {
+                            return false;
+                        }
                         // Check relevant skill ≥ 1
                         let skill = match tech_type {
                             TechType::Ship => c.ship_design.base,
@@ -182,44 +200,42 @@ pub fn draw_research(
                     );
                     ui.add_space(4.0);
 
-                    ScrollArea::vertical()
-                        .max_height(200.0)
-                        .show(ui, |ui| {
-                            for (key, character) in &eligible {
-                                let skill_val = match tech_type {
-                                    TechType::Ship => character.ship_design.base,
-                                    TechType::Troop => character.troop_training.base,
-                                    TechType::Facility => character.facility_design.base,
-                                };
-                                let skill_name = match tech_type {
-                                    TechType::Ship => "Ship Design",
-                                    TechType::Troop => "Troop Training",
-                                    TechType::Facility => "Facility Design",
-                                };
+                    ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                        for (key, character) in &eligible {
+                            let skill_val = match tech_type {
+                                TechType::Ship => character.ship_design.base,
+                                TechType::Troop => character.troop_training.base,
+                                TechType::Facility => character.facility_design.base,
+                            };
+                            let skill_name = match tech_type {
+                                TechType::Ship => "Ship Design",
+                                TechType::Troop => "Troop Training",
+                                TechType::Facility => "Facility Design",
+                            };
 
-                                ui.horizontal(|ui| {
-                                    let btn = ui.button(
-                                        RichText::new(&character.name)
-                                            .color(theme::TEXT_PRIMARY)
-                                            .size(12.0),
-                                    );
+                            ui.horizontal(|ui| {
+                                let btn = ui.button(
+                                    RichText::new(&character.name)
+                                        .color(theme::TEXT_PRIMARY)
+                                        .size(12.0),
+                                );
 
-                                    ui.label(
-                                        RichText::new(format!("{}: {}", skill_name, skill_val))
-                                            .color(theme::TEXT_SECONDARY)
-                                            .size(11.0),
-                                    );
+                                ui.label(
+                                    RichText::new(format!("{}: {}", skill_name, skill_val))
+                                        .color(theme::TEXT_SECONDARY)
+                                        .size(11.0),
+                                );
 
-                                    if btn.clicked() {
-                                        action = Some(PanelAction::DispatchResearch {
-                                            character: *key,
-                                            tech_type,
-                                            faction: player_faction,
-                                        });
-                                    }
-                                });
-                            }
-                        });
+                                if btn.clicked() {
+                                    action = Some(PanelAction::DispatchResearch {
+                                        character: *key,
+                                        tech_type,
+                                        faction: player_faction,
+                                    });
+                                }
+                            });
+                        }
+                    });
                 }
             }
         });

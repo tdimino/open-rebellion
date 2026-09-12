@@ -95,11 +95,11 @@ pub fn apply_theme(ctx: &egui::Context) {
     visuals.faint_bg_color = BG_FRAME;
 
     // Window frame / border
-    visuals.window_stroke = egui::Stroke::new(1.0, GOLD_DIM);
+    visuals.window_stroke = egui::Stroke::new(1.0_f32, GOLD_DIM);
 
     // Selection color
     visuals.selection.bg_fill = Color32::from_rgba_premultiplied(218, 165, 32, 60);
-    visuals.selection.stroke = egui::Stroke::new(1.0, GOLD);
+    visuals.selection.stroke = egui::Stroke::new(1.0_f32, GOLD);
 
     // Hyperlink color
     visuals.hyperlink_color = GOLD;
@@ -107,36 +107,37 @@ pub fn apply_theme(ctx: &egui::Context) {
     // Widget styles — inactive
     visuals.widgets.inactive.bg_fill = Color32::from_rgb(30, 32, 48);
     visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(25, 27, 40);
-    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, Color32::from_rgb(50, 52, 68));
-    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, TEXT_PRIMARY);
+    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, Color32::from_rgb(50, 52, 68));
+    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT_PRIMARY);
     visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(3);
 
     // Widget styles — hovered
     visuals.widgets.hovered.bg_fill = Color32::from_rgb(40, 42, 60);
     visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(35, 37, 52);
-    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, GOLD_DIM);
-    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, GOLD);
+    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, GOLD_DIM);
+    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, GOLD);
     visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(3);
 
     // Widget styles — active (pressed)
     visuals.widgets.active.bg_fill = Color32::from_rgb(50, 48, 30);
     visuals.widgets.active.weak_bg_fill = Color32::from_rgb(45, 43, 28);
-    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.5, GOLD_BRIGHT);
-    visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, GOLD_BRIGHT);
+    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.5_f32, GOLD_BRIGHT);
+    visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5_f32, GOLD_BRIGHT);
     visuals.widgets.active.corner_radius = egui::CornerRadius::same(3);
 
     // Widget styles — open (expanded combo boxes, etc.)
     visuals.widgets.open.bg_fill = Color32::from_rgb(35, 37, 52);
     visuals.widgets.open.weak_bg_fill = Color32::from_rgb(30, 32, 46);
-    visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0, GOLD_DIM);
-    visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0, GOLD);
+    visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, GOLD_DIM);
+    visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0_f32, GOLD);
     visuals.widgets.open.corner_radius = egui::CornerRadius::same(3);
 
     // Widget styles — non-interactive (labels, etc.)
     visuals.widgets.noninteractive.bg_fill = BG_PANEL;
     visuals.widgets.noninteractive.weak_bg_fill = BG_PANEL;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5, Color32::from_rgb(40, 42, 56));
-    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, TEXT_PRIMARY);
+    visuals.widgets.noninteractive.bg_stroke =
+        egui::Stroke::new(0.5_f32, Color32::from_rgb(40, 42, 56));
+    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT_PRIMARY);
     visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(2);
 
     // Window and menu rounding

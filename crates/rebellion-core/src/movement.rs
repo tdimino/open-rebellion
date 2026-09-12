@@ -44,10 +44,10 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{FleetKey, SystemKey};
-use crate::troop_transport::TroopTransportState;
 use crate::tick::TickEvent;
+use crate::troop_transport::TroopTransportState;
 use crate::tuning::MovementConfig;
-use crate::world::{Fleet, FighterEntry, GameWorld};
+use crate::world::{FighterEntry, Fleet, GameWorld};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -86,8 +86,13 @@ pub fn fleet_transit_ticks(
     dest: SystemKey,
 ) -> u32 {
     fleet_transit_ticks_with_config(
-        fleet, world, origin, dest,
-        DISTANCE_SCALE, MIN_TRANSIT_TICKS, DEFAULT_FIGHTER_HYPERDRIVE,
+        fleet,
+        world,
+        origin,
+        dest,
+        DISTANCE_SCALE,
+        MIN_TRANSIT_TICKS,
+        DEFAULT_FIGHTER_HYPERDRIVE,
     )
 }
 
@@ -129,8 +134,7 @@ pub fn fleet_transit_ticks_with_config(
             .max(1) // guard against 0 in DAT data
     };
 
-    let base_ticks =
-        ((distance * distance_scale as f64) / slowest_hyperdrive as f64).ceil() as u32;
+    let base_ticks = ((distance * distance_scale as f64) / slowest_hyperdrive as f64).ceil() as u32;
 
     // Han Solo speed bonus: best hyperdrive_modifier among fleet characters.
     let han_bonus = fleet
@@ -512,12 +516,16 @@ pub fn apply_fleet_arrival(
         if let Some(destination) = world.systems.get(arrival.system) {
             compatible.extend(destination.fleets.iter().copied().filter(|&fleet| {
                 fleet != arrival.fleet
-                    && world.fleets.get(fleet).map(|value| {
-                        value.location == arrival.system
-                            && value.is_alliance == is_alliance
-                            && value.characters.is_empty()
-                            && !value.has_death_star
-                    }).unwrap_or(false)
+                    && world
+                        .fleets
+                        .get(fleet)
+                        .map(|value| {
+                            value.location == arrival.system
+                                && value.is_alliance == is_alliance
+                                && value.characters.is_empty()
+                                && !value.has_death_star
+                        })
+                        .unwrap_or(false)
             }));
         }
     }
@@ -589,10 +597,7 @@ impl MovementSystem {
     /// Returns one `ArrivalEvent` per fleet that completes transit this frame.
     /// The caller applies each event through [`apply_fleet_arrival`] so world
     /// fleet records and system orbit indexes remain canonical.
-    pub fn advance(
-        state: &mut MovementState,
-        tick_events: &[TickEvent],
-    ) -> Vec<ArrivalEvent> {
+    pub fn advance(state: &mut MovementState, tick_events: &[TickEvent]) -> Vec<ArrivalEvent> {
         if tick_events.is_empty() {
             return Vec::new();
         }
@@ -645,8 +650,8 @@ impl MovementSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::ControlKind;
     use crate::tick::TickEvent;
+    use crate::world::ControlKind;
 
     fn mock_fleet_and_systems() -> (FleetKey, SystemKey, SystemKey) {
         let mut fleet_sm: slotmap::SlotMap<FleetKey, ()> = slotmap::SlotMap::with_key();
@@ -824,13 +829,8 @@ mod tests {
     use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::DatId;
     use crate::world::{
-        CapitalShipClass, Character, Fleet, ForceTier, GameWorld, Sector, ShipInstance,
-        SkillPair, System, TroopUnit,
+        CapitalShipClass, Character, Fleet, GameWorld, Sector, ShipInstance, System, TroopUnit,
     };
-
-    fn zero_skill() -> SkillPair {
-        SkillPair { base: 0, variance: 0 }
-    }
 
     fn test_character(name: &str, hyperdrive_modifier: i16) -> Character {
         Character {
@@ -932,12 +932,8 @@ mod tests {
         assert!(!world.systems[origin].fleets.contains(&fleet));
 
         let arrival = MovementSystem::advance(&mut movement, &ticks(5)).remove(0);
-        let applied = apply_fleet_arrival(
-            &mut world,
-            &mut TroopTransportState::default(),
-            &arrival,
-        )
-        .unwrap();
+        let applied =
+            apply_fleet_arrival(&mut world, &mut TroopTransportState::default(), &arrival).unwrap();
         assert_eq!(applied.fleet, fleet);
         assert_eq!(applied.merged_fleets, 0);
         assert_eq!(world.fleets[fleet].location, destination);
@@ -982,12 +978,7 @@ mod tests {
         let mut transport = TroopTransportState::default();
         transport.embark(&mut world, arriving, &[troop]).unwrap();
 
-        let applied = apply_fleet_arrival(
-            &mut world,
-            &mut transport,
-            &arrival,
-        )
-        .unwrap();
+        let applied = apply_fleet_arrival(&mut world, &mut transport, &arrival).unwrap();
 
         assert_eq!(applied.fleet, survivor);
         assert_eq!(applied.merged_fleets, 1);
@@ -1013,12 +1004,8 @@ mod tests {
             system: destination,
         };
 
-        let applied = apply_fleet_arrival(
-            &mut world,
-            &mut TroopTransportState::default(),
-            &arrival,
-        )
-        .unwrap();
+        let applied =
+            apply_fleet_arrival(&mut world, &mut TroopTransportState::default(), &arrival).unwrap();
 
         assert_eq!(applied.fleet, arriving);
         assert_eq!(applied.merged_fleets, 0);
@@ -1100,7 +1087,10 @@ mod tests {
             is_alliance: true,
             has_death_star: false,
         };
-        assert_eq!(fleet_transit_ticks(&fleet, &world, origin, dest), MIN_TRANSIT_TICKS);
+        assert_eq!(
+            fleet_transit_ticks(&fleet, &world, origin, dest),
+            MIN_TRANSIT_TICKS
+        );
     }
 
     #[test]
@@ -1117,7 +1107,7 @@ mod tests {
             has_death_star: false,
         };
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
-        assert!(t >= 10 && t <= 12, "expected ~11, got {}", t);
+        assert!((10..=12).contains(&t), "expected ~11, got {}", t);
     }
 
     #[test]
@@ -1149,7 +1139,10 @@ mod tests {
             is_alliance: true,
             has_death_star: false,
         };
-        assert_eq!(fleet_transit_ticks(&fleet, &world, origin, dest), MIN_TRANSIT_TICKS);
+        assert_eq!(
+            fleet_transit_ticks(&fleet, &world, origin, dest),
+            MIN_TRANSIT_TICKS
+        );
     }
 
     #[test]
@@ -1207,7 +1200,11 @@ mod tests {
         };
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
         // No bonus, base ~11
-        assert!(t >= 10 && t <= 12, "expected ~11 with no bonus, got {}", t);
+        assert!(
+            (10..=12).contains(&t),
+            "expected ~11 with no bonus, got {}",
+            t
+        );
     }
 
     #[test]
@@ -1224,6 +1221,9 @@ mod tests {
             is_alliance: true,
             has_death_star: false,
         };
-        assert_eq!(fleet_transit_ticks(&fleet, &world, origin, dest), MIN_TRANSIT_TICKS);
+        assert_eq!(
+            fleet_transit_ticks(&fleet, &world, origin, dest),
+            MIN_TRANSIT_TICKS
+        );
     }
 }

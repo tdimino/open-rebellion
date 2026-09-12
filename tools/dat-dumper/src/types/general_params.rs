@@ -1,6 +1,6 @@
-use serde::Serialize;
 use crate::codec::{ByteReader, ByteWriter};
 use crate::dat_record::DatRecord;
+use serde::Serialize;
 
 /// One entry in GNPRTB.DAT.
 /// Layout: 3 u32 + 8 i32 = 44 bytes per entry.
@@ -47,21 +47,25 @@ impl DatRecord for GeneralParamsFile {
         let mut entries = Vec::with_capacity(entries_count as usize);
         for _ in 0..entries_count {
             entries.push(GeneralParamEntry {
-                id:               r.read_u32()?,
-                field2:           r.read_u32()?,
-                parameter_id:     r.read_u32()?,
-                development:      r.read_i32()?,
+                id: r.read_u32()?,
+                field2: r.read_u32()?,
+                parameter_id: r.read_u32()?,
+                development: r.read_i32()?,
                 alliance_sp_easy: r.read_i32()?,
                 alliance_sp_medium: r.read_i32()?,
                 alliance_sp_hard: r.read_i32()?,
-                empire_sp_easy:   r.read_i32()?,
+                empire_sp_easy: r.read_i32()?,
                 empire_sp_medium: r.read_i32()?,
-                empire_sp_hard:   r.read_i32()?,
-                multiplayer:      r.read_i32()?,
+                empire_sp_hard: r.read_i32()?,
+                multiplayer: r.read_i32()?,
             });
         }
 
-        Ok(Self { field1, info, entries })
+        Ok(Self {
+            field1,
+            info,
+            entries,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

@@ -1,6 +1,6 @@
-use serde::Serialize;
 use crate::codec::{ByteReader, ByteWriter};
 use crate::dat_record::DatRecord;
+use serde::Serialize;
 
 /// One item within a seed group.
 /// Layout: 3 u32 = 12 bytes per item.
@@ -80,8 +80,8 @@ impl DatRecord for SeedTableFile {
             let mut items = Vec::with_capacity(items_count as usize);
             for _ in 0..items_count {
                 items.push(SeedItem {
-                    field1:  r.read_u32()?,
-                    field2:  r.read_u32()?,
+                    field1: r.read_u32()?,
+                    field2: r.read_u32()?,
                     item_id: r.read_u32()?,
                 });
             }
@@ -96,7 +96,11 @@ impl DatRecord for SeedTableFile {
             });
         }
 
-        Ok(Self { field1, info, groups })
+        Ok(Self {
+            field1,
+            info,
+            groups,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

@@ -80,7 +80,13 @@ impl DatRecord for CapitalShipsFile {
         for _ in 0..count {
             ships.push(CapitalShip::parse_entry(r)?);
         }
-        Ok(Self { field1, count, family_id, field4, ships })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            ships,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

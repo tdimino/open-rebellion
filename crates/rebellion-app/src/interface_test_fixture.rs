@@ -1,7 +1,7 @@
 //! Test-only deterministic interface fixture bridge.
 //!
-//! This module is compiled only for the dedicated WASM acceptance artifact.
-//! Production builds contain neither these imports nor fixture identifiers.
+//! This module is compiled for the dedicated WASM acceptance artifact and
+//! native unit tests. Production builds contain no fixture bridge.
 
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::dat::{ExplorationStatus, Faction};

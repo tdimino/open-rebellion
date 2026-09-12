@@ -198,9 +198,7 @@ impl MessageLog {
         use std::io::Write;
         let mut file = std::fs::File::create(path)?;
         for msg in &self.messages {
-            let json = serde_json::to_string(msg).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, e)
-            })?;
+            let json = serde_json::to_string(msg).map_err(std::io::Error::other)?;
             writeln!(file, "{}", json)?;
         }
         Ok(())
@@ -300,7 +298,11 @@ pub fn draw_message_log(ctx: &egui::Context, log: &MessageLog, state: &mut Messa
         .show(ctx, |ui| {
             // ── Header bar ───────────────────────────────────────────────────
             ui.horizontal(|ui| {
-                let toggle_label = if state.expanded { "▼ Message Log" } else { "▶ Message Log" };
+                let toggle_label = if state.expanded {
+                    "▼ Message Log"
+                } else {
+                    "▶ Message Log"
+                };
                 if ui.small_button(toggle_label).clicked() {
                     state.expanded = !state.expanded;
                 }
@@ -309,9 +311,24 @@ pub fn draw_message_log(ctx: &egui::Context, log: &MessageLog, state: &mut Messa
                     ui.separator();
 
                     // Category filter toggles.
-                    category_toggle(ui, "[BUILD]", MessageCategory::Manufacturing, &mut state.show_manufacturing);
-                    category_toggle(ui, "[MISS]", MessageCategory::Mission, &mut state.show_mission);
-                    category_toggle(ui, "[DIPLO]", MessageCategory::Diplomacy, &mut state.show_diplomacy);
+                    category_toggle(
+                        ui,
+                        "[BUILD]",
+                        MessageCategory::Manufacturing,
+                        &mut state.show_manufacturing,
+                    );
+                    category_toggle(
+                        ui,
+                        "[MISS]",
+                        MessageCategory::Mission,
+                        &mut state.show_mission,
+                    );
+                    category_toggle(
+                        ui,
+                        "[DIPLO]",
+                        MessageCategory::Diplomacy,
+                        &mut state.show_diplomacy,
+                    );
                     category_toggle(ui, "[EVT]", MessageCategory::Event, &mut state.show_event);
                     category_toggle(ui, "[AI]", MessageCategory::Ai, &mut state.show_ai);
                     category_toggle(ui, "[CMB]", MessageCategory::Combat, &mut state.show_combat);
@@ -397,12 +414,7 @@ pub fn draw_message_log(ctx: &egui::Context, log: &MessageLog, state: &mut Messa
 }
 
 /// Render a small toggle button for a category filter.
-fn category_toggle(
-    ui: &mut egui::Ui,
-    label: &str,
-    category: MessageCategory,
-    enabled: &mut bool,
-) {
+fn category_toggle(ui: &mut egui::Ui, label: &str, category: MessageCategory, enabled: &mut bool) {
     let text = if *enabled {
         RichText::new(label).color(category.color()).small()
     } else {
@@ -421,7 +433,11 @@ mod tests {
     fn export_jsonl_round_trip() {
         let mut log = MessageLog::new(10);
         log.push(GameMessage::new(1, "Test event", MessageCategory::Event));
-        log.push(GameMessage::new(2, "Combat happened", MessageCategory::Combat));
+        log.push(GameMessage::new(
+            2,
+            "Combat happened",
+            MessageCategory::Combat,
+        ));
 
         let dir = std::env::temp_dir();
         let path = dir.join("test_export.jsonl");

@@ -27,7 +27,13 @@ impl DatRecord for MinorCharactersFile {
         for _ in 0..count {
             characters.push(CharacterEntry::parse_entry(r)?);
         }
-        Ok(Self { field1, count, family_id, field4, characters })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            characters,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

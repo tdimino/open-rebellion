@@ -435,6 +435,10 @@ fn draw_gid_caption(cam: CameraView, faction: CockpitFaction, mode: GidMode) {
     );
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this existing UI boundary."
+)]
 fn draw_gid_marker(
     cache: &mut BmpCache,
     world: &GameWorld,

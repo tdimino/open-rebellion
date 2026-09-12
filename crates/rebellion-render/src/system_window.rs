@@ -422,6 +422,10 @@ fn draw_reference_rail(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this existing UI boundary."
+)]
 fn draw_system_window(
     ctx: &egui::Context,
     world: &GameWorld,
@@ -605,6 +609,10 @@ struct TabContentDrawResult {
     focus: bool,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this existing UI boundary."
+)]
 fn paint_tab_content(
     ui: &mut egui::Ui,
     cache: &mut BmpCache,

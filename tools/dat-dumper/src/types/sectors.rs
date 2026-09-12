@@ -44,7 +44,13 @@ impl DatRecord for SectorsFile {
         for _ in 0..count {
             sectors.push(Sector::parse_entry(r)?);
         }
-        Ok(Self { field1, count, family_id, field4, sectors })
+        Ok(Self {
+            field1,
+            count,
+            family_id,
+            field4,
+            sectors,
+        })
     }
 
     fn write_bytes(&self, w: &mut ByteWriter) {

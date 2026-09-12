@@ -550,6 +550,8 @@ would tune around known simulation feedback defects.
 
 - [ ] Restore a reviewed CI provider; GitHub Actions workflow definitions are intentionally local/untracked as of 2026-09-08, so current gates are manual.
 - [ ] Enforce format, strict clippy, native, packaged-WASM, and clean-package boot gates.
+  Local `make all` now covers tests, formatting, strict all-target Clippy, and
+  native build; packaged browser and CI enforcement remain open.
 - [ ] Add at least 20 app/browser integration cases and promote long campaigns when stable.
 - [ ] Generate the complete bitmap resource ledger from the entity map; fail on unexplained misses. Fleet-list miniatures are verified in F-010B.
 - [x] Establish 564 stable required interface baseline cells, link all 43

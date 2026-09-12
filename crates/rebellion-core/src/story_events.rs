@@ -29,8 +29,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
     let leia = find_character(world, "Leia");
     let chewbacca = find_character(world, "Chew");
     let yoda = find_character(world, "Yoda");
-    let emperor = find_character(world, "Palpatine")
-        .or_else(|| find_character(world, "Emperor"));
+    let emperor = find_character(world, "Palpatine").or_else(|| find_character(world, "Emperor"));
 
     // -----------------------------------------------------------------------
     // Force milestone events (Task 3)
@@ -49,8 +48,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 // is_repeatable: false handles one-shot — no self-ref EventNotFired needed
             ],
             actions: vec![EventAction::DisplayMessage {
-                text: "A disturbance in the Force... Luke's potential has been noticed."
-                    .into(),
+                text: "A disturbance in the Force... Luke's potential has been noticed.".into(),
             }],
             is_repeatable: false,
             enabled: true,
@@ -304,9 +302,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
 
                 // Emperor Palpatine co-location requirement (Phase 3)
                 if let Some(emperor) = emperor {
-                    final_conditions.push(EventCondition::CharacterExists {
-                        character: emperor,
-                    });
+                    final_conditions.push(EventCondition::CharacterExists { character: emperor });
                     final_conditions.push(EventCondition::CharactersCoLocated {
                         characters: vec![luke, vader, emperor],
                     });
@@ -315,13 +311,13 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                         mandatory: true,
                     });
                     final_actions.push(EventAction::DisplayMessage {
-                        text: "Luke, Vader, and the Emperor are together. The Final Battle begins..."
-                            .into(),
+                        text:
+                            "Luke, Vader, and the Emperor are together. The Final Battle begins..."
+                                .into(),
                     });
                 } else {
                     final_actions.push(EventAction::DisplayMessage {
-                        text: "The Final Battle between Luke and Vader approaches..."
-                            .into(),
+                        text: "The Final Battle between Luke and Vader approaches...".into(),
                     });
                 }
 
@@ -359,8 +355,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                         new_tier: ForceTier::Aware,
                     },
                     EventAction::DisplayMessage {
-                        text: "Princess Leia has discovered her connection to the Force!"
-                            .into(),
+                        text: "Princess Leia has discovered her connection to the Force!".into(),
                     },
                 ],
                 is_repeatable: false,
@@ -384,12 +379,9 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                         min_count: 100,
                     },
                 ],
-                actions: vec![
-                    EventAction::DisplayMessage {
-                        text: "The Emperor has arrived to oversee operations personally."
-                            .into(),
-                    },
-                ],
+                actions: vec![EventAction::DisplayMessage {
+                    text: "The Emperor has arrived to oversee operations personally.".into(),
+                }],
                 is_repeatable: false,
                 enabled: true,
                 system_tag: SystemTag::Story,
@@ -506,8 +498,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 EventCondition::CharacterExists { character: han },
             ],
             actions: vec![EventAction::DisplayMessage {
-                text: "The Empire has dispatched bounty hunters across the galaxy..."
-                    .into(),
+                text: "The Empire has dispatched bounty hunters across the galaxy...".into(),
             }],
             is_repeatable: false,
             enabled: true,
@@ -579,8 +570,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                     EventCondition::CharacterExists { character: leia },
                 ],
                 actions: vec![EventAction::DisplayMessage {
-                    text: "Princess Leia plans a rescue mission to Jabba's Palace..."
-                        .into(),
+                    text: "Princess Leia plans a rescue mission to Jabba's Palace...".into(),
                 }],
                 is_repeatable: false,
                 enabled: true,
@@ -599,8 +589,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                         },
                     ],
                     actions: vec![EventAction::DisplayMessage {
-                        text: "Chewbacca accompanies the rescue team to Tatooine..."
-                            .into(),
+                        text: "Chewbacca accompanies the rescue team to Tatooine...".into(),
                     }],
                     is_repeatable: false,
                     enabled: true,
@@ -619,7 +608,9 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                         EventCondition::EventFired { id: 0x381 },
                         EventCondition::EventNotFired { id: 0x399 }, // Luke not captured
                         EventCondition::EventNotFired { id: 0x385 }, // Leia not captured
-                        EventCondition::EventNotFired { id: EVT_JABBA_CAPTURES_CHEWIE }, // Chewie not captured
+                        EventCondition::EventNotFired {
+                            id: EVT_JABBA_CAPTURES_CHEWIE,
+                        }, // Chewie not captured
                     ],
                     actions: vec![
                         EventAction::SetMandatoryMission {
@@ -738,7 +729,9 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
                 name: "Jabba's Prisoners".into(),
                 conditions: vec![
                     EventCondition::EventFired { id: trigger_id },
-                    EventCondition::EventNotFired { id: EVT_JABBA_PRISONERS },
+                    EventCondition::EventNotFired {
+                        id: EVT_JABBA_PRISONERS,
+                    },
                 ],
                 actions: vec![],
                 is_repeatable: false,
@@ -755,7 +748,7 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
         // fires as the terminal state.
         // -------------------------------------------------------------------
         const CARBONITE_STAGES: [(u32, u32, u64); 5] = [
-            (EVT_HAN_CARBONITE_FAIL_1, 0x398,                  145),
+            (EVT_HAN_CARBONITE_FAIL_1, 0x398, 145),
             (EVT_HAN_CARBONITE_FAIL_2, EVT_HAN_CARBONITE_FAIL_1, 160),
             (EVT_HAN_CARBONITE_FAIL_3, EVT_HAN_CARBONITE_FAIL_2, 175),
             (EVT_HAN_CARBONITE_FAIL_4, EVT_HAN_CARBONITE_FAIL_3, 190),
@@ -784,12 +777,16 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
             id: EVT_HAN_PERMANENT_FREEZE,
             name: "Han Solo Permanently Frozen".into(),
             conditions: vec![
-                EventCondition::EventFired { id: EVT_HAN_CARBONITE_FAIL_5 },
+                EventCondition::EventFired {
+                    id: EVT_HAN_CARBONITE_FAIL_5,
+                },
                 EventCondition::CharacterIsCaptive { character: han },
                 EventCondition::EventNotFired { id: 0x383 }, // rescue not completed
             ],
             actions: vec![EventAction::DisplayMessage {
-                text: "Han Solo's carbonite prison has become permanent. He can no longer be rescued.".into(),
+                text:
+                    "Han Solo's carbonite prison has become permanent. He can no longer be rescued."
+                        .into(),
             }],
             is_repeatable: false,
             enabled: true,
@@ -826,10 +823,10 @@ pub fn define_story_events(state: &mut EventState, world: &GameWorld) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::ControlKind;
     use crate::events::{EventState, EventSystem};
     use crate::tick::TickEvent;
-    use crate::world::{Character, Fleet, ForceTier, SkillPair};
+    use crate::world::ControlKind;
+    use crate::world::{Character, Fleet, ForceTier};
 
     fn tick(n: u64) -> Vec<TickEvent> {
         vec![TickEvent { tick: n }]
@@ -882,19 +879,30 @@ mod tests {
                 dat_id: crate::ids::DatId::new(0),
                 name: "HanSector".into(),
                 group: crate::dat::SectorGroup::Core,
-                x: 0, y: 0, systems: vec![],
+                x: 0,
+                y: 0,
+                systems: vec![],
             });
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(0),
                 name: "HanSystem".into(),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.5, popularity_empire: 0.5,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.5,
+                popularity_empire: 0.5,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Uncontrolled,
             })
@@ -1111,7 +1119,11 @@ mod tests {
         });
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
-        assert_eq!(fired.len(), 1, "event 99 never fired, so EventNotFired should be true");
+        assert_eq!(
+            fired.len(),
+            1,
+            "event 99 never fired, so EventNotFired should be true"
+        );
 
         // Now define and fire event 99, then check EventNotFired again
         let mut state2 = EventState::new();
@@ -1407,20 +1419,31 @@ mod tests {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1434,11 +1457,19 @@ mod tests {
         EventSystem::advance(&mut state, &world, &tick(100), &[0.05]); // bounty attack fires
 
         // Self-escape (0x384) needs tick >= 135, no rescue, no capture, random < 0.10
-        let fired = EventSystem::advance(&mut state, &world, &tick(135), &[0.01, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+        let fired = EventSystem::advance(
+            &mut state,
+            &world,
+            &tick(135),
+            &[0.01, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+        );
         assert!(
             fired.iter().any(|f| f.event_id == 0x384),
             "Han self-escape should fire at tick 135 with low roll. Events: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1452,20 +1483,31 @@ mod tests {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1486,7 +1528,10 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x399),
             "Luke should be captured at tick 115. Fired: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
         assert!(
             fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
@@ -1494,7 +1539,10 @@ mod tests {
         );
         // Self-guard: only one consolidator fires even though 3 variants are registered
         assert_eq!(
-            fired.iter().filter(|f| f.event_id == EVT_JABBA_PRISONERS).count(),
+            fired
+                .iter()
+                .filter(|f| f.event_id == EVT_JABBA_PRISONERS)
+                .count(),
             1,
             "Self-guard should prevent duplicate consolidator fires"
         );
@@ -1509,20 +1557,31 @@ mod tests {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1552,27 +1611,42 @@ mod tests {
         // World: Han + Leia only (no Luke, so rescue 0x383 can't fire —
         // it requires luke.is_some()). Leia capture can proceed.
         let mut world = GameWorld::default();
-        world.characters.insert(make_character("Han Solo", ForceTier::None, true));
-        world.characters.insert(make_character("Princess Leia", ForceTier::None, true));
+        world
+            .characters
+            .insert(make_character("Han Solo", ForceTier::None, true));
+        world
+            .characters
+            .insert(make_character("Princess Leia", ForceTier::None, true));
 
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1591,7 +1665,10 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x385),
             "Leia should be captured. Events: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
         assert!(
             fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
@@ -1612,20 +1689,31 @@ mod tests {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1640,16 +1728,23 @@ mod tests {
         // 0x387 fails (0.99 > 0.12)
         let fired = EventSystem::advance(&mut state, &world, &tick(115), &[0.05, 0.05, 0.99]);
 
-        let captures: Vec<_> = fired.iter()
+        let captures: Vec<_> = fired
+            .iter()
             .filter(|f| f.event_id == 0x399 || f.event_id == 0x385)
             .collect();
         assert!(
             captures.len() >= 2,
             "Both Luke (0x399) and Leia (0x385) should be captured. Fired: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
-            fired.iter().filter(|f| f.event_id == EVT_JABBA_PRISONERS).count(),
+            fired
+                .iter()
+                .filter(|f| f.event_id == EVT_JABBA_PRISONERS)
+                .count(),
             1,
             "Self-guard: exactly one consolidator despite two captures"
         );
@@ -1667,28 +1762,45 @@ mod tests {
         han.is_captive = false;
         world.characters.insert(han);
         if include_luke {
-            world.characters.insert(make_character("Luke Skywalker", ForceTier::Aware, true));
-            world.characters.insert(make_character("Princess Leia", ForceTier::None, true));
-            world.characters.insert(make_character("Chewbacca", ForceTier::None, true));
+            world
+                .characters
+                .insert(make_character("Luke Skywalker", ForceTier::Aware, true));
+            world
+                .characters
+                .insert(make_character("Princess Leia", ForceTier::None, true));
+            world
+                .characters
+                .insert(make_character("Chewbacca", ForceTier::None, true));
         }
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1720,7 +1832,10 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == EVT_HAN_CARBONITE_FAIL_1),
             "FAIL_1 should fire. Events: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
         assert!(
             fired.iter().any(|f| f.event_id == EVT_HAN_CARBONITE_FAIL_5),
@@ -1737,26 +1852,41 @@ mod tests {
         // Han + Luke (no Leia, so rescue 0x383 can't fire — it's inside the
         // Leia block). Self-escape (0x384) lives in the Luke+Han block.
         let mut world = GameWorld::default();
-        world.characters.insert(make_character("Han Solo", ForceTier::None, true));
-        world.characters.insert(make_character("Luke Skywalker", ForceTier::Aware, true));
+        world
+            .characters
+            .insert(make_character("Han Solo", ForceTier::None, true));
+        world
+            .characters
+            .insert(make_character("Luke Skywalker", ForceTier::Aware, true));
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..60 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1775,13 +1905,18 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x384),
             "Han self-escape should fire. Events: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
 
         // At tick 205: fail chain should NOT fire (self-escape already fired)
         let fired2 = EventSystem::advance(&mut state, &world, &tick(205), &[]);
         assert!(
-            !fired2.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            !fired2
+                .iter()
+                .any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
             "Permanent freeze should be blocked by self-escape"
         );
     }
@@ -1797,13 +1932,18 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x383),
             "Rescue should fire. Events: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
 
         // At tick 205: fail chain should NOT fire (rescue already fired)
         let fired2 = EventSystem::advance(&mut state, &world, &tick(205), &[]);
         assert!(
-            !fired2.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            !fired2
+                .iter()
+                .any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
             "Permanent freeze should be blocked by rescue"
         );
     }
@@ -1819,7 +1959,9 @@ mod tests {
         // Next tick: should not fire again (is_repeatable: false)
         let fired2 = EventSystem::advance(&mut state, &world, &tick(206), &[]);
         assert!(
-            !fired2.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            !fired2
+                .iter()
+                .any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
             "Permanent freeze should not fire again (one-shot)"
         );
     }
@@ -1846,7 +1988,10 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == EVT_LEIA_FORCE),
             "Leia Force discovery should fire after Dagobah completion. Events: {:?}",
-            fired.iter().map(|f| (f.event_id, &f.event_name)).collect::<Vec<_>>()
+            fired
+                .iter()
+                .map(|f| (f.event_id, &f.event_name))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1871,7 +2016,11 @@ mod tests {
     #[test]
     fn emperor_palpatine_adds_emperor_specific_events() {
         let mut world = make_world_with_characters();
-        world.characters.insert(make_character("Emperor Palpatine", ForceTier::Experienced, false));
+        world.characters.insert(make_character(
+            "Emperor Palpatine",
+            ForceTier::Experienced,
+            false,
+        ));
 
         let mut state = EventState::new();
         define_story_events(&mut state, &world);
@@ -1886,34 +2035,55 @@ mod tests {
         let final_battle = state.events().iter().find(|e| e.id == EVT_FINAL_BATTLE);
         assert!(final_battle.is_some(), "Final Battle should be registered");
         let fb = final_battle.unwrap();
-        let has_co_loc = fb.conditions.iter().any(|c| matches!(c, EventCondition::CharactersCoLocated { .. }));
-        assert!(has_co_loc, "Final Battle should have CharactersCoLocated when Emperor present");
+        let has_co_loc = fb
+            .conditions
+            .iter()
+            .any(|c| matches!(c, EventCondition::CharactersCoLocated { .. }));
+        assert!(
+            has_co_loc,
+            "Final Battle should have CharactersCoLocated when Emperor present"
+        );
     }
 
     #[test]
     fn emperor_arrival_fires_with_empire_dominance() {
         let mut world = make_world_with_characters();
-        world.characters.insert(make_character("Emperor Palpatine", ForceTier::Experienced, false));
+        world.characters.insert(make_character(
+            "Emperor Palpatine",
+            ForceTier::Experienced,
+            false,
+        ));
 
         // Need 100+ Empire systems
         let sector_key = world.sectors.insert(crate::world::Sector {
             dat_id: crate::ids::DatId::new(0),
             name: "Sector".into(),
             group: crate::dat::SectorGroup::Core,
-            x: 0, y: 0, systems: vec![],
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         for i in 0..110 {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),
                 name: format!("System_{}", i),
-                sector: sector_key, x: 0, y: 0,
+                sector: sector_key,
+                x: 0,
+                y: 0,
                 exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3, popularity_empire: 0.7,
-                is_populated: true, total_energy: 0, raw_materials: 0,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                total_energy: 0,
+                raw_materials: 0,
                 espionage_rating: 0.0,
-                fleets: vec![], ground_units: vec![], special_forces: vec![],
-                defense_facilities: vec![], manufacturing_facilities: vec![],
-                production_facilities: vec![], is_headquarters: false,
+                fleets: vec![],
+                ground_units: vec![],
+                special_forces: vec![],
+                defense_facilities: vec![],
+                manufacturing_facilities: vec![],
+                production_facilities: vec![],
+                is_headquarters: false,
                 is_destroyed: false,
                 control: ControlKind::Controlled(crate::dat::Faction::Empire),
             });
@@ -1937,14 +2107,14 @@ mod tests {
     #[test]
     fn notification_events_never_use_random() {
         let banned_ids: &[u32] = &[
-            EVT_SUPPORT_CHANGE,            // 0x100
-            EVT_INFORMANT_INTEL,           // 0x153
-            EVT_NATURAL_DISASTER,          // 0x154
-            EVT_RESOURCE_DISCOVERY,        // 0x155
-            EVT_MANUFACTURING_IDLE,        // 0x160
+            EVT_SUPPORT_CHANGE,              // 0x100
+            EVT_INFORMANT_INTEL,             // 0x153
+            EVT_NATURAL_DISASTER,            // 0x154
+            EVT_RESOURCE_DISCOVERY,          // 0x155
+            EVT_MANUFACTURING_IDLE,          // 0x160
             EVT_MAINTENANCE_SHORTFALL_EVENT, // 0x304
-            EVT_SABOTEUR_DETECTED,         // 0x305
-            EVT_TRAITOR_REVEALED,          // 0x361
+            EVT_SABOTEUR_DETECTED,           // 0x305
+            EVT_TRAITOR_REVEALED,            // 0x361
         ];
 
         let world = make_world_with_characters();

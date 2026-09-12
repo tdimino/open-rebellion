@@ -1581,7 +1581,7 @@ fn load_image_bytes_as_texture(
     };
 
     let handle = ctx.load_texture(
-        &format!("{}_{}", source.texture_prefix(), resource_id),
+        format!("{}_{}", source.texture_prefix(), resource_id),
         color_image,
         variant.texture_options(),
     );

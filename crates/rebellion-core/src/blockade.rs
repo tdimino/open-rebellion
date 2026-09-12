@@ -37,8 +37,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{SystemKey, TroopKey};
 use crate::tick::TickEvent;
-use crate::world::GameWorld;
 use crate::world::ControlKind;
+use crate::world::GameWorld;
 
 // ---------------------------------------------------------------------------
 // Event IDs (from RE annotated-functions.md)
@@ -61,18 +61,12 @@ pub enum BlockadeEvent {
     ///
     /// Manufacturing is halted for the controlling faction until blockade ends.
     /// Corresponds to event `0x14e` (SystemBlockadeNotif) with state = enter.
-    BlockadeStarted {
-        system: SystemKey,
-        tick: u64,
-    },
+    BlockadeStarted { system: SystemKey, tick: u64 },
 
     /// A system's blockade has ended (defending fleet arrived or attacker withdrew).
     ///
     /// Corresponds to event `0x14e` (SystemBlockadeNotif) with state = exit.
-    BlockadeEnded {
-        system: SystemKey,
-        tick: u64,
-    },
+    BlockadeEnded { system: SystemKey, tick: u64 },
 
     /// A troop regiment was destroyed while being transported through a blockaded system.
     ///
@@ -194,14 +188,24 @@ impl BlockadeSystem {
 
         // New blockades (entered this tick)
         for sys_key in newly_blockaded {
-            events.push(BlockadeEvent::BlockadeStarted { system: sys_key, tick });
+            events.push(BlockadeEvent::BlockadeStarted {
+                system: sys_key,
+                tick,
+            });
         }
 
         // Cleared blockades (ended this tick)
-        let mut cleared: Vec<_> = state.blockaded.difference(&now_blockaded).copied().collect();
+        let mut cleared: Vec<_> = state
+            .blockaded
+            .difference(&now_blockaded)
+            .copied()
+            .collect();
         cleared.sort_unstable();
         for sys_key in cleared {
-            events.push(BlockadeEvent::BlockadeEnded { system: sys_key, tick });
+            events.push(BlockadeEvent::BlockadeEnded {
+                system: sys_key,
+                tick,
+            });
         }
 
         state.blockaded = now_blockaded;
@@ -240,7 +244,6 @@ impl BlockadeSystem {
 
         hostile_count > 0 && defending_count == 0
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -400,13 +403,15 @@ mod tests {
     #[test]
     fn no_blockade_when_contested() {
         let (mut world, sys) = make_world();
-        add_fleet(&mut world, sys, true);   // Alliance defender
-        add_fleet(&mut world, sys, false);  // Empire hostile
+        add_fleet(&mut world, sys, true); // Alliance defender
+        add_fleet(&mut world, sys, false); // Empire hostile
 
         let mut state = BlockadeState::new();
         let events = BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
         // Defender present — no blockade
-        assert!(!events.iter().any(|e| matches!(e, BlockadeEvent::BlockadeStarted { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, BlockadeEvent::BlockadeStarted { .. })));
         assert!(!state.is_blockaded(sys));
     }
 
@@ -417,7 +422,9 @@ mod tests {
 
         let mut state = BlockadeState::new();
         let events = BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
-        assert!(events.iter().any(|e| matches!(e, BlockadeEvent::BlockadeStarted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, BlockadeEvent::BlockadeStarted { .. })));
         assert!(state.is_blockaded(sys));
     }
 
@@ -433,7 +440,9 @@ mod tests {
         // Alliance fleet arrives
         add_fleet(&mut world, sys, true);
         let events = BlockadeSystem::advance(&mut state, &world, &[tick(2)]);
-        assert!(events.iter().any(|e| matches!(e, BlockadeEvent::BlockadeEnded { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, BlockadeEvent::BlockadeEnded { .. })));
         assert!(!state.is_blockaded(sys));
     }
 
@@ -462,12 +471,14 @@ mod tests {
         // Empire troop at Alliance-controlled system — Alliance does not destroy Empire troops
         // via blockade (they're already on the surface, not in transit to help the system)
         add_troop(&mut world, sys, false); // Empire troop
-        add_fleet(&mut world, sys, false);  // Empire fleet blockades
+        add_fleet(&mut world, sys, false); // Empire fleet blockades
 
         let mut state = BlockadeState::new();
         let events = BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
         // Empire troop not destroyed (same faction as blockader, not in transit for defender)
-        assert!(!events.iter().any(|e| matches!(e, BlockadeEvent::TroopDestroyed { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, BlockadeEvent::TroopDestroyed { .. })));
     }
 
     #[test]

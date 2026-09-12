@@ -47,13 +47,12 @@ const GNPRTB_GARRISON_DIVISOR: u16 = 7762;
 const GNPRTB_COLLECTION_RATE_BASE: u16 = 7763;
 
 // Phase 3b: new constants from source tree cross-reference
-const GNPRTB_EMPIRE_TROOP_MULT: u16 = 7680;    // =2: Empire troop doubling + garrison halving divisor
+const GNPRTB_EMPIRE_TROOP_MULT: u16 = 7680; // =2: Empire troop doubling + garrison halving divisor
 const GNPRTB_UPRISING_GARRISON_MULT: u16 = 7682; // =2: garrison doubles during uprising
-const GNPRTB_KDY_CAPSHIP_PENALTY: u16 = 7684;   // =5: KDY production penalty per capital ship
-const GNPRTB_KDY_FIGHTER_PENALTY: u16 = 7685;   // =2: KDY production penalty per fighter
+const GNPRTB_KDY_CAPSHIP_PENALTY: u16 = 7684; // =5: KDY production penalty per capital ship
+const GNPRTB_KDY_FIGHTER_PENALTY: u16 = 7685; // =2: KDY production penalty per fighter
 const GNPRTB_ENERGY_CONTROL_THRESHOLD: u16 = 7760; // =60: energy needed for control eligibility
 const GNPRTB_MAINTENANCE_RATE_CONTROLLED: u16 = 7694; // =30: ticks between maintenance checks (controlled)
-const GNPRTB_MAINTENANCE_RATE_NEUTRAL: u16 = 7696;   // =30: ticks between maintenance checks (neutral)
 
 // ---------------------------------------------------------------------------
 // Economy state
@@ -250,10 +249,7 @@ pub enum EconomyEvent {
         empire_delta: f32,
     },
     /// Collection rate recalculated.
-    CollectionRateChanged {
-        system: SystemKey,
-        new_rate: f32,
-    },
+    CollectionRateChanged { system: SystemKey, new_rate: f32 },
     /// Garrison requirement recalculated.
     GarrisonRequirementChanged {
         system: SystemKey,
@@ -292,17 +288,12 @@ pub enum EconomyEvent {
     /// K2: `EVT_NATURAL_DISASTER` (0x154) — disaster incident bit flipped
     /// `false → true`. Emitted once per transition (clear-before-emit —
     /// eco.incident_flags is updated after the transition check).
-    NaturalDisaster {
-        system: SystemKey,
-    },
+    NaturalDisaster { system: SystemKey },
     /// K3: `EVT_RESOURCE_DISCOVERY` (0x155) — a new mine came online at
     /// a previously-seeded system. Detected as a positive delta on
     /// `eco.raw_material_allocated` (after the `resource_discovery_armed`
     /// gate disarms the seed tick).
-    ResourceDiscovered {
-        system: SystemKey,
-        new_output: u32,
-    },
+    ResourceDiscovered { system: SystemKey, new_output: u32 },
     /// K4: `EVT_MAINTENANCE_SHORTFALL_EVENT` (0x304) — the per-faction
     /// 30-tick timer fired AND the faction has at least one controlled
     /// system with a garrison deficit.
@@ -402,8 +393,13 @@ impl EconomySystem {
 
             // 1. Calculate and apply popular support drift.
             // Pass previous tick's strong_support flag (bit 11 of field_0x88).
-            let (alliance_delta, empire_delta) =
-                calculate_support_drift(sys, &presence, gnprtb, difficulty, eco.summary.strong_support);
+            let (alliance_delta, empire_delta) = calculate_support_drift(
+                sys,
+                &presence,
+                gnprtb,
+                difficulty,
+                eco.summary.strong_support,
+            );
 
             if alliance_delta.abs() > f32::EPSILON || empire_delta.abs() > f32::EPSILON {
                 events.push(EconomyEvent::SupportDrifted {
@@ -435,22 +431,21 @@ impl EconomySystem {
             // We apply to all controlled systems — modifier is 100 when no ships, harmless.
             // Note: uses alive ship counts per fleet, not fleet object counts.
             // The original iterates fleet ship lists and sums individual hull entries.
-            let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty) as i32;
-            let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty) as i32;
-            let total_capships = presence.alliance_capships as i32 + presence.empire_capships as i32;
-            let total_fighters = presence.alliance_fighters as i32 + presence.empire_fighters as i32;
-            let new_prod_mod = (100 - total_capships * capship_penalty
-                - total_fighters * fighter_penalty)
-                .max(0)
-                .min(100) as i8;
+            let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty);
+            let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty);
+            let total_capships =
+                presence.alliance_capships as i32 + presence.empire_capships as i32;
+            let total_fighters =
+                presence.alliance_fighters as i32 + presence.empire_fighters as i32;
+            let new_prod_mod =
+                (100 - total_capships * capship_penalty - total_fighters * fighter_penalty)
+                    .clamp(0, 100) as i8;
 
             // 5. Troop-based side resolution (FUN_0050a780_system_join_side).
             // Original resolves controlling faction every tick from troop presence.
             // If Alliance troops only: Alliance controls. Empire only: Empire controls.
             // Both: keep existing (contested). Neither: uncontrolled.
-            let resolved_control = resolve_system_control(
-                sys, &presence, gnprtb, difficulty,
-            );
+            let resolved_control = resolve_system_control(sys, &presence, gnprtb, difficulty);
             if resolved_control != sys.control {
                 events.push(EconomyEvent::ControlResolved {
                     system: sys_key,
@@ -466,7 +461,14 @@ impl EconomySystem {
             eco.production_modifier = new_prod_mod;
 
             // 6. Troop/fleet summary propagation (FUN_0050a670 through FUN_0050aa50).
-            eco.summary = compute_system_summary(world, sys, &presence, eco.garrison_requirement, gnprtb, difficulty);
+            eco.summary = compute_system_summary(
+                world,
+                sys,
+                &presence,
+                eco.garrison_requirement,
+                gnprtb,
+                difficulty,
+            );
 
             // 7. Incident state + uprising visibility (FUN_0050a970 + FUN_0050ac70).
             // Evaluate incident flags based on system state. Fire events on transitions.
@@ -475,13 +477,19 @@ impl EconomySystem {
             // transition is detected against the PREVIOUS tick's flag, then
             // the flag is updated. This prevents panic-reemission if the
             // downstream handler flips state back (SF-#8).
-            let new_flags = evaluate_incident_flags(sys, &eco.summary, &eco);
+            let new_flags = evaluate_incident_flags(sys, &eco.summary, eco);
             let old_flags = &eco.incident_flags;
             if new_flags.uprising && !old_flags.uprising {
-                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "uprising" });
+                events.push(EconomyEvent::IncidentTriggered {
+                    system: sys_key,
+                    incident_type: "uprising",
+                });
             }
             if new_flags.informant && !old_flags.informant {
-                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "informant" });
+                events.push(EconomyEvent::IncidentTriggered {
+                    system: sys_key,
+                    incident_type: "informant",
+                });
             }
             // K2: direct EVT_NATURAL_DISASTER emission (replaces the umbrella
             // IncidentTriggered "disaster" branch — the umbrella is kept for
@@ -494,7 +502,10 @@ impl EconomySystem {
                 // NOTE: this is the legacy "grid overcap" incident, not K3.
                 // K3 (EVT_RESOURCE_DISCOVERY) fires above on positive
                 // raw_material_allocated deltas.
-                events.push(EconomyEvent::IncidentTriggered { system: sys_key, incident_type: "resource" });
+                events.push(EconomyEvent::IncidentTriggered {
+                    system: sys_key,
+                    incident_type: "resource",
+                });
             }
             eco.incident_flags = new_flags;
 
@@ -521,10 +532,12 @@ impl EconomySystem {
             // computed current tier. Emit on any transition; update the
             // cache unconditionally so the next tick sees the new band.
             let current_support_int = match sys.control {
-                ControlKind::Controlled(crate::dat::Faction::Alliance) =>
-                    (sys.popularity_alliance * 100.0).round() as i32,
-                ControlKind::Controlled(crate::dat::Faction::Empire) =>
-                    (sys.popularity_empire * 100.0).round() as i32,
+                ControlKind::Controlled(crate::dat::Faction::Alliance) => {
+                    (sys.popularity_alliance * 100.0).round() as i32
+                }
+                ControlKind::Controlled(crate::dat::Faction::Empire) => {
+                    (sys.popularity_empire * 100.0).round() as i32
+                }
                 _ => -1, // Sentinel: uncontrolled/contested has no tier
             };
             if current_support_int >= 0 {
@@ -559,21 +572,19 @@ impl EconomySystem {
         // our counters reach zero AND the faction has at least one
         // deficit system, emit and reset to GNPRTB[7694] (30).
         let elapsed = tick_events.len() as u32;
-        let maintenance_rate =
-            gnprtb.value(GNPRTB_MAINTENANCE_RATE_CONTROLLED, difficulty).max(1) as u32;
+        let maintenance_rate = gnprtb
+            .value(GNPRTB_MAINTENANCE_RATE_CONTROLLED, difficulty)
+            .max(1) as u32;
 
         // Initialize lazily on first tick — `EconomyState::default()`
         // leaves cooldowns at 0, which is the "fire immediately on
         // first eval" state. Arm to one full cycle so the first
         // emission happens after `maintenance_rate` ticks.
-        if state.alliance_maintenance_cooldown == 0 && elapsed > 0
-            && alliance_deficit_systems == 0
+        if state.alliance_maintenance_cooldown == 0 && elapsed > 0 && alliance_deficit_systems == 0
         {
             state.alliance_maintenance_cooldown = maintenance_rate;
         }
-        if state.empire_maintenance_cooldown == 0 && elapsed > 0
-            && empire_deficit_systems == 0
-        {
+        if state.empire_maintenance_cooldown == 0 && elapsed > 0 && empire_deficit_systems == 0 {
             state.empire_maintenance_cooldown = maintenance_rate;
         }
 
@@ -684,15 +695,15 @@ fn calculate_support_drift(
 ) -> (f32, f32) {
     // All computation in integer 0-100 to match original (FUN_005583c0).
     // Our popularity fields are f32 0.0-1.0; convert at boundary.
-    let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1) as i32;
-    let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1) as i32;
-    let troop_influence = gnprtb.value(GNPRTB_TROOP_INFLUENCE, difficulty).max(1) as i32;
-    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty) as i32; // 40
-    let threshold_1 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_1, difficulty) as i32; // 20
-    let threshold_2 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_2, difficulty) as i32; // 30
-    let base_low = gnprtb.value(GNPRTB_DRIFT_BASE_LOW, difficulty) as i32; // 75
-    let base_low_mid = gnprtb.value(GNPRTB_DRIFT_BASE_LOW_MID, difficulty) as i32; // 50
-    let base_mid = gnprtb.value(GNPRTB_DRIFT_BASE_MID, difficulty) as i32; // 25
+    let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1);
+    let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1);
+    let troop_influence = gnprtb.value(GNPRTB_TROOP_INFLUENCE, difficulty).max(1);
+    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty); // 40
+    let threshold_1 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_1, difficulty); // 20
+    let threshold_2 = gnprtb.value(GNPRTB_DRIFT_THRESHOLD_2, difficulty); // 30
+    let base_low = gnprtb.value(GNPRTB_DRIFT_BASE_LOW, difficulty); // 75
+    let base_low_mid = gnprtb.value(GNPRTB_DRIFT_BASE_LOW_MID, difficulty); // 50
+    let base_mid = gnprtb.value(GNPRTB_DRIFT_BASE_MID, difficulty); // 25
 
     let is_alliance_controlled = matches!(
         sys.control,
@@ -751,7 +762,7 @@ fn calculate_support_drift(
     // troop count is multiplied by GNPRTB[7680] (=2).
     // This doubles troop suppression effectiveness for the Empire.
     let adjusted_troops = if is_empire_controlled && strong_support {
-        let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1) as i32;
+        let empire_mult = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1);
         friendly_troops as i32 * empire_mult
     } else {
         friendly_troops as i32
@@ -779,15 +790,6 @@ fn calculate_support_drift(
 }
 
 // ---------------------------------------------------------------------------
-// Collection rate (FUN_00558390)
-// ---------------------------------------------------------------------------
-
-/// Calculate resource collection rate from popular support.
-///
-/// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`
-/// Higher support = lower collection rate (less taxation needed).
-/// Range: [1.0, 100.0]. At full support (1.0) rate = 1.0; at zero support rate = 100.0.
-// ---------------------------------------------------------------------------
 // Resource capacity (FUN_00509ed0 + FUN_00509ef0 + FUN_0050a220)
 // ---------------------------------------------------------------------------
 
@@ -797,18 +799,22 @@ fn calculate_support_drift(
 /// The original sums facility outputs (virtual method at +0x1c8) and mine outputs,
 /// then caps at system limits. If overcapped, the original randomly prunes facilities/mines.
 /// We report overcap via events and let the caller decide on pruning.
-fn calculate_resource_allocation(
-    world: &GameWorld,
-    sys: &crate::world::System,
-) -> (u32, u32) {
+fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) -> (u32, u32) {
     // Sum production facility outputs (energy generators).
     // Each production facility contributes 1 unit of energy output.
     let energy_output = sys.production_facilities.len() as u32;
 
     // Sum mine outputs (raw material generators).
     // Mines are production facilities with is_mine = true.
-    let raw_material_output = sys.production_facilities.iter()
-        .filter(|k| world.production_facilities.get(**k).map_or(false, |f| f.is_mine))
+    let raw_material_output = sys
+        .production_facilities
+        .iter()
+        .filter(|k| {
+            world
+                .production_facilities
+                .get(**k)
+                .is_some_and(|f| f.is_mine)
+        })
         .count() as u32;
 
     (energy_output, raw_material_output)
@@ -882,8 +888,12 @@ fn compute_system_summary(
     let total_controlling_troops = controlling_troops;
 
     // FUN_0050ace0: shipyard presence (check manufacturing facilities for shipyard type).
-    let has_shipyard = sys.manufacturing_facilities.iter()
-        .any(|k| world.manufacturing_facilities.get(*k).map_or(false, |f| f.is_shipyard));
+    let has_shipyard = sys.manufacturing_facilities.iter().any(|k| {
+        world
+            .manufacturing_facilities
+            .get(*k)
+            .is_some_and(|f| f.is_shipyard)
+    });
 
     // FUN_0050add0/af70/b4c0: fleet posture (3 passes)
     let fleet_posture = FleetPosture {
@@ -902,12 +912,14 @@ fn compute_system_summary(
     // Bit 11 of field_0x88: "strong support" — set when controlling faction's
     // support exceeds the drift threshold. Controls Empire troop doubling in
     // FUN_005582e0_adjust_value_for_strong_support.
-    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty) as i32;
+    let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty);
     let controlling_support = match sys.control {
-        ControlKind::Controlled(crate::dat::Faction::Alliance) =>
-            (sys.popularity_alliance * 100.0).round() as i32,
-        ControlKind::Controlled(crate::dat::Faction::Empire) =>
-            (sys.popularity_empire * 100.0).round() as i32,
+        ControlKind::Controlled(crate::dat::Faction::Alliance) => {
+            (sys.popularity_alliance * 100.0).round() as i32
+        }
+        ControlKind::Controlled(crate::dat::Faction::Empire) => {
+            (sys.popularity_empire * 100.0).round() as i32
+        }
         _ => 0,
     };
     let strong_support = controlling_support > drift_threshold;
@@ -963,13 +975,17 @@ fn evaluate_incident_flags(
     }
 }
 
+/// Calculate resource collection rate from popular support.
+///
+/// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`.
+/// Higher support means a lower collection rate (less taxation needed).
 fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8) -> f32 {
     // Original: FUN_0053c8d0_calculate_percentage(GNPRTB[7763], 100, support)
     //         = (100 * GNPRTB[7763]) / max(support_int, 1)
     //         = 10000 / support_int  (with stock GNPRTB[7763]=100)
     // Result: integer percentage (100 at full support, 10000 at near-zero).
     // Higher values = higher taxation burden on the system.
-    let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1) as i32;
+    let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1);
     let support_int = (support * 100.0).round() as i32;
     let support_clamped = support_int.max(1);
     let rate = (100 * base) / support_clamped;
@@ -992,8 +1008,11 @@ fn calculate_garrison_requirement(
     // Integer arithmetic matching FUN_005587d0_uprising_threshold + FUN_00558760_garrison_requirement.
     // Our support is f32 0.0-1.0; convert to integer 0-100.
     let support_int = (support * 100.0).round() as i32;
-    let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty) as i32; // 60
-    let divisor = gnprtb.value(GNPRTB_GARRISON_DIVISOR, difficulty).abs().max(1) as i32; // 10
+    let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty); // 60
+    let divisor = gnprtb
+        .value(GNPRTB_GARRISON_DIVISOR, difficulty)
+        .abs()
+        .max(1); // 10
 
     if support_int >= threshold {
         return 0;
@@ -1007,7 +1026,7 @@ fn calculate_garrison_requirement(
     // Original: if Empire + param_3: garrison /= GNPRTB[7680]
     let after_faction = match control {
         ControlKind::Controlled(crate::dat::Faction::Empire) => {
-            let empire_divisor = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1) as i32;
+            let empire_divisor = gnprtb.value(GNPRTB_EMPIRE_TROOP_MULT, difficulty).max(1);
             raw / empire_divisor
         }
         _ => raw,
@@ -1018,7 +1037,9 @@ fn calculate_garrison_requirement(
     // Our ControlKind::Uprising(faction) maps directly to this bit.
     let after_uprising = match control {
         ControlKind::Uprising(_) => {
-            let uprising_mult = gnprtb.value(GNPRTB_UPRISING_GARRISON_MULT, difficulty).max(1) as i32;
+            let uprising_mult = gnprtb
+                .value(GNPRTB_UPRISING_GARRISON_MULT, difficulty)
+                .max(1);
             after_faction * uprising_mult
         }
         _ => after_faction,
@@ -1040,30 +1061,260 @@ mod tests {
     fn stock_gnprtb() -> GnprtbParams {
         use crate::world::GnprtbEntry;
         let entries = vec![
-            GnprtbEntry { parameter_id: 7686, development: 10, alliance_sp_easy: 10, alliance_sp_medium: 10, alliance_sp_hard: 10, empire_sp_easy: 10, empire_sp_medium: 10, empire_sp_hard: 10, multiplayer: 10 },
-            GnprtbEntry { parameter_id: 7687, development: 5, alliance_sp_easy: 5, alliance_sp_medium: 5, alliance_sp_hard: 5, empire_sp_easy: 5, empire_sp_medium: 5, empire_sp_hard: 5, multiplayer: 5 },
-            GnprtbEntry { parameter_id: 7688, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },
-            GnprtbEntry { parameter_id: 7732, development: 40, alliance_sp_easy: 40, alliance_sp_medium: 40, alliance_sp_hard: 40, empire_sp_easy: 40, empire_sp_medium: 40, empire_sp_hard: 40, multiplayer: 40 },
-            GnprtbEntry { parameter_id: 7733, development: 25, alliance_sp_easy: 25, alliance_sp_medium: 25, alliance_sp_hard: 25, empire_sp_easy: 25, empire_sp_medium: 25, empire_sp_hard: 25, multiplayer: 25 },
-            GnprtbEntry { parameter_id: 7734, development: 30, alliance_sp_easy: 30, alliance_sp_medium: 30, alliance_sp_hard: 30, empire_sp_easy: 30, empire_sp_medium: 30, empire_sp_hard: 30, multiplayer: 30 },
-            GnprtbEntry { parameter_id: 7735, development: 50, alliance_sp_easy: 50, alliance_sp_medium: 50, alliance_sp_hard: 50, empire_sp_easy: 50, empire_sp_medium: 50, empire_sp_hard: 50, multiplayer: 50 },
-            GnprtbEntry { parameter_id: 7736, development: 20, alliance_sp_easy: 20, alliance_sp_medium: 20, alliance_sp_hard: 20, empire_sp_easy: 20, empire_sp_medium: 20, empire_sp_hard: 20, multiplayer: 20 },
-            GnprtbEntry { parameter_id: 7737, development: 75, alliance_sp_easy: 75, alliance_sp_medium: 75, alliance_sp_hard: 75, empire_sp_easy: 75, empire_sp_medium: 75, empire_sp_hard: 75, multiplayer: 75 },
-            GnprtbEntry { parameter_id: 7761, development: 60, alliance_sp_easy: 60, alliance_sp_medium: 60, alliance_sp_hard: 60, empire_sp_easy: 60, empire_sp_medium: 60, empire_sp_hard: 60, multiplayer: 60 },
-            GnprtbEntry { parameter_id: 7762, development: -10, alliance_sp_easy: -10, alliance_sp_medium: -10, alliance_sp_hard: -10, empire_sp_easy: -10, empire_sp_medium: -10, empire_sp_hard: -10, multiplayer: -10 },
-            GnprtbEntry { parameter_id: 7763, development: 100, alliance_sp_easy: 100, alliance_sp_medium: 100, alliance_sp_hard: 100, empire_sp_easy: 100, empire_sp_medium: 100, empire_sp_hard: 100, multiplayer: 100 },
+            GnprtbEntry {
+                parameter_id: 7686,
+                development: 10,
+                alliance_sp_easy: 10,
+                alliance_sp_medium: 10,
+                alliance_sp_hard: 10,
+                empire_sp_easy: 10,
+                empire_sp_medium: 10,
+                empire_sp_hard: 10,
+                multiplayer: 10,
+            },
+            GnprtbEntry {
+                parameter_id: 7687,
+                development: 5,
+                alliance_sp_easy: 5,
+                alliance_sp_medium: 5,
+                alliance_sp_hard: 5,
+                empire_sp_easy: 5,
+                empire_sp_medium: 5,
+                empire_sp_hard: 5,
+                multiplayer: 5,
+            },
+            GnprtbEntry {
+                parameter_id: 7688,
+                development: 2,
+                alliance_sp_easy: 2,
+                alliance_sp_medium: 2,
+                alliance_sp_hard: 2,
+                empire_sp_easy: 2,
+                empire_sp_medium: 2,
+                empire_sp_hard: 2,
+                multiplayer: 2,
+            },
+            GnprtbEntry {
+                parameter_id: 7732,
+                development: 40,
+                alliance_sp_easy: 40,
+                alliance_sp_medium: 40,
+                alliance_sp_hard: 40,
+                empire_sp_easy: 40,
+                empire_sp_medium: 40,
+                empire_sp_hard: 40,
+                multiplayer: 40,
+            },
+            GnprtbEntry {
+                parameter_id: 7733,
+                development: 25,
+                alliance_sp_easy: 25,
+                alliance_sp_medium: 25,
+                alliance_sp_hard: 25,
+                empire_sp_easy: 25,
+                empire_sp_medium: 25,
+                empire_sp_hard: 25,
+                multiplayer: 25,
+            },
+            GnprtbEntry {
+                parameter_id: 7734,
+                development: 30,
+                alliance_sp_easy: 30,
+                alliance_sp_medium: 30,
+                alliance_sp_hard: 30,
+                empire_sp_easy: 30,
+                empire_sp_medium: 30,
+                empire_sp_hard: 30,
+                multiplayer: 30,
+            },
+            GnprtbEntry {
+                parameter_id: 7735,
+                development: 50,
+                alliance_sp_easy: 50,
+                alliance_sp_medium: 50,
+                alliance_sp_hard: 50,
+                empire_sp_easy: 50,
+                empire_sp_medium: 50,
+                empire_sp_hard: 50,
+                multiplayer: 50,
+            },
+            GnprtbEntry {
+                parameter_id: 7736,
+                development: 20,
+                alliance_sp_easy: 20,
+                alliance_sp_medium: 20,
+                alliance_sp_hard: 20,
+                empire_sp_easy: 20,
+                empire_sp_medium: 20,
+                empire_sp_hard: 20,
+                multiplayer: 20,
+            },
+            GnprtbEntry {
+                parameter_id: 7737,
+                development: 75,
+                alliance_sp_easy: 75,
+                alliance_sp_medium: 75,
+                alliance_sp_hard: 75,
+                empire_sp_easy: 75,
+                empire_sp_medium: 75,
+                empire_sp_hard: 75,
+                multiplayer: 75,
+            },
+            GnprtbEntry {
+                parameter_id: 7761,
+                development: 60,
+                alliance_sp_easy: 60,
+                alliance_sp_medium: 60,
+                alliance_sp_hard: 60,
+                empire_sp_easy: 60,
+                empire_sp_medium: 60,
+                empire_sp_hard: 60,
+                multiplayer: 60,
+            },
+            GnprtbEntry {
+                parameter_id: 7762,
+                development: -10,
+                alliance_sp_easy: -10,
+                alliance_sp_medium: -10,
+                alliance_sp_hard: -10,
+                empire_sp_easy: -10,
+                empire_sp_medium: -10,
+                empire_sp_hard: -10,
+                multiplayer: -10,
+            },
+            GnprtbEntry {
+                parameter_id: 7763,
+                development: 100,
+                alliance_sp_easy: 100,
+                alliance_sp_medium: 100,
+                alliance_sp_hard: 100,
+                empire_sp_easy: 100,
+                empire_sp_medium: 100,
+                empire_sp_hard: 100,
+                multiplayer: 100,
+            },
             // Phase 3b additions: all economy tick GNPRTB indices (values from GNPRTB.DAT)
-            GnprtbEntry { parameter_id: 7680, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },   // Empire troop doubling + garrison halving
-            GnprtbEntry { parameter_id: 7682, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },   // Uprising garrison doubler
-            GnprtbEntry { parameter_id: 7684, development: 5, alliance_sp_easy: 5, alliance_sp_medium: 5, alliance_sp_hard: 5, empire_sp_easy: 5, empire_sp_medium: 5, empire_sp_hard: 5, multiplayer: 5 },   // KDY capship penalty per unit
-            GnprtbEntry { parameter_id: 7685, development: 2, alliance_sp_easy: 2, alliance_sp_medium: 2, alliance_sp_hard: 2, empire_sp_easy: 2, empire_sp_medium: 2, empire_sp_hard: 2, multiplayer: 2 },   // KDY fighter penalty per unit
-            GnprtbEntry { parameter_id: 7691, development: 0, alliance_sp_easy: 0, alliance_sp_medium: 0, alliance_sp_hard: 0, empire_sp_easy: 0, empire_sp_medium: 0, empire_sp_hard: 0, multiplayer: 0 },   // Support delta Empire-controlled transition
-            GnprtbEntry { parameter_id: 7693, development: 1, alliance_sp_easy: 1, alliance_sp_medium: 1, alliance_sp_hard: 1, empire_sp_easy: 1, empire_sp_medium: 1, empire_sp_hard: 1, multiplayer: 1 },   // Support delta favors controller
-            GnprtbEntry { parameter_id: 7694, development: 30, alliance_sp_easy: 30, alliance_sp_medium: 30, alliance_sp_hard: 30, empire_sp_easy: 30, empire_sp_medium: 30, empire_sp_hard: 30, multiplayer: 30 },  // Maintenance check rate (controlled)
-            GnprtbEntry { parameter_id: 7695, development: -1, alliance_sp_easy: -1, alliance_sp_medium: -1, alliance_sp_hard: -1, empire_sp_easy: -1, empire_sp_medium: -1, empire_sp_hard: -1, multiplayer: -1 },  // Support delta opposes controller
-            GnprtbEntry { parameter_id: 7696, development: 30, alliance_sp_easy: 30, alliance_sp_medium: 30, alliance_sp_hard: 30, empire_sp_easy: 30, empire_sp_medium: 30, empire_sp_hard: 30, multiplayer: 30 },  // Maintenance check rate (neutral)
-            GnprtbEntry { parameter_id: 7697, development: -1, alliance_sp_easy: -1, alliance_sp_medium: -1, alliance_sp_hard: -1, empire_sp_easy: -1, empire_sp_medium: -1, empire_sp_hard: -1, multiplayer: -1 },  // Support delta controlled systems
-            GnprtbEntry { parameter_id: 7760, development: 60, alliance_sp_easy: 60, alliance_sp_medium: 60, alliance_sp_hard: 60, empire_sp_easy: 60, empire_sp_medium: 60, empire_sp_hard: 60, multiplayer: 60 },  // Energy-based control threshold
+            GnprtbEntry {
+                parameter_id: 7680,
+                development: 2,
+                alliance_sp_easy: 2,
+                alliance_sp_medium: 2,
+                alliance_sp_hard: 2,
+                empire_sp_easy: 2,
+                empire_sp_medium: 2,
+                empire_sp_hard: 2,
+                multiplayer: 2,
+            }, // Empire troop doubling + garrison halving
+            GnprtbEntry {
+                parameter_id: 7682,
+                development: 2,
+                alliance_sp_easy: 2,
+                alliance_sp_medium: 2,
+                alliance_sp_hard: 2,
+                empire_sp_easy: 2,
+                empire_sp_medium: 2,
+                empire_sp_hard: 2,
+                multiplayer: 2,
+            }, // Uprising garrison doubler
+            GnprtbEntry {
+                parameter_id: 7684,
+                development: 5,
+                alliance_sp_easy: 5,
+                alliance_sp_medium: 5,
+                alliance_sp_hard: 5,
+                empire_sp_easy: 5,
+                empire_sp_medium: 5,
+                empire_sp_hard: 5,
+                multiplayer: 5,
+            }, // KDY capship penalty per unit
+            GnprtbEntry {
+                parameter_id: 7685,
+                development: 2,
+                alliance_sp_easy: 2,
+                alliance_sp_medium: 2,
+                alliance_sp_hard: 2,
+                empire_sp_easy: 2,
+                empire_sp_medium: 2,
+                empire_sp_hard: 2,
+                multiplayer: 2,
+            }, // KDY fighter penalty per unit
+            GnprtbEntry {
+                parameter_id: 7691,
+                development: 0,
+                alliance_sp_easy: 0,
+                alliance_sp_medium: 0,
+                alliance_sp_hard: 0,
+                empire_sp_easy: 0,
+                empire_sp_medium: 0,
+                empire_sp_hard: 0,
+                multiplayer: 0,
+            }, // Support delta Empire-controlled transition
+            GnprtbEntry {
+                parameter_id: 7693,
+                development: 1,
+                alliance_sp_easy: 1,
+                alliance_sp_medium: 1,
+                alliance_sp_hard: 1,
+                empire_sp_easy: 1,
+                empire_sp_medium: 1,
+                empire_sp_hard: 1,
+                multiplayer: 1,
+            }, // Support delta favors controller
+            GnprtbEntry {
+                parameter_id: 7694,
+                development: 30,
+                alliance_sp_easy: 30,
+                alliance_sp_medium: 30,
+                alliance_sp_hard: 30,
+                empire_sp_easy: 30,
+                empire_sp_medium: 30,
+                empire_sp_hard: 30,
+                multiplayer: 30,
+            }, // Maintenance check rate (controlled)
+            GnprtbEntry {
+                parameter_id: 7695,
+                development: -1,
+                alliance_sp_easy: -1,
+                alliance_sp_medium: -1,
+                alliance_sp_hard: -1,
+                empire_sp_easy: -1,
+                empire_sp_medium: -1,
+                empire_sp_hard: -1,
+                multiplayer: -1,
+            }, // Support delta opposes controller
+            GnprtbEntry {
+                parameter_id: 7696,
+                development: 30,
+                alliance_sp_easy: 30,
+                alliance_sp_medium: 30,
+                alliance_sp_hard: 30,
+                empire_sp_easy: 30,
+                empire_sp_medium: 30,
+                empire_sp_hard: 30,
+                multiplayer: 30,
+            }, // Maintenance check rate (neutral)
+            GnprtbEntry {
+                parameter_id: 7697,
+                development: -1,
+                alliance_sp_easy: -1,
+                alliance_sp_medium: -1,
+                alliance_sp_hard: -1,
+                empire_sp_easy: -1,
+                empire_sp_medium: -1,
+                empire_sp_hard: -1,
+                multiplayer: -1,
+            }, // Support delta controlled systems
+            GnprtbEntry {
+                parameter_id: 7760,
+                development: 60,
+                alliance_sp_easy: 60,
+                alliance_sp_medium: 60,
+                alliance_sp_hard: 60,
+                empire_sp_easy: 60,
+                empire_sp_medium: 60,
+                empire_sp_hard: 60,
+                multiplayer: 60,
+            }, // Energy-based control threshold
         ];
         GnprtbParams::new(entries)
     }
@@ -1075,7 +1326,8 @@ mod tests {
             dat_id: DatId(0),
             name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.1,
             popularity_empire: 0.8,
@@ -1083,17 +1335,25 @@ mod tests {
             total_energy: 5,
             raw_materials: 5,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         };
         let presence = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 0, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 0,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // Low alliance support (0.1 < 0.40 threshold), no fleet → should drift away
@@ -1108,29 +1368,45 @@ mod tests {
             dat_id: DatId(0),
             name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.1,
             popularity_empire: 0.8,
             is_populated: true,
-            total_energy: 5, raw_materials: 5,
+            total_energy: 5,
+            raw_materials: 5,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         };
         let presence = MilitaryPresence {
-            alliance_fleets: 1, empire_fleets: 0, // Friendly fleet present
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 0, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 1,
+            empire_fleets: 0, // Friendly fleet present
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 0,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // Fleet present → no drift
-        assert!(a_delta.abs() < f32::EPSILON, "should not drift with fleet: {a_delta}");
-        assert!(e_delta.abs() < f32::EPSILON, "should not drift with fleet: {e_delta}");
+        assert!(
+            a_delta.abs() < f32::EPSILON,
+            "should not drift with fleet: {a_delta}"
+        );
+        assert!(
+            e_delta.abs() < f32::EPSILON,
+            "should not drift with fleet: {e_delta}"
+        );
     }
 
     #[test]
@@ -1140,30 +1416,44 @@ mod tests {
             dat_id: DatId(0),
             name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.15,
             popularity_empire: 0.7,
             is_populated: true,
-            total_energy: 5, raw_materials: 5,
+            total_energy: 5,
+            raw_materials: 5,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         };
         let no_troops = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 0, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 0,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let with_troops = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 5, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 5,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let (a_no, _) = calculate_support_drift(&sys, &no_troops, &gnprtb, 2, true);
         let (a_with, _) = calculate_support_drift(&sys, &with_troops, &gnprtb, 2, true);
@@ -1231,21 +1521,28 @@ mod tests {
     #[test]
     fn economy_advance_skips_destroyed_systems() {
         let mut state = EconomyState::default();
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
-        let sys_key = world.systems.insert(crate::world::System {
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
+        let _sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
             name: "Destroyed".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.5,
             popularity_empire: 0.5,
             is_populated: true,
-            total_energy: 5, raw_materials: 5,
+            total_energy: 5,
+            raw_materials: 5,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: true, // Destroyed!
@@ -1254,29 +1551,40 @@ mod tests {
         let tick_events = vec![TickEvent { tick: 1 }];
         let events = EconomySystem::advance(&mut state, &world, &tick_events, 2);
         // Destroyed system should be skipped entirely.
-        assert!(events.is_empty(), "destroyed system should produce no events");
+        assert!(
+            events.is_empty(),
+            "destroyed system should produce no events"
+        );
     }
 
     #[test]
     fn economy_advance_produces_telemetry() {
         let mut state = EconomyState::default();
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let _sys_key = world.systems.insert(crate::world::System {
             dat_id: DatId(0),
             name: "Coruscant".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.1,
             popularity_empire: 0.8,
             is_populated: true,
-            total_energy: 10, raw_materials: 8,
+            total_energy: 10,
+            raw_materials: 8,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
         let tick_events = vec![TickEvent { tick: 1 }];
@@ -1291,37 +1599,56 @@ mod tests {
 
     #[test]
     fn kdy_production_modifier_reduces_with_ships() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with fleet presence (capships reduce production)
         let fleet_key = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
             capital_ships: crate::world::ShipInstance::make(
-                crate::ids::CapitalShipKey::default(), 100, true, 3,
+                crate::ids::CapitalShipKey::default(),
+                100,
+                true,
+                3,
             ),
-            fighters: vec![
-                crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 4 },
-            ],
+            fighters: vec![crate::world::FighterEntry {
+                class: crate::ids::FighterKey::default(),
+                count: 4,
+            }],
             characters: vec![],
             is_alliance: true,
             has_death_star: false,
         });
         let sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "KDY".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "KDY".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.7, popularity_empire: 0.3,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.7,
+            popularity_empire: 0.3,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
             fleets: vec![fleet_key],
-            ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1331,44 +1658,65 @@ mod tests {
         let eco = state.per_system.get(&sys_key).unwrap();
         // 3 capships * 5 (capship penalty) + 4 fighters * 2 (fighter penalty) = 15 + 8 = 23
         // production_modifier = max(100 - 23, 0) = 77
-        assert_eq!(eco.production_modifier, 77,
+        assert_eq!(
+            eco.production_modifier, 77,
             "production_modifier should be 100 - 3*5 - 4*2 = 77, got {}",
-            eco.production_modifier);
+            eco.production_modifier
+        );
     }
 
     #[test]
     fn kdy_production_modifier_floors_at_zero() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with massive fleet presence
         let fleet_key = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
             capital_ships: crate::world::ShipInstance::make(
-                crate::ids::CapitalShipKey::default(), 100, true, 10,
+                crate::ids::CapitalShipKey::default(),
+                100,
+                true,
+                10,
             ),
-            fighters: vec![
-                crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 30 },
-            ],
+            fighters: vec![crate::world::FighterEntry {
+                class: crate::ids::FighterKey::default(),
+                count: 30,
+            }],
             characters: vec![],
             is_alliance: true,
             has_death_star: false,
         });
         let sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Overcrowded".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Overcrowded".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.7, popularity_empire: 0.3,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.7,
+            popularity_empire: 0.3,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
             fleets: vec![fleet_key],
-            ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1377,48 +1725,85 @@ mod tests {
 
         let eco = state.per_system.get(&sys_key).unwrap();
         // 10 capships * 5 + 30 fighters * 2 = 50 + 60 = 110 → max(100 - 110, 0) = 0
-        assert_eq!(eco.production_modifier, 0,
+        assert_eq!(
+            eco.production_modifier, 0,
             "production modifier should floor at 0, got {}",
-            eco.production_modifier);
+            eco.production_modifier
+        );
     }
 
     #[test]
     fn energy_overcap_emits_event() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with total_energy=2 but 5 production facilities
         let sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Overcap".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Overcap".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 2, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 2,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000001), is_alliance: true, is_mine: false,
-                }),
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000002), is_alliance: true, is_mine: false,
-                }),
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000003), is_alliance: true, is_mine: false,
-                }),
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000004), is_alliance: true, is_mine: false,
-                }),
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000005), is_alliance: true, is_mine: false,
-                }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x18000001),
+                        is_alliance: true,
+                        is_mine: false,
+                    }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x18000002),
+                        is_alliance: true,
+                        is_mine: false,
+                    }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x18000003),
+                        is_alliance: true,
+                        is_mine: false,
+                    }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x18000004),
+                        is_alliance: true,
+                        is_mine: false,
+                    }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x18000005),
+                        is_alliance: true,
+                        is_mine: false,
+                    }),
             ],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1427,44 +1812,72 @@ mod tests {
 
         // Should emit EnergyOvercapped (5 facilities > 2 capacity)
         assert!(
-            events.iter().any(|e| matches!(e, EconomyEvent::EnergyOvercapped { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, EconomyEvent::EnergyOvercapped { .. })),
             "Expected EnergyOvercapped event"
         );
 
         // energy_allocated should be capped at capacity
         let eco = state.per_system.get(&sys_key).unwrap();
-        assert_eq!(eco.energy_allocated, 2, "energy should be capped at system capacity");
+        assert_eq!(
+            eco.energy_allocated, 2,
+            "energy should be capped at system capacity"
+        );
         assert!(eco.energy_overcapped, "should flag overcap");
     }
 
     #[test]
     fn no_overcap_when_within_limits() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with total_energy=10 and only 3 production facilities
         world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Normal".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Normal".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000001), is_alliance: true, is_mine: false,
-                }),
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x18000002), is_alliance: true, is_mine: false,
-                }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x18000001),
+                        is_alliance: true,
+                        is_mine: false,
+                    }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x18000002),
+                        is_alliance: true,
+                        is_mine: false,
+                    }),
             ],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1473,52 +1886,93 @@ mod tests {
 
         // Should NOT emit overcap events
         assert!(
-            !events.iter().any(|e| matches!(e, EconomyEvent::EnergyOvercapped { .. })),
+            !events
+                .iter()
+                .any(|e| matches!(e, EconomyEvent::EnergyOvercapped { .. })),
             "Should not overcap with 2 facilities and capacity 10"
         );
     }
 
     #[test]
     fn raw_material_overcap_emits_event() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with raw_materials=1 but 3 manufacturing facilities
         world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "MineCap".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "MineCap".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 10, raw_materials: 1,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 1,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
             defense_facilities: vec![],
             manufacturing_facilities: vec![
-                world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x16000001), is_alliance: true, is_shipyard: false,
-                }),
-                world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x16000002), is_alliance: true, is_shipyard: false,
-                }),
-                world.manufacturing_facilities.insert(crate::world::ManufacturingFacilityInstance {
-                    class_dat_id: DatId(0x16000003), is_alliance: true, is_shipyard: false,
-                }),
+                world.manufacturing_facilities.insert(
+                    crate::world::ManufacturingFacilityInstance {
+                        class_dat_id: DatId(0x16000001),
+                        is_alliance: true,
+                        is_shipyard: false,
+                    },
+                ),
+                world.manufacturing_facilities.insert(
+                    crate::world::ManufacturingFacilityInstance {
+                        class_dat_id: DatId(0x16000002),
+                        is_alliance: true,
+                        is_shipyard: false,
+                    },
+                ),
+                world.manufacturing_facilities.insert(
+                    crate::world::ManufacturingFacilityInstance {
+                        class_dat_id: DatId(0x16000003),
+                        is_alliance: true,
+                        is_shipyard: false,
+                    },
+                ),
             ],
             production_facilities: vec![
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x2D000001), is_alliance: true, is_mine: true,
-                }),
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x2D000002), is_alliance: true, is_mine: true,
-                }),
-                world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-                    class_dat_id: DatId(0x2D000003), is_alliance: true, is_mine: true,
-                }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x2D000001),
+                        is_alliance: true,
+                        is_mine: true,
+                    }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x2D000002),
+                        is_alliance: true,
+                        is_mine: true,
+                    }),
+                world
+                    .production_facilities
+                    .insert(crate::world::ProductionFacilityInstance {
+                        class_dat_id: DatId(0x2D000003),
+                        is_alliance: true,
+                        is_mine: true,
+                    }),
             ],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1526,7 +1980,9 @@ mod tests {
         let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
 
         assert!(
-            events.iter().any(|e| matches!(e, EconomyEvent::RawMaterialOvercapped { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, EconomyEvent::RawMaterialOvercapped { .. })),
             "Expected RawMaterialOvercapped event"
         );
     }
@@ -1541,24 +1997,40 @@ mod tests {
 
     #[test]
     fn incident_fires_on_state_transition() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with very low alliance support (< 20%) — triggers disaster incident
         world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Crisis".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Crisis".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.10, popularity_empire: 0.90,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.10,
+            popularity_empire: 0.90,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1570,45 +2042,71 @@ mod tests {
         // route it to `EVT_NATURAL_DISASTER` (0x154) telemetry.
         let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
         assert!(
-            events1.iter().any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
+            events1
+                .iter()
+                .any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
             "Should fire NaturalDisaster on first tick when support < 20%"
         );
 
         // Second tick: should NOT re-fire (no transition — flag already set)
         let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
         assert!(
-            !events2.iter().any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
+            !events2
+                .iter()
+                .any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
             "Should NOT re-fire NaturalDisaster when flags unchanged"
         );
     }
 
     #[test]
     fn informant_incident_on_garrison_shortfall() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with low support (garrison > 0) but no troops (deficit)
         world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Undermanned".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Undermanned".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.4, popularity_empire: 0.6,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.4,
+            popularity_empire: 0.6,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
         let mut state = EconomyState::default();
         let events = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
         assert!(
-            events.iter().any(|e| matches!(e, EconomyEvent::IncidentTriggered { incident_type: "informant", .. })),
+            events.iter().any(|e| matches!(
+                e,
+                EconomyEvent::IncidentTriggered {
+                    incident_type: "informant",
+                    ..
+                }
+            )),
             "Should fire informant incident on garrison shortfall"
         );
     }
@@ -1619,30 +2117,50 @@ mod tests {
 
     #[test]
     fn system_summary_troop_surplus() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         // System with low support (triggers garrison requirement) and some troops
         let troop1 = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: DatId(0x14000100), is_alliance: true, regiment_strength: 100,
+            class_dat_id: DatId(0x14000100),
+            is_alliance: true,
+            regiment_strength: 100,
         });
         let troop2 = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: DatId(0x14000100), is_alliance: true, regiment_strength: 100,
+            class_dat_id: DatId(0x14000100),
+            is_alliance: true,
+            regiment_strength: 100,
         });
         let sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Test".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Test".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.3, popularity_empire: 0.7,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.3,
+            popularity_empire: 0.7,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![troop1, troop2], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![troop1, troop2],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1651,42 +2169,78 @@ mod tests {
 
         let eco = state.per_system.get(&sys_key).unwrap();
         // Garrison = ceil(30/10) = 3, troops = 2, surplus = 2 - 3 = -1
-        assert_eq!(eco.summary.troop_surplus, -1,
+        assert_eq!(
+            eco.summary.troop_surplus, -1,
             "troop surplus should be troops - garrison = 2 - 3 = -1, got {}",
-            eco.summary.troop_surplus);
+            eco.summary.troop_surplus
+        );
         assert_eq!(eco.summary.total_controlling_troops, 2);
     }
 
     #[test]
     fn system_summary_fleet_posture() {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         let fleet1 = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
-            capital_ships: crate::world::ShipInstance::make(crate::ids::CapitalShipKey::default(), 100, true, 2),
-            fighters: vec![crate::world::FighterEntry { class: crate::ids::FighterKey::default(), count: 5 }],
-            characters: vec![], is_alliance: true, has_death_star: false,
+            capital_ships: crate::world::ShipInstance::make(
+                crate::ids::CapitalShipKey::default(),
+                100,
+                true,
+                2,
+            ),
+            fighters: vec![crate::world::FighterEntry {
+                class: crate::ids::FighterKey::default(),
+                count: 5,
+            }],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
         });
         let fleet2 = world.fleets.insert(crate::world::Fleet {
             location: crate::ids::SystemKey::default(),
-            capital_ships: crate::world::ShipInstance::make(crate::ids::CapitalShipKey::default(), 100, false, 3),
-            fighters: vec![], characters: vec![], is_alliance: false, has_death_star: false,
+            capital_ships: crate::world::ShipInstance::make(
+                crate::ids::CapitalShipKey::default(),
+                100,
+                false,
+                3,
+            ),
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
         });
         let sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Contested".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Contested".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![fleet1, fleet2], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![fleet1, fleet2],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
@@ -1708,51 +2262,80 @@ mod tests {
     fn side_resolution_alliance_troops_only() {
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: crate::ids::SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Uncontrolled,
         };
         let presence = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 3, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 3,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
-        assert_eq!(result, ControlKind::Controlled(crate::dat::Faction::Alliance));
+        assert_eq!(
+            result,
+            ControlKind::Controlled(crate::dat::Faction::Alliance)
+        );
     }
 
     #[test]
     fn side_resolution_both_troops_contested() {
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: crate::ids::SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Empire),
         };
         let presence = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 2, empire_troops: 3,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 2,
+            empire_troops: 3,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
         assert_eq!(result, ControlKind::Contested);
@@ -1762,24 +2345,37 @@ mod tests {
     fn side_resolution_no_troops_energy_above_threshold_preserves() {
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: crate::ids::SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 60, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 60,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Empire),
         };
         let presence = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 0, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 0,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
         // No troops but energy >= GNPRTB[7760](60) — preserves existing control
@@ -1790,24 +2386,37 @@ mod tests {
     fn side_resolution_no_troops_low_energy_becomes_uncontrolled() {
         let gnprtb = stock_gnprtb();
         let sys = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: crate::ids::SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Empire),
         };
         let presence = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 0, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 0,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let result = resolve_system_control(&sys, &presence, &gnprtb, 2);
         // No troops and energy < GNPRTB[7760](60) — becomes uncontrolled
@@ -1821,49 +2430,77 @@ mod tests {
         let gnprtb = stock_gnprtb();
         // Alliance-controlled system with low support and 2 troops
         let sys_alliance = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1, popularity_empire: 0.8,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.1,
+            popularity_empire: 0.8,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         };
         let presence_alliance = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 2, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 2,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
-        let (a_delta_alliance, _) = calculate_support_drift(&sys_alliance, &presence_alliance, &gnprtb, 2, true);
+        let (a_delta_alliance, _) =
+            calculate_support_drift(&sys_alliance, &presence_alliance, &gnprtb, 2, true);
 
         // Empire-controlled system with same setup and 2 troops
         let sys_empire = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.8, popularity_empire: 0.1,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.8,
+            popularity_empire: 0.1,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Empire),
         };
         let presence_empire = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 0, empire_troops: 2,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 0,
+            empire_troops: 2,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
-        let (_, e_delta_empire) = calculate_support_drift(&sys_empire, &presence_empire, &gnprtb, 2, true);
+        let (_, e_delta_empire) =
+            calculate_support_drift(&sys_empire, &presence_empire, &gnprtb, 2, true);
 
         // Empire troops get doubled via GNPRTB[7680]=2, so Empire drift should be
         // less (more suppression) than Alliance drift with same troop count.
@@ -1879,20 +2516,31 @@ mod tests {
     #[test]
     fn unpopulated_system_skipped_in_advance() {
         let gnprtb = stock_gnprtb();
-        let mut world = GameWorld::default();
-        world.gnprtb = gnprtb;
+        let mut world = GameWorld {
+            gnprtb,
+            ..Default::default()
+        };
         let _sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Unpopulated".into(),
+            dat_id: DatId(0),
+            name: "Unpopulated".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: false, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: false,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Uncontrolled,
         });
 
@@ -1901,8 +2549,14 @@ mod tests {
         let events = EconomySystem::advance(&mut state, &world, &tick, 2);
 
         // Unpopulated system should produce zero events and no economy entry
-        assert!(events.is_empty(), "unpopulated system should produce no events: {events:?}");
-        assert!(state.per_system.is_empty(), "no economy entry for unpopulated system");
+        assert!(
+            events.is_empty(),
+            "unpopulated system should produce no events: {events:?}"
+        );
+        assert!(
+            state.per_system.is_empty(),
+            "no economy entry for unpopulated system"
+        );
     }
 
     // --- Task #44: Uprising garrison doubling ---
@@ -1925,7 +2579,11 @@ mod tests {
             2,
         );
         assert_eq!(garrison_controlled, 3, "controlled garrison");
-        assert_eq!(garrison_uprising, garrison_controlled * 2, "uprising garrison should be 2x controlled");
+        assert_eq!(
+            garrison_uprising,
+            garrison_controlled * 2,
+            "uprising garrison should be 2x controlled"
+        );
     }
 
     // --- Task #45: Collection rate at zero support + drift at threshold boundary ---
@@ -1935,7 +2593,10 @@ mod tests {
         let gnprtb = stock_gnprtb();
         let rate = calculate_collection_rate(0.0, &gnprtb, 2);
         // At zero support: (100 * 100) / max(0, 1) = 10000
-        assert!((rate - 10000.0).abs() < f32::EPSILON, "zero support should yield max rate: {rate}");
+        assert!(
+            (rate - 10000.0).abs() < f32::EPSILON,
+            "zero support should yield max rate: {rate}"
+        );
     }
 
     #[test]
@@ -1943,30 +2604,49 @@ mod tests {
         let gnprtb = stock_gnprtb();
         // Support at exactly 0.40 (threshold = 40 in integer)
         let sys = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.40, popularity_empire: 0.5,
-            is_populated: true, total_energy: 10, raw_materials: 10,
+            popularity_alliance: 0.40,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         };
         let presence = MilitaryPresence {
-            alliance_fleets: 0, empire_fleets: 0,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 0, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 0,
+            empire_fleets: 0,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 0,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // At exactly threshold (40), integer comparison: 40 > 40 is false → drift occurs.
         // Original: `if (support <= GNPRTB[7732])` means 40 <= 40 passes → drift.
-        assert!(a_delta != 0.0, "at threshold boundary drift should occur: {a_delta}");
-        assert!(e_delta != 0.0, "at threshold boundary drift should occur: {e_delta}");
+        assert!(
+            a_delta != 0.0,
+            "at threshold boundary drift should occur: {a_delta}"
+        );
+        assert!(
+            e_delta != 0.0,
+            "at threshold boundary drift should occur: {e_delta}"
+        );
     }
 
     // --- Task #46: Fleet posture is_contested + strengthen telemetry ---
@@ -1974,41 +2654,66 @@ mod tests {
     #[test]
     fn fleet_posture_contested_requires_two_per_side() {
         let gnprtb = stock_gnprtb();
-        let mut world = GameWorld::default();
-        world.gnprtb = gnprtb;
+        let world = GameWorld {
+            gnprtb,
+            ..Default::default()
+        };
 
         let sys = crate::world::System {
-            dat_id: DatId(0), name: "Test".into(),
+            dat_id: DatId(0),
+            name: "Test".into(),
             sector: SectorKey::default(),
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5, popularity_empire: 0.5,
-            is_populated: true, total_energy: 60, raw_materials: 10,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 60,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         };
         let presence_1v1 = MilitaryPresence {
-            alliance_fleets: 1, empire_fleets: 1,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 5, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 1,
+            empire_fleets: 1,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 5,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let gnprtb = stock_gnprtb();
         let summary_1v1 = compute_system_summary(&world, &sys, &presence_1v1, 0, &gnprtb, 2);
-        assert!(!summary_1v1.fleet_posture.is_contested, "1v1 fleets should NOT be contested");
+        assert!(
+            !summary_1v1.fleet_posture.is_contested,
+            "1v1 fleets should NOT be contested"
+        );
 
         let presence_2v2 = MilitaryPresence {
-            alliance_fleets: 2, empire_fleets: 2,
-            alliance_fighters: 0, empire_fighters: 0,
-            alliance_troops: 5, empire_troops: 0,
-            alliance_capships: 0, empire_capships: 0,
+            alliance_fleets: 2,
+            empire_fleets: 2,
+            alliance_fighters: 0,
+            empire_fighters: 0,
+            alliance_troops: 5,
+            empire_troops: 0,
+            alliance_capships: 0,
+            empire_capships: 0,
         };
         let summary_2v2 = compute_system_summary(&world, &sys, &presence_2v2, 0, &gnprtb, 2);
-        assert!(summary_2v2.fleet_posture.is_contested, "2v2 fleets should be contested");
+        assert!(
+            summary_2v2.fleet_posture.is_contested,
+            "2v2 fleets should be contested"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2030,24 +2735,39 @@ mod tests {
         control: ControlKind,
         is_populated: bool,
     ) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        world.gnprtb = stock_gnprtb();
+        let mut world = GameWorld {
+            gnprtb: stock_gnprtb(),
+            ..Default::default()
+        };
         let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0), name: "S".into(),
-            group: crate::dat::SectorGroup::Core, x: 0, y: 0, systems: vec![],
+            dat_id: DatId(0),
+            name: "S".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
         let sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0), name: "Test".into(), sector: sector_key,
-            x: 0, y: 0,
+            dat_id: DatId(0),
+            name: "Test".into(),
+            sector: sector_key,
+            x: 0,
+            y: 0,
             exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: support_alliance,
             popularity_empire: support_empire,
-            is_populated, total_energy: 10, raw_materials: 10,
+            is_populated,
+            total_energy: 10,
+            raw_materials: 10,
             espionage_rating: 0.0,
-            fleets: vec![], ground_units: vec![], special_forces: vec![],
-            defense_facilities: vec![], manufacturing_facilities: vec![],
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
             production_facilities: vec![],
-            is_headquarters: false, is_destroyed: false,
+            is_headquarters: false,
+            is_destroyed: false,
             control,
         });
         (world, sys_key)
@@ -2059,17 +2779,27 @@ mod tests {
         // Critical → Low is a transition, emit once. Second eval (no
         // state change): no emission.
         let (world, _sys) = make_singleton_world(
-            0.25, 0.75,
+            0.25,
+            0.75,
             ControlKind::Controlled(crate::dat::Faction::Alliance),
             true,
         );
         let mut state = EconomyState::default();
         let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
-        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::SupportChanged { .. })).count();
-        assert_eq!(count1, 1, "K1: first tick should emit exactly one SupportChanged");
+        let count1 = events1
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::SupportChanged { .. }))
+            .count();
+        assert_eq!(
+            count1, 1,
+            "K1: first tick should emit exactly one SupportChanged"
+        );
 
         let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
-        let count2 = events2.iter().filter(|e| matches!(e, EconomyEvent::SupportChanged { .. })).count();
+        let count2 = events2
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::SupportChanged { .. }))
+            .count();
         assert_eq!(count2, 0, "K1: unchanged-tier second tick must not re-fire");
     }
 
@@ -2078,18 +2808,31 @@ mod tests {
         // Support at 0.10 → disaster flag true. First tick: transition
         // from false (default) → emit once. Second tick: no re-fire.
         let (world, _sys) = make_singleton_world(
-            0.10, 0.90,
+            0.10,
+            0.90,
             ControlKind::Controlled(crate::dat::Faction::Alliance),
             true,
         );
         let mut state = EconomyState::default();
         let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
-        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })).count();
-        assert_eq!(count1, 1, "K2: first tick should emit exactly one NaturalDisaster");
+        let count1 = events1
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::NaturalDisaster { .. }))
+            .count();
+        assert_eq!(
+            count1, 1,
+            "K2: first tick should emit exactly one NaturalDisaster"
+        );
 
         let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
-        let count2 = events2.iter().filter(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })).count();
-        assert_eq!(count2, 0, "K2: clear-before-emit ordering must prevent re-fire");
+        let count2 = events2
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::NaturalDisaster { .. }))
+            .count();
+        assert_eq!(
+            count2, 0,
+            "K2: clear-before-emit ordering must prevent re-fire"
+        );
     }
 
     #[test]
@@ -2098,28 +2841,48 @@ mod tests {
         // seeded mine count isn't a "discovery". Second tick (now
         // armed): still no emission because nothing changed.
         let (mut world, sys_key) = make_singleton_world(
-            0.5, 0.5,
+            0.5,
+            0.5,
             ControlKind::Controlled(crate::dat::Faction::Alliance),
             true,
         );
         let mut state = EconomyState::default();
         let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
-        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. })).count();
-        assert_eq!(count1, 0, "K3: seed tick must NOT emit ResourceDiscovered (not armed)");
+        let count1 = events1
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. }))
+            .count();
+        assert_eq!(
+            count1, 0,
+            "K3: seed tick must NOT emit ResourceDiscovered (not armed)"
+        );
 
         // Seed a new mine. Second tick should detect the positive delta.
-        let mine = world.production_facilities.insert(crate::world::ProductionFacilityInstance {
-            class_dat_id: DatId(0x22000001), is_mine: true, is_alliance: true,
-        });
+        let mine = world
+            .production_facilities
+            .insert(crate::world::ProductionFacilityInstance {
+                class_dat_id: DatId(0x22000001),
+                is_mine: true,
+                is_alliance: true,
+            });
         world.systems[sys_key].production_facilities.push(mine);
 
         let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
-        let count2 = events2.iter().filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. })).count();
-        assert_eq!(count2, 1, "K3: new mine should trigger exactly one ResourceDiscovered");
+        let count2 = events2
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. }))
+            .count();
+        assert_eq!(
+            count2, 1,
+            "K3: new mine should trigger exactly one ResourceDiscovered"
+        );
 
         // Third tick (no change): should not re-fire.
         let events3 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 3 }], 2);
-        let count3 = events3.iter().filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. })).count();
+        let count3 = events3
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::ResourceDiscovered { .. }))
+            .count();
         assert_eq!(count3, 0, "K3: stable resource count must not re-fire");
     }
 
@@ -2133,7 +2896,8 @@ mod tests {
         // cooldown window do NOT re-fire, and the next fire only
         // happens after the full 30 ticks elapse.
         let (world, _sys) = make_singleton_world(
-            0.3, 0.7,
+            0.3,
+            0.7,
             ControlKind::Controlled(crate::dat::Faction::Alliance),
             true,
         );
@@ -2141,28 +2905,56 @@ mod tests {
         // Tick 1: default cooldown=0, deficit present → immediate fire,
         // cooldown armed to 30.
         let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
-        let count1 = events1.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
-        assert_eq!(count1, 1, "K4: first tick with deficit should emit exactly once");
-        assert_eq!(state.alliance_maintenance_cooldown, 30,
-            "K4: cooldown should be armed to 30 after fire");
+        let count1 = events1
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
+            .count();
+        assert_eq!(
+            count1, 1,
+            "K4: first tick with deficit should emit exactly once"
+        );
+        assert_eq!(
+            state.alliance_maintenance_cooldown, 30,
+            "K4: cooldown should be armed to 30 after fire"
+        );
 
         // Burn 29 ticks — cooldown 30 → 1, no fire.
         let batch29: Vec<TickEvent> = (2..=30).map(|n| TickEvent { tick: n }).collect();
         let events_batch = EconomySystem::advance(&mut state, &world, &batch29, 2);
-        let count_batch = events_batch.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
-        assert_eq!(count_batch, 0, "K4: partial-cooldown batch must not re-fire");
-        assert_eq!(state.alliance_maintenance_cooldown, 1,
-            "K4: cooldown should have one tick left after 29-tick batch");
+        let count_batch = events_batch
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
+            .count();
+        assert_eq!(
+            count_batch, 0,
+            "K4: partial-cooldown batch must not re-fire"
+        );
+        assert_eq!(
+            state.alliance_maintenance_cooldown, 1,
+            "K4: cooldown should have one tick left after 29-tick batch"
+        );
 
         // One more tick drops the counter to 0 and fires again.
         let events_fire = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 31 }], 2);
-        let count_fire = events_fire.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
-        assert_eq!(count_fire, 1, "K4: cooldown expiry should re-emit exactly once");
+        let count_fire = events_fire
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
+            .count();
+        assert_eq!(
+            count_fire, 1,
+            "K4: cooldown expiry should re-emit exactly once"
+        );
 
         // Immediately after firing, the cooldown resets — next tick
         // must not re-fire.
         let events_next = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 32 }], 2);
-        let count_next = events_next.iter().filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. })).count();
-        assert_eq!(count_next, 0, "K4: reset cooldown must not re-emit immediately");
+        let count_next = events_next
+            .iter()
+            .filter(|e| matches!(e, EconomyEvent::MaintenanceShortfall { .. }))
+            .count();
+        assert_eq!(
+            count_next, 0,
+            "K4: reset cooldown must not re-emit immediately"
+        );
     }
 }

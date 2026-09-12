@@ -165,15 +165,13 @@ pub fn hovered_fleet(
         // Diamond is offset above system dot
         let dy = sy - r - 2.0 * camera.zoom;
         let dist = ((mx - sx).powi(2) + (my - dy).powi(2)).sqrt();
-        if dist < hit_radius {
-            if best.map_or(true, |(_, bd)| dist < bd) {
-                best = Some((fleet_key, dist));
-            }
+        if dist < hit_radius && best.is_none_or(|(_, bd)| dist < bd) {
+            best = Some((fleet_key, dist));
         }
     }
 
     // Check in-transit fleets
-    for (_fleet_key, order) in movement_state.orders().iter() {
+    for order in movement_state.orders().values() {
         let origin_sys = match world.systems.get(order.origin) {
             Some(s) => s,
             None => continue,
@@ -188,10 +186,8 @@ pub fn hovered_fleet(
         let fx = ox + (dx - ox) * t;
         let fy = oy + (dy - oy) * t;
         let dist = ((mx - fx).powi(2) + (my - fy).powi(2)).sqrt();
-        if dist < hit_radius {
-            if best.map_or(true, |(_, bd)| dist < bd) {
-                best = Some((order.fleet, dist));
-            }
+        if dist < hit_radius && best.is_none_or(|(_, bd)| dist < bd) {
+            best = Some((order.fleet, dist));
         }
     }
 
@@ -237,7 +233,7 @@ fn draw_stationary_fleets(world: &GameWorld, movement_state: &MovementState, cam
 
 /// Draw route lines and transit dots for in-transit fleets.
 fn draw_transit_routes(world: &GameWorld, movement_state: &MovementState, camera: &CameraView) {
-    for (_fleet_key, order) in movement_state.orders().iter() {
+    for order in movement_state.orders().values() {
         let origin_sys = match world.systems.get(order.origin) {
             Some(s) => s,
             None => continue,

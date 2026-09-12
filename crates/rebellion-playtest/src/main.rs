@@ -84,6 +84,10 @@ struct Args {
 
 /// Dispatch a single command against the current world/simulation state.
 /// Returns a human-readable result string.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep the existing explicit simulation state inputs at this integration boundary."
+)]
 fn dispatch_command(
     cmd: &str,
     world: &mut rebellion_core::world::GameWorld,
@@ -198,7 +202,7 @@ fn dispatch_command(
                 let rolls: Vec<f64> = (0..1024).map(|_| rng.gen::<f64>()).collect();
                 let wall_ms = start.elapsed().as_millis() as u64;
                 let evts =
-                    run_simulation_tick(world, states, &tick_events, &rolls, wall_ms, &game_config);
+                    run_simulation_tick(world, states, &tick_events, &rolls, wall_ms, game_config);
                 logger.extend(evts);
             }
             format!("Advanced {} ticks ({} events)", n, logger.len())
@@ -277,8 +281,8 @@ fn main() -> anyhow::Result<()> {
     } else {
         rebellion_core::tuning::GameConfig::default()
     };
-    if args.config.is_some() {
-        eprintln!("Config: {}", args.config.as_ref().unwrap().display());
+    if let Some(config) = &args.config {
+        eprintln!("Config: {}", config.display());
     }
 
     // Determine AI faction
@@ -468,8 +472,8 @@ fn main() -> anyhow::Result<()> {
                 let orders: Vec<_> = states
                     .movement
                     .orders()
-                    .iter()
-                    .map(|(_, order)| {
+                    .values()
+                    .map(|order| {
                         let origin = world
                             .systems
                             .get(order.origin)

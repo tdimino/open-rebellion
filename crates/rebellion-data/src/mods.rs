@@ -88,15 +88,12 @@ impl ModManifest {
     /// Parse a manifest from a `mod.toml` file.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        let mut manifest: ModManifest = toml::from_str(&text)
-            .with_context(|| format!("parsing TOML in {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let mut manifest: ModManifest =
+            toml::from_str(&text).with_context(|| format!("parsing TOML in {}", path.display()))?;
         // Store the containing directory (not the manifest file path itself).
-        manifest.path = path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .to_path_buf();
+        manifest.path = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         Ok(manifest)
     }
 
@@ -278,14 +275,18 @@ impl ModLoader {
                     Some(&idx) => idx,
                     None => bail!(
                         "mod '{}' depends on '{}' which is not installed",
-                        manifest.name, dep_name
+                        manifest.name,
+                        dep_name
                     ),
                 };
                 let dep_version = manifests[dep_idx].semver_version()?;
                 if !req.matches(&dep_version) {
                     bail!(
                         "mod '{}' requires '{}@{}' but installed version is '{}'",
-                        manifest.name, dep_name, req_str, dep_version
+                        manifest.name,
+                        dep_name,
+                        req_str,
+                        dep_version
                     );
                 }
                 adj[i].push(dep_idx);
@@ -323,7 +324,10 @@ impl ModLoader {
 
         // Convert indices back to manifests (consume the vec).
         let mut indexed: Vec<Option<ModManifest>> = manifests.into_iter().map(Some).collect();
-        Ok(order.into_iter().map(|i| indexed[i].take().unwrap()).collect())
+        Ok(order
+            .into_iter()
+            .map(|i| indexed[i].take().unwrap())
+            .collect())
     }
 
     /// Apply mod overlays to a serialized world represented as a `serde_json::Value`.
@@ -464,9 +468,7 @@ pub fn merge_patch(target: &mut Value, patch: &Value) {
                 if patch_val.is_null() {
                     target_map.remove(key);
                 } else {
-                    let entry = target_map
-                        .entry(key.clone())
-                        .or_insert(Value::Null);
+                    let entry = target_map.entry(key.clone()).or_insert(Value::Null);
                     merge_patch(entry, patch_val);
                 }
             }
@@ -509,7 +511,10 @@ impl ModWatcher {
             .watch(mods_dir, notify::RecursiveMode::Recursive)
             .with_context(|| format!("watching mods directory {}", mods_dir.display()))?;
 
-        Ok(Self { _watcher: watcher, receiver: rx })
+        Ok(Self {
+            _watcher: watcher,
+            receiver: rx,
+        })
     }
 
     /// Returns `true` if any relevant file-system event has occurred since the
@@ -558,9 +563,20 @@ impl ModWatcher {
 /// Structured errors from mod validation.
 #[derive(Debug, Clone)]
 pub enum ModError {
-    MissingDependency { mod_name: String, dep_name: String },
-    VersionMismatch { mod_name: String, dep_name: String, required: String, found: String },
-    ParseError { mod_name: String, message: String },
+    MissingDependency {
+        mod_name: String,
+        dep_name: String,
+    },
+    VersionMismatch {
+        mod_name: String,
+        dep_name: String,
+        required: String,
+        found: String,
+    },
+    ParseError {
+        mod_name: String,
+        message: String,
+    },
 }
 
 /// Runtime mod management: discovery, validation, and application.
@@ -877,9 +893,11 @@ version = "0.1.0"
 
     #[test]
     fn load_order_missing_dep_errors() {
-        let mods = vec![
-            make_manifest("mod-b", "1.0.0", &[("mod-missing", ">=1.0.0")]),
-        ];
+        let mods = vec![make_manifest(
+            "mod-b",
+            "1.0.0",
+            &[("mod-missing", ">=1.0.0")],
+        )];
         assert!(ModLoader::resolve_load_order(mods).is_err());
     }
 
@@ -1026,20 +1044,36 @@ version = "0.1.0"
         // Create mod-a (will be enabled)
         let mod_a_dir = tmp.path().join("mod-a");
         std::fs::create_dir(&mod_a_dir).unwrap();
-        std::fs::write(mod_a_dir.join("mod.toml"), r#"
+        std::fs::write(
+            mod_a_dir.join("mod.toml"),
+            r#"
 name = "mod-a"
 version = "1.0.0"
-"#).unwrap();
-        std::fs::write(mod_a_dir.join("capital_ships.json"), r#"[{"id": 1, "hull": 9999}]"#).unwrap();
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            mod_a_dir.join("capital_ships.json"),
+            r#"[{"id": 1, "hull": 9999}]"#,
+        )
+        .unwrap();
 
         // Create mod-b (will NOT be enabled)
         let mod_b_dir = tmp.path().join("mod-b");
         std::fs::create_dir(&mod_b_dir).unwrap();
-        std::fs::write(mod_b_dir.join("mod.toml"), r#"
+        std::fs::write(
+            mod_b_dir.join("mod.toml"),
+            r#"
 name = "mod-b"
 version = "1.0.0"
-"#).unwrap();
-        std::fs::write(mod_b_dir.join("capital_ships.json"), r#"[{"id": 1, "hull": 1}]"#).unwrap();
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            mod_b_dir.join("capital_ships.json"),
+            r#"[{"id": 1, "hull": 1}]"#,
+        )
+        .unwrap();
 
         // Enable only mod-a
         let mut config = ModConfig::default();
@@ -1058,13 +1092,17 @@ version = "1.0.0"
         // Create a mod with a missing dependency
         let mod_dir = tmp.path().join("mod-bad");
         std::fs::create_dir(&mod_dir).unwrap();
-        std::fs::write(mod_dir.join("mod.toml"), r#"
+        std::fs::write(
+            mod_dir.join("mod.toml"),
+            r#"
 name = "mod-bad"
 version = "1.0.0"
 
 [dependencies]
 "nonexistent" = ">=1.0.0"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let mut config = ModConfig::default();
         config.toggle("mod-bad");
@@ -1083,21 +1121,29 @@ version = "1.0.0"
         // mod-base: no deps
         let base_dir = tmp.path().join("mod-base");
         std::fs::create_dir(&base_dir).unwrap();
-        std::fs::write(base_dir.join("mod.toml"), r#"
+        std::fs::write(
+            base_dir.join("mod.toml"),
+            r#"
 name = "mod-base"
 version = "2.0.0"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         // mod-ext: depends on mod-base
         let ext_dir = tmp.path().join("mod-ext");
         std::fs::create_dir(&ext_dir).unwrap();
-        std::fs::write(ext_dir.join("mod.toml"), r#"
+        std::fs::write(
+            ext_dir.join("mod.toml"),
+            r#"
 name = "mod-ext"
 version = "1.5.0"
 
 [dependencies]
 "mod-base" = ">=1.0.0"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         // Enable both
         let mut config = ModConfig::default();

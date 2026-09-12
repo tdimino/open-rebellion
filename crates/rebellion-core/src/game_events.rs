@@ -234,11 +234,7 @@ mod tests {
         ];
         let mut seen = std::collections::HashSet::new();
         for evt in &all {
-            assert!(
-                seen.insert(*evt),
-                "duplicate event type constant: {}",
-                evt
-            );
+            assert!(seen.insert(*evt), "duplicate event type constant: {}", evt);
         }
     }
 }

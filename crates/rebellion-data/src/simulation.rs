@@ -148,10 +148,10 @@ pub fn run_simulation_tick(
     let combat_triggers: Vec<_> = world
         .systems
         .keys()
-        .filter_map(|sys_key| {
+        .filter(|&sys_key| {
             if let Some(&last_battle) = states.combat_cooldowns.get(&sys_key) {
                 if combat_is_on_cooldown(last_battle, current_tick) {
-                    return None;
+                    return false;
                 }
             }
             let sys = &world.systems[sys_key];
@@ -165,7 +165,7 @@ pub fn run_simulation_tick(
                 .iter()
                 .copied()
                 .any(|k| world.fleets.get(k).map(|f| !f.is_alliance).unwrap_or(false));
-            (has_alliance && has_empire).then_some(sys_key)
+            has_alliance && has_empire
         })
         .collect();
 
@@ -224,18 +224,11 @@ pub fn run_simulation_tick(
                 &brd_result,
                 attacker,
             );
-            integrator.emit_bombardment(
-                world,
-                sys_key,
-                brd_result.damage,
-                headquarters_destroyed,
-            );
+            integrator.emit_bombardment(world, sys_key, brd_result.damage, headquarters_destroyed);
         }
     }
 
-    let destroyed_cargo = states
-        .troop_transport
-        .destroy_untransportable_cargo(world);
+    let destroyed_cargo = states.troop_transport.destroy_untransportable_cargo(world);
     integrator.emit_destroyed_transport_cargo(&destroyed_cargo);
 
     // ── 3b. Troop landing, ground combat, and occupation ────────────────
@@ -321,12 +314,7 @@ pub fn run_simulation_tick(
             }
 
             for fleet in landing_fleets {
-                integrator.apply_troop_landing(
-                    world,
-                    &mut states.troop_transport,
-                    fleet,
-                    sys_key,
-                );
+                integrator.apply_troop_landing(world, &mut states.troop_transport, fleet, sys_key);
             }
         }
 
@@ -334,17 +322,18 @@ pub fn run_simulation_tick(
             .systems
             .get(sys_key)
             .map(|system| {
-                system.ground_units.iter().fold((0_usize, 0_usize), |counts, troop| {
-                    match world.troops.get(*troop) {
-                        Some(value) if value.regiment_strength > 0 && value.is_alliance => {
-                            (counts.0 + 1, counts.1)
+                system
+                    .ground_units
+                    .iter()
+                    .fold((0_usize, 0_usize), |counts, troop| {
+                        match world.troops.get(*troop) {
+                            Some(value) if value.regiment_strength > 0 && value.is_alliance => {
+                                (counts.0 + 1, counts.1)
+                            }
+                            Some(value) if value.regiment_strength > 0 => (counts.0, counts.1 + 1),
+                            _ => counts,
                         }
-                        Some(value) if value.regiment_strength > 0 => {
-                            (counts.0, counts.1 + 1)
-                        }
-                        _ => counts,
-                    }
-                })
+                    })
             })
             .unwrap_or_default();
 
@@ -380,9 +369,7 @@ pub fn run_simulation_tick(
                         break;
                     }
                 }
-                if rounds == MAX_SYSTEM_GROUND_COMBAT_ROUNDS
-                    && final_winner == CombatSide::Draw
-                {
+                if rounds == MAX_SYSTEM_GROUND_COMBAT_ROUNDS && final_winner == CombatSide::Draw {
                     stalemate = true;
                 }
                 integrator.emit_system_ground_combat(
@@ -721,7 +708,7 @@ pub fn run_simulation_tick(
     }
 
     // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────
-    if current_tick % 250 == 0 && current_tick > 0 {
+    if current_tick.is_multiple_of(250) && current_tick > 0 {
         integrator.emit_campaign_snapshot(world, states.movement.len(), &states.economy);
     }
 
@@ -794,7 +781,8 @@ mod tests {
             control: ControlKind::Uncontrolled,
             espionage_rating: 0.0,
         });
-        let states = SimulationStates {
+
+        SimulationStates {
             clock: GameClock::new(),
             manufacturing: ManufacturingState::new(),
             missions: MissionState::new(),
@@ -815,8 +803,7 @@ mod tests {
             troop_transport: TroopTransportState::default(),
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
-        };
-        states
+        }
     }
 
     #[test]
@@ -1155,7 +1142,10 @@ mod tests {
         );
 
         assert!(!world.systems[alliance_hq].is_headquarters);
-        assert!(!states.victory.resolved, "bombardment still requires occupation");
+        assert!(
+            !states.victory.resolved,
+            "bombardment still requires occupation"
+        );
         let bombardment = events
             .iter()
             .find(|event| event.event_type == EVT_BOMBARDMENT)
@@ -1166,11 +1156,7 @@ mod tests {
     #[test]
     fn unopposed_imperial_invasion_bombards_before_occupying_alliance_hq() {
         let mut world = GameWorld::default();
-        let add_system = |world: &mut GameWorld,
-                          dat_id,
-                          name: &str,
-                          control,
-                          is_headquarters| {
+        let add_system = |world: &mut GameWorld, dat_id, name: &str, control, is_headquarters| {
             world.systems.insert(System {
                 dat_id: DatId::new(dat_id),
                 name: name.into(),
@@ -1295,8 +1281,7 @@ mod tests {
         );
         assert!(states.victory.resolved);
         assert!(events.iter().any(|event| {
-            event.event_type == EVT_BOMBARDMENT
-                && event.details["headquarters_destroyed"] == true
+            event.event_type == EVT_BOMBARDMENT && event.details["headquarters_destroyed"] == true
         }));
         assert!(events.iter().any(|event| event.event_type == EVT_VICTORY));
     }
@@ -1304,11 +1289,7 @@ mod tests {
     #[test]
     fn troop_transport_arrives_lands_occupies_and_captures() {
         let mut world = GameWorld::default();
-        let add_system = |world: &mut GameWorld,
-                          dat_id,
-                          name: &str,
-                          control,
-                          is_headquarters| {
+        let add_system = |world: &mut GameWorld, dat_id, name: &str, control, is_headquarters| {
             world.systems.insert(System {
                 dat_id: DatId::new(dat_id),
                 name: name.into(),
@@ -1438,7 +1419,10 @@ mod tests {
             ControlKind::Controlled(Faction::Alliance)
         );
         assert!(world.characters[prisoner].is_captive);
-        assert_eq!(world.characters[prisoner].captured_by, Some(Faction::Alliance));
+        assert_eq!(
+            world.characters[prisoner].captured_by,
+            Some(Faction::Alliance)
+        );
         assert!(states.victory.resolved);
         for event_type in [
             EVT_FLEET_ARRIVED,

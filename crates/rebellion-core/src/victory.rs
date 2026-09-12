@@ -123,18 +123,13 @@ impl VictorySystem {
             return None;
         }
 
-        for outcome in Self::headquarters_objectives(state, world)
+        Self::headquarters_objectives(state, world)
             .into_iter()
             .flatten()
-        {
-            if victory_conditions == VictoryConditions::HeadquartersOnly
-                || Self::standard_leaders_captured(&outcome, world)
-            {
-                return Some(outcome);
-            }
-        }
-
-        None
+            .find(|outcome| {
+                victory_conditions == VictoryConditions::HeadquartersOnly
+                    || Self::standard_leaders_captured(outcome, world)
+            })
     }
 
     /// Apply the headquarters-specific effect of a resolved bombardment.
@@ -149,10 +144,7 @@ impl VictorySystem {
         result: &BombardmentResult,
         attacker: Faction,
     ) -> bool {
-        if attacker != Faction::Empire
-            || result.damage <= 0
-            || result.system != state.alliance_hq
-        {
+        if attacker != Faction::Empire || result.damage <= 0 || result.system != state.alliance_hq {
             return false;
         }
 
@@ -336,13 +328,9 @@ mod tests {
         let (world, a, e) = make_world();
         let mut state = VictoryState::new(a, e);
         state.resolved = true;
-        assert!(VictorySystem::check(
-            &state,
-            &world,
-            &[tick(1)],
-            VictoryConditions::Standard
-        )
-        .is_none());
+        assert!(
+            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard).is_none()
+        );
     }
 
     #[test]
@@ -451,7 +439,12 @@ mod tests {
 
         world.systems[alliance_hq].control = ControlKind::Controlled(Faction::Empire);
         assert!(matches!(
-            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::HeadquartersOnly),
+            VictorySystem::check(
+                &state,
+                &world,
+                &[tick(1)],
+                VictoryConditions::HeadquartersOnly
+            ),
             Some(VictoryOutcome::HqDestroyed {
                 winner: Faction::Empire,
                 loser: Faction::Alliance,
@@ -521,13 +514,10 @@ mod tests {
         state.death_star_active = true;
         state.death_star_location = Some(a);
 
-        assert!(VictorySystem::check(
-            &state,
-            &world,
-            &[tick(1)],
-            VictoryConditions::Standard,
-        )
-        .is_none());
+        assert!(
+            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard,)
+                .is_none()
+        );
     }
 
     #[test]
@@ -608,13 +598,10 @@ mod tests {
         world.systems.get_mut(alliance_hq).unwrap().is_destroyed = true;
         let state = VictoryState::new(alliance_hq, empire_hq);
 
-        assert!(VictorySystem::check(
-            &state,
-            &world,
-            &[tick(1)],
-            VictoryConditions::Standard,
-        )
-        .is_none());
+        assert!(
+            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard,)
+                .is_none()
+        );
 
         capture_leader(&mut world, "Luke Skywalker", Faction::Empire);
         capture_leader(&mut world, "Mon Mothma", Faction::Empire);

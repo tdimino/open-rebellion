@@ -125,16 +125,22 @@ impl GroundCombatState {
     /// Each tick, opposing regiments damage each other proportionally.
     /// Returns true if combat ended this tick.
     pub fn step(&mut self) -> bool {
-        if self.phase != GroundPhase::Engaging { return false; }
+        if self.phase != GroundPhase::Engaging {
+            return false;
+        }
 
         self.combat_tick += 1;
 
         // Collect active regiments per side.
-        let atk_total: i16 = self.regiments.iter()
+        let atk_total: i16 = self
+            .regiments
+            .iter()
             .filter(|r| r.is_attacker && r.alive)
             .map(|r| r.strength)
             .sum();
-        let def_total: i16 = self.regiments.iter()
+        let def_total: i16 = self
+            .regiments
+            .iter()
             .filter(|r| !r.is_attacker && r.alive)
             .map(|r| r.strength)
             .sum();
@@ -168,8 +174,12 @@ impl GroundCombatState {
 
     fn apply_damage(regiments: &mut [GroundRegiment], is_target_attacker: bool, mut damage: i16) {
         for r in regiments.iter_mut() {
-            if damage <= 0 { break; }
-            if r.is_attacker != is_target_attacker || !r.alive { continue; }
+            if damage <= 0 {
+                break;
+            }
+            if r.is_attacker != is_target_attacker || !r.alive {
+                continue;
+            }
             let take = damage.min(r.strength);
             r.strength -= take;
             damage -= take;
@@ -206,7 +216,9 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
         state.step_accumulator += dt * 6.0; // ~6 ticks per second
         while state.step_accumulator >= 1.0 {
             state.step_accumulator -= 1.0;
-            if state.step() { break; }
+            if state.step() {
+                break;
+            }
         }
     }
 
@@ -227,14 +239,29 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
     let title = format!("Ground Battle — {}", state.system_name);
     let title_size = 24.0;
     let title_dims = measure_text(&title, None, title_size as u16, 1.0);
-    draw_text(&title, (sw - title_dims.width) / 2.0, margin, title_size, WHITE);
+    draw_text(
+        &title,
+        (sw - title_dims.width) / 2.0,
+        margin,
+        title_size,
+        WHITE,
+    );
 
     // Attacker regiments (left side).
     let atk_x = margin;
     let start_y = margin + 40.0;
-    draw_text("ATTACKERS", atk_x, start_y, 16.0, Color::new(0.3, 0.8, 1.0, 0.9));
+    draw_text(
+        "ATTACKERS",
+        atk_x,
+        start_y,
+        16.0,
+        Color::new(0.3, 0.8, 1.0, 0.9),
+    );
 
-    let atk_regiments: Vec<(usize, &GroundRegiment)> = state.regiments.iter().enumerate()
+    let atk_regiments: Vec<(usize, &GroundRegiment)> = state
+        .regiments
+        .iter()
+        .enumerate()
         .filter(|(_, r)| r.is_attacker)
         .collect();
 
@@ -247,7 +274,13 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
         };
 
         // Background bar.
-        draw_rectangle(atk_x, y, bar_width, bar_height, Color::new(0.2, 0.2, 0.2, 0.8));
+        draw_rectangle(
+            atk_x,
+            y,
+            bar_width,
+            bar_height,
+            Color::new(0.2, 0.2, 0.2, 0.8),
+        );
         // Health fill.
         let fill_color = if reg.alive {
             Color::new(0.2, 0.6, 1.0, 0.9)
@@ -256,7 +289,14 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
         };
         draw_rectangle(atk_x, y, bar_width * frac, bar_height, fill_color);
         // Border.
-        draw_rectangle_lines(atk_x, y, bar_width, bar_height, 1.0, Color::new(0.5, 0.5, 0.5, 0.6));
+        draw_rectangle_lines(
+            atk_x,
+            y,
+            bar_width,
+            bar_height,
+            1.0,
+            Color::new(0.5, 0.5, 0.5, 0.6),
+        );
         // Label.
         let label = format!("{} ({}/{})", reg.name, reg.strength, reg.max_strength);
         draw_text(&label, atk_x + 4.0, y + 15.0, 12.0, WHITE);
@@ -264,9 +304,18 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
 
     // Defender regiments (right side).
     let def_x = sw - margin - bar_width;
-    draw_text("DEFENDERS", def_x, start_y, 16.0, Color::new(1.0, 0.4, 0.3, 0.9));
+    draw_text(
+        "DEFENDERS",
+        def_x,
+        start_y,
+        16.0,
+        Color::new(1.0, 0.4, 0.3, 0.9),
+    );
 
-    let def_regiments: Vec<(usize, &GroundRegiment)> = state.regiments.iter().enumerate()
+    let def_regiments: Vec<(usize, &GroundRegiment)> = state
+        .regiments
+        .iter()
+        .enumerate()
         .filter(|(_, r)| !r.is_attacker)
         .collect();
 
@@ -278,14 +327,27 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
             0.0
         };
 
-        draw_rectangle(def_x, y, bar_width, bar_height, Color::new(0.2, 0.2, 0.2, 0.8));
+        draw_rectangle(
+            def_x,
+            y,
+            bar_width,
+            bar_height,
+            Color::new(0.2, 0.2, 0.2, 0.8),
+        );
         let fill_color = if reg.alive {
             Color::new(1.0, 0.3, 0.2, 0.9)
         } else {
             Color::new(0.4, 0.1, 0.1, 0.6)
         };
         draw_rectangle(def_x, y, bar_width * frac, bar_height, fill_color);
-        draw_rectangle_lines(def_x, y, bar_width, bar_height, 1.0, Color::new(0.5, 0.5, 0.5, 0.6));
+        draw_rectangle_lines(
+            def_x,
+            y,
+            bar_width,
+            bar_height,
+            1.0,
+            Color::new(0.5, 0.5, 0.5, 0.6),
+        );
         let label = format!("{} ({}/{})", reg.name, reg.strength, reg.max_strength);
         draw_text(&label, def_x + 4.0, y + 15.0, 12.0, WHITE);
     }
@@ -298,32 +360,42 @@ pub fn draw_ground_combat(state: &mut GroundCombatState) -> GroundAction {
     // egui overlay for results/controls.
     egui_macroquad::ui(|ctx| {
         egui::TopBottomPanel::bottom("ground_bottom").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                match state.phase {
-                    GroundPhase::Engaging => {
-                        ui.label(
-                            RichText::new(format!("Ground engagement in progress... Tick {}", state.combat_tick))
-                                .color(Color32::from_rgb(255, 180, 60))
-                        );
-                    }
-                    GroundPhase::Results => {
-                        let (text, color) = match state.winner {
-                            Some(GroundWinner::Attacker) => ("Attacker ground victory!", Color32::from_rgb(60, 220, 60)),
-                            Some(GroundWinner::Defender) => ("Defender holds ground!", Color32::from_rgb(220, 60, 60)),
-                            Some(GroundWinner::Draw) | None => ("Ground combat draw", Color32::from_rgb(200, 200, 60)),
-                        };
-                        ui.label(RichText::new(text).color(color).strong().size(14.0));
+            ui.horizontal(|ui| match state.phase {
+                GroundPhase::Engaging => {
+                    ui.label(
+                        RichText::new(format!(
+                            "Ground engagement in progress... Tick {}",
+                            state.combat_tick
+                        ))
+                        .color(Color32::from_rgb(255, 180, 60)),
+                    );
+                }
+                GroundPhase::Results => {
+                    let (text, color) = match state.winner {
+                        Some(GroundWinner::Attacker) => {
+                            ("Attacker ground victory!", Color32::from_rgb(60, 220, 60))
+                        }
+                        Some(GroundWinner::Defender) => {
+                            ("Defender holds ground!", Color32::from_rgb(220, 60, 60))
+                        }
+                        Some(GroundWinner::Draw) | None => {
+                            ("Ground combat draw", Color32::from_rgb(200, 200, 60))
+                        }
+                    };
+                    ui.label(RichText::new(text).color(color).strong().size(14.0));
 
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button(
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(
                                 RichText::new("Continue")
                                     .color(Color32::from_rgb(200, 200, 60))
-                                    .strong()
-                            ).clicked() {
-                                action = GroundAction::Done;
-                            }
-                        });
-                    }
+                                    .strong(),
+                            )
+                            .clicked()
+                        {
+                            action = GroundAction::Done;
+                        }
+                    });
                 }
             });
         });
@@ -393,7 +465,9 @@ mod tests {
 
         // Run until resolved.
         for _ in 0..200 {
-            if state.step() { break; }
+            if state.step() {
+                break;
+            }
         }
         assert_eq!(state.phase, GroundPhase::Results);
         assert!(state.winner.is_some());
@@ -411,7 +485,9 @@ mod tests {
             vec![(troop, "Scout Troop".into(), 30)],
         );
         for _ in 0..200 {
-            if state.step() { break; }
+            if state.step() {
+                break;
+            }
         }
         assert_eq!(state.winner, Some(GroundWinner::Attacker));
     }

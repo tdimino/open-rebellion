@@ -128,7 +128,11 @@ pub fn draw_save_load(
         return None;
     }
 
-    let title = if state.save_mode { "Save Game" } else { "Load Game" };
+    let title = if state.save_mode {
+        "Save Game"
+    } else {
+        "Load Game"
+    };
     let mut action: Option<PanelAction> = None;
     let mut close_requested = false;
 
@@ -146,68 +150,66 @@ pub fn draw_save_load(
             );
             ui.add_space(4.0);
 
-            ScrollArea::vertical()
-                .max_height(250.0)
-                .show(ui, |ui| {
-                    for slot in 0..10usize {
-                        let existing = saves.iter().find(|s| s.slot == slot);
-                        let is_selected = state.selected_slot == Some(slot);
+            ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
+                for slot in 0..10usize {
+                    let existing = saves.iter().find(|s| s.slot == slot);
+                    let is_selected = state.selected_slot == Some(slot);
 
-                        let slot_text = match existing {
-                            Some(info) => format!(
-                                "[{}]  {}  —  Day {}  ({})",
-                                slot + 1,
-                                info.name,
-                                info.game_tick,
-                                info.timestamp
-                            ),
-                            None => format!("[{}]  — empty —", slot + 1),
-                        };
+                    let slot_text = match existing {
+                        Some(info) => format!(
+                            "[{}]  {}  —  Day {}  ({})",
+                            slot + 1,
+                            info.name,
+                            info.game_tick,
+                            info.timestamp
+                        ),
+                        None => format!("[{}]  — empty —", slot + 1),
+                    };
 
-                        let label_color = if is_selected {
-                            Color32::from_rgb(255, 220, 100)
-                        } else if existing.is_some() {
-                            Color32::from_rgb(220, 220, 220)
-                        } else {
-                            Color32::from_rgb(140, 140, 140)
-                        };
+                    let label_color = if is_selected {
+                        Color32::from_rgb(255, 220, 100)
+                    } else if existing.is_some() {
+                        Color32::from_rgb(220, 220, 220)
+                    } else {
+                        Color32::from_rgb(140, 140, 140)
+                    };
 
-                        let response = ui.add_enabled(
-                            slot_is_selectable(state.save_mode, existing.is_some()),
-                            egui::SelectableLabel::new(
-                                is_selected,
-                                RichText::new(&slot_text).color(label_color),
-                            ),
-                        );
-                        if response.clicked() {
-                            state.selected_slot = Some(slot);
-                            // Pre-fill name with existing save name if loading
-                            if let Some(info) = existing {
-                                if state.save_mode {
-                                    state.name_input = info.name.clone();
-                                }
-                            }
-                        }
-
-                        // Delete button (save mode only, existing slots)
-                        if state.save_mode {
-                            if let Some(info) = existing {
-                                ui.horizontal(|ui| {
-                                    ui.add_space(20.0);
-                                    if ui
-                                        .small_button(
-                                            RichText::new("✕ Delete")
-                                                .color(Color32::from_rgb(200, 80, 80)),
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(PanelAction::DeleteSave { slot: info.slot });
-                                    }
-                                });
+                    let response = ui.add_enabled(
+                        slot_is_selectable(state.save_mode, existing.is_some()),
+                        egui::SelectableLabel::new(
+                            is_selected,
+                            RichText::new(&slot_text).color(label_color),
+                        ),
+                    );
+                    if response.clicked() {
+                        state.selected_slot = Some(slot);
+                        // Pre-fill name with existing save name if loading
+                        if let Some(info) = existing {
+                            if state.save_mode {
+                                state.name_input = info.name.clone();
                             }
                         }
                     }
-                });
+
+                    // Delete button (save mode only, existing slots)
+                    if state.save_mode {
+                        if let Some(info) = existing {
+                            ui.horizontal(|ui| {
+                                ui.add_space(20.0);
+                                if ui
+                                    .small_button(
+                                        RichText::new("✕ Delete")
+                                            .color(Color32::from_rgb(200, 80, 80)),
+                                    )
+                                    .clicked()
+                                {
+                                    action = Some(PanelAction::DeleteSave { slot: info.slot });
+                                }
+                            });
+                        }
+                    }
+                }
+            });
 
             ui.add_space(6.0);
             ui.separator();
@@ -216,9 +218,7 @@ pub fn draw_save_load(
             // ── Save name input (save mode only) ─────────────────────────
             if state.save_mode {
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Save name:").color(Color32::from_rgb(180, 180, 180)),
-                    );
+                    ui.label(RichText::new("Save name:").color(Color32::from_rgb(180, 180, 180)));
                     ui.text_edit_singleline(&mut state.name_input);
                 });
                 ui.add_space(4.0);
@@ -239,8 +239,7 @@ pub fn draw_save_load(
                     .add_enabled(
                         confirm_enabled,
                         egui::Button::new(
-                            RichText::new(confirm_label)
-                                .color(Color32::from_rgb(100, 220, 100)),
+                            RichText::new(confirm_label).color(Color32::from_rgb(100, 220, 100)),
                         ),
                     )
                     .clicked()

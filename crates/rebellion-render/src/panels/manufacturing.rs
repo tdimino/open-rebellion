@@ -32,7 +32,7 @@ pub struct ManufacturingPanelState {
 pub enum AddSelection {
     #[default]
     None,
-    CapitalShip(usize),   // index into a display list
+    CapitalShip(usize), // index into a display list
     Fighter(usize),
 }
 
@@ -89,41 +89,33 @@ pub fn draw_manufacturing(
                     ui.horizontal(|ui| {
                         let toggle = if is_expanded { "▼" } else { "▶" };
                         if ui.small_button(toggle).clicked() {
-                            panel_state.expanded_system = if is_expanded {
-                                None
-                            } else {
-                                Some(sys_key)
-                            };
+                            panel_state.expanded_system =
+                                if is_expanded { None } else { Some(sys_key) };
                             panel_state.add_selection = AddSelection::None;
                         }
 
                         ui.label(RichText::new(&system.name).strong());
 
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                if queue_len > 0 {
-                                    // Active item progress bar.
-                                    if let Some(q) = queue {
-                                        if let Some(active) = q.active() {
-                                            let fraction = active.progress_fraction();
-                                            draw_mini_progress(ui, fraction);
-                                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if queue_len > 0 {
+                                // Active item progress bar.
+                                if let Some(q) = queue {
+                                    if let Some(active) = q.active() {
+                                        let fraction = active.progress_fraction();
+                                        draw_mini_progress(ui, fraction);
                                     }
-                                    ui.label(
-                                        RichText::new(format!("{queue_len} queued"))
-                                            .small()
-                                            .color(Color32::from_gray(160)),
-                                    );
-                                } else {
-                                    ui.label(
-                                        RichText::new("idle")
-                                            .small()
-                                            .color(Color32::from_gray(100)),
-                                    );
                                 }
-                            },
-                        );
+                                ui.label(
+                                    RichText::new(format!("{queue_len} queued"))
+                                        .small()
+                                        .color(Color32::from_gray(160)),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new("idle").small().color(Color32::from_gray(100)),
+                                );
+                            }
+                        });
                     });
 
                     if is_expanded {
@@ -133,7 +125,9 @@ pub fn draw_manufacturing(
                                 let items: Vec<_> = q.items().iter().collect();
                                 if items.is_empty() {
                                     ui.label(
-                                        RichText::new("Queue empty.").small().color(Color32::from_gray(120)),
+                                        RichText::new("Queue empty.")
+                                            .small()
+                                            .color(Color32::from_gray(120)),
                                     );
                                 } else {
                                     ui.label(
@@ -157,7 +151,9 @@ pub fn draw_manufacturing(
                                                     egui::Sense::hover(),
                                                 );
                                                 ui.painter().rect_filled(
-                                                    rect, 2.0, Color32::from_gray(40),
+                                                    rect,
+                                                    2.0,
+                                                    Color32::from_gray(40),
                                                 );
                                                 ui.painter().rect_filled(
                                                     egui::Rect::from_min_size(
@@ -188,24 +184,25 @@ pub fn draw_manufacturing(
                                                 |ui| {
                                                     if ui
                                                         .small_button(
-                                                            RichText::new("✕")
-                                                                .color(Color32::from_rgb(200, 80, 80)),
+                                                            RichText::new("✕").color(
+                                                                Color32::from_rgb(200, 80, 80),
+                                                            ),
                                                         )
                                                         .clicked()
                                                     {
-                                                        action = Some(PanelAction::CancelQueueItem {
-                                                            system: sys_key,
-                                                            index: idx,
-                                                        });
-                                                    }
-                                                    if idx > 0
-                                                        && ui.small_button("↑").clicked()
-                                                    {
                                                         action =
-                                                            Some(PanelAction::PrioritizeQueueItem {
+                                                            Some(PanelAction::CancelQueueItem {
                                                                 system: sys_key,
                                                                 index: idx,
                                                             });
+                                                    }
+                                                    if idx > 0 && ui.small_button("↑").clicked() {
+                                                        action = Some(
+                                                            PanelAction::PrioritizeQueueItem {
+                                                                system: sys_key,
+                                                                index: idx,
+                                                            },
+                                                        );
                                                     }
                                                 },
                                             );
@@ -247,36 +244,40 @@ pub fn draw_manufacturing(
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new("Ship:").small());
                                     let selected_ship_name = match &panel_state.add_selection {
-                                        AddSelection::CapitalShip(i) => {
-                                            ships.get(*i).map(|(_, c)| c.name.as_str()).unwrap_or("—")
-                                        }
+                                        AddSelection::CapitalShip(i) => ships
+                                            .get(*i)
+                                            .map(|(_, c)| c.name.as_str())
+                                            .unwrap_or("—"),
                                         _ => "—",
                                     };
-                                    egui::ComboBox::from_id_salt(format!("ship_combo_{:?}", sys_key))
-                                        .selected_text(selected_ship_name)
-                                        .show_ui(ui, |ui| {
-                                            for (i, (_, class)) in ships.iter().enumerate() {
-                                                let sel = matches!(
-                                                    &panel_state.add_selection,
-                                                    AddSelection::CapitalShip(j) if *j == i
-                                                );
-                                                if ui
-                                                    .selectable_label(
-                                                        sel,
-                                                        format!(
-                                                            "{} ({}mat, {}d)",
-                                                            class.name,
-                                                            class.refined_material_cost,
-                                                            class.research_difficulty,
-                                                        ),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    panel_state.add_selection =
-                                                        AddSelection::CapitalShip(i);
-                                                }
+                                    egui::ComboBox::from_id_salt(format!(
+                                        "ship_combo_{:?}",
+                                        sys_key
+                                    ))
+                                    .selected_text(selected_ship_name)
+                                    .show_ui(ui, |ui| {
+                                        for (i, (_, class)) in ships.iter().enumerate() {
+                                            let sel = matches!(
+                                                &panel_state.add_selection,
+                                                AddSelection::CapitalShip(j) if *j == i
+                                            );
+                                            if ui
+                                                .selectable_label(
+                                                    sel,
+                                                    format!(
+                                                        "{} ({}mat, {}d)",
+                                                        class.name,
+                                                        class.refined_material_cost,
+                                                        class.research_difficulty,
+                                                    ),
+                                                )
+                                                .clicked()
+                                            {
+                                                panel_state.add_selection =
+                                                    AddSelection::CapitalShip(i);
                                             }
-                                        });
+                                        }
+                                    });
 
                                     if ui.small_button("Enqueue").clicked() {
                                         if let AddSelection::CapitalShip(i) =
@@ -300,39 +301,41 @@ pub fn draw_manufacturing(
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new("Fighter:").small());
                                     let selected_ftr_name = match &panel_state.add_selection {
-                                        AddSelection::Fighter(i) => {
-                                            fighters.get(*i).map(|(_, c)| c.name.as_str()).unwrap_or("—")
-                                        }
+                                        AddSelection::Fighter(i) => fighters
+                                            .get(*i)
+                                            .map(|(_, c)| c.name.as_str())
+                                            .unwrap_or("—"),
                                         _ => "—",
                                     };
-                                    egui::ComboBox::from_id_salt(format!("ftr_combo_{:?}", sys_key))
-                                        .selected_text(selected_ftr_name)
-                                        .show_ui(ui, |ui| {
-                                            for (i, (_, class)) in fighters.iter().enumerate() {
-                                                let sel = matches!(
-                                                    &panel_state.add_selection,
-                                                    AddSelection::Fighter(j) if *j == i
-                                                );
-                                                if ui
-                                                    .selectable_label(
-                                                        sel,
-                                                        format!(
-                                                            "{} ({}mat)",
-                                                            class.name,
-                                                            class.refined_material_cost,
-                                                        ),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    panel_state.add_selection =
-                                                        AddSelection::Fighter(i);
-                                                }
+                                    egui::ComboBox::from_id_salt(format!(
+                                        "ftr_combo_{:?}",
+                                        sys_key
+                                    ))
+                                    .selected_text(selected_ftr_name)
+                                    .show_ui(ui, |ui| {
+                                        for (i, (_, class)) in fighters.iter().enumerate() {
+                                            let sel = matches!(
+                                                &panel_state.add_selection,
+                                                AddSelection::Fighter(j) if *j == i
+                                            );
+                                            if ui
+                                                .selectable_label(
+                                                    sel,
+                                                    format!(
+                                                        "{} ({}mat)",
+                                                        class.name, class.refined_material_cost,
+                                                    ),
+                                                )
+                                                .clicked()
+                                            {
+                                                panel_state.add_selection =
+                                                    AddSelection::Fighter(i);
                                             }
-                                        });
+                                        }
+                                    });
 
                                     if ui.small_button("Enqueue").clicked() {
-                                        if let AddSelection::Fighter(i) =
-                                            &panel_state.add_selection
+                                        if let AddSelection::Fighter(i) = &panel_state.add_selection
                                         {
                                             if let Some((class_key, class)) = fighters.get(*i) {
                                                 action = Some(PanelAction::Enqueue {
@@ -341,7 +344,8 @@ pub fn draw_manufacturing(
                                                     cost: class.refined_material_cost,
                                                     // Fighters have no research_difficulty; use
                                                     // material cost / 5 + 5 as a build-time proxy.
-                                                    ticks: (class.refined_material_cost / 5 + 5).max(1),
+                                                    ticks: (class.refined_material_cost / 5 + 5)
+                                                        .max(1),
                                                 });
                                             }
                                         }

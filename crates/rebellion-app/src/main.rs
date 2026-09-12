@@ -1,5 +1,12 @@
 mod audio;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+#[cfg_attr(
+    all(test, not(target_arch = "wasm32")),
+    expect(
+        dead_code,
+        reason = "Native tests cover fixture helpers; the browser bridge is called only by WASM."
+    )
+)]
 mod interface_test_fixture;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;
@@ -32,8 +39,8 @@ use rebellion_core::missions::{
     MissionEffect, MissionFaction, MissionKind, MissionState, MissionSystem,
 };
 use rebellion_core::movement::{
-    apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit,
-    reconcile_fleet_orbits, validate_fleet_dispatch, MovementState, MovementSystem,
+    apply_fleet_arrival, begin_faction_fleet_transit, begin_fleet_transit, reconcile_fleet_orbits,
+    validate_fleet_dispatch, MovementState, MovementSystem,
 };
 use rebellion_core::repair::{RepairEvent, RepairState, RepairSystem};
 use rebellion_core::research::{ResearchState, ResearchSystem};
@@ -58,16 +65,15 @@ use rebellion_render::{
     draw_encyclopedia, draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map,
     draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing, draw_missions,
     draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
-    draw_system_windows, draw_tactical_view, handle_cockpit_egui_input,
-    set_cockpit_viewport_clip, show_event_screen, update_event_screen, AdvisorFaction,
-    AdvisorState, AssetRenderProfile, AudioVolumeState, BmpCache, CockpitButton, CockpitFaction,
-    CockpitState, CreditsState, EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState,
-    GameMessage, GameSetupAction, GameSetupState, GroundAction, GroundCombatState, MainMenuAction,
-    MainMenuState, ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog,
-    MessageLogState, MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState,
-    MusicContext, OfficersState, PanelAction, SectorWindowAction, SectorWindowState, SfxKind,
-    SystemWindowAction, SystemWindowState, TacticalAction, TacticalState, VideoError, VideoPlayer,
-    VoiceLine,
+    draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
+    show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
+    AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
+    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction,
+    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
+    ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog, MessageLogState,
+    MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
+    PanelAction, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
+    SystemWindowState, TacticalAction, TacticalState, VideoError, VideoPlayer, VoiceLine,
 };
 
 /// Top-level game mode state machine.
@@ -95,6 +101,10 @@ enum GameMode {
     /// Ground combat phase after space combat.
     GroundCombat,
     /// Victory/defeat modal overlay on the frozen galaxy map.
+    #[expect(
+        dead_code,
+        reason = "Victory modal rendering exists, but its transition is not wired yet."
+    )]
     VictoryModal { alliance_won: bool },
 }
 
@@ -398,9 +408,7 @@ fn install_runtime_pack(
     let advisor_bitmaps = pack
         .bitmaps
         .iter()
-        .filter(|(key, _)| {
-            key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/")
-        })
+        .filter(|(key, _)| key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/"))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
 
@@ -594,6 +602,44 @@ fn prewarm_galaxy_font_sizes(
     }
 }
 
+fn toggle_exclusive_panel(panels: &mut [&mut bool], selected: usize) {
+    let was_open = *panels[selected];
+    if !was_open {
+        for panel in panels.iter_mut() {
+            **panel = false;
+        }
+    }
+    *panels[selected] = !was_open;
+}
+
+#[cfg(test)]
+mod panel_toggle_tests {
+    use super::toggle_exclusive_panel;
+
+    #[test]
+    fn opens_closes_and_switches_exclusive_panels() {
+        let mut panels = [false; 9];
+        let press = |panels: &mut [bool; 9], selected| {
+            let mut refs: Vec<&mut bool> = panels.iter_mut().collect();
+            toggle_exclusive_panel(&mut refs, selected);
+        };
+
+        press(&mut panels, 0);
+        assert_eq!(
+            panels,
+            [true, false, false, false, false, false, false, false, false]
+        );
+        press(&mut panels, 0);
+        assert_eq!(panels, [false; 9]);
+        press(&mut panels, 2);
+        press(&mut panels, 8);
+        assert_eq!(
+            panels,
+            [false, false, false, false, false, false, false, false, true]
+        );
+    }
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     // Accept an optional GData path as the first CLI argument.
@@ -618,10 +664,7 @@ async fn main() {
     let gdata_path = PathBuf::from("data/base");
 
     let asset_render_profile = configured_asset_render_profile();
-    macroquad::logging::info!(
-        "[assets] render_profile={}",
-        asset_render_profile.as_str()
-    );
+    macroquad::logging::info!("[assets] render_profile={}", asset_render_profile.as_str());
 
     #[cfg(target_arch = "wasm32")]
     if web_replay::requested() {
@@ -1018,36 +1061,36 @@ async fn main() {
             if is_key_pressed(KeyCode::Key3) {
                 clock.set_speed(GameSpeed::Faster);
             }
-            // Panel toggles (mutually exclusive left panels)
-            // Unified panel mutual exclusion: opening any panel closes all others.
+            // Panel toggles (mutually exclusive left panels).
             macro_rules! toggle_panel {
-                ($key:expr, $flag:ident) => {
+                ($key:expr, $index:expr) => {
                     if is_key_pressed($key) {
-                        $flag = !$flag;
-                        if $flag {
-                            show_officers = false;
-                            show_fleets = false;
-                            show_manufacturing = false;
-                            show_missions = false;
-                            show_research = false;
-                            show_jedi = false;
-                            show_bombardment = false;
-                            show_death_star = false;
-                            show_loyalty = false;
-                            $flag = true; // restore after blanket clear
-                        }
+                        toggle_exclusive_panel(
+                            &mut [
+                                &mut show_officers,
+                                &mut show_fleets,
+                                &mut show_manufacturing,
+                                &mut show_missions,
+                                &mut show_research,
+                                &mut show_jedi,
+                                &mut show_bombardment,
+                                &mut show_death_star,
+                                &mut show_loyalty,
+                            ],
+                            $index,
+                        );
                     }
                 };
             }
-            toggle_panel!(KeyCode::O, show_officers);
-            toggle_panel!(KeyCode::F, show_fleets);
-            toggle_panel!(KeyCode::M, show_manufacturing);
-            toggle_panel!(KeyCode::N, show_missions);
-            toggle_panel!(KeyCode::T, show_research);
-            toggle_panel!(KeyCode::J, show_jedi);
-            toggle_panel!(KeyCode::B, show_bombardment);
-            toggle_panel!(KeyCode::D, show_death_star);
-            toggle_panel!(KeyCode::L, show_loyalty);
+            toggle_panel!(KeyCode::O, 0);
+            toggle_panel!(KeyCode::F, 1);
+            toggle_panel!(KeyCode::M, 2);
+            toggle_panel!(KeyCode::N, 3);
+            toggle_panel!(KeyCode::T, 4);
+            toggle_panel!(KeyCode::J, 5);
+            toggle_panel!(KeyCode::B, 6);
+            toggle_panel!(KeyCode::D, 7);
+            toggle_panel!(KeyCode::L, 8);
             if is_key_pressed(KeyCode::S)
                 && !matches!(
                     game_mode,
@@ -1293,8 +1336,7 @@ async fn main() {
                         );
                     }
                 }
-                let ground_rolls: Vec<f64> =
-                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                let ground_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 ground_resolved_systems.insert(system);
                 resolve_ground_campaign(
                     &mut world,
@@ -1467,38 +1509,40 @@ async fn main() {
                         return None;
                     }
                     let value = world.systems.get(system)?;
-                    let (alliance_troops, empire_troops) = value.ground_units.iter().fold(
-                        (false, false),
-                        |counts, troop| match world.troops.get(*troop) {
-                            Some(value) if value.regiment_strength > 0 && value.is_alliance => {
-                                (true, counts.1)
-                            }
-                            Some(value) if value.regiment_strength > 0 => (counts.0, true),
-                            _ => counts,
-                        },
-                    );
+                    let (alliance_troops, empire_troops) =
+                        value
+                            .ground_units
+                            .iter()
+                            .fold((false, false), |counts, troop| {
+                                match world.troops.get(*troop) {
+                                    Some(value)
+                                        if value.regiment_strength > 0 && value.is_alliance =>
+                                    {
+                                        (true, counts.1)
+                                    }
+                                    Some(value) if value.regiment_strength > 0 => (counts.0, true),
+                                    _ => counts,
+                                }
+                            });
                     if !alliance_troops || !empire_troops {
                         return None;
                     }
 
-                    let (alliance_fleet, empire_fleet) = value.fleets.iter().fold(
-                        (false, false),
-                        |counts, fleet| match world.fleets.get(*fleet) {
-                            Some(value) if value.is_alliance => (true, counts.1),
-                            Some(_) => (counts.0, true),
-                            None => counts,
-                        },
-                    );
-                    let attacker_is_alliance = match (alliance_fleet, empire_fleet) {
-                        (false, true) => false,
-                        _ => true,
-                    };
+                    let (alliance_fleet, empire_fleet) =
+                        value.fleets.iter().fold((false, false), |counts, fleet| {
+                            match world.fleets.get(*fleet) {
+                                Some(value) if value.is_alliance => (true, counts.1),
+                                Some(_) => (counts.0, true),
+                                None => counts,
+                            }
+                        });
+                    let attacker_is_alliance =
+                        !matches!((alliance_fleet, empire_fleet), (false, true));
                     Some((system, attacker_is_alliance))
                 })
                 .collect();
             for (system, attacker_is_alliance) in continuing_ground_battles {
-                let ground_rolls: Vec<f64> =
-                    (0..256).map(|_| sim_rng.gen::<f64>()).collect();
+                let ground_rolls: Vec<f64> = (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                 resolve_ground_campaign(
                     &mut world,
                     &mut troop_transport_state,
@@ -1666,7 +1710,7 @@ async fn main() {
                     .characters
                     .values()
                     .find(|c| c.name.contains("Luke"))
-                    .map_or(false, |c| c.heritage_known);
+                    .is_some_and(|c| c.heritage_known);
 
                 for fired in &fired_events {
                     use rebellion_core::events::{
@@ -2653,7 +2697,7 @@ async fn main() {
                                         CockpitFaction::Alliance
                                     } else {
                                         CockpitFaction::Empire
-                                });
+                                    });
                                 sector_window_state.clear();
                                 system_window_state.clear();
 
@@ -2794,11 +2838,7 @@ async fn main() {
                     }
                 }
                 if let Some(system) = map_state.activated_system {
-                    sector_window_state.open_for_system(
-                        &world,
-                        system,
-                        cockpit_state.faction,
-                    );
+                    sector_window_state.open_for_system(&world, system, cockpit_state.faction);
                 }
 
                 set_cockpit_viewport_clip(None);
@@ -3060,8 +3100,7 @@ async fn main() {
                             CockpitButton::GameOptions => (0x131, "game_options"),
                             CockpitButton::Encyclopedia => (0x132, "encyclopedia"),
                             CockpitButton::GalacticInformationDisplay => {
-                                cockpit_state.gid_ui.menu_open =
-                                    !cockpit_state.gid_ui.menu_open;
+                                cockpit_state.gid_ui.menu_open = !cockpit_state.gid_ui.menu_open;
                                 cockpit_state.gid_ui.category = None;
                                 macroquad::logging::info!(
                                     "[interface] command=0x133 destination=gid_menu status={}",
@@ -3771,6 +3810,10 @@ async fn main() {
 // Panel action handler
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and UI inputs at this existing integration boundary."
+)]
 fn apply_panel_action(
     action: PanelAction,
     world: &mut GameWorld,
@@ -3797,7 +3840,7 @@ fn apply_panel_action(
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
-    #[cfg(not(target_arch = "wasm32"))] sounds_dir: &Path,
+    #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
 ) {
     match action {
         PanelAction::SelectFaction(_) => {
@@ -3987,12 +4030,8 @@ fn apply_panel_action(
                             .get(fleet)
                             .map(|value| value.location)
                             .unwrap_or_default();
-                        let _ = troop_transport_state.disembark_selected(
-                            world,
-                            fleet,
-                            origin,
-                            &troops,
-                        );
+                        let _ =
+                            troop_transport_state.disembark_selected(world, fleet, origin, &troops);
                     }
                     msg_log.push(GameMessage::new(
                         clock.tick,
@@ -4168,50 +4207,50 @@ fn apply_panel_action(
         }
         PanelAction::FireDeathStar { system } => {
             // Use DeathStarSystem::fire() for precondition validation (guards from Ghidra RE).
-            if let Some(evt) = DeathStarSystem::fire(&death_star_state, world, system, clock.tick) {
-                if let rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. } = evt {
-                    let name = world
-                        .systems
-                        .get(system)
-                        .map(|s| s.name.clone())
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    if let Some(sys) = world.systems.get_mut(system) {
-                        sys.is_destroyed = true;
-                    }
-                    victory_state.death_star_location = Some(system);
-                    // Drain the telemetry out-param into the message log so
-                    // interactive play surfaces the killed characters
-                    // immediately; the run_simulation_tick flow does the same
-                    // via the `PerceptionIntegrator`.
-                    let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
-                    rebellion_core::death_star::cleanup_destroyed_system(
-                        world,
-                        system,
-                        movement_state,
-                        death_star_state,
-                        mfg_state,
-                        blockade_state,
-                        &mut cleanup_effects,
-                    );
-                    for effect in cleanup_effects.drain(..) {
-                        if let rebellion_core::effects::GameEffect::CharacterKilled { character } =
-                            effect
-                        {
-                            if let Some(c) = world.characters.get(character) {
-                                msg_log.push(GameMessage::new(
-                                    clock.tick,
-                                    format!("{} has been killed.", c.name),
-                                    MessageCategory::Event,
-                                ));
-                            }
+            if let Some(rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. }) =
+                DeathStarSystem::fire(death_star_state, world, system, clock.tick)
+            {
+                let name = world
+                    .systems
+                    .get(system)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                if let Some(sys) = world.systems.get_mut(system) {
+                    sys.is_destroyed = true;
+                }
+                victory_state.death_star_location = Some(system);
+                // Drain the telemetry out-param into the message log so
+                // interactive play surfaces the killed characters
+                // immediately; the run_simulation_tick flow does the same
+                // via the `PerceptionIntegrator`.
+                let mut cleanup_effects: Vec<rebellion_core::effects::GameEffect> = Vec::new();
+                rebellion_core::death_star::cleanup_destroyed_system(
+                    world,
+                    system,
+                    movement_state,
+                    death_star_state,
+                    mfg_state,
+                    blockade_state,
+                    &mut cleanup_effects,
+                );
+                for effect in cleanup_effects.drain(..) {
+                    if let rebellion_core::effects::GameEffect::CharacterKilled { character } =
+                        effect
+                    {
+                        if let Some(c) = world.characters.get(character) {
+                            msg_log.push(GameMessage::new(
+                                clock.tick,
+                                format!("{} has been killed.", c.name),
+                                MessageCategory::Event,
+                            ));
                         }
                     }
-                    msg_log.push(GameMessage::new(
-                        clock.tick,
-                        format!("{} DESTROYED by Death Star superlaser!", name),
-                        MessageCategory::Combat,
-                    ));
                 }
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("{} DESTROYED by Death Star superlaser!", name),
+                    MessageCategory::Combat,
+                ));
             }
         }
         PanelAction::MoveDeathStar { system } => {
@@ -4235,16 +4274,13 @@ fn apply_panel_action(
                             .get(system)
                             .map(|s| s.name.clone())
                             .unwrap_or_else(|| "Unknown".to_string());
-                        if begin_fleet_transit(
-                            movement_state,
-                            world,
-                            fleet_key,
-                            system,
-                            ticks,
-                        ) {
+                        if begin_fleet_transit(movement_state, world, fleet_key, system, ticks) {
                             msg_log.push(GameMessage::new(
                                 clock.tick,
-                                format!("Death Star fleet moving to {} ({} days)", dest_name, ticks),
+                                format!(
+                                    "Death Star fleet moving to {} ({} days)",
+                                    dest_name, ticks
+                                ),
                                 MessageCategory::Event,
                             ));
                         }
@@ -4943,13 +4979,8 @@ fn apply_automatic_bombardment(
     } else {
         Faction::Empire
     };
-    let result = BombardmentSystem::resolve_bombardment(
-        world,
-        fleet,
-        system,
-        world.difficulty_index,
-        tick,
-    );
+    let result =
+        BombardmentSystem::resolve_bombardment(world, fleet, system, world.difficulty_index, tick);
     let headquarters_destroyed =
         VictorySystem::apply_headquarters_bombardment(victory_state, world, &result, attacker);
     let system_name = world
@@ -5040,15 +5071,18 @@ fn resolve_ground_campaign(
         .systems
         .get(system)
         .map(|value| {
-            value.ground_units.iter().fold((0_usize, 0_usize), |counts, troop| {
-                match world.troops.get(*troop) {
-                    Some(value) if value.regiment_strength > 0 && value.is_alliance => {
-                        (counts.0 + 1, counts.1)
+            value
+                .ground_units
+                .iter()
+                .fold((0_usize, 0_usize), |counts, troop| {
+                    match world.troops.get(*troop) {
+                        Some(value) if value.regiment_strength > 0 && value.is_alliance => {
+                            (counts.0 + 1, counts.1)
+                        }
+                        Some(value) if value.regiment_strength > 0 => (counts.0, counts.1 + 1),
+                        _ => counts,
                     }
-                    Some(value) if value.regiment_strength > 0 => (counts.0, counts.1 + 1),
-                    _ => counts,
-                }
-            })
+                })
         })
         .unwrap_or_default();
 
@@ -5191,6 +5225,10 @@ fn apply_tactical_results(
     troop_transport.destroy_untransportable_cargo(world);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and UI inputs at this existing integration boundary."
+)]
 fn apply_ai_actions(
     actions: &[AIAction],
     rolls: &[f64],
@@ -5255,7 +5293,10 @@ fn apply_ai_actions(
                 let transit = world.fleets.get(*fleet).map(|fleet| {
                     (
                         rebellion_core::movement::fleet_transit_ticks(
-                            fleet, world, fleet.location, *to_system,
+                            fleet,
+                            world,
+                            fleet.location,
+                            *to_system,
                         ),
                         fleet.is_alliance,
                     )
@@ -5263,13 +5304,9 @@ fn apply_ai_actions(
                 if let Some((transit, is_alliance)) = transit {
                     let embarked = troops.is_empty()
                         || troop_transport_state.embark(world, *fleet, troops).is_ok();
-                    if embarked && begin_fleet_transit(
-                        movement_state,
-                        world,
-                        *fleet,
-                        *to_system,
-                        transit,
-                    ) {
+                    if embarked
+                        && begin_fleet_transit(movement_state, world, *fleet, *to_system, transit)
+                    {
                         #[cfg(not(target_arch = "wasm32"))]
                         {
                             audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
@@ -5302,11 +5339,7 @@ fn apply_ai_actions(
                     } else if embarked && !troops.is_empty() {
                         let origin = world.fleets.get(*fleet).map(|value| value.location);
                         if let Some(origin) = origin {
-                            let _ = troop_transport_state.disembark_all(
-                                world,
-                                *fleet,
-                                origin,
-                            );
+                            let _ = troop_transport_state.disembark_all(world, *fleet, origin);
                         }
                     }
                 }

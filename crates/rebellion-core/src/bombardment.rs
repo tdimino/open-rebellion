@@ -58,7 +58,7 @@ impl BombardmentSystem {
     /// # Advance contract
     /// - Does NOT mutate world.
     /// - `difficulty`: 0=development, 1=alliance_easy, 2=alliance_medium, 3=alliance_hard,
-    ///                  4=empire_easy, 5=empire_medium, 6=empire_hard, 7=multiplayer.
+    ///   4=empire_easy, 5=empire_medium, 6=empire_hard, 7=multiplayer.
     ///   Matches the C++ `difficulty_packed` bits 4-5 mapping from `GnprtbParams::value()`.
     pub fn resolve_bombardment(
         world: &GameWorld,
@@ -82,7 +82,11 @@ impl BombardmentSystem {
             }
         };
         if fleet_is_alliance == system_controlled_by_alliance {
-            return BombardmentResult { system, damage: 0, tick };
+            return BombardmentResult {
+                system,
+                damage: 0,
+                tick,
+            };
         }
 
         // FUN_00509620: get combat stats as (attack, secondary) pair.
@@ -99,12 +103,18 @@ impl BombardmentSystem {
             // No net power advantage: early-exit guard from FUN_0055d8c0 returns 0 before
             // the minimum-1 applies. Minimum-1 only fires when result after division is 0
             // but raw_power was non-zero (i.e., there was some power but it divided to zero).
-            return BombardmentResult { system, damage: 0, tick };
+            return BombardmentResult {
+                system,
+                damage: 0,
+                tick,
+            };
         }
 
         // DAT_006bb6e8: GNPRTB bombardment divisor (param_id = 0x1400).
         // Value = 5 (all difficulty modes, from GNPRTB.json).
-        let gnprtb_divisor = world.gnprtb.value(GNPRTB_BOMBARDMENT_DIVISOR_PARAM, difficulty);
+        let gnprtb_divisor = world
+            .gnprtb
+            .value(GNPRTB_BOMBARDMENT_DIVISOR_PARAM, difficulty);
         let divisor = (gnprtb_divisor.max(1)) as f64; // guard divide-by-zero
 
         // FUN_0053e190: apply difficulty modifier.
@@ -117,7 +127,11 @@ impl BombardmentSystem {
         // Minimum 1 damage — confirmed from C++ `result == 0 ? 1 : result`.
         let damage = (damage_f.floor() as i32).max(1);
 
-        BombardmentResult { system, damage, tick }
+        BombardmentResult {
+            system,
+            damage,
+            tick,
+        }
     }
 
     /// Aggregate bombardment attack stats `(attack, secondary)` for a fleet.
@@ -126,14 +140,16 @@ impl BombardmentSystem {
     ///
     /// - `[0]` = aggregate bombardment_modifier across all capital ships + fighters.
     /// - `[1]` = aggregate maneuverability (secondary stat proxy pending decompile
-    ///           of FUN_00509620's exact secondary field selection).
+    ///   of FUN_00509620's exact secondary field selection).
     fn fleet_bombardment_stats(world: &GameWorld, fleet: FleetKey) -> (i32, i32) {
         let f = &world.fleets[fleet];
         let mut brd: i32 = 0;
         let mut sec: i32 = 0;
 
         for ship in &f.capital_ships {
-            if !ship.alive { continue; }
+            if !ship.alive {
+                continue;
+            }
             let class = &world.capital_ship_classes[ship.class];
             brd += class.bombardment_modifier as i32;
             sec += class.maneuverability as i32;
@@ -152,7 +168,7 @@ impl BombardmentSystem {
     /// Maps to `FUN_00509620` called for the defender side.
     ///
     /// - `[0]` = sum of defense facility bombardment_defense (placeholder: 10 each).
-    ///           Full implementation deferred pending `DefenseFacilityClass` world model.
+    ///   Full implementation deferred pending `DefenseFacilityClass` world model.
     /// - `[1]` = sum of troop regiment_strength as secondary defense contribution.
     fn system_bombardment_defense(world: &GameWorld, system: SystemKey) -> (i32, i32) {
         let sys = &world.systems[system];
@@ -187,9 +203,9 @@ impl BombardmentSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::*;
-    use crate::ids::*;
     use crate::dat::{ExplorationStatus, Faction, SectorGroup};
+    use crate::ids::*;
+    use crate::world::*;
     use std::collections::HashMap;
 
     fn empty_world() -> GameWorld {
@@ -242,8 +258,11 @@ mod tests {
         })
     }
 
-    fn make_system(world: &mut GameWorld, sector: SectorKey,
-                   controlling: Option<Faction>) -> SystemKey {
+    fn make_system(
+        world: &mut GameWorld,
+        sector: SectorKey,
+        controlling: Option<Faction>,
+    ) -> SystemKey {
         world.systems.insert(System {
             dat_id: DatId::new(0x90000001),
             name: "Hoth".into(),
@@ -263,7 +282,9 @@ mod tests {
             defense_facilities: vec![],
             manufacturing_facilities: vec![],
             production_facilities: vec![],
-            control: controlling.map(ControlKind::Controlled).unwrap_or(ControlKind::Uncontrolled),
+            control: controlling
+                .map(ControlKind::Controlled)
+                .unwrap_or(ControlKind::Uncontrolled),
             is_headquarters: false,
             is_destroyed: false,
         })
@@ -290,8 +311,13 @@ mod tests {
         })
     }
 
-    fn make_fleet(world: &mut GameWorld, sys: SystemKey, class: CapitalShipKey,
-                  count: u32, is_alliance: bool) -> FleetKey {
+    fn make_fleet(
+        world: &mut GameWorld,
+        sys: SystemKey,
+        class: CapitalShipKey,
+        count: u32,
+        is_alliance: bool,
+    ) -> FleetKey {
         let hull = world.capital_ship_classes[class].hull as i32;
         world.fleets.insert(Fleet {
             location: sys,
@@ -314,7 +340,11 @@ mod tests {
         let fleet = make_fleet(&mut world, sys, class, 3, false); // Empire attacks Alliance
 
         let result = BombardmentSystem::resolve_bombardment(&world, fleet, sys, 2, 1);
-        assert!(result.damage >= 1, "Bombardment damage should be at least 1, got {}", result.damage);
+        assert!(
+            result.damage >= 1,
+            "Bombardment damage should be at least 1, got {}",
+            result.damage
+        );
     }
 
     #[test]
@@ -347,7 +377,8 @@ mod tests {
         assert!(
             result_large.damage >= result_small.damage,
             "Larger fleet should deal >= damage: large={} small={}",
-            result_large.damage, result_small.damage
+            result_large.damage,
+            result_small.damage
         );
     }
 

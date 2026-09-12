@@ -85,10 +85,7 @@ impl VictoryScreenState {
 /// transition or score screen.
 ///
 /// Call inside the `egui_macroquad::ui` closure.
-pub fn draw_victory_screen(
-    ctx: &egui::Context,
-    state: &mut VictoryScreenState,
-) -> bool {
+pub fn draw_victory_screen(ctx: &egui::Context, state: &mut VictoryScreenState) -> bool {
     if !state.is_pending() {
         return false;
     }
@@ -107,11 +104,7 @@ pub fn draw_victory_screen(
         egui::Order::Foreground,
         egui::Id::new("victory_dim"),
     ))
-    .rect_filled(
-        ctx.screen_rect(),
-        0.0,
-        Color32::from_black_alpha(160),
-    );
+    .rect_filled(ctx.screen_rect(), 0.0, Color32::from_black_alpha(160));
 
     egui::Window::new(&title)
         .collapsible(false)
@@ -122,12 +115,7 @@ pub fn draw_victory_screen(
             ui.vertical_centered(|ui| {
                 // ── Title / faction badge ──────────────────────────────
                 ui.add_space(8.0);
-                ui.label(
-                    RichText::new(&title)
-                        .color(title_color)
-                        .size(28.0)
-                        .strong(),
-                );
+                ui.label(RichText::new(&title).color(title_color).size(28.0).strong());
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new(&subtitle)
@@ -148,7 +136,11 @@ pub fn draw_victory_screen(
                     ui.add_space(12.0);
                     ui.separator();
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Campaign Statistics").size(13.0).color(Color32::GRAY));
+                    ui.label(
+                        RichText::new("Campaign Statistics")
+                            .size(13.0)
+                            .color(Color32::GRAY),
+                    );
                     ui.add_space(4.0);
                     ui.label(
                         RichText::new(format!("Days played:   {}", stats.days_played))
@@ -184,9 +176,7 @@ pub fn draw_victory_screen(
                     }
                     ui.add_space(8.0);
                     if ui
-                        .add(egui::Button::new(
-                            RichText::new("Continue").size(15.0),
-                        ))
+                        .add(egui::Button::new(RichText::new("Continue").size(15.0)))
                         .clicked()
                     {
                         dismissed = true;
@@ -208,9 +198,7 @@ pub fn draw_victory_screen(
 // ---------------------------------------------------------------------------
 
 /// Returns `(title, subtitle, body_lines, title_color)` for a given outcome.
-fn describe_outcome(
-    outcome: &VictoryOutcome,
-) -> (String, String, Vec<String>, Color32) {
+fn describe_outcome(outcome: &VictoryOutcome) -> (String, String, Vec<String>, Color32) {
     match outcome {
         VictoryOutcome::HqCaptured { winner, loser, .. } => {
             let winner_name = faction_name(*winner);
@@ -225,7 +213,10 @@ fn describe_outcome(
                 format!("{} Victory!", winner_name),
                 "Headquarters Captured".into(),
                 vec![
-                    format!("The {} has captured the {} headquarters.", winner_name, loser_name),
+                    format!(
+                        "The {} has captured the {} headquarters.",
+                        winner_name, loser_name
+                    ),
                     String::new(),
                     format!("The {} has been defeated.", loser_name),
                 ],
@@ -256,7 +247,6 @@ fn describe_outcome(
             ],
             Color32::from_rgb(220, 60, 60),
         ),
-
     }
 }
 
@@ -275,8 +265,8 @@ fn faction_name(faction: rebellion_core::dat::Faction) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::victory::VictoryOutcome;
     use rebellion_core::dat::Faction;
+    use rebellion_core::victory::VictoryOutcome;
     use rebellion_core::world::GameWorld;
 
     fn make_system_key() -> rebellion_core::ids::SystemKey {
@@ -339,7 +329,11 @@ mod tests {
         state.outcome = Some(VictoryOutcome::DeathStarVictory { target_system: key });
         state.acknowledged = true;
         state.replay_requested = true;
-        state.stats = Some(GameStats { days_played: 100, battles_won: 10, ships_built: 5 });
+        state.stats = Some(GameStats {
+            days_played: 100,
+            battles_won: 10,
+            ships_built: 5,
+        });
         state.reset();
         assert!(state.outcome.is_none());
         assert!(!state.acknowledged);
@@ -390,7 +384,8 @@ mod tests {
         let (title, subtitle, body, _) = describe_outcome(&outcome);
         assert!(title.contains("Empire"));
         assert!(subtitle.contains("Death Star"));
-        assert!(body.iter().any(|l| l.contains("Death Star") || l.contains("Rebel")));
+        assert!(body
+            .iter()
+            .any(|l| l.contains("Death Star") || l.contains("Rebel")));
     }
-
 }

@@ -52,6 +52,10 @@ impl CreditsState {
         self.initialized = false;
     }
 
+    #[expect(
+        clippy::manual_clamp,
+        reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
+    )]
     fn advance(&mut self, dt: f32, viewport_height: f32) {
         if !self.initialized {
             self.scroll_y = viewport_height * 0.25;

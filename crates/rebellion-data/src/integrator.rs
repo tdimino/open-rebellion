@@ -21,10 +21,15 @@ use rebellion_core::economy::{EconomyEvent, EconomyState};
 use rebellion_core::events::{EventAction, FiredEvent, SkillField, SystemTag};
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::*;
+use rebellion_core::ids::DatId;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::jedi::{JediEvent, JediState};
-use rebellion_core::manufacturing::{BuildableKind, CompletionEvent, ManufacturingState, QueueItem};
-use rebellion_core::missions::{MissionEffect, MissionFaction, MissionKind, MissionResult, MissionState};
+use rebellion_core::manufacturing::{
+    BuildableKind, CompletionEvent, ManufacturingState, QueueItem,
+};
+use rebellion_core::missions::{
+    MissionEffect, MissionFaction, MissionKind, MissionResult, MissionState,
+};
 use rebellion_core::movement::{
     apply_fleet_arrival, begin_fleet_transit, ArrivalEvent, MovementState,
 };
@@ -33,8 +38,9 @@ use rebellion_core::research::{ResearchResult, ResearchState};
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
-use rebellion_core::ids::DatId;
-use rebellion_core::world::{ControlKind, Fleet, FighterEntry, GameWorld, ShipInstance, SpecialForceUnit, TroopUnit};
+use rebellion_core::world::{
+    ControlKind, FighterEntry, Fleet, GameWorld, ShipInstance, SpecialForceUnit, TroopUnit,
+};
 
 // ---------------------------------------------------------------------------
 // Name resolution helpers (shared with simulation.rs)
@@ -86,14 +92,22 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
                 "troops": troops.len(),
             })
         }
-        AIAction::DispatchMission { kind, target_system, .. } => {
+        AIAction::DispatchMission {
+            kind,
+            target_system,
+            ..
+        } => {
             serde_json::json!({
                 "type": "DispatchMission",
                 "kind": format!("{:?}", kind),
                 "target": sys_name(world, *target_system),
             })
         }
-        AIAction::EnqueueProduction { system, kind, ticks } => {
+        AIAction::EnqueueProduction {
+            system,
+            kind,
+            ticks,
+        } => {
             serde_json::json!({
                 "type": "EnqueueProduction",
                 "system": sys_name(world, *system),
@@ -101,7 +115,11 @@ pub fn ai_action_json(action: &AIAction, world: &GameWorld) -> serde_json::Value
                 "ticks": ticks,
             })
         }
-        AIAction::DispatchResearch { character, tech_type, ticks } => {
+        AIAction::DispatchResearch {
+            character,
+            tech_type,
+            ticks,
+        } => {
             serde_json::json!({
                 "type": "DispatchResearch",
                 "character": char_name(world, *character),
@@ -176,9 +194,18 @@ impl PerceptionIntegrator {
     }
 
     /// Emit a telemetry record from components.
-    pub fn emit(&mut self, system: &'static str, event_type: &'static str, payload: serde_json::Value) {
+    pub fn emit(
+        &mut self,
+        system: &'static str,
+        event_type: &'static str,
+        payload: serde_json::Value,
+    ) {
         self.events.push(GameEventRecord::new(
-            self.tick, self.wall_ms, system, event_type, payload,
+            self.tick,
+            self.wall_ms,
+            system,
+            event_type,
+            payload,
         ));
     }
 
@@ -192,16 +219,23 @@ impl PerceptionIntegrator {
     /// Emit fog-of-war reveal telemetry (no world mutations).
     pub fn emit_fog_reveals(&mut self, reveals: &[RevealEvent], world: &GameWorld) {
         for reveal in reveals {
-            self.emit(SYS_FOG, EVT_FOG_REVEALED, serde_json::json!({
-                "system": sys_name(world, reveal.system),
-            }));
+            self.emit(
+                SYS_FOG,
+                EVT_FOG_REVEALED,
+                serde_json::json!({
+                    "system": sys_name(world, reveal.system),
+                }),
+            );
         }
     }
 
     /// Heartbeat: emit a check event so the "victory" system tag always appears.
     pub fn emit_victory_check(&mut self, victory_state: &rebellion_core::victory::VictoryState) {
         self.events.push(GameEventRecord::new(
-            self.tick, self.wall_ms, SYS_VICTORY, EVT_VICTORY_CHECK,
+            self.tick,
+            self.wall_ms,
+            SYS_VICTORY,
+            EVT_VICTORY_CHECK,
             serde_json::json!({ "resolved": victory_state.resolved }),
         ));
     }
@@ -220,17 +254,30 @@ impl PerceptionIntegrator {
         world: &GameWorld,
     ) {
         victory_state.resolved = true;
-        self.emit(SYS_VICTORY, EVT_VICTORY, serde_json::json!({
-            "outcome": format!("{:?}", outcome),
-        }));
+        self.emit(
+            SYS_VICTORY,
+            EVT_VICTORY,
+            serde_json::json!({
+                "outcome": format!("{:?}", outcome),
+            }),
+        );
         // A1: EVT_HQ_CAPTURED (0x128). Payload uses the HQ system's name
         // (human-readable) rather than a stale slotmap key (DI-H2).
-        if let VictoryOutcome::HqCaptured { winner, loser, hq_system } = outcome {
-            self.emit(SYS_VICTORY, EVT_HQ_CAPTURED, serde_json::json!({
-                "winner": format!("{:?}", winner),
-                "loser": format!("{:?}", loser),
-                "hq_system": sys_name(world, *hq_system),
-            }));
+        if let VictoryOutcome::HqCaptured {
+            winner,
+            loser,
+            hq_system,
+        } = outcome
+        {
+            self.emit(
+                SYS_VICTORY,
+                EVT_HQ_CAPTURED,
+                serde_json::json!({
+                    "winner": format!("{:?}", winner),
+                    "loser": format!("{:?}", loser),
+                    "hq_system": sys_name(world, *hq_system),
+                }),
+            );
         }
     }
 
@@ -246,8 +293,12 @@ impl PerceptionIntegrator {
         let mut neutral_systems = 0u32;
         for (_, sys) in world.systems.iter() {
             match sys.control {
-                ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => alliance_systems += 1,
-                ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => empire_systems += 1,
+                ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
+                    alliance_systems += 1
+                }
+                ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => {
+                    empire_systems += 1
+                }
                 _ => neutral_systems += 1,
             }
         }
@@ -256,119 +307,192 @@ impl PerceptionIntegrator {
         let mut systems_map = serde_json::Map::new();
         for (key, sys) in world.systems.iter() {
             if let Some(econ) = economy.per_system.get(&key) {
-                systems_map.insert(sys.name.clone(), serde_json::json!({
-                    "production_modifier": econ.production_modifier,
-                    "troop_surplus": econ.summary.troop_surplus,
-                    "has_shipyard": econ.summary.has_shipyard,
-                    "fleet_posture": format!("{:?}", econ.summary.fleet_posture),
-                    "collection_rate": econ.collection_rate,
-                }));
+                systems_map.insert(
+                    sys.name.clone(),
+                    serde_json::json!({
+                        "production_modifier": econ.production_modifier,
+                        "troop_surplus": econ.summary.troop_surplus,
+                        "has_shipyard": econ.summary.has_shipyard,
+                        "fleet_posture": format!("{:?}", econ.summary.fleet_posture),
+                        "collection_rate": econ.collection_rate,
+                    }),
+                );
             }
         }
 
-        self.emit("snapshot", EVT_CAMPAIGN_SNAPSHOT, serde_json::json!({
-            "tick": self.tick,
-            "alliance_systems": alliance_systems,
-            "empire_systems": empire_systems,
-            "neutral_systems": neutral_systems,
-            "fleets": world.fleets.len(),
-            "in_transit": movement_len,
-            "systems": systems_map,
-        }));
+        self.emit(
+            "snapshot",
+            EVT_CAMPAIGN_SNAPSHOT,
+            serde_json::json!({
+                "tick": self.tick,
+                "alliance_systems": alliance_systems,
+                "empire_systems": empire_systems,
+                "neutral_systems": neutral_systems,
+                "fleets": world.fleets.len(),
+                "in_transit": movement_len,
+                "systems": systems_map,
+            }),
+        );
     }
 
     // ── Step 2: Economy section ───────────────────────────────────────────
 
     /// Apply economy events: world mutations (support drift, control) + telemetry.
-    pub fn apply_economy_events(
-        &mut self,
-        world: &mut GameWorld,
-        economy_events: &[EconomyEvent],
-    ) {
+    pub fn apply_economy_events(&mut self, world: &mut GameWorld, economy_events: &[EconomyEvent]) {
         for ev in economy_events {
             match ev {
-                EconomyEvent::SupportDrifted { system, alliance_delta, empire_delta } => {
+                EconomyEvent::SupportDrifted {
+                    system,
+                    alliance_delta,
+                    empire_delta,
+                } => {
                     if let Some(sys) = world.systems.get_mut(*system) {
-                        sys.popularity_alliance = (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
-                        sys.popularity_empire = (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
+                        sys.popularity_alliance =
+                            (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
+                        sys.popularity_empire =
+                            (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
                     }
-                    self.emit(SYS_ECONOMY, EVT_SUPPORT_DRIFT, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "alliance_delta": alliance_delta,
-                        "empire_delta": empire_delta,
-                    }));
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_SUPPORT_DRIFT,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "alliance_delta": alliance_delta,
+                            "empire_delta": empire_delta,
+                        }),
+                    );
                 }
                 EconomyEvent::CollectionRateChanged { system, new_rate } => {
-                    self.emit(SYS_ECONOMY, EVT_COLLECTION_RATE, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "rate": new_rate,
-                    }));
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_COLLECTION_RATE,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "rate": new_rate,
+                        }),
+                    );
                 }
-                EconomyEvent::GarrisonRequirementChanged { system, new_requirement } => {
-                    self.emit(SYS_ECONOMY, EVT_GARRISON_REQUIRED, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "garrison_required": new_requirement,
-                    }));
+                EconomyEvent::GarrisonRequirementChanged {
+                    system,
+                    new_requirement,
+                } => {
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_GARRISON_REQUIRED,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "garrison_required": new_requirement,
+                        }),
+                    );
                 }
-                EconomyEvent::IncidentTriggered { system, incident_type } => {
-                    self.emit(SYS_ECONOMY, EVT_ECONOMY_TICK, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "incident": incident_type,
-                    }));
+                EconomyEvent::IncidentTriggered {
+                    system,
+                    incident_type,
+                } => {
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_ECONOMY_TICK,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "incident": incident_type,
+                        }),
+                    );
                 }
-                EconomyEvent::ControlResolved { system, new_control } => {
+                EconomyEvent::ControlResolved {
+                    system,
+                    new_control,
+                } => {
                     if let Some(sys) = world.systems.get_mut(*system) {
                         sys.control = *new_control;
                     }
-                    self.emit(SYS_ECONOMY, EVT_CONTROL_CHANGED, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "new_control": format!("{:?}", new_control),
-                    }));
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_CONTROL_CHANGED,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "new_control": format!("{:?}", new_control),
+                        }),
+                    );
                 }
-                EconomyEvent::EnergyOvercapped { system, allocated, capacity } => {
-                    self.emit(SYS_ECONOMY, EVT_ECONOMY_TICK, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "energy_overcap": true,
-                        "allocated": allocated,
-                        "capacity": capacity,
-                    }));
+                EconomyEvent::EnergyOvercapped {
+                    system,
+                    allocated,
+                    capacity,
+                } => {
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_ECONOMY_TICK,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "energy_overcap": true,
+                            "allocated": allocated,
+                            "capacity": capacity,
+                        }),
+                    );
                 }
-                EconomyEvent::RawMaterialOvercapped { system, allocated, capacity } => {
-                    self.emit(SYS_ECONOMY, EVT_ECONOMY_TICK, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "raw_material_overcap": true,
-                        "allocated": allocated,
-                        "capacity": capacity,
-                    }));
+                EconomyEvent::RawMaterialOvercapped {
+                    system,
+                    allocated,
+                    capacity,
+                } => {
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_ECONOMY_TICK,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "raw_material_overcap": true,
+                            "allocated": allocated,
+                            "capacity": capacity,
+                        }),
+                    );
                 }
                 // ── Knesset Shamash-Bet Dabora 2 notification events ────────
                 EconomyEvent::SupportChanged { system, from, to } => {
                     // K1: EVT_SUPPORT_CHANGE (0x100).
-                    self.emit(SYS_ECONOMY, EVT_SUPPORT_CHANGE, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "from": format!("{:?}", from),
-                        "to": format!("{:?}", to),
-                    }));
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_SUPPORT_CHANGE,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "from": format!("{:?}", from),
+                            "to": format!("{:?}", to),
+                        }),
+                    );
                 }
                 EconomyEvent::NaturalDisaster { system } => {
                     // K2: EVT_NATURAL_DISASTER (0x154).
-                    self.emit(SYS_ECONOMY, EVT_NATURAL_DISASTER, serde_json::json!({
-                        "system": sys_name(world, *system),
-                    }));
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_NATURAL_DISASTER,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                        }),
+                    );
                 }
                 EconomyEvent::ResourceDiscovered { system, new_output } => {
                     // K3: EVT_RESOURCE_DISCOVERY (0x155).
-                    self.emit(SYS_ECONOMY, EVT_RESOURCE_DISCOVERY, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "new_output": new_output,
-                    }));
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_RESOURCE_DISCOVERY,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "new_output": new_output,
+                        }),
+                    );
                 }
-                EconomyEvent::MaintenanceShortfall { faction_is_alliance, deficit_system_count } => {
+                EconomyEvent::MaintenanceShortfall {
+                    faction_is_alliance,
+                    deficit_system_count,
+                } => {
                     // K4: EVT_MAINTENANCE_SHORTFALL_EVENT (0x304).
-                    self.emit(SYS_ECONOMY, EVT_MAINTENANCE_SHORTFALL, serde_json::json!({
-                        "faction": if *faction_is_alliance { "Alliance" } else { "Empire" },
-                        "deficit_systems": deficit_system_count,
-                    }));
+                    self.emit(
+                        SYS_ECONOMY,
+                        EVT_MAINTENANCE_SHORTFALL,
+                        serde_json::json!({
+                            "faction": if *faction_is_alliance { "Alliance" } else { "Empire" },
+                            "deficit_systems": deficit_system_count,
+                        }),
+                    );
                 }
             }
         }
@@ -390,15 +514,23 @@ impl PerceptionIntegrator {
     ) {
         for c in completions {
             apply_build_completion_inner(c, world);
-            self.emit(SYS_MANUFACTURING, EVT_BUILD_COMPLETE, serde_json::json!({
-                "system": sys_name(world, c.system),
-                "kind": format!("{:?}", c.kind),
-            }));
+            self.emit(
+                SYS_MANUFACTURING,
+                EVT_BUILD_COMPLETE,
+                serde_json::json!({
+                    "system": sys_name(world, c.system),
+                    "kind": format!("{:?}", c.kind),
+                }),
+            );
             // K5: EVT_UNITS_DEPLOYED (0x107).
-            self.emit(SYS_MANUFACTURING, EVT_UNITS_DEPLOYED, serde_json::json!({
-                "system": sys_name(world, c.system),
-                "kind": format!("{:?}", c.kind),
-            }));
+            self.emit(
+                SYS_MANUFACTURING,
+                EVT_UNITS_DEPLOYED,
+                serde_json::json!({
+                    "system": sys_name(world, c.system),
+                    "kind": format!("{:?}", c.kind),
+                }),
+            );
         }
     }
 
@@ -411,9 +543,13 @@ impl PerceptionIntegrator {
         newly_idle: &[rebellion_core::ids::SystemKey],
     ) {
         for &system in newly_idle {
-            self.emit(SYS_MANUFACTURING, EVT_MANUFACTURING_IDLE, serde_json::json!({
-                "system": sys_name(world, system),
-            }));
+            self.emit(
+                SYS_MANUFACTURING,
+                EVT_MANUFACTURING_IDLE,
+                serde_json::json!({
+                    "system": sys_name(world, system),
+                }),
+            );
         }
     }
 
@@ -428,13 +564,17 @@ impl PerceptionIntegrator {
             let Some(applied) = apply_fleet_arrival(world, troop_transport, arrival) else {
                 continue;
             };
-            self.emit(SYS_MOVEMENT, EVT_FLEET_ARRIVED, serde_json::json!({
-                "system": sys_name(world, arrival.system),
-                "origin": sys_name(world, arrival.origin),
-                "fleet_faction": if applied.is_alliance { "Alliance" } else { "Empire" },
-                "surviving_fleet": format!("{:?}", applied.fleet),
-                "merged_fleets": applied.merged_fleets,
-            }));
+            self.emit(
+                SYS_MOVEMENT,
+                EVT_FLEET_ARRIVED,
+                serde_json::json!({
+                    "system": sys_name(world, arrival.system),
+                    "origin": sys_name(world, arrival.origin),
+                    "fleet_faction": if applied.is_alliance { "Alliance" } else { "Empire" },
+                    "surviving_fleet": format!("{:?}", applied.fleet),
+                    "merged_fleets": applied.merged_fleets,
+                }),
+            );
         }
     }
 
@@ -453,10 +593,14 @@ impl PerceptionIntegrator {
             CombatSide::Defender => "empire",
             CombatSide::Draw => "draw",
         };
-        self.emit(SYS_COMBAT, EVT_COMBAT_SPACE, serde_json::json!({
-            "system": sys_name(world, system),
-            "winner": winner_str,
-        }));
+        self.emit(
+            SYS_COMBAT,
+            EVT_COMBAT_SPACE,
+            serde_json::json!({
+                "system": sys_name(world, system),
+                "winner": winner_str,
+            }),
+        );
     }
 
     /// Emit one summary event after a complete system-level space engagement.
@@ -470,53 +614,57 @@ impl PerceptionIntegrator {
             CombatSide::Defender => "empire",
             CombatSide::Draw => "draw",
         };
-        self.emit(SYS_COMBAT, EVT_COMBAT_SPACE, serde_json::json!({
-            "system": sys_name(world, result.system),
-            "winner": winner_str,
-            "rounds": result.rounds,
-            "alliance_fleets": result.alliance_fleets,
-            "empire_fleets": result.empire_fleets,
-            "alliance_before": {
-                "capital_ships": result.alliance_before.capital_ships,
-                "fighter_squadrons": result.alliance_before.fighter_squadrons,
-                "hull": result.alliance_before.hull,
-            },
-            "alliance_after": {
-                "capital_ships": result.alliance_after.capital_ships,
-                "fighter_squadrons": result.alliance_after.fighter_squadrons,
-                "hull": result.alliance_after.hull,
-            },
-            "empire_before": {
-                "capital_ships": result.empire_before.capital_ships,
-                "fighter_squadrons": result.empire_before.fighter_squadrons,
-                "hull": result.empire_before.hull,
-            },
-            "empire_after": {
-                "capital_ships": result.empire_after.capital_ships,
-                "fighter_squadrons": result.empire_after.fighter_squadrons,
-                "hull": result.empire_after.hull,
-            },
-            "stalemate": result.stalemate,
-        }));
+        self.emit(
+            SYS_COMBAT,
+            EVT_COMBAT_SPACE,
+            serde_json::json!({
+                "system": sys_name(world, result.system),
+                "winner": winner_str,
+                "rounds": result.rounds,
+                "alliance_fleets": result.alliance_fleets,
+                "empire_fleets": result.empire_fleets,
+                "alliance_before": {
+                    "capital_ships": result.alliance_before.capital_ships,
+                    "fighter_squadrons": result.alliance_before.fighter_squadrons,
+                    "hull": result.alliance_before.hull,
+                },
+                "alliance_after": {
+                    "capital_ships": result.alliance_after.capital_ships,
+                    "fighter_squadrons": result.alliance_after.fighter_squadrons,
+                    "hull": result.alliance_after.hull,
+                },
+                "empire_before": {
+                    "capital_ships": result.empire_before.capital_ships,
+                    "fighter_squadrons": result.empire_before.fighter_squadrons,
+                    "hull": result.empire_before.hull,
+                },
+                "empire_after": {
+                    "capital_ships": result.empire_after.capital_ships,
+                    "fighter_squadrons": result.empire_after.fighter_squadrons,
+                    "hull": result.empire_after.hull,
+                },
+                "stalemate": result.stalemate,
+            }),
+        );
     }
 
     /// Apply ground combat result: troop damage + dead removal + telemetry.
-    pub fn apply_ground_combat(
-        &mut self,
-        world: &mut GameWorld,
-        result: &GroundCombatResult,
-    ) {
+    pub fn apply_ground_combat(&mut self, world: &mut GameWorld, result: &GroundCombatResult) {
         apply_ground_combat_result_inner(result, world);
         let ground_winner = match result.winner {
             CombatSide::Attacker => "alliance",
             CombatSide::Defender => "empire",
             CombatSide::Draw => "draw",
         };
-        self.emit(SYS_COMBAT, EVT_COMBAT_GROUND, serde_json::json!({
-            "system": sys_name(world, result.system),
-            "winner": ground_winner,
-            "engagements": result.troop_damage.len(),
-        }));
+        self.emit(
+            SYS_COMBAT,
+            EVT_COMBAT_GROUND,
+            serde_json::json!({
+                "system": sys_name(world, result.system),
+                "winner": ground_winner,
+                "engagements": result.troop_damage.len(),
+            }),
+        );
     }
 
     /// Emit one summary for a complete multi-round ground engagement.
@@ -534,13 +682,17 @@ impl PerceptionIntegrator {
             CombatSide::Defender => "defender",
             CombatSide::Draw => "draw",
         };
-        self.emit(SYS_COMBAT, EVT_COMBAT_GROUND, serde_json::json!({
-            "system": sys_name(world, system),
-            "winner": ground_winner,
-            "engagements": engagements,
-            "rounds": rounds,
-            "stalemate": stalemate,
-        }));
+        self.emit(
+            SYS_COMBAT,
+            EVT_COMBAT_GROUND,
+            serde_json::json!({
+                "system": sys_name(world, system),
+                "winner": ground_winner,
+                "engagements": engagements,
+                "rounds": rounds,
+                "stalemate": stalemate,
+            }),
+        );
     }
 
     /// Land every regiment carried by a fleet and emit one movement record.
@@ -555,12 +707,16 @@ impl PerceptionIntegrator {
             .disembark_all(world, fleet, system)
             .unwrap_or_default();
         if !landed.is_empty() {
-            self.emit(SYS_MOVEMENT, EVT_TROOP_MOVED, serde_json::json!({
-                "system": sys_name(world, system),
-                "fleet": format!("{:?}", fleet),
-                "regiments": landed.len(),
-                "status": "landed",
-            }));
+            self.emit(
+                SYS_MOVEMENT,
+                EVT_TROOP_MOVED,
+                serde_json::json!({
+                    "system": sys_name(world, system),
+                    "fleet": format!("{:?}", fleet),
+                    "regiments": landed.len(),
+                    "status": "landed",
+                }),
+            );
         }
         landed
     }
@@ -580,12 +736,16 @@ impl PerceptionIntegrator {
             value.control = ControlKind::Controlled(winner);
         }
         if previous != Some(ControlKind::Controlled(winner)) {
-            self.emit(SYS_COMBAT, EVT_CONTROL_CHANGED, serde_json::json!({
-                "system": sys_name(world, system),
-                "from": format!("{:?}", previous.unwrap_or_default()),
-                "to": format!("{:?}", ControlKind::Controlled(winner)),
-                "cause": "ground_occupation",
-            }));
+            self.emit(
+                SYS_COMBAT,
+                EVT_CONTROL_CHANGED,
+                serde_json::json!({
+                    "system": sys_name(world, system),
+                    "from": format!("{:?}", previous.unwrap_or_default()),
+                    "to": format!("{:?}", ControlKind::Controlled(winner)),
+                    "cause": "ground_occupation",
+                }),
+            );
         }
 
         let captives: Vec<_> = world
@@ -609,29 +769,34 @@ impl PerceptionIntegrator {
                 value.capture_tick = Some(tick);
                 value.current_fleet = None;
             }
-            self.emit(SYS_COMBAT, EVT_CAPTURE, serde_json::json!({
-                "character": name,
-                "system": sys_name(world, system),
-                "captured_by": format!("{:?}", winner),
-                "cause": "ground_occupation",
-            }));
+            self.emit(
+                SYS_COMBAT,
+                EVT_CAPTURE,
+                serde_json::json!({
+                    "character": name,
+                    "system": sys_name(world, system),
+                    "captured_by": format!("{:?}", winner),
+                    "cause": "ground_occupation",
+                }),
+            );
         }
     }
 
     /// Emit loss evidence for regiments whose fleet was destroyed in space.
-    pub fn emit_destroyed_transport_cargo(
-        &mut self,
-        destroyed: &[(FleetKey, Vec<TroopKey>)],
-    ) {
+    pub fn emit_destroyed_transport_cargo(&mut self, destroyed: &[(FleetKey, Vec<TroopKey>)]) {
         for (fleet, troops) in destroyed {
             if troops.is_empty() {
                 continue;
             }
-            self.emit(SYS_COMBAT, EVT_TROOP_MOVED, serde_json::json!({
-                "fleet": format!("{:?}", fleet),
-                "regiments": troops.len(),
-                "status": "destroyed_with_transport",
-            }));
+            self.emit(
+                SYS_COMBAT,
+                EVT_TROOP_MOVED,
+                serde_json::json!({
+                    "fleet": format!("{:?}", fleet),
+                    "regiments": troops.len(),
+                    "status": "destroyed_with_transport",
+                }),
+            );
         }
     }
 
@@ -644,11 +809,15 @@ impl PerceptionIntegrator {
         headquarters_destroyed: bool,
     ) {
         if damage > 0 {
-            self.emit(SYS_COMBAT, EVT_BOMBARDMENT, serde_json::json!({
-                "system": sys_name(world, system),
-                "damage": damage,
-                "headquarters_destroyed": headquarters_destroyed,
-            }));
+            self.emit(
+                SYS_COMBAT,
+                EVT_BOMBARDMENT,
+                serde_json::json!({
+                    "system": sys_name(world, system),
+                    "damage": damage,
+                    "headquarters_destroyed": headquarters_destroyed,
+                }),
+            );
         }
     }
     // ── Step 5: Missions + Escapes ──────────────────────────────────────
@@ -662,54 +831,85 @@ impl PerceptionIntegrator {
         death_star_state: &mut DeathStarState,
     ) {
         apply_mission_effects_inner(&result.effects, world, uprising_state, death_star_state);
-        self.emit(SYS_MISSIONS, EVT_MISSION_RESOLVED, serde_json::json!({
-            "kind": format!("{:?}", result.kind),
-            "outcome": format!("{:?}", result.outcome),
-            "target_system": sys_name(world, result.target_system),
-        }));
-        // Covert missions are espionage operations — emit an Espionage wrapper
-        // so the eval harness sees all 8 mission kinds.
-        if matches!(result.kind, MissionKind::Sabotage | MissionKind::Assassination | MissionKind::Abduction) {
-            self.emit(SYS_MISSIONS, EVT_MISSION_RESOLVED, serde_json::json!({
-                "kind": "Espionage",
+        self.emit(
+            SYS_MISSIONS,
+            EVT_MISSION_RESOLVED,
+            serde_json::json!({
+                "kind": format!("{:?}", result.kind),
                 "outcome": format!("{:?}", result.outcome),
                 "target_system": sys_name(world, result.target_system),
-                "parent_kind": format!("{:?}", result.kind),
-            }));
+            }),
+        );
+        // Covert missions are espionage operations — emit an Espionage wrapper
+        // so the eval harness sees all 8 mission kinds.
+        if matches!(
+            result.kind,
+            MissionKind::Sabotage | MissionKind::Assassination | MissionKind::Abduction
+        ) {
+            self.emit(
+                SYS_MISSIONS,
+                EVT_MISSION_RESOLVED,
+                serde_json::json!({
+                    "kind": "Espionage",
+                    "outcome": format!("{:?}", result.outcome),
+                    "target_system": sys_name(world, result.target_system),
+                    "parent_kind": format!("{:?}", result.kind),
+                }),
+            );
         }
         // R6/R7/R8/R11: Per-effect telemetry emissions.
         for effect in &result.effects {
             match effect {
                 // R6: EVT_INFORMANT_INTEL — Espionage resolved with intel.
                 MissionEffect::SystemIntelligenceGathered { system, faction } => {
-                    self.emit(SYS_MISSIONS, EVT_INFORMANT_INTEL, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "faction": format!("{:?}", faction),
-                    }));
+                    self.emit(
+                        SYS_MISSIONS,
+                        EVT_INFORMANT_INTEL,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "faction": format!("{:?}", faction),
+                        }),
+                    );
                 }
                 // R7: EVT_SABOTEUR_DETECTED — enemy sabotage on a system.
                 MissionEffect::FacilitySabotaged { system, .. } => {
-                    self.emit(SYS_MISSIONS, EVT_SABOTEUR_DETECTED, serde_json::json!({
-                        "system": sys_name(world, *system),
-                        "mission_faction": format!("{:?}", result.faction),
-                    }));
+                    self.emit(
+                        SYS_MISSIONS,
+                        EVT_SABOTEUR_DETECTED,
+                        serde_json::json!({
+                            "system": sys_name(world, *system),
+                            "mission_faction": format!("{:?}", result.faction),
+                        }),
+                    );
                 }
                 // R8: EVT_CHARACTER_HEALTH — character captured (health status change).
-                MissionEffect::CharacterCaptured { character, captured_by, at_system } => {
-                    self.emit(SYS_MISSIONS, EVT_CHARACTER_HEALTH, serde_json::json!({
-                        "character": char_name(world, *character),
-                        "status": "captured",
-                        "captured_by": format!("{:?}", captured_by),
-                        "system": sys_name(world, *at_system),
-                    }));
+                MissionEffect::CharacterCaptured {
+                    character,
+                    captured_by,
+                    at_system,
+                } => {
+                    self.emit(
+                        SYS_MISSIONS,
+                        EVT_CHARACTER_HEALTH,
+                        serde_json::json!({
+                            "character": char_name(world, *character),
+                            "status": "captured",
+                            "captured_by": format!("{:?}", captured_by),
+                            "system": sys_name(world, *at_system),
+                        }),
+                    );
                 }
                 // R11: EVT_CHARACTER_KILLED — assassination kill.
                 MissionEffect::CharacterKilled { character, faction } => {
-                    self.emit(SYS_MISSIONS, EVT_CHARACTER_KILLED, serde_json::json!({
-                        "character": char_name(world, *character),
-                        "cause": "assassination",
-                        "faction": format!("{:?}", faction),
-                    }));
+                    self.emit(
+                        SYS_MISSIONS,
+                        EVT_CHARACTER_KILLED,
+                        serde_json::json!({
+                            "character": char_name(world, *character),
+                            "cause": "assassination",
+                            "faction": format!("{:?}", faction),
+                        }),
+                    );
                 }
                 _ => {}
             }
@@ -717,11 +917,7 @@ impl PerceptionIntegrator {
     }
 
     /// Apply escape effects: character faction flip + fleet removal + telemetry.
-    pub fn apply_escape_effects(
-        &mut self,
-        world: &mut GameWorld,
-        effects: &[MissionEffect],
-    ) {
+    pub fn apply_escape_effects(&mut self, world: &mut GameWorld, effects: &[MissionEffect]) {
         for effect in effects {
             if let MissionEffect::CharacterEscaped {
                 character,
@@ -738,10 +934,14 @@ impl PerceptionIntegrator {
                 for (_, fleet) in world.fleets.iter_mut() {
                     fleet.characters.retain(|&k| k != *character);
                 }
-                self.emit(SYS_MISSIONS, EVT_ESCAPE, serde_json::json!({
-                    "character": char_name(world, *character),
-                    "escaped_to_alliance": escaped_to_alliance,
-                }));
+                self.emit(
+                    SYS_MISSIONS,
+                    EVT_ESCAPE,
+                    serde_json::json!({
+                        "character": char_name(world, *character),
+                        "escaped_to_alliance": escaped_to_alliance,
+                    }),
+                );
             }
         }
     }
@@ -776,9 +976,13 @@ impl PerceptionIntegrator {
                 SystemTag::Story => SYS_STORY,
                 SystemTag::Events | SystemTag::Notification => SYS_EVENTS,
             };
-            self.emit(system_tag, EVT_EVENT_FIRED, serde_json::json!({
-                "event_id": fired.event_id,
-            }));
+            self.emit(
+                system_tag,
+                EVT_EVENT_FIRED,
+                serde_json::json!({
+                    "event_id": fired.event_id,
+                }),
+            );
         }
         // Extract Jedi training starts from story events
         for fired in fired_events {
@@ -797,9 +1001,16 @@ impl PerceptionIntegrator {
         // drain — story_effects is monotonically append-only during
         // the tick.
         for eff in &self.story_effects {
-            if let rebellion_core::effects::GameEffect::SpecialForceSpawned { at_system, is_alliance } = eff {
+            if let rebellion_core::effects::GameEffect::SpecialForceSpawned {
+                at_system,
+                is_alliance,
+            } = eff
+            {
                 self.events.push(GameEventRecord::new(
-                    self.tick, self.wall_ms, SYS_STORY, EVT_EVENT_FIRED,
+                    self.tick,
+                    self.wall_ms,
+                    SYS_STORY,
+                    EVT_EVENT_FIRED,
                     serde_json::json!({
                         "effect": "special_force_spawned",
                         "system": sys_name(world, *at_system),
@@ -829,8 +1040,19 @@ impl PerceptionIntegrator {
         config: &rebellion_core::tuning::GameConfig,
         is_dual: bool,
     ) {
-        let applied = apply_ai_actions_inner(actions, rolls, ai_state, mission_state, mfg_state,
-            movement_state, troop_transport, research_state, world, _tick, config);
+        let applied = apply_ai_actions_inner(
+            actions,
+            rolls,
+            ai_state,
+            mission_state,
+            mfg_state,
+            movement_state,
+            troop_transport,
+            research_state,
+            world,
+            _tick,
+            config,
+        );
         for (action, was_applied) in actions.iter().zip(applied) {
             if !was_applied {
                 continue;
@@ -853,13 +1075,19 @@ impl PerceptionIntegrator {
             match evt {
                 BlockadeEvent::BlockadeStarted { system, tick } => {
                     self.events.push(GameEventRecord::new(
-                        *tick, self.wall_ms, SYS_BLOCKADE, EVT_BLOCKADE_STARTED,
+                        *tick,
+                        self.wall_ms,
+                        SYS_BLOCKADE,
+                        EVT_BLOCKADE_STARTED,
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
                 BlockadeEvent::BlockadeEnded { system, tick } => {
                     self.events.push(GameEventRecord::new(
-                        *tick, self.wall_ms, SYS_BLOCKADE, EVT_BLOCKADE_ENDED,
+                        *tick,
+                        self.wall_ms,
+                        SYS_BLOCKADE,
+                        EVT_BLOCKADE_ENDED,
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
@@ -886,7 +1114,10 @@ impl PerceptionIntegrator {
             match evt {
                 UprisingEvent::UprisingIncident { system, tick } => {
                     self.events.push(GameEventRecord::new(
-                        *tick, self.wall_ms, SYS_UPRISING, EVT_UPRISING_INCIDENT,
+                        *tick,
+                        self.wall_ms,
+                        SYS_UPRISING,
+                        EVT_UPRISING_INCIDENT,
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
@@ -894,17 +1125,22 @@ impl PerceptionIntegrator {
                     let before = world.systems.get(*system).map(|s| s.control);
                     if let Some(sys) = world.systems.get_mut(*system) {
                         sys.control = match sys.control {
-                            ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) =>
-                                ControlKind::Controlled(rebellion_core::dat::Faction::Empire),
-                            ControlKind::Controlled(rebellion_core::dat::Faction::Empire) =>
-                                ControlKind::Controlled(rebellion_core::dat::Faction::Alliance),
+                            ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
+                                ControlKind::Controlled(rebellion_core::dat::Faction::Empire)
+                            }
+                            ControlKind::Controlled(rebellion_core::dat::Faction::Empire) => {
+                                ControlKind::Controlled(rebellion_core::dat::Faction::Alliance)
+                            }
                             other => other,
                         };
                     }
                     let after = world.systems.get(*system).map(|s| s.control);
                     if before != after {
                         self.events.push(GameEventRecord::new(
-                            *tick, self.wall_ms, SYS_UPRISING, EVT_CONTROL_CHANGED,
+                            *tick,
+                            self.wall_ms,
+                            SYS_UPRISING,
+                            EVT_CONTROL_CHANGED,
                             serde_json::json!({
                                 "system": sys_name(world, *system),
                                 "from": format!("{:?}", before),
@@ -914,7 +1150,10 @@ impl PerceptionIntegrator {
                         ));
                     }
                     self.events.push(GameEventRecord::new(
-                        *tick, self.wall_ms, SYS_UPRISING, EVT_UPRISING_BEGAN,
+                        *tick,
+                        self.wall_ms,
+                        SYS_UPRISING,
+                        EVT_UPRISING_BEGAN,
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
@@ -933,15 +1172,22 @@ impl PerceptionIntegrator {
             serde_json::json!({ "characters_checked": world.characters.len(), "betrayals": events.len() }),
         ));
         for evt in events {
-            let BetrayalEvent::CharacterBetrayed { character, defected_to_alliance } = evt;
+            let BetrayalEvent::CharacterBetrayed {
+                character,
+                defected_to_alliance,
+            } = evt;
 
             // #R9: reveal-before-flip — emit EVT_TRAITOR_REVEALED while the
             // character still belongs to the original faction.
-            self.emit(SYS_BETRAYAL, EVT_TRAITOR_REVEALED, serde_json::json!({
-                "character": char_name(world, *character),
-                "original_faction": if world.characters.get(*character)
-                    .map_or(false, |c| c.is_alliance) { "alliance" } else { "empire" },
-            }));
+            self.emit(
+                SYS_BETRAYAL,
+                EVT_TRAITOR_REVEALED,
+                serde_json::json!({
+                    "character": char_name(world, *character),
+                    "original_faction": if world.characters.get(*character)
+                        .is_some_and(|c| c.is_alliance) { "alliance" } else { "empire" },
+                }),
+            );
 
             // Apply the faction flip.
             if let Some(c) = world.characters.get_mut(*character) {
@@ -954,10 +1200,14 @@ impl PerceptionIntegrator {
 
             // #R10: emit EVT_SIDE_CHANGE after the flip with DI-H2 payload.
             // Replaces the former EVT_BETRAYAL emit (identical payload, same timing).
-            self.emit(SYS_BETRAYAL, EVT_SIDE_CHANGE, serde_json::json!({
-                "character": char_name(world, *character),
-                "defected_to_alliance": defected_to_alliance,
-            }));
+            self.emit(
+                SYS_BETRAYAL,
+                EVT_SIDE_CHANGE,
+                serde_json::json!({
+                    "character": char_name(world, *character),
+                    "defected_to_alliance": defected_to_alliance,
+                }),
+            );
         }
     }
 
@@ -967,14 +1217,20 @@ impl PerceptionIntegrator {
     pub fn apply_death_star_events(&mut self, world: &mut GameWorld, events: &[DeathStarEvent]) {
         // Heartbeat: emit a status event so the "death_star" system tag always appears.
         self.events.push(GameEventRecord::new(
-            self.tick, self.wall_ms, SYS_DEATH_STAR, EVT_DS_STATUS,
+            self.tick,
+            self.wall_ms,
+            SYS_DEATH_STAR,
+            EVT_DS_STATUS,
             serde_json::json!({ "events": events.len() }),
         ));
         for evt in events {
             match evt {
                 DeathStarEvent::ConstructionCompleted { system, tick } => {
                     self.events.push(GameEventRecord::new(
-                        *tick, self.wall_ms, SYS_DEATH_STAR, EVT_DS_CONSTRUCTION,
+                        *tick,
+                        self.wall_ms,
+                        SYS_DEATH_STAR,
+                        EVT_DS_CONSTRUCTION,
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
@@ -983,7 +1239,10 @@ impl PerceptionIntegrator {
                         sys.is_destroyed = true;
                     }
                     self.events.push(GameEventRecord::new(
-                        *tick, self.wall_ms, SYS_DEATH_STAR, EVT_DS_FIRED,
+                        *tick,
+                        self.wall_ms,
+                        SYS_DEATH_STAR,
+                        EVT_DS_FIRED,
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
@@ -995,19 +1254,31 @@ impl PerceptionIntegrator {
     // ── Step 12: Research ─────────────────────────────────────────────────
 
     /// Apply research results: level-ups + telemetry.
-    pub fn apply_research_results(&mut self, results: &[ResearchResult], research_state: &mut ResearchState) {
+    pub fn apply_research_results(
+        &mut self,
+        results: &[ResearchResult],
+        research_state: &mut ResearchState,
+    ) {
         for result in results {
-            let ResearchResult::TechUnlocked { faction_is_alliance, tech_type, new_level } = result;
+            let ResearchResult::TechUnlocked {
+                faction_is_alliance,
+                tech_type,
+                new_level,
+            } = result;
             if *faction_is_alliance {
                 research_state.alliance.advance(*tech_type);
             } else {
                 research_state.empire.advance(*tech_type);
             }
-            self.emit(SYS_RESEARCH, EVT_RESEARCH_UNLOCKED, serde_json::json!({
-                "faction_is_alliance": faction_is_alliance,
-                "tech_type": format!("{:?}", tech_type),
-                "new_level": new_level,
-            }));
+            self.emit(
+                SYS_RESEARCH,
+                EVT_RESEARCH_UNLOCKED,
+                serde_json::json!({
+                    "faction_is_alliance": faction_is_alliance,
+                    "tech_type": format!("{:?}", tech_type),
+                    "new_level": new_level,
+                }),
+            );
         }
     }
 
@@ -1017,34 +1288,59 @@ impl PerceptionIntegrator {
     pub fn apply_repair_events(&mut self, world: &mut GameWorld, events: &[RepairEvent]) {
         for evt in events {
             match evt {
-                RepairEvent::ShipRepaired { fleet, ship_index, hull_before, hull_after } => {
+                RepairEvent::ShipRepaired {
+                    fleet,
+                    ship_index,
+                    hull_before,
+                    hull_after,
+                } => {
                     // Apply hull restoration to the ShipInstance.
                     if let Some(f) = world.fleets.get_mut(*fleet) {
                         if let Some(ship) = f.capital_ships.get_mut(*ship_index) {
                             ship.hull_current = *hull_after;
                         }
                     }
-                    let fleet_name = world.fleets.get(*fleet)
+                    let fleet_name = world
+                        .fleets
+                        .get(*fleet)
                         .map(|f| sys_name(world, f.location))
                         .unwrap_or_else(|| "unknown".into());
-                    self.emit(SYS_REPAIR, EVT_SHIP_REPAIRED, serde_json::json!({
-                        "fleet_location": fleet_name,
-                        "hull_before": hull_before,
-                        "hull_after": hull_after,
-                        "delta": hull_after - hull_before,
-                    }));
+                    self.emit(
+                        SYS_REPAIR,
+                        EVT_SHIP_REPAIRED,
+                        serde_json::json!({
+                            "fleet_location": fleet_name,
+                            "hull_before": hull_before,
+                            "hull_after": hull_after,
+                            "delta": hull_after - hull_before,
+                        }),
+                    );
                 }
-                RepairEvent::RepairCheckPerformed { system, fleet, ships_checked } => {
+                RepairEvent::RepairCheckPerformed {
+                    system,
+                    fleet,
+                    ships_checked,
+                } => {
                     let system_name = sys_name(world, *system);
-                    let fleet_commander = world.fleets.get(*fleet)
-                        .and_then(|f| world.characters.get(*f.characters.first()?)
-                            .map(|c| c.name.as_str()))
+                    let fleet_commander = world
+                        .fleets
+                        .get(*fleet)
+                        .and_then(|f| {
+                            world
+                                .characters
+                                .get(*f.characters.first()?)
+                                .map(|c| c.name.as_str())
+                        })
                         .unwrap_or("uncrewed");
-                    self.emit(SYS_REPAIR, EVT_SHIP_REPAIR_STARTED, serde_json::json!({
-                        "system": system_name,
-                        "fleet_commander": fleet_commander,
-                        "ships_checked": ships_checked,
-                    }));
+                    self.emit(
+                        SYS_REPAIR,
+                        EVT_SHIP_REPAIR_STARTED,
+                        serde_json::json!({
+                            "system": system_name,
+                            "fleet_commander": fleet_commander,
+                            "ships_checked": ships_checked,
+                        }),
+                    );
                 }
             }
         }
@@ -1053,28 +1349,47 @@ impl PerceptionIntegrator {
     // ── Step 13: Jedi ─────────────────────────────────────────────────────
 
     /// Apply jedi events: tier advancement + discovery + telemetry.
-    pub fn apply_jedi_events(&mut self, world: &mut GameWorld, events: &[JediEvent], jedi_state: &mut JediState) {
+    pub fn apply_jedi_events(
+        &mut self,
+        world: &mut GameWorld,
+        events: &[JediEvent],
+        jedi_state: &mut JediState,
+    ) {
         // Heartbeat: emit a check event so the "jedi" system tag always appears.
         self.events.push(GameEventRecord::new(
-            self.tick, self.wall_ms, SYS_JEDI, EVT_JEDI_CHECK,
+            self.tick,
+            self.wall_ms,
+            SYS_JEDI,
+            EVT_JEDI_CHECK,
             serde_json::json!({ "training": jedi_state.training.len(), "events": events.len() }),
         ));
         for evt in events {
             match evt {
-                JediEvent::TierAdvanced { character, new_tier } => {
+                JediEvent::TierAdvanced {
+                    character,
+                    new_tier,
+                } => {
                     if let Some(c) = world.characters.get_mut(*character) {
                         c.force_tier = *new_tier;
                         c.force_experience = match new_tier {
                             rebellion_core::world::ForceTier::None => 0,
                             rebellion_core::world::ForceTier::Aware => 1,
-                            rebellion_core::world::ForceTier::Training => rebellion_core::jedi::XP_TO_TRAINING,
-                            rebellion_core::world::ForceTier::Experienced => rebellion_core::jedi::XP_TO_EXPERIENCED,
+                            rebellion_core::world::ForceTier::Training => {
+                                rebellion_core::jedi::XP_TO_TRAINING
+                            }
+                            rebellion_core::world::ForceTier::Experienced => {
+                                rebellion_core::jedi::XP_TO_EXPERIENCED
+                            }
                         };
                     }
-                    self.emit(SYS_JEDI, EVT_JEDI_TIER, serde_json::json!({
-                        "character": char_name(world, *character),
-                        "new_tier": format!("{:?}", new_tier),
-                    }));
+                    self.emit(
+                        SYS_JEDI,
+                        EVT_JEDI_TIER,
+                        serde_json::json!({
+                            "character": char_name(world, *character),
+                            "new_tier": format!("{:?}", new_tier),
+                        }),
+                    );
                 }
                 JediEvent::TrainingComplete { character } => {
                     jedi_state.stop_training(*character);
@@ -1083,9 +1398,13 @@ impl PerceptionIntegrator {
                     if let Some(c) = world.characters.get_mut(*character) {
                         c.is_discovered_jedi = true;
                     }
-                    self.emit(SYS_JEDI, EVT_JEDI_DISCOVERED, serde_json::json!({
-                        "character": char_name(world, *character),
-                    }));
+                    self.emit(
+                        SYS_JEDI,
+                        EVT_JEDI_DISCOVERED,
+                        serde_json::json!({
+                            "character": char_name(world, *character),
+                        }),
+                    );
                 }
             }
         }
@@ -1116,17 +1435,20 @@ fn apply_mission_effects_inner(
                                 (sys.popularity_alliance + delta).clamp(0.0, 1.0);
                         }
                         MissionFaction::Empire => {
-                            sys.popularity_empire =
-                                (sys.popularity_empire + delta).clamp(0.0, 1.0);
+                            sys.popularity_empire = (sys.popularity_empire + delta).clamp(0.0, 1.0);
                         }
                     }
                     const CONTROL_THRESHOLD: f32 = 0.6;
                     let a_pop = sys.popularity_alliance;
                     let e_pop = sys.popularity_empire;
                     let new_control = if a_pop >= CONTROL_THRESHOLD && a_pop > e_pop + 0.1 {
-                        Some(ControlKind::Controlled(rebellion_core::dat::Faction::Alliance))
+                        Some(ControlKind::Controlled(
+                            rebellion_core::dat::Faction::Alliance,
+                        ))
                     } else if e_pop >= CONTROL_THRESHOLD && e_pop > a_pop + 0.1 {
-                        Some(ControlKind::Controlled(rebellion_core::dat::Faction::Empire))
+                        Some(ControlKind::Controlled(
+                            rebellion_core::dat::Faction::Empire,
+                        ))
                     } else {
                         None
                     };
@@ -1137,7 +1459,10 @@ fn apply_mission_effects_inner(
                     }
                 }
             }
-            MissionEffect::UprisingStarted { system, popularity_delta } => {
+            MissionEffect::UprisingStarted {
+                system,
+                popularity_delta,
+            } => {
                 if let Some(sys) = world.systems.get_mut(*system) {
                     sys.popularity_alliance =
                         (sys.popularity_alliance + popularity_delta).clamp(0.0, 1.0);
@@ -1151,7 +1476,11 @@ fn apply_mission_effects_inner(
                 }
             }
             MissionEffect::CharacterRecruited { .. } => {}
-            MissionEffect::FacilitySabotaged { system, facility_index, .. } => {
+            MissionEffect::FacilitySabotaged {
+                system,
+                facility_index,
+                ..
+            } => {
                 if let Some(sys) = world.systems.get_mut(*system) {
                     if *facility_index < sys.manufacturing_facilities.len() {
                         let fac_key = sys.manufacturing_facilities.remove(*facility_index);
@@ -1187,7 +1516,11 @@ fn apply_mission_effects_inner(
                     c.mark_killed();
                 }
             }
-            MissionEffect::CharacterCaptured { character, captured_by, at_system } => {
+            MissionEffect::CharacterCaptured {
+                character,
+                captured_by,
+                at_system,
+            } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.is_captive = true;
                     c.captured_by = Some(match captured_by {
@@ -1200,11 +1533,21 @@ fn apply_mission_effects_inner(
                     fleet.characters.retain(|&k| k != *character);
                 }
             }
-            MissionEffect::CharacterRescued { character, returned_to, .. } => {
+            MissionEffect::CharacterRescued {
+                character,
+                returned_to,
+                ..
+            } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     match returned_to {
-                        MissionFaction::Alliance => { c.is_alliance = true; c.is_empire = false; }
-                        MissionFaction::Empire => { c.is_alliance = false; c.is_empire = true; }
+                        MissionFaction::Alliance => {
+                            c.is_alliance = true;
+                            c.is_empire = false;
+                        }
+                        MissionFaction::Empire => {
+                            c.is_alliance = false;
+                            c.is_empire = true;
+                        }
                     }
                     c.is_captive = false;
                     c.captured_by = None;
@@ -1212,7 +1555,9 @@ fn apply_mission_effects_inner(
                 }
             }
             MissionEffect::CharacterBusy { character } => {
-                if let Some(c) = world.characters.get_mut(*character) { c.on_mission = true; }
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.on_mission = true;
+                }
             }
             MissionEffect::CharacterAvailable { character } => {
                 if let Some(c) = world.characters.get_mut(*character) {
@@ -1221,7 +1566,10 @@ fn apply_mission_effects_inner(
                 }
             }
             MissionEffect::DecoyTriggered { .. } => {}
-            MissionEffect::CharacterEscaped { character, escaped_to_alliance } => {
+            MissionEffect::CharacterEscaped {
+                character,
+                escaped_to_alliance,
+            } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.is_alliance = *escaped_to_alliance;
                     c.is_empire = !*escaped_to_alliance;
@@ -1234,12 +1582,14 @@ fn apply_mission_effects_inner(
                 if let Some(sys) = world.systems.get_mut(*system) {
                     match sys.control {
                         ControlKind::Controlled(rebellion_core::dat::Faction::Alliance) => {
-                            sys.popularity_alliance = (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
+                            sys.popularity_alliance =
+                                (sys.popularity_alliance + 0.05).clamp(0.0, 1.0);
                             sys.popularity_empire = (sys.popularity_empire - 0.05).clamp(0.0, 1.0);
                         }
                         _ => {
                             sys.popularity_empire = (sys.popularity_empire + 0.05).clamp(0.0, 1.0);
-                            sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
+                            sys.popularity_alliance =
+                                (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
                         }
                     }
                 }
@@ -1296,13 +1646,22 @@ pub fn apply_event_action_to_world(
                     category: MessageCategoryTag::Event,
                 });
             }
-            EventAction::ShiftPopularity { system, alliance_delta, empire_delta } => {
+            EventAction::ShiftPopularity {
+                system,
+                alliance_delta,
+                empire_delta,
+            } => {
                 if let Some(sys) = world.systems.get_mut(*system) {
-                    sys.popularity_alliance = (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
+                    sys.popularity_alliance =
+                        (sys.popularity_alliance + alliance_delta).clamp(0.0, 1.0);
                     sys.popularity_empire = (sys.popularity_empire + empire_delta).clamp(0.0, 1.0);
                 }
             }
-            EventAction::ModifyCharacterSkill { character, skill, base_delta } => {
+            EventAction::ModifyCharacterSkill {
+                character,
+                skill,
+                base_delta,
+            } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     let d = *base_delta;
                     let apply = |v: u32, delta: i32| (v as i64 + delta as i64).max(0) as u32;
@@ -1310,8 +1669,12 @@ pub fn apply_event_action_to_world(
                         SkillField::Diplomacy => c.diplomacy.base = apply(c.diplomacy.base, d),
                         SkillField::Espionage => c.espionage.base = apply(c.espionage.base, d),
                         SkillField::ShipDesign => c.ship_design.base = apply(c.ship_design.base, d),
-                        SkillField::TroopTraining => c.troop_training.base = apply(c.troop_training.base, d),
-                        SkillField::FacilityDesign => c.facility_design.base = apply(c.facility_design.base, d),
+                        SkillField::TroopTraining => {
+                            c.troop_training.base = apply(c.troop_training.base, d)
+                        }
+                        SkillField::FacilityDesign => {
+                            c.facility_design.base = apply(c.facility_design.base, d)
+                        }
                         SkillField::Combat => c.combat.base = apply(c.combat.base, d),
                         SkillField::Leadership => c.leadership.base = apply(c.leadership.base, d),
                         SkillField::Loyalty => c.loyalty.base = apply(c.loyalty.base, d),
@@ -1320,24 +1683,46 @@ pub fn apply_event_action_to_world(
                 }
             }
             EventAction::RelocateCharacter { .. } => {}
-            EventAction::SetMandatoryMission { character, mandatory } => {
-                if let Some(c) = world.characters.get_mut(*character) { c.on_mandatory_mission = *mandatory; }
+            EventAction::SetMandatoryMission {
+                character,
+                mandatory,
+            } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.on_mandatory_mission = *mandatory;
+                }
             }
-            EventAction::ModifyForceTier { character, new_tier } => {
-                if let Some(c) = world.characters.get_mut(*character) { c.force_tier = *new_tier; }
+            EventAction::ModifyForceTier {
+                character,
+                new_tier,
+            } => {
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.force_tier = *new_tier;
+                }
             }
             EventAction::RemoveCharacter { character } => {
-                for (_, fleet) in world.fleets.iter_mut() { fleet.characters.retain(|&k| k != *character); }
+                for (_, fleet) in world.fleets.iter_mut() {
+                    fleet.characters.retain(|&k| k != *character);
+                }
                 world.characters.remove(*character);
             }
             EventAction::StartJediTraining { .. } => {}
-            EventAction::TransferCharacter { character, destination, new_faction } => {
+            EventAction::TransferCharacter {
+                character,
+                destination,
+                new_faction,
+            } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.current_system = Some(*destination);
                     if let Some(faction) = new_faction {
                         match faction {
-                            rebellion_core::dat::Faction::Alliance => { c.is_alliance = true; c.is_empire = false; }
-                            rebellion_core::dat::Faction::Empire => { c.is_alliance = false; c.is_empire = true; }
+                            rebellion_core::dat::Faction::Alliance => {
+                                c.is_alliance = true;
+                                c.is_empire = false;
+                            }
+                            rebellion_core::dat::Faction::Empire => {
+                                c.is_alliance = false;
+                                c.is_empire = true;
+                            }
                             _ => {}
                         }
                     }
@@ -1345,21 +1730,34 @@ pub fn apply_event_action_to_world(
             }
             EventAction::TriggerEvent { .. } => {}
             EventAction::AccumulateForceExperience { character, amount } => {
-                if let Some(c) = world.characters.get_mut(*character) { c.force_experience += amount; }
+                if let Some(c) = world.characters.get_mut(*character) {
+                    c.force_experience += amount;
+                }
             }
-            EventAction::CaptureCharacter { character, captor_faction } => {
+            EventAction::CaptureCharacter {
+                character,
+                captor_faction,
+            } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.is_captive = true;
                     c.captured_by = Some(*captor_faction);
                     c.capture_tick = Some(tick);
                 }
-                for (_, fleet) in world.fleets.iter_mut() { fleet.characters.retain(|&k| k != *character); }
+                for (_, fleet) in world.fleets.iter_mut() {
+                    fleet.characters.retain(|&k| k != *character);
+                }
             }
             EventAction::SetCarboniteState { character, frozen } => {
                 if let Some(c) = world.characters.get_mut(*character) {
                     c.on_mandatory_mission = *frozen;
-                    if *frozen { c.is_captive = true; c.capture_tick = Some(tick); }
-                    else { c.is_captive = false; c.captured_by = None; c.capture_tick = None; }
+                    if *frozen {
+                        c.is_captive = true;
+                        c.capture_tick = Some(tick);
+                    } else {
+                        c.is_captive = false;
+                        c.captured_by = None;
+                        c.capture_tick = None;
+                    }
                 }
             }
             EventAction::SpawnSpecialForce { at_character } => {
@@ -1375,10 +1773,8 @@ pub fn apply_event_action_to_world(
                 // so this fallback should always succeed (SF-#7). We `warn!`
                 // instead of panic on the unexpected case.
                 let character = *at_character;
-                let resolved: Option<(rebellion_core::ids::SystemKey, bool)> = world
-                    .characters
-                    .get(character)
-                    .and_then(|c| {
+                let resolved: Option<(rebellion_core::ids::SystemKey, bool)> =
+                    world.characters.get(character).and_then(|c| {
                         // Primary: the character's cached current_system.
                         if let Some(sys) = c.current_system {
                             return Some((sys, c.is_alliance));
@@ -1473,6 +1869,10 @@ pub fn apply_event_action_to_world(
 // AI action helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep the existing explicit simulation state inputs at this integration boundary."
+)]
 fn apply_ai_actions_inner(
     actions: &[AIAction],
     rolls: &[f64],
@@ -1495,19 +1895,41 @@ fn apply_ai_actions_inner(
     let mut applied = Vec::with_capacity(actions.len());
     for action in actions {
         let was_applied = match action {
-            AIAction::DispatchMission { kind, character, target_system, target_character, duration_roll } => {
+            AIAction::DispatchMission {
+                kind,
+                character,
+                target_system,
+                target_character,
+                duration_roll,
+            } => {
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
                 roll_idx += 1;
-                mission_state.dispatch(*kind, mission_faction, *character, *target_system, *target_character, roll);
+                mission_state.dispatch(
+                    *kind,
+                    mission_faction,
+                    *character,
+                    *target_system,
+                    *target_character,
+                    roll,
+                );
                 ai_state.mark_busy(*character);
                 true
             }
-            AIAction::EnqueueProduction { system, kind, ticks } => {
+            AIAction::EnqueueProduction {
+                system,
+                kind,
+                ticks,
+            } => {
                 mfg_state.enqueue(*system, QueueItem::new(*kind, *ticks, *ticks));
                 true
             }
-            AIAction::DispatchResearch { character, tech_type, ticks } => {
-                let is_alliance = ai_state.faction
+            AIAction::DispatchResearch {
+                character,
+                tech_type,
+                ticks,
+            } => {
+                let is_alliance = ai_state
+                    .faction
                     .map(|f| matches!(f, rebellion_core::ai::AiFaction::Alliance))
                     .unwrap_or(false);
                 research_state.dispatch(rebellion_core::research::ResearchProject {
@@ -1528,7 +1950,10 @@ fn apply_ai_actions_inner(
             } => {
                 let transit = world.fleets.get(*fleet).map(|f| {
                     rebellion_core::movement::fleet_transit_ticks_with_config(
-                        f, world, f.location, *to_system,
+                        f,
+                        world,
+                        f.location,
+                        *to_system,
                         config.movement.distance_scale,
                         config.movement.min_transit_ticks,
                         config.movement.default_fighter_hyperdrive,
@@ -1544,13 +1969,7 @@ fn apply_ai_actions_inner(
                 } else {
                     let departed = transit
                         .map(|ticks| {
-                            begin_fleet_transit(
-                                movement_state,
-                                world,
-                                *fleet,
-                                *to_system,
-                                ticks,
-                            )
+                            begin_fleet_transit(movement_state, world, *fleet, *to_system, ticks)
                         })
                         .unwrap_or(false);
                     if !departed && !troops.is_empty() {
@@ -1871,19 +2290,23 @@ fn orbiting_fleets_by_faction(
 }
 
 fn summarize_space_force(world: &GameWorld, fleets: &[FleetKey]) -> SpaceForceSummary {
-    fleets.iter().fold(SpaceForceSummary::default(), |mut summary, fleet_key| {
-        if let Some(fleet) = world.fleets.get(*fleet_key) {
-            summary.capital_ships += fleet.capital_ships.iter().filter(|ship| ship.alive).count();
-            summary.fighter_squadrons += fleet.fighters.iter().map(|entry| entry.count).sum::<u32>();
-            summary.hull += fleet
-                .capital_ships
-                .iter()
-                .filter(|ship| ship.alive)
-                .map(|ship| i64::from(ship.hull_current))
-                .sum::<i64>();
-        }
-        summary
-    })
+    fleets
+        .iter()
+        .fold(SpaceForceSummary::default(), |mut summary, fleet_key| {
+            if let Some(fleet) = world.fleets.get(*fleet_key) {
+                summary.capital_ships +=
+                    fleet.capital_ships.iter().filter(|ship| ship.alive).count();
+                summary.fighter_squadrons +=
+                    fleet.fighters.iter().map(|entry| entry.count).sum::<u32>();
+                summary.hull += fleet
+                    .capital_ships
+                    .iter()
+                    .filter(|ship| ship.alive)
+                    .map(|ship| i64::from(ship.hull_current))
+                    .sum::<i64>();
+            }
+            summary
+        })
 }
 
 /// Resolve all hostile task forces at a system as one uninterrupted engagement.
@@ -1966,10 +2389,7 @@ pub fn resolve_system_space_combat(
     }
 }
 
-pub fn apply_space_combat_result_inner(
-    result: &SpaceCombatResult,
-    world: &mut GameWorld,
-) {
+pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut GameWorld) {
     // Apply hull damage to individual ship instances.
     for evt in &result.ship_damage {
         let fleet_key = evt.fleet;
@@ -1978,7 +2398,9 @@ pub fn apply_space_combat_result_inner(
             // Find the nth alive ship.
             let mut alive_idx = 0;
             for ship in fleet.capital_ships.iter_mut() {
-                if !ship.alive { continue; }
+                if !ship.alive {
+                    continue;
+                }
                 if alive_idx == evt.ship_index {
                     ship.hull_current = evt.hull_after;
                     if evt.hull_after <= 0 {
@@ -2006,7 +2428,9 @@ pub fn apply_space_combat_result_inner(
         if let Some(fleet) = world.fleets.get_mut(fleet_key) {
             fleet.capital_ships.retain(|s| s.alive);
         }
-        let is_empty = world.fleets.get(fleet_key)
+        let is_empty = world
+            .fleets
+            .get(fleet_key)
             .map(|f| f.is_empty())
             .unwrap_or(true);
         if is_empty {
@@ -2167,14 +2591,7 @@ mod combat_application_tests {
         let attacker = add_ship_fleet(&mut world, system, true, 100, 30);
         let defender = add_ship_fleet(&mut world, system, false, 100, 1);
 
-        let result = resolve_system_space_combat(
-            &mut world,
-            system,
-            1,
-            &[0.5; 256],
-            10,
-            false,
-        );
+        let result = resolve_system_space_combat(&mut world, system, 1, &[0.5; 256], 10, false);
 
         assert_eq!(result.winner, CombatSide::Attacker);
         assert_eq!(result.winner_fleet, Some(attacker));
@@ -2192,14 +2609,7 @@ mod combat_application_tests {
         let first_empire = add_ship_fleet(&mut world, system, false, 30, 1);
         let second_empire = add_ship_fleet(&mut world, system, false, 30, 1);
 
-        let result = resolve_system_space_combat(
-            &mut world,
-            system,
-            1,
-            &[0.5; 256],
-            11,
-            false,
-        );
+        let result = resolve_system_space_combat(&mut world, system, 1, &[0.5; 256], 11, false);
 
         assert_eq!(result.alliance_fleets, 2);
         assert_eq!(result.empire_fleets, 2);
@@ -2225,14 +2635,7 @@ mod combat_application_tests {
         add_ship_fleet(&mut world, system, true, 100, 0);
         add_ship_fleet(&mut world, system, false, 100, 0);
 
-        let result = resolve_system_space_combat(
-            &mut world,
-            system,
-            1,
-            &[0.5; 256],
-            12,
-            false,
-        );
+        let result = resolve_system_space_combat(&mut world, system, 1, &[0.5; 256], 12, false);
 
         assert_eq!(result.winner, CombatSide::Draw);
         assert_eq!(result.rounds, 1);
@@ -2241,10 +2644,7 @@ mod combat_application_tests {
     }
 }
 
-pub fn apply_ground_combat_result_inner(
-    result: &GroundCombatResult,
-    world: &mut GameWorld,
-) {
+pub fn apply_ground_combat_result_inner(result: &GroundCombatResult, world: &mut GameWorld) {
     let mut final_strengths: HashMap<TroopKey, i16> = HashMap::new();
     for evt in &result.troop_damage {
         final_strengths.insert(evt.troop, evt.strength_after);
@@ -2279,10 +2679,7 @@ pub fn apply_ground_combat_result_inner(
 // Build completion helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
-pub fn apply_build_completion_inner(
-    completion: &CompletionEvent,
-    world: &mut GameWorld,
-) {
+pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut GameWorld) {
     let sys_key = completion.system;
 
     match &completion.kind {
@@ -2298,23 +2695,30 @@ pub fn apply_build_completion_inner(
                     Some(s) => s,
                     None => return,
                 };
-                sys.fleets
-                    .iter()
-                    .copied()
-                    .find(|&fk| {
-                        world.fleets.get(fk).map(|f| f.is_alliance == is_alliance).unwrap_or(false)
-                    })
+                sys.fleets.iter().copied().find(|&fk| {
+                    world
+                        .fleets
+                        .get(fk)
+                        .map(|f| f.is_alliance == is_alliance)
+                        .unwrap_or(false)
+                })
             };
 
             if let Some(fk) = fleet_key {
                 if let Some(fleet) = world.fleets.get_mut(fk) {
-                    let hull = world.capital_ship_classes.get(*class_key)
+                    let hull = world
+                        .capital_ship_classes
+                        .get(*class_key)
                         .map(|c| c.hull as i32)
                         .unwrap_or(100);
-                    fleet.capital_ships.push(ShipInstance::new(*class_key, hull, is_alliance));
+                    fleet
+                        .capital_ships
+                        .push(ShipInstance::new(*class_key, hull, is_alliance));
                 }
             } else {
-                let hull = world.capital_ship_classes.get(*class_key)
+                let hull = world
+                    .capital_ship_classes
+                    .get(*class_key)
                     .map(|c| c.hull as i32)
                     .unwrap_or(100);
                 let fleet = Fleet {
@@ -2343,12 +2747,13 @@ pub fn apply_build_completion_inner(
                     Some(s) => s,
                     None => return,
                 };
-                sys.fleets
-                    .iter()
-                    .copied()
-                    .find(|&fk| {
-                        world.fleets.get(fk).map(|f| f.is_alliance == is_alliance).unwrap_or(false)
-                    })
+                sys.fleets.iter().copied().find(|&fk| {
+                    world
+                        .fleets
+                        .get(fk)
+                        .map(|f| f.is_alliance == is_alliance)
+                        .unwrap_or(false)
+                })
             };
 
             if let Some(fk) = fleet_key {
@@ -2356,14 +2761,20 @@ pub fn apply_build_completion_inner(
                     if let Some(entry) = fleet.fighters.iter_mut().find(|e| e.class == *class_key) {
                         entry.count += 1;
                     } else {
-                        fleet.fighters.push(FighterEntry { class: *class_key, count: 1 });
+                        fleet.fighters.push(FighterEntry {
+                            class: *class_key,
+                            count: 1,
+                        });
                     }
                 }
             } else {
                 let fleet = Fleet {
                     location: sys_key,
                     capital_ships: vec![],
-                    fighters: vec![FighterEntry { class: *class_key, count: 1 }],
+                    fighters: vec![FighterEntry {
+                        class: *class_key,
+                        count: 1,
+                    }],
                     characters: vec![],
                     is_alliance,
                     has_death_star: false,

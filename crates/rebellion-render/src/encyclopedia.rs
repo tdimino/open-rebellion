@@ -177,11 +177,9 @@ pub fn draw_encyclopedia(
                     ("Characters", EncyclopediaTab::Characters),
                     ("Systems", EncyclopediaTab::Systems),
                 ] {
-                    if ui.selectable_label(state.tab == tab, label).clicked() {
-                        if state.tab != tab {
-                            state.tab = tab;
-                            state.selected_index = 0;
-                        }
+                    if ui.selectable_label(state.tab == tab, label).clicked() && state.tab != tab {
+                        state.tab = tab;
+                        state.selected_index = 0;
                     }
                 }
             });
@@ -193,58 +191,56 @@ pub fn draw_encyclopedia(
                 let list_ui = &mut cols[0];
                 ScrollArea::vertical()
                     .id_salt("enc_list")
-                    .show(list_ui, |ui| {
-                        match state.tab {
-                            EncyclopediaTab::CapitalShips => {
-                                let keys: Vec<(CapitalShipKey, &str)> = world
-                                    .capital_ship_classes
-                                    .iter()
-                                    .map(|(k, c)| (k, c.name.as_str()))
-                                    .collect();
-                                for (i, (_, name)) in keys.iter().enumerate() {
-                                    let sel = state.selected_index == i;
-                                    if ui.selectable_label(sel, *name).clicked() {
-                                        state.selected_index = i;
-                                    }
+                    .show(list_ui, |ui| match state.tab {
+                        EncyclopediaTab::CapitalShips => {
+                            let keys: Vec<(CapitalShipKey, &str)> = world
+                                .capital_ship_classes
+                                .iter()
+                                .map(|(k, c)| (k, c.name.as_str()))
+                                .collect();
+                            for (i, (_, name)) in keys.iter().enumerate() {
+                                let sel = state.selected_index == i;
+                                if ui.selectable_label(sel, *name).clicked() {
+                                    state.selected_index = i;
                                 }
                             }
-                            EncyclopediaTab::Fighters => {
-                                let keys: Vec<(FighterKey, &str)> = world
-                                    .fighter_classes
-                                    .iter()
-                                    .map(|(k, c)| (k, c.name.as_str()))
-                                    .collect();
-                                for (i, (_, name)) in keys.iter().enumerate() {
-                                    let sel = state.selected_index == i;
-                                    if ui.selectable_label(sel, *name).clicked() {
-                                        state.selected_index = i;
-                                    }
+                        }
+                        EncyclopediaTab::Fighters => {
+                            let keys: Vec<(FighterKey, &str)> = world
+                                .fighter_classes
+                                .iter()
+                                .map(|(k, c)| (k, c.name.as_str()))
+                                .collect();
+                            for (i, (_, name)) in keys.iter().enumerate() {
+                                let sel = state.selected_index == i;
+                                if ui.selectable_label(sel, *name).clicked() {
+                                    state.selected_index = i;
                                 }
                             }
-                            EncyclopediaTab::Characters => {
-                                let chars: Vec<(CharacterKey, &str)> = world
-                                    .characters
-                                    .iter()
-                                    .map(|(k, c)| (k, c.name.as_str()))
-                                    .collect();
-                                for (i, (_, name)) in chars.iter().enumerate() {
-                                    let sel = state.selected_index == i;
-                                    if ui.selectable_label(sel, *name).clicked() {
-                                        state.selected_index = i;
-                                    }
+                        }
+                        EncyclopediaTab::Characters => {
+                            let chars: Vec<(CharacterKey, &str)> = world
+                                .characters
+                                .iter()
+                                .map(|(k, c)| (k, c.name.as_str()))
+                                .collect();
+                            for (i, (_, name)) in chars.iter().enumerate() {
+                                let sel = state.selected_index == i;
+                                if ui.selectable_label(sel, *name).clicked() {
+                                    state.selected_index = i;
                                 }
                             }
-                            EncyclopediaTab::Systems => {
-                                let systems: Vec<(SystemKey, &str)> = world
-                                    .systems
-                                    .iter()
-                                    .map(|(k, s)| (k, s.name.as_str()))
-                                    .collect();
-                                for (i, (_, name)) in systems.iter().enumerate() {
-                                    let sel = state.selected_index == i;
-                                    if ui.selectable_label(sel, *name).clicked() {
-                                        state.selected_index = i;
-                                    }
+                        }
+                        EncyclopediaTab::Systems => {
+                            let systems: Vec<(SystemKey, &str)> = world
+                                .systems
+                                .iter()
+                                .map(|(k, s)| (k, s.name.as_str()))
+                                .collect();
+                            for (i, (_, name)) in systems.iter().enumerate() {
+                                let sel = state.selected_index == i;
+                                if ui.selectable_label(sel, *name).clicked() {
+                                    state.selected_index = i;
                                 }
                             }
                         }
@@ -265,8 +261,13 @@ pub fn draw_encyclopedia(
                                         // Formula: resource_id = dat_id.raw() + 1024.
                                         // Ships without a sprite fall through to the EDATA image.
                                         let gokres_id = ship.dat_id.raw() + 1024;
-                                        if let Some(tex) = bmp_cache.get(ctx, DllSource::Gokres, gokres_id) {
-                                            ui.add(egui::Image::new(tex).fit_to_exact_size(Vec2::new(122.0, 50.0)));
+                                        if let Some(tex) =
+                                            bmp_cache.get(ctx, DllSource::Gokres, gokres_id)
+                                        {
+                                            ui.add(
+                                                egui::Image::new(tex)
+                                                    .fit_to_exact_size(Vec2::new(122.0, 50.0)),
+                                            );
                                         }
 
                                         // EDATA offset for capital ships: 42 + 0-based index
@@ -283,15 +284,39 @@ pub fn draw_encyclopedia(
                                         stat_row(ui, "Faction", faction);
                                         stat_row(ui, "Hull", &ship.hull.to_string());
                                         stat_row(ui, "Shields", &ship.shield_strength.to_string());
-                                        stat_row(ui, "Sublight", &ship.sub_light_engine.to_string());
+                                        stat_row(
+                                            ui,
+                                            "Sublight",
+                                            &ship.sub_light_engine.to_string(),
+                                        );
                                         stat_row(ui, "Hyperdrive", &ship.hyperdrive.to_string());
                                         stat_row(ui, "Maneuver", &ship.maneuverability.to_string());
-                                        stat_row(ui, "Fighters", &ship.fighter_capacity.to_string());
+                                        stat_row(
+                                            ui,
+                                            "Fighters",
+                                            &ship.fighter_capacity.to_string(),
+                                        );
                                         stat_row(ui, "Troops", &ship.troop_capacity.to_string());
-                                        stat_row(ui, "Build cost", &ship.refined_material_cost.to_string());
-                                        stat_row(ui, "Maintenance", &ship.maintenance_cost.to_string());
-                                        stat_row(ui, "Research order", &ship.research_order.to_string());
-                                        stat_row(ui, "Build time", &ship.research_difficulty.to_string());
+                                        stat_row(
+                                            ui,
+                                            "Build cost",
+                                            &ship.refined_material_cost.to_string(),
+                                        );
+                                        stat_row(
+                                            ui,
+                                            "Maintenance",
+                                            &ship.maintenance_cost.to_string(),
+                                        );
+                                        stat_row(
+                                            ui,
+                                            "Research order",
+                                            &ship.research_order.to_string(),
+                                        );
+                                        stat_row(
+                                            ui,
+                                            "Build time",
+                                            &ship.research_difficulty.to_string(),
+                                        );
                                     }
                                 }
                             }
@@ -312,10 +337,22 @@ pub fn draw_encyclopedia(
                                             _ => "Both",
                                         };
                                         stat_row(ui, "Faction", faction);
-                                        stat_row(ui, "Squadron size", &ftr.squadron_size.to_string());
+                                        stat_row(
+                                            ui,
+                                            "Squadron size",
+                                            &ftr.squadron_size.to_string(),
+                                        );
                                         stat_row(ui, "Torpedoes", &ftr.torpedoes.to_string());
-                                        stat_row(ui, "Build cost", &ftr.refined_material_cost.to_string());
-                                        stat_row(ui, "Maintenance", &ftr.maintenance_cost.to_string());
+                                        stat_row(
+                                            ui,
+                                            "Build cost",
+                                            &ftr.refined_material_cost.to_string(),
+                                        );
+                                        stat_row(
+                                            ui,
+                                            "Maintenance",
+                                            &ftr.maintenance_cost.to_string(),
+                                        );
                                     }
                                 }
                             }
@@ -336,23 +373,77 @@ pub fn draw_encyclopedia(
                                         ui.add_space(4.0);
                                         ui.heading(&chr.name);
                                         ui.separator();
-                                        let kind = if chr.is_major { "Major character" } else { "Minor character" };
+                                        let kind = if chr.is_major {
+                                            "Major character"
+                                        } else {
+                                            "Minor character"
+                                        };
                                         stat_row(ui, "Type", kind);
-                                        stat_row_pair(ui, "Diplomacy", chr.diplomacy.base, chr.diplomacy.variance);
-                                        stat_row_pair(ui, "Espionage", chr.espionage.base, chr.espionage.variance);
-                                        stat_row_pair(ui, "Ship Design", chr.ship_design.base, chr.ship_design.variance);
-                                        stat_row_pair(ui, "Troop Training", chr.troop_training.base, chr.troop_training.variance);
-                                        stat_row_pair(ui, "Facility Design", chr.facility_design.base, chr.facility_design.variance);
-                                        stat_row_pair(ui, "Combat", chr.combat.base, chr.combat.variance);
-                                        stat_row_pair(ui, "Leadership", chr.leadership.base, chr.leadership.variance);
-                                        stat_row_pair(ui, "Loyalty", chr.loyalty.base, chr.loyalty.variance);
+                                        stat_row_pair(
+                                            ui,
+                                            "Diplomacy",
+                                            chr.diplomacy.base,
+                                            chr.diplomacy.variance,
+                                        );
+                                        stat_row_pair(
+                                            ui,
+                                            "Espionage",
+                                            chr.espionage.base,
+                                            chr.espionage.variance,
+                                        );
+                                        stat_row_pair(
+                                            ui,
+                                            "Ship Design",
+                                            chr.ship_design.base,
+                                            chr.ship_design.variance,
+                                        );
+                                        stat_row_pair(
+                                            ui,
+                                            "Troop Training",
+                                            chr.troop_training.base,
+                                            chr.troop_training.variance,
+                                        );
+                                        stat_row_pair(
+                                            ui,
+                                            "Facility Design",
+                                            chr.facility_design.base,
+                                            chr.facility_design.variance,
+                                        );
+                                        stat_row_pair(
+                                            ui,
+                                            "Combat",
+                                            chr.combat.base,
+                                            chr.combat.variance,
+                                        );
+                                        stat_row_pair(
+                                            ui,
+                                            "Leadership",
+                                            chr.leadership.base,
+                                            chr.leadership.variance,
+                                        );
+                                        stat_row_pair(
+                                            ui,
+                                            "Loyalty",
+                                            chr.loyalty.base,
+                                            chr.loyalty.variance,
+                                        );
                                         if chr.jedi_probability > 0 {
-                                            stat_row(ui, "Jedi probability", &format!("{}%", chr.jedi_probability));
+                                            stat_row(
+                                                ui,
+                                                "Jedi probability",
+                                                &format!("{}%", chr.jedi_probability),
+                                            );
                                         }
                                         let mut roles = Vec::new();
-                                        if chr.can_be_admiral { roles.push("Admiral"); }
-                                        if chr.can_be_general { roles.push("General"); }
-                                        if chr.can_be_commander { roles.push("Commander"); }
+                                        if chr.can_be_admiral {
+                                            roles.push("Admiral");
+                                        }
+                                        if chr.can_be_general {
+                                            roles.push("General");
+                                        }
+                                        if chr.can_be_commander {
+                                            roles.push("Commander");
+                                        }
                                         if !roles.is_empty() {
                                             stat_row(ui, "Roles", &roles.join(", "));
                                         }
@@ -373,17 +464,41 @@ pub fn draw_encyclopedia(
                                             stat_row(ui, "Sector", &sector.name);
                                             let region = match sector.group {
                                                 rebellion_core::dat::SectorGroup::Core => "Core",
-                                                rebellion_core::dat::SectorGroup::RimInner => "Inner Rim",
-                                                rebellion_core::dat::SectorGroup::RimOuter => "Outer Rim",
+                                                rebellion_core::dat::SectorGroup::RimInner => {
+                                                    "Inner Rim"
+                                                }
+                                                rebellion_core::dat::SectorGroup::RimOuter => {
+                                                    "Outer Rim"
+                                                }
                                             };
                                             stat_row(ui, "Region", region);
                                         }
-                                        stat_row(ui, "Position", &format!("({}, {})", system.x, system.y));
-                                        stat_row(ui, "Alliance", &format!("{:.0}%", system.popularity_alliance * 100.0));
-                                        stat_row(ui, "Empire", &format!("{:.0}%", system.popularity_empire * 100.0));
+                                        stat_row(
+                                            ui,
+                                            "Position",
+                                            &format!("({}, {})", system.x, system.y),
+                                        );
+                                        stat_row(
+                                            ui,
+                                            "Alliance",
+                                            &format!("{:.0}%", system.popularity_alliance * 100.0),
+                                        );
+                                        stat_row(
+                                            ui,
+                                            "Empire",
+                                            &format!("{:.0}%", system.popularity_empire * 100.0),
+                                        );
                                         stat_row(ui, "Fleets", &system.fleets.len().to_string());
-                                        stat_row(ui, "Defenses", &system.defense_facilities.len().to_string());
-                                        stat_row(ui, "Shipyards", &system.manufacturing_facilities.len().to_string());
+                                        stat_row(
+                                            ui,
+                                            "Defenses",
+                                            &system.defense_facilities.len().to_string(),
+                                        );
+                                        stat_row(
+                                            ui,
+                                            "Shipyards",
+                                            &system.manufacturing_facilities.len().to_string(),
+                                        );
 
                                         ui.add_space(6.0);
                                         if ui.small_button("Zoom to system on map").clicked() {
@@ -531,7 +646,7 @@ fn load_image_bytes(
     let color_image =
         egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
 
-    let handle = ctx.load_texture(&format!("edata_{}", edata_n), color_image, texture_options);
+    let handle = ctx.load_texture(format!("edata_{}", edata_n), color_image, texture_options);
 
     Some(handle)
 }

@@ -378,7 +378,9 @@ fn decode_anchor_bitmap(bytes: &[u8]) -> Result<AdvisorFrameBase, AdvisorFrameEr
         .get(palette_start..palette_end)
         .ok_or(AdvisorFrameError::InvalidAnchorBitmap)?;
     let palette: Vec<[u8; 3]> = entries
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|entry| [entry[2], entry[1], entry[0]])
         .collect();
 
@@ -509,7 +511,7 @@ pub fn parse_advisor_bin(bytes: &[u8]) -> Result<BinSequence, BinError> {
     }
 
     let mut frame_ids = Vec::with_capacity(declared_count);
-    for chunk in bytes[2..].chunks_exact(2) {
+    for chunk in bytes[2..].as_chunks::<2>().0 {
         frame_ids.push(u16::from_le_bytes([chunk[0], chunk[1]]));
     }
 
@@ -598,7 +600,7 @@ pub fn parse_advisor_bin_cascade(bytes: &[u8]) -> Result<BinSequence, BinError> 
     let expected_len = 2 + count * 2;
     if len == expected_len && count > 0 {
         let mut frame_ids = Vec::with_capacity(count);
-        for chunk in bytes[2..].chunks_exact(2) {
+        for chunk in bytes[2..].as_chunks::<2>().0 {
             frame_ids.push(u16::from_le_bytes([chunk[0], chunk[1]]));
         }
         return Ok(BinSequence {
@@ -1312,7 +1314,7 @@ fn load_legacy_faction_frames(
         .map(|e| e.path())
         .filter(|p| {
             p.extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("bmp"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bmp"))
         })
         .collect();
     bmp_files.sort();
@@ -1327,7 +1329,7 @@ fn load_legacy_faction_frames(
         .map(|e| e.path())
         .filter(|p| {
             p.extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("bin"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
         })
         .collect();
     bin_files.sort();
@@ -1422,9 +1424,8 @@ fn load_legacy_faction_frames(
             }
         }
     }
-    if total_bins > 0 {
-        let valid_total = valid_v1 + valid_v2 + valid_v3 + valid_v4;
-        let pct = 100 * valid_total / total_bins;
+    let valid_total = valid_v1 + valid_v2 + valid_v3 + valid_v4;
+    if let Some(pct) = (100 * valid_total).checked_div(total_bins) {
         if parse_failures > 3 {
             eprintln!(
                 "[advisor] ... and {} more parse failures suppressed",

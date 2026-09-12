@@ -268,9 +268,11 @@ mod tests {
 
     #[test]
     fn mute_and_gain_produce_exact_effective_levels() {
-        let mut state = AudioVolumeState::default();
-        state.music_volume = 0.35;
-        state.sfx_volume = 0.6;
+        let mut state = AudioVolumeState {
+            music_volume: 0.35,
+            sfx_volume: 0.6,
+            ..Default::default()
+        };
         assert_eq!(state.effective_music_volume(), 0.35_f32 as f64);
         assert_eq!(state.effective_sfx_volume(), 0.6_f32 as f64);
 

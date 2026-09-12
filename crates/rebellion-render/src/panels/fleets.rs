@@ -244,14 +244,12 @@ pub fn draw_fleets(
                         ) {
                             Ok(()) => {
                                 let capacity = TroopTransportState::fleet_capacity(world, fleet_key)
-                                    .unwrap_or_default() as usize;
+                                    .unwrap_or_default()
+                                    as usize;
                                 let carried = troop_transport.carried_count(fleet_key);
                                 let free_capacity = capacity.saturating_sub(carried);
-                                let available = available_surface_troops(
-                                    world,
-                                    fleet_key,
-                                    player_faction,
-                                );
+                                let available =
+                                    available_surface_troops(world, fleet_key, player_faction);
                                 let available_keys: Vec<_> =
                                     available.iter().map(|(key, _)| *key).collect();
                                 let selected = state.selected_troops.entry(fleet_key).or_default();
@@ -303,12 +301,9 @@ pub fn draw_fleets(
                                     .unwrap_or("destination");
                                 if ui
                                     .button(
-                                        RichText::new(format!(
-                                            "Dispatch to {}",
-                                            destination_name,
-                                        ))
-                                        .color(theme::GOLD)
-                                        .size(11.0),
+                                        RichText::new(format!("Dispatch to {}", destination_name,))
+                                            .color(theme::GOLD)
+                                            .size(11.0),
                                     )
                                     .clicked()
                                 {
@@ -452,10 +447,9 @@ pub fn draw_fleets(
                                 .unwrap_or_default();
                             ui.add_space(2.0);
                             ui.label(
-                                RichText::new(format!(
-                                    "TROOP CARGO  {}/{}",
-                                    cargo.len(), capacity,
-                                ))
+                                RichText::new(
+                                    format!("TROOP CARGO  {}/{}", cargo.len(), capacity,),
+                                )
                                 .color(theme::GOLD_DIM)
                                 .size(10.0)
                                 .strong(),
