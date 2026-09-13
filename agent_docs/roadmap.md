@@ -592,10 +592,16 @@ would tune around known simulation feedback defects.
   world point through the handedness boundary, and pass the full 28-case muted
   browser bundle. Keep DAT-to-tactical resource joins, production 3D family
   selection, and every strict tactical cell open pending A0 evidence.
+- [x] Complete P57B2C1 authored transform and system palette selection: remove
+  inferred center-and-fit normalization, preserve source coordinates with only
+  the recovered Z reflection and winding reversal, package palettes 5531
+  through 5557, select `5530 + SYSTEMSD.picture_id`, and pass the focused
+  four-case and complete 28-case muted browser gates. Keep every strict
+  tactical cell open pending A0 evidence.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B2C next traces source pivots, scale, palette activation, lighting,
-  filtering, and culling. P58 then proves the DAT-to-tactical-vtable join before
+  states. P57B2C2 next traces lighting, filtering, and culling. P58 then proves
+  the DAT-to-tactical-vtable join before
   replacing procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other

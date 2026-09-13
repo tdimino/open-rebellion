@@ -115,12 +115,23 @@ pub(crate) fn apply(
     cockpit: &mut CockpitState,
     game_mode: &mut GameMode,
 ) -> Result<(), String> {
+    // Exercise two real SYSTEMSD picture/palette identities across the faction
+    // matrix instead of accepting a hard-coded global palette accidentally.
+    let system_dat_id = if request.faction == CockpitFaction::Alliance {
+        100
+    } else {
+        101
+    };
     let system = world
         .systems
         .iter()
-        .find(|(_, system)| !system.is_destroyed && system.fleets.is_empty())
+        .find(|(_, system)| {
+            system.dat_id.index() == system_dat_id
+                && !system.is_destroyed
+                && system.fleets.is_empty()
+        })
         .map(|(key, _)| key)
-        .ok_or("no empty, intact system for the battle fixture")?;
+        .ok_or("fixture system is not empty and intact")?;
     let alliance_ship = world
         .capital_ship_classes
         .iter()
@@ -219,6 +230,8 @@ struct FixtureRecord<'a> {
     proof_enabled: bool,
     tactical_lod: &'a str,
     system: &'a str,
+    system_picture_id: u8,
+    palette_resource_id: u32,
     attacker_ships: usize,
     defender_ships: usize,
     fighters: usize,
@@ -288,7 +301,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     }));
     emit(&FixtureRecord {
-        schema_version: 2,
+        schema_version: 3,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -300,6 +313,8 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         proof_enabled: request.proof_enabled,
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
+        system_picture_id: session.system_picture_id,
+        palette_resource_id: 5530 + u32::from(session.system_picture_id),
         attacker_ships: session.ships.iter().filter(|ship| ship.is_attacker).count(),
         defender_ships: session
             .ships
@@ -323,7 +338,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 2,
+        schema_version: 3,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -335,6 +350,8 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         proof_enabled: request.proof_enabled,
         tactical_lod: request.lod_fixture.label(),
         system: "",
+        system_picture_id: 0,
+        palette_resource_id: 0,
         attacker_ships: 0,
         defender_ships: 0,
         fighters: 0,

@@ -5565,6 +5565,7 @@ mod tactical_ground_tests {
         let session = rebellion_render::BattleSession {
             system,
             system_name: "Test System".into(),
+            system_picture_id: 1,
             attacker_fleet: attacker,
             defender_fleet: defender,
             attacker_is_alliance: true,

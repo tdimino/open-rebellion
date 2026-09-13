@@ -1093,10 +1093,14 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 2);
+      assert.equal(ready.schema_version, 3);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
+      assert.ok(Number.isSafeInteger(ready.system_picture_id)
+        && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
+      "tactical fixture lacks its SYSTEMSD picture identity");
+      assert.equal(ready.palette_resource_id, ready.system_picture_id + 5530);
       assert.ok(ready.attacker_ships > 0 && ready.defender_ships > 0);
       assert.ok(ready.fighters > 0);
       assert.deepEqual(ready.source_layout, {
@@ -1131,8 +1135,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         participants: ready.participants,
       });
       const packLog = consoleLines.find(({ text }) => text.includes("runtime_asset_pack loaded"));
-      assert.match(packLog?.text || "", /tactical_meshes=3 tactical_textures=2/,
-        "runtime pack did not install the exact source-bound three-LOD family");
+      assert.match(packLog?.text || "", /tactical_meshes=3 tactical_textures=29/,
+        "runtime pack did not install the LOD family and 27 active palettes");
       const familyLogs = consoleLines.filter(({ text }) =>
         text.includes("[tactical_3d] family_loaded base=2560"));
       const lodLogs = consoleLines.filter(({ text }) =>
@@ -1145,7 +1149,10 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         assert.equal(familyLogs.length, 1,
           "source-bound tactical LOD family did not emit exactly one load event");
         assert.match(familyLogs[0]?.text || "",
-          /resources=2560,2561,2562 textures=SDESTI52\.BMP,SDESTI_M\.BMP .*family_loads=1/,
+          new RegExp(`resources=2560,2561,2562 textures=SDESTI52\\.BMP,SDESTI_M\\.BMP `
+            + `palette_selector=${ready.system_picture_id} `
+            + `palette_resource_id=${ready.palette_resource_id} palette_flags=68 `
+            + `transform=authored_xyz_z_reflection .*family_loads=1`),
           "source-bound tactical LOD family did not load exactly once");
         const expectedResources = scenario.expected_lod_sequence
           || [scenario.expected_lod_resource];
@@ -1165,7 +1172,12 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           meshes: ["2560/1033", "2561/1033", "2562/1033"],
           textures: ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"],
           selected_resources: selectedResources,
-          palette: "tactical-dll/1000",
+          palette: {
+            system_picture_id: ready.system_picture_id,
+            resource_id: ready.palette_resource_id,
+            flags: 68,
+          },
+          transform: "authored_xyz_z_reflection",
           family_loads: 1,
         });
         if (scenario.camera_journey) {

@@ -88,6 +88,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P57B2B3 participant evidence](evidence/2026-09-13-tactical-participant-placement.md)
   for stable DAT and fleet-roster identity, exact source X slots and faction
   lanes, selected-world-point targeting, and the remaining resource join.
+- Review the [P57B2C1 transform and palette evidence](evidence/2026-09-13-tactical-transform-palette.md)
+  for direct authored mesh coordinates, the complete system-palette pack,
+  exact Abregado/Cathar selection, and the remaining render-state boundary.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -172,8 +175,11 @@ isolated fixed-view fixture records one initial family-load event. Its
 acceptance, production fleet integration, and all 106 tactical cells open.
 P57B2A through P57B2B3 recover the source camera, selected-object target path,
 active-force extent, four lanes, stable participant identity, exact X slots,
-and source-world target point. The DAT-to-tactical-resource join, production
-3D draw path, remaining render rules, and A0 comparisons remain open.
+and source-world target point. P57B2C1 removes inferred mesh normalization,
+uses authored coordinates with the source handedness boundary, and packages
+and selects the original system palette. The DAT-to-tactical-resource join,
+production 3D draw path, lighting, filtering, culling, and A0 comparisons
+remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

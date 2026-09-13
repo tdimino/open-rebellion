@@ -13,11 +13,14 @@ use std::{io::Read, path::Path};
 use macroquad::prelude::*;
 use macroquad::window::miniquad::{Backend, Comparison, PipelineParams};
 
-use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::tactical_view::OriginalTacticalLayout;
 
 pub const PROOF_MESH_KEYS: [&str; 3] = ["2560/1033", "2561/1033", "2562/1033"];
 pub const PROOF_TEXTURE_KEYS: [&str; 2] = ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"];
+#[cfg(not(target_arch = "wasm32"))]
+pub const TACTICAL_PALETTE_FIRST: u32 = 5531;
+#[cfg(not(target_arch = "wasm32"))]
+pub const TACTICAL_PALETTE_LAST: u32 = 5557;
 
 const ORIGINAL_CLOSE_THRESHOLD: f32 = 15.0;
 const ORIGINAL_MEDIUM_THRESHOLD: f32 = 40.0;
@@ -273,6 +276,7 @@ pub fn select_original_tactical_lod(
 
 const MESH_MAGIC: &[u8; 8] = b"ORTMESH\0";
 const TEXTURE_MAGIC: &[u8; 8] = b"ORTINDEX";
+const PALETTE_MAGIC: &[u8; 8] = b"ORTPAL00";
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_PROOF_OBJECT_BYTES: usize = 8 << 20;
 
@@ -321,6 +325,8 @@ pub fn install_native_tactical_lod_family(runtime_root: &Path) -> Result<(), Str
     #[derive(Deserialize)]
     struct TextureRecord {
         identifier_kind: String,
+        #[serde(default)]
+        id: u32,
         name: Option<String>,
         language: u32,
         kind: String,
@@ -425,6 +431,35 @@ pub fn install_native_tactical_lod_family(runtime_root: &Path) -> Result<(), Str
             )?,
         );
     }
+    for palette_id in TACTICAL_PALETTE_FIRST..=TACTICAL_PALETTE_LAST {
+        let matches: Vec<_> = manifest
+            .textures
+            .iter()
+            .filter(|record| {
+                record.identifier_kind == "id" && record.id == palette_id && record.language == 1033
+            })
+            .collect();
+        if matches.len() != 1 {
+            return Err(format!(
+                "tactical runtime lacks unique palette {palette_id}/1033"
+            ));
+        }
+        let palette = matches[0];
+        if palette.kind != "palette_rgb24" {
+            return Err(format!(
+                "tactical palette {palette_id}/1033 has the wrong runtime kind"
+            ));
+        }
+        installed_textures.insert(
+            format!("{palette_id}/1033"),
+            load_object(
+                runtime_root,
+                &palette.object,
+                &palette.object_sha256,
+                ".texture",
+            )?,
+        );
+    }
     set_tactical_asset_cache(installed_meshes, installed_textures);
     Ok(())
 }
@@ -466,6 +501,7 @@ pub(crate) struct TacticalProofRenderer {
     logged_camera: Option<[u32; 12]>,
     source_layout: Option<OriginalTacticalLayout>,
     logged_layout: Option<OriginalTacticalLayout>,
+    palette_selector: u8,
 }
 
 impl Default for TacticalProofRenderer {
@@ -482,11 +518,23 @@ impl Default for TacticalProofRenderer {
             logged_camera: None,
             source_layout: None,
             logged_layout: None,
+            palette_selector: 1,
         }
     }
 }
 
 impl TacticalProofRenderer {
+    pub(crate) fn set_palette_selector(&mut self, selector: u8) {
+        let selector = selector.clamp(1, 27);
+        if self.palette_selector != selector {
+            self.palette_selector = selector;
+            self.attempted = false;
+            self.assets.clear();
+            self.material = None;
+            self.logged_lod = None;
+        }
+    }
+
     pub(crate) fn set_view(&mut self, view: TacticalLodView) {
         self.view = view;
     }
@@ -547,10 +595,10 @@ impl TacticalProofRenderer {
         }
     }
 
-    pub(crate) fn draw(&mut self, bmp_cache: &mut BmpCache, aperture: (f32, f32, f32, f32)) {
+    pub(crate) fn draw(&mut self, aperture: (f32, f32, f32, f32)) {
         if !self.attempted {
             self.attempted = true;
-            if let Err(error) = self.load(bmp_cache) {
+            if let Err(error) = self.load() {
                 macroquad::logging::warn!("[tactical_3d] LOD family unavailable: {}", error);
             }
         }
@@ -668,8 +716,9 @@ impl TacticalProofRenderer {
         set_default_camera();
     }
 
-    fn load(&mut self, bmp_cache: &mut BmpCache) -> Result<(), String> {
-        let (mesh_payloads, texture_payloads) = {
+    fn load(&mut self) -> Result<(), String> {
+        let palette_resource_id = 5530 + u32::from(self.palette_selector);
+        let (mesh_payloads, texture_payloads, palette_payload) = {
             let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
             let meshes = PROOF_MESH_KEYS
                 .iter()
@@ -692,11 +741,15 @@ impl TacticalProofRenderer {
                         .ok_or_else(|| format!("typed texture entry {key} is missing"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            (meshes, textures)
+            let palette_key = format!("{palette_resource_id}/1033");
+            let palette = cache
+                .textures
+                .get(&palette_key)
+                .cloned()
+                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
+            (meshes, textures, palette)
         };
-        let palette = bmp_cache
-            .original_palette_rgba(DllSource::Tactical, resources::tactical::BACKGROUND)
-            .ok_or("TACTICAL 1000 active palette is unavailable")?;
+        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
 
         let mut textures = HashMap::new();
         for (key, bytes) in texture_payloads {
@@ -705,13 +758,11 @@ impl TacticalProofRenderer {
         let white = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
         white.set_filter(FilterMode::Nearest);
 
-        let mut family_transform = None;
         let mut assets = Vec::with_capacity(3);
         let mut diagnostics = Vec::with_capacity(3);
         for (index, mesh_bytes) in mesh_payloads.iter().enumerate() {
             let resource_id = 2560 + index as u32;
-            let mut decoded = decode_mesh_object(mesh_bytes, family_transform)?;
-            family_transform = Some(decoded.transform);
+            let mut decoded = decode_mesh_object(mesh_bytes)?;
             for chunk in &mut decoded.chunks {
                 let texture = chunk
                     .texture_name
@@ -749,18 +800,14 @@ impl TacticalProofRenderer {
         self.assets = assets;
         self.family_loads = self.family_loads.saturating_add(1);
         macroquad::logging::info!(
-            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette=tactical-dll/1000 diagnostics={} family_loads={}",
+            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette_selector={} palette_resource_id={} palette_flags=68 transform=authored_xyz_z_reflection diagnostics={} family_loads={}",
+            self.palette_selector,
+            palette_resource_id,
             diagnostics.join(","),
             self.family_loads,
         );
         Ok(())
     }
-}
-
-#[derive(Clone, Copy)]
-struct MeshTransform {
-    center: Vec3,
-    scale: f32,
 }
 
 struct DecodedMeshChunk {
@@ -772,7 +819,6 @@ struct DecodedMeshObject {
     chunks: Vec<DecodedMeshChunk>,
     source_vertices: usize,
     source_faces: usize,
-    transform: MeshTransform,
 }
 
 struct DecodedMaterial {
@@ -780,10 +826,7 @@ struct DecodedMaterial {
     texture_name: Option<String>,
 }
 
-fn decode_mesh_object(
-    bytes: &[u8],
-    family_transform: Option<MeshTransform>,
-) -> Result<DecodedMeshObject, String> {
+fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
     let mut reader = Reader::new(bytes);
     reader.expect(MESH_MAGIC)?;
     if reader.u32()? != 1 {
@@ -800,21 +843,12 @@ fn decode_mesh_object(
     for value in &mut bounds {
         *value = reader.f32()?;
     }
-    let source_center = vec3(
-        (bounds[0] + bounds[3]) * 0.5,
-        (bounds[1] + bounds[4]) * 0.5,
-        (bounds[2] + bounds[5]) * 0.5,
-    );
     let extent = (bounds[3] - bounds[0])
         .max(bounds[4] - bounds[1])
         .max(bounds[5] - bounds[2]);
     if !extent.is_finite() || extent <= 0.0 {
         return Err("invalid tactical mesh bounds".to_string());
     }
-    let transform = family_transform.unwrap_or(MeshTransform {
-        center: source_center,
-        scale: 2.0 / extent,
-    });
     let mut decoded_materials = Vec::with_capacity(materials);
     for _ in 0..materials {
         let diffuse = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
@@ -852,9 +886,8 @@ fn decode_mesh_object(
             let position = vec3(reader.f32()?, reader.f32()?, reader.f32()?);
             let normal = vec3(reader.f32()?, reader.f32()?, reader.f32()?);
             let uv = vec2(reader.f32()?, reader.f32()?);
-            let relative = position - transform.center;
             vertices.push(Vertex {
-                position: vec3(relative.x, relative.y, -relative.z) * transform.scale,
+                position: authored_position(position),
                 uv,
                 color: decoded_material.diffuse.into(),
                 normal: vec3(normal.x, normal.y, -normal.z).extend(0.0),
@@ -887,8 +920,31 @@ fn decode_mesh_object(
         chunks: output,
         source_vertices,
         source_faces,
-        transform,
     })
+}
+
+fn authored_position(position: Vec3) -> Vec3 {
+    vec3(position.x, position.y, -position.z)
+}
+
+fn decode_palette_object(
+    bytes: &[u8],
+    expected_resource_id: u32,
+) -> Result<[[u8; 4]; 256], String> {
+    let mut reader = Reader::new(bytes);
+    reader.expect(PALETTE_MAGIC)?;
+    if reader.u32()? != 1 || reader.u32()? != expected_resource_id {
+        return Err("invalid tactical palette object identity".to_string());
+    }
+    let rgb = reader.bytes(256 * 3)?;
+    if !reader.finished() {
+        return Err("tactical palette object has trailing bytes".to_string());
+    }
+    let mut palette = [[0_u8; 4]; 256];
+    for (entry, source) in palette.iter_mut().zip(rgb.chunks_exact(3)) {
+        *entry = [source[0], source[1], source[2], 255];
+    }
+    Ok(palette)
 }
 
 fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Texture2D, String> {
@@ -1096,6 +1152,30 @@ mod tests {
     }
 
     #[test]
+    fn authored_mesh_positions_keep_source_scale_and_reflect_only_z() {
+        assert_eq!(
+            authored_position(vec3(12.5, -3.25, 8.0)),
+            vec3(12.5, -3.25, -8.0)
+        );
+    }
+
+    #[test]
+    fn tactical_palette_object_preserves_rgb_and_uses_opaque_texture_alpha() {
+        let resource_id = 5537_u32;
+        let mut bytes = Vec::from(PALETTE_MAGIC.as_slice());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&resource_id.to_le_bytes());
+        for index in 0_u16..256 {
+            let component = u8::try_from(index).unwrap();
+            bytes.extend_from_slice(&[component, 255 - component, 17]);
+        }
+        let palette = decode_palette_object(&bytes, resource_id).unwrap();
+        assert_eq!(palette[0], [0, 255, 17, 255]);
+        assert_eq!(palette[255], [255, 0, 17, 255]);
+        assert!(decode_palette_object(&bytes, resource_id + 1).is_err());
+    }
+
+    #[test]
     fn original_camera_preserves_faction_pose_clip_and_field_contract() {
         let alliance = OriginalTacticalCamera::new(false, 100.0).pose();
         let empire = OriginalTacticalCamera::new(true, 100.0).pose();
@@ -1295,12 +1375,19 @@ mod tests {
             .expect("install owned P57 tactical LOD family");
         let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
         assert_eq!(cache.meshes.len(), PROOF_MESH_KEYS.len());
-        assert_eq!(cache.textures.len(), PROOF_TEXTURE_KEYS.len());
+        assert_eq!(
+            cache.textures.len(),
+            PROOF_TEXTURE_KEYS.len()
+                + usize::try_from(TACTICAL_PALETTE_LAST - TACTICAL_PALETTE_FIRST + 1).unwrap()
+        );
         for key in PROOF_MESH_KEYS {
             assert!(cache.meshes.contains_key(key));
         }
         for key in PROOF_TEXTURE_KEYS {
             assert!(cache.textures.contains_key(key));
+        }
+        for palette_id in TACTICAL_PALETTE_FIRST..=TACTICAL_PALETTE_LAST {
+            assert!(cache.textures.contains_key(&format!("{palette_id}/1033")));
         }
     }
 }

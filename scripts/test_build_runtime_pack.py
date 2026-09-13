@@ -103,6 +103,10 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 "SDESTI52.BMP": b"ORTINDEX close",
                 "SDESTI_M.BMP": b"ORTINDEX medium",
             }
+            palette_payloads = {
+                palette_id: b"ORTPAL00" + palette_id.to_bytes(4, "little")
+                for palette_id in PACKER.TACTICAL_PALETTE_IDS
+            }
             mesh_hashes = {
                 mesh_id: hashlib.sha256(payload).hexdigest()
                 for mesh_id, payload in mesh_payloads.items()
@@ -111,10 +115,16 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 name: hashlib.sha256(payload).hexdigest()
                 for name, payload in texture_payloads.items()
             }
+            palette_hashes = {
+                palette_id: hashlib.sha256(payload).hexdigest()
+                for palette_id, payload in palette_payloads.items()
+            }
             for mesh_id, payload in mesh_payloads.items():
                 (objects / f"{mesh_hashes[mesh_id]}.mesh").write_bytes(payload)
             for name, payload in texture_payloads.items():
                 (objects / f"{texture_hashes[name]}.texture").write_bytes(payload)
+            for palette_id, payload in palette_payloads.items():
+                (objects / f"{palette_hashes[palette_id]}.texture").write_bytes(payload)
             (runtime / "manifest.json").write_text(
                 json.dumps(
                     {
@@ -153,6 +163,17 @@ class RuntimePackBuilderTests(unittest.TestCase):
                                 "object": f"objects/{texture_hashes[name]}.texture",
                             }
                             for name in texture_payloads
+                        ]
+                        + [
+                            {
+                                "identifier_kind": "id",
+                                "id": palette_id,
+                                "language": 1033,
+                                "kind": "palette_rgb24",
+                                "object_sha256": palette_hashes[palette_id],
+                                "object": f"objects/{palette_hashes[palette_id]}.texture",
+                            }
+                            for palette_id in palette_payloads
                         ],
                     }
                 ),
@@ -167,7 +188,11 @@ class RuntimePackBuilderTests(unittest.TestCase):
             )
             self.assertEqual(
                 [key for kind, key in keys if kind == PACKER.KIND_TACTICAL_TEXTURE],
-                ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"],
+                [
+                    *[f"{palette_id}/1033" for palette_id in PACKER.TACTICAL_PALETTE_IDS],
+                    "SDESTI52.BMP/1033",
+                    "SDESTI_M.BMP/1033",
+                ],
             )
 
             manifest_path = runtime / "manifest.json"

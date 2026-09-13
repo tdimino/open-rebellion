@@ -51,6 +51,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical selected-object target proof](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md) | Source-traced target command, normal/held bitmap state, selected-ship centering, and remaining production-ID/A0 boundary for P24/P57B2. |
 | [Tactical active-force layout proof](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-battle-layout.md) | Source-traced active-object count, docked-fighter exclusion, battle extent, four tactical lanes, and remaining production-placement/A0 boundary for P24/P57B2. |
 | [Tactical participant placement proof](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md) | Stable DAT and fleet-roster identities, exact source X slots and faction lanes, selected-world-point targeting, and remaining resource-join/A0 boundary for P24/P57B2. |
+| [Tactical authored transform and palette proof](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md) | Direct authored mesh coordinates, complete system-palette transport, exact two-system selection, and remaining render-state/A0 boundary for P24/P57B2. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

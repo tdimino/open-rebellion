@@ -66,20 +66,24 @@ and closes every process. Raw runs live under ignored
   calculations, including its exclusion of docked fighter groups.
 - P57B2B3 binds production DAT/roster identities to those lanes, reproduces
   the original X-slot sequence, and targets the selected source world point.
+- P57B2C1 preserves the mesh's authored coordinates with only the recovered Z
+  reflection, packages palettes 5531 through 5557, and selects
+  `5530 + SYSTEMSD.picture_id`.
 - The complete bundle passes 28 of 28 muted browser cases across both factions
   and both viewports with one family load and no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge is test-only. DAT-to-tactical resource joins, production 3D family
-selection, source pivots and scale, palette activation, lighting, filtering,
-culling, native GPU and A0/A1 comparison, remaining commands, damage, effects,
-Death Star paths, results, audio, and return routing remain open. All
+selection, lighting, filtering, culling, native GPU and A0/A1 comparison,
+remaining commands, damage, effects, Death Star paths, results, audio, and
+return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
 
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P57B2C1 authored transform and system palette evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md)
 - [P57B2B3 participant identity and placement evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md)
 - [P57B2B2 active-force layout evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-battle-layout.md)
 - [P57B2B1 selected-object target evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md)

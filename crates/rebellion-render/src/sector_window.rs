@@ -490,7 +490,7 @@ fn sector_planet_position(
     )
 }
 
-fn planet_picture_id(dat_id: DatId) -> u8 {
+pub(crate) fn planet_picture_id(dat_id: DatId) -> u8 {
     dat_id
         .index()
         .checked_sub(100)

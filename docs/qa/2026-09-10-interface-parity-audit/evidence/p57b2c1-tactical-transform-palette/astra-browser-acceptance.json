@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P57B2C1",
+  "model": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "task_scope": "browser-artifact visual acceptance",
+  "focused_harness_run": "2026-09-13T19-30-31-013Z-51479",
+  "full_harness_run": "2026-09-13T19-33-33-304Z-52592",
+  "result": {
+    "verdict": "provisional_A1_pass",
+    "ready_to_commit": true,
+    "severity_findings": [],
+    "observations": [
+      "All four retained PNG captures were inspected; the original bitmap tactical shell remains intact at 640x480 and proportionally scaled with side letterboxing at 1280x800.",
+      "Both faction fixtures show participants and the small isolated authored mesh within the tactical aperture, with no blank or corrupt panel and no obvious palette corruption.",
+      "Both detailed records document --mute-audio, one temporary browser profile per scenario, and in-game music muted.",
+      "The detailed records show exactly four HTTP 200 startup requests, empty error arrays, and closed browser cleanup.",
+      "Alliance Abregado selects system picture 1 and palette 5531; Imperial Cathar selects system picture 2 and palette 5532. Both record palette flags 68 and authored_xyz_z_reflection.",
+      "The focused summary passes 4 of 4 executions and the full summary passes 28 of 28, with every launch muted, every startup limited to four requests, every browser closed, no failures, and no unstable screenshots.",
+      "Both native-size PNG hashes match their saved result records."
+    ]
+  },
+  "limits": [
+    "This is provisional A1 implementation evidence; no A0 original-executable baseline exists and the visual comparisons remain unbaselined.",
+    "The isolated authored mesh is expected to be small; these captures do not establish complete fleet rendering or original-executable visual parity.",
+    "All 106 tactical cells remain open.",
+    "Astra inspected retained captures and JSON rather than launching a new browser session or reviewing source code.",
+    "The detailed launch, palette, transform, and zero-error records cover the two 640x480 cases; the summaries provide broader execution and browser-closure coverage. Server-process closure is not explicitly recorded."
+  ]
+}

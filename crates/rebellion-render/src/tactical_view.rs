@@ -28,6 +28,7 @@ use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey, FleetKey, SystemKey
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::sector_window::planet_picture_id;
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::{TacticalLodView, TacticalProofRenderer};
 
@@ -364,6 +365,8 @@ pub struct BattleSession {
     /// System where the battle takes place.
     pub system: SystemKey,
     pub system_name: String,
+    /// Original `SYSTEMSD.picture_id`; selects the active tactical palette.
+    pub system_picture_id: u8,
     /// Attacker fleet key (in `GameWorld`).
     pub attacker_fleet: FleetKey,
     /// Defender fleet key (in `GameWorld`).
@@ -460,6 +463,10 @@ impl BattleSession {
             .systems
             .get(system)
             .map_or_else(|| "Unknown".into(), |s| s.name.clone());
+        let system_picture_id = world
+            .systems
+            .get(system)
+            .map_or(1, |system| planet_picture_id(system.dat_id));
 
         let mut ships = Vec::new();
         let mut fighters = Vec::new();
@@ -489,6 +496,7 @@ impl BattleSession {
         BattleSession {
             system,
             system_name,
+            system_picture_id,
             attacker_fleet: attacker,
             defender_fleet: defender,
             attacker_is_alliance: world.fleets[attacker].is_alliance,
@@ -1158,12 +1166,14 @@ impl TacticalState {
     /// Enable the source-bound tactical LOD proof in isolated fixture builds.
     #[cfg(feature = "interface-test-fixtures")]
     pub fn enable_resource_2560_proof(&mut self) {
+        self.sync_proof_palette();
         self.proof_resource_2560 = true;
     }
 
     /// Set a deterministic source-coordinate LOD view for browser acceptance.
     #[cfg(feature = "interface-test-fixtures")]
     pub fn set_tactical_lod_fixture(&mut self, view: TacticalLodView) {
+        self.sync_proof_palette();
         self.proof_resource_2560 = true;
         self.proof_lod_follows_zoom = false;
         self.proof_renderer.set_view(view);
@@ -1172,6 +1182,7 @@ impl TacticalState {
     /// Drive all three source LOD slots through the authentic zoom controls.
     #[cfg(feature = "interface-test-fixtures")]
     pub fn enable_tactical_lod_journey(&mut self) {
+        self.sync_proof_palette();
         self.proof_resource_2560 = true;
         self.proof_lod_follows_zoom = true;
         self.zoom = 2.0;
@@ -1182,6 +1193,7 @@ impl TacticalState {
     /// Enable the source-traced camera for isolated browser acceptance.
     #[cfg(feature = "interface-test-fixtures")]
     pub fn enable_original_camera_proof(&mut self, player_is_empire: bool) {
+        self.sync_proof_palette();
         self.proof_resource_2560 = true;
         self.proof_lod_follows_zoom = false;
         let source_layout = self.session.as_ref().map_or_else(
@@ -1190,6 +1202,15 @@ impl TacticalState {
         );
         self.proof_renderer
             .enable_original_camera(player_is_empire, source_layout);
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    fn sync_proof_palette(&mut self) {
+        let selector = self
+            .session
+            .as_ref()
+            .map_or(1, |session| session.system_picture_id);
+        self.proof_renderer.set_palette_selector(selector);
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -1728,10 +1749,9 @@ pub fn draw_tactical_view(
                 .set_view(TacticalLodView::from_fixture_zoom(state.zoom));
         }
         let aperture = canvas.aperture();
-        state.proof_renderer.draw(
-            bmp_cache,
-            (aperture.x, aperture.y, aperture.width, aperture.height),
-        );
+        state
+            .proof_renderer
+            .draw((aperture.x, aperture.y, aperture.width, aperture.height));
     }
 
     // Borrow session for rendering (immutable reads).

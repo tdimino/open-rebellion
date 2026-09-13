@@ -28,6 +28,7 @@ TACTICAL_LOD_FAMILY = {
     2561: "SDESTI_M.BMP",
     2562: None,
 }
+TACTICAL_PALETTE_IDS = range(5531, 5558)
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,31 @@ def collect_tactical_proof_entries(runtime_dir: Path) -> list[Entry]:
                 f"{texture_name}/{TACTICAL_PROOF_LANGUAGE}",
                 texture_path,
                 texture_digest,
+            )
+        )
+    for palette_id in TACTICAL_PALETTE_IDS:
+        matches = [
+            record
+            for record in manifest.get("textures", [])
+            if record.get("identifier_kind") == "id"
+            and record.get("id") == palette_id
+            and record.get("language") == TACTICAL_PROOF_LANGUAGE
+            and record.get("kind") == "palette_rgb24"
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"tactical runtime lacks unique palette {palette_id}/1033"
+            )
+        palette = matches[0]
+        palette_path, palette_digest = checked_runtime_object(
+            runtime_dir, palette, ".texture"
+        )
+        entries.append(
+            Entry(
+                KIND_TACTICAL_TEXTURE,
+                f"{palette_id}/{TACTICAL_PROOF_LANGUAGE}",
+                palette_path,
+                palette_digest,
             )
         )
     return entries
