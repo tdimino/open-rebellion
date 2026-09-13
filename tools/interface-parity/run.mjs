@@ -1007,6 +1007,7 @@ async function probeTacticalCameraJourney(page, viewport, folder, stable) {
     "camera-up", point(558, 354), 1053, 537, 344, [target],
   ));
   transitions.push(await press("camera-down", point(558, 444), 1056, 537, 412));
+  transitions.push(await press("camera-target", point(549, 390), 1059, 538, 379));
 
   const modelHashes = [initialModel, ...transitions.map(({ released }) =>
     tacticalProofModelHash(viewport, released))];
@@ -1134,7 +1135,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           family_loads: 1,
         });
         if (scenario.camera_journey) {
-          assert.equal(cameraLogs.length, 7,
+          assert.equal(cameraLogs.length, 8,
             "source camera journey emitted the wrong state count");
           const states = cameraLogs.map(({ text }) => {
             const value = (label) => {
@@ -1153,22 +1154,35 @@ async function runScenario(server, executable, scenario, faction, viewport) {
               near: value("near"),
               far: value("far"),
               fovy_radians: value("fovy_radians"),
+              target_object_id: value("target_object_id"),
+              target_x: value("target_x"),
+              target_y: value("target_y"),
+              target_z: value("target_z"),
             };
           });
           const initialYaw = faction === "alliance" ? -30 : 150;
-          assert.deepEqual(states.map(({ pitch }) => pitch), [30, 30, 30, 30, 30, 35, 30]);
+          assert.deepEqual(states.map(({ pitch }) => pitch), [30, 30, 30, 30, 30, 35, 30, 30]);
           assert.deepEqual(states.map(({ yaw }) => yaw),
-            [initialYaw, initialYaw, initialYaw, initialYaw - 5, initialYaw, initialYaw, initialYaw]);
-          assert.deepEqual(states.map(({ zoom_step }) => zoom_step), [5, 4, 5, 5, 5, 5, 5]);
-          assert.deepEqual(states.map(({ orbit_step }) => orbit_step), [5, 4, 5, 5, 5, 5, 5]);
+            [initialYaw, initialYaw, initialYaw, initialYaw - 5, initialYaw, initialYaw, initialYaw,
+              initialYaw]);
+          assert.deepEqual(states.map(({ zoom_step }) => zoom_step), [5, 4, 5, 5, 5, 5, 5, 5]);
+          assert.deepEqual(states.map(({ orbit_step }) => orbit_step), [5, 4, 5, 5, 5, 5, 5, 5]);
           assert.ok(Math.abs(states[0].field - 0.2) < 1e-6);
           assert.ok(Math.abs(states[1].field - 0.18) < 1e-6);
           assert.ok(Math.abs(states[2].field - 0.198) < 1e-6);
           assert.ok(states.every(({ distance, near, far }) =>
             Math.abs(distance - 170) < 1e-6 && near === 1 && Math.abs(far - 425) < 1e-6));
+          const selectedObjectId = faction === "alliance" ? 1 : 2;
+          assert.deepEqual(states.map(({ target_object_id }) => target_object_id),
+            [0, 0, 0, 0, 0, 0, 0, selectedObjectId]);
+          assert.ok(states.every(({ target_x, target_y, target_z }) =>
+            target_x === 0 && target_y === 0 && target_z === 0));
           probes.push({
             type: "source-traced-tactical-camera-journey",
-            executable_functions: ["FUN_005d9490", "FUN_005d9620", "FUN_005d9640", "0x005d97c0"],
+            executable_functions: [
+              "FUN_005d9490", "FUN_005d9620", "FUN_005d9640", "FUN_00595be0",
+              "FUN_005c1080", "0x005d97c0",
+            ],
             states,
           });
         } else {

@@ -72,7 +72,7 @@
     },
     {
       "slug": "camera-journey",
-      "description": "Source-traced faction view, field zoom, yaw orbit, and pitch journey through the original bitmap camera controls",
+      "description": "Source-traced faction view, field zoom, yaw orbit, pitch, and selected-object target journey through the original bitmap camera controls",
       "fixture_codes": { "alliance": 65799, "empire": 66055 },
       "tactical_proof": true,
       "camera_journey": true,

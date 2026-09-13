@@ -118,7 +118,8 @@ implementation review.
 P57B2 is not complete. The general battle-extent/layout calculation, selected
 object `LookAt`, source pivot and scale, palette activation, lighting, texture
 filtering, culling, native GPU comparison, lossless A0/A1 views, and production
-fleet/DAT binding remain open. The center target control stays display-only
-until case 9 can resolve a source-mapped production object. P57B1's
-zoom-to-depth bridge remains test-only. No `TAC-01` through `TAC-07` cell is
-accepted by this checkpoint.
+fleet/DAT binding remain open. [P57B2B1](2026-09-13-tactical-target-control.md)
+now activates case 9 and the center target control with provisional fixture
+object IDs. Stable production DAT and tactical identity plus world-position
+binding remain open. P57B1's zoom-to-depth bridge remains test-only. No
+`TAC-01` through `TAC-07` cell is accepted by this checkpoint.

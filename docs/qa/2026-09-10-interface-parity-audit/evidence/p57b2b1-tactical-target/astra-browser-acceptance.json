@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "reviewer": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "scope": "live browser and computer-use acceptance only",
+  "run_id": "2026-09-13T16-06-34-340Z-55580",
+  "command": "node run.mjs --battle --all --scenario=camera-journey --no-build",
+  "passed": 4,
+  "failed": 0,
+  "http": {
+    "requests": 16,
+    "http_200": 16,
+    "four_request_startups": 4,
+    "non_200": 0
+  },
+  "errors": {
+    "browser": 0,
+    "console": 0,
+    "network": 0,
+    "missing_asset": 0,
+    "runtime": 0
+  },
+  "mute": {
+    "muted_browser_launches": 4,
+    "runtime_muted_confirmations": 4,
+    "unmuted": 0
+  },
+  "cleanup": {
+    "browser_processes_closed": 4,
+    "scenario_cleanup_closed": 4,
+    "harness_exited": true,
+    "remaining_harness_browser_or_server_processes": 0
+  },
+  "screenshots_inspected": 8,
+  "observations": [
+    "The original tactical shell remains visible in both faction and viewport pairs.",
+    "The center target control changes to its held appearance without clipping.",
+    "Native probes match pressed resource 1059 across all 529 pixels for each faction.",
+    "The selected Mon Calamari Cruiser and Strike Cruiser are centered in the current two-dimensional fallback after targeting.",
+    "Final camera records identify object 1 for Alliance and object 2 for Empire.",
+    "Every launch used --mute-audio and retained zero music volume."
+  ],
+  "findings": [],
+  "browser_acceptance": {
+    "status": "provisional_pass",
+    "evidence_level": "A1",
+    "tac_cells_accepted": []
+  },
+  "limitations": [
+    "The four executions have no lossless original-game A0 baseline.",
+    "Letterboxed held-state checks are visual; exact pixel probes run at native resolution.",
+    "The fixture IDs prove command routing but do not replace the pending production DAT-to-tactical-object identity join.",
+    "No TAC acceptance cell is closed."
+  ]
+}

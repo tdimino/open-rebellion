@@ -1019,6 +1019,7 @@ enum TacticalHudControl {
     Pause,
     ZoomIn,
     ZoomOut,
+    CameraTarget,
     CameraLeft,
     CameraRight,
     CameraUp,
@@ -1034,7 +1035,7 @@ struct TacticalHudControlSpec {
     hit_resource: u32,
 }
 
-const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 9] = [
+const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 10] = [
     TacticalHudControlSpec {
         control: TacticalHudControl::Pause,
         rect: NativeRect::new(560.0, 307.0, 28.0, 21.0),
@@ -1049,6 +1050,13 @@ const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 9] = [
         control: TacticalHudControl::ZoomOut,
         rect: NativeRect::new(603.0, 343.0, 24.0, 24.0),
         hit_resource: resources::tactical::BTN_CAMERA_ZOOM_OUT_NORMAL,
+    },
+    // The target button is painted above the four overlapping D-pad arms and
+    // therefore owns opaque pixels in their shared bounding region.
+    TacticalHudControlSpec {
+        control: TacticalHudControl::CameraTarget,
+        rect: NativeRect::new(538.0, 379.0, 23.0, 23.0),
+        hit_resource: resources::tactical::BTN_CAMERA_TARGET_NORMAL,
     },
     TacticalHudControlSpec {
         control: TacticalHudControl::CameraLeft,
@@ -1348,7 +1356,15 @@ fn draw_original_tactical_hud(
             537.0,
             412.0,
         ),
-        (art::BTN_CAMERA_TARGET_NORMAL, 538.0, 379.0),
+        (
+            if pressed_control == Some(TacticalHudControl::CameraTarget) {
+                art::BTN_CAMERA_TARGET_PRESSED
+            } else {
+                art::BTN_CAMERA_TARGET_NORMAL
+            },
+            538.0,
+            379.0,
+        ),
     ] {
         draw_tactical_bitmap(cache, id, canvas, x, y);
     }
@@ -1373,6 +1389,21 @@ fn handle_original_tactical_controls(
                 state.zoom = (state.zoom / 1.25).max(0.5);
                 #[cfg(feature = "interface-test-fixtures")]
                 state.proof_renderer.zoom_out();
+            }
+            Some(TacticalHudControl::CameraTarget) => {
+                let selected = state.session.as_ref().and_then(|session| {
+                    session.selected_ship.and_then(|index| {
+                        session.ships.get(index).map(|ship| (index, ship.x, ship.y))
+                    })
+                });
+                if let Some((_index, x, y)) = selected {
+                    (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
+                    #[cfg(feature = "interface-test-fixtures")]
+                    state.proof_renderer.focus_target(
+                        u32::try_from(_index).unwrap_or(u32::MAX).saturating_add(1),
+                        Vec3::ZERO,
+                    );
+                }
             }
             Some(TacticalHudControl::CameraLeft) => {
                 #[cfg(feature = "interface-test-fixtures")]
@@ -1406,6 +1437,10 @@ fn handle_original_tactical_controls(
         state.zoom = (state.zoom / 1.25).max(0.5);
     }
     TacticalAction::None
+}
+
+fn camera_offset_for_target(x: f32, y: f32) -> (f32, f32) {
+    (x - ARENA_WIDTH * 0.5, y - ARENA_HEIGHT * 0.5)
 }
 
 /// Draw the tactical combat view (macroquad + egui).
@@ -2500,5 +2535,19 @@ mod tests {
             Some(TacticalHudControl::HighlightEmpire)
         );
         assert_eq!(tactical_hud_control_at(&mut cache, 588.0, 317.0), None);
+    }
+
+    #[test]
+    fn target_control_owns_its_topmost_mask_and_centers_the_selected_position() {
+        let mut cache = BmpCache::new();
+        cache.set_base_path(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/base/ui"),
+        );
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 549.1, 390.1),
+            Some(TacticalHudControl::CameraTarget)
+        );
+        assert_eq!(camera_offset_for_target(120.0, 190.0), (-480.0, -210.0));
+        assert_eq!(camera_offset_for_target(600.0, 400.0), (0.0, 0.0));
     }
 }

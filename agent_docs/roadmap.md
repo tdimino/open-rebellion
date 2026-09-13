@@ -576,11 +576,15 @@ would tune around known simulation feedback defects.
   pitch bounds, and Direct3D handedness conversion; render the original normal
   and held directional bitmaps; and pass the 28-case muted browser bundle.
   Keep every strict tactical cell open pending A0 view acceptance.
+- [x] Complete P57B2B1 selected-object target proof: recover command 9's
+  selection-ID and retained-frame `LookAt` path, activate source resources
+  1058/1059, center the selected production fallback ship, and pass the
+  focused four-case and complete 28-case muted browser gates. Keep the fixture
+  object IDs provisional until P58 joins stable DAT and tactical identities.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B2B next recovers general layout, target look-at, and the remaining
-  render rules before P58 replaces procedural ships, fighters, planets, and
-  effects.
+  states. P57B2B next recovers general layout and the remaining render rules
+  before P58 replaces procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

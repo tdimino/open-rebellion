@@ -4287,7 +4287,7 @@
         149,
         150
       ],
-      "current_implementation": "The original 640x480 TACTICAL 1000 shell, faction group headers, selected-unit panel frame, pause, highlight, zoom, and camera-control art replace the active combat replacement panels. Pause, highlights, and zoom work through native-coordinate source-bitmap hit masks; zoom renders its original held pressed states. P54 stages and P55 deterministically decode every type-301 mesh and type-303 texture or palette resource. P56 proves one exact mesh/texture pair. P57A packages the complete 2560 through 2562 family and applies the source-traced LOD predicate. P57B1 proves live cached switching. P57B2A recovers the exact faction camera, field zoom, clip planes, handedness conversion, and four source-shaped D-pad directions in an isolated browser journey. General battle layout, target look-at, remaining render rules, DAT identity, lossless original view acceptance, and production selection remain open. Procedural battle contents, incomplete panel data and commands, Battle Alert, results, audio, and rare states keep every TAC-01 cell pending.",
+      "current_implementation": "The original 640x480 TACTICAL 1000 shell, faction group headers, selected-unit panel frame, pause, highlight, zoom, and camera-control art replace the active combat replacement panels. Pause, highlights, and zoom work through native-coordinate source-bitmap hit masks; zoom renders its original held pressed states. P54 stages and P55 deterministically decode every type-301 mesh and type-303 texture or palette resource. P56 proves one exact mesh/texture pair. P57A packages the complete 2560 through 2562 family and applies the source-traced LOD predicate. P57B1 proves live cached switching. P57B2A recovers the exact faction camera, field zoom, clip planes, handedness conversion, and four source-shaped D-pad directions. P57B2B1 activates the source target control and selected-object frame contract in an isolated browser journey and centers the selected production fallback ship. General battle layout, remaining render rules, stable production DAT and tactical identity, lossless original view acceptance, and production 3D selection remain open. Procedural battle contents, incomplete panel data and commands, Battle Alert, results, audio, and rare states keep every TAC-01 cell pending.",
       "finding_ids": [
         "UIP-F-009"
       ],
@@ -4710,7 +4710,7 @@
         145,
         146
       ],
-      "current_implementation": "Some behavior exists, but original visual composition and state controls are unverified.",
+      "current_implementation": "P57B2A source-traces faction camera entry, zoom, rotate, tilt, clip planes, handedness, and the four bitmap D-pad controls in an isolated fixture. P57B2B1 adds the source center-target command, normal/held resources, selected-object record, and production 2D fallback centering. Stable production 3D object identity and position, navigation sets, routes, memorize/recall, chase camera, complete interaction states, and A0 acceptance remain unverified, so every TAC-04 cell stays pending.",
       "finding_ids": [
         "UIP-F-009"
       ],

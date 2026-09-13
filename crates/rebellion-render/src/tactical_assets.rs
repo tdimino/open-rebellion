@@ -36,7 +36,8 @@ const ORIGINAL_CAMERA_EMPIRE_YAW: i32 = 150;
 const ORIGINAL_CAMERA_INITIAL_STEP: i32 = 5;
 
 /// Source-traced tactical camera state from `FUN_005d9490`, `FUN_005d9620`,
-/// `FUN_005d9640`, and the command switch at `0x005d97c0`.
+/// `FUN_005d9640`, `FUN_00595be0`, `FUN_005c1080`, and the command switch at
+/// `0x005d97c0`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OriginalTacticalCamera {
     pitch_degrees: i32,
@@ -45,6 +46,8 @@ pub struct OriginalTacticalCamera {
     orbit_step: i32,
     field: f32,
     distance: f32,
+    target_object_id: Option<u32>,
+    target: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -59,6 +62,8 @@ struct OriginalCameraPose {
     yaw_degrees: i32,
     zoom_step: i32,
     orbit_step: i32,
+    target_object_id: Option<u32>,
+    target: Vec3,
 }
 
 impl OriginalTacticalCamera {
@@ -76,6 +81,8 @@ impl OriginalTacticalCamera {
             orbit_step: ORIGINAL_CAMERA_INITIAL_STEP,
             field: ORIGINAL_CAMERA_FIELD,
             distance: battle_extent * ORIGINAL_CAMERA_DISTANCE_SCALE,
+            target_object_id: None,
+            target: Vec3::ZERO,
         }
     }
 
@@ -109,6 +116,13 @@ impl OriginalTacticalCamera {
         if self.pitch_degrees > -90 {
             self.pitch_degrees -= self.orbit_step;
         }
+    }
+
+    /// Reproduce camera command 9 after object/frame resolution: cache the
+    /// current tactical object identity and look at its resolved world point.
+    pub(crate) fn focus_target(&mut self, target_object_id: u32, target: Vec3) {
+        self.target_object_id = Some(target_object_id);
+        self.target = target;
     }
 
     fn update_orbit_step(&mut self) {
@@ -149,6 +163,8 @@ impl OriginalTacticalCamera {
             yaw_degrees: self.yaw_degrees,
             zoom_step: self.zoom_step,
             orbit_step: self.orbit_step,
+            target_object_id: self.target_object_id,
+            target: self.target,
         }
     }
 }
@@ -446,7 +462,7 @@ pub(crate) struct TacticalProofRenderer {
     view: TacticalLodView,
     logged_lod: Option<OriginalTacticalLod>,
     source_camera: Option<OriginalTacticalCamera>,
-    logged_camera: Option<[u32; 8]>,
+    logged_camera: Option<[u32; 12]>,
 }
 
 impl Default for TacticalProofRenderer {
@@ -511,6 +527,12 @@ impl TacticalProofRenderer {
         }
     }
 
+    pub(crate) fn focus_target(&mut self, target_object_id: u32, target: Vec3) {
+        if let Some(camera) = &mut self.source_camera {
+            camera.focus_target(target_object_id, target);
+        }
+    }
+
     pub(crate) fn draw(&mut self, bmp_cache: &mut BmpCache, aperture: (f32, f32, f32, f32)) {
         if !self.attempted {
             self.attempted = true;
@@ -556,10 +578,14 @@ impl TacticalProofRenderer {
                 pose.yaw_degrees as u32,
                 pose.zoom_step as u32,
                 pose.orbit_step as u32,
+                pose.target_object_id.unwrap_or(0),
+                pose.target.x.to_bits(),
+                pose.target.y.to_bits(),
+                pose.target.z.to_bits(),
             ];
             if self.logged_camera != Some(camera_key) {
                 macroquad::logging::info!(
-                    "[tactical_3d] camera_source pitch={} yaw={} field={} zoom_step={} orbit_step={} distance={} near={} far={} fovy_radians={} handedness=lh_y_up_to_rh_y_up",
+                    "[tactical_3d] camera_source pitch={} yaw={} field={} zoom_step={} orbit_step={} distance={} near={} far={} fovy_radians={} target_object_id={} target_x={} target_y={} target_z={} handedness=lh_y_up_to_rh_y_up",
                     pose.pitch_degrees,
                     pose.yaw_degrees,
                     pose.field,
@@ -569,12 +595,16 @@ impl TacticalProofRenderer {
                     pose.near,
                     pose.far,
                     pose.fovy_radians,
+                    pose.target_object_id.unwrap_or(0),
+                    pose.target.x,
+                    pose.target.y,
+                    pose.target.z,
                 );
                 self.logged_camera = Some(camera_key);
             }
             set_camera(&Camera3D {
                 position: pose.position,
-                target: Vec3::ZERO,
+                target: pose.target,
                 up: pose.up,
                 fovy: pose.fovy_radians,
                 aspect: Some(width / height),
@@ -1071,6 +1101,10 @@ mod tests {
         assert_eq!(camera.pitch_degrees, 35);
         camera.pitch_down();
         assert_eq!(camera.pitch_degrees, 30);
+        camera.focus_target(17, vec3(4.0, 5.0, 6.0));
+        let targeted = camera.pose();
+        assert_eq!(targeted.target_object_id, Some(17));
+        assert_eq!(targeted.target, vec3(4.0, 5.0, 6.0));
 
         for _ in 0..100 {
             camera.zoom_in();

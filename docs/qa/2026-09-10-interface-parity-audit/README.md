@@ -79,6 +79,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P57B2A camera evidence](evidence/2026-09-13-tactical-camera-contract.md)
   for exact faction views, field zoom, clip planes, handedness conversion,
   bitmap D-pad interactions, and the remaining production/A0 boundary.
+- Review the [P57B2B1 target evidence](evidence/2026-09-13-tactical-target-control.md)
+  for the source-selected object/frame path, normal and held bitmap control,
+  fallback centering, and the stable production identity boundary.
 
 ## Suggested contribution lanes
 

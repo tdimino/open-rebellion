@@ -24,9 +24,9 @@
   <sub>Screenshot from <a href="https://x.com/oldyzach/status/2023783273046933925">@oldyzach</a></sub>
 </p>
 
-If you ever stayed up past midnight watching your fleet crawl across the galaxy map toward Coruscant, wondering if your three Mon Cal cruisers could take the Super Star Destroyer parked there—this project is for you.
+If you stayed up past midnight watching fleets crawl across the galaxy map, gambled three Mon Cal cruisers against the Super Star Destroyer over Coruscant, or sent one last Bothan spy on a mission they had no business surviving—this project is for you.
 
-If you spent hours on TheForce.net debating whether Vergere was secretly a Sith, rolling dice and envisioning new storylines for Star Wars DnD, or composing elaborate threads on InvisionFree RPG message boards set in the Outer Rim—this project is for you.
+If you spent hours on TheForce.net debating whether Vergere was secretly a Sith, rolled dice and envisioned new storylines for Star Wars D&D, or composed elaborate threads on InvisionFree RPG message boards set in the Outer Rim—this project is for you.
 
 If you modded *Star Wars Galaxies* client-side until its servers shut down, roleplayed with sabers holstered on *Jedi Academy* multiplayer servers, ran *Rebellion* tournaments on mIRC, or replayed *KOTOR I* for the sixth time through a janky port on Steam—this project is *especially* for you.
 

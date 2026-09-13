@@ -83,6 +83,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P57A tactical 3D LOD-family evidence](evidence/2026-09-13-tactical-3d-lod-family.md) | Complete first three-mesh family, source-traced LOD predicate, deterministic two-faction browser matrix, and explicit P57B limits. |
 | [P57B1 tactical live LOD evidence](evidence/2026-09-13-tactical-live-lod-journey.md) | Source-traced cached-slot cycle, live close-medium-far-medium-close browser journey, one-load proof, and explicit P57B2 limits. |
 | [P57B2A tactical camera evidence](evidence/2026-09-13-tactical-camera-contract.md) | Exact faction pose, field zoom, clip planes, handedness conversion, working bitmap D-pad states, and explicit production/A0 limits. |
+| [P57B2B1 tactical target evidence](evidence/2026-09-13-tactical-target-control.md) | Source-recovered selected-object and retained-frame route, working bitmap target states, fallback centering, and explicit production-ID/A0 limits. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -175,8 +176,13 @@ P57B2A then recovers the exact initial faction poses, field and clip constants,
 zoom/orbit/pitch command switch, and handedness conversion, and proves the four
 bitmap D-pad directions in a seven-state muted browser journey. Its
 [evidence](evidence/2026-09-13-tactical-camera-contract.md) keeps general battle
-layout, target look-at, remaining render state, A0 comparison, production
-binding, and every tactical cell open.
+layout, remaining render state, A0 comparison, production binding, and every
+tactical cell open. P57B2B1 activates the center target control from switch
+case 9, verifies its 1058/1059 states and selected-object record, and centers
+the production two-dimensional fallback. Its
+[evidence](evidence/2026-09-13-tactical-target-control.md) keeps stable DAT and
+tactical identity binding, source world positions, A0 comparison, and every
+tactical cell open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

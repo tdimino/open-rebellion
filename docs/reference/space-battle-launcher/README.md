@@ -26,7 +26,7 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `lod-medium` | 65796 | 66052 | Resource 2561 |
 | `lod-far` | 65797 | 66053 | Resource 2562 |
 | `lod-journey` | 65798 | 66054 | Live 2560, 2561, 2562, 2561, 2560 journey with one family load |
-| `camera-journey` | 65799 | 66055 | Source camera entry plus zoom, yaw, and pitch command sequence |
+| `camera-journey` | 65799 | 66055 | Source camera entry plus zoom, yaw, pitch, and selected-object target sequence |
 
 ## Run it
 
@@ -59,13 +59,16 @@ and closes every process. Raw runs live under ignored
 - P57B2A recovers the faction camera, near/far planes, field zoom, handedness
   conversion, and four D-pad commands from `FUN_005c1d30`, `FUN_005d9490`,
   `FUN_005d9640`, and the switch at `0x005d97c0`.
+- P57B2B1 activates switch case 9 and the center target resources 1058/1059.
+  It centers the selected two-dimensional fallback ship and records the
+  isolated proof's selected object before its retained-frame `LookAt`.
 - The complete bundle passes 28 of 28 muted browser cases across both factions
   and both viewports with one family load and no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
-bridge is test-only. General battle layout, selected-object look-at, source
-pivots and scale, palette activation, lighting, filtering, culling, native GPU
-and A0/A1 comparison, production entity binding, remaining commands, damage,
+bridge is test-only. General battle layout, stable production object identity
+and world-position binding, source pivots and scale, palette activation,
+lighting, filtering, culling, native GPU and A0/A1 comparison, remaining commands, damage,
 effects, Death Star paths, results, audio, and return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
@@ -73,6 +76,7 @@ effects, Death Star paths, results, audio, and return routing remain open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P57B2B1 selected-object target evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md)
 - [P57B2A camera and D-pad evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md)
 - [P57B1 live LOD evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md)
 - [P57A family and predicate](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md)
