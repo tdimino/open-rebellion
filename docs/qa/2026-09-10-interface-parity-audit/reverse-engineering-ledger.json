@@ -442,8 +442,8 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL", "tools/stage-ui-assets"],
-        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. P55 decodes the complete corpus into deterministic runtime objects and verifies mesh topology, bounds, materials, and texture names against Assimp 6.0.5 raw import. Continue tracing control constructors, paint handlers, entity joins, selection states, availability predicates, camera rules, and LOD commands.",
-        "next_proof": "Prove resource 2560 with SDESTI52.BMP in native and muted browser rendering, then finish both faction HUDs and every tactical control and content state."
+        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. P55 decodes the complete corpus into deterministic runtime objects and verifies mesh topology, bounds, materials, and texture names against Assimp 6.0.5 raw import. P56 packages exact pair 2560/1033 plus SDESTI52.BMP/1033 and proves WebGL draw submission against a negative control. Continue tracing control constructors, paint handlers, entity joins, selection states, availability predicates, palette activation, camera rules, and LOD commands.",
+        "next_proof": "Add resources 2561 and 2562, prove the original three-LOD selection and view rules, then finish both faction HUDs and every tactical control and content state."
       },
       "runtime_capture_required": true
     },

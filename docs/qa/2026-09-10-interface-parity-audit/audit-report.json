@@ -62,7 +62,7 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_original_640x480_shell_pause_highlight_zoom_source_hit_masks_and_zoom_pressed_states_passed_all_87_type301_and_397_type303_raw_resources_staged_decoding_rendering_and_all_106_cells_open",
+    "tactical_interface": "fail_original_shell_and_first_controls_pass_one_exact_type301_type303_pair_browser_rendered_in_isolated_proof_all_106_cells_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
@@ -162,14 +162,15 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell and first bitmap control-state checkpoints pass and all type-301/type-303 resources stage and decode reproducibly, but browser transport, rendering, procedural battle replacement, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell and first bitmap control-state checkpoints pass, all type-301/type-303 resources stage and decode reproducibly, and one exact pair renders in an isolated browser proof, but production fleet rendering, original view rules, replacement battle content, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -258,9 +259,10 @@
     "p47b_popular_support_gid": "evidence/2026-09-11-popular-support-gid.md",
     "p54_tactical_3d_staging": "evidence/2026-09-12-tactical-3d-staging.md",
     "p55_tactical_3d_runtime_pack": "evidence/2026-09-12-tactical-3d-runtime-pack.md",
+    "p56_tactical_3d_render_proof": "evidence/2026-09-13-tactical-3d-render-proof.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Execute P56 by packaging and rendering original resource 2560 with its SDESTI52.BMP texture in native and fresh muted browser sessions. Use Astra medium for the browser evidence review before wiring source-mapped selected-unit, camera, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
+  "next_action": "Execute P57 by adding resources 2561 and 2562 and tracing the original three-LOD selection, camera, lighting, filtering, and culling rules. Compare fixed views against authoritative original evidence before wiring source-mapped selected-unit, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
 }

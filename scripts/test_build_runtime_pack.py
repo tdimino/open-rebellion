@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -79,6 +81,87 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 (PACKER.KIND_ADVISOR_FRAME, "alsprite-dll/2002"),
                 [(entry.kind, entry.key) for entry in entries],
             )
+
+    def test_tactical_proof_entries_are_selected_and_hash_verified(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / "base"
+            ui = root / "ui"
+            runtime = ui / "tactical-dll" / "TACTICAL3D" / "runtime"
+            objects = runtime / "objects"
+            base.mkdir()
+            ui.mkdir(exist_ok=True)
+            objects.mkdir(parents=True)
+            (base / "SYSTEMSD.DAT").write_bytes(b"systems")
+
+            mesh_bytes = b"ORTMESH proof"
+            texture_bytes = b"ORTINDEX proof"
+            mesh_hash = hashlib.sha256(mesh_bytes).hexdigest()
+            texture_hash = hashlib.sha256(texture_bytes).hexdigest()
+            (objects / f"{mesh_hash}.mesh").write_bytes(mesh_bytes)
+            (objects / f"{texture_hash}.texture").write_bytes(texture_bytes)
+            (runtime / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "meshes": [
+                            {
+                                "id": 2560,
+                                "language": 1033,
+                                "object_sha256": mesh_hash,
+                                "object": f"objects/{mesh_hash}.mesh",
+                                "texture_bindings": [
+                                    {
+                                        "resource_name": "sdesti52.bmp",
+                                        "resource_language": 1033,
+                                    }
+                                ],
+                            }
+                        ],
+                        "textures": [
+                            {
+                                "identifier_kind": "name",
+                                "name": "SDESTI52.BMP",
+                                "language": 1033,
+                                "kind": "indexed_rle",
+                                "palette_rule": "battle_active",
+                                "object_sha256": texture_hash,
+                                "object": f"objects/{texture_hash}.texture",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            entries = PACKER.collect_entries(base, ui)
+            keys = [(entry.kind, entry.key) for entry in entries]
+            self.assertIn((PACKER.KIND_TACTICAL_MESH, "2560/1033"), keys)
+            self.assertIn(
+                (PACKER.KIND_TACTICAL_TEXTURE, "SDESTI52.BMP/1033"), keys
+            )
+
+            manifest_path = runtime / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["meshes"][0]["texture_bindings"][0][
+                "resource_language"
+            ] = 9999
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "does not bind"):
+                PACKER.collect_entries(base, ui)
+
+            manifest["meshes"][0]["texture_bindings"][0][
+                "resource_language"
+            ] = 1033
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            entries = PACKER.collect_entries(base, ui)
+            (objects / f"{mesh_hash}.mesh").write_bytes(b"changed after collection")
+            with self.assertRaisesRegex(ValueError, "changed after validation"):
+                PACKER.write_pack(entries, root / "changed.orpk")
+
+            (objects / f"{mesh_hash}.mesh").write_bytes(b"tampered")
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                PACKER.collect_entries(base, ui)
 
 
 if __name__ == "__main__":

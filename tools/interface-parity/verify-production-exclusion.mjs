@@ -14,6 +14,8 @@ const forbidden = [
   "__openRebellionInterfaceReady",
   "gid/alliance/popular-support",
   "tactical_test_fixture",
+  "enable_resource_2560_proof",
+  "[tactical_3d] rendered",
   "battle-ready",
   "Tactical test launcher",
 ];

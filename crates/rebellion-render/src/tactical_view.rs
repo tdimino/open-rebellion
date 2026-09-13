@@ -28,6 +28,8 @@ use rebellion_core::ids::{CapitalShipKey, FighterKey, FleetKey, SystemKey};
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+#[cfg(feature = "interface-test-fixtures")]
+use crate::tactical_assets::TacticalProofRenderer;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -873,6 +875,10 @@ pub struct TacticalState {
     /// Original Tactical Display faction-wireframe switches.
     pub highlight_alliance: bool,
     pub highlight_empire: bool,
+    #[cfg(feature = "interface-test-fixtures")]
+    proof_resource_2560: bool,
+    #[cfg(feature = "interface-test-fixtures")]
+    proof_renderer: TacticalProofRenderer,
 }
 
 impl Default for TacticalState {
@@ -886,6 +892,10 @@ impl Default for TacticalState {
             zoom: 1.0,
             highlight_alliance: true,
             highlight_empire: true,
+            #[cfg(feature = "interface-test-fixtures")]
+            proof_resource_2560: false,
+            #[cfg(feature = "interface-test-fixtures")]
+            proof_renderer: TacticalProofRenderer::default(),
         }
     }
 }
@@ -921,6 +931,12 @@ impl TacticalState {
         self.zoom = 1.0;
         self.highlight_alliance = true;
         self.highlight_empire = true;
+    }
+
+    /// Enable the source-bound P56 mesh proof in isolated fixture builds.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn enable_resource_2560_proof(&mut self) {
+        self.proof_resource_2560 = true;
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -1332,6 +1348,15 @@ pub fn draw_tactical_view(
     // 2. Transform the provisional 2D battle into the original aperture.
     let (scale, offset_x, offset_y) =
         canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
+
+    #[cfg(feature = "interface-test-fixtures")]
+    if state.proof_resource_2560 {
+        let aperture = canvas.aperture();
+        state.proof_renderer.draw(
+            bmp_cache,
+            (aperture.x, aperture.y, aperture.width, aperture.height),
+        );
+    }
 
     // Borrow session for rendering (immutable reads).
     let session = state.session.as_ref().unwrap();

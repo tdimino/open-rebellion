@@ -117,6 +117,44 @@ function fixtureCode(scenario, faction) {
   return (scenario.index + 1) | ((faction === "alliance" ? 1 : 2) << 8);
 }
 
+async function measureBrowserRuntime(page) {
+  return page.evaluate(async () => {
+    const intervals = [];
+    await new Promise((resolve) => {
+      let previous = null;
+      function sample(now) {
+        if (previous !== null) intervals.push(now - previous);
+        previous = now;
+        if (intervals.length >= 60) resolve();
+        else requestAnimationFrame(sample);
+      }
+      requestAnimationFrame(sample);
+    });
+    const sorted = [...intervals].sort((a, b) => a - b);
+    const percentile = (ratio) => sorted[Math.min(
+      sorted.length - 1,
+      Math.ceil(sorted.length * ratio) - 1,
+    )];
+    const navigation = performance.getEntriesByType("navigation")[0];
+    const wasmMemoryBytes = typeof wasm_memory !== "undefined"
+      ? wasm_memory.buffer.byteLength
+      : null;
+    const jsHeap = performance.memory || null;
+    return {
+      sample: "60 paused requestAnimationFrame intervals after cold fixture load",
+      frame_interval_ms: {
+        median: percentile(0.5),
+        p95: percentile(0.95),
+        max: sorted[sorted.length - 1],
+      },
+      navigation_duration_ms: navigation?.duration ?? null,
+      wasm_memory_bytes: wasmMemoryBytes,
+      js_heap_used_bytes: jsHeap?.usedJSHeapSize ?? null,
+      js_heap_total_bytes: jsHeap?.totalJSHeapSize ?? null,
+    };
+  });
+}
+
 function compareScreenshot(id, bytes, folder, capture = "actual") {
   const baselineId = capture === "actual" ? id : `${id}/${capture}`;
   const baseline = path.join(baselineDir, `${baselineId}.png`);
@@ -540,6 +578,66 @@ function tacticalApertureHash(viewport, screenshotBytes) {
   return hash.digest("hex");
 }
 
+function tacticalApertureChangedPixels(viewport, proofBytes, controlBytes) {
+  const proof = PNG.sync.read(proofBytes);
+  const control = PNG.sync.read(controlBytes);
+  assert.equal(proof.width, control.width);
+  assert.equal(proof.height, control.height);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const x0 = Math.floor(offsetX + 16 * scale);
+  const y0 = Math.floor(offsetY + 28 * scale);
+  const x1 = Math.ceil(offsetX + 460 * scale);
+  const y1 = Math.ceil(offsetY + 476 * scale);
+  let changed = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const offset = (y * proof.width + x) * 4;
+      if (Math.abs(proof.data[offset] - control.data[offset]) > 2
+        || Math.abs(proof.data[offset + 1] - control.data[offset + 1]) > 2
+        || Math.abs(proof.data[offset + 2] - control.data[offset + 2]) > 2) {
+        changed++;
+      }
+    }
+  }
+  return changed;
+}
+
+function verifyTacticalProofNegativeControls(results, factions, viewports) {
+  for (const faction of factions) {
+    for (const viewport of viewports) {
+      const proof = results.find(({ id }) =>
+        id === `tactical/${faction}/battle-entry/${viewport.id}`);
+      const control = results.find(({ id }) =>
+        id === `tactical/${faction}/battle-entry-proof-off/${viewport.id}`);
+      assert.ok(proof && control, `missing tactical proof pair for ${faction}/${viewport.id}`);
+      if (proof.status !== "pass" || control.status !== "pass") continue;
+      const proofImage = fs.readFileSync(path.join(runDir, proof.id, "actual.png"));
+      const controlImage = fs.readFileSync(path.join(runDir, control.id, "actual.png"));
+      const changedPixels = tacticalApertureChangedPixels(viewport, proofImage, controlImage);
+      const scale = Math.min(viewport.width / 640, viewport.height / 480);
+      const minimumChanged = Math.ceil(1000 * scale * scale);
+      const probe = {
+        type: "tactical-3d-pixel-submission-negative-control",
+        proof_fixture_code: proof.fixture_code,
+        control_fixture_code: control.fixture_code,
+        changed_aperture_pixels: changedPixels,
+        minimum_changed_pixels: minimumChanged,
+      };
+      for (const result of [proof, control]) {
+        result.probes.push(probe);
+        if (changedPixels < minimumChanged) {
+          result.status = "fail";
+          result.error = `tactical proof/control aperture differs by only ${changedPixels} pixels`;
+        }
+        fs.writeFileSync(path.join(runDir, result.id, "result.json"),
+          `${JSON.stringify(result, null, 2)}\n`);
+      }
+    }
+  }
+}
+
 function verifyWireframeColor(viewport, onBytes, offBytes, faction) {
   const on = PNG.sync.read(onBytes);
   const off = PNG.sync.read(offBytes);
@@ -740,7 +838,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
       consoleLines.push({ type: message.type(), text: message.text() });
-      if (message.type() === "error" || /missing.asset|\[bmp_cache\].*not found/i.test(message.text())) {
+      if (message.type() === "error"
+        || /missing.asset|\[bmp_cache\].*not found|\[tactical_3d\].*(unavailable|rejected)/i.test(message.text())) {
         errors.push(`console:${message.type()}:${message.text()}`);
       }
     });
@@ -762,13 +861,47 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     const probes = battle
       ? [{ type: "production-tactical-entry", system: ready.system,
         attacker_ships: ready.attacker_ships, defender_ships: ready.defender_ships,
-        fighters: ready.fighters }, ...await probeTactical(page, viewport, folder, stable)]
+        fighters: ready.fighters }, ...(scenario.tactical_proof
+        ? await probeTactical(page, viewport, folder, stable)
+        : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
+      assert.equal(ready.proof_enabled, scenario.tactical_proof);
       assert.ok(ready.attacker_ships > 0 && ready.defender_ships > 0);
       assert.ok(ready.fighters > 0);
+      const packLog = consoleLines.find(({ text }) => text.includes("runtime_asset_pack loaded"));
+      assert.match(packLog?.text || "", /tactical_meshes=1 tactical_textures=1/,
+        "runtime pack did not install exactly one source-bound tactical proof pair");
+      const proofLog = consoleLines.find(({ text }) =>
+        text.includes("[tactical_3d] rendered resource_id=2560"));
+      if (scenario.tactical_proof) {
+        assert.match(proofLog?.text || "",
+          /texture=SDESTI52\.BMP .*source_vertices=48 source_faces=62 render_vertices=186 triangles=62/,
+          "resource 2560 did not render with its verified texture binding and geometry counts");
+        probes.push({
+          type: "source-bound-tactical-3d-proof",
+          mesh: "2560/1033",
+          texture: "SDESTI52.BMP/1033",
+          palette: "tactical-dll/1000",
+          source_vertices: 48,
+          render_vertices: 186,
+          triangles: 62,
+        });
+      } else {
+        assert.equal(proofLog, undefined, "negative control submitted the tactical proof mesh");
+      }
+    }
+    const runtimeMeasurements = battle ? await measureBrowserRuntime(page) : null;
+    if (battle) {
+      assert.ok(Number.isFinite(runtimeMeasurements.frame_interval_ms.p95)
+        && runtimeMeasurements.frame_interval_ms.p95 < 100,
+      "paused tactical render stalled during the 60-frame timing sample");
+      assert.ok(Number.isSafeInteger(runtimeMeasurements.wasm_memory_bytes)
+        && runtimeMeasurements.wasm_memory_bytes > 0,
+      "WASM cold-load memory was not observable");
+      probes.push({ type: "browser-runtime-measurements", ...runtimeMeasurements });
     }
     const comparison = compareScreenshot(id, stable.bytes, folder);
     const interactionComparisons = {};
@@ -810,6 +943,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       screenshot_sha256: stable.second,
       two_frame_hashes: { first: stable.first, second: stable.second, equal: stable.first === stable.second },
       message_index_rail: messageIndexRail,
+      runtime_measurements: runtimeMeasurements,
       wasm_sha256: sha256(fs.readFileSync(path.join(site, "open-rebellion-test.wasm"))),
       runtime_pack_sha256: sha256(fs.readFileSync(path.join(site, "data/runtime.orpk"))),
       requests,
@@ -851,7 +985,9 @@ async function main() {
   if (battle) {
     assert.equal(catalog.family, "TAC-01");
     assert.equal(catalog.fixture_namespace, 1);
-    assert.deepEqual(catalog.scenarios.map(({ slug }) => slug), ["battle-entry"]);
+    assert.deepEqual(catalog.scenarios.map(({ slug }) => slug),
+      ["battle-entry", "battle-entry-proof-off"]);
+    assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof), [true, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });
@@ -870,6 +1006,8 @@ async function main() {
   const executable = browserExecutable();
   let server;
   const results = [];
+  let selectedFactions = [];
+  let selectedViewports = [];
   try {
     server = await startServer();
     const scenarios = scenarioFilter
@@ -880,11 +1018,11 @@ async function main() {
       ? catalog.scenarios.filter(({ slug }) => ["popular-support", "galaxy"].includes(slug))
       : catalog.scenarios;
     if (!scenarios.length) fail(`unknown ${battle ? "tactical" : "GID"} scenario: ${scenarioFilter}`);
-    const factions = smoke ? ["alliance", "empire"] : catalog.factions;
-    const viewports = smoke ? [catalog.viewports[0]] : catalog.viewports;
+    selectedFactions = smoke ? ["alliance", "empire"] : catalog.factions;
+    selectedViewports = smoke ? [catalog.viewports[0]] : catalog.viewports;
     for (const scenario of scenarios) {
-      for (const faction of factions) {
-        for (const viewport of viewports) {
+      for (const faction of selectedFactions) {
+        for (const viewport of selectedViewports) {
           const result = await runScenario(server, executable, scenario, faction, viewport);
           results.push(result);
           process.stdout.write(`${result.status === "pass" ? "PASS" : "FAIL"} ${result.id}\n`);
@@ -893,6 +1031,10 @@ async function main() {
     }
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
+  }
+
+  if (battle && !scenarioFilter) {
+    verifyTacticalProofNegativeControls(results, selectedFactions, selectedViewports);
   }
 
   writeContactSheet(results);

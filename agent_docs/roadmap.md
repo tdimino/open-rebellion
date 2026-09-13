@@ -554,6 +554,12 @@ would tune around known simulation feedback defects.
   meshes, 370 indexed images, and 27 palettes into a verified content-addressed
   runtime store. Confirm topology, bounds, materials, and 59 texture links
   against Assimp 6.0.5 raw import. Keep proprietary output ignored.
+- [x] Complete P56 single-resource browser rendering: package exact typed
+  resource `2560/1033` and `SDESTI52.BMP/1033`, render the pair through a
+  normals-aware depth-tested WebGL 1 path, and prove draw submission against a
+  negative control in eight fresh muted browser cases. Keep its DAT identity,
+  original camera and palette activation, production integration, and all 106
+  tactical acceptance cells open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
   states. Stage and map original type-301/type-303 battle graphics before

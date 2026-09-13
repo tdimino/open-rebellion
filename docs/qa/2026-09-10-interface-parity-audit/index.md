@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit"
 description: "Authoritative screenshot corpus, surface ledger, findings, and acceptance gates for reproducing every visible Rebellion interface state"
 category: qa
 created: 2026-09-10
-updated: 2026-09-12
+updated: 2026-09-13
 tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 ---
 
@@ -79,6 +79,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P53 tactical control-state evidence](evidence/2026-09-12-tactical-control-hit-states.md) | Original palette-key hit masks, zoom pressed/resting resources, round-trip browser proof, and explicit limits. |
 | [P54 tactical 3D staging evidence](evidence/2026-09-12-tactical-3d-staging.md) | Complete raw type-301/type-303 inventory, content-addressed extraction, source hashes, and explicit non-rendering limits. |
 | [P55 tactical 3D runtime-pack evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md) | Complete binary-X and type-303 decoding, deterministic mesh/texture objects, palette routing, source-bound exceptions, and Assimp oracle results. |
+| [P56 tactical 3D render proof](evidence/2026-09-13-tactical-3d-render-proof.md) | Exact typed mesh/texture transport, normals-aware browser rendering, proof/control pixel evidence, runtime observations, and explicit open parity gates. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -156,8 +157,13 @@ P55 decodes the complete corpus into 87 mesh and 397 texture objects and checks
 all original mesh topology, bounds, materials, and texture names against
 Assimp 6.0.5 raw import. Its
 [evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md) keeps browser
-transport, semantic mapping, rendering, and every tactical cell open.
-Runtime pack v2 now
+transport, semantic mapping, rendering, and every tactical cell open. P56
+packages and visibly renders one exact source-bound pair in a proof/control
+browser matrix. Its
+[evidence](evidence/2026-09-13-tactical-3d-render-proof.md) keeps native GPU
+rendering, original view rules, semantic mapping, fleet integration, and every
+tactical cell open.
+Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain
 open. Its 27 packages give every required surface a named recovery or removal

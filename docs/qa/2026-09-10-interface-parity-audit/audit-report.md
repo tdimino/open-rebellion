@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit Report"
 description: "Evidence-backed diagnosis and execution plan for complete bitmap-driven UI parity"
 category: qa
 created: 2026-09-10
-updated: 2026-09-12
+updated: 2026-09-13
 tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 ---
 
@@ -93,7 +93,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; original 3D assets staged and decoded; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), and [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md) |
+| First original tactical shell and control states; original 3D assets staged and decoded; one exact pair browser-rendered; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), and [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -143,7 +143,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, pause, highlight, zoom, source-shaped hit masks, and zoom pressed-state checkpoints pass. All 87 type-301 and 397 type-303 resources stage and decode reproducibly. Browser transport and rendering are still absent, so procedural battle contents and incomplete command, result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, pause, highlight, zoom, source-shaped hit masks, and zoom pressed-state checkpoints pass. All 87 type-301 and 397 type-303 resources stage and decode reproducibly, and one exact pair renders in an isolated browser proof. Production fleet rendering, original view rules, procedural battle contents, and incomplete command, result, special-state, and audio paths remain. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
@@ -332,5 +332,6 @@ P52 and P53 establish the original tactical shell and first authentic control
 states. P54 stages the full raw DirectX mesh and type-303 resource inventory
 without committing proprietary output. P55 decodes it into a deterministic,
 verified runtime store and checks all 87 meshes against Assimp 6.0.5 raw
-import. P56 is the first visible, muted Astra medium browser proof. Every
-`TAC-*` cell remains open.
+import. P56 visibly renders one exact pair in a muted proof/control browser
+matrix. Its [evidence](evidence/2026-09-13-tactical-3d-render-proof.md) keeps
+every `TAC-*` cell open.

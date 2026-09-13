@@ -3,6 +3,10 @@ name = "rebellion-render"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+interface-test-fixtures = []
+
 [dependencies]
 rebellion-core = { path = "../rebellion-core" }
 macroquad = "0.4"

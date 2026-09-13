@@ -150,7 +150,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | untriaged | Recover constructors, choices, force tabs, results, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader and event-handler registry | static-proven | Connect event slots to controls and observable state transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus staged and decoded | Prove resource 2560 with its named texture in native and browser rendering, then trace entity, camera, and LOD rules |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus staged and decoded, one pair browser-rendered | Add resources 2561 and 2562, then trace original entity, camera, palette, and LOD rules |
 | RE-TAC-03 | Tactical battle-results composition | untriaged | Connect result construction to application and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -174,9 +174,12 @@ the owned `TACTICAL.DLL` with exact identities and hashes. The
 [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md) records the inventory
 and one embedded mesh-to-texture edge. P55 decodes all of them into a
 deterministic runtime store and verifies the mesh corpus against Assimp 6.0.5;
-see its [evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md). Browser
-transport, semantic joins, camera and LOD rules, and visual acceptance remain
-open.
+see its [evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md). P56
+packages and visibly renders exact pair `2560/1033` plus
+`SDESTI52.BMP/1033`; see its
+[evidence](evidence/2026-09-13-tactical-3d-render-proof.md). Complete browser
+transport, semantic joins, palette activation, camera and LOD rules, and
+visual acceptance remain open.
 
 ## Immediate implementation order
 

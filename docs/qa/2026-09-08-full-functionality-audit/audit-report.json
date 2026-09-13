@@ -11,6 +11,7 @@
     "original_interface_reference_ledger": "docs/qa/2026-09-10-interface-parity-audit/reference-ledger.json",
     "tactical_3d_asset_plan": "docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md",
     "tactical_3d_staging_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md",
+    "tactical_3d_render_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md",
     "official_victory_contract": "docs/reference/campaign-history/official-campaign-contract.md#standard-victory",
     "current_victory_implementation": "agent_docs/systems/victory.md",
     "archived_legacy_game_flow": "archive/legacy-docs/GAME-FLOW.md"
@@ -1867,7 +1868,7 @@
     {"id":"P21","name":"Blockade and repair","status":"pending"},
     {"id":"P22","name":"AI","status":"partial","verified_tranches":["F-007A_transit_and_same_pass_move_deconfliction","F-007B_bounded_fleet_arena"]},
     {"id":"P23","name":"Core space combat","status":"partial","verified_tranches":["F-007D_system_scope_and_fighter_attrition"],"evidence":"docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-system-combat-resolution.md"},
-    {"id":"P24","name":"Tactical space combat","status":"partial","verified_tranches":["tactical_result_identity","validated_shared_entry","muted_two_faction_browser_entry","p54_original_raw_mesh_and_texture_staging","p55_deterministic_tactical_3d_runtime_pack"],"evidence":"docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md","raw_staging_evidence":"docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md","interface_evidence":"docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md"},
+    {"id":"P24","name":"Tactical space combat","status":"partial","verified_tranches":["tactical_result_identity","validated_shared_entry","muted_two_faction_browser_entry","p54_original_raw_mesh_and_texture_staging","p55_deterministic_tactical_3d_runtime_pack","p56_single_resource_browser_render_proof"],"evidence":"docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md","raw_staging_evidence":"docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md","interface_evidence":"docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md"},
     {"id":"P25","name":"Ground combat","status":"pending"},
     {"id":"P26","name":"Bombardment","status":"pending"},
     {"id":"P27","name":"Death Star","status":"pending"},

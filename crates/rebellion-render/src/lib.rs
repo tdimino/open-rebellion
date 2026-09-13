@@ -16,6 +16,8 @@ pub mod message_log;
 pub mod panels;
 pub mod sector_window;
 pub mod system_window;
+#[cfg(feature = "interface-test-fixtures")]
+mod tactical_assets;
 pub mod tactical_view;
 pub mod theme;
 pub mod victory_screen;
@@ -85,6 +87,10 @@ pub use system_window::{
     draw_system_windows, SystemWindowAction, SystemWindowState, SystemWindowTab,
     REFERENCE_RAIL_SLOTS, SYSTEM_WINDOW_CLIENT_WIDTH, SYSTEM_WINDOW_HEIGHT, SYSTEM_WINDOW_WIDTH,
 };
+#[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
+pub use tactical_assets::install_native_tactical_proof;
+#[cfg(feature = "interface-test-fixtures")]
+pub use tactical_assets::set_tactical_asset_cache;
 pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
 };

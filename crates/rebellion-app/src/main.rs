@@ -411,6 +411,8 @@ fn install_runtime_pack(
     let bitmap_count = pack.bitmaps.len();
     let audio_file_count = pack.audio_files.len();
     let advisor_frame_count = pack.advisor_frames.len();
+    let tactical_mesh_count = pack.tactical_meshes.len();
+    let tactical_texture_count = pack.tactical_textures.len();
     if bitmap_count == 0 {
         return Err("runtime pack contains no UI bitmaps".to_string());
     }
@@ -426,12 +428,16 @@ fn install_runtime_pack(
     rebellion_data::set_file_cache(pack.game_files);
     rebellion_render::set_advisor_asset_cache(pack.advisor_frames, advisor_bitmaps);
     rebellion_render::set_bmp_cache(pack.bitmaps);
+    #[cfg(feature = "interface-test-fixtures")]
+    rebellion_render::set_tactical_asset_cache(pack.tactical_meshes, pack.tactical_textures);
     macroquad::logging::info!(
-        "runtime_asset_pack loaded game_files={} ui_bitmaps={} advisor_frames={} audio_files={} bytes={}",
+        "runtime_asset_pack loaded game_files={} ui_bitmaps={} advisor_frames={} audio_files={} tactical_meshes={} tactical_textures={} bytes={}",
         game_file_count,
         bitmap_count,
         advisor_frame_count,
         audio_file_count,
+        tactical_mesh_count,
+        tactical_texture_count,
         bytes.len()
     );
     Ok(pack.audio_files)
@@ -881,6 +887,24 @@ async fn main() {
         // gdata_path is data/base; staged UI BMPs live at data/base/ui/
         let ui_path = gdata_path.join("ui");
         bmp_cache.set_base_path(&ui_path);
+        #[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
+        {
+            let tactical_runtime = ui_path
+                .join("tactical-dll")
+                .join("TACTICAL3D")
+                .join("runtime");
+            if tactical_runtime.is_dir() {
+                match rebellion_render::install_native_tactical_proof(&tactical_runtime) {
+                    Ok(()) => {
+                        macroquad::logging::info!("[tactical_3d] installed native P56 proof assets")
+                    }
+                    Err(error) => macroquad::logging::warn!(
+                        "[tactical_3d] native proof assets rejected: {}",
+                        error
+                    ),
+                }
+            }
+        }
         // HD PNG overrides at data/hd/{dll-name}/{resource_id}.png.
         let hd_ui_path = gdata_path
             .parent()

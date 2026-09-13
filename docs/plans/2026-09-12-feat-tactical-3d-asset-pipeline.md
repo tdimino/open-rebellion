@@ -3,7 +3,7 @@ title: "Tactical 3D Asset Pipeline"
 description: "Recover the original DirectX battle meshes and textures for deterministic native and browser rendering"
 category: plan
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-13
 tags: [interface, parity, tactical, 3d, wasm, assets]
 status: in_progress
 ---
@@ -125,7 +125,8 @@ tests against the pinned oracle.
 
 ### P56. Single-resource browser proof
 
-Status: next.
+Status: complete. See the
+[P56 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md).
 
 Render raw resource `2560` with embedded `sdesti52.bmp`, resolved and recorded
 against original named resource `SDESTI52.BMP`, inside the
@@ -137,6 +138,14 @@ Gate: native and WASM selection, texture orientation, winding, depth, cold-load
 memory, frame timing, context diagnostics, four-request packaging, both
 viewports, and Astra medium browser review. An original-runtime A/B
 capture is required before calling the view parity-correct.
+
+The implementation packages only the exact `2560/1033` and
+`SDESTI52.BMP/1033` proof pair into runtime pack v3, verifies its binding and
+hashes at collection and serialization, and renders it with normals, texture,
+depth, a fixed camera, and an explicit TACTICAL 1000 palette. A paired disabled
+fixture proves draw submission at both viewports. Native GPU rendering and the
+original orientation, camera, lighting, palette activation, filtering, and
+culling remain open, so no tactical cell is accepted.
 
 ### P57. One three-LOD family
 

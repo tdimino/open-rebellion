@@ -1278,6 +1278,22 @@ impl BmpCache {
             .map(|mask| [mask.width, mask.height])
     }
 
+    /// Return the original 256-entry BMP palette as RGBA.
+    ///
+    /// Tactical type-303 textures reference the palette active in the
+    /// original display instead of embedding RGB values. P56 uses the original
+    /// TACTICAL 1000 shell palette as an explicit test palette without
+    /// converting or recoloring its indexed pixels. Runtime palette activation
+    /// remains an original-executable A/B gate.
+    pub fn original_palette_rgba(
+        &self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<[[u8; 4]; 256]> {
+        let bytes = self.load_original_bytes(source, resource_id)?;
+        decode_bmp_palette(&bytes)
+    }
+
     /// Retrieve an original bitmap as a nearest-neighbor Macroquad texture.
     ///
     /// This path is for authored bitmap layers painted beneath Macroquad
@@ -1520,6 +1536,25 @@ fn decode_macroquad_texture(
     let texture = Texture2D::from_rgba8(width, height, rgba.as_raw());
     texture.set_filter(FilterMode::Nearest);
     Some(texture)
+}
+
+fn decode_bmp_palette(bytes: &[u8]) -> Option<[[u8; 4]; 256]> {
+    if bytes.get(0..2)? != b"BM" {
+        return None;
+    }
+    let dib_size = u32::from_le_bytes(bytes.get(14..18)?.try_into().ok()?) as usize;
+    let bits_per_pixel = u16::from_le_bytes(bytes.get(28..30)?.try_into().ok()?);
+    let colors_used = u32::from_le_bytes(bytes.get(46..50)?.try_into().ok()?) as usize;
+    if dib_size < 40 || bits_per_pixel != 8 || !matches!(colors_used, 0 | 256) {
+        return None;
+    }
+    let palette_start = 14_usize.checked_add(dib_size)?;
+    let palette_bytes = bytes.get(palette_start..palette_start.checked_add(256 * 4)?)?;
+    let mut palette = [[0_u8; 4]; 256];
+    for (index, entry) in palette_bytes.chunks_exact(4).enumerate() {
+        palette[index] = [entry[2], entry[1], entry[0], 255];
+    }
+    Some(palette)
 }
 
 /// Decode a staged image and apply the original game's palette-blue
@@ -1780,6 +1815,22 @@ mod tests {
             AssetVariant::FaithfulHd.texture_options(),
             TextureOptions::LINEAR
         );
+    }
+
+    #[test]
+    fn indexed_bmp_palette_preserves_original_rgb_entries() {
+        let mut bmp = vec![0_u8; 14 + 40 + 256 * 4];
+        bmp[0..2].copy_from_slice(b"BM");
+        bmp[14..18].copy_from_slice(&40_u32.to_le_bytes());
+        bmp[28..30].copy_from_slice(&8_u16.to_le_bytes());
+        bmp[46..50].copy_from_slice(&256_u32.to_le_bytes());
+        let palette = 14 + 40;
+        bmp[palette..palette + 4].copy_from_slice(&[3, 2, 1, 0]);
+        bmp[palette + 4..palette + 8].copy_from_slice(&[30, 20, 10, 0]);
+
+        let decoded = decode_bmp_palette(&bmp).unwrap();
+        assert_eq!(decoded[0], [1, 2, 3, 255]);
+        assert_eq!(decoded[1], [10, 20, 30, 255]);
     }
 
     #[test]

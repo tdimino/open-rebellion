@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 const MAGIC: &[u8; 4] = b"ORPK";
-const VERSION: u16 = 2;
+const VERSION: u16 = 3;
 const HEADER_LEN: usize = 12;
 const ENTRY_HEADER_LEN: usize = 7;
 const MAX_ENTRIES: usize = 10_000;
@@ -14,6 +14,8 @@ const KIND_GAME_DATA: u8 = 0;
 const KIND_BITMAP: u8 = 1;
 const KIND_AUDIO: u8 = 2;
 const KIND_ADVISOR_FRAME: u8 = 3;
+const KIND_TACTICAL_MESH: u8 = 4;
+const KIND_TACTICAL_TEXTURE: u8 = 5;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct RuntimePack {
@@ -21,6 +23,8 @@ pub struct RuntimePack {
     pub bitmaps: HashMap<String, Vec<u8>>,
     pub audio_files: HashMap<String, Vec<u8>>,
     pub advisor_frames: HashMap<String, Vec<u8>>,
+    pub tactical_meshes: HashMap<String, Vec<u8>>,
+    pub tactical_textures: HashMap<String, Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +97,8 @@ pub fn parse_runtime_pack(bytes: &[u8]) -> Result<RuntimePack, PackError> {
         bitmaps: HashMap::with_capacity(count as usize),
         audio_files: HashMap::new(),
         advisor_frames: HashMap::new(),
+        tactical_meshes: HashMap::new(),
+        tactical_textures: HashMap::new(),
     };
 
     for _ in 0..count {
@@ -123,6 +129,8 @@ pub fn parse_runtime_pack(bytes: &[u8]) -> Result<RuntimePack, PackError> {
             KIND_BITMAP => &mut pack.bitmaps,
             KIND_AUDIO => &mut pack.audio_files,
             KIND_ADVISOR_FRAME => &mut pack.advisor_frames,
+            KIND_TACTICAL_MESH => &mut pack.tactical_meshes,
+            KIND_TACTICAL_TEXTURE => &mut pack.tactical_textures,
             other => return Err(PackError::UnknownKind(other)),
         };
         if destination.insert(key.clone(), data).is_some() {
@@ -184,6 +192,8 @@ mod tests {
             (KIND_BITMAP, "strategy-dll/900", b"bitmap"),
             (KIND_AUDIO, "music/main_theme.wav", b"wave"),
             (KIND_ADVISOR_FRAME, "alsprite-dll/2002", b"sparse"),
+            (KIND_TACTICAL_MESH, "2560/1033", b"mesh"),
+            (KIND_TACTICAL_TEXTURE, "SDESTI52.BMP/1033", b"texture"),
         ]);
 
         let parsed = parse_runtime_pack(&bytes).unwrap();
@@ -192,6 +202,8 @@ mod tests {
         assert_eq!(parsed.bitmaps["strategy-dll/900"], b"bitmap");
         assert_eq!(parsed.audio_files["music/main_theme.wav"], b"wave");
         assert_eq!(parsed.advisor_frames["alsprite-dll/2002"], b"sparse");
+        assert_eq!(parsed.tactical_meshes["2560/1033"], b"mesh");
+        assert_eq!(parsed.tactical_textures["SDESTI52.BMP/1033"], b"texture");
     }
 
     #[test]

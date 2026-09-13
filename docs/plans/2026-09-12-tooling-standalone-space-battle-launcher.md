@@ -3,7 +3,7 @@ title: "Standalone Space-Battle Test Launcher"
 description: "Test-only entry into the production tactical battle path and its original-interface parity matrix"
 category: plan
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-13
 tags: [interface, parity, tactical, browser, testing]
 status: in_progress
 ---
@@ -23,7 +23,7 @@ Every T1 through T5 browser harness gate uses `codex-orchestrator` with Astra
 at medium effort. Each scenario starts in a fresh muted Chromium process and
 closes its browser and local server when complete.
 
-T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. [P52](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md) adds the original 640×480 shell and first working bitmap pause, highlight, and zoom controls. [P53](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md) adds palette-key hit masks and held zoom pressed art. [P54](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md) adds reproducible raw staging for every original type-301 and type-303 tactical resource. [P55](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md) converts and independently verifies the full original corpus. Shared return/outcome routing, packaged and rendered battle graphics, complete battle interactions, and all 106 visual cells remain open.
+T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. [P52](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md) adds the original 640×480 shell and first working bitmap pause, highlight, and zoom controls. [P53](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md) adds palette-key hit masks and held zoom pressed art. [P54](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md) adds reproducible raw staging for every original type-301 and type-303 tactical resource. [P55](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md) converts and independently verifies the full original corpus. [P56](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md) packages and visibly renders one exact mesh and texture pair in an isolated proof/control matrix. Shared return/outcome routing, production fleet rendering, complete battle interactions, original comparisons, and all 106 visual cells remain open.
 
 ## Current contract and limits
 
@@ -32,7 +32,7 @@ T0 and T1 are partially complete. The [tactical result-identity regression](../q
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves 29 ship and eight fighter ordinal-to-resource bases. Candidate DAT names still need the original vtable identity join. P54 stages and P55 decodes all type-301 and type-303 resources, but they are not yet packaged for browser rendering.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves 29 ship and eight fighter ordinal-to-resource bases. Candidate DAT names still need the original vtable identity join. P54 stages and P55 decodes all type-301 and type-303 resources. P56 packages and renders one source-bound pair only; complete browser transport and production selection remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design

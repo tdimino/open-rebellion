@@ -64,7 +64,10 @@ geometry, and unverified asset mappings do not count as parity.
   source hashes, and the P55 decoding boundary.
 - Review the [P55 tactical 3D runtime-pack evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md)
   for complete binary-X and type-303 decoding, palette rules, deterministic
-  objects, and the independent Assimp oracle. Rendering begins in P56.
+  objects, and the independent Assimp oracle.
+- Review the [P56 tactical 3D render proof](evidence/2026-09-13-tactical-3d-render-proof.md)
+  for the first exact mesh/texture browser submission, its paired negative
+  control, runtime observations, and the original-parity boundaries kept open.
 
 ## Suggested contribution lanes
 
@@ -138,6 +141,12 @@ P51 removes a provisional hover wash and extends those checks to the visible
 frame border beneath a foreground system window. Its
 [evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) keeps original hover
 and focus states open.
+P52 through P55 restore the first tactical shell and controls, stage the full
+original 3D corpus, and decode it into a deterministic runtime store. P56 then
+packages and visibly renders one exact mesh and texture pair against a
+proof-off control in both faction shells and viewports. Its
+[evidence](evidence/2026-09-13-tactical-3d-render-proof.md) keeps original view
+rules, production fleet integration, and all 106 tactical cells open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

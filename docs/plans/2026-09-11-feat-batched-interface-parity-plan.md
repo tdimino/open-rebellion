@@ -3,7 +3,7 @@ title: "Batched Interface Parity Execution Plan"
 description: "Current plan for restoring the original bitmap interface in coherent, independently accepted browser bundles"
 category: plan
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-09-13
 tags: [interface, parity, bitmap, browser, astra, qa]
 status: active
 ---
@@ -80,7 +80,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md), [tactical 3D asset plan](2026-09-12-feat-tactical-3d-asset-pipeline.md), and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P56 tactical render proof; UIP-B06 continues
+## Current execution focus: P57 three-LOD family; UIP-B06 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -166,9 +166,11 @@ battle objects, and every tactical acceptance cell remain open. See the
 P54 stages every original type-301 and type-303 tactical resource without
 tracking proprietary output. P55 converts all 87 meshes, 370 indexed images,
 and 27 palettes into deterministic runtime objects and checks the mesh corpus
-against Assimp 6.0.5 raw import. P56 next packages and renders resource `2560`
-with its source-linked texture. See the
-[P55 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md).
+against Assimp 6.0.5 raw import. P56 packages and visibly renders resource
+`2560` with its source-linked texture in an isolated proof/control browser
+matrix. P57 next adds resources `2561` and `2562` and traces original LOD,
+camera, lighting, filtering, and culling rules. See the
+[P56 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md).
 
 ## Bundle acceptance record
 

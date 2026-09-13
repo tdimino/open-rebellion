@@ -13,9 +13,19 @@
       "slug": "battle-entry",
       "description": "Deterministic opposing one-ship, one-squadron encounter through the production tactical entry function",
       "fixture_codes": { "alliance": 65793, "empire": 66049 },
+      "tactical_proof": true,
       "expected_status": "battle-ready",
       "audit_cells": [],
       "acceptance": "Functional entry fixture only. No original tactical interface cell is accepted."
+    },
+    {
+      "slug": "battle-entry-proof-off",
+      "description": "Deterministic negative control for pixel-level tactical mesh submission evidence",
+      "fixture_codes": { "alliance": 65794, "empire": 66050 },
+      "tactical_proof": false,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "Test-only negative control. No original tactical interface cell is accepted."
     }
   ]
 }

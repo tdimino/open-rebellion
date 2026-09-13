@@ -11,6 +11,7 @@ use crate::GameMode;
 
 const TACTICAL_FAMILY: u32 = 1;
 const BATTLE_SCENARIO: u32 = 1;
+const BATTLE_WITHOUT_PROOF_SCENARIO: u32 = 2;
 
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
@@ -21,18 +22,28 @@ extern "C" {
 pub(crate) struct TacticalFixtureRequest {
     pub faction: CockpitFaction,
     pub code: u32,
+    pub proof_enabled: bool,
 }
 
 fn decode(code: u32) -> Option<TacticalFixtureRequest> {
-    if code >> 16 != TACTICAL_FAMILY || code & 0xff != BATTLE_SCENARIO {
+    if code >> 16 != TACTICAL_FAMILY {
         return None;
     }
+    let proof_enabled = match code & 0xff {
+        BATTLE_SCENARIO => true,
+        BATTLE_WITHOUT_PROOF_SCENARIO => false,
+        _ => return None,
+    };
     let faction = match (code >> 8) & 0xff {
         1 => CockpitFaction::Alliance,
         2 => CockpitFaction::Empire,
         _ => return None,
     };
-    Some(TacticalFixtureRequest { faction, code })
+    Some(TacticalFixtureRequest {
+        faction,
+        code,
+        proof_enabled,
+    })
 }
 
 pub(crate) fn requested() -> Option<TacticalFixtureRequest> {
@@ -129,6 +140,10 @@ pub(crate) fn apply(
         game_mode,
     )
     .map_err(|error| format!("fixture battle entry failed: {error:?}"))?;
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.proof_enabled {
+        tactical.enable_resource_2560_proof();
+    }
     *player_faction = if player_is_attacker {
         MissionFaction::Alliance
     } else {
@@ -145,6 +160,7 @@ struct FixtureRecord<'a> {
     family: &'a str,
     fixture_code: u32,
     faction: &'a str,
+    proof_enabled: bool,
     system: &'a str,
     attacker_ships: usize,
     defender_ships: usize,
@@ -167,6 +183,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         } else {
             "empire"
         },
+        proof_enabled: request.proof_enabled,
         system: &session.system_name,
         attacker_ships: session.ships.iter().filter(|ship| ship.is_attacker).count(),
         defender_ships: session
@@ -190,6 +207,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         } else {
             "empire"
         },
+        proof_enabled: request.proof_enabled,
         system: "",
         attacker_ships: 0,
         defender_ships: 0,
@@ -211,8 +229,10 @@ mod tests {
     fn tactical_codes_are_versioned_and_do_not_accept_gid_codes() {
         assert_eq!(decode(0x10101).unwrap().faction, CockpitFaction::Alliance);
         assert_eq!(decode(0x10201).unwrap().faction, CockpitFaction::Empire);
+        assert!(decode(0x10101).unwrap().proof_enabled);
+        assert!(!decode(0x10102).unwrap().proof_enabled);
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10102).is_none());
+        assert!(decode(0x10103).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }
