@@ -491,7 +491,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   return probes;
 }
 
-function verifyTacticalBitmap(viewport, screenshotBytes, id, x0, y0) {
+function verifyTacticalBitmap(viewport, screenshotBytes, id, x0, y0, occluders = []) {
   if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
     return { status: "non-native-scale", pixels_checked: 0 };
   }
@@ -499,11 +499,30 @@ function verifyTacticalBitmap(viewport, screenshotBytes, id, x0, y0) {
   const source = decodeIndexedBmp(fs.readFileSync(path.join(
     root, `data/base/ui/tactical-dll/BMP/${id}.bmp`,
   )));
+  const decodedOccluders = occluders.map(({ id: overlayId, x, y }) => ({
+    x,
+    y,
+    source: decodeIndexedBmp(fs.readFileSync(path.join(
+      root, `data/base/ui/tactical-dll/BMP/${overlayId}.bmp`,
+    ))),
+  }));
   let pixelsChecked = 0;
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
       const color = source.pixel(x, y);
       if (color[0] < 32 && color[1] < 32 && color[2] > 192) continue;
+      const screenX = x0 + x;
+      const screenY = y0 + y;
+      const occluded = decodedOccluders.some(({ x: overlayX, y: overlayY, source: overlay }) => {
+        const localX = screenX - overlayX;
+        const localY = screenY - overlayY;
+        if (localX < 0 || localY < 0 || localX >= overlay.width || localY >= overlay.height) {
+          return false;
+        }
+        const overlayColor = overlay.pixel(localX, localY);
+        return !(overlayColor[0] < 32 && overlayColor[1] < 32 && overlayColor[2] > 192);
+      });
+      if (occluded) continue;
       const actualOffset = ((y0 + y) * screenshot.width + x0 + x) * 4;
       assert.deepEqual(
         Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
@@ -951,6 +970,56 @@ async function probeTacticalLodJourney(page, viewport, folder, stable) {
   }];
 }
 
+async function probeTacticalCameraJourney(page, viewport, folder, stable) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
+  const press = async (name, location, resource, resourceX, resourceY, occluders = []) => {
+    await page.mouse.move(location.x, location.y);
+    await page.mouse.down({ button: "left" });
+    await page.waitForTimeout(80);
+    const pressed = await capture(`${name}-pressed`);
+    const bitmap = verifyTacticalBitmap(
+      viewport, pressed, resource, resourceX, resourceY, occluders,
+    );
+    await page.mouse.up({ button: "left" });
+    await page.waitForTimeout(80);
+    const released = await capture(name);
+    return { name, bitmap, released };
+  };
+
+  const initialModel = tacticalProofModelHash(viewport, stable.bytes);
+  const transitions = [];
+  transitions.push(await press("camera-zoom-in", point(498, 355), 1045, 486, 343));
+  transitions.push(await press("camera-zoom-out", point(615, 355), 1047, 603, 343));
+  const up = { id: 1052, x: 537, y: 344 };
+  const down = { id: 1055, x: 537, y: 412 };
+  const target = { id: 1058, x: 538, y: 379 };
+  transitions.push(await press(
+    "camera-left", point(520, 397), 1049, 511, 376, [up, down, target],
+  ));
+  transitions.push(await press(
+    "camera-right", point(590, 397), 1051, 557, 376, [up, down, target],
+  ));
+  transitions.push(await press(
+    "camera-up", point(558, 354), 1053, 537, 344, [target],
+  ));
+  transitions.push(await press("camera-down", point(558, 444), 1056, 537, 412));
+
+  const modelHashes = [initialModel, ...transitions.map(({ released }) =>
+    tacticalProofModelHash(viewport, released))];
+  assert.ok(new Set(modelHashes).size >= 4,
+    "source camera journey did not produce distinct rendered model views");
+  return transitions.map(({ name, bitmap }, index) => ({
+    type: "source-camera-control",
+    control: name,
+    pressed_bitmap: bitmap,
+    model_crop_sha256: modelHashes[index + 1],
+  }));
+}
+
 async function runScenario(server, executable, scenario, faction, viewport) {
   const id = scenarioId(scenario, faction, viewport);
   const folder = path.resolve(runDir, id);
@@ -1012,7 +1081,9 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     const probes = battle
       ? [{ type: "production-tactical-entry", system: ready.system,
         attacker_ships: ready.attacker_ships, defender_ships: ready.defender_ships,
-        fighters: ready.fighters }, ...(scenario.lod_journey
+        fighters: ready.fighters }, ...(scenario.camera_journey
+        ? await probeTacticalCameraJourney(page, viewport, folder, stable)
+        : scenario.lod_journey
         ? await probeTacticalLodJourney(page, viewport, folder, stable)
         : scenario.slug === "battle-entry"
         ? await probeTactical(page, viewport, folder, stable)
@@ -1033,6 +1104,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         text.includes("[tactical_3d] family_loaded base=2560"));
       const lodLogs = consoleLines.filter(({ text }) =>
         text.includes("[tactical_3d] lod_selection"));
+      const cameraLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] camera_source"));
       if (scenario.tactical_proof) {
         assert.equal(familyLogs.length, 1,
           "source-bound tactical LOD family did not emit exactly one load event");
@@ -1060,6 +1133,48 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           palette: "tactical-dll/1000",
           family_loads: 1,
         });
+        if (scenario.camera_journey) {
+          assert.equal(cameraLogs.length, 7,
+            "source camera journey emitted the wrong state count");
+          const states = cameraLogs.map(({ text }) => {
+            const value = (label) => {
+              const match = text.match(new RegExp(`${label}=(-?[0-9.]+)`));
+              assert.ok(match, `source camera log omitted ${label}`);
+              return Number(match[1]);
+            };
+            assert.match(text, /handedness=lh_y_up_to_rh_y_up/);
+            return {
+              pitch: value("pitch"),
+              yaw: value("yaw"),
+              field: value("field"),
+              zoom_step: value("zoom_step"),
+              orbit_step: value("orbit_step"),
+              distance: value("distance"),
+              near: value("near"),
+              far: value("far"),
+              fovy_radians: value("fovy_radians"),
+            };
+          });
+          const initialYaw = faction === "alliance" ? -30 : 150;
+          assert.deepEqual(states.map(({ pitch }) => pitch), [30, 30, 30, 30, 30, 35, 30]);
+          assert.deepEqual(states.map(({ yaw }) => yaw),
+            [initialYaw, initialYaw, initialYaw, initialYaw - 5, initialYaw, initialYaw, initialYaw]);
+          assert.deepEqual(states.map(({ zoom_step }) => zoom_step), [5, 4, 5, 5, 5, 5, 5]);
+          assert.deepEqual(states.map(({ orbit_step }) => orbit_step), [5, 4, 5, 5, 5, 5, 5]);
+          assert.ok(Math.abs(states[0].field - 0.2) < 1e-6);
+          assert.ok(Math.abs(states[1].field - 0.18) < 1e-6);
+          assert.ok(Math.abs(states[2].field - 0.198) < 1e-6);
+          assert.ok(states.every(({ distance, near, far }) =>
+            Math.abs(distance - 170) < 1e-6 && near === 1 && Math.abs(far - 425) < 1e-6));
+          probes.push({
+            type: "source-traced-tactical-camera-journey",
+            executable_functions: ["FUN_005d9490", "FUN_005d9620", "FUN_005d9640", "0x005d97c0"],
+            states,
+          });
+        } else {
+          assert.equal(cameraLogs.length, 0,
+            "non-camera tactical proof unexpectedly enabled the source camera");
+        }
       } else {
         assert.equal(familyLogs.length, 0, "negative control loaded the tactical LOD family");
         assert.equal(lodLogs.length, 0, "negative control submitted a tactical LOD mesh");
@@ -1159,13 +1274,15 @@ async function main() {
     assert.equal(catalog.fixture_namespace, 1);
     assert.deepEqual(catalog.scenarios.map(({ slug }) => slug),
       ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",
-        "lod-journey"]);
+        "lod-journey", "camera-journey"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true]);
+      [true, false, true, true, true, true, true]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
-      [2560, undefined, 2560, 2561, 2562, 2560]);
+      [2560, undefined, 2560, 2561, 2562, 2560, 2560]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true]);
+      [false, false, false, false, false, true, false]);
+    assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
+      [false, false, false, false, false, false, true]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

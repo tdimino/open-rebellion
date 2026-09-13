@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "reviewer": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "scope": "live browser and computer-use acceptance only",
+  "run_id": "2026-09-13T15-35-40-549Z-38317",
+  "command": "node run.mjs --battle --all --scenario=camera-journey --no-build",
+  "passed": 4,
+  "failed": 0,
+  "total_requests": 16,
+  "http_200": 16,
+  "browser_errors": 0,
+  "console_errors": 0,
+  "console_warnings": 0,
+  "network_errors": 0,
+  "missing_asset_diagnostics": 0,
+  "fresh_muted_chromium_processes": 4,
+  "game_muted_confirmations": 4,
+  "browser_processes_closed": 4,
+  "remaining_run_browser_server_processes": 0,
+  "screenshots_inspected": 28,
+  "visual_observations": [
+    "The original tactical shell is visible in all inspected screenshots.",
+    "Alliance and Empire show distinct source-camera views.",
+    "Normal and held D-pad artwork stays within the panel without clipping.",
+    "The 1280x800 view is stably letterboxed and the native 640x480 shell is preserved."
+  ],
+  "retained_screenshot_identity": {
+    "alliance_initial_640x480_sha256": "0cd0db370e9575d76e6ab7d3d0341167e5e7978c15a2601c6ccc61fc07baaf03",
+    "alliance_left_pressed_640x480_sha256": "2bcd5158691906aff611a0c9465a8d87437496c453e9745653bb6e8fd2901f4c",
+    "alliance_up_pressed_640x480_sha256": "1ac1a4332c03f42098a94c06784233b8c3b32cddde9b316a7d2db1c46674fa90",
+    "matches_pre_review_retained_files": true
+  },
+  "findings": [],
+  "browser_acceptance": true,
+  "limitations": [
+    "All four cases remain unbaselined against an owned original-game A0 capture.",
+    "Native held-bitmap probes are exact; scaled controls were visually inspected.",
+    "No TAC cell or native A0 parity is accepted."
+  ]
+}

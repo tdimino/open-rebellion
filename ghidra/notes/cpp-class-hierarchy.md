@@ -223,7 +223,7 @@ Vtable address constants observed in decompiled code, mapped to class types.
 | `PTR_FUN_0066c380` | CShipEventHandler variant B | FUN_005a7500, slot 0x394 |
 | `PTR_FUN_0066c370` | CShipEventHandler variant C | FUN_005a7500, slot 0x397 |
 
-**Note**: `FUN_005a7500` is the **tactical ship constructor** — it allocates and initializes the object
+**Note**: `FUN_005a7500` is the **tactical battle manager/controller constructor** — it allocates and initializes the object
 that handles the 2D tactical battle view. It installs all tactical-layer message handlers (SHIP_ADD,
 SHIP_REMOVE, SHIP_FIRELASERCANNON, SHIP_TAKE_LASER_HIT, DEATHSTAR_FIRE, etc.) and sets the root
 vtable pointer to `PTR_LAB_0066c2d0`. The `FUN_00585640` constructor (GNPRTB parser) allocates

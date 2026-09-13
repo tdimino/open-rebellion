@@ -39,8 +39,10 @@ the owned original DLL directly:
   resource match is named `SDESTI52.BMP`, size 5,414 bytes, SHA-256
   `c128cd6b7304de44063b835c6f0f68cbbd4cc4a3cf7ccd288b8fb481c9b481e2`.
 - The native ordinal lookup proves 29 capital-ship and eight fighter resource
-  families. The join from those ordinals to exact DAT identities and the
-  original camera, lighting, culling, and LOD thresholds remains open.
+  families. The join from those ordinals to exact DAT identities remains open.
+  P57B2A recovers the initial faction camera, field zoom, clip planes, four
+  orbit commands, and Direct3D-to-Macroquad handedness conversion. General
+  layout, targeting, lighting, filtering, culling, and A0 comparison remain open.
 
 The original executable used Direct3D Retained Mode 3D rendering. The previous
 claim that pre-rendered sprite sheets represented the authentic 1998 battle
@@ -58,8 +60,11 @@ Multiplayer simulation and network state must be independent of render profile,
 visual LOD, or local texture choice.
 
 Every P56 through P58 browser harness gate uses `codex-orchestrator` with Astra
-at medium effort. Each browser scenario starts muted in a fresh Chromium
-process and closes the browser and local server when complete.
+only for live browser/computer-use acceptance: low effort for routine checks
+and medium for complex or release-significant journeys. Use Sol high or
+extra-high for code or evidence review only when the slice's risk warrants an
+independent pass. Each browser scenario starts muted in a fresh
+Chromium process and closes the browser and local server when complete.
 
 ## Pipeline
 
@@ -136,7 +141,7 @@ HUD composition.
 
 Gate: native and WASM selection, texture orientation, winding, depth, cold-load
 memory, frame timing, context diagnostics, four-request packaging, both
-viewports, and Astra medium browser review. An original-runtime A/B
+viewports, and task-proportional Astra browser acceptance. An original-runtime A/B
 capture is required before calling the view parity-correct.
 
 The implementation packages only the exact `2560/1033` and
@@ -149,9 +154,10 @@ culling remain open, so no tactical cell is accepted.
 
 ### P57. One three-LOD family
 
-Status: in progress. P57A and P57B1 are complete. See the
+Status: in progress. P57A, P57B1, and P57B2A are complete. See the
 [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md)
-and [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md).
+[P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
+and [P57B2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md).
 
 Add `2561` and `2562`, then trace and implement the original LOD selection,
 camera, filtering, culling, and lighting rules. Capture the same fixed views in
@@ -164,14 +170,19 @@ reduced-detail thresholds recovered from `FUN_005d26c0`, `FUN_005d3770`, and
 three fixed selections, exactly one initial family-load event per isolated
 fixture, and aperture-only changes. P57B1 traces the original cached-slot cycle
 in `FUN_005c1160` and proves the five-step LOD journey with one renderer and one
-family load. P57B2 retains camera, orientation, palette activation, filtering,
-culling, lighting, original zoom-to-depth behavior, original A0/A1 captures,
-native GPU comparison, and simulation-fingerprint proof.
+family load. P57B2A implements the initial faction camera, field zoom, near/far
+planes, four orbit commands, adaptive angular step, pitch bounds, and handedness
+conversion recovered from `FUN_005c1d30`, `FUN_005d9490`, `FUN_005d9640`, and
+the switch at `0x005d97c0`. P57B2 still retains general battle extent/layout,
+selected-object look-at, source pivot and scale, palette activation, filtering,
+culling, lighting, original A0/A1 captures, native GPU comparison, and
+simulation-fingerprint proof.
 
 Gate: deterministic LOD transitions, no resource churn, accepted A0/A1 views,
 and no simulation fingerprint change. P57A proves the source predicate and
 fixed-view selection matrix. P57B1 proves live cached-slot transitions and no
-resource churn. The full P57 gate remains open.
+resource churn. P57B2A proves its bounded source-camera and bitmap D-pad slice
+in 28 fresh muted browser cases. The full P57 gate remains open.
 
 ### P58. Fleet integration
 

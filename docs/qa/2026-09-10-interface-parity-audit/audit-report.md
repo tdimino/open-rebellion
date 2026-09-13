@@ -93,7 +93,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; original 3D assets staged and decoded; one complete three-LOD family browser-rendered with its source predicate and live cached-slot switching; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), and [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md) |
+| First original tactical shell and control states; original 3D assets staged and decoded; one three-LOD family has source selection, live cached switching, and a source-traced faction camera/D-pad proof; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md), and [P57B2A evidence](evidence/2026-09-13-tactical-camera-contract.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -110,9 +110,11 @@ dialog, encyclopedia, advisor-control, and voice families remain incomplete.
 P54 separately stages every original type-301 mesh and type-303 texture or
 palette resource with a source-bound content-addressed manifest. P55 decodes
 the full corpus into verified deterministic mesh and texture objects. P56 and
-P57A render the first complete family and recover its LOD predicate. P57B1
-proves live cached-slot switching without a second family load. Entity joins,
-original camera and render rules, and A0/A1 acceptance remain open.
+P57A renders the first complete family and recovers its LOD predicate. P57B1
+proves live cached-slot switching without a second family load. P57B2A recovers
+the initial faction cameras, field zoom, clip planes, four D-pad commands, and
+handedness conversion. Entity joins, remaining render rules, general battle
+layout, target look-at, and A0/A1 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,

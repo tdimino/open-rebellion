@@ -18,6 +18,7 @@ const LOD_CLOSE_SCENARIO: u32 = 3;
 const LOD_MEDIUM_SCENARIO: u32 = 4;
 const LOD_FAR_SCENARIO: u32 = 5;
 const LOD_JOURNEY_SCENARIO: u32 = 6;
+const CAMERA_JOURNEY_SCENARIO: u32 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -26,6 +27,7 @@ enum TacticalLodFixture {
     Medium,
     Far,
     Journey,
+    CameraJourney,
 }
 
 impl TacticalLodFixture {
@@ -36,6 +38,7 @@ impl TacticalLodFixture {
             Self::Medium => "medium",
             Self::Far => "far",
             Self::Journey => "journey",
+            Self::CameraJourney => "camera-journey",
         }
     }
 
@@ -47,6 +50,7 @@ impl TacticalLodFixture {
             Self::Medium => Some(TacticalLodView::MEDIUM_FIXTURE),
             Self::Far => Some(TacticalLodView::FAR_FIXTURE),
             Self::Journey => None,
+            Self::CameraJourney => None,
         }
     }
 }
@@ -75,6 +79,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         LOD_MEDIUM_SCENARIO => (true, TacticalLodFixture::Medium),
         LOD_FAR_SCENARIO => (true, TacticalLodFixture::Far),
         LOD_JOURNEY_SCENARIO => (true, TacticalLodFixture::Journey),
+        CAMERA_JOURNEY_SCENARIO => (true, TacticalLodFixture::CameraJourney),
         _ => return None,
     };
     let faction = match (code >> 8) & 0xff {
@@ -189,6 +194,8 @@ pub(crate) fn apply(
         tactical.enable_resource_2560_proof();
         if request.lod_fixture == TacticalLodFixture::Journey {
             tactical.enable_tactical_lod_journey();
+        } else if request.lod_fixture == TacticalLodFixture::CameraJourney {
+            tactical.enable_original_camera_proof(request.faction == CockpitFaction::Empire);
         } else if let Some(view) = request.lod_fixture.view() {
             tactical.set_tactical_lod_fixture(view);
         }
@@ -299,8 +306,12 @@ mod tests {
             decode(0x10106).unwrap().lod_fixture,
             TacticalLodFixture::Journey
         );
+        assert_eq!(
+            decode(0x10107).unwrap().lod_fixture,
+            TacticalLodFixture::CameraJourney
+        );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10107).is_none());
+        assert!(decode(0x10108).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

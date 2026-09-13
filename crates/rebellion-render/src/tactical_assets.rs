@@ -22,6 +22,137 @@ const ORIGINAL_CLOSE_THRESHOLD: f32 = 15.0;
 const ORIGINAL_MEDIUM_THRESHOLD: f32 = 40.0;
 const ORIGINAL_REDUCED_DETAIL_THRESHOLD: f32 = 20.0;
 
+const ORIGINAL_CAMERA_DISTANCE_SCALE: f32 = 1.7;
+const ORIGINAL_CAMERA_FAR_SCALE: f32 = 2.5;
+const ORIGINAL_CAMERA_NEAR: f32 = 1.0;
+const ORIGINAL_CAMERA_FIELD: f32 = 0.2;
+const ORIGINAL_CAMERA_FIELD_MIN: f32 = 0.005;
+const ORIGINAL_CAMERA_FIELD_MAX: f32 = 1.5;
+const ORIGINAL_CAMERA_ZOOM_IN_SCALE: f32 = 0.9;
+const ORIGINAL_CAMERA_ZOOM_OUT_SCALE: f32 = 1.1;
+const ORIGINAL_CAMERA_PITCH: i32 = 30;
+const ORIGINAL_CAMERA_ALLIANCE_YAW: i32 = -30;
+const ORIGINAL_CAMERA_EMPIRE_YAW: i32 = 150;
+const ORIGINAL_CAMERA_INITIAL_STEP: i32 = 5;
+
+/// Source-traced tactical camera state from `FUN_005d9490`, `FUN_005d9620`,
+/// `FUN_005d9640`, and the command switch at `0x005d97c0`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OriginalTacticalCamera {
+    pitch_degrees: i32,
+    yaw_degrees: i32,
+    zoom_step: i32,
+    orbit_step: i32,
+    field: f32,
+    distance: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct OriginalCameraPose {
+    position: Vec3,
+    up: Vec3,
+    field: f32,
+    fovy_radians: f32,
+    near: f32,
+    far: f32,
+    pitch_degrees: i32,
+    yaw_degrees: i32,
+    zoom_step: i32,
+    orbit_step: i32,
+}
+
+impl OriginalTacticalCamera {
+    /// Construct the original initial view for a battle extent and player side.
+    #[must_use]
+    pub fn new(player_is_empire: bool, battle_extent: f32) -> Self {
+        Self {
+            pitch_degrees: ORIGINAL_CAMERA_PITCH,
+            yaw_degrees: if player_is_empire {
+                ORIGINAL_CAMERA_EMPIRE_YAW
+            } else {
+                ORIGINAL_CAMERA_ALLIANCE_YAW
+            },
+            zoom_step: ORIGINAL_CAMERA_INITIAL_STEP,
+            orbit_step: ORIGINAL_CAMERA_INITIAL_STEP,
+            field: ORIGINAL_CAMERA_FIELD,
+            distance: battle_extent * ORIGINAL_CAMERA_DISTANCE_SCALE,
+        }
+    }
+
+    pub(crate) fn zoom_in(&mut self) {
+        self.field = (self.field * ORIGINAL_CAMERA_ZOOM_IN_SCALE).max(ORIGINAL_CAMERA_FIELD_MIN);
+        self.zoom_step -= 1;
+        self.update_orbit_step();
+    }
+
+    pub(crate) fn zoom_out(&mut self) {
+        self.field = (self.field * ORIGINAL_CAMERA_ZOOM_OUT_SCALE).min(ORIGINAL_CAMERA_FIELD_MAX);
+        self.zoom_step += 1;
+        self.update_orbit_step();
+    }
+
+    pub(crate) fn turn_left(&mut self) {
+        self.yaw_degrees -= self.orbit_step;
+    }
+
+    pub(crate) fn turn_right(&mut self) {
+        self.yaw_degrees += self.orbit_step;
+    }
+
+    pub(crate) fn pitch_up(&mut self) {
+        if self.pitch_degrees < 90 {
+            self.pitch_degrees += self.orbit_step;
+        }
+    }
+
+    pub(crate) fn pitch_down(&mut self) {
+        if self.pitch_degrees > -90 {
+            self.pitch_degrees -= self.orbit_step;
+        }
+    }
+
+    fn update_orbit_step(&mut self) {
+        self.orbit_step = self.zoom_step.clamp(1, 5);
+    }
+
+    fn pose(mut self) -> OriginalCameraPose {
+        if self.yaw_degrees > 180 {
+            self.yaw_degrees -= 360;
+        }
+        if self.yaw_degrees < -180 {
+            self.yaw_degrees += 360;
+        }
+        let pitch = (self.pitch_degrees as f32).to_radians();
+        let yaw = (self.yaw_degrees as f32).to_radians();
+        let (sin_pitch, cos_pitch) = pitch.sin_cos();
+        let (sin_yaw, cos_yaw) = yaw.sin_cos();
+
+        // Direct3D retained mode is left-handed and the original meshes use
+        // Y-up. Reflecting source Z produces Macroquad's right-handed space.
+        let position = vec3(
+            -self.distance * sin_pitch * sin_yaw,
+            self.distance * sin_pitch * cos_yaw,
+            self.distance * cos_pitch,
+        );
+        let up = vec3(-cos_pitch * sin_yaw, cos_pitch * cos_yaw, -sin_pitch);
+        OriginalCameraPose {
+            position,
+            up,
+            field: self.field,
+            // Wine's retained-mode compatibility implementation constructs
+            // unit-front clip planes at +/-field. This is the corresponding
+            // vertical angle for Macroquad's perspective camera.
+            fovy_radians: 2.0 * self.field.atan(),
+            near: ORIGINAL_CAMERA_NEAR,
+            far: self.distance * ORIGINAL_CAMERA_FAR_SCALE,
+            pitch_degrees: self.pitch_degrees,
+            yaw_degrees: self.yaw_degrees,
+            zoom_step: self.zoom_step,
+            orbit_step: self.orbit_step,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OriginalTacticalLod {
     Close = 0,
@@ -314,6 +445,8 @@ pub(crate) struct TacticalProofRenderer {
     current_lod: OriginalTacticalLod,
     view: TacticalLodView,
     logged_lod: Option<OriginalTacticalLod>,
+    source_camera: Option<OriginalTacticalCamera>,
+    logged_camera: Option<[u32; 8]>,
 }
 
 impl Default for TacticalProofRenderer {
@@ -326,6 +459,8 @@ impl Default for TacticalProofRenderer {
             current_lod: OriginalTacticalLod::Medium,
             view: TacticalLodView::default(),
             logged_lod: None,
+            source_camera: None,
+            logged_camera: None,
         }
     }
 }
@@ -333,6 +468,47 @@ impl Default for TacticalProofRenderer {
 impl TacticalProofRenderer {
     pub(crate) fn set_view(&mut self, view: TacticalLodView) {
         self.view = view;
+    }
+
+    pub(crate) fn enable_original_camera(&mut self, player_is_empire: bool, battle_extent: f32) {
+        self.source_camera = Some(OriginalTacticalCamera::new(player_is_empire, battle_extent));
+        self.logged_camera = None;
+    }
+
+    pub(crate) fn zoom_in(&mut self) {
+        if let Some(camera) = &mut self.source_camera {
+            camera.zoom_in();
+        }
+    }
+
+    pub(crate) fn zoom_out(&mut self) {
+        if let Some(camera) = &mut self.source_camera {
+            camera.zoom_out();
+        }
+    }
+
+    pub(crate) fn turn_left(&mut self) {
+        if let Some(camera) = &mut self.source_camera {
+            camera.turn_left();
+        }
+    }
+
+    pub(crate) fn turn_right(&mut self) {
+        if let Some(camera) = &mut self.source_camera {
+            camera.turn_right();
+        }
+    }
+
+    pub(crate) fn pitch_up(&mut self) {
+        if let Some(camera) = &mut self.source_camera {
+            camera.pitch_up();
+        }
+    }
+
+    pub(crate) fn pitch_down(&mut self) {
+        if let Some(camera) = &mut self.source_camera {
+            camera.pitch_down();
+        }
     }
 
     pub(crate) fn draw(&mut self, bmp_cache: &mut BmpCache, aperture: (f32, f32, f32, f32)) {
@@ -369,19 +545,59 @@ impl TacticalProofRenderer {
             width.round() as i32,
             height.round() as i32,
         );
-        let camera_direction = vec3(2.8, -4.2, 2.2).normalize();
-        let camera_distance = self.view.view_depth.mul_add(0.24, 2.0);
-        set_camera(&Camera3D {
-            position: camera_direction * camera_distance,
-            target: Vec3::ZERO,
-            up: Vec3::Z,
-            fovy: 35.0_f32.to_radians(),
-            aspect: Some(width / height),
-            viewport: Some(viewport),
-            z_near: 0.1,
-            z_far: 100.0,
-            ..Default::default()
-        });
+        if let Some(source_camera) = self.source_camera {
+            let pose = source_camera.pose();
+            let camera_key = [
+                pose.position.x.to_bits(),
+                pose.position.y.to_bits(),
+                pose.position.z.to_bits(),
+                pose.field.to_bits(),
+                pose.pitch_degrees as u32,
+                pose.yaw_degrees as u32,
+                pose.zoom_step as u32,
+                pose.orbit_step as u32,
+            ];
+            if self.logged_camera != Some(camera_key) {
+                macroquad::logging::info!(
+                    "[tactical_3d] camera_source pitch={} yaw={} field={} zoom_step={} orbit_step={} distance={} near={} far={} fovy_radians={} handedness=lh_y_up_to_rh_y_up",
+                    pose.pitch_degrees,
+                    pose.yaw_degrees,
+                    pose.field,
+                    pose.zoom_step,
+                    pose.orbit_step,
+                    source_camera.distance,
+                    pose.near,
+                    pose.far,
+                    pose.fovy_radians,
+                );
+                self.logged_camera = Some(camera_key);
+            }
+            set_camera(&Camera3D {
+                position: pose.position,
+                target: Vec3::ZERO,
+                up: pose.up,
+                fovy: pose.fovy_radians,
+                aspect: Some(width / height),
+                viewport: Some(viewport),
+                z_near: pose.near,
+                z_far: pose.far,
+                ..Default::default()
+            });
+        } else {
+            let camera_direction = vec3(2.8, -4.2, 2.2).normalize();
+            let camera_distance = self.view.view_depth.mul_add(0.24, 2.0);
+            set_camera(&Camera3D {
+                position: camera_direction * camera_distance,
+                target: Vec3::ZERO,
+                up: Vec3::Z,
+                fovy: 35.0_f32.to_radians(),
+                aspect: Some(width / height),
+                viewport: Some(viewport),
+                z_near: 0.1,
+                z_far: 100.0,
+                ..Default::default()
+            });
+        }
         gl_use_material(self.material.as_ref().unwrap());
         let asset = &self.assets[self.current_lod as usize];
         debug_assert_eq!(asset.resource_id, self.current_lod.resource_id());
@@ -576,11 +792,12 @@ fn decode_mesh_object(
             let position = vec3(reader.f32()?, reader.f32()?, reader.f32()?);
             let normal = vec3(reader.f32()?, reader.f32()?, reader.f32()?);
             let uv = vec2(reader.f32()?, reader.f32()?);
+            let relative = position - transform.center;
             vertices.push(Vertex {
-                position: (position - transform.center) * transform.scale,
+                position: vec3(relative.x, relative.y, -relative.z) * transform.scale,
                 uv,
                 color: decoded_material.diffuse.into(),
-                normal: normal.extend(0.0),
+                normal: vec3(normal.x, normal.y, -normal.z).extend(0.0),
             });
         }
         let mut indices = Vec::with_capacity(index_count);
@@ -590,6 +807,9 @@ fn decode_mesh_object(
                 return Err("tactical mesh chunk index is out of range".to_string());
             }
             indices.push(index);
+        }
+        for triangle in indices.chunks_exact_mut(3) {
+            triangle.swap(1, 2);
         }
         output.push(DecodedMeshChunk {
             mesh: Mesh {
@@ -799,6 +1019,13 @@ fragment float4 fragmentShader(RasterizerData in [[stage_in]], texture2d<float> 
 mod tests {
     use super::*;
 
+    fn assert_near(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 1.0e-5,
+            "expected {expected}, got {actual}"
+        );
+    }
+
     #[test]
     fn reader_rejects_non_finite_and_truncated_values() {
         let encoded_nan = f32::NAN.to_bits().to_le_bytes();
@@ -806,6 +1033,55 @@ mod tests {
         assert!(non_finite.f32().is_err());
         let mut truncated = Reader::new(&[1, 2, 3]);
         assert!(truncated.u32().is_err());
+    }
+
+    #[test]
+    fn original_camera_preserves_faction_pose_clip_and_field_contract() {
+        let alliance = OriginalTacticalCamera::new(false, 100.0).pose();
+        let empire = OriginalTacticalCamera::new(true, 100.0).pose();
+        assert_eq!(alliance.pitch_degrees, 30);
+        assert_eq!(alliance.yaw_degrees, -30);
+        assert_eq!(empire.yaw_degrees, 150);
+        assert_near(alliance.position.x, -empire.position.x);
+        assert_near(alliance.position.y, -empire.position.y);
+        assert_near(alliance.position.z, empire.position.z);
+        assert_near(alliance.near, 1.0);
+        assert_near(alliance.far, 425.0);
+        assert_near(alliance.field, 0.2);
+        assert_near(alliance.fovy_radians, 2.0 * 0.2_f32.atan());
+        assert_near(alliance.up.length(), 1.0);
+    }
+
+    #[test]
+    fn original_camera_commands_use_field_zoom_and_adaptive_orbit_steps() {
+        let mut camera = OriginalTacticalCamera::new(false, 100.0);
+        camera.zoom_in();
+        assert_near(camera.field, 0.18);
+        assert_eq!(camera.zoom_step, 4);
+        assert_eq!(camera.orbit_step, 4);
+        camera.turn_left();
+        assert_eq!(camera.yaw_degrees, -34);
+        camera.turn_right();
+        assert_eq!(camera.yaw_degrees, -30);
+        camera.zoom_out();
+        assert_near(camera.field, 0.198);
+        assert_eq!(camera.zoom_step, 5);
+        assert_eq!(camera.orbit_step, 5);
+        camera.pitch_up();
+        assert_eq!(camera.pitch_degrees, 35);
+        camera.pitch_down();
+        assert_eq!(camera.pitch_degrees, 30);
+
+        for _ in 0..100 {
+            camera.zoom_in();
+        }
+        assert_near(camera.field, ORIGINAL_CAMERA_FIELD_MIN);
+        assert_eq!(camera.orbit_step, 1);
+        for _ in 0..200 {
+            camera.zoom_out();
+        }
+        assert_near(camera.field, ORIGINAL_CAMERA_FIELD_MAX);
+        assert_eq!(camera.orbit_step, 5);
     }
 
     #[test]

@@ -729,6 +729,26 @@ pub mod resources {
         pub const BTN_CAMERA_ZOOM_OUT_NORMAL: u32 = 1046;
         /// Camera zoom-out control, pressed state.
         pub const BTN_CAMERA_ZOOM_OUT_PRESSED: u32 = 1047;
+        /// Camera orbit-left control, normal state.
+        pub const BTN_CAMERA_LEFT_NORMAL: u32 = 1048;
+        /// Camera orbit-left control, pressed state.
+        pub const BTN_CAMERA_LEFT_PRESSED: u32 = 1049;
+        /// Camera orbit-right control, normal state.
+        pub const BTN_CAMERA_RIGHT_NORMAL: u32 = 1050;
+        /// Camera orbit-right control, pressed state.
+        pub const BTN_CAMERA_RIGHT_PRESSED: u32 = 1051;
+        /// Camera pitch-up control, normal state.
+        pub const BTN_CAMERA_UP_NORMAL: u32 = 1052;
+        /// Camera pitch-up control, pressed state.
+        pub const BTN_CAMERA_UP_PRESSED: u32 = 1053;
+        /// Camera pitch-down control, normal state.
+        pub const BTN_CAMERA_DOWN_NORMAL: u32 = 1055;
+        /// Camera pitch-down control, pressed state.
+        pub const BTN_CAMERA_DOWN_PRESSED: u32 = 1056;
+        /// Camera target control, normal state.
+        pub const BTN_CAMERA_TARGET_NORMAL: u32 = 1058;
+        /// Camera target control, pressed state.
+        pub const BTN_CAMERA_TARGET_PRESSED: u32 = 1059;
 
         /// Tactical command button: Maneuvers/Tactics, normal state.
         pub const BTN_MANEUVERS_TACTICS_NORMAL: u32 = 1105;

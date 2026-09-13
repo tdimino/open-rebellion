@@ -966,6 +966,17 @@ impl TacticalState {
             .set_view(TacticalLodView::from_fixture_zoom(self.zoom));
     }
 
+    /// Enable the source-traced camera for isolated browser acceptance.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn enable_original_camera_proof(&mut self, player_is_empire: bool) {
+        self.proof_resource_2560 = true;
+        self.proof_lod_follows_zoom = false;
+        // The deterministic one-ship-per-side fixture retains the executable's
+        // unmodified 100-unit battle extent.
+        self.proof_renderer
+            .enable_original_camera(player_is_empire, 100.0);
+    }
+
     /// End the current battle — clears session. Returns the session for
     /// result processing by the caller.
     pub fn end_battle(&mut self) -> Option<BattleSession> {
@@ -1008,6 +1019,10 @@ enum TacticalHudControl {
     Pause,
     ZoomIn,
     ZoomOut,
+    CameraLeft,
+    CameraRight,
+    CameraUp,
+    CameraDown,
     HighlightAlliance,
     HighlightEmpire,
 }
@@ -1019,7 +1034,7 @@ struct TacticalHudControlSpec {
     hit_resource: u32,
 }
 
-const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 5] = [
+const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 9] = [
     TacticalHudControlSpec {
         control: TacticalHudControl::Pause,
         rect: NativeRect::new(560.0, 307.0, 28.0, 21.0),
@@ -1034,6 +1049,26 @@ const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 5] = [
         control: TacticalHudControl::ZoomOut,
         rect: NativeRect::new(603.0, 343.0, 24.0, 24.0),
         hit_resource: resources::tactical::BTN_CAMERA_ZOOM_OUT_NORMAL,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::CameraLeft,
+        rect: NativeRect::new(511.0, 376.0, 42.0, 43.0),
+        hit_resource: resources::tactical::BTN_CAMERA_LEFT_NORMAL,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::CameraRight,
+        rect: NativeRect::new(557.0, 376.0, 43.0, 43.0),
+        hit_resource: resources::tactical::BTN_CAMERA_RIGHT_NORMAL,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::CameraUp,
+        rect: NativeRect::new(537.0, 344.0, 43.0, 43.0),
+        hit_resource: resources::tactical::BTN_CAMERA_UP_NORMAL,
+    },
+    TacticalHudControlSpec {
+        control: TacticalHudControl::CameraDown,
+        rect: NativeRect::new(537.0, 412.0, 43.0, 43.0),
+        hit_resource: resources::tactical::BTN_CAMERA_DOWN_NORMAL,
     },
     TacticalHudControlSpec {
         control: TacticalHudControl::HighlightAlliance,
@@ -1277,11 +1312,43 @@ fn draw_original_tactical_hud(
         343.0,
     );
     for (id, x, y) in [
-        (1048, 511.0, 376.0),
-        (1050, 557.0, 376.0),
-        (1052, 537.0, 344.0),
-        (1055, 537.0, 412.0),
-        (1058, 538.0, 379.0),
+        (
+            if pressed_control == Some(TacticalHudControl::CameraLeft) {
+                art::BTN_CAMERA_LEFT_PRESSED
+            } else {
+                art::BTN_CAMERA_LEFT_NORMAL
+            },
+            511.0,
+            376.0,
+        ),
+        (
+            if pressed_control == Some(TacticalHudControl::CameraRight) {
+                art::BTN_CAMERA_RIGHT_PRESSED
+            } else {
+                art::BTN_CAMERA_RIGHT_NORMAL
+            },
+            557.0,
+            376.0,
+        ),
+        (
+            if pressed_control == Some(TacticalHudControl::CameraUp) {
+                art::BTN_CAMERA_UP_PRESSED
+            } else {
+                art::BTN_CAMERA_UP_NORMAL
+            },
+            537.0,
+            344.0,
+        ),
+        (
+            if pressed_control == Some(TacticalHudControl::CameraDown) {
+                art::BTN_CAMERA_DOWN_PRESSED
+            } else {
+                art::BTN_CAMERA_DOWN_NORMAL
+            },
+            537.0,
+            412.0,
+        ),
+        (art::BTN_CAMERA_TARGET_NORMAL, 538.0, 379.0),
     ] {
         draw_tactical_bitmap(cache, id, canvas, x, y);
     }
@@ -1297,8 +1364,32 @@ fn handle_original_tactical_controls(
         let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
         match tactical_hud_control_at(cache, x, y) {
             Some(TacticalHudControl::Pause) => return TacticalAction::TogglePause,
-            Some(TacticalHudControl::ZoomIn) => state.zoom = (state.zoom * 1.25).min(2.0),
-            Some(TacticalHudControl::ZoomOut) => state.zoom = (state.zoom / 1.25).max(0.5),
+            Some(TacticalHudControl::ZoomIn) => {
+                state.zoom = (state.zoom * 1.25).min(2.0);
+                #[cfg(feature = "interface-test-fixtures")]
+                state.proof_renderer.zoom_in();
+            }
+            Some(TacticalHudControl::ZoomOut) => {
+                state.zoom = (state.zoom / 1.25).max(0.5);
+                #[cfg(feature = "interface-test-fixtures")]
+                state.proof_renderer.zoom_out();
+            }
+            Some(TacticalHudControl::CameraLeft) => {
+                #[cfg(feature = "interface-test-fixtures")]
+                state.proof_renderer.turn_left();
+            }
+            Some(TacticalHudControl::CameraRight) => {
+                #[cfg(feature = "interface-test-fixtures")]
+                state.proof_renderer.turn_right();
+            }
+            Some(TacticalHudControl::CameraUp) => {
+                #[cfg(feature = "interface-test-fixtures")]
+                state.proof_renderer.pitch_up();
+            }
+            Some(TacticalHudControl::CameraDown) => {
+                #[cfg(feature = "interface-test-fixtures")]
+                state.proof_renderer.pitch_down();
+            }
             Some(TacticalHudControl::HighlightAlliance) => {
                 state.highlight_alliance = !state.highlight_alliance;
             }
@@ -2382,6 +2473,22 @@ mod tests {
         assert_eq!(
             tactical_hud_control_at(&mut cache, 609.1, 344.1),
             Some(TacticalHudControl::ZoomOut)
+        );
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 520.1, 397.1),
+            Some(TacticalHudControl::CameraLeft)
+        );
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 590.1, 397.1),
+            Some(TacticalHudControl::CameraRight)
+        );
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 558.1, 354.1),
+            Some(TacticalHudControl::CameraUp)
+        );
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 558.1, 444.1),
+            Some(TacticalHudControl::CameraDown)
         );
 
         assert_eq!(

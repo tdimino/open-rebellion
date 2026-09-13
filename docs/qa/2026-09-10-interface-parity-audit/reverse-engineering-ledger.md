@@ -147,11 +147,11 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-PACK-01 | Complete native/WASM resource transport | implementation-needed | Version the pack for arbitrary resources, films, and EData |
 | RE-MSN-01 | Create Mission and Mission Status composites | untriaged | Trace constructors, legal-target predicates, and outcome routing |
 | RE-EVT-01 | Strategic events and authored reports | static-partial | Resolve every common, faction, and rare event variant |
-| RE-BAT-01 | Battle Alert, strategic reports, and results | untriaged | Recover constructors, choices, force tabs, results, and return routing |
+| RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
-| RE-TAC-01 | Tactical loader and event-handler registry | static-proven | Connect event slots to controls and observable state transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded and first three-LOD family source-proven/browser-rendered with live cached-slot switching | Finish DAT identity, camera, palette, filtering, culling, lighting, and production selection |
-| RE-TAC-03 | Tactical battle-results composition | untriaged | Connect result construction to application and strategic return |
+| RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, faction camera, field zoom, handedness conversion, and four D-pad commands source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through layout, target look-at, DAT identity, palette, render state, A0 comparison, and production selection |
+| RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
 | RE-END-01 | Campaign endings, skip, return, restart, and failure | static-partial | Recover the complete terminal media matrix |
@@ -182,9 +182,14 @@ traced through `FUN_005d26c0`, `FUN_005d3770`, and `FUN_005d3650`; see its
 [evidence](evidence/2026-09-13-tactical-3d-lod-family.md). P57B1 adds
 `FUN_005c1160`, whose slot 2, 1, 0, restore sequence corroborates cached object
 switching, and proves the live sequence with one browser family load; see its
-[evidence](evidence/2026-09-13-tactical-live-lod-journey.md). DAT identity,
-palette activation, camera, filtering, culling, lighting, production binding,
-and original visual acceptance remain open.
+[evidence](evidence/2026-09-13-tactical-live-lod-journey.md). P57B2A traces
+`FUN_005c1d30`, `FUN_005d9490`, `FUN_005d9620`,
+`FUN_005d9640`, and the command switch at `0x005d97c0` to recover exact faction
+pose, field zoom, clip, orbit, pitch, and target-command state. Its
+[evidence](evidence/2026-09-13-tactical-camera-contract.md) proves the bounded
+camera fixture and four bitmap D-pad directions. DAT identity, general battle
+layout, target look-at, palette activation, filtering, culling, lighting,
+production binding, and original visual acceptance remain open.
 
 ## Immediate implementation order
 
@@ -200,7 +205,8 @@ and original visual acceptance remain open.
    menu, expanded legend, remaining filter predicates and overlays, and exact
    map input.
 6. Recover and implement the complete `TAC-01` through `TAC-07` space-battle
-   path, including type-301/303 resources and Death Star controls.
+   path using the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md),
+   including type-301/303 resources, tactical audio, results, and Death Star controls.
 7. Use original-runtime capture only for the remaining dynamic proof boundary.
 
 No static discovery marks a surface complete. It closes only the corresponding

@@ -571,10 +571,16 @@ would tune around known simulation feedback defects.
   controls, prove exactly one family load, and verify both factions and both
   viewports in 24 fresh muted browser cases. Keep the test-only zoom-to-depth
   bridge excluded from production and all 106 tactical cells open.
+- [x] Complete P57B2A source-camera and D-pad proof: recover the two faction
+  entry views, field zoom, clip planes, four orbit commands, adaptive step,
+  pitch bounds, and Direct3D handedness conversion; render the original normal
+  and held directional bitmaps; and pass the 28-case muted browser bundle.
+  Keep every strict tactical cell open pending A0 view acceptance.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B2 next recovers and accepts original camera/render rules before
-  P58 replaces procedural ships, fighters, planets, and effects.
+  states. P57B2B next recovers general layout, target look-at, and the remaining
+  render rules before P58 replaces procedural ships, fighters, planets, and
+  effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

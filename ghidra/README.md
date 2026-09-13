@@ -65,7 +65,7 @@ coverage is incomplete and tracked in the
 - **AI is omniscient** — no fog-of-war check in FUN_00519d00 (galaxy evaluation)
 - **Turn processing**: FUN_004927c0 (9K lines) is the master tick function — research dispatch, fleet orders, manufacturing, event processing
 
-## Ghidra Scripts (8 Jython scripts)
+## Ghidra Scripts (14 tracked Jython scripts)
 
 | Script | Purpose |
 |--------|---------|
@@ -77,6 +77,16 @@ coverage is incomplete and tracked in the
 | `DumpCombatRegion.py` | Function listing in combat address range |
 | `FindCombatMath.py` | Pattern search for combat math operations |
 | `DumpGNPRTBXrefs.py` | GNPRTB parameter → function tracer |
+| `DecompileTargets.py` | Decompile an explicit address list without a broad export |
+| `DumpScalars.py` | Emit typed scalar values at explicit addresses |
+| `DumpReferences.py` | Emit references to explicit functions or data addresses |
+| `DumpInstructions.py` | Emit bounded instruction listings around a target address |
+| `ListFunctionsRange.py` | List functions in one bounded address range |
+| `DumpPointerTable.py` | Decode a bounded pointer table with referenced symbols |
+
+These six targeted probes support reproducible interface work without checking
+in the saved Ghidra database or generated decompilation corpus. Other local
+scratch scripts remain ignored until separately reviewed.
 
 ## Decompiled Functions by Game System
 
@@ -112,7 +122,7 @@ ghidra/
 │   ├── 4 review .md files        # Internal review notes
 │   └── FUN_*.c files             # Partial pseudocode export; some files are empty
 └── scripts/
-    └── 8 .py files               # Ghidra Jython scripts
+    └── 14 tracked .py files      # Broad analysis plus bounded UI probes
 ```
 
 ## How to Use

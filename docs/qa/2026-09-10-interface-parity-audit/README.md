@@ -76,6 +76,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P57B1 live LOD evidence](evidence/2026-09-13-tactical-live-lod-journey.md)
   for the source-traced cached-slot sequence, one-load browser journey, and the
   original camera and A0/A1 boundaries still open for P57B2.
+- Review the [P57B2A camera evidence](evidence/2026-09-13-tactical-camera-contract.md)
+  for exact faction views, field zoom, clip planes, handedness conversion,
+  bitmap D-pad interactions, and the remaining production/A0 boundary.
 
 ## Suggested contribution lanes
 
@@ -85,7 +88,7 @@ geometry, and unverified asset mappings do not count as parity.
 | Interface implementation | A required family or cell in [surface-ledger.json](surface-ledger.json) |
 | Screenshot and provenance research | A missing state in [screenshot-ledger.md](screenshot-ledger.md) |
 | Automated visual verification | The gates and thresholds in [audit-report.md](audit-report.md) |
-| Space-battle interface | `TAC-01` through `TAC-07`, covering 106 baseline cells |
+| Space-battle interface | `TAC-01` through `TAC-07`, covering 106 baseline cells, plus the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) |
 
 ## Acceptance rule
 

@@ -21,8 +21,15 @@ functional; historical parity percentages are estimates, not acceptance proof.
   next feature. Never check off a partial or inferred result.
 - Work directly on `main`; do not create or retain side branches unless the
   user explicitly changes the main-only policy.
-- Browser acceptance must use `codex-orchestrator` with Astra at medium effort.
-  Retain inspected screenshots, console/network logs, and artifact hashes.
+- Use Astra only for live browser or computer-use acceptance through
+  `codex-orchestrator`: low effort for routine checks, medium for complex or
+  release-significant journeys. Do not assign Astra source, implementation,
+  reverse-engineering, or documentation reviews. Retain its inspected
+  screenshots, console/network logs, and artifact hashes.
+- Use Codex Sol through `codex-orchestrator`, at high or extra-high effort,
+  when risk warrants independent code, reverse-engineering, architecture,
+  persistence/network, security, or documentation review. Routine, well-tested
+  feature slices do not require a Sol review.
 - Launch every Open Rebellion browser-test session with Chromium
   `--mute-audio`, and keep the in-game music control muted unless the test
   explicitly verifies audio. Close the test browser and local server when the

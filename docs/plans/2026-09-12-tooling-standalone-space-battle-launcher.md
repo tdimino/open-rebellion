@@ -14,6 +14,8 @@ This is a test harness for `UIP-B06` in the [batched interface plan](2026-09-11-
 
 Use the [space-battle launcher reference](../reference/space-battle-launcher/README.md)
 for current routes, fixture codes, commands, evidence, and verified limits.
+Its [reverse-engineering map](../reference/space-battle-launcher/reverse-engineering-map.md)
+ranks the exact Windows/Ghidra targets that unlock each remaining tactical seam.
 
 The [tactical 3D asset pipeline](2026-09-12-feat-tactical-3d-asset-pipeline.md)
 owns recovery and browser rendering of the original DirectX meshes and
@@ -23,10 +25,13 @@ and evidence gate.
 It is not blocked on finishing the GID, system-window, or other strategic interface families. Start T0 and T1 after the current in-flight GID bundle is committed, then work on tactical asset proof and original HUD composition as a separate `UIP-B06` lane. The final 106-cell tactical acceptance gate still depends on original resources, screenshot baselines, and real browser interaction; a functioning launcher is not that gate.
 
 Every T1 through T5 browser harness gate uses `codex-orchestrator` with Astra
-at medium effort. Each scenario starts in a fresh muted Chromium process and
-closes its browser and local server when complete.
+only for live browser/computer-use acceptance: low effort for routine checks
+and medium for complex or release-significant journeys. Use Sol high or
+extra-high for code or evidence review only when the slice's risk warrants an
+independent pass. Each scenario starts in a fresh muted Chromium
+process and closes its browser and local server when complete.
 
-T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. [P52](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md) adds the original 640×480 shell and first working bitmap pause, highlight, and zoom controls. [P53](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md) adds palette-key hit masks and held zoom pressed art. [P54](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md) adds reproducible raw staging for every original type-301 and type-303 tactical resource. [P55](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md) converts and independently verifies the full original corpus. [P56](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md) packages and visibly renders one exact mesh and texture pair in an isolated proof/control matrix. [P57A](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md) adds the complete `2560`–`2562` family, both named textures, and source-traced close/medium/far selection. [P57B1](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md) proves live cached-slot switching through the authentic zoom controls with one family load. Shared return/outcome routing, production fleet rendering, original view acceptance, complete battle interactions, and all 106 visual cells remain open.
+T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. [P52](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md) adds the original 640×480 shell and first working bitmap pause, highlight, and zoom controls. [P53](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md) adds palette-key hit masks and held zoom pressed art. [P54](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md) adds reproducible raw staging for every original type-301 and type-303 tactical resource. [P55](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md) converts and independently verifies the full original corpus. [P56](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md) packages and visibly renders one exact mesh and texture pair in an isolated proof/control matrix. [P57A](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md) adds the complete `2560`–`2562` family, both named textures, and source-traced close/medium/far selection. [P57B1](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md) proves live cached-slot switching through the authentic zoom controls with one family load. [P57B2A](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md) adds the source faction camera and working bitmap D-pad; the full muted harness now passes 28 of 28 cases. Shared return/outcome routing, production fleet rendering, original view acceptance, complete battle interactions, and all 106 visual cells remain open.
 
 ## Current contract and limits
 
@@ -35,7 +40,7 @@ T0 and T1 are partially complete. The [tactical result-identity regression](../q
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves 29 ship and eight fighter ordinal-to-resource bases. Candidate DAT names still need the original vtable identity join. P54 stages and P55 decode all type-301 and type-303 resources. P56 proves one source-bound pair. P57A proves its full three-LOD family and selection predicate. P57B1 proves live switching without resource churn. Complete production selection and original view acceptance remain open.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves 29 ship and eight fighter ordinal-to-resource bases. Candidate DAT names still need the original vtable identity join. P54 stages and P55 decode all type-301 and type-303 resources. P56 proves one source-bound pair. P57A proves its full three-LOD family and selection predicate. P57B1 proves live switching without resource churn. P57B2A proves the initial faction camera, projection, clip planes, handedness conversion, and four D-pad commands. Complete production selection, general layout, remaining render rules, and original view acceptance remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design
@@ -86,14 +91,17 @@ Gate: repeatable seeded results, no missing required assets or browser errors, s
 
 Use `RE-TAC-01`, `RE-TAC-02`, `RE-BAT-01`, the manual pages 139–150, the [asset reference library](../reference/asset-library/README.md), extracted `TACTICAL.DLL` resources, and the screenshot ledger to replace the current 1200×800 synthetic egui tactical HUD and results screen panel by panel. Map original resource ID, placement, state predicate, hit rectangle, and action for each control before implementation. Current camera fields and several tactical controls are not functional, so a rendered panel alone is insufficient. Keep the battle launcher fixed on the production renderer and expand its snapshot matrix as surfaces become authentic.
 
-Gate: source-mapped art and controls for the selected bundle, exact extracted-BMP pixels where unobscured, documented comparison limits for compressed screenshots, and an Astra medium review of both factions. Do not infer missing hover, disabled, Death Star, or result art from a modern replacement.
+Gate: source-mapped art and controls for the selected bundle, exact extracted-BMP pixels where unobscured, documented comparison limits for compressed screenshots, and task-proportional Astra browser acceptance of both factions. Do not infer missing hover, disabled, Death Star, or result art from a modern replacement.
 
-Status: the P52 and P53 slices pass this scoped gate for shell `1000`, faction
+Status: the P52, P53, and P57B2A slices pass this scoped gate for shell `1000`, faction
 group headers, the selected-unit frame, pause, highlights, zoom, and visible
-camera-control art. Working controls use source-shaped hit masks, and zoom uses
-its normal and held pressed resources. The active combat replacement panels are removed. Camera
-semantics beyond zoom, task-force and squadron assignment, selected-unit data,
-ships, fighters, planets, effects, commands, results, and audio remain T3 work.
+camera-control art. Working controls use source-shaped hit masks, and zoom plus
+the four D-pad controls use their normal and held resources. The source faction
+view, field zoom, clip planes, yaw, pitch, and handedness conversion now run in
+the isolated camera fixture. The active combat replacement panels are removed.
+General layout, target look-at, remaining render rules, task-force and squadron
+assignment, selected-unit data, ships, fighters, planets, effects, commands,
+results, and audio remain T3 work.
 No `TAC-*` acceptance cell is closed.
 
 ### T4. Battle outcome and rare-state closure
@@ -104,7 +112,7 @@ Gate: native unit/integration tests and browser journeys agree on state fingerpr
 
 ### T5. Strict acceptance
 
-For each `TAC-01` through `TAC-07` cell, run its source evidence, native, packaged-WASM, both-faction, viewport, interaction, audio, and diagnostic matrix from the [interface audit](../qa/2026-09-10-interface-parity-audit/README.md). Astra medium reviews a bounded battle bundle rather than operating every probe. Update the ledger and evidence in the same commit as each verified bundle, then push. Keep any cell lacking authoritative original captures pending.
+For each `TAC-01` through `TAC-07` cell, run its source evidence, native, packaged-WASM, both-faction, viewport, interaction, audio, and diagnostic matrix from the [interface audit](../qa/2026-09-10-interface-parity-audit/README.md). Astra operates selected live browser journeys at low or medium effort after the harness performs deterministic probes. Use Sol high or extra-high review only for risk-significant bundles. Update the ledger and evidence in the same commit as each verified bundle, then push. Keep any cell lacking authoritative original captures pending.
 
 ## Evidence and release rules
 

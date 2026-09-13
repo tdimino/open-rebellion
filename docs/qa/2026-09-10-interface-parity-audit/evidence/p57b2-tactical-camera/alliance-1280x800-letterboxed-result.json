@@ -1,0 +1,452 @@
+{
+  "schema_version": 1,
+  "id": "tactical/alliance/camera-journey/1280x800-letterboxed",
+  "status": "pass",
+  "fixture_code": 65799,
+  "browser_version": "151.0.7922.34",
+  "browser_executable": "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "launch_arguments": [
+    "--mute-audio",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--no-first-run"
+  ],
+  "profile": "new-process-and-temporary-profile-per-scenario",
+  "muted": true,
+  "viewport": {
+    "id": "1280x800-letterboxed",
+    "width": 1280,
+    "height": 800,
+    "device_scale_factor": 1
+  },
+  "ready": {
+    "schema_version": 1,
+    "status": "battle-ready",
+    "family": "tactical",
+    "fixture_code": 65799,
+    "faction": "alliance",
+    "proof_enabled": true,
+    "tactical_lod": "camera-journey",
+    "system": "Abregado",
+    "attacker_ships": 1,
+    "defender_ships": 1,
+    "fighters": 2,
+    "error": null
+  },
+  "screenshot_sha256": "8e6027b585b05c2c5f89db7d412c6539875b3aa4785b63cf4c5a60864af72772",
+  "two_frame_hashes": {
+    "first": "8e6027b585b05c2c5f89db7d412c6539875b3aa4785b63cf4c5a60864af72772",
+    "second": "8e6027b585b05c2c5f89db7d412c6539875b3aa4785b63cf4c5a60864af72772",
+    "equal": true
+  },
+  "message_index_rail": null,
+  "runtime_measurements": {
+    "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+    "frame_interval_ms": {
+      "median": 8.300000000000182,
+      "p95": 8.699999999999818,
+      "max": 9.200000000000273
+    },
+    "navigation_duration_ms": 18.5,
+    "wasm_memory_bytes": 81330176,
+    "js_heap_used_bytes": 40042370,
+    "js_heap_total_bytes": 44740462
+  },
+  "wasm_sha256": "bac1309c18fd720a49795e5dec3c1afa3c0ecdecb9cb4a56757a9ea4d20d8e43",
+  "runtime_pack_sha256": "0ff81287d2003431a44a61601d8adffd636ad9880cc2381681ba846127f8b497",
+  "requests": [
+    {
+      "url": "/",
+      "status": 200
+    },
+    {
+      "url": "/gl.js",
+      "status": 200
+    },
+    {
+      "url": "/open-rebellion-test.wasm",
+      "status": 200
+    },
+    {
+      "url": "/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "console": [
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_replay is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_interface_fixture is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "info",
+      "text": "[assets] render_profile=original-parity"
+    },
+    {
+      "type": "info",
+      "text": "runtime_asset_pack loaded game_files=52 ui_bitmaps=2303 advisor_frames=3988 audio_files=5 tactical_meshes=3 tactical_textures=2 bytes=36187383"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette=tactical-dll/1000 diagnostics=2560:48/62/186/62,2561:25/28/84/28,2562:9/10/30/10 family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=close resource_id=2560 view_depth=10 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.2 zoom_step=5 orbit_step=5 distance=170 near=1 far=425 fovy_radians=0.39479113 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[audio] music_volume=0.00 muted=true music_muted=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.17999999 zoom_step=4 orbit_step=4 distance=170 near=1 far=425 fovy_radians=0.35618585 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.198 zoom_step=5 orbit_step=5 distance=170 near=1 far=425 fovy_radians=0.3909435 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-35 field=0.198 zoom_step=5 orbit_step=5 distance=170 near=1 far=425 fovy_radians=0.3909435 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.198 zoom_step=5 orbit_step=5 distance=170 near=1 far=425 fovy_radians=0.3909435 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=35 yaw=-30 field=0.198 zoom_step=5 orbit_step=5 distance=170 near=1 far=425 fovy_radians=0.3909435 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.198 zoom_step=5 orbit_step=5 distance=170 near=1 far=425 fovy_radians=0.3909435 handedness=lh_y_up_to_rh_y_up"
+    }
+  ],
+  "interaction_logs": [],
+  "probes": [
+    {
+      "type": "production-tactical-entry",
+      "system": "Abregado",
+      "attacker_ships": 1,
+      "defender_ships": 1,
+      "fighters": 2
+    },
+    {
+      "type": "source-camera-control",
+      "control": "camera-zoom-in",
+      "pressed_bitmap": {
+        "status": "non-native-scale",
+        "pixels_checked": 0
+      },
+      "model_crop_sha256": "7d38616ec49e8eca97444e740c2463c20b890a7e1450a645cc0f7aa82136b1e9"
+    },
+    {
+      "type": "source-camera-control",
+      "control": "camera-zoom-out",
+      "pressed_bitmap": {
+        "status": "non-native-scale",
+        "pixels_checked": 0
+      },
+      "model_crop_sha256": "d34026b0881babeeb06890244834fc361352a9c3e7b38b73fbf161f545ee801f"
+    },
+    {
+      "type": "source-camera-control",
+      "control": "camera-left",
+      "pressed_bitmap": {
+        "status": "non-native-scale",
+        "pixels_checked": 0
+      },
+      "model_crop_sha256": "8dcdda36fd3166d4650add3df84c73f351a10366664944fa15d5365aa61b4c69"
+    },
+    {
+      "type": "source-camera-control",
+      "control": "camera-right",
+      "pressed_bitmap": {
+        "status": "non-native-scale",
+        "pixels_checked": 0
+      },
+      "model_crop_sha256": "d34026b0881babeeb06890244834fc361352a9c3e7b38b73fbf161f545ee801f"
+    },
+    {
+      "type": "source-camera-control",
+      "control": "camera-up",
+      "pressed_bitmap": {
+        "status": "non-native-scale",
+        "pixels_checked": 0
+      },
+      "model_crop_sha256": "7b7dac44d1b16aec5b218ef7f3c17a17a591d43d09f70423e8cb1dd2fb57602a"
+    },
+    {
+      "type": "source-camera-control",
+      "control": "camera-down",
+      "pressed_bitmap": {
+        "status": "non-native-scale",
+        "pixels_checked": 0
+      },
+      "model_crop_sha256": "d34026b0881babeeb06890244834fc361352a9c3e7b38b73fbf161f545ee801f"
+    },
+    {
+      "type": "source-bound-tactical-3d-lod-family",
+      "meshes": [
+        "2560/1033",
+        "2561/1033",
+        "2562/1033"
+      ],
+      "textures": [
+        "SDESTI52.BMP/1033",
+        "SDESTI_M.BMP/1033"
+      ],
+      "selected_resources": [
+        2560
+      ],
+      "palette": "tactical-dll/1000",
+      "family_loads": 1
+    },
+    {
+      "type": "source-traced-tactical-camera-journey",
+      "executable_functions": [
+        "FUN_005d9490",
+        "FUN_005d9620",
+        "FUN_005d9640",
+        "0x005d97c0"
+      ],
+      "states": [
+        {
+          "pitch": 30,
+          "yaw": -30,
+          "field": 0.2,
+          "zoom_step": 5,
+          "orbit_step": 5,
+          "distance": 170,
+          "near": 1,
+          "far": 425,
+          "fovy_radians": 0.39479113
+        },
+        {
+          "pitch": 30,
+          "yaw": -30,
+          "field": 0.17999999,
+          "zoom_step": 4,
+          "orbit_step": 4,
+          "distance": 170,
+          "near": 1,
+          "far": 425,
+          "fovy_radians": 0.35618585
+        },
+        {
+          "pitch": 30,
+          "yaw": -30,
+          "field": 0.198,
+          "zoom_step": 5,
+          "orbit_step": 5,
+          "distance": 170,
+          "near": 1,
+          "far": 425,
+          "fovy_radians": 0.3909435
+        },
+        {
+          "pitch": 30,
+          "yaw": -35,
+          "field": 0.198,
+          "zoom_step": 5,
+          "orbit_step": 5,
+          "distance": 170,
+          "near": 1,
+          "far": 425,
+          "fovy_radians": 0.3909435
+        },
+        {
+          "pitch": 30,
+          "yaw": -30,
+          "field": 0.198,
+          "zoom_step": 5,
+          "orbit_step": 5,
+          "distance": 170,
+          "near": 1,
+          "far": 425,
+          "fovy_radians": 0.3909435
+        },
+        {
+          "pitch": 35,
+          "yaw": -30,
+          "field": 0.198,
+          "zoom_step": 5,
+          "orbit_step": 5,
+          "distance": 170,
+          "near": 1,
+          "far": 425,
+          "fovy_radians": 0.3909435
+        },
+        {
+          "pitch": 30,
+          "yaw": -30,
+          "field": 0.198,
+          "zoom_step": 5,
+          "orbit_step": 5,
+          "distance": 170,
+          "near": 1,
+          "far": 425,
+          "fovy_radians": 0.3909435
+        }
+      ]
+    },
+    {
+      "type": "browser-runtime-measurements",
+      "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+      "frame_interval_ms": {
+        "median": 8.300000000000182,
+        "p95": 8.699999999999818,
+        "max": 9.200000000000273
+      },
+      "navigation_duration_ms": 18.5,
+      "wasm_memory_bytes": 81330176,
+      "js_heap_used_bytes": 40042370,
+      "js_heap_total_bytes": 44740462
+    }
+  ],
+  "comparison": {
+    "original_reference_source": "owned-original-or-curated-reference-only",
+    "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+    "implementation_baseline": null,
+    "status": "unbaselined",
+    "different_pixels": null,
+    "difference_ratio": null,
+    "tolerance": 0,
+    "masks": []
+  },
+  "interaction_comparisons": {
+    "camera-down-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-down": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-left-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-left": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-right-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-right": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-up-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-up": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-zoom-in-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-zoom-in": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-zoom-out-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "camera-zoom-out": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    }
+  },
+  "cleanup": "closed"
+}

@@ -26,6 +26,7 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `lod-medium` | 65796 | 66052 | Resource 2561 |
 | `lod-far` | 65797 | 66053 | Resource 2562 |
 | `lod-journey` | 65798 | 66054 | Live 2560, 2561, 2562, 2561, 2560 journey with one family load |
+| `camera-journey` | 65799 | 66055 | Source camera entry plus zoom, yaw, and pitch command sequence |
 
 ## Run it
 
@@ -34,6 +35,7 @@ From `tools/interface-parity`:
 ```sh
 node run.mjs --battle --scenario=battle-entry
 node run.mjs --battle --all --scenario=lod-journey --no-build
+node run.mjs --battle --all --scenario=camera-journey --no-build
 node run.mjs --battle --all --no-build
 ```
 
@@ -54,18 +56,24 @@ and closes every process. Raw runs live under ignored
   form the first source-proven LOD family.
 - The source predicate and cached-slot cycle are recovered from
   `FUN_005d26c0`, `FUN_005d3770`, `FUN_005d3650`, and `FUN_005c1160`.
-- P57B1 passes 24 of 24 muted browser cases across both factions and both
-  viewports with one family load and no runtime errors.
+- P57B2A recovers the faction camera, near/far planes, field zoom, handedness
+  conversion, and four D-pad commands from `FUN_005c1d30`, `FUN_005d9490`,
+  `FUN_005d9640`, and the switch at `0x005d97c0`.
+- The complete bundle passes 28 of 28 muted browser cases across both factions
+  and both viewports with one family load and no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
-bridge is test-only. Original camera, orientation, palette activation,
-lighting, filtering, culling, native GPU and A0/A1 comparison, production
-entity binding, commands, damage, effects, Death Star paths, results, audio,
-and return routing remain open. All 106 `TAC-01` through `TAC-07` cells remain
-pending in the [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
+bridge is test-only. General battle layout, selected-object look-at, source
+pivots and scale, palette activation, lighting, filtering, culling, native GPU
+and A0/A1 comparison, production entity binding, remaining commands, damage,
+effects, Death Star paths, results, audio, and return routing remain open. All
+106 `TAC-01` through `TAC-07` cells remain pending in the
+[surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
 
 ## Evidence and asset maps
 
+- [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P57B2A camera and D-pad evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md)
 - [P57B1 live LOD evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md)
 - [P57A family and predicate](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md)
 - [Space-battle graphics inventory](../asset-library/space-battle.md)

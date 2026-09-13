@@ -408,11 +408,12 @@
       "id": "RE-BAT-01",
       "surface_ids": ["EVT-02", "EVT-03", "TAC-07"],
       "title": "Battle Alert, strategic reports, and battle-result routing",
-      "status": "untriaged",
+      "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TACTICAL.DLL", "GOKRES.DLL", "TEXTTACT.DLL"],
-        "method": "Cross-reference Battle Alert and result strings to constructors, force tabs, disabled predicates, retreat/simulate/command choices, result population, and return navigation.",
-        "next_proof": "Recover the pre-battle and result window geometry, commands, tabs, population rules, and application routing."
+        "anchors": ["TACTICALRESULT_UPDATE", "FUN_0040a700", "FUN_005445d0_combat_result"],
+        "method": "Cross-reference Battle Alert and result strings, then trace state setters and callers to constructors, force tabs, disabled predicates, retreat/simulate/command choices, result population, media callbacks, and return navigation. Treat FUN_0040a700 as a state stringifier until callers prove transitions.",
+        "next_proof": "Recover the pre-battle and result window geometry, commands, tabs, population rules, canonical application, reports, media, and return routing."
       },
       "runtime_capture_required": true
     },
@@ -435,9 +436,9 @@
       "status": "static-proven",
       "retrieval": {
         "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL"],
-        "anchors": ["FUN_0059a8d0", "FUN_005a7500"],
-        "method": "Use tactical module loading and the battle-manager registry to connect lifecycle, selection, orders, fire, damage, repair, recovery, pause, abort, game, and sync events.",
-        "next_proof": "Associate every registered event slot with its concrete control, handler, and observable transition."
+        "anchors": ["FUN_0059a8d0", "FUN_005c14d0", "FUN_005a7500", "0x0066c960", "0x0066c2d0", "0x0066bdd0", "0x0066bdb8"],
+        "method": "Trace the code-built 640x480 control tree and TEXTTACT references through the battle-manager registry to connect geometry, visibility, enabled predicates, lifecycle, selection, orders, fire, damage, repair, recovery, pause, abort, result, and sync events.",
+        "next_proof": "Associate every registered event slot and subordinate control vtable with its concrete rectangle, state predicate, handler, and observable transition."
       },
       "runtime_capture_required": true
     },
@@ -448,9 +449,9 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL", "tools/stage-ui-assets"],
-        "anchors": ["FUN_005d26c0", "FUN_005d3770", "FUN_005d3650", "FUN_005c1160"],
-        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. P55 decodes the complete corpus into deterministic runtime objects and verifies mesh topology, bounds, materials, and texture names against Assimp 6.0.5 raw import. P56 packages exact pair 2560/1033 plus SDESTI52.BMP/1033 and proves WebGL draw submission against a negative control. P57A packages 2560 through 2562 plus both named textures, implements the recovered high- and reduced-detail LOD predicate, and records one initial family-load event per isolated fixture. P57B1 traces FUN_005c1160's slot 2, 1, 0, restore cycle and proves a live same-renderer close-medium-far-medium-close journey with exactly one family load. Continue tracing control constructors, paint handlers, entity joins, selection states, availability predicates, palette activation, camera, filtering, culling, and lighting.",
-        "next_proof": "Prove the original camera and render-state rules against A0/A1 captures, then finish DAT identity, production binding, both faction HUDs, and every tactical control and content state."
+        "anchors": ["FUN_00597610_ship_db", "FUN_005ab650", "FUN_005c1100", "FUN_005c12a0", "FUN_005d26c0", "FUN_005d3770", "FUN_005d3650", "FUN_005c1160", "FUN_005c1d30", "FUN_005d9490", "FUN_005d9620", "FUN_005d9640", "0x005d97c0", "FUN_00596ad0", "FUN_005c2e60", "FUN_005d9eb0", "FUN_005da150", "FUN_005d59e0"],
+        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. P55 decodes the complete corpus into deterministic runtime objects and verifies mesh topology, bounds, materials, and texture names against Assimp 6.0.5 raw import. P56 packages one exact pair and proves WebGL submission. P57A implements the first three-resource LOD family and predicate. P57B1 proves the live cached-slot cycle. P57B2A recovers the initial faction camera, field and clip constants, zoom/orbit/pitch switch, handedness conversion, and four bitmap D-pad commands and proves them in a muted browser journey. The ranked recovery map now separates the ordinal-to-DAT join, force layout, palette, retained-mode render state, and A0-only observations.",
+        "next_proof": "Trace general force layout, pivot and scale, target look-at, palette and render-state rules, then compare lossless A0/A1 views before production entity binding and complete HUD/content work."
       },
       "runtime_capture_required": true
     },
@@ -458,11 +459,12 @@
       "id": "RE-TAC-03",
       "surface_ids": ["TAC-07"],
       "title": "Tactical battle-results composition",
-      "status": "untriaged",
+      "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "TACTICAL.DLL", "GOKRES.DLL", "TEXTTACT.DLL"],
-        "method": "Follow tactical completion events into the result constructor, faction outcome branches, force tabs, damage classifications, and strategic return commands.",
-        "next_proof": "Connect the original result renderer to the application and remove bypasses."
+        "anchors": ["TACTICALRESULT_UPDATE", "FUN_0040a700", "FUN_005445d0_combat_result"],
+        "method": "Trace completion-event callers and state setters into the result constructor, faction outcome branches, force tabs, damage classifications, media callbacks, and strategic return commands. Treat FUN_0040a700 as a state stringifier until its callers prove transitions.",
+        "next_proof": "Connect result state setters, original result composition, canonical application, reports, and return routing; then remove bypasses."
       },
       "runtime_capture_required": true
     },
