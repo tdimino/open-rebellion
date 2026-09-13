@@ -1093,11 +1093,43 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
+      assert.equal(ready.schema_version, 2);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
       assert.ok(ready.attacker_ships > 0 && ready.defender_ships > 0);
       assert.ok(ready.fighters > 0);
+      assert.deepEqual(ready.source_layout, {
+        first_active_objects: 2,
+        second_active_objects: 2,
+        battle_extent: 106,
+        outer_positive_z: 53,
+        outer_negative_z: -53,
+        inner_negative_z: -33,
+        inner_positive_z: 33,
+      });
+      assert.equal(ready.participants.length, 4);
+      const expectedParticipantLanes = new Map([
+        ["capital-ship:alliance", -53],
+        ["capital-ship:empire", 53],
+        ["fighter-group:alliance", -33],
+        ["fighter-group:empire", 33],
+      ]);
+      for (const participant of ready.participants) {
+        const key = `${participant.kind}:${participant.faction}`;
+        assert.ok(expectedParticipantLanes.has(key), `unexpected participant ${key}`);
+        assert.ok(Number.isSafeInteger(participant.class_dat_id)
+          && participant.class_dat_id > 0, `${key} lacks stable DAT identity`);
+        assert.equal(participant.fleet_roster_index, 0);
+        assert.deepEqual(participant.source_position,
+          [-0, 0, expectedParticipantLanes.get(key)], `${key} has the wrong source position`);
+      }
+      probes.push({
+        type: "source-bound-tactical-participants",
+        executable_functions: ["FUN_005ab650", "FUN_005a9030"],
+        layout: ready.source_layout,
+        participants: ready.participants,
+      });
       const packLog = consoleLines.find(({ text }) => text.includes("runtime_asset_pack loaded"));
       assert.match(packLog?.text || "", /tactical_meshes=3 tactical_textures=2/,
         "runtime pack did not install the exact source-bound three-LOD family");
@@ -1182,8 +1214,11 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           const selectedObjectId = faction === "alliance" ? 1 : 2;
           assert.deepEqual(states.map(({ target_object_id }) => target_object_id),
             [0, 0, 0, 0, 0, 0, 0, selectedObjectId]);
-          assert.ok(states.every(({ target_x, target_y, target_z }) =>
+          assert.ok(states.slice(0, -1).every(({ target_x, target_y, target_z }) =>
             target_x === 0 && target_y === 0 && target_z === 0));
+          assert.equal(states.at(-1).target_x, -0);
+          assert.equal(states.at(-1).target_y, 0);
+          assert.equal(states.at(-1).target_z, faction === "alliance" ? 53 : -53);
           probes.push({
             type: "source-traced-tactical-camera-journey",
             executable_functions: [

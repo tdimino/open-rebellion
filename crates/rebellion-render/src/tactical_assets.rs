@@ -14,6 +14,7 @@ use macroquad::prelude::*;
 use macroquad::window::miniquad::{Backend, Comparison, PipelineParams};
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::tactical_view::OriginalTacticalLayout;
 
 pub const PROOF_MESH_KEYS: [&str; 3] = ["2560/1033", "2561/1033", "2562/1033"];
 pub const PROOF_TEXTURE_KEYS: [&str; 2] = ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"];
@@ -34,49 +35,6 @@ const ORIGINAL_CAMERA_PITCH: i32 = 30;
 const ORIGINAL_CAMERA_ALLIANCE_YAW: i32 = -30;
 const ORIGINAL_CAMERA_EMPIRE_YAW: i32 = 150;
 const ORIGINAL_CAMERA_INITIAL_STEP: i32 = 5;
-
-const ORIGINAL_BATTLE_BASE_EXTENT: f32 = 100.0;
-const ORIGINAL_BATTLE_OBJECT_INCREMENT: f32 = 3.0;
-const ORIGINAL_BATTLE_OUTER_LANE_SCALE: f32 = 0.5;
-const ORIGINAL_BATTLE_INNER_LANE_OFFSET: f32 = 20.0;
-
-/// Source-coordinate tactical extent and Z lanes recovered from
-/// `FUN_005ab650`. The original expands the base extent once for each rank in
-/// the larger active force, then places the four capital/fighter collections
-/// on paired outer and inner lanes.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct OriginalTacticalLayout {
-    first_active_objects: u16,
-    second_active_objects: u16,
-    battle_extent: f32,
-    outer_positive_z: f32,
-    outer_negative_z: f32,
-    inner_negative_z: f32,
-    inner_positive_z: f32,
-}
-
-impl OriginalTacticalLayout {
-    fn from_active_counts(first_active_objects: usize, second_active_objects: usize) -> Self {
-        let first_active_objects = u16::try_from(first_active_objects).unwrap_or(u16::MAX);
-        let second_active_objects = u16::try_from(second_active_objects).unwrap_or(u16::MAX);
-        let widest_force = first_active_objects.max(second_active_objects);
-        let battle_extent = ORIGINAL_BATTLE_OBJECT_INCREMENT
-            .mul_add(f32::from(widest_force), ORIGINAL_BATTLE_BASE_EXTENT);
-        let outer_positive_z = battle_extent * ORIGINAL_BATTLE_OUTER_LANE_SCALE;
-        let outer_negative_z = -outer_positive_z;
-        let inner_negative_z = ORIGINAL_BATTLE_INNER_LANE_OFFSET - outer_positive_z;
-        let inner_positive_z = outer_positive_z - ORIGINAL_BATTLE_INNER_LANE_OFFSET;
-        Self {
-            first_active_objects,
-            second_active_objects,
-            battle_extent,
-            outer_positive_z,
-            outer_negative_z,
-            inner_negative_z,
-            inner_positive_z,
-        }
-    }
-}
 
 /// Source-traced tactical camera state from `FUN_005d9490`, `FUN_005d9620`,
 /// `FUN_005d9640`, `FUN_00595be0`, `FUN_005c1080`, and the command switch at
@@ -536,11 +494,8 @@ impl TacticalProofRenderer {
     pub(crate) fn enable_original_camera(
         &mut self,
         player_is_empire: bool,
-        first_active_objects: usize,
-        second_active_objects: usize,
+        layout: OriginalTacticalLayout,
     ) {
-        let layout =
-            OriginalTacticalLayout::from_active_counts(first_active_objects, second_active_objects);
         self.source_camera = Some(OriginalTacticalCamera::new(
             player_is_empire,
             layout.battle_extent,

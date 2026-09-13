@@ -29,14 +29,16 @@ real tactical scene. Its proof and negative-control links use the versioned code
 [`tactical.catalog.json`](scenarios/tactical.catalog.json) and start muted. The
 fixture proves deterministic production-path battle entry, the current
 shell/control checkpoint, and fixed selection from one source-bound three-LOD
-family, one live LOD journey, and the source camera/target/layout journey. Run
+family, one live LOD journey, and the source camera/target/layout/participant
+journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
 `node run.mjs --battle --all --no-build` for all 28 entry, negative-control,
 fixed-LOD, live-LOD, camera, faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
 proof-on/off pixel differences. The camera journey also checks the recovered
-active-force extent and four lane values. Each scenario uses a fresh muted
+active-force extent, four lane values, stable DAT and fleet-roster identities,
+exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

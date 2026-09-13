@@ -586,11 +586,17 @@ would tune around known simulation feedback defects.
   groups, derive the four source lanes, and verify both factions and viewports
   in four fresh muted browser journeys. Keep production object placement and
   every strict tactical cell open pending stable identity and A0 evidence.
+- [x] Complete P57B2B3 production participant placement: retain DAT class and
+  unfiltered fleet-roster identity, reproduce the exact signed-zero and
+  alternating five-unit X slots on all four lanes, target the selected source
+  world point through the handedness boundary, and pass the full 28-case muted
+  browser bundle. Keep DAT-to-tactical resource joins, production 3D family
+  selection, and every strict tactical cell open pending A0 evidence.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B2B next binds the recovered lanes to production object identity
-  and world positions, then traces the remaining render rules before P58
-  replaces procedural ships, fighters, planets, and effects.
+  states. P57B2C next traces source pivots, scale, palette activation, lighting,
+  filtering, and culling. P58 then proves the DAT-to-tactical-vtable join before
+  replacing procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

@@ -5578,6 +5578,16 @@ mod tactical_ground_tests {
             fighters: vec![
                 rebellion_render::tactical_view::TacticalFighter {
                     class_key: fighter_class,
+                    identity: rebellion_render::tactical_view::TacticalObjectIdentity {
+                        class_dat_id: DatId::new(3),
+                        fleet_roster_index: 0,
+                        is_alliance: true,
+                    },
+                    source_position: rebellion_render::tactical_view::TacticalWorldPosition {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
                     fleet_fighter_index: 0,
                     name: "Fighter".into(),
                     x: 0.0,
@@ -5588,6 +5598,16 @@ mod tactical_ground_tests {
                 },
                 rebellion_render::tactical_view::TacticalFighter {
                     class_key: fighter_class,
+                    identity: rebellion_render::tactical_view::TacticalObjectIdentity {
+                        class_dat_id: DatId::new(3),
+                        fleet_roster_index: 1,
+                        is_alliance: true,
+                    },
+                    source_position: rebellion_render::tactical_view::TacticalWorldPosition {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
                     fleet_fighter_index: 1,
                     name: "Fighter".into(),
                     x: 0.0,
@@ -5597,6 +5617,7 @@ mod tactical_ground_tests {
                     alive: true,
                 },
             ],
+            source_layout: rebellion_render::tactical_view::OriginalTacticalLayout::default(),
             selected_ship: None,
             placement_confirmed: true,
             start_tick: 1,
@@ -5626,6 +5647,16 @@ mod tactical_ground_tests {
     ) -> rebellion_render::tactical_view::TacticalShip {
         rebellion_render::tactical_view::TacticalShip {
             class_key,
+            identity: rebellion_render::tactical_view::TacticalObjectIdentity {
+                class_dat_id: DatId::new(1),
+                fleet_roster_index: fleet_ship_index,
+                is_alliance: is_attacker,
+            },
+            source_position: rebellion_render::tactical_view::TacticalWorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             name: "Ship".into(),
             x: 0.0,
             y: 0.0,

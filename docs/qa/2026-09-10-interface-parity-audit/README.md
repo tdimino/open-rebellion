@@ -85,6 +85,11 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P57B2B2 layout evidence](evidence/2026-09-13-tactical-battle-layout.md)
   for the active-force extent, docked-fighter exclusion, four tactical lanes,
   muted browser proof, and the remaining production-placement boundary.
+- Review the [P57B2B3 participant evidence](evidence/2026-09-13-tactical-participant-placement.md)
+  for stable DAT and fleet-roster identity, exact source X slots and faction
+  lanes, selected-world-point targeting, and the remaining resource join.
+- Use the [evidence index](evidence/README.md) to find each durable report and
+  artifact bundle. Every new bundle must include its own `README.md` inventory.
 
 ## Suggested contribution lanes
 
@@ -165,6 +170,10 @@ original LOD meshes, both textures, and the source selection predicate. Each
 isolated fixed-view fixture records one initial family-load event. Its
 [evidence](evidence/2026-09-13-tactical-3d-lod-family.md) keeps original view
 acceptance, production fleet integration, and all 106 tactical cells open.
+P57B2A through P57B2B3 recover the source camera, selected-object target path,
+active-force extent, four lanes, stable participant identity, exact X slots,
+and source-world target point. The DAT-to-tactical-resource join, production
+3D draw path, remaining render rules, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

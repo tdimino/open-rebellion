@@ -24,7 +24,7 @@
 
 use egui_macroquad::egui::{self, Color32, RichText, Vec2};
 use macroquad::prelude::*;
-use rebellion_core::ids::{CapitalShipKey, FighterKey, FleetKey, SystemKey};
+use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey, FleetKey, SystemKey};
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
@@ -74,6 +74,127 @@ const FIGHTER_SIZE: f32 = 16.0;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
+
+const ORIGINAL_BATTLE_BASE_EXTENT: f32 = 100.0;
+const ORIGINAL_BATTLE_OBJECT_INCREMENT: f32 = 3.0;
+const ORIGINAL_BATTLE_OUTER_LANE_SCALE: f32 = 0.5;
+const ORIGINAL_BATTLE_INNER_LANE_OFFSET: f32 = 20.0;
+const ORIGINAL_BATTLE_SLOT_SPACING: f32 = 5.0;
+
+/// Source-coordinate tactical envelope recovered from `FUN_005ab650`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OriginalTacticalLayout {
+    pub first_active_objects: u16,
+    pub second_active_objects: u16,
+    pub battle_extent: f32,
+    pub outer_positive_z: f32,
+    pub outer_negative_z: f32,
+    pub inner_negative_z: f32,
+    pub inner_positive_z: f32,
+}
+
+impl OriginalTacticalLayout {
+    pub(crate) fn from_active_counts(
+        first_active_objects: usize,
+        second_active_objects: usize,
+    ) -> Self {
+        let first_active_objects = u16::try_from(first_active_objects).unwrap_or(u16::MAX);
+        let second_active_objects = u16::try_from(second_active_objects).unwrap_or(u16::MAX);
+        let widest_force = first_active_objects.max(second_active_objects);
+        let battle_extent = ORIGINAL_BATTLE_OBJECT_INCREMENT
+            .mul_add(f32::from(widest_force), ORIGINAL_BATTLE_BASE_EXTENT);
+        let outer_positive_z = battle_extent * ORIGINAL_BATTLE_OUTER_LANE_SCALE;
+        let outer_negative_z = -outer_positive_z;
+        let inner_negative_z = ORIGINAL_BATTLE_INNER_LANE_OFFSET - outer_positive_z;
+        let inner_positive_z = outer_positive_z - ORIGINAL_BATTLE_INNER_LANE_OFFSET;
+        Self {
+            first_active_objects,
+            second_active_objects,
+            battle_extent,
+            outer_positive_z,
+            outer_negative_z,
+            inner_negative_z,
+            inner_positive_z,
+        }
+    }
+}
+
+impl Default for OriginalTacticalLayout {
+    fn default() -> Self {
+        Self::from_active_counts(0, 0)
+    }
+}
+
+/// Stable production identity for one battle participant. Slotmap keys remain
+/// runtime-only; the original DAT identity and fleet roster index survive any
+/// tactical render reordering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TacticalObjectIdentity {
+    pub class_dat_id: DatId,
+    pub fleet_roster_index: usize,
+    pub is_alliance: bool,
+}
+
+/// Initial retained-mode world coordinate recovered from the original battle
+/// setup. The existing 2D simulation coordinates remain separate until its
+/// movement and scale rules are recovered.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TacticalWorldPosition {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl TacticalWorldPosition {
+    const ORIGIN: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+
+    fn rendered(self) -> Vec3 {
+        // Direct3D retained mode is left-handed and the browser renderer is
+        // right-handed. Preserve Y and reflect source Z.
+        vec3(self.x, self.y, -self.z)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OriginalTacticalSlots {
+    index: usize,
+    magnitude: f32,
+    current: f32,
+}
+
+impl Default for OriginalTacticalSlots {
+    fn default() -> Self {
+        Self {
+            index: 0,
+            magnitude: 0.0,
+            current: 0.0,
+        }
+    }
+}
+
+impl Iterator for OriginalTacticalSlots {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index & 1 == 0 {
+            self.current = -self.current;
+        } else {
+            let prior_was_negative = self.current < 0.0;
+            self.magnitude += ORIGINAL_BATTLE_SLOT_SPACING;
+            self.current = if prior_was_negative {
+                -self.magnitude
+            } else {
+                self.magnitude
+            };
+        }
+        self.index = self.index.saturating_add(1);
+        Some(self.current)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct NativeRect {
@@ -173,6 +294,10 @@ pub enum BattlePhase {
 pub struct TacticalShip {
     /// Which capital ship class this hull belongs to.
     pub class_key: CapitalShipKey,
+    /// Stable DAT and roster identity for production-to-render joins.
+    pub identity: TacticalObjectIdentity,
+    /// Original retained-mode position at battle initialization.
+    pub source_position: TacticalWorldPosition,
     /// Display name (from `CapitalShipClass`).
     pub name: String,
     /// Position on the battlefield (logical coords).
@@ -215,6 +340,10 @@ pub struct TacticalShip {
 #[derive(Debug, Clone)]
 pub struct TacticalFighter {
     pub class_key: FighterKey,
+    /// Stable DAT and roster identity for production-to-render joins.
+    pub identity: TacticalObjectIdentity,
+    /// Original retained-mode position at battle initialization.
+    pub source_position: TacticalWorldPosition,
     /// Index into the originating fleet's fighter roster. Classes may repeat.
     pub fleet_fighter_index: usize,
     pub name: String,
@@ -249,6 +378,8 @@ pub struct BattleSession {
     pub ships: Vec<TacticalShip>,
     /// Fighter squadrons on the battlefield.
     pub fighters: Vec<TacticalFighter>,
+    /// Immutable source battle envelope used to place the initial participants.
+    pub source_layout: OriginalTacticalLayout,
     /// Index of currently selected ship (in `ships`), if any.
     pub selected_ship: Option<usize>,
     /// Whether the placement phase is confirmed (player clicked "Begin Battle").
@@ -338,9 +469,12 @@ impl BattleSession {
         // Expand defender fleet.
         Self::expand_fleet(world, defender, false, &mut ships, &mut fighters);
 
-        // Auto-place all ships in deployment zones.
+        // Retain the working 2D fallback separately from the recovered source
+        // world coordinates. P58 will replace each fallback only after its
+        // DAT-to-tactical resource identity is proven.
         Self::auto_place_ships(&mut ships);
         Self::auto_place_fighters(&mut fighters, &ships);
+        let source_layout = Self::assign_original_world_positions(&mut ships, &mut fighters);
 
         // The original Tactical Display opens with the battle paused. The
         // Battle Alert's Take Command choice is the entry action, not a second
@@ -362,6 +496,7 @@ impl BattleSession {
             phase: BattlePhase::Combat,
             ships,
             fighters,
+            source_layout,
             selected_ship,
             placement_confirmed: true,
             start_tick: tick,
@@ -383,7 +518,12 @@ impl BattleSession {
         fighters: &mut Vec<TacticalFighter>,
     ) {
         let fleet = &world.fleets[fleet_key];
-        for (ship_idx, ship) in fleet.capital_ships.iter().filter(|s| s.alive).enumerate() {
+        for (ship_idx, ship) in fleet
+            .capital_ships
+            .iter()
+            .enumerate()
+            .filter(|(_, ship)| ship.alive)
+        {
             let class = &world.capital_ship_classes[ship.class];
             let sprite_id = Self::class_to_sprite_id(class.dat_id.index());
 
@@ -405,6 +545,12 @@ impl BattleSession {
 
             ships.push(TacticalShip {
                 class_key: ship.class,
+                identity: TacticalObjectIdentity {
+                    class_dat_id: class.dat_id,
+                    fleet_roster_index: ship_idx,
+                    is_alliance: fleet.is_alliance,
+                },
+                source_position: TacticalWorldPosition::ORIGIN,
                 name: class.name.clone(),
                 x: 0.0,
                 y: 0.0,
@@ -431,6 +577,12 @@ impl BattleSession {
             let class = &world.fighter_classes[entry.class];
             fighters.push(TacticalFighter {
                 class_key: entry.class,
+                identity: TacticalObjectIdentity {
+                    class_dat_id: class.dat_id,
+                    fleet_roster_index: fighter_idx,
+                    is_alliance: fleet.is_alliance,
+                },
+                source_position: TacticalWorldPosition::ORIGIN,
                 fleet_fighter_index: fighter_idx,
                 name: class.name.clone(),
                 x: 0.0,
@@ -440,6 +592,67 @@ impl BattleSession {
                 alive: entry.count > 0,
             });
         }
+    }
+
+    /// Bind every active battle participant to the source X-slot and Z-lane
+    /// initialization performed by `FUN_005ab650` through `FUN_005a9030`.
+    fn assign_original_world_positions(
+        ships: &mut [TacticalShip],
+        fighters: &mut [TacticalFighter],
+    ) -> OriginalTacticalLayout {
+        let active_count = |is_alliance| {
+            ships
+                .iter()
+                .filter(|ship| ship.alive && ship.identity.is_alliance == is_alliance)
+                .count()
+                + fighters
+                    .iter()
+                    .filter(|fighter| {
+                        fighter.alive
+                            && fighter.squad_count > 0
+                            && fighter.identity.is_alliance == is_alliance
+                    })
+                    .count()
+        };
+        // Original tactical side zero is the Alliance collection at +0x08;
+        // side one is the Imperial collection at +0x0c.
+        let layout =
+            OriginalTacticalLayout::from_active_counts(active_count(true), active_count(false));
+
+        fn place_ships(ships: &mut [TacticalShip], is_alliance: bool, z: f32) {
+            let mut slots = OriginalTacticalSlots::default();
+            for ship in ships
+                .iter_mut()
+                .filter(|ship| ship.alive && ship.identity.is_alliance == is_alliance)
+            {
+                ship.source_position = TacticalWorldPosition {
+                    x: slots.next().unwrap_or(0.0),
+                    y: 0.0,
+                    z,
+                };
+            }
+        }
+
+        fn place_fighters(fighters: &mut [TacticalFighter], is_alliance: bool, z: f32) {
+            let mut slots = OriginalTacticalSlots::default();
+            for fighter in fighters.iter_mut().filter(|fighter| {
+                fighter.alive
+                    && fighter.squad_count > 0
+                    && fighter.identity.is_alliance == is_alliance
+            }) {
+                fighter.source_position = TacticalWorldPosition {
+                    x: slots.next().unwrap_or(0.0),
+                    y: 0.0,
+                    z,
+                };
+            }
+        }
+
+        place_ships(ships, true, layout.outer_negative_z);
+        place_ships(ships, false, layout.outer_positive_z);
+        place_fighters(fighters, true, layout.inner_negative_z);
+        place_fighters(fighters, false, layout.inner_positive_z);
+        layout
     }
 
     /// Map a ship class `DatId` index to a TACTICAL.DLL sprite resource ID.
@@ -971,31 +1184,12 @@ impl TacticalState {
     pub fn enable_original_camera_proof(&mut self, player_is_empire: bool) {
         self.proof_resource_2560 = true;
         self.proof_lod_follows_zoom = false;
-        let (first_active_objects, second_active_objects) =
-            self.session.as_ref().map_or((0, 0), |session| {
-                let count = |is_attacker| {
-                    session
-                        .ships
-                        .iter()
-                        .filter(|ship| ship.alive && ship.is_attacker == is_attacker)
-                        .count()
-                        + session
-                            .fighters
-                            .iter()
-                            .filter(|fighter| {
-                                fighter.alive
-                                    && fighter.squad_count > 0
-                                    && fighter.is_attacker == is_attacker
-                            })
-                            .count()
-                };
-                (count(true), count(false))
-            });
-        self.proof_renderer.enable_original_camera(
-            player_is_empire,
-            first_active_objects,
-            second_active_objects,
+        let source_layout = self.session.as_ref().map_or_else(
+            || OriginalTacticalLayout::from_active_counts(0, 0),
+            |session| session.source_layout,
         );
+        self.proof_renderer
+            .enable_original_camera(player_is_empire, source_layout);
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -1414,15 +1608,18 @@ fn handle_original_tactical_controls(
             Some(TacticalHudControl::CameraTarget) => {
                 let selected = state.session.as_ref().and_then(|session| {
                     session.selected_ship.and_then(|index| {
-                        session.ships.get(index).map(|ship| (index, ship.x, ship.y))
+                        session
+                            .ships
+                            .get(index)
+                            .map(|ship| (index, ship.x, ship.y, ship.source_position.rendered()))
                     })
                 });
-                if let Some((_index, x, y)) = selected {
+                if let Some((_index, x, y, _source_position)) = selected {
                     (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
                     #[cfg(feature = "interface-test-fixtures")]
                     state.proof_renderer.focus_target(
                         u32::try_from(_index).unwrap_or(u32::MAX).saturating_add(1),
-                        Vec3::ZERO,
+                        _source_position,
                     );
                 }
             }
@@ -2444,6 +2641,143 @@ fn draw_starfield(canvas: TacticalCanvas) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> TacticalShip {
+        TacticalShip {
+            class_key: CapitalShipKey::default(),
+            identity: TacticalObjectIdentity {
+                class_dat_id: DatId::new(dat_id),
+                fleet_roster_index: roster,
+                is_alliance,
+            },
+            source_position: TacticalWorldPosition::ORIGIN,
+            name: format!("ship-{dat_id}"),
+            x: 0.0,
+            y: 0.0,
+            hull_current: 1,
+            hull_max: 1,
+            shield: 0,
+            shield_max: 0,
+            is_attacker: is_alliance,
+            alive,
+            selected: false,
+            fleet_ship_index: roster,
+            sprite_id: None,
+            turbolaser_power: 0,
+            ion_cannon_power: 0,
+            laser_cannon_power: 0,
+            focus_target: None,
+            retreating: false,
+            retreat_progress: 0.0,
+            retreated: false,
+        }
+    }
+
+    fn test_fighter(dat_id: u32, is_alliance: bool) -> TacticalFighter {
+        TacticalFighter {
+            class_key: FighterKey::default(),
+            identity: TacticalObjectIdentity {
+                class_dat_id: DatId::new(dat_id),
+                fleet_roster_index: 0,
+                is_alliance,
+            },
+            source_position: TacticalWorldPosition::ORIGIN,
+            fleet_fighter_index: 0,
+            name: format!("fighter-{dat_id}"),
+            x: 0.0,
+            y: 0.0,
+            squad_count: 12,
+            is_attacker: is_alliance,
+            alive: true,
+        }
+    }
+
+    #[test]
+    fn original_slot_sequence_matches_executable_branch_order() {
+        let actual: Vec<_> = OriginalTacticalSlots::default().take(9).collect();
+        assert_eq!(actual[0].to_bits(), (-0.0f32).to_bits());
+        assert_eq!(
+            actual,
+            vec![0.0, 5.0, -5.0, -10.0, 10.0, 15.0, -15.0, -20.0, 20.0]
+        );
+    }
+
+    #[test]
+    fn production_participants_retain_dat_identity_and_source_world_positions() {
+        let mut ships = vec![
+            test_ship(64, 0, true, true),
+            test_ship(65, 2, true, true),
+            test_ship(66, 7, true, false),
+            test_ship(133, 0, false, true),
+            test_ship(134, 1, false, true),
+            test_ship(135, 2, false, true),
+        ];
+        let mut fighters = vec![test_fighter(3, true), test_fighter(5, false)];
+
+        let layout = BattleSession::assign_original_world_positions(&mut ships, &mut fighters);
+        assert_eq!(layout.first_active_objects, 3);
+        assert_eq!(layout.second_active_objects, 4);
+        assert_eq!(layout.battle_extent, 112.0);
+        assert_eq!(
+            ships[0].source_position,
+            TacticalWorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: -56.0
+            }
+        );
+        assert_eq!(
+            ships[1].source_position,
+            TacticalWorldPosition {
+                x: 5.0,
+                y: 0.0,
+                z: -56.0
+            }
+        );
+        assert_eq!(ships[2].source_position, TacticalWorldPosition::ORIGIN);
+        assert_eq!(
+            ships[3].source_position,
+            TacticalWorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: 56.0
+            }
+        );
+        assert_eq!(
+            ships[4].source_position,
+            TacticalWorldPosition {
+                x: 5.0,
+                y: 0.0,
+                z: 56.0
+            }
+        );
+        assert_eq!(
+            ships[5].source_position,
+            TacticalWorldPosition {
+                x: -5.0,
+                y: 0.0,
+                z: 56.0
+            }
+        );
+        assert_eq!(
+            fighters[0].source_position,
+            TacticalWorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: -36.0
+            }
+        );
+        assert_eq!(
+            fighters[1].source_position,
+            TacticalWorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: 36.0
+            }
+        );
+        assert_eq!(ships[1].identity.class_dat_id, DatId::new(65));
+        assert_eq!(ships[1].identity.fleet_roster_index, 2);
+    }
 
     #[test]
     fn class_to_sprite_id_in_range() {

@@ -172,10 +172,14 @@ matrix. P57A packages resources `2560` through `2562`, binds both named
 textures, and applies the source-traced three-level LOD predicate. Each fixed
 fixture records exactly one initial family-load event. P57B1 now traces the
 original cached-slot cycle and proves a close-medium-far-medium-close journey
-with the bitmap zoom controls and no reload. P57B2 next recovers and accepts
-the original camera, lighting, filtering, culling, and zoom-to-depth behavior.
-See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md)
-and [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md).
+with the bitmap zoom controls and no reload. P57B2A through P57B2B3 recover the
+source camera, selected-object target route, active-force extent, four lanes,
+stable DAT and fleet-roster identity, exact X slots, and selected source-world
+target. P57B2C next recovers pivot, scale, palette, lighting, filtering, and
+culling. P58 then completes the DAT-to-tactical-resource join and production
+3D selection. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
+[P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
+and [P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md).
 
 ## Bundle acceptance record
 

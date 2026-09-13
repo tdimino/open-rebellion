@@ -150,7 +150,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, faction camera, field zoom, handedness conversion, D-pad, selected-object target command, and active-force extent/lanes source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through production placement, stable DAT and tactical identity binding, palette, render state, A0 comparison, and production selection |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, faction camera, field zoom, handedness conversion, D-pad, selected-object target command, active-force layout, and stable participant source placement source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through the DAT-to-resource join, source pivot and scale, palette, render state, A0 comparison, and production 3D selection |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -193,9 +193,15 @@ and proves its selected-object record and fallback centering; see its
 [evidence](evidence/2026-09-13-tactical-target-control.md). P57B2B2 recovers
 `FUN_005ab650`'s active-object count, docked-fighter exclusion, battle extent,
 and four tactical lanes; see its
-[evidence](evidence/2026-09-13-tactical-battle-layout.md). DAT identity,
-production placement and target position, palette activation, filtering,
-culling, lighting, production binding, and original visual acceptance remain open.
+[evidence](evidence/2026-09-13-tactical-battle-layout.md). P57B2B3 traces
+`FUN_005a9030` and the placement callsites, binds stable DAT and
+unfiltered fleet-roster identity to production participants, reproduces the
+source X-slot sequence and four faction lanes, and sends the selected source
+world point to the camera. Its
+[evidence](evidence/2026-09-13-tactical-participant-placement.md) closes that
+bounded recovery package. The DAT-to-tactical-resource join, source pivot and
+scale, palette activation, filtering, culling, lighting, production 3D draw,
+and original visual acceptance remain open.
 
 ## Immediate implementation order
 

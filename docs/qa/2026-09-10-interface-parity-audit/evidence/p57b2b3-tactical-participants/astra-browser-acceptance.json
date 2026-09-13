@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P57B2B3",
+  "model": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "task_scope": "browser-only visual acceptance",
+  "artifact": "/tmp/open-rebellion-p57b2b3-contact.png",
+  "harness_run": "2026-09-13T18-38-16-885Z-6857",
+  "result": {
+    "pass": true,
+    "ready_to_commit": true,
+    "findings": [
+      "No blank or failed surfaces, visible clipping, or P0-P2 visual defects.",
+      "Tactical chrome and faction presentation remain consistent at native and letterboxed sizes.",
+      "Target-held views center the selected ship and show pressed target-control feedback.",
+      "This is provisional A1 evidence only; all 106 strict tactical cells remain open."
+    ]
+  },
+  "limits": [
+    "Astra inspected the supplied contact sheet; deterministic harness claims are supported separately by the retained result JSON.",
+    "No original-executable A0 capture was available for visual equivalence."
+  ]
+}

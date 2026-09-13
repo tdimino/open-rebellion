@@ -93,7 +93,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; original 3D assets staged and decoded; one three-LOD family has source selection, live cached switching, a source-traced faction camera/D-pad proof, selected-object target routing, and the active-force extent/lane contract; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md), [P57B2A evidence](evidence/2026-09-13-tactical-camera-contract.md), [P57B2B1 evidence](evidence/2026-09-13-tactical-target-control.md), and [P57B2B2 evidence](evidence/2026-09-13-tactical-battle-layout.md) |
+| First original tactical shell and control states; original 3D assets staged and decoded; one three-LOD family has source selection, live cached switching, a source-traced faction camera/D-pad proof, selected-object target routing, active-force extent/lanes, and stable production participant placement; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md), [P57B2A evidence](evidence/2026-09-13-tactical-camera-contract.md), [P57B2B1 evidence](evidence/2026-09-13-tactical-target-control.md), [P57B2B2 evidence](evidence/2026-09-13-tactical-battle-layout.md), and [P57B2B3 evidence](evidence/2026-09-13-tactical-participant-placement.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -115,8 +115,11 @@ proves live cached-slot switching without a second family load. P57B2A recovers
 the initial faction cameras, field zoom, clip planes, four D-pad commands, and
 handedness conversion. P57B2B1 activates the source target-control states and
 selected-object frame contract. P57B2B2 recovers the active-force extent and
-four tactical lanes. Entity joins, production placement, remaining render
-rules, stable production target binding, and A0/A1 acceptance remain open.
+four tactical lanes. P57B2B3 binds stable DAT and original fleet-roster
+identity to production participants, places them in the recovered source slots,
+and targets the selected source-world point. The DAT-to-tactical-resource join,
+production 3D rendering, remaining render rules, and A0/A1 acceptance remain
+open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
@@ -149,7 +152,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode, and one complete three-LOD family with its source selection rule pass implementation gates. Production fleet rendering, original view acceptance, procedural battle contents, and incomplete command, result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode, one complete three-LOD family, recovered camera and targeting, and source-bound participant placement pass implementation gates. Production fleet 3D rendering, the DAT-to-resource join, original view acceptance, procedural battle contents, and incomplete command, result, special-state, and audio paths remain. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
@@ -343,3 +346,9 @@ matrix. P57A proves the complete related three-LOD family and the original
 high- and reduced-detail selection predicate. Its
 [evidence](evidence/2026-09-13-tactical-3d-lod-family.md) keeps original view
 acceptance, production fleet binding, and every `TAC-*` cell open.
+P57B2A through P57B2B3 recover the faction camera, bitmap D-pad, selected-object
+target route, active-force extent, four tactical lanes, exact X-slot sequence,
+stable DAT and fleet-roster identity, and selected source-world target. See the
+[participant evidence](evidence/2026-09-13-tactical-participant-placement.md).
+The resource-family join, production 3D draw path, render-state fidelity, and
+all strict tactical acceptance cells remain open.

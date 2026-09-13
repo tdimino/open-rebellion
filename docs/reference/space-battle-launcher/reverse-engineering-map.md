@@ -62,7 +62,11 @@ mixing, or genuine two-peer ordering.
   non-docked fighter groups per force, adds three units for the larger force,
   and derives lanes at `+extent/2`, `-extent/2`, `20 - extent/2`, and
   `extent/2 - 20`. P57B2B2 implements and browser-checks that calculation;
-  binding production objects to those lanes remains open.
+  P57B2B3 binds production DAT and fleet-roster identities to those lanes.
+- [`FUN_005a9030`](../../../ghidra/notes/FUN_005a9030.c) writes source X/Y/Z
+  coordinates and the `-1.0` retained-object field. P57B2B3 reproduces its
+  signed-zero alternating X slots, faction lanes, and selected-world-point
+  target. The DAT-to-tactical-resource family join remains open.
 
 ## A0-only boundary
 

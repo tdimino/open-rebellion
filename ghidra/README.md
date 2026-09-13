@@ -3,7 +3,7 @@ title: "Ghidra Reverse Engineering — REBEXE.EXE"
 description: "Working decompilation corpus for Star Wars Rebellion (1998), including simulation findings and an incomplete interface evidence set"
 category: ghidra
 created: 2026-03-13
-updated: 2026-03-22
+updated: 2026-09-13
 tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
 ---
 
@@ -90,6 +90,12 @@ These targeted probes support reproducible interface work without checking
 in the saved Ghidra database or generated decompilation corpus. Other local
 scratch scripts remain ignored until separately reviewed.
 
+For P57B2B3, Ghidra 11.3.2 headless ran with OpenJDK 21 and an isolated
+temporary user home. The bounded decompilation of
+[`FUN_005a9030`](notes/FUN_005a9030.c), its callers, and placement scalars
+recovered exact tactical participant X slots and faction lanes without writing
+to the saved project.
+
 ## Decompiled Functions by Game System
 
 | System | Address Range | Functions | Key Entry Points |
@@ -140,4 +146,7 @@ ghidra/
 
 The decompiled code is the ground truth for the reimplementation. Every simulation system in `crates/rebellion-core/src/` is ported from specific decompiled functions. The `agent_docs/systems/ai-parity-tracker.md` maps each original function to our Rust implementation with DONE/AUGMENTED/PARTIAL/MISSING status.
 
-The `ghidra/` directory is gitignored (binary project files + non-redistributable decompiled code). This README is the only tracked file. The tracked reference for agents is `agent_docs/ghidra-re.md`.
+The `ghidra/` directory is gitignored by default because it contains binary
+project files and non-redistributable decompilation output. Bounded reviewed
+notes and scripts may be force-added when they are necessary provenance. The
+tracked reference for agents is `agent_docs/ghidra-re.md`.

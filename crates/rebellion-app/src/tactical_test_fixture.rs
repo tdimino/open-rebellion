@@ -222,7 +222,30 @@ struct FixtureRecord<'a> {
     attacker_ships: usize,
     defender_ships: usize,
     fighters: usize,
+    source_layout: Option<FixtureSourceLayout>,
+    participants: Vec<FixtureParticipant<'a>>,
     error: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct FixtureSourceLayout {
+    first_active_objects: u16,
+    second_active_objects: u16,
+    battle_extent: f32,
+    outer_positive_z: f32,
+    outer_negative_z: f32,
+    inner_negative_z: f32,
+    inner_positive_z: f32,
+}
+
+#[derive(Serialize)]
+struct FixtureParticipant<'a> {
+    kind: &'static str,
+    name: &'a str,
+    faction: &'static str,
+    class_dat_id: u32,
+    fleet_roster_index: usize,
+    source_position: [f32; 3],
 }
 
 pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalState) {
@@ -230,8 +253,42 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         emit_failed(request, "battle session missing after fixture entry");
         return;
     };
+    let layout = session.source_layout;
+    let mut participants = Vec::with_capacity(session.ships.len() + session.fighters.len());
+    participants.extend(session.ships.iter().map(|ship| FixtureParticipant {
+        kind: "capital-ship",
+        name: &ship.name,
+        faction: if ship.identity.is_alliance {
+            "alliance"
+        } else {
+            "empire"
+        },
+        class_dat_id: ship.identity.class_dat_id.index(),
+        fleet_roster_index: ship.identity.fleet_roster_index,
+        source_position: [
+            ship.source_position.x,
+            ship.source_position.y,
+            ship.source_position.z,
+        ],
+    }));
+    participants.extend(session.fighters.iter().map(|fighter| FixtureParticipant {
+        kind: "fighter-group",
+        name: &fighter.name,
+        faction: if fighter.identity.is_alliance {
+            "alliance"
+        } else {
+            "empire"
+        },
+        class_dat_id: fighter.identity.class_dat_id.index(),
+        fleet_roster_index: fighter.identity.fleet_roster_index,
+        source_position: [
+            fighter.source_position.x,
+            fighter.source_position.y,
+            fighter.source_position.z,
+        ],
+    }));
     emit(&FixtureRecord {
-        schema_version: 1,
+        schema_version: 2,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -250,13 +307,23 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             .filter(|ship| !ship.is_attacker)
             .count(),
         fighters: session.fighters.len(),
+        source_layout: Some(FixtureSourceLayout {
+            first_active_objects: layout.first_active_objects,
+            second_active_objects: layout.second_active_objects,
+            battle_extent: layout.battle_extent,
+            outer_positive_z: layout.outer_positive_z,
+            outer_negative_z: layout.outer_negative_z,
+            inner_negative_z: layout.inner_negative_z,
+            inner_positive_z: layout.inner_positive_z,
+        }),
+        participants,
         error: None,
     });
 }
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 1,
+        schema_version: 2,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -271,6 +338,8 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         attacker_ships: 0,
         defender_ships: 0,
         fighters: 0,
+        source_layout: None,
+        participants: Vec::new(),
         error: Some(error),
     });
 }
