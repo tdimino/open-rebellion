@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "id": "tactical/alliance/lod-journey/1280x800-letterboxed",
+  "status": "pass",
+  "fixture_code": 65798,
+  "browser_version": "151.0.7922.34",
+  "browser_executable": "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "launch_arguments": [
+    "--mute-audio",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--no-first-run"
+  ],
+  "profile": "new-process-and-temporary-profile-per-scenario",
+  "muted": true,
+  "viewport": {
+    "id": "1280x800-letterboxed",
+    "width": 1280,
+    "height": 800,
+    "device_scale_factor": 1
+  },
+  "ready": {
+    "schema_version": 1,
+    "status": "battle-ready",
+    "family": "tactical",
+    "fixture_code": 65798,
+    "faction": "alliance",
+    "proof_enabled": true,
+    "tactical_lod": "journey",
+    "system": "Abregado",
+    "attacker_ships": 1,
+    "defender_ships": 1,
+    "fighters": 2,
+    "error": null
+  },
+  "screenshot_sha256": "5ac920822b905822ef1e140a308de82df95330e05b51b96d6deaf9fc7fa74ad9",
+  "two_frame_hashes": {
+    "first": "5ac920822b905822ef1e140a308de82df95330e05b51b96d6deaf9fc7fa74ad9",
+    "second": "5ac920822b905822ef1e140a308de82df95330e05b51b96d6deaf9fc7fa74ad9",
+    "equal": true
+  },
+  "message_index_rail": null,
+  "runtime_measurements": {
+    "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+    "frame_interval_ms": {
+      "median": 8.300000000000182,
+      "p95": 9.300000000000182,
+      "max": 9.400000000000091
+    },
+    "navigation_duration_ms": 17.700000047683716,
+    "wasm_memory_bytes": 81330176,
+    "js_heap_used_bytes": 39218879,
+    "js_heap_total_bytes": 44740455
+  },
+  "wasm_sha256": "ee01c8a8815dc3dcc074fafc0e00f3979bf2adbb9b5be7d4dda8a65e893671e1",
+  "runtime_pack_sha256": "0ff81287d2003431a44a61601d8adffd636ad9880cc2381681ba846127f8b497",
+  "requests": [
+    {
+      "url": "/",
+      "status": 200
+    },
+    {
+      "url": "/gl.js",
+      "status": 200
+    },
+    {
+      "url": "/open-rebellion-test.wasm",
+      "status": 200
+    },
+    {
+      "url": "/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "console": [
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_replay is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_interface_fixture is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "info",
+      "text": "[assets] render_profile=original-parity"
+    },
+    {
+      "type": "info",
+      "text": "runtime_asset_pack loaded game_files=52 ui_bitmaps=2303 advisor_frames=3988 audio_files=5 tactical_meshes=3 tactical_textures=2 bytes=36187383"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette=tactical-dll/1000 diagnostics=2560:48/62/186/62,2561:25/28/84/28,2562:9/10/30/10 family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=close resource_id=2560 view_depth=12.5 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[audio] music_volume=0.00 muted=true music_muted=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=close to=medium resource_id=2561 view_depth=15.625 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=far resource_id=2562 view_depth=47.68372 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=far to=medium resource_id=2561 view_depth=38.146976 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=close resource_id=2560 view_depth=12.500001 projection_scale=1 high_detail=true family_loads=1"
+    }
+  ],
+  "interaction_logs": [],
+  "probes": [
+    {
+      "type": "production-tactical-entry",
+      "system": "Abregado",
+      "attacker_ships": 1,
+      "defender_ships": 1,
+      "fighters": 2
+    },
+    {
+      "type": "tactical-3d-same-renderer-lod-journey",
+      "controls": [
+        "zoom-out",
+        "zoom-in"
+      ],
+      "expected_resources": [
+        2560,
+        2561,
+        2562,
+        2561,
+        2560
+      ],
+      "aperture_hashes": [
+        "93af72e8097ced55262829017ac1b88724412d6508283aa7896ec39ceb100467",
+        "e4a1bdfec5b8ec746ea43fe8d82fde075cfde622c8be9ac4b69b43c73a560c85",
+        "2966ba7371c72ac9a1cf8806f8c851958a86bc631835bf6cc59ba60a16932f80",
+        "813f84ff9a7f18c9733ae507e739c1e75e24276c3a2ffa79bf09159126320700",
+        "9fed7c345edd9d70ee346e5833342312c63c65ce34d861dd5be078f70bc93e4a"
+      ],
+      "model_crop_native_rect": {
+        "x": 180,
+        "y": 80,
+        "width": 260,
+        "height": 240
+      },
+      "model_crop_hashes": [
+        "0d7f62ad0027b710bb86ec440e479f3a0f0275b4faf32df532a4c850cfe9c92f",
+        "67812bb0ad9fadb5bfac359816d68222586bd1bc39c688ed55c0b57ad26af514",
+        "17f55f044d8c7a49a5d21a41361f17e4ea794ed06aa53e2c4b01616d9d6999eb",
+        "3350a80129afe22ced9102096e6f4b60681b7e1d671d9e4760609d48db4b8afd",
+        "0d7f62ad0027b710bb86ec440e479f3a0f0275b4faf32df532a4c850cfe9c92f"
+      ],
+      "aperture_isolation": [
+        {
+          "status": "isolated",
+          "pixels_checked": 464675,
+          "ignored_native_rects": [
+            {
+              "x": 65,
+              "y": 4,
+              "width": 18,
+              "height": 18,
+              "reason": "provisional task-force number"
+            },
+            {
+              "x": 490,
+              "y": 35,
+              "width": 145,
+              "height": 20,
+              "reason": "provisional selected-ship label"
+            },
+            {
+              "x": 490,
+              "y": 208,
+              "width": 145,
+              "height": 22,
+              "reason": "provisional orders label"
+            }
+          ]
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 464675,
+          "ignored_native_rects": [
+            {
+              "x": 65,
+              "y": 4,
+              "width": 18,
+              "height": 18,
+              "reason": "provisional task-force number"
+            },
+            {
+              "x": 490,
+              "y": 35,
+              "width": 145,
+              "height": 20,
+              "reason": "provisional selected-ship label"
+            },
+            {
+              "x": 490,
+              "y": 208,
+              "width": 145,
+              "height": 22,
+              "reason": "provisional orders label"
+            }
+          ]
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 464675,
+          "ignored_native_rects": [
+            {
+              "x": 65,
+              "y": 4,
+              "width": 18,
+              "height": 18,
+              "reason": "provisional task-force number"
+            },
+            {
+              "x": 490,
+              "y": 35,
+              "width": 145,
+              "height": 20,
+              "reason": "provisional selected-ship label"
+            },
+            {
+              "x": 490,
+              "y": 208,
+              "width": 145,
+              "height": 22,
+              "reason": "provisional orders label"
+            }
+          ]
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 464675,
+          "ignored_native_rects": [
+            {
+              "x": 65,
+              "y": 4,
+              "width": 18,
+              "height": 18,
+              "reason": "provisional task-force number"
+            },
+            {
+              "x": 490,
+              "y": 35,
+              "width": 145,
+              "height": 20,
+              "reason": "provisional selected-ship label"
+            },
+            {
+              "x": 490,
+              "y": 208,
+              "width": 145,
+              "height": 22,
+              "reason": "provisional orders label"
+            }
+          ]
+        }
+      ],
+      "restored_model_exact": true,
+      "restored_full_frame_exact": false,
+      "native_full_frame_asserted": false
+    },
+    {
+      "type": "source-bound-tactical-3d-lod-family",
+      "meshes": [
+        "2560/1033",
+        "2561/1033",
+        "2562/1033"
+      ],
+      "textures": [
+        "SDESTI52.BMP/1033",
+        "SDESTI_M.BMP/1033"
+      ],
+      "selected_resources": [
+        2560,
+        2561,
+        2562,
+        2561,
+        2560
+      ],
+      "palette": "tactical-dll/1000",
+      "family_loads": 1
+    },
+    {
+      "type": "browser-runtime-measurements",
+      "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+      "frame_interval_ms": {
+        "median": 8.300000000000182,
+        "p95": 9.300000000000182,
+        "max": 9.400000000000091
+      },
+      "navigation_duration_ms": 17.700000047683716,
+      "wasm_memory_bytes": 81330176,
+      "js_heap_used_bytes": 39218879,
+      "js_heap_total_bytes": 44740455
+    }
+  ],
+  "comparison": {
+    "original_reference_source": "owned-original-or-curated-reference-only",
+    "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+    "implementation_baseline": null,
+    "status": "unbaselined",
+    "different_pixels": null,
+    "difference_ratio": null,
+    "tolerance": 0,
+    "masks": []
+  },
+  "interaction_comparisons": {
+    "lod-journey-far": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "lod-journey-medium": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "lod-journey-restored-close": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "lod-journey-return-medium": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    }
+  },
+  "cleanup": "closed"
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-09-13",
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "mode": "read-only"
+  },
+  "checkpoint": "P57B1",
+  "ready_to_commit": true,
+  "reviewed_run": "2026-09-13T13-20-18-944Z-77237",
+  "post_review_run": "2026-09-13T13-32-03-569Z-85039",
+  "summary": "The bounded checkpoint proves one live renderer selects resources 2560, 2561, 2562, 2561, and 2560 through the bitmap zoom controls with one family load. It does not establish original camera behavior or strict interface parity.",
+  "findings": [
+    {
+      "severity": "P3",
+      "status": "resolved",
+      "file": "tools/interface-parity/run.mjs",
+      "finding": "Text masks were applied at native and fractional scales even though only fractional scaling required them.",
+      "resolution": "Masks now apply only at fractional scale. Native journeys require exact full-frame restoration. The complete 24-case matrix passed afterward."
+    }
+  ],
+  "gate_assessment": {
+    "same_renderer_live_sequence": "pass",
+    "single_family_load": "pass",
+    "production_exclusion": "pass",
+    "visual_comparison_for_P57B1": "pass",
+    "browser_matrix": "pass",
+    "documentation_and_launcher_reference": "pass",
+    "strict_original_parity": "deferred_to_P57B2"
+  },
+  "strict_boundary": {
+    "tactical_cells_total": 106,
+    "tactical_cells_passed": 0,
+    "tactical_cells_pending": 106
+  }
+}

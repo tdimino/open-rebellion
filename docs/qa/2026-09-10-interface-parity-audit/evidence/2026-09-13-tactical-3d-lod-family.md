@@ -111,8 +111,9 @@ isolation, not similarity to the original executable.
 
 The family relationship and LOD predicate are source-proven. DAT identity,
 original camera transform and orientation, palette activation, texture
-filtering, winding and culling, lighting, A0/A1 visual comparison, live
-distance transitions, native GPU capture, production entity selection,
-damage and effect attachments, and simulation-fingerprint comparison remain
-open. P57B owns those view and acceptance rules before P58 can integrate the
-complete production fleet.
+filtering, winding and culling, lighting, A0/A1 visual comparison, native GPU
+capture, production entity selection, damage and effect attachments, and
+simulation-fingerprint comparison remain open. [P57B1](2026-09-13-tactical-live-lod-journey.md)
+now proves live cached-slot transitions without resource churn. P57B2 owns the
+remaining view and acceptance rules before P58 can integrate the complete
+production fleet.

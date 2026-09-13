@@ -17,6 +17,7 @@ const BATTLE_WITHOUT_PROOF_SCENARIO: u32 = 2;
 const LOD_CLOSE_SCENARIO: u32 = 3;
 const LOD_MEDIUM_SCENARIO: u32 = 4;
 const LOD_FAR_SCENARIO: u32 = 5;
+const LOD_JOURNEY_SCENARIO: u32 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -24,6 +25,7 @@ enum TacticalLodFixture {
     Close,
     Medium,
     Far,
+    Journey,
 }
 
 impl TacticalLodFixture {
@@ -33,6 +35,7 @@ impl TacticalLodFixture {
             Self::Close => "close",
             Self::Medium => "medium",
             Self::Far => "far",
+            Self::Journey => "journey",
         }
     }
 
@@ -43,6 +46,7 @@ impl TacticalLodFixture {
             Self::Close => Some(TacticalLodView::CLOSE_FIXTURE),
             Self::Medium => Some(TacticalLodView::MEDIUM_FIXTURE),
             Self::Far => Some(TacticalLodView::FAR_FIXTURE),
+            Self::Journey => None,
         }
     }
 }
@@ -70,6 +74,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         LOD_CLOSE_SCENARIO => (true, TacticalLodFixture::Close),
         LOD_MEDIUM_SCENARIO => (true, TacticalLodFixture::Medium),
         LOD_FAR_SCENARIO => (true, TacticalLodFixture::Far),
+        LOD_JOURNEY_SCENARIO => (true, TacticalLodFixture::Journey),
         _ => return None,
     };
     let faction = match (code >> 8) & 0xff {
@@ -182,7 +187,9 @@ pub(crate) fn apply(
     #[cfg(feature = "interface-test-fixtures")]
     if request.proof_enabled {
         tactical.enable_resource_2560_proof();
-        if let Some(view) = request.lod_fixture.view() {
+        if request.lod_fixture == TacticalLodFixture::Journey {
+            tactical.enable_tactical_lod_journey();
+        } else if let Some(view) = request.lod_fixture.view() {
             tactical.set_tactical_lod_fixture(view);
         }
     }
@@ -288,8 +295,12 @@ mod tests {
             decode(0x10105).unwrap().lod_fixture,
             TacticalLodFixture::Far
         );
+        assert_eq!(
+            decode(0x10106).unwrap().lod_fixture,
+            TacticalLodFixture::Journey
+        );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10106).is_none());
+        assert!(decode(0x10107).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

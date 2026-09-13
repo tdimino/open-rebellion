@@ -222,6 +222,21 @@ async function stableFrame(page, folder) {
   return { first: sha256(first), second: sha256(second), bytes: second };
 }
 
+async function stableInteractionFrame(page, folder, name) {
+  let previous = null;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await page.evaluate(() => new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const bytes = await page.screenshot({ animations: "disabled" });
+    if (previous && sha256(previous) === sha256(bytes)) {
+      fs.writeFileSync(path.join(folder, `${name}.png`), bytes);
+      return bytes;
+    }
+    previous = bytes;
+  }
+  throw new Error(`tactical interaction capture did not stabilize: ${name}`);
+}
+
 function decodeIndexedBmp(bytes) {
   assert.equal(bytes.toString("ascii", 0, 2), "BM", "source resource is not a BMP");
   const dataOffset = bytes.readUInt32LE(10);
@@ -531,7 +546,7 @@ function verifyTacticalShell(viewport, screenshotBytes) {
   return { status: "source-bitmap-exact", resource_id: 1000, pixels_checked: pixelsChecked };
 }
 
-function verifyTacticalApertureIsolation(viewport, beforeBytes, afterBytes) {
+function verifyTacticalApertureIsolation(viewport, beforeBytes, afterBytes, ignoreNativeRects = []) {
   const before = PNG.sync.read(beforeBytes);
   const after = PNG.sync.read(afterBytes);
   assert.equal(before.width, after.width);
@@ -545,10 +560,19 @@ function verifyTacticalApertureIsolation(viewport, beforeBytes, afterBytes) {
     x1: Math.round(offsetX + 460 * scale),
     y1: Math.round(offsetY + 467 * scale),
   };
+  const ignored = ignoreNativeRects.map(({ x, y, width, height, reason }) => ({
+    x0: Math.floor(offsetX + x * scale),
+    y0: Math.floor(offsetY + y * scale),
+    x1: Math.ceil(offsetX + (x + width) * scale),
+    y1: Math.ceil(offsetY + (y + height) * scale),
+    reason,
+  }));
   let pixelsChecked = 0;
   for (let y = 0; y < before.height; y++) {
     for (let x = 0; x < before.width; x++) {
       if (x >= aperture.x0 && x < aperture.x1 && y >= aperture.y0 && y < aperture.y1) continue;
+      if (ignored.some((rect) =>
+        x >= rect.x0 && x < rect.x1 && y >= rect.y0 && y < rect.y1)) continue;
       const offset = (y * before.width + x) * 4;
       assert.deepEqual(
         Array.from(after.data.subarray(offset, offset + 4)),
@@ -558,7 +582,11 @@ function verifyTacticalApertureIsolation(viewport, beforeBytes, afterBytes) {
       pixelsChecked++;
     }
   }
-  return { status: "isolated", pixels_checked: pixelsChecked };
+  return {
+    status: "isolated",
+    pixels_checked: pixelsChecked,
+    ...(ignoreNativeRects.length ? { ignored_native_rects: ignoreNativeRects } : {}),
+  };
 }
 
 function tacticalApertureHash(viewport, screenshotBytes) {
@@ -570,6 +598,23 @@ function tacticalApertureHash(viewport, screenshotBytes) {
   const y0 = Math.round(offsetY + 28 * scale);
   const x1 = Math.round(offsetX + 460 * scale);
   const y1 = Math.round(offsetY + 467 * scale);
+  const hash = createHash("sha256");
+  for (let y = y0; y < y1; y++) {
+    hash.update(screenshot.data.subarray((y * screenshot.width + x0) * 4,
+      (y * screenshot.width + x1) * 4));
+  }
+  return hash.digest("hex");
+}
+
+function tacticalProofModelHash(viewport, screenshotBytes) {
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const x0 = Math.floor(offsetX + 180 * scale);
+  const y0 = Math.floor(offsetY + 80 * scale);
+  const x1 = Math.ceil(offsetX + 440 * scale);
+  const y1 = Math.ceil(offsetY + 320 * scale);
   const hash = createHash("sha256");
   for (let y = y0; y < y1; y++) {
     hash.update(screenshot.data.subarray((y * screenshot.width + x0) * 4,
@@ -712,9 +757,7 @@ async function probeTactical(page, viewport, folder, stable) {
   const offsetX = (viewport.width - 640 * scale) / 2;
   const offsetY = (viewport.height - 480 * scale) / 2;
   const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
-  const capture = async (name) => page.screenshot({
-    path: path.join(folder, `${name}.png`), animations: "disabled",
-  });
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
   const probes = [{ type: "tactical-shell", ...verifyTacticalShell(viewport, stable.bytes) }];
   probes.push({ type: "paused-control-bitmap",
     ...verifyTacticalBitmap(viewport, stable.bytes, 1061, 560, 307) });
@@ -837,6 +880,77 @@ async function probeTactical(page, viewport, folder, stable) {
   return probes;
 }
 
+async function probeTacticalLodJourney(page, viewport, folder, stable) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
+  const clickRepeatedly = async (location, count) => {
+    for (let index = 0; index < count; index++) {
+      await page.mouse.click(location.x, location.y);
+      await page.waitForTimeout(80);
+    }
+  };
+  const zoomOut = point(615, 355);
+  const zoomIn = point(498, 355);
+
+  await clickRepeatedly(zoomOut, 1);
+  const medium = await capture("lod-journey-medium");
+  await clickRepeatedly(zoomOut, 5);
+  const far = await capture("lod-journey-far");
+  await clickRepeatedly(zoomIn, 1);
+  const returnMedium = await capture("lod-journey-return-medium");
+  // One additional authentic click reaches the existing 2.0 clamp exactly,
+  // avoiding reciprocal-f32 drift that is visible at letterboxed resolution.
+  await clickRepeatedly(zoomIn, 6);
+  const restoredClose = await capture("lod-journey-restored-close");
+
+  const apertureHashes = [stable.bytes, medium, far, returnMedium, restoredClose]
+    .map((bytes) => tacticalApertureHash(viewport, bytes));
+  const modelHashes = [stable.bytes, medium, far, returnMedium, restoredClose]
+    .map((bytes) => tacticalProofModelHash(viewport, bytes));
+  assert.equal(new Set(modelHashes.slice(0, 3)).size, 3,
+    "same-renderer close, medium, and far journey views are not distinct");
+  assert.equal(modelHashes[4], modelHashes[0],
+    "same-renderer LOD journey did not restore its exact initial model view");
+  const transitions = [
+    [stable.bytes, medium],
+    [medium, far],
+    [far, returnMedium],
+    [returnMedium, restoredClose],
+  ];
+  const provisionalTextMasks = [
+    { x: 65, y: 4, width: 18, height: 18, reason: "provisional task-force number" },
+    { x: 490, y: 35, width: 145, height: 20, reason: "provisional selected-ship label" },
+    { x: 490, y: 208, width: 145, height: 22, reason: "provisional orders label" },
+  ];
+  const exactNativeScale = Number.isInteger(scale);
+  const isolationMasks = exactNativeScale ? [] : provisionalTextMasks;
+  const isolation = transitions.map(([before, after]) =>
+    verifyTacticalApertureIsolation(viewport, before, after, isolationMasks));
+  assert.ok(isolation.every(({ status }) => status === "isolated"),
+    "same-renderer LOD journey changed pixels outside the tactical aperture");
+  const restoredFullFrameExact = sha256(restoredClose) === sha256(stable.bytes);
+  if (exactNativeScale) {
+    assert.equal(restoredFullFrameExact, true,
+      "native same-renderer LOD journey did not restore its exact initial frame");
+  }
+
+  return [{
+    type: "tactical-3d-same-renderer-lod-journey",
+    controls: ["zoom-out", "zoom-in"],
+    expected_resources: [2560, 2561, 2562, 2561, 2560],
+    aperture_hashes: apertureHashes,
+    model_crop_native_rect: { x: 180, y: 80, width: 260, height: 240 },
+    model_crop_hashes: modelHashes,
+    aperture_isolation: isolation,
+    restored_model_exact: true,
+    restored_full_frame_exact: restoredFullFrameExact,
+    native_full_frame_asserted: exactNativeScale,
+  }];
+}
+
 async function runScenario(server, executable, scenario, faction, viewport) {
   const id = scenarioId(scenario, faction, viewport);
   const folder = path.resolve(runDir, id);
@@ -898,7 +1012,9 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     const probes = battle
       ? [{ type: "production-tactical-entry", system: ready.system,
         attacker_ships: ready.attacker_ships, defender_ships: ready.defender_ships,
-        fighters: ready.fighters }, ...(scenario.slug === "battle-entry"
+        fighters: ready.fighters }, ...(scenario.lod_journey
+        ? await probeTacticalLodJourney(page, viewport, folder, stable)
+        : scenario.slug === "battle-entry"
         ? await probeTactical(page, viewport, folder, stable)
         : scenario.tactical_proof
         ? [{ type: "tactical-lod-fixture", requested: ready.tactical_lod }]
@@ -923,16 +1039,24 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         assert.match(familyLogs[0]?.text || "",
           /resources=2560,2561,2562 textures=SDESTI52\.BMP,SDESTI_M\.BMP .*family_loads=1/,
           "source-bound tactical LOD family did not load exactly once");
-        assert.equal(lodLogs.length, 1,
-          "source-derived tactical LOD fixture did not emit exactly one selection event");
-        assert.match(lodLogs[0]?.text || "",
-          new RegExp(`resource_id=${scenario.expected_lod_resource} .*family_loads=1`),
-          "source-derived tactical LOD selection chose the wrong resource");
+        const expectedResources = scenario.expected_lod_sequence
+          || [scenario.expected_lod_resource];
+        assert.equal(lodLogs.length, expectedResources.length,
+          "source-derived tactical LOD fixture emitted the wrong selection-event count");
+        const selectedResources = lodLogs.map(({ text }) => {
+          assert.match(text, /family_loads=1/,
+            "tactical LOD selection observed a reloaded family");
+          const match = text.match(/resource_id=(\d+)/);
+          assert.ok(match, "tactical LOD selection omitted its resource identity");
+          return Number(match[1]);
+        });
+        assert.deepEqual(selectedResources, expectedResources,
+          "source-derived tactical LOD selection chose the wrong resource sequence");
         probes.push({
           type: "source-bound-tactical-3d-lod-family",
           meshes: ["2560/1033", "2561/1033", "2562/1033"],
           textures: ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"],
-          selected_resource: scenario.expected_lod_resource,
+          selected_resources: selectedResources,
           palette: "tactical-dll/1000",
           family_loads: 1,
         });
@@ -1034,11 +1158,14 @@ async function main() {
     assert.equal(catalog.family, "TAC-01");
     assert.equal(catalog.fixture_namespace, 1);
     assert.deepEqual(catalog.scenarios.map(({ slug }) => slug),
-      ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far"]);
+      ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",
+        "lod-journey"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true]);
+      [true, false, true, true, true, true]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
-      [2560, undefined, 2560, 2561, 2562]);
+      [2560, undefined, 2560, 2561, 2562, 2560]);
+    assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
+      [false, false, false, false, false, true]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

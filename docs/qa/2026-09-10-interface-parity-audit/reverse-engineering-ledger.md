@@ -150,7 +150,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | untriaged | Recover constructors, choices, force tabs, results, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader and event-handler registry | static-proven | Connect event slots to controls and observable state transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded and first three-LOD family source-proven/browser-rendered | Finish DAT identity, camera, palette, filtering, culling, lighting, and production selection |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded and first three-LOD family source-proven/browser-rendered with live cached-slot switching | Finish DAT identity, camera, palette, filtering, culling, lighting, and production selection |
 | RE-TAC-03 | Tactical battle-results composition | untriaged | Connect result construction to application and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -179,7 +179,10 @@ packages and visibly renders exact pair `2560/1033` plus
 `SDESTI52.BMP/1033`. P57A adds resources `2561/1033` and `2562/1033`, the
 second named texture, and the original high- and reduced-detail LOD predicate
 traced through `FUN_005d26c0`, `FUN_005d3770`, and `FUN_005d3650`; see its
-[evidence](evidence/2026-09-13-tactical-3d-lod-family.md). DAT identity,
+[evidence](evidence/2026-09-13-tactical-3d-lod-family.md). P57B1 adds
+`FUN_005c1160`, whose slot 2, 1, 0, restore sequence corroborates cached object
+switching, and proves the live sequence with one browser family load; see its
+[evidence](evidence/2026-09-13-tactical-live-lod-journey.md). DAT identity,
 palette activation, camera, filtering, culling, lighting, production binding,
 and original visual acceptance remain open.
 

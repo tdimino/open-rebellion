@@ -149,8 +149,9 @@ culling remain open, so no tactical cell is accepted.
 
 ### P57. One three-LOD family
 
-Status: in progress. P57A is complete. See the
-[P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md).
+Status: in progress. P57A and P57B1 are complete. See the
+[P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md)
+and [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md).
 
 Add `2561` and `2562`, then trace and implement the original LOD selection,
 camera, filtering, culling, and lighting rules. Capture the same fixed views in
@@ -161,13 +162,16 @@ far mesh's material diffuse color, and implements the original high- and
 reduced-detail thresholds recovered from `FUN_005d26c0`, `FUN_005d3770`, and
 `FUN_005d3650`. A deterministic, muted two-faction browser matrix proves all
 three fixed selections, exactly one initial family-load event per isolated
-fixture, and aperture-only changes. P57B retains camera, orientation, palette
-activation, filtering, culling, lighting, same-renderer distance transitions
-and no-churn proof, original A0/A1 captures, and simulation-fingerprint proof.
+fixture, and aperture-only changes. P57B1 traces the original cached-slot cycle
+in `FUN_005c1160` and proves the five-step LOD journey with one renderer and one
+family load. P57B2 retains camera, orientation, palette activation, filtering,
+culling, lighting, original zoom-to-depth behavior, original A0/A1 captures,
+native GPU comparison, and simulation-fingerprint proof.
 
 Gate: deterministic LOD transitions, no resource churn, accepted A0/A1 views,
 and no simulation fingerprint change. P57A proves the source predicate and
-fixed-view selection matrix. The full P57 gate remains open.
+fixed-view selection matrix. P57B1 proves live cached-slot transitions and no
+resource churn. The full P57 gate remains open.
 
 ### P58. Fleet integration
 

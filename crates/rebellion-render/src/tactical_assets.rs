@@ -66,6 +66,16 @@ impl TacticalLodView {
         projection_scale: 1.0,
         high_detail: true,
     };
+
+    /// Test-only bridge from the working tactical zoom control to a source
+    /// view-depth range that crosses all three original LOD thresholds.
+    pub(crate) fn from_fixture_zoom(zoom: f32) -> Self {
+        Self {
+            view_depth: 25.0 / zoom,
+            projection_scale: 1.0,
+            high_detail: true,
+        }
+    }
 }
 
 impl Default for TacticalLodView {
@@ -298,6 +308,7 @@ struct TacticalLodAsset {
 /// Lazily allocated GPU state for the source-bound P57 LOD family.
 pub(crate) struct TacticalProofRenderer {
     attempted: bool,
+    family_loads: usize,
     assets: Vec<TacticalLodAsset>,
     material: Option<Material>,
     current_lod: OriginalTacticalLod,
@@ -309,6 +320,7 @@ impl Default for TacticalProofRenderer {
     fn default() -> Self {
         Self {
             attempted: false,
+            family_loads: 0,
             assets: Vec::new(),
             material: None,
             current_lod: OriginalTacticalLod::Medium,
@@ -338,13 +350,14 @@ impl TacticalProofRenderer {
         self.current_lod = select_original_tactical_lod(self.current_lod, self.view);
         if self.logged_lod != Some(self.current_lod) {
             macroquad::logging::info!(
-                "[tactical_3d] lod_selection from={} to={} resource_id={} view_depth={} projection_scale={} high_detail={} family_loads=1",
+                "[tactical_3d] lod_selection from={} to={} resource_id={} view_depth={} projection_scale={} high_detail={} family_loads={}",
                 prior_lod.label(),
                 self.current_lod.label(),
                 self.current_lod.resource_id(),
                 self.view.view_depth,
                 self.view.projection_scale,
                 self.view.high_detail,
+                self.family_loads,
             );
             self.logged_lod = Some(self.current_lod);
         }
@@ -458,9 +471,11 @@ impl TacticalProofRenderer {
 
         self.material = Some(load_tactical_material()?);
         self.assets = assets;
+        self.family_loads = self.family_loads.saturating_add(1);
         macroquad::logging::info!(
-            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette=tactical-dll/1000 diagnostics={} family_loads=1",
-            diagnostics.join(",")
+            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette=tactical-dll/1000 diagnostics={} family_loads={}",
+            diagnostics.join(","),
+            self.family_loads,
         );
         Ok(())
     }
@@ -897,6 +912,19 @@ mod tests {
                     expected
                 );
             }
+        }
+
+        let mut current = OriginalTacticalLod::Close;
+        for (zoom, expected) in [
+            (2.0, OriginalTacticalLod::Close),
+            (1.6, OriginalTacticalLod::Medium),
+            (0.524_288, OriginalTacticalLod::Far),
+            (0.655_36, OriginalTacticalLod::Medium),
+            (2.0, OriginalTacticalLod::Close),
+        ] {
+            current =
+                select_original_tactical_lod(current, TacticalLodView::from_fixture_zoom(zoom));
+            assert_eq!(current, expected);
         }
     }
 

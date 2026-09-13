@@ -16,6 +16,7 @@ const forbidden = [
   "tactical_test_fixture",
   "enable_resource_2560_proof",
   "set_tactical_lod_fixture",
+  "enable_tactical_lod_journey",
   "[tactical_3d] rendered",
   "[tactical_3d] family_loaded",
   "[tactical_3d] lod_selection",

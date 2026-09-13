@@ -81,6 +81,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P55 tactical 3D runtime-pack evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md) | Complete binary-X and type-303 decoding, deterministic mesh/texture objects, palette routing, source-bound exceptions, and Assimp oracle results. |
 | [P56 tactical 3D render proof](evidence/2026-09-13-tactical-3d-render-proof.md) | Exact typed mesh/texture transport, normals-aware browser rendering, proof/control pixel evidence, runtime observations, and explicit open parity gates. |
 | [P57A tactical 3D LOD-family evidence](evidence/2026-09-13-tactical-3d-lod-family.md) | Complete first three-mesh family, source-traced LOD predicate, deterministic two-faction browser matrix, and explicit P57B limits. |
+| [P57B1 tactical live LOD evidence](evidence/2026-09-13-tactical-live-lod-journey.md) | Source-traced cached-slot cycle, live close-medium-far-medium-close browser journey, one-load proof, and explicit P57B2 limits. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -165,6 +166,10 @@ browser matrix. P57A packages the related `2561` and `2562` meshes and
 Its [evidence](evidence/2026-09-13-tactical-3d-lod-family.md) keeps native GPU
 rendering, original camera and render-state acceptance, semantic mapping,
 fleet integration, and every tactical cell open.
+P57B1 traces `FUN_005c1160` and proves a live same-renderer
+close-medium-far-medium-close sequence with exactly one family load. Its
+[evidence](evidence/2026-09-13-tactical-live-lod-journey.md) keeps the original
+camera, render-state, A0/A1, production binding, and every tactical cell open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

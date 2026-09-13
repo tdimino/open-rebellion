@@ -170,10 +170,12 @@ against Assimp 6.0.5 raw import. P56 packages and visibly renders resource
 `2560` with its source-linked texture in an isolated proof/control browser
 matrix. P57A packages resources `2560` through `2562`, binds both named
 textures, and applies the source-traced three-level LOD predicate. Each fixed
-fixture records exactly one initial family-load event. P57B next recovers and
-accepts original camera, lighting, filtering, culling, and live same-renderer
-transition behavior. See the
-[P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md).
+fixture records exactly one initial family-load event. P57B1 now traces the
+original cached-slot cycle and proves a close-medium-far-medium-close journey
+with the bitmap zoom controls and no reload. P57B2 next recovers and accepts
+the original camera, lighting, filtering, culling, and zoom-to-depth behavior.
+See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md)
+and [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md).
 
 ## Bundle acceptance record
 

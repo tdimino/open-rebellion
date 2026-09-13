@@ -57,6 +57,18 @@
       "expected_status": "battle-ready",
       "audit_cells": [],
       "acceptance": "A1 executable-rule implementation proof only. No original tactical interface cell is accepted."
+    },
+    {
+      "slug": "lod-journey",
+      "description": "One-renderer close-medium-far-medium-close journey through the authentic tactical zoom controls",
+      "fixture_codes": { "alliance": 65798, "empire": 66054 },
+      "tactical_proof": true,
+      "lod_journey": true,
+      "expected_lod_resource": 2560,
+      "expected_lod_sequence": [2560, 2561, 2562, 2561, 2560],
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 same-renderer slot-switch and no-reload implementation proof only. No original tactical interface cell is accepted."
     }
   ]
 }

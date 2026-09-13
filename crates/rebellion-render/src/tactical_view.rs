@@ -878,6 +878,8 @@ pub struct TacticalState {
     #[cfg(feature = "interface-test-fixtures")]
     proof_resource_2560: bool,
     #[cfg(feature = "interface-test-fixtures")]
+    proof_lod_follows_zoom: bool,
+    #[cfg(feature = "interface-test-fixtures")]
     proof_renderer: TacticalProofRenderer,
 }
 
@@ -894,6 +896,8 @@ impl Default for TacticalState {
             highlight_empire: true,
             #[cfg(feature = "interface-test-fixtures")]
             proof_resource_2560: false,
+            #[cfg(feature = "interface-test-fixtures")]
+            proof_lod_follows_zoom: false,
             #[cfg(feature = "interface-test-fixtures")]
             proof_renderer: TacticalProofRenderer::default(),
         }
@@ -931,6 +935,11 @@ impl TacticalState {
         self.zoom = 1.0;
         self.highlight_alliance = true;
         self.highlight_empire = true;
+        #[cfg(feature = "interface-test-fixtures")]
+        {
+            self.proof_resource_2560 = false;
+            self.proof_lod_follows_zoom = false;
+        }
     }
 
     /// Enable the source-bound tactical LOD proof in isolated fixture builds.
@@ -943,7 +952,18 @@ impl TacticalState {
     #[cfg(feature = "interface-test-fixtures")]
     pub fn set_tactical_lod_fixture(&mut self, view: TacticalLodView) {
         self.proof_resource_2560 = true;
+        self.proof_lod_follows_zoom = false;
         self.proof_renderer.set_view(view);
+    }
+
+    /// Drive all three source LOD slots through the authentic zoom controls.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn enable_tactical_lod_journey(&mut self) {
+        self.proof_resource_2560 = true;
+        self.proof_lod_follows_zoom = true;
+        self.zoom = 2.0;
+        self.proof_renderer
+            .set_view(TacticalLodView::from_fixture_zoom(self.zoom));
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -1358,6 +1378,11 @@ pub fn draw_tactical_view(
 
     #[cfg(feature = "interface-test-fixtures")]
     if state.proof_resource_2560 {
+        if state.proof_lod_follows_zoom {
+            state
+                .proof_renderer
+                .set_view(TacticalLodView::from_fixture_zoom(state.zoom));
+        }
         let aperture = canvas.aperture();
         state.proof_renderer.draw(
             bmp_cache,

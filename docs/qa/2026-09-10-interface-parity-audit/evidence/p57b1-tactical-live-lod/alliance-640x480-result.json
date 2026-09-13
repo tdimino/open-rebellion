@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "id": "tactical/alliance/lod-journey/640x480",
+  "status": "pass",
+  "fixture_code": 65798,
+  "browser_version": "151.0.7922.34",
+  "browser_executable": "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "launch_arguments": [
+    "--mute-audio",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--no-first-run"
+  ],
+  "profile": "new-process-and-temporary-profile-per-scenario",
+  "muted": true,
+  "viewport": {
+    "id": "640x480",
+    "width": 640,
+    "height": 480,
+    "device_scale_factor": 1
+  },
+  "ready": {
+    "schema_version": 1,
+    "status": "battle-ready",
+    "family": "tactical",
+    "fixture_code": 65798,
+    "faction": "alliance",
+    "proof_enabled": true,
+    "tactical_lod": "journey",
+    "system": "Abregado",
+    "attacker_ships": 1,
+    "defender_ships": 1,
+    "fighters": 2,
+    "error": null
+  },
+  "screenshot_sha256": "b8591c25ee36d1c49241f7cf264aeb63d4f67fb9a2985f62dd6412f9e7dee426",
+  "two_frame_hashes": {
+    "first": "b8591c25ee36d1c49241f7cf264aeb63d4f67fb9a2985f62dd6412f9e7dee426",
+    "second": "b8591c25ee36d1c49241f7cf264aeb63d4f67fb9a2985f62dd6412f9e7dee426",
+    "equal": true
+  },
+  "message_index_rail": null,
+  "runtime_measurements": {
+    "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+    "frame_interval_ms": {
+      "median": 8.300000000000182,
+      "p95": 9.200000000000273,
+      "max": 9.400000000000091
+    },
+    "navigation_duration_ms": 18.799999952316284,
+    "wasm_memory_bytes": 81330176,
+    "js_heap_used_bytes": 40033011,
+    "js_heap_total_bytes": 44216167
+  },
+  "wasm_sha256": "ee01c8a8815dc3dcc074fafc0e00f3979bf2adbb9b5be7d4dda8a65e893671e1",
+  "runtime_pack_sha256": "0ff81287d2003431a44a61601d8adffd636ad9880cc2381681ba846127f8b497",
+  "requests": [
+    {
+      "url": "/",
+      "status": 200
+    },
+    {
+      "url": "/gl.js",
+      "status": 200
+    },
+    {
+      "url": "/open-rebellion-test.wasm",
+      "status": 200
+    },
+    {
+      "url": "/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "console": [
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_replay is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_interface_fixture is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "info",
+      "text": "[assets] render_profile=original-parity"
+    },
+    {
+      "type": "info",
+      "text": "runtime_asset_pack loaded game_files=52 ui_bitmaps=2303 advisor_frames=3988 audio_files=5 tactical_meshes=3 tactical_textures=2 bytes=36187383"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette=tactical-dll/1000 diagnostics=2560:48/62/186/62,2561:25/28/84/28,2562:9/10/30/10 family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=close resource_id=2560 view_depth=12.5 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[audio] music_volume=0.00 muted=true music_muted=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=close to=medium resource_id=2561 view_depth=15.625 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=far resource_id=2562 view_depth=47.68372 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=far to=medium resource_id=2561 view_depth=38.146976 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=close resource_id=2560 view_depth=12.500001 projection_scale=1 high_detail=true family_loads=1"
+    }
+  ],
+  "interaction_logs": [],
+  "probes": [
+    {
+      "type": "production-tactical-entry",
+      "system": "Abregado",
+      "attacker_ships": 1,
+      "defender_ships": 1,
+      "fighters": 2
+    },
+    {
+      "type": "tactical-3d-same-renderer-lod-journey",
+      "controls": [
+        "zoom-out",
+        "zoom-in"
+      ],
+      "expected_resources": [
+        2560,
+        2561,
+        2562,
+        2561,
+        2560
+      ],
+      "aperture_hashes": [
+        "72034426a46d7e58d2d46239179ffb015b1568a3e5cf3c0ad957aa0f967a2c35",
+        "99b60d1c552fcb9967b1902fa71ccf31e6aba141ba940491cc5b22ff6bd3e0b3",
+        "e242bd96ad1fe40d57584ee425383b5d78d6eab6e4dcfd4efeed9047e348b742",
+        "608ae6ca8d2b63a39336bdfe8139271223b98cacacd3eed9c99b69b8db0ca36a",
+        "72034426a46d7e58d2d46239179ffb015b1568a3e5cf3c0ad957aa0f967a2c35"
+      ],
+      "model_crop_native_rect": {
+        "x": 180,
+        "y": 80,
+        "width": 260,
+        "height": 240
+      },
+      "model_crop_hashes": [
+        "05783791f50721dec379c08683b0b640ef078317837be0424c003fcf7a0dd257",
+        "c73559c26df2fa604751927e53413ba40c1c13c8efe33580bafd021572742202",
+        "6b86b46070da5dcc767aaeb574c368afd0de00a78edebe66f0c3e7f7215dcaff",
+        "8725b4a2cd75bada348609cd333574863c013978d1c8ce982830ecef8edb37b5",
+        "05783791f50721dec379c08683b0b640ef078317837be0424c003fcf7a0dd257"
+      ],
+      "aperture_isolation": [
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        }
+      ],
+      "restored_model_exact": true,
+      "restored_full_frame_exact": true,
+      "native_full_frame_asserted": true
+    },
+    {
+      "type": "source-bound-tactical-3d-lod-family",
+      "meshes": [
+        "2560/1033",
+        "2561/1033",
+        "2562/1033"
+      ],
+      "textures": [
+        "SDESTI52.BMP/1033",
+        "SDESTI_M.BMP/1033"
+      ],
+      "selected_resources": [
+        2560,
+        2561,
+        2562,
+        2561,
+        2560
+      ],
+      "palette": "tactical-dll/1000",
+      "family_loads": 1
+    },
+    {
+      "type": "browser-runtime-measurements",
+      "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+      "frame_interval_ms": {
+        "median": 8.300000000000182,
+        "p95": 9.200000000000273,
+        "max": 9.400000000000091
+      },
+      "navigation_duration_ms": 18.799999952316284,
+      "wasm_memory_bytes": 81330176,
+      "js_heap_used_bytes": 40033011,
+      "js_heap_total_bytes": 44216167
+    }
+  ],
+  "comparison": {
+    "original_reference_source": "owned-original-or-curated-reference-only",
+    "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+    "implementation_baseline": null,
+    "status": "unbaselined",
+    "different_pixels": null,
+    "difference_ratio": null,
+    "tolerance": 0,
+    "masks": []
+  },
+  "interaction_comparisons": {
+    "lod-journey-far": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "lod-journey-medium": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "lod-journey-restored-close": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "lod-journey-return-medium": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    }
+  },
+  "cleanup": "closed"
+}

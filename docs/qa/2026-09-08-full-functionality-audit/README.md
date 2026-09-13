@@ -46,6 +46,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Authentic faction-advisor proof](evidence/2026-09-10-authentic-droid-advisors.md) | Type-302 extraction and decoding, native/WASM transport, both factions, corruption containment, and Astra browser evidence. |
 | [Faithful-HD foundation proof](evidence/2026-09-10-faithful-hd-foundation.md) | Explicit render profiles, manifest provenance, verified-byte decoding, fail-closed fallback, and Astra browser-regression evidence for P45A. |
 | [Tactical three-LOD family proof](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md) | First complete original tactical mesh family, source-traced selection predicate, deterministic browser matrix, and remaining view-acceptance boundary for P24/P57. |
+| [Tactical live LOD journey](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md) | Same-renderer close-medium-far-medium-close switching, one-load proof, and remaining original-view boundary for P24/P57B2. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

@@ -566,11 +566,15 @@ would tune around known simulation feedback defects.
   verify all fixed selections in 20 fresh muted browser cases. Keep live
   same-renderer switching, no-churn proof, original view rules, production
   integration, and all 106 tactical acceptance cells open.
+- [x] Complete P57B1 live cached-slot switching: exercise one renderer through
+  `2560 -> 2561 -> 2562 -> 2561 -> 2560` with the authentic bitmap zoom
+  controls, prove exactly one family load, and verify both factions and both
+  viewports in 24 fresh muted browser cases. Keep the test-only zoom-to-depth
+  bridge excluded from production and all 106 tactical cells open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B next recovers original camera/render rules and proves live LOD
-  switching without resource churn before P58 replaces procedural ships,
-  fighters, planets, and effects.
+  states. P57B2 next recovers and accepts original camera/render rules before
+  P58 replaces procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

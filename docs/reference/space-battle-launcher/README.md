@@ -1,0 +1,74 @@
+# Space-battle launcher reference
+
+This is the operational reference for opening and verifying Open Rebellion's
+space-battle scene. The [implementation plan](../../plans/2026-09-12-tooling-standalone-space-battle-launcher.md)
+owns future work. The [interface audit](../../qa/2026-09-10-interface-parity-audit/README.md)
+remains the acceptance authority.
+
+## Entry contract
+
+| Route | Entry | Purpose |
+|---|---|---|
+| Campaign | `crates/rebellion-app/src/tactical_flow.rs::begin_player_battle` | Validates two opposing fleets at one system, begins the production `TacticalState`, records the cooldown/message, and enters `GameMode::TacticalCombat`. |
+| Browser fixture | `crates/rebellion-app/src/tactical_test_fixture.rs::apply` | Creates a deterministic encounter, then calls the same production entry function. It exists only with `interface-test-fixtures`. |
+| Renderer | `crates/rebellion-render/src/tactical_view.rs::draw_tactical_view` | Draws the production tactical scene used by both routes. |
+| Harness | `tools/interface-parity/run.mjs --battle` | Launches one fresh muted Chromium process per faction, scenario, and viewport, records screenshots/logs/hashes, then closes it. |
+
+Fixture code layout is `(family << 16) | (faction << 8) | scenario`. Tactical
+family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
+[`tactical.catalog.json`](../../../tools/interface-parity/scenarios/tactical.catalog.json).
+
+| Scenario | Alliance | Empire | Contract |
+|---|---:|---:|---|
+| `battle-entry` | 65793 | 66049 | Production entry with the isolated 3D proof enabled |
+| `battle-entry-proof-off` | 65794 | 66050 | Paired negative control |
+| `lod-close` | 65795 | 66051 | Resource 2560 |
+| `lod-medium` | 65796 | 66052 | Resource 2561 |
+| `lod-far` | 65797 | 66053 | Resource 2562 |
+| `lod-journey` | 65798 | 66054 | Live 2560, 2561, 2562, 2561, 2560 journey with one family load |
+
+## Run it
+
+From `tools/interface-parity`:
+
+```sh
+node run.mjs --battle --scenario=battle-entry
+node run.mjs --battle --all --scenario=lod-journey --no-build
+node run.mjs --battle --all --no-build
+```
+
+The first command builds current production and fixture WASM artifacts. Use
+`--no-build` only after that build succeeds. The harness always supplies
+Chromium `--mute-audio`, verifies four-request startup, uses a temporary profile,
+and closes every process. Raw runs live under ignored
+`.artifacts/interface-parity/`.
+
+## Current verified boundary
+
+- The original 640×480 `TACTICAL.DLL` shell is active.
+- Bitmap pause, faction highlight/dim, and zoom controls work with source hit
+  masks; zoom has resting and held pressed art.
+- All 87 type-301 meshes and 397 type-303 texture/palette resources can be
+  staged and decoded from an owned installation.
+- Exact resources 2560, 2561, and 2562 plus `SDESTI52.BMP` and `SDESTI_M.BMP`
+  form the first source-proven LOD family.
+- The source predicate and cached-slot cycle are recovered from
+  `FUN_005d26c0`, `FUN_005d3770`, `FUN_005d3650`, and `FUN_005c1160`.
+- P57B1 passes 24 of 24 muted browser cases across both factions and both
+  viewports with one family load and no runtime errors.
+
+This does not accept an original tactical surface. The fixture's zoom-to-depth
+bridge is test-only. Original camera, orientation, palette activation,
+lighting, filtering, culling, native GPU and A0/A1 comparison, production
+entity binding, commands, damage, effects, Death Star paths, results, audio,
+and return routing remain open. All 106 `TAC-01` through `TAC-07` cells remain
+pending in the [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
+
+## Evidence and asset maps
+
+- [P57B1 live LOD evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md)
+- [P57A family and predicate](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md)
+- [Space-battle graphics inventory](../asset-library/space-battle.md)
+- [Native tactical lookup](../asset-library/tactical-lookup.json)
+- [Reverse-engineering ledger](../../qa/2026-09-10-interface-parity-audit/reverse-engineering-ledger.md)
+- [Screenshot ledger](../../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md)

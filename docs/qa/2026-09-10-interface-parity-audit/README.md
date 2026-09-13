@@ -26,6 +26,8 @@ geometry, and unverified asset mappings do not count as parity.
   for every decoded entity, staged resource ID, battle-art gap, and Ghidra
   proof route. The [standalone space-battle launcher plan](../../plans/2026-09-12-tooling-standalone-space-battle-launcher.md)
   scopes test-only tactical entry and the `TAC-01` through `TAC-07` gate.
+- Use the [space-battle launcher reference](../../reference/space-battle-launcher/README.md)
+  for its production route, fixture codes, harness commands, and evidence chain.
 - Read the [audit report](audit-report.md) for findings, thresholds, and the
   six-tranche implementation order.
 - Review the [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md)
@@ -71,6 +73,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P57A tactical LOD-family evidence](evidence/2026-09-13-tactical-3d-lod-family.md)
   for the complete first three-mesh family, source selection predicate,
   two-faction browser matrix, and the view rules still open for P57B.
+- Review the [P57B1 live LOD evidence](evidence/2026-09-13-tactical-live-lod-journey.md)
+  for the source-traced cached-slot sequence, one-load browser journey, and the
+  original camera and A0/A1 boundaries still open for P57B2.
 
 ## Suggested contribution lanes
 
