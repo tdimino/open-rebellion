@@ -22,11 +22,24 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	cutsceneOutput := flags.String("cutscene-output", "assets/references", "parent of ref-videos and cutscene-frames outputs")
 	force := flags.Bool("force", false, "replace staged assets whose contents differ")
 	verifyOnly := flags.Bool("verify", false, "verify staged assets without reading source files")
+	tactical3D := flags.Bool("tactical-3d", false, "also stage and verify original type-301/type-303 tactical resources")
+	tactical3DOnly := flags.Bool("tactical-3d-only", false, "stage or verify only original type-301/type-303 tactical resources")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %v", flags.Args())
+	}
+	if *tactical3D && *tactical3DOnly {
+		return fmt.Errorf("--tactical-3d and --tactical-3d-only are mutually exclusive")
+	}
+	if *tactical3DOnly {
+		if !*verifyOnly {
+			if _, err := stageTactical3D(*sourceDir, *outputDir, *force, stdout); err != nil {
+				return err
+			}
+		}
+		return verifyTactical3D(*outputDir, tacticalMeshCount, tacticalTextureCount, stdout)
 	}
 
 	if !*verifyOnly {
@@ -40,6 +53,11 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 			return err
 		}
 		fmt.Fprintf(stdout, "Staged %d UI resources from %d DLLs (%d written, %d unchanged)\n", summary.Resources, summary.DLLs, summary.Written, summary.Skipped)
+		if *tactical3D {
+			if _, err := stageTactical3D(*sourceDir, *outputDir, *force, stdout); err != nil {
+				return err
+			}
+		}
 	}
 
 	verified, err := verifyTargets(*outputDir, targets, stdout)
@@ -47,6 +65,11 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 		return err
 	}
 	fmt.Fprintf(stdout, "Verified %d UI resources across %d DLLs\n", verified.Resources, verified.DLLs)
+	if *tactical3D {
+		if err := verifyTactical3D(*outputDir, tacticalMeshCount, tacticalTextureCount, stdout); err != nil {
+			return err
+		}
+	}
 	if !*verifyOnly {
 		if *mdata == "" {
 			*mdata = filepath.Join(*sourceDir, "MDATA")

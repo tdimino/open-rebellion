@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"debug/pe"
 	"encoding/binary"
 	"fmt"
@@ -21,8 +22,18 @@ type bitmapResource struct {
 
 type rawResource struct {
 	ID       uint32
+	Name     string
+	Named    bool
 	Language uint32
+	CodePage uint32
+	Reserved uint32
 	Data     []byte
+}
+
+type rawResourceLimits struct {
+	MaxCount          int
+	MaxResourceBytes  uint64
+	MaxAggregateBytes uint64
 }
 
 type resourceDirectoryEntry struct {
@@ -93,16 +104,25 @@ func parseBitmapResources(resourceData []byte, resolveRVA func(uint32, uint32) (
 }
 
 func parseRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32) ([]rawResource, error) {
-	return parseTypedRawResources(resourceData, resolveRVA, resourceTypeID, "")
+	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, "", false, rawResourceLimits{})
 }
 
 func parseTypedRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, typeName string) ([]rawResource, error) {
+	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, typeName, false, rawResourceLimits{})
+}
+
+func parseMixedRawResources(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, limits rawResourceLimits) ([]rawResource, error) {
+	return parseRawResourcesMode(resourceData, resolveRVA, resourceTypeID, "", true, limits)
+}
+
+func parseRawResourcesMode(resourceData []byte, resolveRVA func(uint32, uint32) ([]byte, error), resourceTypeID uint32, typeName string, allowNamed bool, limits rawResourceLimits) ([]rawResource, error) {
 	types, err := readResourceDirectory(resourceData, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read resource types: %w", err)
 	}
 
 	var resources []rawResource
+	var aggregateBytes uint64
 	for _, resourceType := range types {
 		if typeName != "" {
 			if resourceType.name&resourceSubdirectory == 0 {
@@ -127,39 +147,71 @@ func parseTypedRawResources(resourceData []byte, resolveRVA func(uint32, uint32)
 			return nil, fmt.Errorf("read resource type %d IDs: %w", resourceTypeID, err)
 		}
 		for _, idEntry := range ids {
-			if idEntry.name&resourceSubdirectory != 0 {
+			resourceID := idEntry.name
+			resourceNameValue := ""
+			resourceNamed := idEntry.name&resourceSubdirectory != 0
+			if resourceNamed && !allowNamed {
 				return nil, fmt.Errorf("resource type %d has unsupported named entry", resourceTypeID)
 			}
-			resourceID := idEntry.name
+			if resourceNamed {
+				resourceNameValue, err = resourceName(resourceData, idEntry.name)
+				if err != nil {
+					return nil, fmt.Errorf("read resource type %d name: %w", resourceTypeID, err)
+				}
+				resourceID = 0
+			}
+			resourceLabel := fmt.Sprintf("ID %d", resourceID)
+			if resourceNamed {
+				resourceLabel = fmt.Sprintf("name %q", resourceNameValue)
+			}
 			if idEntry.target&resourceSubdirectory == 0 {
-				return nil, fmt.Errorf("resource type %d ID %d does not point to a language directory", resourceTypeID, resourceID)
+				return nil, fmt.Errorf("resource type %d %s does not point to a language directory", resourceTypeID, resourceLabel)
 			}
 
 			languages, err := readResourceDirectory(resourceData, idEntry.target&^resourceSubdirectory)
 			if err != nil {
-				return nil, fmt.Errorf("read languages for resource type %d ID %d: %w", resourceTypeID, resourceID, err)
+				return nil, fmt.Errorf("read languages for resource type %d %s: %w", resourceTypeID, resourceLabel, err)
 			}
 			for _, languageEntry := range languages {
 				if languageEntry.name&resourceSubdirectory != 0 {
 					continue
 				}
 				if languageEntry.target&resourceSubdirectory != 0 {
-					return nil, fmt.Errorf("resource type %d ID %d language %d points to a directory", resourceTypeID, resourceID, languageEntry.name)
+					return nil, fmt.Errorf("resource type %d %s language %d points to a directory", resourceTypeID, resourceLabel, languageEntry.name)
 				}
 
 				dataEntryOffset := languageEntry.target
 				if uint64(dataEntryOffset)+16 > uint64(len(resourceData)) {
-					return nil, fmt.Errorf("resource type %d ID %d language %d has an out-of-bounds data entry", resourceTypeID, resourceID, languageEntry.name)
+					return nil, fmt.Errorf("resource type %d %s language %d has an out-of-bounds data entry", resourceTypeID, resourceLabel, languageEntry.name)
 				}
 				dataRVA := binary.LittleEndian.Uint32(resourceData[dataEntryOffset : dataEntryOffset+4])
 				dataSize := binary.LittleEndian.Uint32(resourceData[dataEntryOffset+4 : dataEntryOffset+8])
+				codePage := binary.LittleEndian.Uint32(resourceData[dataEntryOffset+8 : dataEntryOffset+12])
+				reserved := binary.LittleEndian.Uint32(resourceData[dataEntryOffset+12 : dataEntryOffset+16])
+				if limits.MaxCount > 0 && len(resources) >= limits.MaxCount {
+					return nil, fmt.Errorf("resource type %d exceeds the %d-resource limit", resourceTypeID, limits.MaxCount)
+				}
+				if limits.MaxResourceBytes > 0 && uint64(dataSize) > limits.MaxResourceBytes {
+					return nil, fmt.Errorf("resource type %d %s language %d size %d exceeds the %d-byte limit", resourceTypeID, resourceLabel, languageEntry.name, dataSize, limits.MaxResourceBytes)
+				}
+				if uint64(dataSize) > ^uint64(0)-aggregateBytes {
+					return nil, fmt.Errorf("resource type %d aggregate size overflows", resourceTypeID)
+				}
+				aggregateBytes += uint64(dataSize)
+				if limits.MaxAggregateBytes > 0 && aggregateBytes > limits.MaxAggregateBytes {
+					return nil, fmt.Errorf("resource type %d aggregate size %d exceeds the %d-byte limit", resourceTypeID, aggregateBytes, limits.MaxAggregateBytes)
+				}
 				data, err := resolveRVA(dataRVA, dataSize)
 				if err != nil {
-					return nil, fmt.Errorf("read resource type %d ID %d language %d: %w", resourceTypeID, resourceID, languageEntry.name, err)
+					return nil, fmt.Errorf("read resource type %d %s language %d: %w", resourceTypeID, resourceLabel, languageEntry.name, err)
 				}
 				resources = append(resources, rawResource{
 					ID:       resourceID,
+					Name:     resourceNameValue,
+					Named:    resourceNamed,
 					Language: languageEntry.name,
+					CodePage: codePage,
+					Reserved: reserved,
 					Data:     append([]byte(nil), data...),
 				})
 			}
@@ -233,6 +285,30 @@ func readPEBitmapResources(path string, namedIDs map[string]uint32) ([]bitmapRes
 
 func readPERawResources(path string, resourceTypeID uint32) ([]rawResource, error) {
 	return readPETypedRawResources(path, resourceTypeID, "")
+}
+
+func readPEMixedRawResourcesFromBytes(source []byte, resourceTypeID uint32, limits rawResourceLimits) ([]rawResource, error) {
+	file, err := pe.NewFile(bytes.NewReader(source))
+	if err != nil {
+		return nil, fmt.Errorf("open PE snapshot: %w", err)
+	}
+	defer file.Close()
+
+	resourceDirectory, err := peDataDirectory(file, 2)
+	if err != nil {
+		return nil, err
+	}
+	if resourceDirectory.VirtualAddress == 0 || resourceDirectory.Size == 0 {
+		return nil, fmt.Errorf("PE file has no resource directory")
+	}
+
+	resourceData, err := readPERange(file, resourceDirectory.VirtualAddress, resourceDirectory.Size)
+	if err != nil {
+		return nil, fmt.Errorf("read resource directory: %w", err)
+	}
+	return parseMixedRawResources(resourceData, func(rva, size uint32) ([]byte, error) {
+		return readPERange(file, rva, size)
+	}, resourceTypeID, limits)
 }
 
 func readPEWaveResources(path string) ([]rawResource, error) {
@@ -310,17 +386,28 @@ func readPERange(file *pe.File, rva, size uint32) ([]byte, error) {
 func resourceName(resourceData []byte, rawName uint32) (string, error) {
 	offset := rawName &^ resourceSubdirectory
 	if uint64(offset)+2 > uint64(len(resourceData)) {
-		return "", fmt.Errorf("bitmap resource name at offset %#x is outside resource data", offset)
+		return "", fmt.Errorf("PE resource name at offset %#x is outside resource data", offset)
 	}
 	length := binary.LittleEndian.Uint16(resourceData[offset : offset+2])
 	end := uint64(offset) + 2 + uint64(length)*2
 	if end > uint64(len(resourceData)) {
-		return "", fmt.Errorf("bitmap resource name at offset %#x is truncated", offset)
+		return "", fmt.Errorf("PE resource name at offset %#x is truncated", offset)
 	}
 	codeUnits := make([]uint16, length)
 	for i := range codeUnits {
 		start := uint64(offset) + 2 + uint64(i)*2
 		codeUnits[i] = binary.LittleEndian.Uint16(resourceData[start : start+2])
+	}
+	for i := 0; i < len(codeUnits); i++ {
+		switch {
+		case codeUnits[i] >= 0xd800 && codeUnits[i] <= 0xdbff:
+			if i+1 >= len(codeUnits) || codeUnits[i+1] < 0xdc00 || codeUnits[i+1] > 0xdfff {
+				return "", fmt.Errorf("PE resource name at offset %#x contains malformed UTF-16", offset)
+			}
+			i++
+		case codeUnits[i] >= 0xdc00 && codeUnits[i] <= 0xdfff:
+			return "", fmt.Errorf("PE resource name at offset %#x contains malformed UTF-16", offset)
+		}
 	}
 	return string(utf16.Decode(codeUnits)), nil
 }

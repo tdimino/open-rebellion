@@ -209,7 +209,7 @@ Entity mapping: `data/resource-entity-map.json` — 162 GOKRES resource IDs → 
 
 **Status**: References contaminate non-portrait packs. Only use for portrait-major, portrait-mini, character-panel. All other packs use Vertex AI Imagen (no references needed).
 
-### DLL Upscale Pipeline (2,231 BMPs)
+### DLL Upscale Pipeline (2,303 BMPs)
 
 **HD override contract**: `data/hd/{dll-dir-name}/{resource_id}.png` plus
 `data/hd/manifest.json`. `BmpCache` checks reviewed entries only when
@@ -251,6 +251,21 @@ packaging logic, never the copyrighted game resources. Standard BMP anchors
 provide the original indexed pixels and palette. Type-302 scanlines preserve
 unchanged pixels and add authored byte deltas to the remaining pixels, matching
 the original renderer.
+
+### Tactical 3D raw staging
+
+The same dependency-free extractor has an opt-in content-addressed path for all
+87 type-301 DirectX meshes and 397 type-303 texture/palette resources:
+
+```bash
+go run ./tools/stage-ui-assets --tactical-3d-only
+go run ./tools/stage-ui-assets --tactical-3d-only --verify
+```
+
+The ignored `data/base/ui/tactical-dll/TACTICAL3D/` store retains exact PE
+identifiers and hashes without using named resources as paths. These raw assets
+are not yet decoded or included in `runtime.orpk`; follow the
+[tactical 3D asset plan](../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 
 **Batch upscale command** (Vertex, all non-portrait packs):
 ```bash
@@ -302,11 +317,25 @@ image = { version = "0.25", default-features = false, features = ["bmp", "png"] 
 
 ---
 
-## Pipeline 2: 3D Tactical Combat Models
+## Pipeline 2: Tactical 3D assets
 
-### Architecture: Pre-Rendered Sprite Sheets
+### Original-parity architecture
 
-macroquad 0.4 has no native glTF/GLB loading (GitHub issue #456, still open). Solution: pre-render 3D models to sprite sheets via Blender — authentically how the original 1998 game worked.
+The original 1998 tactical renderer used real Direct3D Retained Mode meshes,
+not pre-rendered ship sprite sheets. Strict parity therefore starts with the 87
+type-301 DirectX `.x` resources and their type-303 textures. See the
+[tactical 3D asset plan](../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
+The runtime target is a compact deterministic mesh pack rendered through
+macroquad inside the original battle aperture. GLB is useful for conversion
+inspection, but it is not required in the WASM runtime.
+
+### Experimental-remaster model generation
+
+The generation workflow below is an optional extension. Hunyuan, Meshy, or
+other replacement geometry must use the `experimental-remaster` profile and
+must never count as original-interface or tactical-rendering parity evidence.
+Pre-rendered sprite sheets remain useful as a low-end experimental fallback,
+not as a reconstruction of the original renderer.
 
 ### 3D Generation: Dual-Provider Strategy
 

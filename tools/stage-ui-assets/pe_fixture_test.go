@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"testing"
+	"unicode/utf16"
 )
 
 func putResourceDirectory(dst []byte, offset int, named, ids uint16) {
@@ -69,5 +70,25 @@ func buildTestPE32WithResource(t *testing.T, resourceType, id, language uint32, 
 	binary.LittleEndian.PutUint32(file[section+20:section+24], sectionOffset)
 	binary.LittleEndian.PutUint32(file[section+36:section+40], 0x40000040)
 	copy(file[sectionOffset:], resource)
+	return file
+}
+
+func buildTestPE32WithNamedResource(t *testing.T, resourceType uint32, name string, language uint32, data []byte) []byte {
+	t.Helper()
+	file := buildTestPE32WithResource(t, resourceType, 1, language, data)
+	const (
+		sectionOffset = 0x200
+		nameOffset    = 0x180
+	)
+	putResourceEntry(file, sectionOffset+0x30, resourceSubdirectory|nameOffset, resourceSubdirectory|0x40)
+	encoded := utf16.Encode([]rune(name))
+	if len(encoded) > 63 {
+		t.Fatalf("test resource name is too long: %d UTF-16 units", len(encoded))
+	}
+	binary.LittleEndian.PutUint16(file[sectionOffset+nameOffset:sectionOffset+nameOffset+2], uint16(len(encoded)))
+	for index, value := range encoded {
+		start := sectionOffset + nameOffset + 2 + index*2
+		binary.LittleEndian.PutUint16(file[start:start+2], value)
+	}
 	return file
 }

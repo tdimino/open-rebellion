@@ -62,7 +62,7 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_original_640x480_shell_pause_highlight_zoom_source_hit_masks_and_zoom_pressed_states_passed_all_106_cells_open",
+    "tactical_interface": "fail_original_640x480_shell_pause_highlight_zoom_source_hit_masks_and_zoom_pressed_states_passed_all_87_type301_and_397_type303_raw_resources_staged_decoding_rendering_and_all_106_cells_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
@@ -162,12 +162,13 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell and first bitmap control-state checkpoints pass, but procedural battle contents and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell and first bitmap control-state checkpoints pass and all raw type-301/type-303 resources stage reproducibly, but decoding, rendering, procedural battle replacement, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -254,9 +255,10 @@
     "p46d_detailed_system_tab_items": "evidence/2026-09-11-detailed-system-tab-items.md",
     "p47a_authored_galaxy_backdrop": "evidence/2026-09-11-authored-galaxy-backdrop.md",
     "p47b_popular_support_gid": "evidence/2026-09-11-popular-support-gid.md",
+    "p54_tactical_3d_staging": "evidence/2026-09-12-tactical-3d-staging.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Continue UIP-B06 from the verified tactical shell and bitmap input-state checkpoint by staging and decoding the original type-301 and type-303 ship, fighter, planet, and effect resources, then wire source-mapped selected-unit, camera, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
+  "next_action": "Execute P55 by decoding the staged original binary X and type-303 resources into a deterministic runtime mesh pack. Then run the P56 single-resource native and muted Astra medium browser proof before wiring source-mapped selected-unit, camera, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
 }

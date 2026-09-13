@@ -59,6 +59,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P53 tactical control-state evidence](evidence/2026-09-12-tactical-control-hit-states.md)
   for source-shaped hit masks, zoom pressed art, browser round trips, and the
   states that remain deliberately unclaimed.
+- Review the [P54 tactical 3D staging evidence](evidence/2026-09-12-tactical-3d-staging.md)
+  for the complete raw type-301/type-303 inventory, deterministic extraction,
+  source hashes, and the P55 decoding boundary.
 
 ## Suggested contribution lanes
 

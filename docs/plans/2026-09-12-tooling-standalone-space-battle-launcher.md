@@ -12,9 +12,18 @@ status: in_progress
 
 This is a test harness for `UIP-B06` in the [batched interface plan](2026-09-11-feat-batched-interface-parity-plan.md). A developer should be able to choose a deterministic battle, open the actual game directly in that battle, use its real controls, and inspect the result without playing a campaign first. The launcher is outside the game canvas and absent from production builds. It must not introduce another tactical renderer or an invented in-game menu.
 
+The [tactical 3D asset pipeline](2026-09-12-feat-tactical-3d-asset-pipeline.md)
+owns recovery and browser rendering of the original DirectX meshes and
+textures. This launcher supplies its deterministic production-scene fixtures
+and evidence gate.
+
 It is not blocked on finishing the GID, system-window, or other strategic interface families. Start T0 and T1 after the current in-flight GID bundle is committed, then work on tactical asset proof and original HUD composition as a separate `UIP-B06` lane. The final 106-cell tactical acceptance gate still depends on original resources, screenshot baselines, and real browser interaction; a functioning launcher is not that gate.
 
-T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. [P52](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md) adds the original 640×480 shell and first working bitmap pause, highlight, and zoom controls. [P53](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md) adds palette-key hit masks and held zoom pressed art. Shared return/outcome routing, complete battle interactions and art, and all 106 visual cells remain open.
+Every T1 through T5 browser harness gate uses `codex-orchestrator` with Astra
+at medium effort. Each scenario starts in a fresh muted Chromium process and
+closes its browser and local server when complete.
+
+T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md) preserves surviving hull damage and exact fighter roster losses. Campaign and a test-only browser fixture both call the validated production tactical-entry function. The fixture opens both factions muted at native and letterboxed sizes, with four successful startup requests and no browser errors in each case. [P52](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md) adds the original 640×480 shell and first working bitmap pause, highlight, and zoom controls. [P53](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md) adds palette-key hit masks and held zoom pressed art. [P54](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md) adds reproducible raw staging for every original type-301 and type-303 tactical resource. Shared return/outcome routing, decoded and rendered battle graphics, complete battle interactions, and all 106 visual cells remain open.
 
 ## Current contract and limits
 
@@ -23,7 +32,7 @@ T0 and T1 are partially complete. The [tactical result-identity regression](../q
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves 29 ship and eight fighter ordinal-to-resource bases. Candidate DAT names still need the original vtable identity join; type-301/303 assets are not yet staged for browser rendering.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves 29 ship and eight fighter ordinal-to-resource bases. Candidate DAT names still need the original vtable identity join. P54 stages all type-301 and type-303 resources, but they are not yet decoded or packaged for browser rendering.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design
@@ -92,7 +101,7 @@ Gate: native unit/integration tests and browser journeys agree on state fingerpr
 
 ### T5. Strict acceptance
 
-For each `TAC-01` through `TAC-07` cell, run its source evidence, native, packaged-WASM, both-faction, viewport, interaction, audio, and diagnostic matrix from the [interface audit](../qa/2026-09-10-interface-parity-audit/README.md). Astra reviews a bounded battle bundle rather than operating every probe. Update the ledger and evidence in the same commit as each verified bundle, then push. Keep any cell lacking authoritative original captures pending.
+For each `TAC-01` through `TAC-07` cell, run its source evidence, native, packaged-WASM, both-faction, viewport, interaction, audio, and diagnostic matrix from the [interface audit](../qa/2026-09-10-interface-parity-audit/README.md). Astra medium reviews a bounded battle bundle rather than operating every probe. Update the ledger and evidence in the same commit as each verified bundle, then push. Keep any cell lacking authoritative original captures pending.
 
 ## Evidence and release rules
 

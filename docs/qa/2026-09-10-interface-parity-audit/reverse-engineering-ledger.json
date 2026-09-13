@@ -66,7 +66,7 @@
     {"module": "EMSPRITE.DLL", "standard_bmp": 34, "rcdata_bin": 753, "custom_type_302_frames": 2348, "wav": 216},
     {"module": "ALBRIEF.DLL", "standard_bmp": 20, "rcdata_bin": 366, "custom_type_302_frames": 2684, "wav": 17},
     {"module": "EMBRIEF.DLL", "standard_bmp": 18, "rcdata_bin": 471, "custom_type_302_frames": 2738, "wav": 22},
-    {"module": "TACTICAL.DLL", "standard_bmp": 288, "rcdata_bin": 1, "custom_type_301_meshes": 87, "custom_type_303_textures": 397, "wav": 66},
+    {"module": "TACTICAL.DLL", "standard_bmp": 288, "rcdata_bin": 1, "custom_type_301_meshes": 87, "type_301_bytes": 268936, "type_301_x0302_bin": 11, "type_301_x0303_bin": 76, "custom_type_303_textures": 397, "type_303_bytes": 1674840, "type_303_named": 59, "type_303_numeric": 338, "raw_staging": "p54_verified", "wav": 66},
     {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66, "primary_control_bitmaps": {"Alliance": "10001-10012", "Empire": "10015-10026"}, "gid_control_bitmaps": {"Alliance": [10013, 10014], "Empire": [10027, 10028]}, "command_center_composition": {"Alliance shell": 900, "Imperial shell": 901, "Display Off bright galaxy": 902, "active GID dim galaxy": 903}, "gid_resources": {"Alliance markers largest to smallest": "10146-10149", "Empire markers smallest to largest": "10150-10153", "neutral markers smallest to largest": "10154-10157", "unexplored or unpopulated marker": 10158, "compact legend": 10168}},
     {"module": "EData", "images": 187, "dimensions": [400, 200]}
   ],
@@ -441,9 +441,9 @@
       "title": "Tactical geometry, state art, meshes, and textures",
       "status": "static-partial",
       "retrieval": {
-        "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL"],
-        "method": "Trace control constructors and paint handlers through standard BMPs, type-301 meshes, type-303 textures, selection states, availability predicates, and camera commands.",
-        "next_proof": "Complete both faction HUDs and every rest, hover, pressed, selected, disabled, damage, navigation, maneuver, tactic, mission, recover, and retreat state."
+        "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL", "tools/stage-ui-assets"],
+        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. Continue tracing control constructors, binary X and type-303 decoding, paint handlers, entity joins, selection states, availability predicates, camera rules, and LOD commands.",
+        "next_proof": "Complete deterministic binary X and type-303 decoding, prove resource 2560 with SDESTI52.BMP in native and browser rendering, then finish both faction HUDs and every tactical control and content state."
       },
       "runtime_capture_required": true
     },

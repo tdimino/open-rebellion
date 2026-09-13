@@ -77,10 +77,10 @@ matrix passes.
 | UIP-B03 | Command-center completion | Remaining bitmap controls, speed, messages, status, advisor chrome, authored actions, voice, and unobscured apertures | Both command centers contain no replacement strips, blank required apertures, or invented controls |
 | UIP-B04 | Strategic management windows | Finders, personnel, fleets, facilities, production, research, missions, object status, and their legal, disabled, empty, populated, transit, and damage states | Each original strategic management journey is usable through its native window graph |
 | UIP-B05 | Reports, events, encyclopedia, and endings | Dialog resources, event and battle reports, EData art, cutscenes, rare events, victory, defeat, skip, restart, and return routing | Every non-tactical campaign presentation family passes its required media and navigation matrix |
-| UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md) and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
+| UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md), [tactical 3D asset plan](2026-09-12-feat-tactical-3d-asset-pipeline.md), and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P53 tactical control states; UIP-B06 continues
+## Current execution focus: P55 tactical decoding; UIP-B06 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right

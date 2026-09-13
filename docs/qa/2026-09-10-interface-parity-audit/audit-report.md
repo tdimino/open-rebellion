@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit Report"
 description: "Evidence-backed diagnosis and execution plan for complete bitmap-driven UI parity"
 category: qa
 created: 2026-09-10
-updated: 2026-09-11
+updated: 2026-09-12
 tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 ---
 
@@ -93,7 +93,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/bmp_cache.rs` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), and [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md) |
+| First original tactical shell and control states; raw 3D assets staged; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), and [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -107,6 +107,9 @@ commands, bitmap-state paint paths, managed object-window routing, GID display
 construction, and faction advisor apertures. The extractor and runtime pack now
 preserve all 3,988 ALSPRITE and EMSPRITE type-302 frames. Briefing, tactical,
 dialog, encyclopedia, advisor-control, and voice families remain incomplete.
+P54 separately stages every original type-301 mesh and type-303 texture or
+palette resource with a source-bound content-addressed manifest. Decoding,
+runtime transport, entity joins, camera rules, and rendering remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
@@ -139,7 +142,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, pause, highlight, zoom, source-shaped hit masks, and zoom pressed-state checkpoints pass. Procedural battle contents and incomplete command, result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, pause, highlight, zoom, source-shaped hit masks, and zoom pressed-state checkpoints pass. All 87 type-301 and 397 type-303 raw resources stage reproducibly. Decoding and rendering are still absent, so procedural battle contents and incomplete command, result, special-state, and audio paths remain. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
@@ -323,3 +326,9 @@ exact rail thumbnails, nested object compositions,
 commands, uncommon states, replacement message and status surfaces, and the A0
 matrix remain open. `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, `OBJ-02`,
 `UIP-T01`, and project-wide interface parity do not pass.
+
+P52 and P53 establish the original tactical shell and first authentic control
+states. P54 stages the full raw DirectX mesh and type-303 resource inventory
+without committing proprietary output. P55 must decode those resources and
+emit a deterministic runtime mesh pack before P56 can run the first visible,
+muted Astra browser proof. Every `TAC-*` cell remains open.

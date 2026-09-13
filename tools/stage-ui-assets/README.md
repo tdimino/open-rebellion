@@ -7,6 +7,10 @@ and soundtrack WAVs, 15 cutscenes, and original text strings. It then verifies
 all outputs. The Go code uses only its standard library; cutscene conversion
 requires `ffmpeg` and `ffprobe`. No Python environment or Windows runtime is needed.
 
+An opt-in tactical-only path also preserves all 87 type-301 DirectX meshes and
+397 type-303 texture/palette resources from `TACTICAL.DLL` in a
+content-addressed raw store. It does not require the media tools.
+
 For standard bitmaps, the extractor preserves the original DIB bytes and adds a
 BMP file header. For advisor animations, it preserves each custom PE type-302
 resource byte for byte. It does not resize or re-encode the artwork.
@@ -154,6 +158,8 @@ make the final count check fail even with `--force`.
 | `--cutscene-output` | `assets/references` | Parent for `ref-videos` and `cutscene-frames` |
 | `--verify` | `false` | Check existing output without extraction |
 | `--force` | `false` | Replace files whose contents differ |
+| `--tactical-3d` | `false` | Add tactical type-301/type-303 staging to the full extraction |
+| `--tactical-3d-only` | `false` | Stage or verify only tactical type-301/type-303 resources |
 | `--help` | | Print usage |
 
 Successful runs and help exit with status 0. Errors exit with status 1 and an
@@ -168,13 +174,51 @@ Successful runs and help exit with status 0. Errors exit with status 1 and an
 - **Verification fails:** inspect the reported file or directory. Rerun
   extraction to restore missing files; use `--force` for differing files.
 
-This tool stages UI resources, audio, cutscenes, and original text strings. It does
-not extract SPT/BIN/FDT control data, briefing animation, tactical meshes
-or textures, DAT tables, or EData images. It does not generate the browser
+This tool stages UI resources, audio, cutscenes, original text strings, and
+opt-in raw tactical meshes and textures. It does not decode or runtime-pack the
+tactical resources. It also does not extract SPT/BIN/FDT control data,
+briefing animation, DAT tables, or EData images. It does not generate the browser
 manifest or runtime pack. The repository's
 [WASM build script](../../scripts/build-wasm.sh) consumes `data/base/ui/` for
 browser packaging. See the
 [asset guide](../../agent_docs/assets.md) for the broader pipeline.
+
+## Tactical 3D raw staging
+
+Stage only the original tactical 3D resources without requiring other DLLs,
+soundtrack files, cutscenes, `ffmpeg`, or `ffprobe`:
+
+```sh
+go run ./tools/stage-ui-assets --tactical-3d-only \
+  --source "/path/to/Star Wars - Rebellion" \
+  --output ./data/base/ui
+```
+
+Verify an existing tactical raw store without reading `TACTICAL.DLL`:
+
+```sh
+go run ./tools/stage-ui-assets --tactical-3d-only --verify \
+  --output ./data/base/ui
+```
+
+The output is `tactical-dll/TACTICAL3D/manifest.json` plus
+`TACTICAL3D/objects/{sha256}.bin`. The manifest records resource type, numeric
+or exact named identifier, language, code page, reserved value, size, object
+hash, and source DLL hash. Resource names never become filesystem paths.
+Extraction rejects path separators, control characters, case-folding
+ambiguities, duplicate identifiers, unsupported X headers, unexpected counts,
+and bounded-size violations. Verification rehashes every object and checks the
+expected 87 type-301 and 397 type-303 records.
+
+The source DLL is read once into a bounded snapshot, and that same snapshot is
+hashed and parsed. Tactical traversal applies count, per-resource, and aggregate
+limits before payload copies. Verification requires regular object files and
+uses bounded reads before hashing them.
+
+The raw store remains ignored and must be produced from an owned installation.
+It is not included in the browser runtime pack. Binary X geometry, type-303
+textures/palettes, camera rules, and entity identities require the subsequent
+passes in the [tactical 3D asset plan](../../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 
 ## Development checks
 
@@ -189,7 +233,8 @@ Tests construct synthetic PE files, DIB data, and type-302 frames, so they run
 without proprietary game files. They cover resource traversal, named-ID
 mappings, BMP headers, sparse-frame validation, dimension limits, runtime output
 paths, duplicate-ID rejection, preserving or replacing existing files,
-temporary-file cleanup, and CLI staging with verification.
+temporary-file cleanup, tactical snapshot and size bounds, raw-manifest
+reproducibility and repair, and CLI staging with verification.
 
 ## Audio extraction
 

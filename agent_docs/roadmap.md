@@ -546,6 +546,10 @@ would tune around known simulation feedback defects.
   control, render zoom pressed resources 1045/1047 while held, and verify
   inert matte pixels plus exact zoom round-trip restoration in both factions
   and viewports. Drag/repeat semantics and all 106 tactical cells remain open.
+- [x] Complete P54 reproducible tactical 3D staging: preserve all 87 type-301
+  DirectX meshes and 397 type-303 texture or palette resources from an owned
+  `TACTICAL.DLL` in a validated content-addressed store. Keep the proprietary
+  output ignored. Binary X and type-303 decoding begin in P55.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
   states. Stage and map original type-301/type-303 battle graphics before
