@@ -115,11 +115,15 @@ implementation review.
 
 ## Open boundary
 
-P57B2 is not complete. The general battle-extent/layout calculation, selected
-object `LookAt`, source pivot and scale, palette activation, lighting, texture
+P57B2 is not complete. At this checkpoint the general battle-extent/layout
+calculation and selected-object `LookAt` remained open. P57B2B1 subsequently
+closed the bounded target-control slice, and
+[P57B2B2](2026-09-13-tactical-battle-layout.md) recovered the active-force
+extent and four tactical lanes. Production placement on those lanes, source
+pivot and scale, palette activation, lighting, texture
 filtering, culling, native GPU comparison, lossless A0/A1 views, and production
 fleet/DAT binding remain open. [P57B2B1](2026-09-13-tactical-target-control.md)
-now activates case 9 and the center target control with provisional fixture
-object IDs. Stable production DAT and tactical identity plus world-position
+activates case 9 and the center target control with provisional fixture object
+IDs. Stable production DAT and tactical identity plus world-position
 binding remain open. P57B1's zoom-to-depth bridge remains test-only. No
 `TAC-01` through `TAC-07` cell is accepted by this checkpoint.

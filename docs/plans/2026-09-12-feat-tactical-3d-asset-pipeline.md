@@ -156,15 +156,17 @@ culling remain open, so no tactical cell is accepted.
 
 ### P57. One three-LOD family
 
-Status: in progress. P57A, P57B1, P57B2A, and P57B2B1 are complete. See the
+Status: in progress. P57A, P57B1, P57B2A, P57B2B1, and P57B2B2 are complete. See the
 [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
 [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
 the [P57B2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md),
-and the [P57B2B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md).
+the [P57B2B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md),
+and the [P57B2B2 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-battle-layout.md).
 
-Add `2561` and `2562`, then trace and implement the original LOD selection,
-camera, filtering, culling, and lighting rules. Capture the same fixed views in
-the original executable and Open Rebellion.
+Next bind stable production objects and world positions to the recovered
+tactical lanes, then trace pivot, scale, palette activation, filtering,
+culling, and lighting rules. Capture the same fixed views in the original
+executable and Open Rebellion.
 
 P57A packages all three meshes and both source-bound textures, preserves the
 far mesh's material diffuse color, and implements the original high- and
@@ -178,8 +180,9 @@ planes, four orbit commands, adaptive angular step, pitch bounds, and handedness
 conversion recovered from `FUN_005c1d30`, `FUN_005d9490`, `FUN_005d9640`, and
 the switch at `0x005d97c0`. P57B2B1 activates switch case 9, records the
 selected object identity, models its frame-resolution contract, and paints the
-held 1059 target resource. P57B2 still retains general battle extent/layout, stable
-production identity and world-position binding, source pivot and scale,
+held 1059 target resource. P57B2B2 derives the active-force battle extent and
+four source lanes from `FUN_005ab650`, including docked-fighter exclusion.
+P57B2 still retains production identity and world-position binding, source pivot and scale,
 palette activation, filtering, culling, lighting, original A0/A1 captures,
 native GPU comparison, and simulation-fingerprint proof.
 
@@ -188,7 +191,8 @@ and no simulation fingerprint change. P57A proves the source predicate and
 fixed-view selection matrix. P57B1 proves live cached-slot transitions and no
 resource churn. P57B2A proves its bounded source-camera and bitmap D-pad slice.
 P57B2B1 proves the target control in four focused and 28 complete fresh muted
-browser cases. The full P57 gate remains open.
+browser cases. P57B2B2 proves the source extent/lane calculation in four fresh
+muted browser cases. The full P57 gate remains open.
 
 ### P58. Fleet integration
 

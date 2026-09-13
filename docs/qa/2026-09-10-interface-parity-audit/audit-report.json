@@ -50,8 +50,8 @@
     {"id": "A4", "description": "Memory, inference, recreation, modded media, or unverified derivative", "can_close": []}
   ],
   "summary": {
-    "practical_scope_materially_tackled": "approximately_20_to_23_percent_planning_estimate",
-    "practical_scope_remaining": "approximately_77_to_80_percent_planning_estimate",
+    "practical_scope_materially_tackled": "approximately_20_to_25_percent_planning_estimate",
+    "practical_scope_remaining": "approximately_75_to_80_percent_planning_estimate",
     "required_family_status": "0_complete_9_partial_34_fail",
     "strictly_accepted_required_cells": "0_of_564",
     "current_execution_plan": "docs/plans/2026-09-11-feat-batched-interface-parity-plan.md",
@@ -162,7 +162,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode, one three-LOD family, source-traced faction camera and D-pad, and selected-object target command pass implementation gates, but production fleet rendering, original view acceptance, replacement battle content, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode, one three-LOD family, source-traced faction camera and D-pad, selected-object target command, and active-force extent/lane contract pass implementation gates, but production fleet rendering, original view acceptance, replacement battle content, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -174,7 +174,8 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-battle-layout.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -267,9 +268,11 @@
     "p57a_tactical_3d_lod_family": "evidence/2026-09-13-tactical-3d-lod-family.md",
     "p57b1_tactical_live_lod": "evidence/2026-09-13-tactical-live-lod-journey.md",
     "p57b2a_tactical_camera": "evidence/2026-09-13-tactical-camera-contract.md",
+    "p57b2b1_tactical_target": "evidence/2026-09-13-tactical-target-control.md",
+    "p57b2b2_tactical_layout": "evidence/2026-09-13-tactical-battle-layout.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Continue P57B2 with the general battle-extent and object-layout calculation, stable production target identity and world-position binding, palette activation, lighting, filtering, culling, and lossless A0/A1 comparisons. Then wire source-mapped production entities, selected-unit, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
+  "next_action": "Continue P57B2 by binding stable production object identities and world positions to the recovered tactical lanes, then trace pivot, scale, palette, lighting, filtering, culling, and lossless A0/A1 comparisons. Next wire source-mapped production entities, selected-unit, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
 }

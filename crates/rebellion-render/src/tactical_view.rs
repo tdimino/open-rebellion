@@ -971,10 +971,31 @@ impl TacticalState {
     pub fn enable_original_camera_proof(&mut self, player_is_empire: bool) {
         self.proof_resource_2560 = true;
         self.proof_lod_follows_zoom = false;
-        // The deterministic one-ship-per-side fixture retains the executable's
-        // unmodified 100-unit battle extent.
-        self.proof_renderer
-            .enable_original_camera(player_is_empire, 100.0);
+        let (first_active_objects, second_active_objects) =
+            self.session.as_ref().map_or((0, 0), |session| {
+                let count = |is_attacker| {
+                    session
+                        .ships
+                        .iter()
+                        .filter(|ship| ship.alive && ship.is_attacker == is_attacker)
+                        .count()
+                        + session
+                            .fighters
+                            .iter()
+                            .filter(|fighter| {
+                                fighter.alive
+                                    && fighter.squad_count > 0
+                                    && fighter.is_attacker == is_attacker
+                            })
+                            .count()
+                };
+                (count(true), count(false))
+            });
+        self.proof_renderer.enable_original_camera(
+            player_is_empire,
+            first_active_objects,
+            second_active_objects,
+        );
     }
 
     /// End the current battle — clears session. Returns the session for

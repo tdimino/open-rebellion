@@ -35,6 +35,49 @@ const ORIGINAL_CAMERA_ALLIANCE_YAW: i32 = -30;
 const ORIGINAL_CAMERA_EMPIRE_YAW: i32 = 150;
 const ORIGINAL_CAMERA_INITIAL_STEP: i32 = 5;
 
+const ORIGINAL_BATTLE_BASE_EXTENT: f32 = 100.0;
+const ORIGINAL_BATTLE_OBJECT_INCREMENT: f32 = 3.0;
+const ORIGINAL_BATTLE_OUTER_LANE_SCALE: f32 = 0.5;
+const ORIGINAL_BATTLE_INNER_LANE_OFFSET: f32 = 20.0;
+
+/// Source-coordinate tactical extent and Z lanes recovered from
+/// `FUN_005ab650`. The original expands the base extent once for each rank in
+/// the larger active force, then places the four capital/fighter collections
+/// on paired outer and inner lanes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct OriginalTacticalLayout {
+    first_active_objects: u16,
+    second_active_objects: u16,
+    battle_extent: f32,
+    outer_positive_z: f32,
+    outer_negative_z: f32,
+    inner_negative_z: f32,
+    inner_positive_z: f32,
+}
+
+impl OriginalTacticalLayout {
+    fn from_active_counts(first_active_objects: usize, second_active_objects: usize) -> Self {
+        let first_active_objects = u16::try_from(first_active_objects).unwrap_or(u16::MAX);
+        let second_active_objects = u16::try_from(second_active_objects).unwrap_or(u16::MAX);
+        let widest_force = first_active_objects.max(second_active_objects);
+        let battle_extent = ORIGINAL_BATTLE_OBJECT_INCREMENT
+            .mul_add(f32::from(widest_force), ORIGINAL_BATTLE_BASE_EXTENT);
+        let outer_positive_z = battle_extent * ORIGINAL_BATTLE_OUTER_LANE_SCALE;
+        let outer_negative_z = -outer_positive_z;
+        let inner_negative_z = ORIGINAL_BATTLE_INNER_LANE_OFFSET - outer_positive_z;
+        let inner_positive_z = outer_positive_z - ORIGINAL_BATTLE_INNER_LANE_OFFSET;
+        Self {
+            first_active_objects,
+            second_active_objects,
+            battle_extent,
+            outer_positive_z,
+            outer_negative_z,
+            inner_negative_z,
+            inner_positive_z,
+        }
+    }
+}
+
 /// Source-traced tactical camera state from `FUN_005d9490`, `FUN_005d9620`,
 /// `FUN_005d9640`, `FUN_00595be0`, `FUN_005c1080`, and the command switch at
 /// `0x005d97c0`.
@@ -463,6 +506,8 @@ pub(crate) struct TacticalProofRenderer {
     logged_lod: Option<OriginalTacticalLod>,
     source_camera: Option<OriginalTacticalCamera>,
     logged_camera: Option<[u32; 12]>,
+    source_layout: Option<OriginalTacticalLayout>,
+    logged_layout: Option<OriginalTacticalLayout>,
 }
 
 impl Default for TacticalProofRenderer {
@@ -477,6 +522,8 @@ impl Default for TacticalProofRenderer {
             logged_lod: None,
             source_camera: None,
             logged_camera: None,
+            source_layout: None,
+            logged_layout: None,
         }
     }
 }
@@ -486,9 +533,21 @@ impl TacticalProofRenderer {
         self.view = view;
     }
 
-    pub(crate) fn enable_original_camera(&mut self, player_is_empire: bool, battle_extent: f32) {
-        self.source_camera = Some(OriginalTacticalCamera::new(player_is_empire, battle_extent));
+    pub(crate) fn enable_original_camera(
+        &mut self,
+        player_is_empire: bool,
+        first_active_objects: usize,
+        second_active_objects: usize,
+    ) {
+        let layout =
+            OriginalTacticalLayout::from_active_counts(first_active_objects, second_active_objects);
+        self.source_camera = Some(OriginalTacticalCamera::new(
+            player_is_empire,
+            layout.battle_extent,
+        ));
         self.logged_camera = None;
+        self.source_layout = Some(layout);
+        self.logged_layout = None;
     }
 
     pub(crate) fn zoom_in(&mut self) {
@@ -542,6 +601,22 @@ impl TacticalProofRenderer {
         }
         if self.assets.len() != 3 || self.material.is_none() {
             return;
+        }
+
+        if let Some(layout) = self.source_layout {
+            if self.logged_layout != Some(layout) {
+                macroquad::logging::info!(
+                    "[tactical_3d] layout_source first_active_objects={} second_active_objects={} battle_extent={} outer_positive_z={} outer_negative_z={} inner_negative_z={} inner_positive_z={} source=FUN_005ab650",
+                    layout.first_active_objects,
+                    layout.second_active_objects,
+                    layout.battle_extent,
+                    layout.outer_positive_z,
+                    layout.outer_negative_z,
+                    layout.inner_negative_z,
+                    layout.inner_positive_z,
+                );
+                self.logged_layout = Some(layout);
+            }
         }
 
         let prior_lod = self.current_lod;
@@ -1080,6 +1155,23 @@ mod tests {
         assert_near(alliance.field, 0.2);
         assert_near(alliance.fovy_radians, 2.0 * 0.2_f32.atan());
         assert_near(alliance.up.length(), 1.0);
+    }
+
+    #[test]
+    fn original_layout_expands_extent_and_derives_four_source_lanes() {
+        let balanced = OriginalTacticalLayout::from_active_counts(2, 2);
+        assert_eq!(balanced.first_active_objects, 2);
+        assert_eq!(balanced.second_active_objects, 2);
+        assert_near(balanced.battle_extent, 106.0);
+        assert_near(balanced.outer_positive_z, 53.0);
+        assert_near(balanced.outer_negative_z, -53.0);
+        assert_near(balanced.inner_negative_z, -33.0);
+        assert_near(balanced.inner_positive_z, 33.0);
+
+        let uneven = OriginalTacticalLayout::from_active_counts(7, 3);
+        assert_near(uneven.battle_extent, 121.0);
+        assert_near(uneven.outer_positive_z, 60.5);
+        assert_near(uneven.inner_positive_z, 40.5);
     }
 
     #[test]

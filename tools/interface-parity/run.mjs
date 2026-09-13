@@ -1107,6 +1107,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         text.includes("[tactical_3d] lod_selection"));
       const cameraLogs = consoleLines.filter(({ text }) =>
         text.includes("[tactical_3d] camera_source"));
+      const layoutLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] layout_source"));
       if (scenario.tactical_proof) {
         assert.equal(familyLogs.length, 1,
           "source-bound tactical LOD family did not emit exactly one load event");
@@ -1135,6 +1137,11 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           family_loads: 1,
         });
         if (scenario.camera_journey) {
+          assert.equal(layoutLogs.length, 1,
+            "source camera journey emitted the wrong layout-event count");
+          assert.match(layoutLogs[0]?.text || "",
+            /first_active_objects=2 second_active_objects=2 battle_extent=106 outer_positive_z=53 outer_negative_z=-53 inner_negative_z=-33 inner_positive_z=33 source=FUN_005ab650/,
+            "source camera journey did not use the fixture force composition");
           assert.equal(cameraLogs.length, 8,
             "source camera journey emitted the wrong state count");
           const states = cameraLogs.map(({ text }) => {
@@ -1171,7 +1178,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           assert.ok(Math.abs(states[1].field - 0.18) < 1e-6);
           assert.ok(Math.abs(states[2].field - 0.198) < 1e-6);
           assert.ok(states.every(({ distance, near, far }) =>
-            Math.abs(distance - 170) < 1e-6 && near === 1 && Math.abs(far - 425) < 1e-6));
+            Math.abs(distance - 180.2) < 1e-4 && near === 1 && Math.abs(far - 450.5) < 1e-4));
           const selectedObjectId = faction === "alliance" ? 1 : 2;
           assert.deepEqual(states.map(({ target_object_id }) => target_object_id),
             [0, 0, 0, 0, 0, 0, 0, selectedObjectId]);
@@ -1185,9 +1192,18 @@ async function runScenario(server, executable, scenario, faction, viewport) {
             ],
             states,
           });
+          probes.push({
+            type: "source-traced-tactical-layout",
+            executable_function: "FUN_005ab650",
+            active_objects: { first_force: 2, second_force: 2 },
+            battle_extent: 106,
+            z_lanes: [53, -53, -33, 33],
+          });
         } else {
           assert.equal(cameraLogs.length, 0,
             "non-camera tactical proof unexpectedly enabled the source camera");
+          assert.equal(layoutLogs.length, 0,
+            "non-camera tactical proof unexpectedly enabled the source layout");
         }
       } else {
         assert.equal(familyLogs.length, 0, "negative control loaded the tactical LOD family");

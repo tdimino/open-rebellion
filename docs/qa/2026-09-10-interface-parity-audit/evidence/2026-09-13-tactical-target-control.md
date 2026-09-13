@@ -67,7 +67,9 @@ The fixture's object numbers are deterministic render-order identities, not a
 completed DAT-to-tactical-object join. The isolated proof target is the origin
 because its one source mesh is positioned there. P58 must bind stable
 production entity identity and source-derived world positions before this can
-prove production 3D selection focus. General force layout, pivot and scale,
-palette activation, lighting, filtering, culling, native GPU and lossless A0
+prove production 3D selection focus. [P57B2B2](2026-09-13-tactical-battle-layout.md)
+subsequently recovers the active-force extent and four tactical lanes, while
+production placement on them remains open. Pivot and scale, palette
+activation, lighting, filtering, culling, native GPU and lossless A0
 comparison, complete HUD content, results, effects, audio, and return routing
 also remain open. No `TAC-*` cell is accepted by this checkpoint.

@@ -65,7 +65,7 @@ coverage is incomplete and tracked in the
 - **AI is omniscient** — no fog-of-war check in FUN_00519d00 (galaxy evaluation)
 - **Turn processing**: FUN_004927c0 (9K lines) is the master tick function — research dispatch, fleet orders, manufacturing, event processing
 
-## Ghidra Scripts (14 tracked Jython scripts)
+## Ghidra Scripts (targeted Python and Java scripts)
 
 | Script | Purpose |
 |--------|---------|
@@ -77,14 +77,16 @@ coverage is incomplete and tracked in the
 | `DumpCombatRegion.py` | Function listing in combat address range |
 | `FindCombatMath.py` | Pattern search for combat math operations |
 | `DumpGNPRTBXrefs.py` | GNPRTB parameter → function tracer |
-| `DecompileTargets.py` | Decompile an explicit address list without a broad export |
-| `DumpScalars.py` | Emit typed scalar values at explicit addresses |
+| `DecompileTargets.py` | Decompile an explicit address list with PyGhidra/Jython-enabled installs |
+| `DecompileTargets.java` | Run the same bounded decompilation in standard Ghidra 12 headless installs |
+| `DumpScalars.py` | Emit typed scalar values at explicit addresses with PyGhidra/Jython-enabled installs |
+| `DumpScalars.java` | Emit the same scalar values in standard Ghidra 12 headless installs |
 | `DumpReferences.py` | Emit references to explicit functions or data addresses |
 | `DumpInstructions.py` | Emit bounded instruction listings around a target address |
 | `ListFunctionsRange.py` | List functions in one bounded address range |
 | `DumpPointerTable.py` | Decode a bounded pointer table with referenced symbols |
 
-These six targeted probes support reproducible interface work without checking
+These targeted probes support reproducible interface work without checking
 in the saved Ghidra database or generated decompilation corpus. Other local
 scratch scripts remain ignored until separately reviewed.
 

@@ -82,6 +82,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P57B2B1 target evidence](evidence/2026-09-13-tactical-target-control.md)
   for the source-selected object/frame path, normal and held bitmap control,
   fallback centering, and the stable production identity boundary.
+- Review the [P57B2B2 layout evidence](evidence/2026-09-13-tactical-battle-layout.md)
+  for the active-force extent, docked-fighter exclusion, four tactical lanes,
+  muted browser proof, and the remaining production-placement boundary.
 
 ## Suggested contribution lanes
 
@@ -111,8 +114,8 @@ Required interface families: 43. Complete: 0. Partial: 9. Failing: 34. Blocked: 
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
-The practical implementation estimate is approximately 20 to 23% tackled and
-77 to 80% remaining. Formally, the ledger has 43 required families: 0 complete,
+The practical implementation estimate is approximately 20 to 25% tackled and
+75 to 80% remaining. Formally, the ledger has 43 required families: 0 complete,
 9 partial, and 34 failing. All 564 required cells remain pending until their
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.

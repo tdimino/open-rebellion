@@ -18,8 +18,8 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 20 to 23% |
-| Practical interface scope remaining | approximately 77 to 80% |
+| Practical interface scope materially tackled | approximately 20 to 25% |
+| Practical interface scope remaining | approximately 75 to 80% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -84,6 +84,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P57B1 tactical live LOD evidence](evidence/2026-09-13-tactical-live-lod-journey.md) | Source-traced cached-slot cycle, live close-medium-far-medium-close browser journey, one-load proof, and explicit P57B2 limits. |
 | [P57B2A tactical camera evidence](evidence/2026-09-13-tactical-camera-contract.md) | Exact faction pose, field zoom, clip planes, handedness conversion, working bitmap D-pad states, and explicit production/A0 limits. |
 | [P57B2B1 tactical target evidence](evidence/2026-09-13-tactical-target-control.md) | Source-recovered selected-object and retained-frame route, working bitmap target states, fallback centering, and explicit production-ID/A0 limits. |
+| [P57B2B2 tactical layout evidence](evidence/2026-09-13-tactical-battle-layout.md) | Source-recovered active-force extent, docked-fighter exclusion, four tactical lanes, browser proof, and explicit production-placement/A0 limits. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -183,6 +184,10 @@ the production two-dimensional fallback. Its
 [evidence](evidence/2026-09-13-tactical-target-control.md) keeps stable DAT and
 tactical identity binding, source world positions, A0 comparison, and every
 tactical cell open.
+P57B2B2 then recovers `FUN_005ab650`'s active-force object count, extent, and
+four tactical lanes, including docked-fighter exclusion. Its
+[evidence](evidence/2026-09-13-tactical-battle-layout.md) keeps production
+identity and placement, A0 comparison, and every tactical cell open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

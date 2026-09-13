@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "reviewer": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "scope": "saved browser and computer-use evidence only; no source review or edits",
+  "run_id": "2026-09-13T17-55-23-930Z-75640",
+  "command": "node tools/interface-parity/run.mjs --battle --all --scenario=camera-journey --no-build",
+  "inspected_screenshots": 8,
+  "passed": 4,
+  "failed": 0,
+  "http": {
+    "requests": 16,
+    "http_200": 16,
+    "four_request_startups": 4,
+    "non_200": 0
+  },
+  "errors": {
+    "browser": 0,
+    "console": 0,
+    "network": 0,
+    "missing_asset": 0,
+    "runtime": 0
+  },
+  "mute": {
+    "muted_browser_launches": 4,
+    "runtime_muted_confirmations": 4,
+    "unmuted": 0
+  },
+  "cleanup": {
+    "browser_processes_closed": 4,
+    "scenario_cleanup_closed": 4,
+    "harness_exited": true
+  },
+  "observations": [
+    "The authentic tactical shell remains intact for both factions.",
+    "The source mesh remains visible and correctly framed after the extent change.",
+    "The target-held bitmap feedback remains visible.",
+    "The letterboxed viewports preserve proportions without clipping.",
+    "All browser diagnostics are clean and every run remained muted."
+  ],
+  "findings": [],
+  "browser_acceptance": {
+    "status": "provisional_pass",
+    "evidence_level": "A1",
+    "tac_cells_accepted": []
+  },
+  "limitations": [
+    "No lossless original-game A0 baseline exists for these views.",
+    "The target marker overlaps the small proof mesh in held captures.",
+    "Production object placement and stable DAT-to-tactical identity remain open.",
+    "No TAC acceptance cell is closed."
+  ]
+}

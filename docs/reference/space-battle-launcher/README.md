@@ -62,12 +62,14 @@ and closes every process. Raw runs live under ignored
 - P57B2B1 activates switch case 9 and the center target resources 1058/1059.
   It centers the selected two-dimensional fallback ship and records the
   isolated proof's selected object before its retained-frame `LookAt`.
+- P57B2B2 recovers `FUN_005ab650`'s active-object extent and four lane
+  calculations, including its exclusion of docked fighter groups.
 - The complete bundle passes 28 of 28 muted browser cases across both factions
   and both viewports with one family load and no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
-bridge is test-only. General battle layout, stable production object identity
-and world-position binding, source pivots and scale, palette activation,
+bridge is test-only. Production placement on the recovered lanes, stable
+production object identity and world-position binding, source pivots and scale, palette activation,
 lighting, filtering, culling, native GPU and A0/A1 comparison, remaining commands, damage,
 effects, Death Star paths, results, audio, and return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
@@ -76,6 +78,7 @@ effects, Death Star paths, results, audio, and return routing remain open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P57B2B2 active-force layout evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-battle-layout.md)
 - [P57B2B1 selected-object target evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md)
 - [P57B2A camera and D-pad evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md)
 - [P57B1 live LOD evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md)

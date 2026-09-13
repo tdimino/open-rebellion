@@ -27,7 +27,7 @@ mixing, or genuine two-peer ordering.
 | 1 | `FUN_005c14d0`; root vtable `0x0066c960`; subordinate vtables `0x0066ca10`, `0x0066c9f8`, `0x0066c9f0`, `0x0066c9e8`, `0x0066c9d8`, `0x0066c9d0`, `0x0066c9c0`, `0x0066c9b8`, `0x0066c9b0`, `0x0066c9a0`, `0x0066c998`, `0x0066c990`; TEXTTACT cross-references | Code-built controls, geometry, visibility/enabled predicates, pause/wait/observe overlays, modals, and actions across `TAC-01`, `TAC-02`, `TAC-03`, `TAC-05`, and `TAC-06` |
 | 2 | `FUN_005a7500`; vtables `0x0066c2d0`, `0x0066bdd0`, `0x0066bdb8`, `0x0066c390`, `0x0066c380`, `0x0066c370`; registered event slots | Concrete handlers for groups, targets, missions, formations, navigation, damage, recovery, retreat, pause, results, and Death Star events |
 | 3 | `FUN_00597610_ship_db`; vtables `0x0066bae8`, `0x0066baf0`, `0x0066bae4`; `+0x24` implementors consumed by `FUN_005ab650`; `CAPSHPSD.DAT`; `FIGHTSD.DAT` | Definitive ship/fighter ordinal-to-DAT identity and removal of the approximate `class_to_sprite_id` path |
-| 4 | `FUN_005ab650`, `FUN_005a9030`, `FUN_005adfa0`, `FUN_005c1100`, `FUN_005c12a0`, `FUN_00595be0`, `FUN_005c1080`, `FUN_005d9640`; preserve `SYSTEMSD.picture_id` | Force-dependent extent, placement, fighter groups, bounds, planet selection, resource family, pivot/scale, production camera distance, and stable selected-object frame binding |
+| 4 | `FUN_005ab650`, `FUN_005a9030`, `FUN_005adfa0`, `FUN_005c1100`, `FUN_005c12a0`, `FUN_00595be0`, `FUN_005c1080`, `FUN_005d9640`; preserve `SYSTEMSD.picture_id` | Production placement on the recovered force-dependent extent and lanes, fighter groups, bounds, planet selection, resource family, pivot/scale, production camera distance, and stable selected-object frame binding |
 | 5 | `TACTICALRESULT_UPDATE`; callers and setters around `FUN_0040a700` states `7`–`9` and `0x15`–`0x17`; `FUN_005445d0_combat_result`; Battle Alert and Death Star callbacks | Results composition, simulate/observe flow, reports, media routing, and strategic return |
 | 6 | `FUN_005bae60`; vtable `0x0066c748`; audio-manager callers; TACTICAL WAVE `13000`–`13065`; TEXTTACT `MDATA.401`–`MDATA.406` | Event-to-SFX/voice mapping, faction variants, and the missing tactical-audio staging path |
 | 7 | `FUN_00596ad0`, `FUN_005c2e60`, `FUN_005d9eb0`, `FUN_005da150`, `FUN_005d59e0`; retained-mode COM slots | Palette realization, back plane, quality, filtering, culling, material, and lighting rules |
@@ -58,6 +58,11 @@ mixing, or genuine two-peer ordering.
   `FUN_005c1080`, reads the object's frame, and supplies it to `LookAt`.
   P57B2B1 implements this contract with provisional fixture IDs; the stable
   production DAT and tactical identity join remains open.
+- `FUN_005ab650` begins with extent 100, counts active capital ships and
+  non-docked fighter groups per force, adds three units for the larger force,
+  and derives lanes at `+extent/2`, `-extent/2`, `20 - extent/2`, and
+  `extent/2 - 20`. P57B2B2 implements and browser-checks that calculation;
+  binding production objects to those lanes remains open.
 
 ## A0-only boundary
 

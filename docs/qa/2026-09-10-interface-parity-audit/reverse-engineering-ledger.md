@@ -150,7 +150,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, faction camera, field zoom, handedness conversion, D-pad, and selected-object target command source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through layout, stable DAT and tactical identity binding, palette, render state, A0 comparison, and production selection |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, faction camera, field zoom, handedness conversion, D-pad, selected-object target command, and active-force extent/lanes source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through production placement, stable DAT and tactical identity binding, palette, render state, A0 comparison, and production selection |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -190,9 +190,12 @@ pose, field zoom, clip, orbit, pitch, and target-command state. Its
 camera fixture and four bitmap D-pad directions. P57B2B1 recovers switch case
 9 through `FUN_00595be0` and `FUN_005c1080`, activates resources 1058/1059,
 and proves its selected-object record and fallback centering; see its
-[evidence](evidence/2026-09-13-tactical-target-control.md). DAT identity,
-general battle layout, stable production target position, palette activation, filtering, culling, lighting,
-production binding, and original visual acceptance remain open.
+[evidence](evidence/2026-09-13-tactical-target-control.md). P57B2B2 recovers
+`FUN_005ab650`'s active-object count, docked-fighter exclusion, battle extent,
+and four tactical lanes; see its
+[evidence](evidence/2026-09-13-tactical-battle-layout.md). DAT identity,
+production placement and target position, palette activation, filtering,
+culling, lighting, production binding, and original visual acceptance remain open.
 
 ## Immediate implementation order
 

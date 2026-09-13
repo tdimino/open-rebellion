@@ -13,8 +13,8 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 
 | Measure | Current position |
 |---|---:|
-| Practical interface scope materially tackled | approximately 20 to 23% |
-| Practical interface scope remaining | approximately 77 to 80% |
+| Practical interface scope materially tackled | approximately 20 to 25% |
+| Practical interface scope remaining | approximately 75 to 80% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -93,7 +93,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; original 3D assets staged and decoded; one three-LOD family has source selection, live cached switching, a source-traced faction camera/D-pad proof, and selected-object target routing; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md), [P57B2A evidence](evidence/2026-09-13-tactical-camera-contract.md), and [P57B2B1 evidence](evidence/2026-09-13-tactical-target-control.md) |
+| First original tactical shell and control states; original 3D assets staged and decoded; one three-LOD family has source selection, live cached switching, a source-traced faction camera/D-pad proof, selected-object target routing, and the active-force extent/lane contract; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md), [P57B2A evidence](evidence/2026-09-13-tactical-camera-contract.md), [P57B2B1 evidence](evidence/2026-09-13-tactical-target-control.md), and [P57B2B2 evidence](evidence/2026-09-13-tactical-battle-layout.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -114,8 +114,9 @@ P57A renders the first complete family and recovers its LOD predicate. P57B1
 proves live cached-slot switching without a second family load. P57B2A recovers
 the initial faction cameras, field zoom, clip planes, four D-pad commands, and
 handedness conversion. P57B2B1 activates the source target-control states and
-selected-object frame contract. Entity joins, remaining render rules, general
-battle layout, stable production target binding, and A0/A1 acceptance remain open.
+selected-object frame contract. P57B2B2 recovers the active-force extent and
+four tactical lanes. Entity joins, production placement, remaining render
+rules, stable production target binding, and A0/A1 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,

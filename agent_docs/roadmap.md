@@ -581,10 +581,16 @@ would tune around known simulation feedback defects.
   1058/1059, center the selected production fallback ship, and pass the
   focused four-case and complete 28-case muted browser gates. Keep the fixture
   object IDs provisional until P58 joins stable DAT and tactical identities.
+- [x] Complete P57B2B2 active-force layout proof: recover the original
+  `100 + 3 * max(force object count)` battle extent, exclude docked fighter
+  groups, derive the four source lanes, and verify both factions and viewports
+  in four fresh muted browser journeys. Keep production object placement and
+  every strict tactical cell open pending stable identity and A0 evidence.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B2B next recovers general layout and the remaining render rules
-  before P58 replaces procedural ships, fighters, planets, and effects.
+  states. P57B2B next binds the recovered lanes to production object identity
+  and world positions, then traces the remaining render rules before P58
+  replaces procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
