@@ -99,20 +99,33 @@ the default UI extraction contract.
 
 ### P55. Deterministic converter and mesh pack
 
-Status: next.
+Status: complete. See the
+[P55 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md).
 
 Parse the original binary X templates, decode type-303 textures and palettes,
 emit deterministic geometry, and partition meshes that exceed macroquad's
 `u16` index range. MSZIP support is optional compatibility for editor-derived
 X files, not part of the original-DLL path. Use
-a pinned Assimp conversion as an independent oracle, not as a browser runtime
-dependency. Treat resource `2022` as an explicit outlier fixture.
+a pinned Assimp 6.0.5 raw import as an independent oracle, not as a browser
+runtime dependency. Resource `2082` is the one original mesh without source
+normals; its identity and hash exclusively authorize derived face normals.
+
+The converter emits 87 mesh objects and 397 texture objects. It preserves 370
+indexed images rather than baking one guessed palette: 27 planet resources bind
+their proven paired palettes, while 343 ship, fighter, and effect resources
+retain the original active-battle-palette requirement for P56. All 59 embedded
+texture filenames resolve uniquely to same-language named type-303 resources.
+The optional pinned-Assimp gate compares triangle connectivity, transformed
+positions and normals, transformed UVs, material values, and texture names for
+every original mesh.
 
 Gate: decoded hashes, finite coordinates, valid topology and indices, UV and
 material references, normals, bounds, repeatable bytes, and parser differential
 tests against the pinned oracle.
 
 ### P56. Single-resource browser proof
+
+Status: next.
 
 Render raw resource `2560` with embedded `sdesti52.bmp`, resolved and recorded
 against original named resource `SDESTI52.BMP`, inside the

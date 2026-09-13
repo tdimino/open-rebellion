@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,5 +36,49 @@ func TestRunCLIStagesAndVerifiesConfiguredTargets(t *testing.T) {
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte("Verified 1 UI resources")) {
 		t.Errorf("stdout = %q, want verification summary", stdout.String())
+	}
+}
+
+func TestRunCLITactical3DConvertMode(t *testing.T) {
+	outputDir := t.TempDir()
+	writeSyntheticTacticalRawStore(t, outputDir)
+	var stdout, stderr bytes.Buffer
+	if err := runCLIWithMedia(
+		[]string{"--tactical-3d-convert", "--output", outputDir},
+		&stdout,
+		&stderr,
+		nil,
+		nil,
+		nil,
+	); err != nil {
+		t.Fatalf("convert CLI error = %v; stderr = %s", err, stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Verified tactical runtime pack")) {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	stdout.Reset()
+	if err := runCLIWithMedia(
+		[]string{"--tactical-3d-convert", "--verify", "--output", outputDir},
+		&stdout,
+		&stderr,
+		nil,
+		nil,
+		nil,
+	); err != nil {
+		t.Fatalf("verify CLI error = %v; stderr = %s", err, stderr.String())
+	}
+}
+
+func TestRunCLIRejectsMultipleTacticalModes(t *testing.T) {
+	err := runCLIWithMedia(
+		[]string{"--tactical-3d-only", "--tactical-3d-convert"},
+		io.Discard,
+		io.Discard,
+		nil,
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("multiple tactical modes were accepted")
 	}
 }

@@ -24,14 +24,33 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	verifyOnly := flags.Bool("verify", false, "verify staged assets without reading source files")
 	tactical3D := flags.Bool("tactical-3d", false, "also stage and verify original type-301/type-303 tactical resources")
 	tactical3DOnly := flags.Bool("tactical-3d-only", false, "stage or verify only original type-301/type-303 tactical resources")
+	tactical3DConvert := flags.Bool("tactical-3d-convert", false, "convert or verify the staged tactical resources")
+	tactical3DAssimpOracle := flags.String("tactical-3d-assimp-oracle", "", "verify staged tactical meshes against this Assimp executable")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %v", flags.Args())
 	}
-	if *tactical3D && *tactical3DOnly {
-		return fmt.Errorf("--tactical-3d and --tactical-3d-only are mutually exclusive")
+	selectedTacticalModes := 0
+	for _, selected := range []bool{*tactical3D, *tactical3DOnly, *tactical3DConvert, *tactical3DAssimpOracle != ""} {
+		if selected {
+			selectedTacticalModes++
+		}
+	}
+	if selectedTacticalModes > 1 {
+		return fmt.Errorf("--tactical-3d, --tactical-3d-only, --tactical-3d-convert, and --tactical-3d-assimp-oracle are mutually exclusive")
+	}
+	if *tactical3DAssimpOracle != "" {
+		return verifyTactical3DWithAssimp(*outputDir, *tactical3DAssimpOracle, stdout)
+	}
+	if *tactical3DConvert {
+		if !*verifyOnly {
+			if _, err := stageTactical3DRuntime(*outputDir, *force, stdout); err != nil {
+				return err
+			}
+		}
+		return verifyTactical3DRuntime(*outputDir, stdout)
 	}
 	if *tactical3DOnly {
 		if !*verifyOnly {

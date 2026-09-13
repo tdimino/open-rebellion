@@ -62,6 +62,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P54 tactical 3D staging evidence](evidence/2026-09-12-tactical-3d-staging.md)
   for the complete raw type-301/type-303 inventory, deterministic extraction,
   source hashes, and the P55 decoding boundary.
+- Review the [P55 tactical 3D runtime-pack evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md)
+  for complete binary-X and type-303 decoding, palette rules, deterministic
+  objects, and the independent Assimp oracle. Rendering begins in P56.
 
 ## Suggested contribution lanes
 

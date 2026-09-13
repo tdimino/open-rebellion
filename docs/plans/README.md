@@ -18,9 +18,10 @@ resource inventory and the original-mapping proof queue.
 
 The [Tactical 3D Asset Pipeline](2026-09-12-feat-tactical-3d-asset-pipeline.md)
 is the active battle-rendering companion. P54 reproducibly stages every
-original DirectX mesh and type-303 texture or palette resource. P55 converts
-them into a deterministic runtime pack. Modern replacement models remain in a
-separate experimental profile.
+original DirectX mesh and type-303 texture or palette resource. P55 now
+converts and independently verifies the complete corpus as a deterministic
+runtime store. P56 is the first native and muted-browser render proof. Modern
+replacement models remain in a separate experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The
 [interface parity audit](../qa/2026-09-10-interface-parity-audit/) remains the

@@ -78,6 +78,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P52 tactical shell and controls evidence](evidence/2026-09-12-tactical-shell-controls.md) | Original 640×480 shell, first working bitmap controls, exact source-pixel probes, and explicit tactical gaps. |
 | [P53 tactical control-state evidence](evidence/2026-09-12-tactical-control-hit-states.md) | Original palette-key hit masks, zoom pressed/resting resources, round-trip browser proof, and explicit limits. |
 | [P54 tactical 3D staging evidence](evidence/2026-09-12-tactical-3d-staging.md) | Complete raw type-301/type-303 inventory, content-addressed extraction, source hashes, and explicit non-rendering limits. |
+| [P55 tactical 3D runtime-pack evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md) | Complete binary-X and type-303 decoding, deterministic mesh/texture objects, palette routing, source-bound exceptions, and Assimp oracle results. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
 | [Reference captures](reference-captures/) | Locally retained manual pages and classified original-game screenshots. |
@@ -150,6 +151,11 @@ repeat, camera, battle-content, A0, and complete tactical acceptance open.
 P54 adds dependency-free, content-addressed raw staging for all 87 original
 type-301 meshes and 397 type-303 texture or palette resources. Its
 [evidence](evidence/2026-09-12-tactical-3d-staging.md) keeps decoding, runtime
+transport, semantic mapping, rendering, and every tactical cell open.
+P55 decodes the complete corpus into 87 mesh and 397 texture objects and checks
+all original mesh topology, bounds, materials, and texture names against
+Assimp 6.0.5 raw import. Its
+[evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md) keeps browser
 transport, semantic mapping, rendering, and every tactical cell open.
 Runtime pack v2 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,

@@ -262,9 +262,17 @@ go run ./tools/stage-ui-assets --tactical-3d-only
 go run ./tools/stage-ui-assets --tactical-3d-only --verify
 ```
 
+Convert or verify that raw store separately:
+
+```bash
+go run ./tools/stage-ui-assets --tactical-3d-convert
+go run ./tools/stage-ui-assets --tactical-3d-convert --verify
+```
+
 The ignored `data/base/ui/tactical-dll/TACTICAL3D/` store retains exact PE
-identifiers and hashes without using named resources as paths. These raw assets
-are not yet decoded or included in `runtime.orpk`; follow the
+identifiers and hashes without using named resources as paths. P55 decodes all
+87 meshes, 370 indexed images, and 27 palettes into the ignored `runtime/`
+subtree. These assets are not yet included in `runtime.orpk`; follow the
 [tactical 3D asset plan](../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 
 **Batch upscale command** (Vertex, all non-portrait packs):

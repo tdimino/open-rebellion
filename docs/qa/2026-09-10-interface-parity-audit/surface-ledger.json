@@ -4287,7 +4287,7 @@
         149,
         150
       ],
-      "current_implementation": "The original 640x480 TACTICAL 1000 shell, faction group headers, selected-unit panel frame, pause, highlight, zoom, and camera-control art replace the active combat replacement panels. Pause, highlights, and zoom work through native-coordinate source-bitmap hit masks; zoom renders its original held pressed states. P54 reproducibly stages every raw type-301 mesh and type-303 texture or palette resource, but none is decoded or rendered yet. Procedural battle contents, incomplete panel data and commands, Battle Alert, results, audio, and rare states keep every TAC-01 cell pending.",
+      "current_implementation": "The original 640x480 TACTICAL 1000 shell, faction group headers, selected-unit panel frame, pause, highlight, zoom, and camera-control art replace the active combat replacement panels. Pause, highlights, and zoom work through native-coordinate source-bitmap hit masks; zoom renders its original held pressed states. P54 stages and P55 deterministically decodes every type-301 mesh and type-303 texture or palette resource, but none is transported to or rendered by the browser yet. Procedural battle contents, incomplete panel data and commands, Battle Alert, results, audio, and rare states keep every TAC-01 cell pending.",
       "finding_ids": [
         "UIP-F-009"
       ],
@@ -4411,7 +4411,7 @@
         143,
         144
       ],
-      "current_implementation": "P54 reproducibly stages the complete raw type-301/type-303 corpus, but decoding, runtime transport, semantic ship and fighter joins, complete slots, states, geometry, and faction coverage remain unproven.",
+      "current_implementation": "P54 reproducibly stages and P55 deterministically decodes the complete type-301/type-303 corpus. Browser transport, semantic ship and fighter joins, complete slots, states, rendered geometry, and faction coverage remain unproven.",
       "finding_ids": [
         "UIP-F-009"
       ],
@@ -4542,7 +4542,7 @@
         145,
         146
       ],
-      "current_implementation": "A custom right SidePanel still provides partial art. P54 stages the raw original mesh and texture corpus, but no selected-unit mesh or texture is decoded or rendered.",
+      "current_implementation": "A custom right SidePanel still provides partial art. P54 stages and P55 decodes the original mesh and texture corpus, but no selected-unit mesh or texture is transported to or rendered by the browser.",
       "finding_ids": [
         "UIP-F-009",
         "UIP-F-012"

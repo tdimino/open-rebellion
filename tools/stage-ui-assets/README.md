@@ -175,8 +175,9 @@ Successful runs and help exit with status 0. Errors exit with status 1 and an
   extraction to restore missing files; use `--force` for differing files.
 
 This tool stages UI resources, audio, cutscenes, original text strings, and
-opt-in raw tactical meshes and textures. It does not decode or runtime-pack the
-tactical resources. It also does not extract SPT/BIN/FDT control data,
+opt-in raw tactical meshes and textures. Its separate tactical converter
+decodes staged binary-X geometry and type-303 indexed images and palettes into
+a deterministic content-addressed runtime store. It does not extract SPT/BIN/FDT control data,
 briefing animation, DAT tables, or EData images. It does not generate the browser
 manifest or runtime pack. The repository's
 [WASM build script](../../scripts/build-wasm.sh) consumes `data/base/ui/` for
@@ -215,10 +216,41 @@ hashed and parsed. Tactical traversal applies count, per-resource, and aggregate
 limits before payload copies. Verification requires regular object files and
 uses bounded reads before hashing them.
 
-The raw store remains ignored and must be produced from an owned installation.
-It is not included in the browser runtime pack. Binary X geometry, type-303
-textures/palettes, camera rules, and entity identities require the subsequent
-passes in the [tactical 3D asset plan](../../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
+Convert a verified raw store without rereading `TACTICAL.DLL`:
+
+```sh
+go run ./tools/stage-ui-assets --tactical-3d-convert \
+  --output ./data/base/ui
+```
+
+Verify an existing converted store without reading its raw source objects:
+
+```sh
+go run ./tools/stage-ui-assets --tactical-3d-convert --verify \
+  --output ./data/base/ui
+```
+
+Independently compare every owned original mesh with pinned Assimp 6.0.5 raw
+output, including connectivity, positions, normals, UVs, materials, texture
+names, and the explicit handedness and UV-origin transforms:
+
+```sh
+go run ./tools/stage-ui-assets \
+  --tactical-3d-assimp-oracle /path/to/assimp-6.0.5/bin/assimp \
+  --output ./data/base/ui
+```
+
+The oracle mode is a development gate, requires the audited original
+`TACTICAL.DLL`, and never becomes a runtime dependency.
+
+The converted output is `TACTICAL3D/runtime/manifest.json` plus hashed `.mesh`
+and `.texture` objects. It retains source and object hashes, material and named
+texture links, original indexed pixels, the dynamic battle-palette rule, all
+27 planet palettes, and bounded source-specific exceptions. Both raw and
+converted stores remain ignored and must originate from an owned installation.
+Neither is included in the browser runtime pack yet. Browser transport,
+camera rules, and semantic entity identities remain in the subsequent passes
+of the [tactical 3D asset plan](../../docs/plans/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 
 ## Development checks
 

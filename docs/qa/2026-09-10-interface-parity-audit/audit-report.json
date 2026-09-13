@@ -162,13 +162,14 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell and first bitmap control-state checkpoints pass and all raw type-301/type-303 resources stage reproducibly, but decoding, rendering, procedural battle replacement, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell and first bitmap control-state checkpoints pass and all type-301/type-303 resources stage and decode reproducibly, but browser transport, rendering, procedural battle replacement, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-shell-controls.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-staging.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -256,9 +257,10 @@
     "p47a_authored_galaxy_backdrop": "evidence/2026-09-11-authored-galaxy-backdrop.md",
     "p47b_popular_support_gid": "evidence/2026-09-11-popular-support-gid.md",
     "p54_tactical_3d_staging": "evidence/2026-09-12-tactical-3d-staging.md",
+    "p55_tactical_3d_runtime_pack": "evidence/2026-09-12-tactical-3d-runtime-pack.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Execute P55 by decoding the staged original binary X and type-303 resources into a deterministic runtime mesh pack. Then run the P56 single-resource native and muted Astra medium browser proof before wiring source-mapped selected-unit, camera, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
+  "next_action": "Execute P56 by packaging and rendering original resource 2560 with its SDESTI52.BMP texture in native and fresh muted browser sessions. Use Astra medium for the browser evidence review before wiring source-mapped selected-unit, camera, task-force, and fighter-group controls. Keep all 106 tactical acceptance cells open until their complete evidence matrices pass."
 }

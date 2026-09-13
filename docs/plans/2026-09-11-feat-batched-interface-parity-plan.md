@@ -80,7 +80,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md), [tactical 3D asset plan](2026-09-12-feat-tactical-3d-asset-pipeline.md), and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P55 tactical decoding; UIP-B06 continues
+## Current execution focus: P56 tactical render proof; UIP-B06 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -162,6 +162,13 @@ muted harness proves transparent internal pixels are inert and zoom-in followed
 by zoom-out restores the exact paused screen. Drag, repeat, camera, original
 battle objects, and every tactical acceptance cell remain open. See the
 [P53 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md).
+
+P54 stages every original type-301 and type-303 tactical resource without
+tracking proprietary output. P55 converts all 87 meshes, 370 indexed images,
+and 27 palettes into deterministic runtime objects and checks the mesh corpus
+against Assimp 6.0.5 raw import. P56 next packages and renders resource `2560`
+with its source-linked texture. See the
+[P55 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-3d-runtime-pack.md).
 
 ## Bundle acceptance record
 

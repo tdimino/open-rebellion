@@ -442,8 +442,8 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL", "tools/stage-ui-assets"],
-        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. Continue tracing control constructors, binary X and type-303 decoding, paint handlers, entity joins, selection states, availability predicates, camera rules, and LOD commands.",
-        "next_proof": "Complete deterministic binary X and type-303 decoding, prove resource 2560 with SDESTI52.BMP in native and browser rendering, then finish both faction HUDs and every tactical control and content state."
+        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. P55 decodes the complete corpus into deterministic runtime objects and verifies mesh topology, bounds, materials, and texture names against Assimp 6.0.5 raw import. Continue tracing control constructors, paint handlers, entity joins, selection states, availability predicates, camera rules, and LOD commands.",
+        "next_proof": "Prove resource 2560 with SDESTI52.BMP in native and muted browser rendering, then finish both faction HUDs and every tactical control and content state."
       },
       "runtime_capture_required": true
     },

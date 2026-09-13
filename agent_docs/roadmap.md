@@ -550,6 +550,10 @@ would tune around known simulation feedback defects.
   DirectX meshes and 397 type-303 texture or palette resources from an owned
   `TACTICAL.DLL` in a validated content-addressed store. Keep the proprietary
   output ignored. Binary X and type-303 decoding begin in P55.
+- [x] Complete P55 deterministic tactical conversion: decode all 87 binary-X
+  meshes, 370 indexed images, and 27 palettes into a verified content-addressed
+  runtime store. Confirm topology, bounds, materials, and 59 texture links
+  against Assimp 6.0.5 raw import. Keep proprietary output ignored.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
   states. Stage and map original type-301/type-303 battle graphics before
