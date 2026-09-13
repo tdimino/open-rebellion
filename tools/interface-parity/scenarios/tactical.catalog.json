@@ -14,6 +14,7 @@
       "description": "Deterministic opposing one-ship, one-squadron encounter through the production tactical entry function",
       "fixture_codes": { "alliance": 65793, "empire": 66049 },
       "tactical_proof": true,
+      "expected_lod_resource": 2560,
       "expected_status": "battle-ready",
       "audit_cells": [],
       "acceptance": "Functional entry fixture only. No original tactical interface cell is accepted."
@@ -26,6 +27,36 @@
       "expected_status": "battle-ready",
       "audit_cells": [],
       "acceptance": "Test-only negative control. No original tactical interface cell is accepted."
+    },
+    {
+      "slug": "lod-close",
+      "description": "Source-derived close LOD fixture below the original 15-unit scaled-depth threshold",
+      "fixture_codes": { "alliance": 65795, "empire": 66051 },
+      "tactical_proof": true,
+      "expected_lod_resource": 2560,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable-rule implementation proof only. No original tactical interface cell is accepted."
+    },
+    {
+      "slug": "lod-medium",
+      "description": "Source-derived medium LOD fixture between the original 15-unit and 40-unit scaled-depth thresholds",
+      "fixture_codes": { "alliance": 65796, "empire": 66052 },
+      "tactical_proof": true,
+      "expected_lod_resource": 2561,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable-rule implementation proof only. No original tactical interface cell is accepted."
+    },
+    {
+      "slug": "lod-far",
+      "description": "Source-derived far LOD fixture above the original 40-unit scaled-depth threshold",
+      "fixture_codes": { "alliance": 65797, "empire": 66053 },
+      "tactical_proof": true,
+      "expected_lod_resource": 2562,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable-rule implementation proof only. No original tactical interface cell is accepted."
     }
   ]
 }

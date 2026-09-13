@@ -29,7 +29,7 @@ use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 #[cfg(feature = "interface-test-fixtures")]
-use crate::tactical_assets::TacticalProofRenderer;
+use crate::tactical_assets::{TacticalLodView, TacticalProofRenderer};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -933,10 +933,17 @@ impl TacticalState {
         self.highlight_empire = true;
     }
 
-    /// Enable the source-bound P56 mesh proof in isolated fixture builds.
+    /// Enable the source-bound tactical LOD proof in isolated fixture builds.
     #[cfg(feature = "interface-test-fixtures")]
     pub fn enable_resource_2560_proof(&mut self) {
         self.proof_resource_2560 = true;
+    }
+
+    /// Set a deterministic source-coordinate LOD view for browser acceptance.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn set_tactical_lod_fixture(&mut self, view: TacticalLodView) {
+        self.proof_resource_2560 = true;
+        self.proof_renderer.set_view(view);
     }
 
     /// End the current battle — clears session. Returns the session for

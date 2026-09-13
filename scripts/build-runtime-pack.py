@@ -22,9 +22,12 @@ KIND_ADVISOR_FRAME = 3
 KIND_TACTICAL_MESH = 4
 KIND_TACTICAL_TEXTURE = 5
 
-TACTICAL_PROOF_MESH_ID = 2560
 TACTICAL_PROOF_LANGUAGE = 1033
-TACTICAL_PROOF_TEXTURE = "SDESTI52.BMP"
+TACTICAL_LOD_FAMILY = {
+    2560: "SDESTI52.BMP",
+    2561: "SDESTI_M.BMP",
+    2562: None,
+}
 
 
 @dataclass(frozen=True)
@@ -90,53 +93,76 @@ def collect_tactical_proof_entries(runtime_dir: Path) -> list[Entry]:
     if manifest.get("schema_version") != 1:
         raise ValueError("unsupported tactical runtime manifest version")
 
-    meshes = [
-        record
-        for record in manifest.get("meshes", [])
-        if record.get("id") == TACTICAL_PROOF_MESH_ID
-        and record.get("language") == TACTICAL_PROOF_LANGUAGE
-    ]
-    textures = [
-        record
-        for record in manifest.get("textures", [])
-        if record.get("identifier_kind") == "name"
-        and record.get("name", "").upper() == TACTICAL_PROOF_TEXTURE
-        and record.get("language") == TACTICAL_PROOF_LANGUAGE
-    ]
-    if len(meshes) != 1 or len(textures) != 1:
-        raise ValueError("tactical runtime lacks the unique P56 mesh or texture")
+    entries: list[Entry] = []
+    selected_textures: dict[str, dict] = {}
+    for mesh_id, expected_texture in TACTICAL_LOD_FAMILY.items():
+        matches = [
+            record
+            for record in manifest.get("meshes", [])
+            if record.get("id") == mesh_id
+            and record.get("language") == TACTICAL_PROOF_LANGUAGE
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"tactical runtime lacks unique mesh {mesh_id}/1033")
+        mesh = matches[0]
+        bindings = mesh.get("texture_bindings") or []
+        if expected_texture is None:
+            if bindings:
+                raise ValueError(f"tactical mesh {mesh_id} unexpectedly binds a texture")
+        else:
+            binding = bindings[0] if len(bindings) == 1 else {}
+            if (
+                str(binding.get("resource_name", "")).casefold()
+                != expected_texture.casefold()
+                or binding.get("resource_language") != TACTICAL_PROOF_LANGUAGE
+            ):
+                raise ValueError(
+                    f"tactical mesh {mesh_id} does not bind {expected_texture}/1033"
+                )
+            textures = [
+                record
+                for record in manifest.get("textures", [])
+                if record.get("identifier_kind") == "name"
+                and record.get("name", "").casefold() == expected_texture.casefold()
+                and record.get("language") == TACTICAL_PROOF_LANGUAGE
+            ]
+            if len(textures) != 1:
+                raise ValueError(
+                    f"tactical runtime lacks unique texture {expected_texture}/1033"
+                )
+            texture = textures[0]
+            if (
+                texture.get("kind") != "indexed_rle"
+                or texture.get("palette_rule") != "battle_active"
+            ):
+                raise ValueError(
+                    f"{expected_texture} does not retain the active battle-palette rule"
+                )
+            selected_textures[expected_texture] = texture
 
-    mesh = meshes[0]
-    texture = textures[0]
-    bindings = mesh.get("texture_bindings", [])
-    binding = bindings[0] if len(bindings) == 1 else {}
-    if (
-        str(binding.get("resource_name", "")).casefold()
-        != str(texture.get("name", "")).casefold()
-        or binding.get("resource_language") != texture.get("language")
-    ):
-        raise ValueError("P56 mesh does not bind the selected tactical texture")
-    if texture.get("kind") != "indexed_rle" or texture.get("palette_rule") != "battle_active":
-        raise ValueError("P56 texture does not retain the active battle-palette rule")
+        mesh_path, mesh_digest = checked_runtime_object(runtime_dir, mesh, ".mesh")
+        entries.append(
+            Entry(
+                KIND_TACTICAL_MESH,
+                f"{mesh_id}/{TACTICAL_PROOF_LANGUAGE}",
+                mesh_path,
+                mesh_digest,
+            )
+        )
 
-    mesh_path, mesh_digest = checked_runtime_object(runtime_dir, mesh, ".mesh")
-    texture_path, texture_digest = checked_runtime_object(
-        runtime_dir, texture, ".texture"
-    )
-    return [
-        Entry(
-            KIND_TACTICAL_MESH,
-            f"{TACTICAL_PROOF_MESH_ID}/{TACTICAL_PROOF_LANGUAGE}",
-            mesh_path,
-            mesh_digest,
-        ),
-        Entry(
-            KIND_TACTICAL_TEXTURE,
-            f"{TACTICAL_PROOF_TEXTURE}/{TACTICAL_PROOF_LANGUAGE}",
-            texture_path,
-            texture_digest,
-        ),
-    ]
+    for texture_name, texture in selected_textures.items():
+        texture_path, texture_digest = checked_runtime_object(
+            runtime_dir, texture, ".texture"
+        )
+        entries.append(
+            Entry(
+                KIND_TACTICAL_TEXTURE,
+                f"{texture_name}/{TACTICAL_PROOF_LANGUAGE}",
+                texture_path,
+                texture_digest,
+            )
+        )
+    return entries
 
 
 def checked_runtime_object(

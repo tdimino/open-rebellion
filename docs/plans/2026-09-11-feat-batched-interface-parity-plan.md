@@ -80,7 +80,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md), [tactical 3D asset plan](2026-09-12-feat-tactical-3d-asset-pipeline.md), and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P57 three-LOD family; UIP-B06 continues
+## Current execution focus: P57B original tactical view rules; UIP-B06 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -168,9 +168,12 @@ tracking proprietary output. P55 converts all 87 meshes, 370 indexed images,
 and 27 palettes into deterministic runtime objects and checks the mesh corpus
 against Assimp 6.0.5 raw import. P56 packages and visibly renders resource
 `2560` with its source-linked texture in an isolated proof/control browser
-matrix. P57 next adds resources `2561` and `2562` and traces original LOD,
-camera, lighting, filtering, and culling rules. See the
-[P56 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md).
+matrix. P57A packages resources `2560` through `2562`, binds both named
+textures, and applies the source-traced three-level LOD predicate. Each fixed
+fixture records exactly one initial family-load event. P57B next recovers and
+accepts original camera, lighting, filtering, culling, and live same-renderer
+transition behavior. See the
+[P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md).
 
 ## Bundle acceptance record
 

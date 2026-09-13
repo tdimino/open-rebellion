@@ -28,14 +28,17 @@ The generated test site also contains `battle.html`, a test-only launcher for th
 real tactical scene. Its proof and negative-control links use the versioned codes in
 [`tactical.catalog.json`](scenarios/tactical.catalog.json) and start muted. The
 fixture proves deterministic production-path battle entry, the current
-shell/control checkpoint, and one source-bound mesh and texture submission. Run
+shell/control checkpoint, and fixed selection from one source-bound three-LOD
+family. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all eight proof/control, faction,
-and viewport cases. The tactical probes cover pause stability,
+`node run.mjs --battle --all --no-build` for all 20 entry, negative-control,
+fixed-LOD, faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
-proof-on/off pixel differences. Tactical controls and images still have no
-lossless original-game baselines. See the [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
+proof-on/off pixel differences. Each scenario uses a fresh muted browser; live
+same-renderer LOD switching is a separate open gate. Tactical controls and
+images still have no lossless original-game baselines. See the
+[standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 
 The PNG comparison directory contains *implementation regression* baselines,
 not original-game truth. `--update-goldens` creates only missing implementation

@@ -9,6 +9,17 @@
   "ordinal_to_resource_grade": "source-proven",
   "candidate_dat_identity_grade": "candidate",
   "candidate_identity_basis": "Embedded mesh texture names and StarWarsRebellionEditor.NET tactical labels; original DAT-to-vtable-ordinal edge not traced",
+  "source_proven_lod": {
+    "resource_family": [2560, 2561, 2562],
+    "slots": {"close": 2560, "medium": 2561, "far": 2562},
+    "textures": {"close": "SDESTI52.BMP", "medium": "SDESTI_M.BMP", "far": null},
+    "anchors": ["FUN_005d26c0", "FUN_005d3770", "FUN_005d3650"],
+    "initial": "medium",
+    "comparison": "view_depth versus f32(threshold / projection_scale); preserve divide-then-round order",
+    "high_detail": {"close_below_quotient": 15.0, "medium_between_exclusive_quotients": [15.0, 40.0], "far_above_quotient": 40.0, "exact_boundaries": "retain_current"},
+    "reduced_detail": {"medium_at_or_below_quotient": 20.0, "far_above_quotient": 20.0},
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md"
+  },
   "capital_ships": [
     [0, 2010, 64, "Mon Calamari Cruiser"],
     [1, 2020, 65, "Bulk Cruiser"],
@@ -53,5 +64,5 @@
     [36, 4130, 4134, 8, "TIE Defender"]
   ],
   "fighter_columns": ["tactical_ordinal", "first_side_type303_base", "opposing_side_type303_base", "candidate_fightsd_id", "candidate_name"],
-  "unresolved": ["DAT identity to tactical vtable ordinal", "type-301 close/medium/far predicate", "fighter formation/color/distance offset", "battle event to effect resource", "tactical planet picture selector initialization", "original control-state and render geometry"]
+  "unresolved": ["DAT identity to tactical vtable ordinal", "remaining type-301 family construction and view rules", "fighter formation/color/distance offset", "battle event to effect resource", "tactical planet picture selector initialization", "original control-state and render geometry"]
 }

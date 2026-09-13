@@ -88,9 +88,9 @@ pub use system_window::{
     REFERENCE_RAIL_SLOTS, SYSTEM_WINDOW_CLIENT_WIDTH, SYSTEM_WINDOW_HEIGHT, SYSTEM_WINDOW_WIDTH,
 };
 #[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
-pub use tactical_assets::install_native_tactical_proof;
+pub use tactical_assets::install_native_tactical_lod_family;
 #[cfg(feature = "interface-test-fixtures")]
-pub use tactical_assets::set_tactical_asset_cache;
+pub use tactical_assets::{set_tactical_asset_cache, TacticalLodView};
 pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
 };

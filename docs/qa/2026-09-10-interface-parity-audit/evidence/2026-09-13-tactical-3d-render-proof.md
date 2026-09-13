@@ -93,5 +93,7 @@ lighting, and one explicit palette. Native GPU rendering, original
 orientation, winding, camera, lighting, filtering, culling, LOD selection,
 DAT identity, selected-unit binding, fleet integration, battle effects,
 controls, results, audio, original A0/A1 comparisons, and all strict tactical
-cells remain open. P57 adds the related `2561` and `2562` resources and traces
-the original three-LOD selection and view rules.
+cells remain open. [P57A](2026-09-13-tactical-3d-lod-family.md) adds the
+related `2561` and `2562` resources and proves the original three-LOD
+selection predicate; P57B retains the remaining view and visual-acceptance
+rules.

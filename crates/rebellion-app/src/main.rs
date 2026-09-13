@@ -894,9 +894,9 @@ async fn main() {
                 .join("TACTICAL3D")
                 .join("runtime");
             if tactical_runtime.is_dir() {
-                match rebellion_render::install_native_tactical_proof(&tactical_runtime) {
+                match rebellion_render::install_native_tactical_lod_family(&tactical_runtime) {
                     Ok(()) => {
-                        macroquad::logging::info!("[tactical_3d] installed native P56 proof assets")
+                        macroquad::logging::info!("[tactical_3d] installed native P57 LOD family")
                     }
                     Err(error) => macroquad::logging::warn!(
                         "[tactical_3d] native proof assets rejected: {}",

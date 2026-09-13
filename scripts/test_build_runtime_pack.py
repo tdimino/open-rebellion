@@ -82,7 +82,7 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 [(entry.kind, entry.key) for entry in entries],
             )
 
-    def test_tactical_proof_entries_are_selected_and_hash_verified(self) -> None:
+    def test_tactical_lod_family_entries_are_selected_and_hash_verified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base = root / "base"
@@ -94,40 +94,65 @@ class RuntimePackBuilderTests(unittest.TestCase):
             objects.mkdir(parents=True)
             (base / "SYSTEMSD.DAT").write_bytes(b"systems")
 
-            mesh_bytes = b"ORTMESH proof"
-            texture_bytes = b"ORTINDEX proof"
-            mesh_hash = hashlib.sha256(mesh_bytes).hexdigest()
-            texture_hash = hashlib.sha256(texture_bytes).hexdigest()
-            (objects / f"{mesh_hash}.mesh").write_bytes(mesh_bytes)
-            (objects / f"{texture_hash}.texture").write_bytes(texture_bytes)
+            mesh_payloads = {
+                2560: b"ORTMESH close",
+                2561: b"ORTMESH medium",
+                2562: b"ORTMESH far",
+            }
+            texture_payloads = {
+                "SDESTI52.BMP": b"ORTINDEX close",
+                "SDESTI_M.BMP": b"ORTINDEX medium",
+            }
+            mesh_hashes = {
+                mesh_id: hashlib.sha256(payload).hexdigest()
+                for mesh_id, payload in mesh_payloads.items()
+            }
+            texture_hashes = {
+                name: hashlib.sha256(payload).hexdigest()
+                for name, payload in texture_payloads.items()
+            }
+            for mesh_id, payload in mesh_payloads.items():
+                (objects / f"{mesh_hashes[mesh_id]}.mesh").write_bytes(payload)
+            for name, payload in texture_payloads.items():
+                (objects / f"{texture_hashes[name]}.texture").write_bytes(payload)
             (runtime / "manifest.json").write_text(
                 json.dumps(
                     {
                         "schema_version": 1,
                         "meshes": [
                             {
-                                "id": 2560,
+                                "id": mesh_id,
                                 "language": 1033,
-                                "object_sha256": mesh_hash,
-                                "object": f"objects/{mesh_hash}.mesh",
-                                "texture_bindings": [
-                                    {
-                                        "resource_name": "sdesti52.bmp",
-                                        "resource_language": 1033,
-                                    }
-                                ],
+                                "object_sha256": mesh_hashes[mesh_id],
+                                "object": f"objects/{mesh_hashes[mesh_id]}.mesh",
+                                "texture_bindings": (
+                                    []
+                                    if mesh_id == 2562
+                                    else [
+                                        {
+                                            "resource_name": (
+                                                "sdesti52.bmp"
+                                                if mesh_id == 2560
+                                                else "sdesti_m.bmp"
+                                            ),
+                                            "resource_language": 1033,
+                                        }
+                                    ]
+                                ),
                             }
+                            for mesh_id in mesh_payloads
                         ],
                         "textures": [
                             {
                                 "identifier_kind": "name",
-                                "name": "SDESTI52.BMP",
+                                "name": name,
                                 "language": 1033,
                                 "kind": "indexed_rle",
                                 "palette_rule": "battle_active",
-                                "object_sha256": texture_hash,
-                                "object": f"objects/{texture_hash}.texture",
+                                "object_sha256": texture_hashes[name],
+                                "object": f"objects/{texture_hashes[name]}.texture",
                             }
+                            for name in texture_payloads
                         ],
                     }
                 ),
@@ -136,9 +161,13 @@ class RuntimePackBuilderTests(unittest.TestCase):
 
             entries = PACKER.collect_entries(base, ui)
             keys = [(entry.kind, entry.key) for entry in entries]
-            self.assertIn((PACKER.KIND_TACTICAL_MESH, "2560/1033"), keys)
-            self.assertIn(
-                (PACKER.KIND_TACTICAL_TEXTURE, "SDESTI52.BMP/1033"), keys
+            self.assertEqual(
+                [key for kind, key in keys if kind == PACKER.KIND_TACTICAL_MESH],
+                ["2560/1033", "2561/1033", "2562/1033"],
+            )
+            self.assertEqual(
+                [key for kind, key in keys if kind == PACKER.KIND_TACTICAL_TEXTURE],
+                ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"],
             )
 
             manifest_path = runtime / "manifest.json"
@@ -155,11 +184,13 @@ class RuntimePackBuilderTests(unittest.TestCase):
             ] = 1033
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             entries = PACKER.collect_entries(base, ui)
-            (objects / f"{mesh_hash}.mesh").write_bytes(b"changed after collection")
+            (objects / f"{mesh_hashes[2560]}.mesh").write_bytes(
+                b"changed after collection"
+            )
             with self.assertRaisesRegex(ValueError, "changed after validation"):
                 PACKER.write_pack(entries, root / "changed.orpk")
 
-            (objects / f"{mesh_hash}.mesh").write_bytes(b"tampered")
+            (objects / f"{mesh_hashes[2560]}.mesh").write_bytes(b"tampered")
             with self.assertRaisesRegex(ValueError, "SHA-256"):
                 PACKER.collect_entries(base, ui)
 

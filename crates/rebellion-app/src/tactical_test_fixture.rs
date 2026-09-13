@@ -3,6 +3,8 @@
 use rebellion_core::ids::{CapitalShipKey, FighterKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::{FighterEntry, Fleet, GameWorld, ShipInstance};
+#[cfg(feature = "interface-test-fixtures")]
+use rebellion_render::TacticalLodView;
 use rebellion_render::{CockpitFaction, CockpitState, MessageLog, TacticalState};
 use serde::Serialize;
 
@@ -12,6 +14,38 @@ use crate::GameMode;
 const TACTICAL_FAMILY: u32 = 1;
 const BATTLE_SCENARIO: u32 = 1;
 const BATTLE_WITHOUT_PROOF_SCENARIO: u32 = 2;
+const LOD_CLOSE_SCENARIO: u32 = 3;
+const LOD_MEDIUM_SCENARIO: u32 = 4;
+const LOD_FAR_SCENARIO: u32 = 5;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TacticalLodFixture {
+    Default,
+    Close,
+    Medium,
+    Far,
+}
+
+impl TacticalLodFixture {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Close => "close",
+            Self::Medium => "medium",
+            Self::Far => "far",
+        }
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    const fn view(self) -> Option<TacticalLodView> {
+        match self {
+            Self::Default => None,
+            Self::Close => Some(TacticalLodView::CLOSE_FIXTURE),
+            Self::Medium => Some(TacticalLodView::MEDIUM_FIXTURE),
+            Self::Far => Some(TacticalLodView::FAR_FIXTURE),
+        }
+    }
+}
 
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
@@ -23,15 +57,19 @@ pub(crate) struct TacticalFixtureRequest {
     pub faction: CockpitFaction,
     pub code: u32,
     pub proof_enabled: bool,
+    lod_fixture: TacticalLodFixture,
 }
 
 fn decode(code: u32) -> Option<TacticalFixtureRequest> {
     if code >> 16 != TACTICAL_FAMILY {
         return None;
     }
-    let proof_enabled = match code & 0xff {
-        BATTLE_SCENARIO => true,
-        BATTLE_WITHOUT_PROOF_SCENARIO => false,
+    let (proof_enabled, lod_fixture) = match code & 0xff {
+        BATTLE_SCENARIO => (true, TacticalLodFixture::Default),
+        BATTLE_WITHOUT_PROOF_SCENARIO => (false, TacticalLodFixture::Default),
+        LOD_CLOSE_SCENARIO => (true, TacticalLodFixture::Close),
+        LOD_MEDIUM_SCENARIO => (true, TacticalLodFixture::Medium),
+        LOD_FAR_SCENARIO => (true, TacticalLodFixture::Far),
         _ => return None,
     };
     let faction = match (code >> 8) & 0xff {
@@ -43,6 +81,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         faction,
         code,
         proof_enabled,
+        lod_fixture,
     })
 }
 
@@ -143,6 +182,9 @@ pub(crate) fn apply(
     #[cfg(feature = "interface-test-fixtures")]
     if request.proof_enabled {
         tactical.enable_resource_2560_proof();
+        if let Some(view) = request.lod_fixture.view() {
+            tactical.set_tactical_lod_fixture(view);
+        }
     }
     *player_faction = if player_is_attacker {
         MissionFaction::Alliance
@@ -161,6 +203,7 @@ struct FixtureRecord<'a> {
     fixture_code: u32,
     faction: &'a str,
     proof_enabled: bool,
+    tactical_lod: &'a str,
     system: &'a str,
     attacker_ships: usize,
     defender_ships: usize,
@@ -184,6 +227,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             "empire"
         },
         proof_enabled: request.proof_enabled,
+        tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         attacker_ships: session.ships.iter().filter(|ship| ship.is_attacker).count(),
         defender_ships: session
@@ -208,6 +252,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
             "empire"
         },
         proof_enabled: request.proof_enabled,
+        tactical_lod: request.lod_fixture.label(),
         system: "",
         attacker_ships: 0,
         defender_ships: 0,
@@ -231,8 +276,20 @@ mod tests {
         assert_eq!(decode(0x10201).unwrap().faction, CockpitFaction::Empire);
         assert!(decode(0x10101).unwrap().proof_enabled);
         assert!(!decode(0x10102).unwrap().proof_enabled);
+        assert_eq!(
+            decode(0x10103).unwrap().lod_fixture,
+            TacticalLodFixture::Close
+        );
+        assert_eq!(
+            decode(0x10104).unwrap().lod_fixture,
+            TacticalLodFixture::Medium
+        );
+        assert_eq!(
+            decode(0x10105).unwrap().lod_fixture,
+            TacticalLodFixture::Far
+        );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10103).is_none());
+        assert!(decode(0x10106).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

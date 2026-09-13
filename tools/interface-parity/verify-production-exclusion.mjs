@@ -15,7 +15,10 @@ const forbidden = [
   "gid/alliance/popular-support",
   "tactical_test_fixture",
   "enable_resource_2560_proof",
+  "set_tactical_lod_fixture",
   "[tactical_3d] rendered",
+  "[tactical_3d] family_loaded",
+  "[tactical_3d] lod_selection",
   "battle-ready",
   "Tactical test launcher",
 ];

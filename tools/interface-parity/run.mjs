@@ -638,6 +638,43 @@ function verifyTacticalProofNegativeControls(results, factions, viewports) {
   }
 }
 
+function verifyTacticalLodFamily(results, factions, viewports) {
+  const slugs = ["lod-close", "lod-medium", "lod-far"];
+  for (const faction of factions) {
+    for (const viewport of viewports) {
+      const family = slugs.map((slug) => results.find(({ id }) =>
+        id === `tactical/${faction}/${slug}/${viewport.id}`));
+      assert.ok(family.every(Boolean), `missing tactical LOD family for ${faction}/${viewport.id}`);
+      if (family.some(({ status }) => status !== "pass")) continue;
+      const images = family.map(({ id }) =>
+        fs.readFileSync(path.join(runDir, id, "actual.png")));
+      const hashes = images.map((bytes) => tacticalApertureHash(viewport, bytes));
+      assert.equal(new Set(hashes).size, 3,
+        `tactical LOD views are not distinct for ${faction}/${viewport.id}`);
+      const closeMediumChanged = tacticalApertureChangedPixels(viewport, images[0], images[1]);
+      const mediumFarChanged = tacticalApertureChangedPixels(viewport, images[1], images[2]);
+      assert.ok(closeMediumChanged > 100 && mediumFarChanged > 100,
+        `tactical LOD selections changed too few aperture pixels for ${faction}/${viewport.id}`);
+      const closeMediumIsolation = verifyTacticalApertureIsolation(viewport, images[0], images[1]);
+      const mediumFarIsolation = verifyTacticalApertureIsolation(viewport, images[1], images[2]);
+      const probe = {
+        type: "tactical-3d-three-lod-selection-matrix",
+        resources: [2560, 2561, 2562],
+        aperture_hashes: hashes,
+        close_medium_changed_pixels: closeMediumChanged,
+        medium_far_changed_pixels: mediumFarChanged,
+        close_medium_isolation: closeMediumIsolation,
+        medium_far_isolation: mediumFarIsolation,
+      };
+      for (const result of family) {
+        result.probes.push(probe);
+        fs.writeFileSync(path.join(runDir, result.id, "result.json"),
+          `${JSON.stringify(result, null, 2)}\n`);
+      }
+    }
+  }
+}
+
 function verifyWireframeColor(viewport, onBytes, offBytes, faction) {
   const on = PNG.sync.read(onBytes);
   const off = PNG.sync.read(offBytes);
@@ -861,8 +898,10 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     const probes = battle
       ? [{ type: "production-tactical-entry", system: ready.system,
         attacker_ships: ready.attacker_ships, defender_ships: ready.defender_ships,
-        fighters: ready.fighters }, ...(scenario.tactical_proof
+        fighters: ready.fighters }, ...(scenario.slug === "battle-entry"
         ? await probeTactical(page, viewport, folder, stable)
+        : scenario.tactical_proof
+        ? [{ type: "tactical-lod-fixture", requested: ready.tactical_lod }]
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
@@ -872,25 +911,34 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       assert.ok(ready.attacker_ships > 0 && ready.defender_ships > 0);
       assert.ok(ready.fighters > 0);
       const packLog = consoleLines.find(({ text }) => text.includes("runtime_asset_pack loaded"));
-      assert.match(packLog?.text || "", /tactical_meshes=1 tactical_textures=1/,
-        "runtime pack did not install exactly one source-bound tactical proof pair");
-      const proofLog = consoleLines.find(({ text }) =>
-        text.includes("[tactical_3d] rendered resource_id=2560"));
+      assert.match(packLog?.text || "", /tactical_meshes=3 tactical_textures=2/,
+        "runtime pack did not install the exact source-bound three-LOD family");
+      const familyLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] family_loaded base=2560"));
+      const lodLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] lod_selection"));
       if (scenario.tactical_proof) {
-        assert.match(proofLog?.text || "",
-          /texture=SDESTI52\.BMP .*source_vertices=48 source_faces=62 render_vertices=186 triangles=62/,
-          "resource 2560 did not render with its verified texture binding and geometry counts");
+        assert.equal(familyLogs.length, 1,
+          "source-bound tactical LOD family did not emit exactly one load event");
+        assert.match(familyLogs[0]?.text || "",
+          /resources=2560,2561,2562 textures=SDESTI52\.BMP,SDESTI_M\.BMP .*family_loads=1/,
+          "source-bound tactical LOD family did not load exactly once");
+        assert.equal(lodLogs.length, 1,
+          "source-derived tactical LOD fixture did not emit exactly one selection event");
+        assert.match(lodLogs[0]?.text || "",
+          new RegExp(`resource_id=${scenario.expected_lod_resource} .*family_loads=1`),
+          "source-derived tactical LOD selection chose the wrong resource");
         probes.push({
-          type: "source-bound-tactical-3d-proof",
-          mesh: "2560/1033",
-          texture: "SDESTI52.BMP/1033",
+          type: "source-bound-tactical-3d-lod-family",
+          meshes: ["2560/1033", "2561/1033", "2562/1033"],
+          textures: ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"],
+          selected_resource: scenario.expected_lod_resource,
           palette: "tactical-dll/1000",
-          source_vertices: 48,
-          render_vertices: 186,
-          triangles: 62,
+          family_loads: 1,
         });
       } else {
-        assert.equal(proofLog, undefined, "negative control submitted the tactical proof mesh");
+        assert.equal(familyLogs.length, 0, "negative control loaded the tactical LOD family");
+        assert.equal(lodLogs.length, 0, "negative control submitted a tactical LOD mesh");
       }
     }
     const runtimeMeasurements = battle ? await measureBrowserRuntime(page) : null;
@@ -986,8 +1034,11 @@ async function main() {
     assert.equal(catalog.family, "TAC-01");
     assert.equal(catalog.fixture_namespace, 1);
     assert.deepEqual(catalog.scenarios.map(({ slug }) => slug),
-      ["battle-entry", "battle-entry-proof-off"]);
-    assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof), [true, false]);
+      ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far"]);
+    assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
+      [true, false, true, true, true]);
+    assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
+      [2560, undefined, 2560, 2561, 2562]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });
@@ -1035,6 +1086,7 @@ async function main() {
 
   if (battle && !scenarioFilter) {
     verifyTacticalProofNegativeControls(results, selectedFactions, selectedViewports);
+    verifyTacticalLodFamily(results, selectedFactions, selectedViewports);
   }
 
   writeContactSheet(results);

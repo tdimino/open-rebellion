@@ -68,6 +68,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P56 tactical 3D render proof](evidence/2026-09-13-tactical-3d-render-proof.md)
   for the first exact mesh/texture browser submission, its paired negative
   control, runtime observations, and the original-parity boundaries kept open.
+- Review the [P57A tactical LOD-family evidence](evidence/2026-09-13-tactical-3d-lod-family.md)
+  for the complete first three-mesh family, source selection predicate,
+  two-faction browser matrix, and the view rules still open for P57B.
 
 ## Suggested contribution lanes
 
@@ -142,11 +145,12 @@ frame border beneath a foreground system window. Its
 [evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) keeps original hover
 and focus states open.
 P52 through P55 restore the first tactical shell and controls, stage the full
-original 3D corpus, and decode it into a deterministic runtime store. P56 then
-packages and visibly renders one exact mesh and texture pair against a
-proof-off control in both faction shells and viewports. Its
-[evidence](evidence/2026-09-13-tactical-3d-render-proof.md) keeps original view
-rules, production fleet integration, and all 106 tactical cells open.
+original 3D corpus, and decode it into a deterministic runtime store. P56
+proves one exact mesh and texture pair. P57A extends that path to all three
+original LOD meshes, both textures, and the source selection predicate. Each
+isolated fixed-view fixture records one initial family-load event. Its
+[evidence](evidence/2026-09-13-tactical-3d-lod-family.md) keeps original view
+acceptance, production fleet integration, and all 106 tactical cells open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

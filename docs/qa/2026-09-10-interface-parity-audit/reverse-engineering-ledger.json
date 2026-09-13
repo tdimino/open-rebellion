@@ -112,6 +112,12 @@
       "functions": ["0x0040dc30", "0x0040ec60", "0x005f9860", "0x005f7ea0"],
       "proof": "Multiplayer template/control mapping, hit testing, timers, receive/send failure, player departure, and teardown paths.",
       "confidence": "high"
+    },
+    {
+      "id": "RE-DISC-008",
+      "functions": ["0x005d26c0", "0x005d3770", "0x005d3650"],
+      "proof": "Capital-ship type-301 base/base+1/base+2 family construction, initial medium state, high-detail 15/40 depth thresholds with boundary retention, reduced-detail 20 threshold, and slot swap without family reload.",
+      "confidence": "high"
     }
   ],
   "work_packages": [
@@ -442,8 +448,9 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "TACTICAL.DLL", "TEXTTACT.DLL", "tools/stage-ui-assets"],
-        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. P55 decodes the complete corpus into deterministic runtime objects and verifies mesh topology, bounds, materials, and texture names against Assimp 6.0.5 raw import. P56 packages exact pair 2560/1033 plus SDESTI52.BMP/1033 and proves WebGL draw submission against a negative control. Continue tracing control constructors, paint handlers, entity joins, selection states, availability predicates, palette activation, camera rules, and LOD commands.",
-        "next_proof": "Add resources 2561 and 2562, prove the original three-LOD selection and view rules, then finish both faction HUDs and every tactical control and content state."
+        "anchors": ["FUN_005d26c0", "FUN_005d3770", "FUN_005d3650"],
+        "method": "P54 stages all 87 type-301 meshes and 397 type-303 texture or palette resources with exact PE identities and hashes. P55 decodes the complete corpus into deterministic runtime objects and verifies mesh topology, bounds, materials, and texture names against Assimp 6.0.5 raw import. P56 packages exact pair 2560/1033 plus SDESTI52.BMP/1033 and proves WebGL draw submission against a negative control. P57A packages 2560 through 2562 plus both named textures, implements the recovered high- and reduced-detail LOD predicate, and records one initial family-load event per isolated fixture. Same-renderer switching and no-churn proof remain open. Continue tracing control constructors, paint handlers, entity joins, selection states, availability predicates, palette activation, camera, filtering, culling, and lighting.",
+        "next_proof": "Prove the original camera and render-state rules against A0/A1 captures, then finish DAT identity, production binding, both faction HUDs, and every tactical control and content state."
       },
       "runtime_capture_required": true
     },

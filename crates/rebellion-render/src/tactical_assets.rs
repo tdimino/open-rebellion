@@ -1,8 +1,8 @@
 //! Decoding and rendering for the original tactical type-301/type-303 assets.
 //!
-//! P56 intentionally installs one source-bound proof pair. The cache and
-//! decoder are reusable by later fleet integration, but no DAT identity is
-//! inferred from the proof resource.
+//! P56 established one source-bound render proof. P57 installs its original
+//! three-resource LOD family and reproduces the executable's selection rule.
+//! No DAT identity is inferred from the resource ordinal.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -15,8 +15,103 @@ use macroquad::window::miniquad::{Backend, Comparison, PipelineParams};
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 
-pub const PROOF_MESH_KEY: &str = "2560/1033";
-pub const PROOF_TEXTURE_KEY: &str = "SDESTI52.BMP/1033";
+pub const PROOF_MESH_KEYS: [&str; 3] = ["2560/1033", "2561/1033", "2562/1033"];
+pub const PROOF_TEXTURE_KEYS: [&str; 2] = ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"];
+
+const ORIGINAL_CLOSE_THRESHOLD: f32 = 15.0;
+const ORIGINAL_MEDIUM_THRESHOLD: f32 = 40.0;
+const ORIGINAL_REDUCED_DETAIL_THRESHOLD: f32 = 20.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OriginalTacticalLod {
+    Close = 0,
+    Medium = 1,
+    Far = 2,
+}
+
+impl OriginalTacticalLod {
+    const fn resource_id(self) -> u32 {
+        2560 + self as u32
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Close => "close",
+            Self::Medium => "medium",
+            Self::Far => "far",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TacticalLodView {
+    pub view_depth: f32,
+    pub projection_scale: f32,
+    pub high_detail: bool,
+}
+
+impl TacticalLodView {
+    pub const CLOSE_FIXTURE: Self = Self {
+        view_depth: 10.0,
+        projection_scale: 1.0,
+        high_detail: true,
+    };
+    pub const MEDIUM_FIXTURE: Self = Self {
+        view_depth: 25.0,
+        projection_scale: 1.0,
+        high_detail: true,
+    };
+    pub const FAR_FIXTURE: Self = Self {
+        view_depth: 50.0,
+        projection_scale: 1.0,
+        high_detail: true,
+    };
+}
+
+impl Default for TacticalLodView {
+    fn default() -> Self {
+        Self::CLOSE_FIXTURE
+    }
+}
+
+/// Reproduce `FUN_005d3770`: state 0/1/2 maps to base/base+1/base+2.
+/// The original divides each threshold by projection scale before comparing
+/// view depth. Exact high-detail threshold equality retains the current LOD.
+#[must_use]
+pub fn select_original_tactical_lod(
+    current: OriginalTacticalLod,
+    view: TacticalLodView,
+) -> OriginalTacticalLod {
+    if !view.view_depth.is_finite()
+        || !view.projection_scale.is_finite()
+        || view.view_depth < 0.0
+        || view.projection_scale <= 0.0
+    {
+        return current;
+    }
+    if !view.high_detail {
+        let medium_depth = ORIGINAL_REDUCED_DETAIL_THRESHOLD / view.projection_scale;
+        return if view.view_depth <= medium_depth {
+            OriginalTacticalLod::Medium
+        } else {
+            OriginalTacticalLod::Far
+        };
+    }
+    // Preserve the executable's f32-rounded quotient boundaries. Multiplying
+    // depth by scale is algebraically equivalent over real numbers but can
+    // choose a different LOD after floating-point rounding.
+    let close_depth = ORIGINAL_CLOSE_THRESHOLD / view.projection_scale;
+    let medium_depth = ORIGINAL_MEDIUM_THRESHOLD / view.projection_scale;
+    if view.view_depth > medium_depth {
+        OriginalTacticalLod::Far
+    } else if view.view_depth > close_depth && view.view_depth < medium_depth {
+        OriginalTacticalLod::Medium
+    } else if view.view_depth < close_depth {
+        OriginalTacticalLod::Close
+    } else {
+        current
+    }
+}
 
 const MESH_MAGIC: &[u8; 8] = b"ORTMESH\0";
 const TEXTURE_MAGIC: &[u8; 8] = b"ORTINDEX";
@@ -40,9 +135,9 @@ pub fn set_tactical_asset_cache(
     *TACTICAL_OBJECT_CACHE.lock().unwrap() = TacticalObjectCache { meshes, textures };
 }
 
-/// Install the same P56 proof pair from an ignored native runtime store.
+/// Install the P57 proof family from an ignored native runtime store.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn install_native_tactical_proof(runtime_root: &Path) -> Result<(), String> {
+pub fn install_native_tactical_lod_family(runtime_root: &Path) -> Result<(), String> {
     use serde::Deserialize;
     use sha2::{Digest, Sha256};
 
@@ -82,39 +177,6 @@ pub fn install_native_tactical_proof(runtime_root: &Path) -> Result<(), String> 
     if manifest.schema_version != 1 {
         return Err("unsupported tactical runtime manifest version".to_string());
     }
-    let mut meshes = manifest
-        .meshes
-        .iter()
-        .filter(|record| record.id == 2560 && record.language == 1033);
-    let mesh = meshes
-        .next()
-        .filter(|_| meshes.next().is_none())
-        .ok_or("tactical runtime lacks unique mesh 2560/1033")?;
-    let texture_bindings = mesh.texture_bindings.as_deref().unwrap_or_default();
-    if texture_bindings.len() != 1
-        || !texture_bindings[0]
-            .resource_name
-            .eq_ignore_ascii_case("SDESTI52.BMP")
-        || texture_bindings[0].resource_language != 1033
-    {
-        return Err("mesh 2560 does not bind SDESTI52.BMP/1033".to_string());
-    }
-    let mut textures = manifest.textures.iter().filter(|record| {
-        record.identifier_kind == "name"
-            && record
-                .name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case("SDESTI52.BMP"))
-            && record.language == 1033
-    });
-    let texture = textures
-        .next()
-        .filter(|_| textures.next().is_none())
-        .ok_or("tactical runtime lacks unique SDESTI52.BMP/1033")?;
-    if texture.kind != "indexed_rle" || texture.palette_rule.as_deref() != Some("battle_active") {
-        return Err("SDESTI52.BMP does not retain the active battle-palette rule".to_string());
-    }
-
     fn load_object(
         root: &Path,
         relative: &str,
@@ -137,17 +199,75 @@ pub fn install_native_tactical_proof(runtime_root: &Path) -> Result<(), String> 
         Ok(bytes)
     }
 
-    let mesh_bytes = load_object(runtime_root, &mesh.object, &mesh.object_sha256, ".mesh")?;
-    let texture_bytes = load_object(
-        runtime_root,
-        &texture.object,
-        &texture.object_sha256,
-        ".texture",
-    )?;
-    set_tactical_asset_cache(
-        HashMap::from([(PROOF_MESH_KEY.to_string(), mesh_bytes)]),
-        HashMap::from([(PROOF_TEXTURE_KEY.to_string(), texture_bytes)]),
-    );
+    let expected_meshes = [
+        (2560, Some("SDESTI52.BMP")),
+        (2561, Some("SDESTI_M.BMP")),
+        (2562, None),
+    ];
+    let mut installed_meshes = HashMap::new();
+    for (mesh_id, expected_texture) in expected_meshes {
+        let matches: Vec<_> = manifest
+            .meshes
+            .iter()
+            .filter(|record| record.id == mesh_id && record.language == 1033)
+            .collect();
+        if matches.len() != 1 {
+            return Err(format!("tactical runtime lacks unique mesh {mesh_id}/1033"));
+        }
+        let mesh = matches[0];
+        let bindings = mesh.texture_bindings.as_deref().unwrap_or_default();
+        match expected_texture {
+            Some(texture_name)
+                if bindings.len() == 1
+                    && bindings[0].resource_name.eq_ignore_ascii_case(texture_name)
+                    && bindings[0].resource_language == 1033 => {}
+            None if bindings.is_empty() => {}
+            Some(texture_name) => {
+                return Err(format!("mesh {mesh_id} does not bind {texture_name}/1033"));
+            }
+            None => return Err(format!("mesh {mesh_id} unexpectedly binds a texture")),
+        }
+        installed_meshes.insert(
+            format!("{mesh_id}/1033"),
+            load_object(runtime_root, &mesh.object, &mesh.object_sha256, ".mesh")?,
+        );
+    }
+
+    let mut installed_textures = HashMap::new();
+    for texture_name in ["SDESTI52.BMP", "SDESTI_M.BMP"] {
+        let matches: Vec<_> = manifest
+            .textures
+            .iter()
+            .filter(|record| {
+                record.identifier_kind == "name"
+                    && record
+                        .name
+                        .as_deref()
+                        .is_some_and(|name| name.eq_ignore_ascii_case(texture_name))
+                    && record.language == 1033
+            })
+            .collect();
+        if matches.len() != 1 {
+            return Err(format!("tactical runtime lacks unique {texture_name}/1033"));
+        }
+        let texture = matches[0];
+        if texture.kind != "indexed_rle" || texture.palette_rule.as_deref() != Some("battle_active")
+        {
+            return Err(format!(
+                "{texture_name} does not retain the active battle-palette rule"
+            ));
+        }
+        installed_textures.insert(
+            format!("{texture_name}/1033"),
+            load_object(
+                runtime_root,
+                &texture.object,
+                &texture.object_sha256,
+                ".texture",
+            )?,
+        );
+    }
+    set_tactical_asset_cache(installed_meshes, installed_textures);
     Ok(())
 }
 
@@ -170,24 +290,63 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-/// Lazily allocated GPU state for the single-resource P56 proof.
-#[derive(Default)]
+struct TacticalLodAsset {
+    resource_id: u32,
+    meshes: Vec<Mesh>,
+}
+
+/// Lazily allocated GPU state for the source-bound P57 LOD family.
 pub(crate) struct TacticalProofRenderer {
     attempted: bool,
-    meshes: Vec<Mesh>,
+    assets: Vec<TacticalLodAsset>,
     material: Option<Material>,
+    current_lod: OriginalTacticalLod,
+    view: TacticalLodView,
+    logged_lod: Option<OriginalTacticalLod>,
+}
+
+impl Default for TacticalProofRenderer {
+    fn default() -> Self {
+        Self {
+            attempted: false,
+            assets: Vec::new(),
+            material: None,
+            current_lod: OriginalTacticalLod::Medium,
+            view: TacticalLodView::default(),
+            logged_lod: None,
+        }
+    }
 }
 
 impl TacticalProofRenderer {
+    pub(crate) fn set_view(&mut self, view: TacticalLodView) {
+        self.view = view;
+    }
+
     pub(crate) fn draw(&mut self, bmp_cache: &mut BmpCache, aperture: (f32, f32, f32, f32)) {
         if !self.attempted {
             self.attempted = true;
             if let Err(error) = self.load(bmp_cache) {
-                macroquad::logging::warn!("[tactical_3d] resource 2560 unavailable: {}", error);
+                macroquad::logging::warn!("[tactical_3d] LOD family unavailable: {}", error);
             }
         }
-        if self.meshes.is_empty() || self.material.is_none() {
+        if self.assets.len() != 3 || self.material.is_none() {
             return;
+        }
+
+        let prior_lod = self.current_lod;
+        self.current_lod = select_original_tactical_lod(self.current_lod, self.view);
+        if self.logged_lod != Some(self.current_lod) {
+            macroquad::logging::info!(
+                "[tactical_3d] lod_selection from={} to={} resource_id={} view_depth={} projection_scale={} high_detail={} family_loads=1",
+                prior_lod.label(),
+                self.current_lod.label(),
+                self.current_lod.resource_id(),
+                self.view.view_depth,
+                self.view.projection_scale,
+                self.view.high_detail,
+            );
+            self.logged_lod = Some(self.current_lod);
         }
 
         let (x, y, width, height) = aperture;
@@ -197,8 +356,10 @@ impl TacticalProofRenderer {
             width.round() as i32,
             height.round() as i32,
         );
+        let camera_direction = vec3(2.8, -4.2, 2.2).normalize();
+        let camera_distance = self.view.view_depth.mul_add(0.24, 2.0);
         set_camera(&Camera3D {
-            position: vec3(2.8, -4.2, 2.2),
+            position: camera_direction * camera_distance,
             target: Vec3::ZERO,
             up: Vec3::Z,
             fovy: 35.0_f32.to_radians(),
@@ -209,7 +370,9 @@ impl TacticalProofRenderer {
             ..Default::default()
         });
         gl_use_material(self.material.as_ref().unwrap());
-        for mesh in &self.meshes {
+        let asset = &self.assets[self.current_lod as usize];
+        debug_assert_eq!(asset.resource_id, self.current_lod.resource_id());
+        for mesh in &asset.meshes {
             draw_mesh(mesh);
         }
         gl_use_default_material();
@@ -217,39 +380,119 @@ impl TacticalProofRenderer {
     }
 
     fn load(&mut self, bmp_cache: &mut BmpCache) -> Result<(), String> {
-        let (mesh_bytes, texture_bytes) = {
+        let (mesh_payloads, texture_payloads) = {
             let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
-            (
-                cache.meshes.get(PROOF_MESH_KEY).cloned(),
-                cache.textures.get(PROOF_TEXTURE_KEY).cloned(),
-            )
+            let meshes = PROOF_MESH_KEYS
+                .iter()
+                .map(|key| {
+                    cache
+                        .meshes
+                        .get(*key)
+                        .cloned()
+                        .ok_or_else(|| format!("typed mesh entry {key} is missing"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let textures = PROOF_TEXTURE_KEYS
+                .iter()
+                .map(|key| {
+                    cache
+                        .textures
+                        .get(*key)
+                        .cloned()
+                        .map(|bytes| ((*key).to_string(), bytes))
+                        .ok_or_else(|| format!("typed texture entry {key} is missing"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            (meshes, textures)
         };
-        let mesh_bytes = mesh_bytes.ok_or("typed mesh entry is missing")?;
-        let texture_bytes = texture_bytes.ok_or("typed texture entry is missing")?;
         let palette = bmp_cache
             .original_palette_rgba(DllSource::Tactical, resources::tactical::BACKGROUND)
             .ok_or("TACTICAL 1000 active palette is unavailable")?;
-        let texture = decode_indexed_texture(&texture_bytes, &palette)?;
-        let (mut meshes, source_vertices, source_faces) = decode_mesh_object(&mesh_bytes)?;
-        for mesh in &mut meshes {
-            mesh.texture = Some(texture.clone());
+
+        let mut textures = HashMap::new();
+        for (key, bytes) in texture_payloads {
+            textures.insert(key, decode_indexed_texture(&bytes, &palette)?);
         }
+        let white = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
+        white.set_filter(FilterMode::Nearest);
+
+        let mut family_transform = None;
+        let mut assets = Vec::with_capacity(3);
+        let mut diagnostics = Vec::with_capacity(3);
+        for (index, mesh_bytes) in mesh_payloads.iter().enumerate() {
+            let resource_id = 2560 + index as u32;
+            let mut decoded = decode_mesh_object(mesh_bytes, family_transform)?;
+            family_transform = Some(decoded.transform);
+            for chunk in &mut decoded.chunks {
+                let texture = chunk
+                    .texture_name
+                    .as_ref()
+                    .and_then(|name| textures.get(&format!("{}/1033", name.to_ascii_uppercase())))
+                    .cloned()
+                    .unwrap_or_else(|| white.clone());
+                chunk.mesh.texture = Some(texture);
+            }
+            let triangles: usize = decoded
+                .chunks
+                .iter()
+                .map(|chunk| chunk.mesh.indices.len() / 3)
+                .sum();
+            let render_vertices: usize = decoded
+                .chunks
+                .iter()
+                .map(|chunk| chunk.mesh.vertices.len())
+                .sum();
+            diagnostics.push(format!(
+                "{}:{}/{}/{}/{}",
+                resource_id,
+                decoded.source_vertices,
+                decoded.source_faces,
+                render_vertices,
+                triangles,
+            ));
+            assets.push(TacticalLodAsset {
+                resource_id,
+                meshes: decoded.chunks.into_iter().map(|chunk| chunk.mesh).collect(),
+            });
+        }
+
         self.material = Some(load_tactical_material()?);
-        let triangles: usize = meshes.iter().map(|mesh| mesh.indices.len() / 3).sum();
-        let render_vertices: usize = meshes.iter().map(|mesh| mesh.vertices.len()).sum();
-        self.meshes = meshes;
+        self.assets = assets;
         macroquad::logging::info!(
-            "[tactical_3d] rendered resource_id=2560 language=1033 texture=SDESTI52.BMP palette=tactical-dll/1000 source_vertices={} source_faces={} render_vertices={} triangles={}",
-            source_vertices,
-            source_faces,
-            render_vertices,
-            triangles
+            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette=tactical-dll/1000 diagnostics={} family_loads=1",
+            diagnostics.join(",")
         );
         Ok(())
     }
 }
 
-fn decode_mesh_object(bytes: &[u8]) -> Result<(Vec<Mesh>, usize, usize), String> {
+#[derive(Clone, Copy)]
+struct MeshTransform {
+    center: Vec3,
+    scale: f32,
+}
+
+struct DecodedMeshChunk {
+    mesh: Mesh,
+    texture_name: Option<String>,
+}
+
+struct DecodedMeshObject {
+    chunks: Vec<DecodedMeshChunk>,
+    source_vertices: usize,
+    source_faces: usize,
+    transform: MeshTransform,
+}
+
+struct DecodedMaterial {
+    diffuse: Color,
+    texture_name: Option<String>,
+}
+
+fn decode_mesh_object(
+    bytes: &[u8],
+    family_transform: Option<MeshTransform>,
+) -> Result<DecodedMeshObject, String> {
     let mut reader = Reader::new(bytes);
     reader.expect(MESH_MAGIC)?;
     if reader.u32()? != 1 {
@@ -266,7 +509,7 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<(Vec<Mesh>, usize, usize), String>
     for value in &mut bounds {
         *value = reader.f32()?;
     }
-    let center = vec3(
+    let source_center = vec3(
         (bounds[0] + bounds[3]) * 0.5,
         (bounds[1] + bounds[4]) * 0.5,
         (bounds[2] + bounds[5]) * 0.5,
@@ -277,14 +520,28 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<(Vec<Mesh>, usize, usize), String>
     if !extent.is_finite() || extent <= 0.0 {
         return Err("invalid tactical mesh bounds".to_string());
     }
-    let scale = 2.0 / extent;
+    let transform = family_transform.unwrap_or(MeshTransform {
+        center: source_center,
+        scale: 2.0 / extent,
+    });
+    let mut decoded_materials = Vec::with_capacity(materials);
     for _ in 0..materials {
-        for _ in 0..11 {
+        let diffuse = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
+        for _ in 0..7 {
             reader.f32()?;
         }
         let name_len = reader.bounded_count(512, "texture name")?;
         let name = reader.bytes(name_len)?;
-        std::str::from_utf8(name).map_err(|_| "invalid tactical texture name")?;
+        let name = std::str::from_utf8(name).map_err(|_| "invalid tactical texture name")?;
+        decoded_materials.push(DecodedMaterial {
+            diffuse: Color::new(
+                diffuse[0].clamp(0.0, 1.0),
+                diffuse[1].clamp(0.0, 1.0),
+                diffuse[2].clamp(0.0, 1.0),
+                diffuse[3].clamp(0.0, 1.0),
+            ),
+            texture_name: (!name.is_empty()).then(|| name.to_string()),
+        });
     }
 
     let mut output = Vec::with_capacity(chunks);
@@ -298,15 +555,16 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<(Vec<Mesh>, usize, usize), String>
         if vertex_count == 0 || index_count == 0 || index_count % 3 != 0 {
             return Err("invalid tactical mesh chunk size".to_string());
         }
+        let decoded_material = &decoded_materials[material];
         let mut vertices = Vec::with_capacity(vertex_count);
         for _ in 0..vertex_count {
             let position = vec3(reader.f32()?, reader.f32()?, reader.f32()?);
             let normal = vec3(reader.f32()?, reader.f32()?, reader.f32()?);
             let uv = vec2(reader.f32()?, reader.f32()?);
             vertices.push(Vertex {
-                position: (position - center) * scale,
+                position: (position - transform.center) * transform.scale,
                 uv,
-                color: WHITE.into(),
+                color: decoded_material.diffuse.into(),
                 normal: normal.extend(0.0),
             });
         }
@@ -318,16 +576,24 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<(Vec<Mesh>, usize, usize), String>
             }
             indices.push(index);
         }
-        output.push(Mesh {
-            vertices,
-            indices,
-            texture: None,
+        output.push(DecodedMeshChunk {
+            mesh: Mesh {
+                vertices,
+                indices,
+                texture: None,
+            },
+            texture_name: decoded_material.texture_name.clone(),
         });
     }
     if !reader.finished() {
         return Err("tactical mesh object has trailing bytes".to_string());
     }
-    Ok((output, source_vertices, source_faces))
+    Ok(DecodedMeshObject {
+        chunks: output,
+        source_vertices,
+        source_faces,
+        transform,
+    })
 }
 
 fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Texture2D, String> {
@@ -461,24 +727,28 @@ impl<'a> Reader<'a> {
 const TACTICAL_VERTEX_GLSL: &str = r#"#version 100
 attribute vec3 position;
 attribute vec2 texcoord;
+attribute vec4 color0;
 attribute vec4 normal;
 varying lowp vec2 uv;
 varying lowp float light;
+varying lowp vec4 tint;
 uniform mat4 Model;
 uniform mat4 Projection;
 void main() {
     gl_Position = Projection * Model * vec4(position, 1.0);
     uv = texcoord;
+    tint = color0 / 255.0;
     light = 0.28 + 0.72 * max(dot(normalize(normal.xyz), normalize(vec3(-0.35, -0.5, 0.8))), 0.0);
 }"#;
 
 const TACTICAL_FRAGMENT_GLSL: &str = r#"#version 100
 varying lowp vec2 uv;
 varying lowp float light;
+varying lowp vec4 tint;
 uniform sampler2D Texture;
 void main() {
     lowp vec4 texel = texture2D(Texture, uv);
-    gl_FragColor = vec4(texel.rgb * light, texel.a);
+    gl_FragColor = vec4(texel.rgb * tint.rgb * light, texel.a * tint.a);
 }"#;
 
 const TACTICAL_METAL: &str = r#"
@@ -495,17 +765,19 @@ struct RasterizerData {
     float4 position [[position]];
     float2 uv [[user(locn0)]];
     float light [[user(locn1)]];
+    float4 tint [[user(locn2)]];
 };
 vertex RasterizerData vertexShader(Vertex v [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
     RasterizerData out;
     out.position = u.Projection * u.Model * float4(v.position, 1.0);
     out.uv = v.texcoord;
+    out.tint = v.color0 / 255.0;
     out.light = 0.28 + 0.72 * max(dot(normalize(v.normal.xyz), normalize(float3(-0.35, -0.5, 0.8))), 0.0);
     return out;
 }
 fragment float4 fragmentShader(RasterizerData in [[stage_in]], texture2d<float> Texture [[texture(0)]], sampler TextureSmplr [[sampler(0)]]) {
     float4 texel = Texture.sample(TextureSmplr, in.uv);
-    return float4(texel.rgb * in.light, texel.a);
+    return float4(texel.rgb * in.tint.rgb * in.light, texel.a * in.tint.a);
 }"#;
 
 #[cfg(test)]
@@ -521,17 +793,129 @@ mod tests {
         assert!(truncated.u32().is_err());
     }
 
+    #[test]
+    fn original_lod_rule_preserves_threshold_edges_and_reduced_detail_mode() {
+        let close = TacticalLodView::CLOSE_FIXTURE;
+        let medium = TacticalLodView::MEDIUM_FIXTURE;
+        let far = TacticalLodView::FAR_FIXTURE;
+        assert_eq!(
+            select_original_tactical_lod(OriginalTacticalLod::Medium, close),
+            OriginalTacticalLod::Close
+        );
+        assert_eq!(
+            select_original_tactical_lod(OriginalTacticalLod::Close, medium),
+            OriginalTacticalLod::Medium
+        );
+        assert_eq!(
+            select_original_tactical_lod(OriginalTacticalLod::Medium, far),
+            OriginalTacticalLod::Far
+        );
+        for threshold in [ORIGINAL_CLOSE_THRESHOLD, ORIGINAL_MEDIUM_THRESHOLD] {
+            let view = TacticalLodView {
+                view_depth: threshold,
+                projection_scale: 1.0,
+                high_detail: true,
+            };
+            for current in [
+                OriginalTacticalLod::Close,
+                OriginalTacticalLod::Medium,
+                OriginalTacticalLod::Far,
+            ] {
+                assert_eq!(select_original_tactical_lod(current, view), current);
+            }
+        }
+        fn immediately_below(value: f32) -> f32 {
+            f32::from_bits(value.to_bits() - 1)
+        }
+        fn immediately_above(value: f32) -> f32 {
+            f32::from_bits(value.to_bits() + 1)
+        }
+
+        // Non-unit scales guard the executable's divide-then-round sequence.
+        // A multiply-first implementation fails at least the 0.3 close edge.
+        for projection_scale in [0.3_f32, 2.3_f32] {
+            let close_edge = ORIGINAL_CLOSE_THRESHOLD / projection_scale;
+            let medium_edge = ORIGINAL_MEDIUM_THRESHOLD / projection_scale;
+            for (edge, below, above) in [
+                (
+                    close_edge,
+                    OriginalTacticalLod::Close,
+                    OriginalTacticalLod::Medium,
+                ),
+                (
+                    medium_edge,
+                    OriginalTacticalLod::Medium,
+                    OriginalTacticalLod::Far,
+                ),
+            ] {
+                let at_edge = TacticalLodView {
+                    view_depth: edge,
+                    projection_scale,
+                    high_detail: true,
+                };
+                assert_eq!(
+                    select_original_tactical_lod(OriginalTacticalLod::Far, at_edge),
+                    OriginalTacticalLod::Far
+                );
+                assert_eq!(
+                    select_original_tactical_lod(
+                        OriginalTacticalLod::Far,
+                        TacticalLodView {
+                            view_depth: immediately_below(edge),
+                            ..at_edge
+                        },
+                    ),
+                    below
+                );
+                assert_eq!(
+                    select_original_tactical_lod(
+                        OriginalTacticalLod::Close,
+                        TacticalLodView {
+                            view_depth: immediately_above(edge),
+                            ..at_edge
+                        },
+                    ),
+                    above
+                );
+            }
+
+            let reduced_edge = ORIGINAL_REDUCED_DETAIL_THRESHOLD / projection_scale;
+            for (view_depth, expected) in [
+                (immediately_below(reduced_edge), OriginalTacticalLod::Medium),
+                (reduced_edge, OriginalTacticalLod::Medium),
+                (immediately_above(reduced_edge), OriginalTacticalLod::Far),
+            ] {
+                assert_eq!(
+                    select_original_tactical_lod(
+                        OriginalTacticalLod::Close,
+                        TacticalLodView {
+                            view_depth,
+                            projection_scale,
+                            high_detail: false,
+                        },
+                    ),
+                    expected
+                );
+            }
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     #[ignore = "requires the ignored runtime store generated from an owned TACTICAL.DLL"]
-    fn owned_native_proof_pair_installs_with_exact_typed_keys() {
+    fn owned_native_lod_family_installs_with_exact_typed_keys() {
         let runtime = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../data/base/ui/tactical-dll/TACTICAL3D/runtime");
-        install_native_tactical_proof(&runtime).expect("install owned P56 tactical proof pair");
+        install_native_tactical_lod_family(&runtime)
+            .expect("install owned P57 tactical LOD family");
         let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
-        assert_eq!(cache.meshes.len(), 1);
-        assert_eq!(cache.textures.len(), 1);
-        assert!(cache.meshes.contains_key(PROOF_MESH_KEY));
-        assert!(cache.textures.contains_key(PROOF_TEXTURE_KEY));
+        assert_eq!(cache.meshes.len(), PROOF_MESH_KEYS.len());
+        assert_eq!(cache.textures.len(), PROOF_TEXTURE_KEYS.len());
+        for key in PROOF_MESH_KEYS {
+            assert!(cache.meshes.contains_key(key));
+        }
+        for key in PROOF_TEXTURE_KEYS {
+            assert!(cache.textures.contains_key(key));
+        }
     }
 }
