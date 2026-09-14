@@ -4,10 +4,10 @@ The [Batched Interface Parity Execution Plan](2026-09-11-feat-batched-interface-
 is the current primary plan. Strategic shell, GID, system-window, and first
 tactical-shell checkpoints are in place. The first original three-LOD family,
 source predicate, and live no-reload slot journey pass the isolated browser
-matrix. Source camera, authored mesh coordinates, system palette selection, and
-the retained-mode light rig also pass their bounded gates. Filtering, culling,
-remaining render state, production family binding, and A0/A1 comparison are
-the current P57B2/P58 focus.
+matrix. Source camera, authored mesh coordinates, system palette selection,
+lighting, filtering, culling, depth, and material/device state also pass their
+bounded gates. Production family binding and A0/A1 comparison are the current
+P58 focus.
 
 The active
 [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
@@ -29,9 +29,9 @@ converts and independently verifies the complete corpus as a deterministic
 runtime store. P56 supplies the first isolated muted-browser render proof.
 P57A now supplies the first complete original three-LOD family and source
 selection rule. P57B1 proves live same-renderer switching without asset churn.
-P57B2 now includes the original camera, authored transform, system palette
-selector, and retained-mode light rig. It still owns filtering, culling,
-remaining material/device state, and A0/A1 acceptance.
+P57B2 now includes the original camera, authored transform, system palette,
+retained-mode light rig, filtering, culling, depth, and material/device state.
+P58 owns production family binding. A0/A1 acceptance remains open.
 Modern replacement models remain in a separate experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The

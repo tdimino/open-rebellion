@@ -178,14 +178,15 @@ stable DAT and fleet-roster identity, exact X slots, and selected source-world
 target. P57B2C1 removes inferred mesh normalization, preserves authored
 coordinates, and activates the complete system palette set. P57B2C2 recovers
 render state. P57B2C2A now restores the source directional and ambient
-light rig; P57B2C2B owns filtering, culling, and remaining material/device
-quality. P58 then completes the
+light rig; P57B2C2B restores filtering, culling, depth, dither, shading,
+specular, and diffuse/emissive material behavior. P58 then completes the
 DAT-to-tactical-resource join and production
 3D selection. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
 [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
 [P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md),
 [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md),
-and [P57B2C2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md).
+[P57B2C2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md),
+and [P57B2C2B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md).
 
 ## Bundle acceptance record
 

@@ -603,11 +603,15 @@ would tune around known simulation feedback defects.
   `(5,5,-1)`, Z-constrained origin target, ambient RGB `0.5`, and transformed
   surface-to-light vector; pass the focused four-case and complete 28-case
   muted browser gates. Keep every strict tactical cell open pending A0 evidence.
+- [x] Complete P57B2C2B retained-mode render-state recovery: preserve explicit
+  dither-off state, Gouraud lighting, nearest/no-mip filtering,
+  `D3DCULL_CCW`, LessEqual depth with writes, specular-off behavior, and
+  diffuse-plus-emissive materials; pass the focused four-case and complete
+  28-case muted browser gates. Keep every strict tactical cell open pending A0
+  evidence.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B2C2B next traces filtering, culling, and remaining material/device
-  state. P58 then proves
-  the DAT-to-tactical-vtable join before
+  states. P58 next proves the DAT-to-tactical-vtable join before
   replacing procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other

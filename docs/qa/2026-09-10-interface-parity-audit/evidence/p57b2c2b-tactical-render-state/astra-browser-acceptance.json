@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P57B2C2B",
+  "model": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "task_scope": "browser-artifact visual acceptance only",
+  "focused_harness_run": {
+    "run_id": "2026-09-14T06-44-45-865Z-63003",
+    "passed": 4,
+    "executions": 4,
+    "failed": 0,
+    "status": "pass"
+  },
+  "full_harness_run": {
+    "run_id": "2026-09-14T06-45-28-620Z-63297",
+    "passed": 28,
+    "executions": 28,
+    "failed": 0,
+    "status": "pass"
+  },
+  "result": {
+    "verdict": "provisional_A1_pass",
+    "ready_to_commit": true,
+    "severity_findings": [],
+    "observations": [
+      "The contact sheet shows small shaded source hulls inside the bitmap tactical cockpit for both factions at native and letterboxed sizes.",
+      "The focused and full summaries total 32 of 32 passing executions, with zero unstable screenshots, 32 muted launches, 32 four-request startups, and 32 closed browser processes.",
+      "Both inspected journeys have stable paired frame hashes, no errors, music muted, and cleanup marked closed.",
+      "Both inspected records include the source-traced tactical render-state probe with Gouraud shading, dither disabled, nearest filtering, no mip filter, D3DCULL_CCW mapped to back culling with clockwise fronts, LessEqual depth testing, depth writes, specular disabled, and diffuse-plus-emissive material handling."
+    ]
+  },
+  "limits": [
+    "Commit readiness applies only to this provisional A1 implementation checkpoint.",
+    "All 32 captures lack original baselines and remain unbaselined implementation evidence.",
+    "All 106 strict tactical cells remain open pending lossless owned-original comparison and their complete state matrices.",
+    "The isolated source family remains test-only until P58 proves the production DAT-to-tactical-resource join."
+  ]
+}

@@ -11,7 +11,9 @@ use std::sync::{LazyLock, Mutex};
 use std::{io::Read, path::Path};
 
 use macroquad::prelude::*;
-use macroquad::window::miniquad::{Backend, Comparison, PipelineParams, UniformDesc, UniformType};
+use macroquad::window::miniquad::{
+    Backend, Comparison, CullFace, FrontFaceOrder, PipelineParams, UniformDesc, UniformType,
+};
 
 use crate::tactical_view::OriginalTacticalLayout;
 
@@ -48,6 +50,27 @@ const ORIGINAL_CAMERA_INITIAL_STEP: i32 = 5;
 const ORIGINAL_LIGHT_FRAME_SOURCE_POSITION: [f32; 3] = [5.0, 5.0, -1.0];
 const ORIGINAL_AMBIENT_LIGHT_RGB: f32 = 0.5;
 const ORIGINAL_DIRECTIONAL_LIGHT_RGB: f32 = 0.8;
+const ORIGINAL_DEVICE_DITHER: bool = false;
+const ORIGINAL_SPECULAR_ENABLED: bool = false;
+
+fn original_tactical_texture_filter() -> FilterMode {
+    // `FUN_005c1c10` initializes the retained-mode device without calling
+    // SetTextureQuality. The Direct3D no-filter path is nearest-point sampling.
+    FilterMode::Nearest
+}
+
+fn original_tactical_pipeline_params() -> PipelineParams {
+    PipelineParams {
+        // Direct3D's default D3DCULL_CCW treats clockwise facets as front
+        // faces. The handedness reflection and index reversal in
+        // `decode_mesh_object` preserve that source winding.
+        cull_face: CullFace::Back,
+        front_face_order: FrontFaceOrder::Clockwise,
+        depth_write: true,
+        depth_test: Comparison::LessOrEqual,
+        ..Default::default()
+    }
+}
 
 fn original_surface_to_light_direction() -> Vec3 {
     authored_position(vec3(
@@ -513,7 +536,12 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
 
 struct TacticalLodAsset {
     resource_id: u32,
-    meshes: Vec<Mesh>,
+    meshes: Vec<TacticalMeshChunk>,
+}
+
+struct TacticalMeshChunk {
+    mesh: Mesh,
+    emissive: [f32; 3],
 }
 
 /// Lazily allocated GPU state for the source-bound P57 LOD family.
@@ -734,11 +762,16 @@ impl TacticalProofRenderer {
                 ..Default::default()
             });
         }
-        gl_use_material(self.material.as_ref().unwrap());
+        let material = self.material.as_ref().unwrap();
+        gl_use_material(material);
         let asset = &self.assets[self.current_lod as usize];
         debug_assert_eq!(asset.resource_id, self.current_lod.resource_id());
-        for mesh in &asset.meshes {
-            draw_mesh(mesh);
+        for chunk in &asset.meshes {
+            material.set_uniform(
+                "MaterialEmissive",
+                [chunk.emissive[0], chunk.emissive[1], chunk.emissive[2], 0.0],
+            );
+            draw_mesh(&chunk.mesh);
         }
         gl_use_default_material();
         set_default_camera();
@@ -784,7 +817,7 @@ impl TacticalProofRenderer {
             textures.insert(key, decode_indexed_texture(&bytes, &palette)?);
         }
         let white = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
-        white.set_filter(FilterMode::Nearest);
+        white.set_filter(original_tactical_texture_filter());
 
         let mut assets = Vec::with_capacity(3);
         let mut diagnostics = Vec::with_capacity(3);
@@ -820,7 +853,14 @@ impl TacticalProofRenderer {
             ));
             assets.push(TacticalLodAsset {
                 resource_id,
-                meshes: decoded.chunks.into_iter().map(|chunk| chunk.mesh).collect(),
+                meshes: decoded
+                    .chunks
+                    .into_iter()
+                    .map(|chunk| TacticalMeshChunk {
+                        mesh: chunk.mesh,
+                        emissive: chunk.emissive,
+                    })
+                    .collect(),
             });
         }
 
@@ -828,7 +868,7 @@ impl TacticalProofRenderer {
         self.assets = assets;
         self.family_loads = self.family_loads.saturating_add(1);
         macroquad::logging::info!(
-            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette_selector={} palette_resource_id={} palette_flags=68 transform=authored_xyz_z_reflection light_directional_rgb={} light_ambient_rgb={} light_frame_source=5,5,-1 surface_to_light_rh={},{},{} light_constraint=z diagnostics={} family_loads={}",
+            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette_selector={} palette_resource_id={} palette_flags=68 transform=authored_xyz_z_reflection light_directional_rgb={} light_ambient_rgb={} light_frame_source=5,5,-1 surface_to_light_rh={},{},{} light_constraint=z render_quality=gouraud device_dither={} texture_filter=nearest mip_filter=none source_cull=d3dcull_ccw target_cull=back_cw depth_test=less_equal depth_write=true specular={} material=diffuse_plus_emissive diagnostics={} family_loads={}",
             self.palette_selector,
             palette_resource_id,
             ORIGINAL_DIRECTIONAL_LIGHT_RGB,
@@ -836,6 +876,8 @@ impl TacticalProofRenderer {
             original_surface_to_light_direction().x,
             original_surface_to_light_direction().y,
             original_surface_to_light_direction().z,
+            ORIGINAL_DEVICE_DITHER,
+            ORIGINAL_SPECULAR_ENABLED,
             diagnostics.join(","),
             self.family_loads,
         );
@@ -846,6 +888,7 @@ impl TacticalProofRenderer {
 struct DecodedMeshChunk {
     mesh: Mesh,
     texture_name: Option<String>,
+    emissive: [f32; 3],
 }
 
 struct DecodedMeshObject {
@@ -856,6 +899,7 @@ struct DecodedMeshObject {
 
 struct DecodedMaterial {
     diffuse: Color,
+    emissive: [f32; 3],
     texture_name: Option<String>,
 }
 
@@ -885,9 +929,9 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
     let mut decoded_materials = Vec::with_capacity(materials);
     for _ in 0..materials {
         let diffuse = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
-        for _ in 0..7 {
-            reader.f32()?;
-        }
+        let _specular_exponent = reader.f32()?;
+        let _specular = [reader.f32()?, reader.f32()?, reader.f32()?];
+        let emissive = [reader.f32()?, reader.f32()?, reader.f32()?];
         let name_len = reader.bounded_count(512, "texture name")?;
         let name = reader.bytes(name_len)?;
         let name = std::str::from_utf8(name).map_err(|_| "invalid tactical texture name")?;
@@ -898,6 +942,7 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
                 diffuse[2].clamp(0.0, 1.0),
                 diffuse[3].clamp(0.0, 1.0),
             ),
+            emissive,
             texture_name: (!name.is_empty()).then(|| name.to_string()),
         });
     }
@@ -944,6 +989,7 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
                 texture: None,
             },
             texture_name: decoded_material.texture_name.clone(),
+            emissive: decoded_material.emissive,
         });
     }
     if !reader.finished() {
@@ -1016,7 +1062,7 @@ fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Text
         rgba.extend_from_slice(&palette[usize::from(*index)]);
     }
     let texture = Texture2D::from_rgba8(width as u16, height as u16, &rgba);
-    texture.set_filter(FilterMode::Nearest);
+    texture.set_filter(original_tactical_texture_filter());
     Ok(texture)
 }
 
@@ -1034,14 +1080,11 @@ fn load_tactical_material() -> Result<Material, String> {
     let material = load_material(
         shader,
         MaterialParams {
-            pipeline_params: PipelineParams {
-                depth_write: true,
-                depth_test: Comparison::LessOrEqual,
-                ..Default::default()
-            },
+            pipeline_params: original_tactical_pipeline_params(),
             uniforms: vec![
                 UniformDesc::new("SourceLightDirectionAmbient", UniformType::Float4),
                 UniformDesc::new("SourceLightColorDirectional", UniformType::Float4),
+                UniformDesc::new("MaterialEmissive", UniformType::Float4),
             ],
             ..Default::default()
         },
@@ -1061,6 +1104,7 @@ fn load_tactical_material() -> Result<Material, String> {
         "SourceLightColorDirectional",
         [1.0, 1.0, 1.0, ORIGINAL_DIRECTIONAL_LIGHT_RGB],
     );
+    material.set_uniform("MaterialEmissive", [0.0_f32; 4]);
     Ok(material)
 }
 
@@ -1139,6 +1183,7 @@ uniform mat4 Model;
 uniform mat4 Projection;
 uniform vec4 SourceLightDirectionAmbient;
 uniform vec4 SourceLightColorDirectional;
+uniform lowp vec4 MaterialEmissive;
 void main() {
     gl_Position = Projection * Model * vec4(position, 1.0);
     uv = texcoord;
@@ -1148,13 +1193,16 @@ void main() {
 }"#;
 
 const TACTICAL_FRAGMENT_GLSL: &str = r#"#version 100
+precision lowp float;
 varying lowp vec2 uv;
 varying lowp vec3 light;
 varying lowp vec4 tint;
 uniform sampler2D Texture;
+uniform lowp vec4 MaterialEmissive;
 void main() {
     lowp vec4 texel = texture2D(Texture, uv);
-    gl_FragColor = vec4(texel.rgb * tint.rgb * light, texel.a * tint.a);
+    lowp vec3 material = min(vec3(1.0), tint.rgb * light + MaterialEmissive.rgb);
+    gl_FragColor = vec4(texel.rgb * material, texel.a * tint.a);
 }"#;
 
 const TACTICAL_METAL: &str = r#"
@@ -1166,6 +1214,7 @@ struct Uniforms {
     float4 _Time;
     float4 SourceLightDirectionAmbient;
     float4 SourceLightColorDirectional;
+    float4 MaterialEmissive;
 };
 struct Vertex {
     float3 position [[attribute(0)]];
@@ -1188,9 +1237,10 @@ vertex RasterizerData vertexShader(Vertex v [[stage_in]], constant Uniforms& u [
     out.light = min(float3(1.0), float3(u.SourceLightDirectionAmbient.w) + u.SourceLightColorDirectional.rgb * u.SourceLightColorDirectional.w * diffuse);
     return out;
 }
-fragment float4 fragmentShader(RasterizerData in [[stage_in]], texture2d<float> Texture [[texture(0)]], sampler TextureSmplr [[sampler(0)]]) {
+fragment float4 fragmentShader(RasterizerData in [[stage_in]], constant Uniforms& u [[buffer(0)]], texture2d<float> Texture [[texture(0)]], sampler TextureSmplr [[sampler(0)]]) {
     float4 texel = Texture.sample(TextureSmplr, in.uv);
-    return float4(texel.rgb * in.tint.rgb * in.light, texel.a * in.tint.a);
+    float3 material = min(float3(1.0), in.tint.rgb * in.light + u.MaterialEmissive.rgb);
+    return float4(texel.rgb * material, texel.a * in.tint.a);
 }"#;
 
 #[cfg(test)]
@@ -1237,6 +1287,20 @@ mod tests {
             original_tactical_light_factor(vec3(-1.0, 1.0, 0.0)),
             ORIGINAL_AMBIENT_LIGHT_RGB,
         );
+    }
+
+    #[test]
+    fn source_device_state_uses_nearest_gouraud_backface_depth_contract() {
+        assert!(!ORIGINAL_DEVICE_DITHER);
+        assert!(!ORIGINAL_SPECULAR_ENABLED);
+        assert_eq!(original_tactical_texture_filter(), FilterMode::Nearest);
+        let pipeline = original_tactical_pipeline_params();
+        assert_eq!(pipeline.cull_face, CullFace::Back);
+        assert_eq!(pipeline.front_face_order, FrontFaceOrder::Clockwise);
+        assert_eq!(pipeline.depth_test, Comparison::LessOrEqual);
+        assert!(pipeline.depth_write);
+        assert!(pipeline.color_blend.is_none());
+        assert!(pipeline.alpha_blend.is_none());
     }
 
     #[test]

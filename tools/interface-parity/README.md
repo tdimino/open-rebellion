@@ -39,7 +39,9 @@ art, aperture isolation, typed resource diagnostics, runtime measurements, and
 proof-on/off pixel differences. The camera journey also checks the recovered
 active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
-browser. Tactical controls and images still have no lossless original-game baselines. See the
+browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
+filtering, culling, depth, specular, diffuse, and emissive render-state contract.
+Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 
 The PNG comparison directory contains *implementation regression* baselines,

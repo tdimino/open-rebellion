@@ -95,6 +95,9 @@ geometry, and unverified asset mappings do not count as parity.
   for the recovered retained-mode directional and ambient lights, exact
   transformed direction, muted browser proof, and the filtering/culling
   boundary.
+- Review the [P57B2C2B render-state evidence](evidence/2026-09-14-tactical-render-state.md)
+  for filtering, culling, depth, device quality, material fields, muted browser
+  proof, and the production-resource/A0 boundary.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -182,8 +185,10 @@ active-force extent, four lanes, stable participant identity, exact X slots,
 and source-world target point. P57B2C1 removes inferred mesh normalization,
 uses authored coordinates with the source handedness boundary, and packages
 and selects the original system palette. P57B2C2A replaces the guessed light
-with the source directional and ambient rig. The DAT-to-tactical-resource join,
-production 3D draw path, filtering, culling, and A0 comparisons remain open.
+with the source directional and ambient rig. P57B2C2B restores filtering,
+culling, depth, dither, shading, specular, and diffuse/emissive material state.
+The DAT-to-tactical-resource join, production 3D draw path, and A0 comparisons
+remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

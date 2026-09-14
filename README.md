@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Tests-592%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-660%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>
@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-13):** Workspace tests and the muted browser harness pass. The shuttle, strategic shell, bitmap controls, sector windows, first system tabs, tactical shell, and first original three-LOD ship family are verified implementation checkpoints. Live LOD switching reuses one loaded family. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks original-view, complete tactical, multiplayer, and release gates that remain open.
+> **Verification (2026-09-14):** Workspace tests and the muted browser harness pass. Verified interface checkpoints now include the shuttle, strategic shell, sector/system navigation, tactical shell, and one source-rendered three-LOD ship family with recovered camera, placement, palette, lighting, and device/material state. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks the production fleet join, original-view, complete tactical, multiplayer, and release gates still open.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|

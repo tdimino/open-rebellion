@@ -53,6 +53,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical participant placement proof](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md) | Stable DAT and fleet-roster identities, exact source X slots and faction lanes, selected-world-point targeting, and remaining resource-join/A0 boundary for P24/P57B2. |
 | [Tactical authored transform and palette proof](../2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md) | Direct authored mesh coordinates, complete system-palette transport, exact two-system selection, and remaining render-state/A0 boundary for P24/P57B2. |
 | [Tactical retained-mode light proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md) | Directional and ambient light types, colors, frame and target contract, transformed direction, muted browser evidence, and remaining filtering/culling/A0 boundary for P24/P57B2. |
+| [Tactical retained-mode render-state proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md) | Dither, Gouraud, filtering, culling, depth, specular, diffuse/emissive material behavior, muted browser evidence, and remaining production/A0 boundary for P24/P57B2. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 
