@@ -23,6 +23,9 @@ Usage (outer process; it spawns Blender itself):
   uv run scripts/sprites/render_original_meshes.py --ids 2560 2561 2562            # proof family
   uv run scripts/sprites/render_original_meshes.py --all --cell 128
   uv run scripts/sprites/render_original_meshes.py --ids 2560 --unlit --check-palette
+     (white-tinted textured chunks must hit a palette entry exactly; tinted textured chunks and
+      untextured chunks, the far LOD of every family, must hit texel*tint or the tint itself
+      within +/-1 per channel; provenance records off_palette (must be 0) and tinted_pixels)
 
 Outputs under data/models/sprites/ (gitignored, derived from original game data):
   frames/<id>/frame_00..07.png, <id>.png + <id>.json (sprite-forge atlas-v2, directions 8),
@@ -217,7 +220,8 @@ def worker(spec_path: Path) -> None:
         mat = bpy.data.materials.new(name)
         mat.use_nodes = True
         mat.use_backface_culling = True
-        mat.blend_method = "OPAQUE" if hasattr(mat, "blend_method") else None  # noqa
+        if hasattr(mat, "blend_method"):   # removed for Eevee in newer Blender; alpha < 1 never occurs in the corpus
+            mat.blend_method = "OPAQUE"
         nodes, links = mat.node_tree.nodes, mat.node_tree.links
         nodes.clear()
         out = nodes.new("ShaderNodeOutputMaterial")
@@ -239,7 +243,13 @@ def worker(spec_path: Path) -> None:
             mul.inputs[6].default_value = (1.0, 1.0, 1.0, 1.0)   # untextured: texel is white
         links.new(attr.outputs["Color"], mul.inputs[7])
         links.new(mul.outputs[2], emit.inputs["Color"])
-        links.new(emit.outputs["Emission"], out.inputs["Surface"])
+        # alpha = texel.a * tint.a like the runtime fragment shader (every corpus material has a = 1).
+        transparent = nodes.new("ShaderNodeBsdfTransparent")
+        mix = nodes.new("ShaderNodeMixShader")
+        links.new(attr.outputs["Alpha"], mix.inputs["Fac"])
+        links.new(transparent.outputs["BSDF"], mix.inputs[1])
+        links.new(emit.outputs["Emission"], mix.inputs[2])
+        links.new(mix.outputs["Shader"], out.inputs["Surface"])
         return mat
 
     for job in spec["jobs"]:
@@ -307,7 +317,9 @@ def worker(spec_path: Path) -> None:
                     uv.data[li].uv = (u, 1.0 - v)
                 for vi in range(len(verts)):
                     if job["unlit"]:
-                        col.data[vi].color = (1.0, 1.0, 1.0, mat.diffuse[3])
+                        # skip only the light term: tint = min(1, diffuse + emissive), so a textured
+                        # chunk passes its texel through and an untextured one shows its real tint
+                        col.data[vi].color = tuple(min(1.0, mat.diffuse[i] + mat.emissive[i]) for i in range(3)) + (mat.diffuse[3],)
                     else:
                         col.data[vi].color = vertex_material(norms[vi], mat.diffuse, mat.emissive, light_dir)
                 me.materials.append(materials[chunk.material])
@@ -338,10 +350,47 @@ def load_module(path: Path, name: str):
     return mod
 
 
-def check_frames(frames_dir: Path, palette, unlit: bool, check_palette: bool) -> dict:
+def material_tint(m) -> tuple[float, float, float]:
+    """What --unlit bakes per vertex: min(1, diffuse + emissive), the runtime material term without light."""
+    return tuple(min(1.0, m.diffuse[i] + m.emissive[i]) for i in range(3))
+
+
+def allowed_colours(mesh, palette) -> tuple[set[tuple[int, int, int]], set[tuple[int, int, int]]]:
+    """(exact palette entries, tinted colours) an --unlit render of `mesh` may contain.
+
+    The runtime fragment shader outputs texel * material, so a textured chunk whose material tint is
+    not pure white (e.g. carrak52 at 0.976, 0.976, 1.0) legitimately leaves the palette: its colours
+    are palette entries scaled by the tint. An untextured chunk (the far LOD of every family) has no
+    texel and renders the tint itself.
+    """
+    exact, tinted = set(), set()
+    for m in mesh.materials:
+        tint = material_tint(m)
+        if m.texture_name:
+            if all(abs(c - 1.0) < 1e-6 for c in tint):
+                exact.update(tuple(c) for c in palette)
+            else:
+                tinted.update(tuple(int(round(c * t)) for c, t in zip(rgb, tint)) for rgb in palette)
+        else:
+            tinted.add(tuple(int(round(t * 255)) for t in tint))
+    return exact, tinted
+
+
+def check_frames(frames_dir: Path, exact, tinted, unlit: bool, check_palette: bool) -> dict:
+    """Frame count, binary alpha and, under --unlit --check-palette, colour pass-through.
+
+    Pixels of white-tinted textured chunks must be palette entries exactly; pixels of tinted textured
+    chunks and of untextured chunks must be the tint-scaled colour within +/-1 per channel (float ->
+    8-bit rounding). `tinted_pixels` counts the latter, `off_palette` (must be 0) everything else.
+    """
     from PIL import Image
-    result = {"frames": 0, "alpha_binary": True, "opaque_pixels": 0, "off_palette": 0}
-    pal = {tuple(c) for c in palette}
+    result = {"frames": 0, "alpha_binary": True, "opaque_pixels": 0, "off_palette": 0, "tinted_pixels": 0,
+              "tinted_materials": bool(tinted)}
+
+    def near_tinted(rgb):
+        return any((rgb[0] + dx, rgb[1] + dy, rgb[2] + dz) in tinted
+                   for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1))
+
     for f in sorted(frames_dir.glob("frame_*.png")):
         with Image.open(f) as im:
             raw = im.convert("RGBA").tobytes()
@@ -352,8 +401,11 @@ def check_frames(frames_dir: Path, palette, unlit: bool, check_palette: bool) ->
                 result["alpha_binary"] = False
             if a == 255:
                 result["opaque_pixels"] += 1
-                if unlit and check_palette and (r, g, b) not in pal:
-                    result["off_palette"] += 1
+                if unlit and check_palette and (r, g, b) not in exact:
+                    if near_tinted((r, g, b)):
+                        result["tinted_pixels"] += 1
+                    else:
+                        result["off_palette"] += 1
     return result
 
 
@@ -509,14 +561,15 @@ def main() -> int:
     failures = []
     for job in jobs:
         frames_dir = Path(job["frames_dir"])
-        check = check_frames(frames_dir, palette, a.unlit, a.check_palette)
+        exact, tinted = allowed_colours(manifest.mesh(job["id"]), palette)
+        check = check_frames(frames_dir, exact, tinted, a.unlit, a.check_palette)
         w = winding[job["id"]]
         if check["frames"] != len(DIRECTIONS):
             failures.append(f"{job['id']}: {check['frames']} frames")
         if not check["alpha_binary"]:
             failures.append(f"{job['id']}: anti-aliased alpha")
         if a.unlit and a.check_palette and check["off_palette"]:
-            failures.append(f"{job['id']}: {check['off_palette']} opaque pixels off palette")
+            failures.append(f"{job['id']}: {check['off_palette']} opaque pixels off palette and off the tinted colours")
         if w["winding_disagree"] > w["winding_agree"]:
             failures.append(f"{job['id']}: winding disagrees with source normals ({w['winding_disagree']} vs {w['winding_agree']})")
         rec = manifest.meshes_by_id[job["id"]]

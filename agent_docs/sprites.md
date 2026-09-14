@@ -57,8 +57,13 @@ with the evidence files named in `provenance.json`:
   no specular, Gouraud. The vertex term `min(1, diffuse·min(1, 0.5 + 0.8·max(0, n·L)) + emissive)`
   is computed in Python per vertex and baked into a colour attribute; Blender multiplies it by the
   texel and rasterises with one sample, pixel filter 0, view transform Raw, textures Non-Color,
-  nearest sampling, back-face culling. `--unlit --check-palette` proves the pass-through: every
-  opaque pixel must be a palette colour (87/87 meshes pass, 0 anti-aliased alpha values).
+  nearest sampling, back-face culling. `--unlit` drops only the light term (tint = min(1, diffuse +
+  emissive)); with `--check-palette` every opaque pixel of a white-tinted textured chunk must be a
+  palette colour exactly, while tinted textured chunks (2540, 2570, 2571 carry diffuse 0.976,
+  0.976, 1.0, so the runtime's texel×tint legitimately leaves the palette) and untextured chunks
+  (the far LOD of all 29 families, 28 meshes) must be texel×tint or the tint itself within ±1 per
+  channel. Provenance records `off_palette` (must be 0) and `tinted_pixels` per sheet; 87/87
+  meshes pass with 0 anti-aliased alpha values.
 - Winding: the decoder's `(i0, i2, i1)` order is CCW-front in the reflected space; the script
   counts triangles whose geometric normal agrees with the source normals and fails a sheet when
   the disagreements win (87/87 agree completely).
@@ -101,8 +106,8 @@ render-side family fallback is a later, approval-gated Rust task.
 ## Track C: fighter textures
 
 `export_fighter_textures.py` asserts 77 files (41 at 32x32, 36 at 16x16), all rule 1, writes mode-P
-PNGs on the chosen palette plus `palette.json` (palette RGB and sha256, per-file object/source/
-indices/PNG digests) and `INDEX.md`. Family slugs come from `tactical-lookup.json` `fighters`
+PNGs on the chosen palette plus `palette.json` (palette id and sha256, per-file object/source/
+indices/PNG digests; the RGB table itself is game data and is not written) and `INDEX.md`. Family slugs come from `tactical-lookup.json` `fighters`
 ranges (`base..base+9`); 4044 and 4049 fall outside every range and are `unknown`.
 `assets/references/ref-squadron-sprites/` (14 files) is MetasharpNet `Names303` 128x128 upscales
 with the palette discarded; it is annotated as non-native in `assets/references/INDEX.md` and

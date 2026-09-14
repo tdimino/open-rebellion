@@ -11,7 +11,8 @@ reference, unlike assets/references/ref-squadron-sprites/, whose 14 files are Me
   uv run scripts/sprites/export_fighter_textures.py                 # palette 5531 -> ref-fighter-textures/
   uv run scripts/sprites/export_fighter_textures.py --palette 5540 --out /tmp/refs
 
-Writes {id}-{size}-{family}.png, palette.json (palette id, RGB triplets, sha256, per-file digests)
+Writes {id}-{size}-{family}.png, palette.json (palette id, palette sha256, per-file digests; the RGB
+table itself is not written, it is original game data)
 and INDEX.md. Family names come from docs/reference/asset-library/tactical-lookup.json `fighters`
 (id ranges base..base+9); ids outside every range are `unknown` (4044, 4049).
 PNGs under assets/references/ are gitignored (extracted from game data); INDEX.md and palette.json
@@ -100,7 +101,7 @@ def main() -> int:
         problems.append(f"expected sizes {EXPECTED_SIZES}, found {dict(sizes)}")
 
     sidecar = {"schema": "open-rebellion/fighter-texture-refs-v1", "palette_id": a.palette,
-               "palette_sha256": hashlib.sha256(palette_bytes).hexdigest(), "palette_rgb": palette,
+               "palette_sha256": hashlib.sha256(palette_bytes).hexdigest(),   # the RGB table itself stays in game data
                "id_range": list(ID_RANGE), "count": len(files), "sizes": {f"{w}x{h}": n for (w, h), n in sorted(sizes.items())},
                "families": sorted({f["family"] for f in files}), "files": files}
     (a.out / "palette.json").write_text(json.dumps(sidecar, indent=2))
