@@ -99,6 +99,8 @@ enum GameMode {
     MainMenu,
     /// Save-slot picker entered from the main menu.
     LoadGame,
+    /// Game Options entered from the command-center globe.
+    GameOptions,
     /// Scrolling original-game and Open Rebellion credits.
     Credits,
     /// Historical head-to-head setup destination.
@@ -1075,7 +1077,9 @@ async fn main() {
                 }
             }
         } else if is_key_pressed(KeyCode::Escape) && !event_screen_state.is_active() {
-            if game_mode == GameMode::LoadGame {
+            if cockpit_routing::return_from_game_options(&mut game_mode) {
+                save_load_panel_state.close();
+            } else if game_mode == GameMode::LoadGame {
                 save_load_panel_state.close();
                 game_mode = GameMode::MainMenu;
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
@@ -2540,9 +2544,40 @@ async fn main() {
                 }
             }
 
-            GameMode::LoadGame => {
+            GameMode::LoadGame | GameMode::GameOptions => {
                 clear_background(Color::new(0.02, 0.02, 0.06, 1.0));
                 egui_macroquad::ui(|ctx| {
+                    if game_mode == GameMode::GameOptions {
+                        egui_macroquad::egui::TopBottomPanel::top("campaign_game_options").show(
+                            ctx,
+                            |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.heading("Game Options");
+                                    if ui
+                                        .selectable_label(
+                                            save_load_panel_state.save_mode,
+                                            "Save Game",
+                                        )
+                                        .clicked()
+                                    {
+                                        save_load_panel_state.open_save();
+                                    }
+                                    if ui
+                                        .selectable_label(
+                                            !save_load_panel_state.save_mode,
+                                            "Load Game",
+                                        )
+                                        .clicked()
+                                    {
+                                        save_load_panel_state.open_load();
+                                    }
+                                    if ui.button("Return to Game").clicked() {
+                                        panel_actions.push(PanelAction::CloseSaveLoadPanel);
+                                    }
+                                });
+                            },
+                        );
+                    }
                     egui_macroquad::egui::TopBottomPanel::bottom("main_menu_audio_options").show(
                         ctx,
                         |ui| {
@@ -3125,7 +3160,19 @@ async fn main() {
                             CockpitButton::FleetFinder => (0x12e, "fleet_finder"),
                             CockpitButton::PersonnelFinder => (0x12f, "personnel_finder"),
                             CockpitButton::TroopFinder => (0x130, "troop_finder"),
-                            CockpitButton::GameOptions => (0x131, "game_options"),
+                            CockpitButton::GameOptions => {
+                                save_slots = read_save_slots(&saves_dir);
+                                cockpit_routing::open_game_options(
+                                    &mut cockpit_state,
+                                    &mut save_load_panel_state,
+                                    &mut game_mode,
+                                );
+                                show_save_load = false;
+                                macroquad::logging::info!(
+                                    "[interface] command=0x133 destination=game_options status=opened"
+                                );
+                                return;
+                            }
                             CockpitButton::SaveLoad => {
                                 cockpit_state.gid_ui.menu_open = false;
                                 cockpit_state.gid_ui.category = None;
@@ -3740,7 +3787,9 @@ async fn main() {
                 PanelAction::CloseSaveLoadPanel => {
                     save_load_panel_state.close();
                     show_save_load = false;
-                    if game_mode == GameMode::LoadGame {
+                    if !cockpit_routing::return_from_game_options(&mut game_mode)
+                        && game_mode == GameMode::LoadGame
+                    {
                         game_mode = GameMode::MainMenu;
                     }
                 }

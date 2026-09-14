@@ -20,6 +20,8 @@ audit-driven milestones are the source of truth.
 
 PR #11 checkpoint (2026-09-14): `0x131` opens the existing Encyclopedia for both factions. [Native tests and evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-encyclopedia-routing.md) pass for routing; strict Clippy and original/browser Encyclopedia acceptance remain open.
 
+PR #11 step 2 (2026-09-14): [Game Options routing](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-game-options-routing.md) has native-tested entry and return for both faction globes. Separate pending task: complete the original options layout, saved-game controls, tactical display settings, restart/exit semantics, and visual/browser acceptance.
+
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 

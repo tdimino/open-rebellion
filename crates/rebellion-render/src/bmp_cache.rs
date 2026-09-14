@@ -426,10 +426,10 @@ pub mod resources {
         pub const ALLIANCE_GID_PRESSED: u32 = 10011;
         /// Alliance Galactic Information Display, normal.
         pub const ALLIANCE_GID_NORMAL: u32 = 10012;
-        /// Alliance save/load globe, normal.
-        pub const ALLIANCE_SAVE_LOAD_NORMAL: u32 = 10013;
-        /// Alliance save/load globe, pressed.
-        pub const ALLIANCE_SAVE_LOAD_PRESSED: u32 = 10014;
+        /// Alliance Game Options globe, normal.
+        pub const ALLIANCE_GAME_OPTIONS_NORMAL: u32 = 10013;
+        /// Alliance Game Options globe, pressed.
+        pub const ALLIANCE_GAME_OPTIONS_PRESSED: u32 = 10014;
 
         /// Imperial System Finder, pressed.
         pub const EMPIRE_SYSTEM_FINDER_PRESSED: u32 = 10015;
@@ -455,10 +455,10 @@ pub mod resources {
         pub const EMPIRE_GID_PRESSED: u32 = 10025;
         /// Imperial Galactic Information Display, normal.
         pub const EMPIRE_GID_NORMAL: u32 = 10026;
-        /// Imperial save/load globe, normal.
-        pub const EMPIRE_SAVE_LOAD_NORMAL: u32 = 10027;
-        /// Imperial save/load globe, pressed.
-        pub const EMPIRE_SAVE_LOAD_PRESSED: u32 = 10028;
+        /// Imperial Game Options globe, normal.
+        pub const EMPIRE_GAME_OPTIONS_NORMAL: u32 = 10027;
+        /// Imperial Game Options globe, pressed.
+        pub const EMPIRE_GAME_OPTIONS_PRESSED: u32 = 10028;
 
         /// Code-built GID menu frame tiles, checkmarks, category icons, and arrows.
         pub const GID_FRAME_FIRST: u32 = 10100;

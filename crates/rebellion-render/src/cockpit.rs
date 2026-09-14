@@ -444,8 +444,8 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
     },
 ];
 
-const ALLIANCE_SAVE_LOAD_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::SaveLoad,
+const ALLIANCE_GAME_OPTIONS_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::GameOptions,
     command_id: 0x133,
     rect: CockpitViewport {
         x: 3.0,
@@ -453,12 +453,12 @@ const ALLIANCE_SAVE_LOAD_CONTROL: StrategicControlSpec = StrategicControlSpec {
         width: 27.0,
         height: 41.0,
     },
-    normal_resource: resources::strategy::ALLIANCE_SAVE_LOAD_NORMAL,
-    pressed_resource: resources::strategy::ALLIANCE_SAVE_LOAD_PRESSED,
+    normal_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_NORMAL,
+    pressed_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
 };
 
-const EMPIRE_SAVE_LOAD_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::SaveLoad,
+const EMPIRE_GAME_OPTIONS_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::GameOptions,
     command_id: 0x133,
     rect: CockpitViewport {
         x: 79.0,
@@ -466,8 +466,8 @@ const EMPIRE_SAVE_LOAD_CONTROL: StrategicControlSpec = StrategicControlSpec {
         width: 35.0,
         height: 57.0,
     },
-    normal_resource: resources::strategy::EMPIRE_SAVE_LOAD_NORMAL,
-    pressed_resource: resources::strategy::EMPIRE_SAVE_LOAD_PRESSED,
+    normal_resource: resources::strategy::EMPIRE_GAME_OPTIONS_NORMAL,
+    pressed_resource: resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
 };
 
 const ALLIANCE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
@@ -535,8 +535,8 @@ pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicContr
 /// Side control outside the six bottom controls.
 fn strategic_side_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
     match faction {
-        CockpitFaction::Alliance => &ALLIANCE_SAVE_LOAD_CONTROL,
-        CockpitFaction::Empire => &EMPIRE_SAVE_LOAD_CONTROL,
+        CockpitFaction::Alliance => &ALLIANCE_GAME_OPTIONS_CONTROL,
+        CockpitFaction::Empire => &EMPIRE_GAME_OPTIONS_CONTROL,
     }
 }
 
@@ -1750,9 +1750,9 @@ mod tests {
     }
 
     #[test]
-    fn empire_globe_opens_save_load_without_moving_its_artwork() {
+    fn empire_globe_opens_game_options_without_moving_its_artwork() {
         let globe = strategic_side_control(CockpitFaction::Empire);
-        assert_eq!(globe.button, CockpitButton::SaveLoad);
+        assert_eq!(globe.button, CockpitButton::GameOptions);
         assert_eq!(globe.command_id, 0x133);
         assert_eq!(globe.normal_resource, 10027);
         assert_eq!(globe.pressed_resource, 10028);
@@ -1772,9 +1772,9 @@ mod tests {
     }
 
     #[test]
-    fn alliance_globe_opens_save_load_without_moving_its_artwork() {
+    fn alliance_globe_opens_game_options_without_moving_its_artwork() {
         let globe = strategic_side_control(CockpitFaction::Alliance);
-        assert_eq!(globe.button, CockpitButton::SaveLoad);
+        assert_eq!(globe.button, CockpitButton::GameOptions);
         assert_eq!(globe.command_id, 0x133);
         assert_eq!(globe.normal_resource, 10013);
         assert_eq!(globe.pressed_resource, 10014);

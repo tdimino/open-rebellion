@@ -1885,7 +1885,7 @@
     {"id":"P28","name":"Generic events","status":"pending"},
     {"id":"P29","name":"Story and cutscenes","status":"pending"},
     {"id":"P30","name":"Victory and defeat","status":"partial","verified_tranches":["F-007E-victory_contract"],"remaining":["end-to-end terminal presentation, simulation freeze, cutscene policy, Continue, and clean restart"],"evidence":"docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-victory-contract.md"},
-    {"id":"P31","name":"Save/load/delete","status":"pending"},
+    {"id":"P31","routing_checkpoint":{"date":"2026-09-14","command":"0x133","status":"native_tests_pass_browser_pending","evidence":"docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-game-options-routing.md","scope":"User narrowed step 2 to opening Game Options; complete screen repair is a separate task."},"name":"Save/load/delete","status":"pending"},
     {"id":"P32","name":"Mods","status":"pending"},
     {"id":"P33","name":"Audio","status":"pending"},
     {"id":"P34","name":"Droid advisors","status":"partial","verified_tranches":["P44_RE-ADV-01_authentic_idle_frames"],"evidence":"docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md","interface_audit":"docs/qa/2026-09-10-interface-parity-audit/","known_visual_failures":["replacement strategic controls overlap lower advisor apertures","original embedded chrome, Agent menus, action timing, preemption, voice, and briefing sequences remain absent"]},
