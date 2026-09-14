@@ -77,6 +77,8 @@ pub enum CockpitButton {
     PersonnelFinder,
     /// Open the original game-options destination (F7).
     GameOptions,
+    /// Open the save/load screen.
+    SaveLoad,
     /// Open the Encyclopedia.
     Encyclopedia,
     /// Open the Galactic Information Display menu.
@@ -354,7 +356,7 @@ const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
         pressed_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::Encyclopedia,
+        button: CockpitButton::GalacticInformationDisplay,
         command_id: 0x132,
         rect: CockpitViewport {
             x: 446.0,
@@ -362,8 +364,8 @@ const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 27.0,
             height: 16.0,
         },
-        normal_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
+        normal_resource: resources::strategy::ALLIANCE_GID_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_GID_PRESSED,
     },
 ];
 
@@ -429,7 +431,7 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
         pressed_resource: resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::Encyclopedia,
+        button: CockpitButton::GalacticInformationDisplay,
         command_id: 0x132,
         rect: CockpitViewport {
             x: 519.0,
@@ -437,13 +439,13 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 37.0,
             height: 25.0,
         },
-        normal_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
+        normal_resource: resources::strategy::EMPIRE_GID_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_GID_PRESSED,
     },
 ];
 
-const ALLIANCE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::GalacticInformationDisplay,
+const ALLIANCE_SAVE_LOAD_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::SaveLoad,
     command_id: 0x133,
     rect: CockpitViewport {
         x: 3.0,
@@ -451,12 +453,12 @@ const ALLIANCE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
         width: 27.0,
         height: 41.0,
     },
-    normal_resource: resources::strategy::ALLIANCE_GID_NORMAL,
-    pressed_resource: resources::strategy::ALLIANCE_GID_PRESSED,
+    normal_resource: resources::strategy::ALLIANCE_SAVE_LOAD_NORMAL,
+    pressed_resource: resources::strategy::ALLIANCE_SAVE_LOAD_PRESSED,
 };
 
-const EMPIRE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::GalacticInformationDisplay,
+const EMPIRE_SAVE_LOAD_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::SaveLoad,
     command_id: 0x133,
     rect: CockpitViewport {
         x: 79.0,
@@ -464,8 +466,8 @@ const EMPIRE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
         width: 35.0,
         height: 57.0,
     },
-    normal_resource: resources::strategy::EMPIRE_GID_NORMAL,
-    pressed_resource: resources::strategy::EMPIRE_GID_PRESSED,
+    normal_resource: resources::strategy::EMPIRE_SAVE_LOAD_NORMAL,
+    pressed_resource: resources::strategy::EMPIRE_SAVE_LOAD_PRESSED,
 };
 
 const ALLIANCE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
@@ -521,12 +523,20 @@ pub fn strategic_primary_controls(faction: CockpitFaction) -> &'static [Strategi
     }
 }
 
-/// Exact GID control created by `FUN_00427270` for a faction.
+/// GID control for a faction: the rightmost bottom control.
 #[must_use]
 pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
     match faction {
-        CockpitFaction::Alliance => &ALLIANCE_GID_CONTROL,
-        CockpitFaction::Empire => &EMPIRE_GID_CONTROL,
+        CockpitFaction::Alliance => &ALLIANCE_PRIMARY_CONTROLS[5],
+        CockpitFaction::Empire => &EMPIRE_PRIMARY_CONTROLS[5],
+    }
+}
+
+/// Side control outside the six bottom controls.
+fn strategic_side_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
+    match faction {
+        CockpitFaction::Alliance => &ALLIANCE_SAVE_LOAD_CONTROL,
+        CockpitFaction::Empire => &EMPIRE_SAVE_LOAD_CONTROL,
     }
 }
 
@@ -743,7 +753,7 @@ pub fn draw_cockpit_egui_layer(
         &painter,
         layout,
         state,
-        strategic_gid_control(state.faction),
+        strategic_side_control(state.faction),
         primary_down,
     );
     draw_message_index_rail(ctx, cache, &painter, layout, state.faction);
@@ -1354,7 +1364,7 @@ pub fn handle_cockpit_egui_input(
             control_at_pointer(cache, controls, layout, pointer).or_else(|| {
                 control_at_pointer(
                     cache,
-                    std::slice::from_ref(strategic_gid_control(state.faction)),
+                    std::slice::from_ref(strategic_side_control(state.faction)),
                     layout,
                     pointer,
                 )
@@ -1653,7 +1663,7 @@ mod tests {
                     10009,
                 ),
                 (
-                    CockpitButton::Encyclopedia,
+                    CockpitButton::GalacticInformationDisplay,
                     0x132,
                     CockpitViewport {
                         x: 446.0,
@@ -1699,33 +1709,78 @@ mod tests {
     fn gid_controls_match_recovered_constructor_records() {
         let alliance = strategic_gid_control(CockpitFaction::Alliance);
         assert_eq!(alliance.button, CockpitButton::GalacticInformationDisplay);
-        assert_eq!(alliance.command_id, 0x133);
+        assert_eq!(alliance.command_id, 0x132);
         assert_eq!(
             alliance.rect,
             CockpitViewport {
-                x: 3.0,
-                y: 355.0,
+                x: 446.0,
+                y: 406.0,
                 width: 27.0,
-                height: 41.0,
+                height: 16.0,
             }
         );
-        assert_eq!(alliance.normal_resource, 10013);
-        assert_eq!(alliance.pressed_resource, 10014);
+        assert_eq!(alliance.normal_resource, 10012);
+        assert_eq!(alliance.pressed_resource, 10011);
 
         let empire = strategic_gid_control(CockpitFaction::Empire);
         assert_eq!(empire.button, CockpitButton::GalacticInformationDisplay);
-        assert_eq!(empire.command_id, 0x133);
+        assert_eq!(empire.command_id, 0x132);
         assert_eq!(
             empire.rect,
             CockpitViewport {
-                x: 79.0,
-                y: 192.0,
-                width: 35.0,
-                height: 57.0,
+                x: 519.0,
+                y: 434.0,
+                width: 37.0,
+                height: 25.0,
             }
         );
-        assert_eq!(empire.normal_resource, 10027);
-        assert_eq!(empire.pressed_resource, 10028);
+        assert_eq!(empire.normal_resource, 10026);
+        assert_eq!(empire.pressed_resource, 10025);
+    }
+
+    #[test]
+    fn empire_globe_opens_save_load_without_moving_its_artwork() {
+        let globe = strategic_side_control(CockpitFaction::Empire);
+        assert_eq!(globe.button, CockpitButton::SaveLoad);
+        assert_eq!(globe.command_id, 0x133);
+        assert_eq!(globe.normal_resource, 10027);
+        assert_eq!(globe.pressed_resource, 10028);
+        assert_viewport(globe.rect, 79.0, 192.0, 35.0, 57.0);
+        let controls = strategic_primary_controls(CockpitFaction::Empire);
+        assert_eq!(
+            controls[5].button,
+            CockpitButton::GalacticInformationDisplay
+        );
+        assert_eq!(
+            controls
+                .iter()
+                .filter(|c| c.button == CockpitButton::GalacticInformationDisplay)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn alliance_globe_opens_save_load_without_moving_its_artwork() {
+        let globe = strategic_side_control(CockpitFaction::Alliance);
+        assert_eq!(globe.button, CockpitButton::SaveLoad);
+        assert_eq!(globe.command_id, 0x133);
+        assert_eq!(globe.normal_resource, 10013);
+        assert_eq!(globe.pressed_resource, 10014);
+        assert_viewport(globe.rect, 3.0, 355.0, 27.0, 41.0);
+
+        let controls = strategic_primary_controls(CockpitFaction::Alliance);
+        assert_eq!(
+            controls
+                .iter()
+                .filter(|c| c.button == CockpitButton::GalacticInformationDisplay)
+                .count(),
+            1
+        );
+        assert_eq!(
+            controls[5].button,
+            CockpitButton::GalacticInformationDisplay
+        );
     }
 
     #[test]

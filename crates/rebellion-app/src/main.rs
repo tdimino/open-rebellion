@@ -3125,12 +3125,25 @@ async fn main() {
                             CockpitButton::PersonnelFinder => (0x12f, "personnel_finder"),
                             CockpitButton::TroopFinder => (0x130, "troop_finder"),
                             CockpitButton::GameOptions => (0x131, "game_options"),
+                            CockpitButton::SaveLoad => {
+                                cockpit_state.gid_ui.menu_open = false;
+                                cockpit_state.gid_ui.category = None;
+                                save_slots = read_save_slots(&saves_dir);
+                                save_load_panel_state.open_save();
+                                show_save_load = true;
+                                macroquad::logging::info!(
+                                    "[interface] command=0x133 destination=save_load status=opened"
+                                );
+                                return;
+                            }
                             CockpitButton::Encyclopedia => (0x132, "encyclopedia"),
                             CockpitButton::GalacticInformationDisplay => {
                                 cockpit_state.gid_ui.menu_open = !cockpit_state.gid_ui.menu_open;
                                 cockpit_state.gid_ui.category = None;
                                 macroquad::logging::info!(
-                                    "[interface] command=0x133 destination=gid_menu status={}",
+                                    "[interface] command=0x{:x} destination=gid_menu status={}",
+                                    rebellion_render::strategic_gid_control(cockpit_state.faction)
+                                        .command_id,
                                     if cockpit_state.gid_ui.menu_open {
                                         "opened_original"
                                     } else {
