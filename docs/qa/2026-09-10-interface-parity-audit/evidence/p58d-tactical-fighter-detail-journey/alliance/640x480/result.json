@@ -1,0 +1,782 @@
+{
+  "schema_version": 1,
+  "id": "tactical/alliance/production-fighter-detail-journey/640x480",
+  "status": "pass",
+  "fixture_code": 65802,
+  "browser_version": "151.0.7922.34",
+  "browser_executable": "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "launch_arguments": [
+    "--mute-audio",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--no-first-run"
+  ],
+  "profile": "new-process-and-temporary-profile-per-scenario",
+  "muted": true,
+  "viewport": {
+    "id": "640x480",
+    "width": 640,
+    "height": 480,
+    "device_scale_factor": 1
+  },
+  "ready": {
+    "schema_version": 8,
+    "status": "battle-ready",
+    "family": "tactical",
+    "fixture_code": 65802,
+    "faction": "alliance",
+    "proof_enabled": false,
+    "production_participants": true,
+    "suppress_capital_fallback": false,
+    "focus_player_fighter": true,
+    "tactical_lod": "default",
+    "system": "Abregado",
+    "system_picture_id": 1,
+    "palette_resource_id": 5531,
+    "attacker_ships": 1,
+    "defender_ships": 1,
+    "fighters": 2,
+    "source_layout": {
+      "first_active_objects": 2,
+      "second_active_objects": 2,
+      "battle_extent": 106,
+      "outer_positive_z": 53,
+      "outer_negative_z": -53,
+      "inner_negative_z": -33,
+      "inner_positive_z": 33
+    },
+    "participants": [
+      {
+        "kind": "capital-ship",
+        "name": "Mon Calamari Cruiser",
+        "faction": "alliance",
+        "class_dat_id": 64,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 0,
+        "resource_base": 2010,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "source_position": [
+          0,
+          0,
+          -53
+        ]
+      },
+      {
+        "kind": "capital-ship",
+        "name": "Strike Cruiser",
+        "faction": "empire",
+        "class_dat_id": 128,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 15,
+        "resource_base": 2510,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "source_position": [
+          0,
+          0,
+          53
+        ]
+      },
+      {
+        "kind": "fighter-group",
+        "name": "A-wing",
+        "faction": "alliance",
+        "class_dat_id": 1,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 31,
+        "resource_base": 4020,
+        "opposing_resource_base": 4024,
+        "initial_close_resource": 4024,
+        "initial_far_resource": 4029,
+        "initial_indicator_resource": 4204,
+        "source_position": [
+          0,
+          0,
+          -33
+        ]
+      },
+      {
+        "kind": "fighter-group",
+        "name": "TIE Fighter",
+        "faction": "empire",
+        "class_dat_id": 5,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 33,
+        "resource_base": 4100,
+        "opposing_resource_base": 4104,
+        "initial_close_resource": 4104,
+        "initial_far_resource": 4109,
+        "initial_indicator_resource": 4204,
+        "source_position": [
+          0,
+          0,
+          33
+        ]
+      }
+    ],
+    "error": null
+  },
+  "screenshot_sha256": "b5ce484dc8a9569eefcaf8f47724f15cee5f65f1e15a6a8fdb375a500f5dac7c",
+  "two_frame_hashes": {
+    "first": "b5ce484dc8a9569eefcaf8f47724f15cee5f65f1e15a6a8fdb375a500f5dac7c",
+    "second": "b5ce484dc8a9569eefcaf8f47724f15cee5f65f1e15a6a8fdb375a500f5dac7c",
+    "equal": true
+  },
+  "message_index_rail": null,
+  "runtime_measurements": {
+    "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+    "frame_interval_ms": {
+      "median": 8.300000000000182,
+      "p95": 9.300000000000182,
+      "max": 12.099999999999909
+    },
+    "navigation_duration_ms": 16.300000071525574,
+    "wasm_memory_bytes": 89653248,
+    "js_heap_used_bytes": 44218568,
+    "js_heap_total_bytes": 48629960
+  },
+  "wasm_sha256": "87be63a58afb488eb4db2f36862864dec18814bd0e254d5914a647cc4552ab05",
+  "runtime_pack_sha256": "7f0289265d9f85bfc971b8160edcab0da2425f1ed7246c35e570b6a07fdde631",
+  "requests": [
+    {
+      "url": "/",
+      "status": 200
+    },
+    {
+      "url": "/gl.js",
+      "status": 200
+    },
+    {
+      "url": "/open-rebellion-test.wasm",
+      "status": 200
+    },
+    {
+      "url": "/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "console": [
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_replay is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_interface_fixture is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "info",
+      "text": "[assets] render_profile=original-parity"
+    },
+    {
+      "type": "info",
+      "text": "runtime_asset_pack loaded game_files=52 ui_bitmaps=2303 advisor_frames=3988 audio_files=5 tactical_meshes=87 tactical_textures=397 bytes=40337367"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_family_loaded base=2010 resources=2010,2011,2012 textures=MONCAL52.BMP,MONCAL_M.BMP palette_selector=1 palette_resource_id=5531 diagnostics=2010:60/56/168/56,2011:38/34/102/34,2012:22/22/66/22 family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_family_loaded base=2510 resources=2510,2511,2512 textures=STRIKE52.BMP,STRIKE_M.BMP palette_selector=1 palette_resource_id=5531 diagnostics=2510:58/53/159/53,2511:30/32/96/32,2512:10/16/48/16 family_loads=2"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] layout_source first_active_objects=2 second_active_objects=2 battle_extent=106 outer_positive_z=53 outer_negative_z=-53 inner_negative_z=-33 inner_positive_z=33 source=FUN_005ab650"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.2 zoom_step=5 orbit_step=5 distance=180.20001 near=1 far=450.50003 fovy_radians=0.39479113 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_scene requested=2 rendered=2 families=2010,2510 resources=1:2012,2:2512 screen_positions=1:238.000,342.581;2:238.000,-3.772 source_positions=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_bounds screen_bounds=1:233.597,336.501,242.415,348.139;2:237.239,-4.868,238.761,-2.546 source_projection=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_family_loaded close=4024 far=4029 indicator=4204 dimensions=32x32,16x16,2x2 palette_selector=1 palette_resource_id=5531 texture_filter=nearest alpha=opaque source=FUN_005c63f0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_family_loaded close=4104 far=4109 indicator=4204 dimensions=32x32,16x16,2x2 palette_selector=1 palette_resource_id=5531 texture_filter=nearest alpha=opaque source=FUN_005c63f0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4204:Indicator:30.503,1002:4204:Indicator:41.154 screen_positions=1001:238.000,247.500;1002:238.000,39.541 screen_bounds=1001:237.000,246.500,239.000,248.500;1002:237.000,38.541,239.000,40.541 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[audio] music_volume=0.00 muted=true music_muted=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.17999999 zoom_step=4 orbit_step=4 distance=180.20001 near=1 far=450.50003 fovy_radians=0.35618585 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.16199999 zoom_step=3 orbit_step=3 distance=180.20001 near=1 far=450.50003 fovy_radians=0.32120943 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.14579998 zoom_step=2 orbit_step=2 distance=180.20001 near=1 far=450.50003 fovy_radians=0.2895597 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.13121998 zoom_step=1 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.26094905 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.11809798 zoom_step=0 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.23510697 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.10628818 zoom_step=-1 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.21178123 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.09565936 zoom_step=-2 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.19073834 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.08609342 zoom_step=-3 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.1717633 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.07748407 zoom_step=-4 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.15465912 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.06973566 zoom_step=-5 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.1392459 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.0627621 zoom_step=-6 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.12535976 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4029:Far:9.572,1002:4204:Indicator:12.914 screen_positions=1001:238.000,247.500;1002:238.000,-415.190 screen_bounds=1001:230.000,239.500,246.000,255.500;1002:237.000,-416.190,239.000,-414.190 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.056485884 zoom_step=-7 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.11285184 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.050837293 zoom_step=-8 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.10158713 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.04575356 zoom_step=-9 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.09144335 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4029:Far:6.978,1002:4109:Far:9.415 screen_positions=1001:238.000,247.500;1002:238.000,-661.541 screen_bounds=1001:230.000,239.500,246.000,255.500;1002:230.000,-669.541,246.000,-653.541 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.041178204 zoom_step=-10 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.08230991 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.037060384 zoom_step=-11 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.07408686 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.033354346 zoom_step=-12 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.06668397 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.03001891 zoom_step=-13 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.0600198 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4024:Close:4.578,1002:4109:Far:6.177 screen_positions=1001:238.000,247.500;1002:238.000,-1138.021 screen_bounds=1001:222.000,231.500,254.000,263.500;1002:230.000,-1146.021,246.000,-1130.021 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.02701702 zoom_step=-14 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.054020897 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.024315316 zoom_step=-15 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.04862105 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.021883784 zoom_step=-16 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.043760583 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4024:Close:3.338,1002:4104:Close:4.503 screen_positions=1001:238.000,247.500;1002:238.000,-1653.078 screen_bounds=1001:222.000,231.500,254.000,263.500;1002:222.000,-1669.078,254.000,-1637.078 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.024072163 zoom_step=-15 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.04813503 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.02647938 zoom_step=-14 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.05294639 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4024:Close:4.039,1002:4109:Far:5.449 screen_positions=1001:238.000,247.500;1002:238.000,-1323.226 screen_bounds=1001:222.000,231.500,254.000,263.500;1002:230.000,-1331.226,246.000,-1315.226 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.029127318 zoom_step=-13 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.05823817 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.032040052 zoom_step=-12 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.06405819 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.03524406 zoom_step=-11 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.070458956 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4029:Far:5.375,1002:4109:Far:7.252 screen_positions=1001:238.000,247.500;1002:238.000,-932.609 screen_bounds=1001:230.000,239.500,246.000,255.500;1002:230.000,-940.609,246.000,-924.609 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.038768467 zoom_step=-10 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.07749812 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.042645313 zoom_step=-9 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.08523898 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.046909846 zoom_step=-8 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.09375097 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.051600832 zoom_step=-7 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.10311022 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4029:Far:7.870,1002:4204:Indicator:10.618 screen_positions=1001:238.000,247.500;1002:238.000,-558.530 screen_bounds=1001:230.000,239.500,246.000,255.500;1002:237.000,-559.530,239.000,-557.530 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.05676092 zoom_step=-6 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.113400154 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.062437013 zoom_step=-5 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.12471213 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.06868072 zoom_step=-4 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.13714607 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4204:Indicator:10.475,1002:4204:Indicator:14.132 screen_positions=1001:238.000,247.500;1002:238.000,-358.083 screen_bounds=1001:237.000,246.500,239.000,248.500;1002:237.000,-359.083,239.000,-357.083 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.07554879 zoom_step=-3 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.15081109 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.08310367 zoom_step=-2 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.1658263 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.09141404 zoom_step=-1 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.18232135 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.10055545 zoom_step=0 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.20043714 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.110611 zoom_step=1 orbit_step=1 distance=180.20001 near=1 far=450.50003 fovy_radians=0.22032636 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=-30 field=0.1216721 zoom_step=2 orbit_step=2 distance=180.20001 near=1 far=450.50003 fovy_radians=0.24215393 target_object_id=1001 target_x=-0 target_y=0 target_z=33 handedness=lh_y_up_to_rh_y_up"
+    }
+  ],
+  "interaction_logs": [],
+  "probes": [
+    {
+      "type": "production-tactical-entry",
+      "system": "Abregado",
+      "attacker_ships": 1,
+      "defender_ships": 1,
+      "fighters": 2
+    },
+    {
+      "type": "production-tactical-fighter-detail-journey",
+      "controls": [
+        "zoom-in",
+        "zoom-out"
+      ],
+      "executable_functions": [
+        "FUN_005c7150",
+        "FUN_005c63f0",
+        "0x005d4af0"
+      ],
+      "thresholds": {
+        "close_below": 5,
+        "far_below": 10,
+        "indicator_at_or_above": 10
+      },
+      "states": [
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4204,
+            "detail": "indicator",
+            "view_span": 30.503
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4204,
+            "detail": "indicator",
+            "view_span": 41.154
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4029,
+            "detail": "far",
+            "view_span": 9.572
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4204,
+            "detail": "indicator",
+            "view_span": 12.914
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4029,
+            "detail": "far",
+            "view_span": 6.978
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4109,
+            "detail": "far",
+            "view_span": 9.415
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4024,
+            "detail": "close",
+            "view_span": 4.578
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4109,
+            "detail": "far",
+            "view_span": 6.177
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4024,
+            "detail": "close",
+            "view_span": 3.338
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4104,
+            "detail": "close",
+            "view_span": 4.503
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4024,
+            "detail": "close",
+            "view_span": 4.039
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4109,
+            "detail": "far",
+            "view_span": 5.449
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4029,
+            "detail": "far",
+            "view_span": 5.375
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4109,
+            "detail": "far",
+            "view_span": 7.252
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4029,
+            "detail": "far",
+            "view_span": 7.87
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4204,
+            "detail": "indicator",
+            "view_span": 10.618
+          }
+        ],
+        [
+          {
+            "object_id": 1001,
+            "resource_id": 4204,
+            "detail": "indicator",
+            "view_span": 10.475
+          },
+          {
+            "object_id": 1002,
+            "resource_id": 4204,
+            "detail": "indicator",
+            "view_span": 14.132
+          }
+        ]
+      ],
+      "aperture_hashes": [
+        "f3828e7304db539036932f7a879b20b9b30d6555fba99be205cfec7b00189839",
+        "9a8200c42c9a64ac688b484415f8bfcf18562d3c2b4dccb6678a4367442f69a7",
+        "e705a04715e3b7917bfb43a3a833c3fe3dc1c42c20e504604408c34910bfa63b",
+        "9a8200c42c9a64ac688b484415f8bfcf18562d3c2b4dccb6678a4367442f69a7",
+        "93fdf251052357f102afaf8409bb1b0d01bdb15d9f55d2092d57e7f4f4bf14f3"
+      ],
+      "aperture_isolation": [
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        },
+        {
+          "status": "isolated",
+          "pixels_checked": 112284
+        }
+      ],
+      "family_loads": 2
+    },
+    {
+      "type": "source-bound-tactical-participants",
+      "executable_functions": [
+        "FUN_005ab650",
+        "FUN_005a9030"
+      ],
+      "layout": {
+        "first_active_objects": 2,
+        "second_active_objects": 2,
+        "battle_extent": 106,
+        "outer_positive_z": 53,
+        "outer_negative_z": -53,
+        "inner_negative_z": -33,
+        "inner_positive_z": 33
+      },
+      "participants": [
+        {
+          "kind": "capital-ship",
+          "name": "Mon Calamari Cruiser",
+          "faction": "alliance",
+          "class_dat_id": 64,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 0,
+          "resource_base": 2010,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "source_position": [
+            0,
+            0,
+            -53
+          ]
+        },
+        {
+          "kind": "capital-ship",
+          "name": "Strike Cruiser",
+          "faction": "empire",
+          "class_dat_id": 128,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 15,
+          "resource_base": 2510,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "source_position": [
+            0,
+            0,
+            53
+          ]
+        },
+        {
+          "kind": "fighter-group",
+          "name": "A-wing",
+          "faction": "alliance",
+          "class_dat_id": 1,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 31,
+          "resource_base": 4020,
+          "opposing_resource_base": 4024,
+          "initial_close_resource": 4024,
+          "initial_far_resource": 4029,
+          "initial_indicator_resource": 4204,
+          "source_position": [
+            0,
+            0,
+            -33
+          ]
+        },
+        {
+          "kind": "fighter-group",
+          "name": "TIE Fighter",
+          "faction": "empire",
+          "class_dat_id": 5,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 33,
+          "resource_base": 4100,
+          "opposing_resource_base": 4104,
+          "initial_close_resource": 4104,
+          "initial_far_resource": 4109,
+          "initial_indicator_resource": 4204,
+          "source_position": [
+            0,
+            0,
+            33
+          ]
+        }
+      ]
+    },
+    {
+      "type": "production-tactical-resource-families",
+      "families": [
+        2010,
+        2510
+      ],
+      "selected_resources": [
+        2012,
+        2512
+      ],
+      "source_positions": true
+    },
+    {
+      "type": "production-tactical-fighter-families",
+      "close_resources": [
+        4024,
+        4104
+      ],
+      "far_resources": [
+        4029,
+        4109
+      ],
+      "selected_resources": [
+        4204,
+        4204
+      ],
+      "source_thresholds": [
+        5,
+        10
+      ],
+      "source_positions": true
+    },
+    {
+      "type": "browser-runtime-measurements",
+      "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+      "frame_interval_ms": {
+        "median": 8.300000000000182,
+        "p95": 9.300000000000182,
+        "max": 12.099999999999909
+      },
+      "navigation_duration_ms": 16.300000071525574,
+      "wasm_memory_bytes": 89653248,
+      "js_heap_used_bytes": 44218568,
+      "js_heap_total_bytes": 48629960
+    }
+  ],
+  "comparison": {
+    "original_reference_source": "owned-original-or-curated-reference-only",
+    "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+    "implementation_baseline": null,
+    "status": "unbaselined",
+    "different_pixels": null,
+    "difference_ratio": null,
+    "tolerance": 0,
+    "masks": []
+  },
+  "interaction_comparisons": {
+    "fighter-detail-close": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "fighter-detail-far": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "fighter-detail-return-far": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "fighter-detail-return-indicator": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    }
+  },
+  "cleanup": "closed"
+}

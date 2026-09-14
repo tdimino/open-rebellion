@@ -215,9 +215,11 @@ approximate sprite arithmetic, and browser-proves complete 87-mesh and
 proves live production capital-family drawing at recovered source positions.
 [P58C evidence](evidence/2026-09-14-tactical-fighters-selection.md) proves the
 type-303 fighter resource triplets, exact detail thresholds, production fighter
-pixels, and projection-aligned capital interactions. Close/far browser
-journeys, squadron and task-force panels, and original visual acceptance remain
-open.
+pixels, and projection-aligned capital interactions. The
+[P58D evidence](evidence/2026-09-14-tactical-fighter-detail-journey.md) proves
+the nine independent indicator/far/close transitions through the original zoom
+controls without family reload. Squadron and task-force panels and original
+visual acceptance remain open.
 
 ## Immediate implementation order
 

@@ -627,10 +627,15 @@ would tune around known simulation feedback defects.
   recovered detail predicate; move capital selection, focus, targeting, and
   framing onto projected mesh bounds; and pass the 36-case muted browser gate
   with paired controls. Keep every strict tactical cell open pending A0.
+- [x] Complete P58D production fighter-detail journey: focus the test camera on
+  each faction's real fighter, exercise the original zoom controls through all
+  nine independent indicator/far/close transitions, retain both cached
+  families, and pass the 40-case muted browser gate. Keep every strict tactical
+  cell open pending A0.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58D next restores task-force and squadron presentation plus the
-  close/far fighter camera journeys before damage, planets, and effects.
+  states. P58E next restores task-force and squadron presentation before
+  damage, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

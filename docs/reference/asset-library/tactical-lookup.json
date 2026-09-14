@@ -75,5 +75,5 @@
     "reduced_detail": {"far_below_view_span": 10.0, "indicator_at_or_above": 10.0},
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md"
   },
-  "unresolved": ["selected-object retained lifetime and squadron/task-force presentation", "remaining type-301 family view rules", "fighter formation/color variants and close/far camera journeys", "battle event to effect resource", "tactical planet picture selector initialization", "remaining original control-state and render geometry"]
+  "unresolved": ["selected-object retained lifetime and squadron/task-force presentation", "remaining type-301 family view rules", "fighter formation and color variants", "battle event to effect resource", "tactical planet picture selector initialization", "remaining original control-state and render geometry"]
 }

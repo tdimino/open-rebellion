@@ -1244,6 +1244,34 @@ impl TacticalState {
         self.suppress_mapped_fighter_fallback = true;
     }
 
+    /// Center the source camera on the player's first production fighter group
+    /// for deterministic close/far browser evidence. This never enters a
+    /// production build; normal play must reach the same state through the
+    /// original fighter-group controls.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn focus_player_fighter_for_fixture(&mut self) {
+        let target = self.session.as_ref().and_then(|session| {
+            session
+                .fighters
+                .iter()
+                .enumerate()
+                .find(|(_, fighter)| {
+                    fighter.alive && fighter.is_attacker == session.player_is_attacker
+                })
+                .map(|(index, fighter)| {
+                    (
+                        u32::try_from(index)
+                            .unwrap_or(u32::MAX)
+                            .saturating_add(1001),
+                        fighter.source_position.rendered(),
+                    )
+                })
+        });
+        if let Some((object_id, position)) = target {
+            self.asset_renderer.focus_target(object_id, position);
+        }
+    }
+
     /// End the current battle — clears session. Returns the session for
     /// result processing by the caller.
     pub fn end_battle(&mut self) -> Option<BattleSession> {

@@ -32,8 +32,9 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 36 entry, negative-control,
-fixed-LOD, live-LOD, camera, production-participant, faction, and viewport cases. The tactical probes cover pause stability,
+`node run.mjs --battle --all --no-build` for all 40 entry, negative-control,
+fixed-LOD, live-LOD, camera, production-participant, fighter-detail, faction,
+and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
 proof-on/off pixel differences. The camera journey also checks the recovered
@@ -41,13 +42,16 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 7 additionally asserts representative capital-ship and fighter
+Fixture schema 8 additionally asserts representative capital-ship and fighter
 DAT-to-tactical-resource joins, exact production rendering of two joined
 capital-ship families, exact fighter close/far/indicator resource triplets,
-and a 3D-off control with all mapped fallbacks suppressed. Per-object
+the test-only fighter focus used by the detail journey, and a 3D-off control
+with all mapped fallbacks suppressed. Per-object
 framebuffer probes require changed pixels around every logged capital and
 fighter projection. Production journeys deselect, reselect, and target through
-the projected capital bounds. Every tactical run requires all 87 meshes and
+the projected capital bounds. The fighter journey uses the original zoom
+buttons and asserts all nine independent detail transitions without another
+family load. Every tactical run requires all 87 meshes and
 397 textures in the four-request runtime pack.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).

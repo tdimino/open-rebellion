@@ -92,6 +92,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58A tactical resource-join evidence](evidence/2026-09-14-tactical-resource-join.md) | Complete DAT-to-ordinal/resource joins, full 87-mesh/397-texture browser pack, representative participant probes, and production-draw/A0 limits. |
 | [P58B production tactical-participant evidence](evidence/2026-09-14-tactical-production-participants.md) | Exact live capital-family rendering, paired 3D-off framebuffer proof, 36-case muted browser gate, and fighter/selection/A0 limits. |
 | [P58C tactical fighter and selection evidence](evidence/2026-09-14-tactical-fighters-selection.md) | Source-mapped fighter detail resources, projection-aligned selection and targeting, paired controls, and explicit A0 limits. |
+| [P58D fighter-detail journey evidence](evidence/2026-09-14-tactical-fighter-detail-journey.md) | Production indicator/far/close transitions, centered close sprites, no-reload proof, 40-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |

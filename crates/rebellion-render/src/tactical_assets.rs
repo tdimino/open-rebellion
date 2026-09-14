@@ -941,7 +941,7 @@ pub(crate) struct TacticalAssetRenderer {
     logged_layout: Option<OriginalTacticalLayout>,
     palette_selector: u8,
     logged_participant_scene: bool,
-    logged_fighter_scene: bool,
+    logged_fighter_scene: Option<String>,
 }
 
 impl Default for TacticalAssetRenderer {
@@ -971,7 +971,7 @@ impl Default for TacticalAssetRenderer {
             logged_layout: None,
             palette_selector: 1,
             logged_participant_scene: false,
-            logged_fighter_scene: false,
+            logged_fighter_scene: None,
         }
     }
 }
@@ -995,7 +995,7 @@ impl TacticalAssetRenderer {
             self.unavailable_fighter_families.clear();
             self.material = None;
             self.logged_participant_scene = false;
-            self.logged_fighter_scene = false;
+            self.logged_fighter_scene = None;
         }
     }
 
@@ -1019,7 +1019,7 @@ impl TacticalAssetRenderer {
         self.source_layout = Some(layout);
         self.logged_layout = None;
         self.logged_participant_scene = false;
-        self.logged_fighter_scene = false;
+        self.logged_fighter_scene = None;
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -1029,7 +1029,7 @@ impl TacticalAssetRenderer {
         self.source_layout = None;
         self.logged_layout = None;
         self.logged_participant_scene = false;
-        self.logged_fighter_scene = false;
+        self.logged_fighter_scene = None;
     }
 
     pub(crate) fn zoom_in(&mut self) {
@@ -1525,7 +1525,16 @@ impl TacticalAssetRenderer {
             ));
         }
 
-        if !self.logged_fighter_scene {
+        let scene_signature = selected_resources
+            .iter()
+            .map(|entry| {
+                entry
+                    .rsplit_once(':')
+                    .map_or(entry.as_str(), |(prefix, _)| prefix)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        if self.logged_fighter_scene.as_deref() != Some(scene_signature.as_str()) {
             let mut families = self.fighter_families.keys().copied().collect::<Vec<_>>();
             families.sort_unstable();
             macroquad::logging::info!(
@@ -1537,7 +1546,7 @@ impl TacticalAssetRenderer {
                 screen_positions.join(";"),
                 screen_bounds.join(";"),
             );
-            self.logged_fighter_scene = true;
+            self.logged_fighter_scene = Some(scene_signature);
         }
         report
     }

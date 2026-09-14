@@ -110,7 +110,7 @@ dialog, encyclopedia, advisor-control, and voice families remain incomplete.
 P54 separately stages every original type-301 mesh and type-303 texture or
 palette resource with a source-bound content-addressed manifest. P55 decodes
 the full corpus into verified deterministic mesh and texture objects. P56 and
-P57A renders the first complete family and recovers its LOD predicate. P57B1
+P57A render the first complete family and recover its LOD predicate. P57B1
 proves live cached-slot switching without a second family load. P57B2A recovers
 the initial faction cameras, field zoom, clip planes, four D-pad commands, and
 handedness conversion. P57B2B1 activates the source target-control states and
@@ -129,7 +129,8 @@ resources and transports all 87 meshes and 397 textures. P58B renders live
 production capital ships from exact joined families and source positions.
 P58C renders the exact close, far, and indicator fighter resources through the
 source detail thresholds and aligns capital selection and targeting with their
-projected bounds. Close/far browser journeys, squadron and task-force panels,
+projected bounds. P58D proves the complete two-faction production fighter-detail
+journey through the original zoom controls. Squadron and task-force panels,
 special objects, and A0 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six

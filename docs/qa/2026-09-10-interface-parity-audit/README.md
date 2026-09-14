@@ -201,8 +201,10 @@ fighter, and Death Star DAT resource joins, and transports all 87 meshes and
 397 textures through the four-request browser pack. P58B renders live
 production capital ships from their joined families at source positions. P58C
 renders source-mapped fighter groups and aligns capital selection and targeting
-with the projected meshes. Close/far fighter journeys, task-force and squadron
-panels, effects, commands, results, and A0 comparisons remain open.
+with the projected meshes. P58D drives both production fighter families through
+their independent indicator, far, and close transitions with the original zoom
+controls and no family reload. Task-force and squadron panels, effects,
+commands, results, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

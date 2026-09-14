@@ -1,0 +1,39 @@
+{
+  "reviewer": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "reviewed_at": "2026-09-14",
+  "verdict": "qualified_a1_acceptance",
+  "inspected_files": {
+    "directory": "docs/qa/2026-09-10-interface-parity-audit/evidence/p58d-tactical-fighter-detail-journey",
+    "coverage": "all_24_pngs_four_bundled_result_records_full_summary_and_40_referenced_raw_result_records"
+  },
+  "confirmed": [
+    "both_faction_close_states_center_and_render_the_source_production_fighter",
+    "indicator_far_and_close_states_are_visually_distinct_and_return_states_restore_the_intended_class",
+    "native_640x480_and_1280x800_letterboxed_views_are_coherent_without_blank_surfaces_or_new_bitmap_chrome_regressions",
+    "40_of_40_cases_pass_with_four_successful_requests_muted_isolated_launches_stable_frames_zero_errors_and_closed_browsers",
+    "all_four_bundled_actual_screenshot_hashes_match_their_result_records"
+  ],
+  "runtime_findings": {
+    "tactical_cases_passed": 40,
+    "tactical_cases_total": 40,
+    "four_request_successful_starts": 40,
+    "muted_isolated_launches": 40,
+    "music_muted_records": 40,
+    "unstable_cases": 0,
+    "browser_page_errors": 0,
+    "console_errors": 0,
+    "request_errors": 0,
+    "missing_asset_errors": 0,
+    "closed_browsers": 40
+  },
+  "acceptance_grade": "A1",
+  "strict_cells_accepted": 0,
+  "strict_cells_remaining": 106,
+  "limitations": [
+    "no_lossless_owned_original_a0_baseline",
+    "retained_evidence_review_only_without_a_new_live_browser_run",
+    "known_placeholder_task_force_and_squadron_presentation_is_outside_p58d",
+    "broader_tactical_functionality_and_original_game_parity_remain_open"
+  ]
+}

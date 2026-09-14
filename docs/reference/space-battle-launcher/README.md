@@ -83,12 +83,15 @@ and closes every process. Raw runs live under ignored
   `2010` and `2510`, preserving source positions and the recovered view state.
 - P58C renders the exact type-303 fighter detail resources and uses projected
   capital mesh bounds for selection, focus, targeting, and framing.
-- The complete bundle passes 36 of 36 muted browser cases across both factions
+- P58D centers a test-only camera on each faction's live fighter, then proves
+  all nine independent indicator/far/close transitions through the original
+  zoom controls without reloading either family.
+- The complete bundle passes 40 of 40 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
-bridge is test-only. Close/far fighter journeys, squadron and task-force
-presentation, native GPU and A0 comparison, remaining commands, damage,
+bridge and fighter focus are test-only. Squadron and task-force presentation,
+native GPU and A0 comparison, remaining commands, damage,
 effects, Death Star paths, results, audio, and return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
@@ -96,6 +99,7 @@ effects, Death Star paths, results, audio, and return routing remain open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58D tactical fighter-detail journey evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md)
 - [P58C tactical fighter and selection evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md)
 - [P58B production capital-participant evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md)
 - [P58A tactical resource-join evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md)
