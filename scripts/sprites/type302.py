@@ -234,8 +234,7 @@ def cmd_digests(a):
                     rec["error"] = str(exc)
             result[f"{dll}/{rid}"] = rec
         for aid, first, last in AUTHORED_FAMILIES[dll]:
-            frames = [(rid, frame_path(dll, rid).read_bytes()) for rid in range(first, last + 1)
-                      if frame_path(dll, rid).exists()]
+            frames = authored_chain(dll, first, last)
             for rid, decoded in decode_family(anchors[aid], frames):
                 result[f"{dll}/{rid}"]["chain"] = fnv1a64(decoded.rgba)
     Path(a.out).write_text(json.dumps(result, indent=1, sort_keys=True))
@@ -245,6 +244,21 @@ def cmd_digests(a):
     return 1 if errors else 0
 
 
+def authored_chain(dll: str, first: int, last: int) -> list[tuple[int, bytes]]:
+    """Frames of an authored family in id order, stopping at the first missing file.
+
+    Mirrors load_authored_faction_frames (advisor.rs): the runtime breaks the chain at the first
+    gap, so nothing past a gap is ever rendered and must not be digested or exported either.
+    """
+    frames = []
+    for rid in range(first, last + 1):
+        path = frame_path(dll, rid)
+        if not path.exists():
+            break
+        frames.append((rid, path.read_bytes()))
+    return frames
+
+
 def cmd_export(a):
     from PIL import Image  # noqa: F401
     fam = next((f for f in AUTHORED_FAMILIES[a.dll] if f[0] == a.family), None)
@@ -252,7 +266,9 @@ def cmd_export(a):
         sys.exit(f"unknown family {a.dll}/{a.family}; known: {AUTHORED_FAMILIES[a.dll]}")
     aid, first, last = fam
     anchor = load_anchor(a.dll, aid)
-    frames = [(rid, frame_path(a.dll, rid).read_bytes()) for rid in range(first, last + 1)]
+    frames = authored_chain(a.dll, first, last)
+    if len(frames) != last - first + 1:
+        print(f"WARNING: chain {a.dll}/{aid} stops at {first + len(frames) - 1}; runtime would stop there too", file=sys.stderr)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     to_image(DecodedFrame(anchor.width, anchor.height, bytes(anchor.indices),

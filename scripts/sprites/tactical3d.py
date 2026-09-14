@@ -20,6 +20,7 @@ id (fighters 4000-4134, palettes 5531-5557).
 from __future__ import annotations
 
 import json
+import math
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -191,9 +192,12 @@ def decode_mesh(data: bytes) -> Mesh:
     if r.u32() != 1:
         raise TacticalObjectError("unsupported mesh version")
     n_materials, n_chunks, src_v, src_f, normal_mode = r.u32(), r.u32(), r.u32(), r.u32(), r.u32()
-    if normal_mode > 1 or n_materials > 256 or n_chunks > 4096:
+    if normal_mode > 1 or n_materials > 256 or n_chunks > 4096 or src_v > 1_000_000 or src_f > 1_000_000:
         raise TacticalObjectError("invalid mesh header")
     bounds = r.f32s(6)
+    extent = max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2])
+    if not math.isfinite(extent) or extent <= 0.0:
+        raise TacticalObjectError("invalid mesh bounds")
     materials = []
     for _ in range(n_materials):
         diffuse = r.f32s(4)
@@ -203,7 +207,10 @@ def decode_mesh(data: bytes) -> Mesh:
         name_len = r.u32()
         if name_len > 512:
             raise TacticalObjectError("texture name too long")
-        name = r.bytes(name_len).decode("utf-8")
+        try:
+            name = r.bytes(name_len).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise TacticalObjectError("invalid tactical texture name") from exc
         materials.append(Material(diffuse, spec_exp, specular, emissive, name or None))
     chunks = []
     for _ in range(n_chunks):

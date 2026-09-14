@@ -498,7 +498,9 @@ def generate(
         if matching_record(job, existing) and not force:
             skipped += 1
             if job.family:
-                previous_frame[job.family] = (load_logical(job), Image.open(job.output))
+                with Image.open(job.output) as existing_output:
+                    existing_output.load()
+                    previous_frame[job.family] = (load_logical(job), existing_output.copy())
             continue
         if job.output.exists() and not force:
             print(
