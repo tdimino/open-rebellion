@@ -34,6 +34,9 @@ geometry, and unverified asset mappings do not count as parity.
   for the verified canvas, aperture, and browser-transform checkpoint.
 - Review the [P46B strategic-control evidence](evidence/2026-09-11-strategic-command-controls.md)
   for the recovered six-control geometry, bitmap, input, and command contract.
+- Review the [PR #11 cockpit-routing correction](evidence/2026-09-14-cockpit-routing-correction.md)
+  for the corrected `0x131` through `0x133` identities, F1/F7 routing, GID
+  open/close behavior, and fail-closed original destinations.
 - Review the [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md)
   for the sector, system-shell, tab, and rail checkpoint and its remaining
   item-level boundaries.
@@ -154,6 +157,9 @@ crop, recovered galaxy apertures, and shared browser transform. See the
 [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md). P46B restores
 the six primary faction controls and removes their replacement text strip. See
 the [P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
+PR #11 corrects `0x131` through `0x133`, F1/F7, and the authentic GID toggle
+while keeping unfinished original destinations fail closed. See the
+[routing correction](evidence/2026-09-14-cockpit-routing-correction.md).
 UIP-B01 now replaces the invented sidebar with first-pass original sector and
 system shells and a working 12-slot rail lifecycle for both factions. See the
 [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md).

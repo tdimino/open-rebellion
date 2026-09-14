@@ -52,12 +52,14 @@ multiwindow matrix remain open. See the
 
 P46B restores the six primary faction controls from the recovered constructor,
 paint, hit-test, capture, and `WM_COMMAND` paths. It removes the replacement
-text strip, renders the exact normal and captured-press bitmap pairs, and keeps
-all six destinations closed until their original windows exist. Full
-A0 captures, the disabled path, destination compositions, and speed controls
-remain open. P47B adds the exact faction GID control under the same native
-input contract, while its destination menu remains open. See the
-[P46B evidence](evidence/2026-09-11-strategic-command-controls.md).
+text strip and renders the exact normal and captured-press bitmap pairs. PR #11
+corrects `0x131` to Encyclopedia, `0x132` to GID, and the side-globe `0x133` to
+Game Options for both factions. F1 and F7 match the native destinations. GID
+opens and closes its original menu, while Game Options and Encyclopedia fail
+closed until their original bitmap windows exist. Full A0 captures, the
+disabled path, destination compositions, and speed controls remain open. See
+the [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) and
+[routing correction](evidence/2026-09-14-cockpit-routing-correction.md).
 
 The first UIP-B01 checkpoint also replaces the invented sidebar with recovered
 235x360 sector and 226x304 detailed-system shells. Original planet pictures,

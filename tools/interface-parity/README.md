@@ -21,6 +21,13 @@ Harness unit regressions can be run from the repository root with
 GID actions register a fresh expected command event before input, then wait
 through the following paint; the combined wait has a two-second deadline.
 This prevents a stale log or an early screenshot from satisfying a new action.
+Every case verifies command `0x132` on the corrected bottom GID control and
+uses the same control to close and reopen the menu. The Popular Support cases
+also probe both factions' physical `0x133` Game Options and `0x131`
+Encyclopedia controls, their distinct held bitmaps, F1/F7, and the fail-closed
+destination boundary. They also verify that the legacy `E` shortcut cannot
+expose the replacement Encyclopedia. Held-state captures wait through two
+animation frames.
 
 Browser startup retains its 30-second deadline. A launch timeout gets one
 fresh-process retry after a one-second pause; other launch errors fail

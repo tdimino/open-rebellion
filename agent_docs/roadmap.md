@@ -18,21 +18,7 @@ The delivery notes before “Audit-Driven Parity” are historical implementatio
 records. They do not establish current parity or release acceptance; the active
 audit-driven milestones are the source of truth.
 
-PR #11 checkpoint (2026-09-14): `0x131` opens the existing Encyclopedia for both factions. [Native tests and evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-encyclopedia-routing.md) pass for routing; strict Clippy and original/browser Encyclopedia acceptance remain open.
-
-PR #11 step 2 (2026-09-14): [Game Options routing](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-game-options-routing.md) has native-tested entry and return for both faction globes. Separate pending task: complete the original options layout, saved-game controls, tactical display settings, restart/exit semantics, and visual/browser acceptance.
-
-PR #11 step 3 (2026-09-14): [F1/F7 routing](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-keyboard-routing.md) passes native tests for both input paths. Full native/browser keyboard acceptance remains open.
-
-PR #11 step 4 (2026-09-14): [both GID mappings remain verified](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-gid-preservation.md) at `0x132`, with no code changes. Browser-harness coordinates and runtime acceptance remain later checklist items.
-
-PR #11 step 5 (2026-09-14): [regression coverage is complete](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-regression-coverage.md) using the tests committed in steps 1–3. Browser acceptance remains a later checklist item.
-
-PR #11 step 6 (2026-09-14): [GID harness coordinates corrected](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-gid-harness-coordinates.md) for both factions and viewport sizes. Full browser execution remains step 7.
-
-PR #11 step 7 (2026-09-14): [fixed automated browser gate passes 152/152](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-browser-gate-fixed.md), with zero launch retries. Initial failures remain documented; required independent Astra live acceptance is still pending.
-
-PR #11 rebase verification (2026-09-14): [fresh browser artifacts pass 152/152](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-rebased-browser-gate.md) at `e7533c6` on upstream `741bcfb`, with no launch retries. Independent live review remains pending.
+PR #11 checkpoint (2026-09-14): [cockpit routing is corrected](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md) for commands `0x131` through `0x133`, both factions, and F1/F7. GID uses its authentic bottom control and can open and close its original menu. Game Options and Encyclopedia remain fail-closed until their original bitmap windows are restored.
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*

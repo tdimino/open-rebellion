@@ -1760,7 +1760,7 @@
         "Game Options command",
         "Encyclopedia command",
         "F2 through F5 accelerators",
-        "F7 accelerator",
+        "F1 Game Options and F7 Encyclopedia accelerators",
         "window overlap ordering"
       ],
       "authority_refs": [
@@ -1772,7 +1772,7 @@
       "manual_pages": [
         71
       ],
-      "current_implementation": "P46B removes the synthetic text-button strip and renders the six faction-specific primary STRATEGY bitmap pairs at their exact recovered rectangles. Press capture, release cancellation, strict outer-edge rejection, indexed palette-key hit masks, F2 through F5, and F7 follow the native state machine. P47B adds the exact faction GID control pairs and rectangles under the same input contract and recognizes command 0x133 without inventing its still-open destination menu. Input resolves after floating content so covered controls do not receive clicks. The six primary commands are recognized, but none opens a replacement panel while its original destination window remains pending. The replacement message and status bars are withheld because they covered original control apertures.",
+      "current_implementation": "P46B removes the synthetic text-button strip and renders the faction-specific STRATEGY control pairs at their exact recovered rectangles. Press capture, release cancellation, strict outer-edge rejection, indexed palette-key hit masks, F1 through F5, and F7 follow the native state machine. PR #11 corrects command 0x131 to Encyclopedia, command 0x132 to the rightmost GID control, and command 0x133 to the side Game Options globe for both factions. The original GID menu opens and closes from its own control. Game Options and Encyclopedia are recognized but fail closed until their original bitmap windows exist. Event overlays block galaxy-map and cockpit pointer input through their dismissal frame. Egui keyboard ownership blocks cockpit accelerators. The replacement message and status bars remain withheld because they covered original control apertures.",
       "finding_ids": [
         "UIP-F-001",
         "UIP-F-007"
@@ -1891,7 +1891,7 @@
         },
         {
           "id": "CMD-10-C019",
-          "requirement": "F7 accelerator",
+          "requirement": "F1 Game Options and F7 Encyclopedia accelerators",
           "status": "pending",
           "counts_toward_parity": true
         },

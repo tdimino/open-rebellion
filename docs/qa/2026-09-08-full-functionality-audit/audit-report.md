@@ -39,21 +39,7 @@ and `run-eval.sh`.
 
 ## Where work left off
 
-PR #11 after rebase [passes the freshly rebuilt browser gate](evidence/2026-09-14-pr11-rebased-browser-gate.md) at `e7533c6` on upstream `741bcfb`: **152/152 passed, zero failures or launch retries**. Cleanup and artifact hashes are verified; external independent review remains the user’s follow-up.
-
-PR #11 step 7 [now passes the complete automated browser gate](evidence/2026-09-14-pr11-browser-gate-fixed.md): **152/152 passed, zero failures or launch retries** after event-and-paint synchronization and recorded startup recovery. The initial failed evidence is preserved. Independent Astra live acceptance remains unavailable, so the broader checkpoint is not closed.
-
-PR #11 step 6 [corrects the GID harness coordinates](evidence/2026-09-14-pr11-gid-harness-coordinates.md) for both factions and requires command `0x132` in the opening log. Static geometry checks pass; the full browser gate remains pending.
-
-PR #11 step 5 [records existing regression coverage](evidence/2026-09-14-pr11-regression-coverage.md) for both factions and both keyboard input paths. Steps 1–3 supplied the tests; step 4 recorded 671 passing tests. Browser acceptance remains open.
-
-PR #11 step 4 [verifies preservation of both GID controls](evidence/2026-09-14-pr11-gid-preservation.md): `0x132` remains on the rightmost bottom control with the expected resources and rectangles. Existing tests pass; no Rust changes or browser/visual acceptance are claimed.
-
-PR #11 step 3 has [native keyboard-routing evidence](evidence/2026-09-14-pr11-keyboard-routing.md): F1 opens Game Options and F7 opens Encyclopedia through both input paths. Physical native/browser keyboard acceptance and full surface parity remain open.
-
-PR #11 step 2 now has a [Game Options destination checkpoint](evidence/2026-09-14-pr11-game-options-routing.md): both `0x133` globes enter the distinct screen and return to the campaign. The user separated full screen repair into another task. P31 and original/browser acceptance remain open.
-
-PR #11 now has a [native-tested Encyclopedia routing checkpoint](evidence/2026-09-14-pr11-encyclopedia-routing.md): command `0x131` opens the existing viewer for both factions and preserves selection. P35 remains failing; original layout, browser artwork, and browser acceptance are open. The broader command-ledger correction remains a later PR review step.
+PR #11 [corrects the cockpit command routing](../2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md): `0x131` and F7 identify Encyclopedia, `0x132` opens and closes GID, and the side-globe `0x133` plus F1 identify Game Options for both factions. Game Options and Encyclopedia deliberately fail closed until their original bitmap-driven windows replace the reconstructed panels.
 
 The current continuation has verified the authentic bitmap main menu,
 save/load/delete, deterministic browser packaging, save continuation, exact

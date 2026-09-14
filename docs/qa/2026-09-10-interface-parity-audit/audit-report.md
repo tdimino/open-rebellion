@@ -87,7 +87,7 @@ The local source inspection establishes the implementation causes:
 |---------|---------------------|-------------------|
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
-| Partial authored galaxy and GID | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-render/src/cockpit.rs` | STRATEGY 902/903, 10013/10014, 10027/10028, 10100 through 10107, 10146 through 10158, 10168, manual pp. 66–73, [P47B evidence](evidence/2026-09-11-popular-support-gid.md), and [P50 evidence](evidence/2026-09-12-gid-menu-frame.md) |
+| Partial authored galaxy and GID | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-render/src/cockpit.rs` | STRATEGY 902/903, GID 10012/10011 and 10026/10025, Game Options 10013/10014 and 10027/10028, 10100 through 10107, 10146 through 10158, 10168, manual pp. 66–73, [P47B evidence](evidence/2026-09-11-popular-support-gid.md), and [P50 evidence](evidence/2026-09-12-gid-menu-frame.md) |
 | Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
@@ -135,7 +135,9 @@ special objects, and A0 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
-and command paths. P46C and P46D add the first reference-rail lifecycle,
+and command paths. PR #11 corrects the three destination identities, F1/F7,
+and the GID control's open/close path without exposing replacement destination
+windows. P46C and P46D add the first reference-rail lifecycle,
 sector/system window journey, source-mapped tab items, coarse
 current-intelligence gating, and recovered scrollbar art. Exact rail
 thumbnails, destination-window compositions, nested object contents, exact

@@ -24,8 +24,8 @@ establishes this default view:
 |---|---|
 | Display Off backdrop | STRATEGY 902, bright 607x437 starfield |
 | Every active GID backdrop | STRATEGY 903, dim 607x437 starfield |
-| Alliance GID control | command `0x133`; logical `3,355,27,41`; normal 10013; pressed 10014 |
-| Imperial GID control | command `0x133`; logical `79,192,35,57`; normal 10027; pressed 10028 |
+| Alliance GID control | command `0x132`; logical `446,406,27,16`; normal 10012; pressed 10011 |
+| Imperial GID control | command `0x132`; logical `519,434,37,25`; normal 10026; pressed 10025 |
 | Compact legend | STRATEGY 10168, 47x25; Alliance `55,50`; Imperial `113,50` |
 | Alliance markers | 10146 through 10149, largest through smallest |
 | Imperial markers | 10150 through 10153, smallest through largest |
@@ -39,8 +39,9 @@ view, marker color meaning, metric-based size, and Display Off behavior.
 `FUN_00427270`, and `FUN_0042b330` provide the executable-level paint,
 resource, geometry, command, and threshold evidence.
 
-The nine tall side controls are Message Index categories. They are not GID
-filters. The actual faction GID control is the separate `0x133` control above.
+The nine tall rail controls are Message Index categories. They are not GID
+filters. The separate side globe is Game Options command `0x133`. The actual
+faction GID control is the rightmost bottom command `0x132` listed above.
 
 ## Implementation
 
@@ -62,6 +63,11 @@ filters. The actual faction GID control is the separate `0x133` control above.
 
 ## Verification
 
+The historical P47B browser run targeted the side globe before the command
+identities were corrected. Its galaxy, marker, and legend evidence remains
+useful, but its GID-control interaction and pressed captures are superseded by
+the PR #11 routing evidence. They are not acceptance proof for command `0x132`.
+
 | Gate | Result |
 |---|---|
 | Renderer tests | 145 passed, 0 failed |
@@ -81,7 +87,7 @@ errors, failed requests, or missing-asset logs.
 Normal and pressed faction controls and the compact legend matched their
 packed source pixels. More than 99.49% of sampled map-background pixels matched
 STRATEGY 903; the differences contained the native markers. Valid release
-emitted one `0x133`, release outside cancelled, and all outer edges rejected at
+emitted one `0x132`, release outside cancelled, and all outer edges rejected at
 640x480. At 1280x800, every nearest representable outer pixel rejected; exact
 fractional edges cannot reach the integer WASM mouse interface and therefore
 remain source-corroborated rather than runtime-proven. Visible systems opened

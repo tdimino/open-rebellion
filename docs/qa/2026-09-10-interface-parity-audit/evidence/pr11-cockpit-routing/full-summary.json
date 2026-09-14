@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "checkpoint": "PR11-cockpit-routing-correction",
+  "date": "2026-09-14",
+  "status": "pass_a1_original_baselines_open",
+  "controls": {
+    "0x131": {
+      "destination": "Encyclopedia",
+      "accelerator": "F7",
+      "alliance": {"rect": [394, 405, 27, 16], "normal": 10010, "held": 10009},
+      "empire": {"rect": [465, 434, 35, 24], "normal": 10024, "held": 10023}
+    },
+    "0x132": {
+      "destination": "Galactic Information Display",
+      "accelerator": null,
+      "alliance": {"rect": [446, 406, 27, 16], "normal": 10012, "held": 10011},
+      "empire": {"rect": [519, 434, 37, 25], "normal": 10026, "held": 10025}
+    },
+    "0x133": {
+      "destination": "Game Options",
+      "accelerator": "F1",
+      "alliance": {"rect": [3, 355, 27, 41], "normal": 10013, "held": 10014},
+      "empire": {"rect": [79, 192, 35, 57], "normal": 10027, "held": 10028}
+    }
+  },
+  "browser": {
+    "strategic": {
+      "run_id": "2026-09-14T20-47-43-278Z-69098",
+      "executions": 152,
+      "passed": 152,
+      "failed": 0,
+      "unbaselined": 152,
+      "unstable_screenshots": 0,
+      "four_request_startups": 152,
+      "muted_launches": 152,
+      "launch_timeouts": 0,
+      "recovered_launch_timeouts": 0,
+      "browser_processes_closed": 152
+    },
+    "tactical_regression": {
+      "run_id": "2026-09-14T20-52-21-860Z-78166",
+      "executions": 40,
+      "passed": 40,
+      "failed": 0,
+      "unbaselined": 40,
+      "unstable_screenshots": 0,
+      "four_request_startups": 40,
+      "muted_launches": 40,
+      "launch_timeouts": 0,
+      "recovered_launch_timeouts": 0,
+      "browser_processes_closed": 40
+    },
+    "startup_requests": ["/", "/gl.js", "/open-rebellion-test.wasm", "/data/runtime.orpk"],
+    "errors": 0
+  },
+  "artifacts": {
+    "production_wasm": {"bytes": 5267498, "sha256": "1c3b575f070a45a7139de909f910546d55216918b73c85775d8d62efe059a6cd"},
+    "test_wasm": {"bytes": 5336900, "sha256": "8269c830e1b15cd1e6f8fc1b709a4160f0e23887a8790c7b32715ccc1abe3998"},
+    "runtime_pack": {"bytes": 39527071, "sha256": "430c90f76628ea2b5db74d2e1a582da83df311d92031ab288cc92ee4beeb58a8"}
+  },
+  "native_640_probes": {
+    "alliance": {
+      "rest_sha256": "ea04190aba8a3fa22c4054cdf42b53f1240dc4a45dd7580917f98892db964cc6",
+      "gid_held_sha256": "f051ae0680bece4965616e1b8f38856bff5e0dc956e2e032f13a43426baa43aa",
+      "gid_open_sha256": "69c08a0380563d66c10b016ad50f885a85172bdf3dd09ad5d92e714612897469",
+      "gid_source_pixels": 634,
+      "game_options_held_sha256": "666ad271de9344e28ccaa948621998bc712636014be9f77f3c08364d33469006",
+      "encyclopedia_held_sha256": "af4e872d8ec4dbd988cc4435f6f67349f063397a8882bf5518414a9e97aa46d3",
+      "legacy_encyclopedia_shortcut_sha256": "ea04190aba8a3fa22c4054cdf42b53f1240dc4a45dd7580917f98892db964cc6"
+    },
+    "empire": {
+      "rest_sha256": "4873756ce1284b88f9de489e3db6dc8c54222145bc802a753732fad111f70be7",
+      "gid_held_sha256": "56082d4aa273d1205c67423ac3c1fa9e1813f00df650eedb93d56200ed0b4f76",
+      "gid_open_sha256": "4f41df1a3f9b39d861904815e4fcea618b2ddd870f2495b8b1e83fe8f4a63313",
+      "gid_source_pixels": 634,
+      "game_options_held_sha256": "64d07eadc965ee7033fb90e615aded569f26982fe94ce464891c95c56745a3c0",
+      "encyclopedia_held_sha256": "1d764aefe972ad22e1b59821f8636bcfbe0313a2d294756acaa9674add5d2a92",
+      "legacy_encyclopedia_shortcut_sha256": "4873756ce1284b88f9de489e3db6dc8c54222145bc802a753732fad111f70be7"
+    }
+  },
+  "letterboxed_1280_probes": {
+    "alliance": {"rest_sha256": "bf6479ca5e530a04a87b3d45167c2f58206e1b1c217676b9aa2806fc09bf5746", "gid_open_sha256": "767475131b98cd0a1c2d0398d39b933f6ce713457630ae359442ce6126779047"},
+    "empire": {"rest_sha256": "1f799128d88ec809dfbccf04d9cd6fd2a12a8ee9db98655d7e1bfe2e5232a652", "gid_open_sha256": "35a5cbe7127490d0eb403ef1c499eedf46a52296495713d9fac9580f87be5c92"}
+  },
+  "tests": {
+    "workspace": {"passed": 677, "failed": 0, "ignored": 21},
+    "asset_dependent": {"passed": 4, "failed": 0},
+    "cockpit_focused": {"passed": 27, "failed": 0},
+    "browser_harness_unit": {"passed": 11, "failed": 0},
+    "astra_browser_evidence": {"status": "pass_a1", "blockers": 0, "screenshots_inspected": 16, "browser_results_inspected": 192}
+  },
+  "acceptance": {
+    "tier": "A1",
+    "strict_cells_closed": 0,
+    "reason": "Lossless owned-original A0 captures and original Game Options and Encyclopedia windows remain open."
+  }
+}

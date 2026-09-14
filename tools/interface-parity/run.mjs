@@ -380,6 +380,9 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   await page.mouse.move(interior.x, interior.y);
   await page.screenshot({ path: path.join(folder, "control-hover.png"), animations: "disabled" });
   await page.mouse.down();
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
   await page.screenshot({ path: path.join(folder, "control-pressed.png"), animations: "disabled" });
   const opened = "command=0x132 destination=gid_menu status=opened_original";
   await performCommand(page, opened, () => page.mouse.up());
@@ -387,6 +390,16 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   const rootFrame = verifyGidRootFrame(viewport, rootCapture, scenario.slug === "system");
   probes.push({ type: "control-click", x: interior.x, y: interior.y, opened: true,
     screenshot_sha256: sha256(rootCapture), root_frame: rootFrame });
+
+  const closed = "command=0x132 destination=gid_menu status=closed";
+  await performCommand(page, closed, () => page.mouse.click(interior.x, interior.y));
+  const closedCapture = await page.screenshot({ path: path.join(folder, "control-closed.png"),
+    animations: "disabled" });
+  assert.equal(sha256(closedCapture), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+    `${faction}: the GID control did not close its own menu cleanly`);
+  probes.push({ type: "control-click-close", x: interior.x, y: interior.y, opened: false,
+    screenshot_sha256: sha256(closedCapture) });
+  await performCommand(page, opened, () => page.mouse.click(interior.x, interior.y));
 
   if (scenario.category !== null) {
     const alternate = scenario.mode === "Uprisings" ? "Popular Support" : "Uprisings";
@@ -444,6 +457,67 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     assert.equal(sha256(dismissed), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
       `${scenario.slug}: Escape left the original galaxy surface`);
     probes.push({ type: "menu-escape", screenshot_sha256: sha256(dismissed) });
+  }
+
+  if (scenario.slug === "popular-support") {
+    const commandControls = faction === "alliance"
+      ? [
+          { slug: "game-options", rect: { x: 3, y: 355, width: 27, height: 41 },
+            expected: "command=0x133 destination=game_options status=pending_original_window" },
+          { slug: "encyclopedia", rect: { x: 394, y: 405, width: 27, height: 16 },
+            expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
+        ]
+      : [
+          { slug: "game-options", rect: { x: 79, y: 192, width: 35, height: 57 },
+            expected: "command=0x133 destination=game_options status=pending_original_window" },
+          { slug: "encyclopedia", rect: { x: 465, y: 434, width: 35, height: 24 },
+            expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
+        ];
+    for (const command of commandControls) {
+      const center = point(command.rect.x + command.rect.width / 2,
+        command.rect.y + command.rect.height / 2);
+      await page.mouse.move(center.x, center.y);
+      const hover = await page.screenshot({ path: path.join(folder, `${command.slug}-hover.png`),
+        animations: "disabled" });
+      await page.mouse.down();
+      await page.evaluate(() => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }));
+      const pressed = await page.screenshot({
+        path: path.join(folder, `${command.slug}-pressed.png`), animations: "disabled",
+      });
+      const observed = await performCommand(page, command.expected, () => page.mouse.up());
+      const released = await page.screenshot({
+        path: path.join(folder, `${command.slug}-released.png`), animations: "disabled",
+      });
+      assert.notEqual(sha256(pressed), sha256(hover),
+        `${faction}: ${command.slug} did not show its original pressed resource`);
+      assert.equal(sha256(released), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+        `${faction}: ${command.slug} exposed a replacement destination`);
+      probes.push({ type: "physical-command", command: command.slug, expected: command.expected,
+        observed, hover_sha256: sha256(hover), pressed_sha256: sha256(pressed),
+        released_sha256: sha256(released) });
+    }
+
+    for (const [key, expected] of [
+      ["F1", "command=0x133 destination=game_options status=pending_original_window"],
+      ["F7", "command=0x131 destination=encyclopedia status=pending_original_window"],
+    ]) {
+      const observed = await performCommand(page, expected, () => page.keyboard.press(key));
+      probes.push({ type: "keyboard-command", key, expected, observed });
+    }
+
+    await page.keyboard.press("E");
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+    const legacyEncyclopedia = await page.screenshot({
+      path: path.join(folder, "legacy-encyclopedia-shortcut.png"), animations: "disabled",
+    });
+    assert.equal(sha256(legacyEncyclopedia), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+      `${faction}: legacy E shortcut exposed a replacement Encyclopedia`);
+    probes.push({ type: "legacy-encyclopedia-shortcut", key: "E", status: "fails-closed",
+      screenshot_sha256: sha256(legacyEncyclopedia) });
   }
 
   if (scenario.mode !== null && scenario.mode !== "Display Off") {

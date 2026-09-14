@@ -179,7 +179,7 @@ pub struct GalaxyMapState {
     /// System activated by a primary press in the current frame.
     /// Consumers clear this by drawing the next map frame.
     pub activated_system: Option<SystemKey>,
-    /// True while a modeless original-interface window owns the pointer.
+    /// True while an original-interface window or modal overlay owns the pointer.
     pub pointer_blocked: bool,
     pub show_sector_labels: bool,
     pub show_grid: bool,

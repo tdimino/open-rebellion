@@ -77,8 +77,6 @@ pub enum CockpitButton {
     PersonnelFinder,
     /// Open the original game-options destination (F1).
     GameOptions,
-    /// Open the save/load screen.
-    SaveLoad,
     /// Open the Encyclopedia (F7).
     Encyclopedia,
     /// Open the Galactic Information Display menu.
@@ -738,6 +736,7 @@ pub fn draw_cockpit_egui_layer(
     ctx: &egui::Context,
     state: &mut CockpitState,
     cache: &mut BmpCache,
+    input_enabled: bool,
 ) -> Option<GidMode> {
     let layout = state.layout();
     let controls = strategic_primary_controls(state.faction);
@@ -762,7 +761,7 @@ pub fn draw_cockpit_egui_layer(
         draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
     }
 
-    let selected = draw_gid_menu(ctx, state, cache, layout);
+    let selected = draw_gid_menu(ctx, state, cache, layout, input_enabled);
     if let Some(mode) = selected {
         state.gid_mode = mode;
         state.gid_ui.menu_open = false;
@@ -1220,6 +1219,7 @@ fn draw_gid_menu(
     state: &mut CockpitState,
     cache: &mut BmpCache,
     layout: CockpitLayout,
+    input_enabled: bool,
 ) -> Option<GidMode> {
     if !state.gid_ui.menu_open {
         return None;
@@ -1235,6 +1235,9 @@ fn draw_gid_menu(
         .fade_in(false)
         .fixed_pos(root_pos)
         .show(ctx, |ui| {
+            if !input_enabled {
+                ui.disable();
+            }
             ui.set_width(158.0 * scale);
             let menu = gid_popup_frame().show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
@@ -1288,6 +1291,9 @@ fn draw_gid_menu(
             .fade_in(false)
             .fixed_pos(submenu_pos)
             .show(ctx, |ui| {
+                if !input_enabled {
+                    ui.disable();
+                }
                 ui.set_width(238.0 * scale);
                 let menu = gid_popup_frame().show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
@@ -1318,7 +1324,7 @@ fn draw_gid_menu(
         selected = selected.or(submenu.inner);
     }
 
-    if selected.is_none() {
+    if input_enabled && selected.is_none() {
         let (pressed, pointer, escape) = ctx.input(|input| {
             (
                 input.pointer.button_pressed(egui::PointerButton::Primary),
@@ -1326,9 +1332,11 @@ fn draw_gid_menu(
                 input.key_pressed(egui::Key::Escape),
             )
         });
+        let trigger_rect =
+            logical_rect_to_screen(layout, strategic_gid_control(state.faction).rect);
         let outside = pressed
             && pointer.is_some_and(|pointer| {
-                !root.response.rect.contains(pointer) && !submenu_rect.contains(pointer)
+                should_dismiss_gid_menu(pointer, root.response.rect, submenu_rect, trigger_rect)
             });
         if outside || escape {
             state.gid_ui.menu_open = false;
@@ -1380,7 +1388,20 @@ pub fn handle_cockpit_egui_input(
         pointer_hit,
     );
 
-    clicked.or_else(|| keyboard_control(ctx))
+    clicked.or_else(|| {
+        (!ctx.wants_keyboard_input())
+            .then(|| keyboard_control(ctx))
+            .flatten()
+    })
+}
+
+fn should_dismiss_gid_menu(
+    pointer: egui::Pos2,
+    root: egui::Rect,
+    submenu: egui::Rect,
+    trigger: egui::Rect,
+) -> bool {
+    !root.contains(pointer) && !submenu.contains(pointer) && !trigger.contains(pointer)
 }
 
 fn update_control_capture(
@@ -1936,6 +1957,38 @@ mod tests {
             None
         );
         assert_eq!(captured, None);
+    }
+
+    #[test]
+    fn gid_trigger_closes_through_command_dispatch_not_outside_dismissal() {
+        let root = egui::Rect::from_min_size(egui::pos2(425.0, 230.0), egui::vec2(158.0, 147.0));
+        let submenu = egui::Rect::from_min_size(egui::pos2(179.0, 230.0), egui::vec2(238.0, 42.0));
+        let trigger = egui::Rect::from_min_size(egui::pos2(446.0, 406.0), egui::vec2(27.0, 16.0));
+
+        assert!(!should_dismiss_gid_menu(
+            egui::pos2(450.0, 410.0),
+            root,
+            submenu,
+            trigger,
+        ));
+        assert!(!should_dismiss_gid_menu(
+            egui::pos2(430.0, 235.0),
+            root,
+            submenu,
+            trigger,
+        ));
+        assert!(!should_dismiss_gid_menu(
+            egui::pos2(200.0, 250.0),
+            root,
+            submenu,
+            trigger,
+        ));
+        assert!(should_dismiss_gid_menu(
+            egui::pos2(100.0, 100.0),
+            root,
+            submenu,
+            trigger,
+        ));
     }
 
     #[test]
