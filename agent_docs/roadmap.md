@@ -26,6 +26,8 @@ PR #11 step 3 (2026-09-14): [F1/F7 routing](../docs/qa/2026-09-08-full-functiona
 
 PR #11 step 4 (2026-09-14): [both GID mappings remain verified](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-gid-preservation.md) at `0x132`, with no code changes. Browser-harness coordinates and runtime acceptance remain later checklist items.
 
+PR #11 step 5 (2026-09-14): [regression coverage is complete](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-regression-coverage.md) using the tests committed in steps 1–3. Browser acceptance remains a later checklist item.
+
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 

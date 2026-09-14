@@ -39,6 +39,8 @@ and `run-eval.sh`.
 
 ## Where work left off
 
+PR #11 step 5 [records existing regression coverage](evidence/2026-09-14-pr11-regression-coverage.md) for both factions and both keyboard input paths. Steps 1–3 supplied the tests; step 4 recorded 671 passing tests. Browser acceptance remains open.
+
 PR #11 step 4 [verifies preservation of both GID controls](evidence/2026-09-14-pr11-gid-preservation.md): `0x132` remains on the rightmost bottom control with the expected resources and rectangles. Existing tests pass; no Rust changes or browser/visual acceptance are claimed.
 
 PR #11 step 3 has [native keyboard-routing evidence](evidence/2026-09-14-pr11-keyboard-routing.md): F1 opens Game Options and F7 opens Encyclopedia through both input paths. Physical native/browser keyboard acceptance and full surface parity remain open.
