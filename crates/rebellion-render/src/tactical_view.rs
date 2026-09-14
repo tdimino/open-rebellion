@@ -31,6 +31,10 @@ use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::sector_window::planet_picture_id;
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::{TacticalLodView, TacticalProofRenderer};
+use crate::tactical_resources::{
+    capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
+    TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
+};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -48,10 +52,6 @@ const BATTLE_APERTURE: NativeRect = NativeRect::new(16.0, 28.0, 444.0, 439.0);
 
 /// Deployment zone width (fraction of arena width per side).
 const DEPLOY_ZONE_FRACTION: f32 = 0.3;
-
-/// Ship sprite IDs in TACTICAL.DLL (resource range 2001-2130).
-const TACTICAL_SHIP_SPRITE_START: u32 = 2001;
-const TACTICAL_SHIP_SPRITE_END: u32 = 2130;
 
 /// Task force info panel BMP IDs in TACTICAL.DLL.
 /// 1001 = attacker/Alliance panel, 1002 = defender/Empire panel.
@@ -297,6 +297,10 @@ pub struct TacticalShip {
     pub class_key: CapitalShipKey,
     /// Stable DAT and roster identity for production-to-render joins.
     pub identity: TacticalObjectIdentity,
+    /// Exact original tactical graphic identity, when this is an original class.
+    pub tactical_resource: Option<TacticalCapitalShipResource>,
+    /// Separate original Death Star resource path, when applicable.
+    pub death_star_resource: Option<TacticalDeathStarResource>,
     /// Original retained-mode position at battle initialization.
     pub source_position: TacticalWorldPosition,
     /// Display name (from `CapitalShipClass`).
@@ -343,6 +347,8 @@ pub struct TacticalFighter {
     pub class_key: FighterKey,
     /// Stable DAT and roster identity for production-to-render joins.
     pub identity: TacticalObjectIdentity,
+    /// Exact original side-dependent tactical graphic identity.
+    pub tactical_resource: Option<TacticalFighterResource>,
     /// Original retained-mode position at battle initialization.
     pub source_position: TacticalWorldPosition,
     /// Index into the originating fleet's fighter roster. Classes may repeat.
@@ -533,7 +539,8 @@ impl BattleSession {
             .filter(|(_, ship)| ship.alive)
         {
             let class = &world.capital_ship_classes[ship.class];
-            let sprite_id = Self::class_to_sprite_id(class.dat_id.index());
+            let tactical_resource = capital_ship_tactical_resource(class.dat_id);
+            let death_star_resource = death_star_tactical_resource(class.dat_id);
 
             let turbolaser_total = (class.turbolaser_fore
                 + class.turbolaser_aft
@@ -558,6 +565,8 @@ impl BattleSession {
                     fleet_roster_index: ship_idx,
                     is_alliance: fleet.is_alliance,
                 },
+                tactical_resource,
+                death_star_resource,
                 source_position: TacticalWorldPosition::ORIGIN,
                 name: class.name.clone(),
                 x: 0.0,
@@ -570,7 +579,10 @@ impl BattleSession {
                 alive: true,
                 selected: false,
                 fleet_ship_index: ship_idx,
-                sprite_id,
+                // IDs 2001 through 2130 are not a linear class sprite table.
+                // Keep the legacy selected-panel slot empty until its exact
+                // bitmap role is independently recovered.
+                sprite_id: None,
                 turbolaser_power: turbolaser_total,
                 ion_cannon_power: ion_cannon_total,
                 laser_cannon_power: laser_cannon_total,
@@ -590,6 +602,7 @@ impl BattleSession {
                     fleet_roster_index: fighter_idx,
                     is_alliance: fleet.is_alliance,
                 },
+                tactical_resource: fighter_tactical_resource(class.dat_id),
                 source_position: TacticalWorldPosition::ORIGIN,
                 fleet_fighter_index: fighter_idx,
                 name: class.name.clone(),
@@ -661,20 +674,6 @@ impl BattleSession {
         place_fighters(fighters, true, layout.inner_negative_z);
         place_fighters(fighters, false, layout.inner_positive_z);
         layout
-    }
-
-    /// Map a ship class `DatId` index to a TACTICAL.DLL sprite resource ID.
-    ///
-    /// The original game uses a lookup table; we approximate with a linear
-    /// mapping into the 2001-2130 range. Each class gets ~2 sprites
-    /// (different orientations) — use the base orientation.
-    fn class_to_sprite_id(class_index: u32) -> Option<u32> {
-        let id = TACTICAL_SHIP_SPRITE_START + (class_index * 2);
-        if id <= TACTICAL_SHIP_SPRITE_END {
-            Some(id)
-        } else {
-            None
-        }
     }
 
     /// Auto-place ships in their respective deployment zones.
@@ -2670,6 +2669,8 @@ mod tests {
                 fleet_roster_index: roster,
                 is_alliance,
             },
+            tactical_resource: capital_ship_tactical_resource(DatId::new(dat_id)),
+            death_star_resource: death_star_tactical_resource(DatId::new(dat_id)),
             source_position: TacticalWorldPosition::ORIGIN,
             name: format!("ship-{dat_id}"),
             x: 0.0,
@@ -2701,6 +2702,7 @@ mod tests {
                 fleet_roster_index: 0,
                 is_alliance,
             },
+            tactical_resource: fighter_tactical_resource(DatId::new(dat_id)),
             source_position: TacticalWorldPosition::ORIGIN,
             fleet_fighter_index: 0,
             name: format!("fighter-{dat_id}"),
@@ -2797,14 +2799,6 @@ mod tests {
         );
         assert_eq!(ships[1].identity.class_dat_id, DatId::new(65));
         assert_eq!(ships[1].identity.fleet_roster_index, 2);
-    }
-
-    #[test]
-    fn class_to_sprite_id_in_range() {
-        assert_eq!(BattleSession::class_to_sprite_id(0), Some(2001));
-        assert_eq!(BattleSession::class_to_sprite_id(10), Some(2021));
-        // Beyond range returns None.
-        assert_eq!(BattleSession::class_to_sprite_id(200), None);
     }
 
     #[test]

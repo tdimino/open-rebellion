@@ -5,7 +5,6 @@
 //! No DAT identity is inferred from the resource ordinal.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{io::Read, path::Path};
@@ -15,6 +14,9 @@ use macroquad::window::miniquad::{
     Backend, Comparison, CullFace, FrontFaceOrder, PipelineParams, UniformDesc, UniformType,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::tactical_asset_cache::set_tactical_asset_cache;
+use crate::tactical_asset_cache::TACTICAL_OBJECT_CACHE;
 use crate::tactical_view::OriginalTacticalLayout;
 
 pub const PROOF_MESH_KEYS: [&str; 3] = ["2560/1033", "2561/1033", "2562/1033"];
@@ -330,23 +332,6 @@ const TEXTURE_MAGIC: &[u8; 8] = b"ORTINDEX";
 const PALETTE_MAGIC: &[u8; 8] = b"ORTPAL00";
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_PROOF_OBJECT_BYTES: usize = 8 << 20;
-
-#[derive(Default)]
-struct TacticalObjectCache {
-    meshes: HashMap<String, Vec<u8>>,
-    textures: HashMap<String, Vec<u8>>,
-}
-
-static TACTICAL_OBJECT_CACHE: LazyLock<Mutex<TacticalObjectCache>> =
-    LazyLock::new(|| Mutex::new(TacticalObjectCache::default()));
-
-/// Install typed tactical runtime objects unpacked from the browser pack.
-pub fn set_tactical_asset_cache(
-    meshes: HashMap<String, Vec<u8>>,
-    textures: HashMap<String, Vec<u8>>,
-) {
-    *TACTICAL_OBJECT_CACHE.lock().unwrap() = TacticalObjectCache { meshes, textures };
-}
 
 /// Install the P57 proof family from an ignored native runtime store.
 #[cfg(not(target_arch = "wasm32"))]

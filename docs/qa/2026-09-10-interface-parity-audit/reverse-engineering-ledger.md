@@ -150,7 +150,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, camera, placement, authored transform, palette, light, and retained-mode device/material state source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through the DAT-to-resource join, A0 comparison, and production 3D selection |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus first three-LOD family, camera, placement, authored transform, palette, light, and retained-mode device/material state source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through production 3D family selection and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -208,7 +208,10 @@ frame at `(5,5,-1)`, origin target with Z constraint, and ambient RGB `0.5`;
 see its [evidence](evidence/2026-09-14-tactical-light-rig.md). P57B2C2B then
 recovers `FUN_005c1c10` and `FUN_005d6e10` device and material state; see its
 [evidence](evidence/2026-09-14-tactical-render-state.md). The
-DAT-to-tactical-resource join, production 3D draw, and original visual
+[P58A evidence](evidence/2026-09-14-tactical-resource-join.md) then joins the
+source-named tactical registry to every ship and fighter DAT identity, removes
+approximate sprite arithmetic, and browser-proves complete 87-mesh and
+397-texture transport. Production 3D family drawing and original visual
 acceptance remain open.
 
 ## Immediate implementation order

@@ -41,6 +41,9 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
+Fixture schema 4 additionally asserts representative capital-ship and fighter
+DAT-to-tactical-resource joins, while every tactical run requires all 87 meshes
+and 397 textures in the four-request runtime pack.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

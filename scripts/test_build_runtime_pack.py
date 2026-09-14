@@ -82,7 +82,7 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 [(entry.kind, entry.key) for entry in entries],
             )
 
-    def test_tactical_lod_family_entries_are_selected_and_hash_verified(self) -> None:
+    def test_complete_tactical_runtime_is_packed_and_hash_verified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base = root / "base"
@@ -105,7 +105,7 @@ class RuntimePackBuilderTests(unittest.TestCase):
             }
             palette_payloads = {
                 palette_id: b"ORTPAL00" + palette_id.to_bytes(4, "little")
-                for palette_id in PACKER.TACTICAL_PALETTE_IDS
+                for palette_id in range(5531, 5558)
             }
             mesh_hashes = {
                 mesh_id: hashlib.sha256(payload).hexdigest()
@@ -189,7 +189,7 @@ class RuntimePackBuilderTests(unittest.TestCase):
             self.assertEqual(
                 [key for kind, key in keys if kind == PACKER.KIND_TACTICAL_TEXTURE],
                 [
-                    *[f"{palette_id}/1033" for palette_id in PACKER.TACTICAL_PALETTE_IDS],
+                    *[f"{palette_id}/1033" for palette_id in range(5531, 5558)],
                     "SDESTI52.BMP/1033",
                     "SDESTI_M.BMP/1033",
                 ],
@@ -201,7 +201,7 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 "resource_language"
             ] = 9999
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "does not bind"):
+            with self.assertRaisesRegex(ValueError, "missing named tactical texture"):
                 PACKER.collect_entries(base, ui)
 
             manifest["meshes"][0]["texture_bindings"][0][

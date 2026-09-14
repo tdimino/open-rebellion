@@ -6,8 +6,9 @@ tactical-shell checkpoints are in place. The first original three-LOD family,
 source predicate, and live no-reload slot journey pass the isolated browser
 matrix. Source camera, authored mesh coordinates, system palette selection,
 lighting, filtering, culling, depth, and material/device state also pass their
-bounded gates. Production family binding and A0/A1 comparison are the current
-P58 focus.
+bounded gates. P58A now proves every ship/fighter DAT resource join and packs
+all 87 meshes plus 397 textures. Production family drawing and A0 comparison
+are the current P58B focus.
 
 The active
 [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
@@ -31,7 +32,8 @@ P57A now supplies the first complete original three-LOD family and source
 selection rule. P57B1 proves live same-renderer switching without asset churn.
 P57B2 now includes the original camera, authored transform, system palette,
 retained-mode light rig, filtering, culling, depth, and material/device state.
-P58 owns production family binding. A0/A1 acceptance remains open.
+P58A owns the exact DAT resource join and complete browser pack. P58B owns
+production family drawing. A0 acceptance remains open.
 Modern replacement models remain in a separate experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The

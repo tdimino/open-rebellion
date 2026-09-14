@@ -1093,7 +1093,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 3);
+      assert.equal(ready.schema_version, 4);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1119,12 +1119,33 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ["fighter-group:alliance", -33],
         ["fighter-group:empire", 33],
       ]);
+      const expectedParticipantResources = new Map([
+        ["capital-ship:alliance", {
+          datId: 64, ordinal: 0, base: 2010, opposingBase: null,
+        }],
+        ["capital-ship:empire", {
+          datId: 128, ordinal: 15, base: 2510, opposingBase: null,
+        }],
+        ["fighter-group:alliance", {
+          datId: 1, ordinal: 31, base: 4020, opposingBase: 4024,
+        }],
+        ["fighter-group:empire", {
+          datId: 5, ordinal: 33, base: 4100, opposingBase: 4104,
+        }],
+      ]);
       for (const participant of ready.participants) {
         const key = `${participant.kind}:${participant.faction}`;
         assert.ok(expectedParticipantLanes.has(key), `unexpected participant ${key}`);
-        assert.ok(Number.isSafeInteger(participant.class_dat_id)
-          && participant.class_dat_id > 0, `${key} lacks stable DAT identity`);
+        const expectedResource = expectedParticipantResources.get(key);
+        assert.equal(participant.class_dat_id, expectedResource.datId,
+          `${key} has the wrong stable DAT identity`);
         assert.equal(participant.fleet_roster_index, 0);
+        assert.equal(participant.tactical_ordinal, expectedResource.ordinal,
+          `${key} has the wrong tactical ordinal`);
+        assert.equal(participant.resource_base, expectedResource.base,
+          `${key} has the wrong tactical resource base`);
+        assert.equal(participant.opposing_resource_base, expectedResource.opposingBase,
+          `${key} has the wrong opposing tactical resource base`);
         assert.deepEqual(participant.source_position,
           [-0, 0, expectedParticipantLanes.get(key)], `${key} has the wrong source position`);
       }
@@ -1135,8 +1156,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         participants: ready.participants,
       });
       const packLog = consoleLines.find(({ text }) => text.includes("runtime_asset_pack loaded"));
-      assert.match(packLog?.text || "", /tactical_meshes=3 tactical_textures=29/,
-        "runtime pack did not install the LOD family and 27 active palettes");
+      assert.match(packLog?.text || "", /tactical_meshes=87 tactical_textures=397/,
+        "runtime pack did not install the complete tactical object corpus");
       const familyLogs = consoleLines.filter(({ text }) =>
         text.includes("[tactical_3d] family_loaded base=2560"));
       const lodLogs = consoleLines.filter(({ text }) =>

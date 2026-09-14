@@ -38,25 +38,26 @@ and
 [P53 evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-tactical-control-hit-states.md)
 for current positions, browser source-pixel proof, and open mappings.
 
-The current renderer calls IDs `2001`–`2130` a tactical ship-sprite block, but
-the extracted BMP inventory contains only **43** IDs inside that range:
-`2001`–`2038` and `2101`–`2105`. Its `class_to_sprite_id` formula is explicitly
-approximate. The original battle manager instead holds a
+The earlier renderer treated IDs `2001`–`2130` as a linear tactical ship-sprite
+block, but the extracted BMP inventory contains only **43** IDs inside that
+range: `2001`–`2038` and `2101`–`2105`. P58A removes that approximation. The
+original battle manager instead holds a
 [29-ship, eight-fighter ordinal lookup](tactical-lookup.json) into custom
-type-301 meshes and type-303 fighter graphics. An ordinal is not yet a proven
-DAT class identity. Missing BMP numbers must not be synthesized or mistaken for
+type-301 meshes and type-303 fighter graphics. The source-named registry in
+`FUN_00597610_ship_db`, correlated with unique DAT class identities, now proves
+the full join. Missing BMP numbers must not be synthesized or mistaken for
 missing custom resource types.
 
 ## Ships, fighters, planets, and effects
 
 | Graphic family                           | Current inventory                                                                                                                                | Semantic mapping status                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Capital ships                            | 30 CAPSHPSD classes; 29 native ordinal → type-301 bases `2010`–`2150` and `2510`–`2640`, plus separate Death Star `5010`/`5020`                  | Ordinal table is original-binary-proven. The `2560`–`2562` family and source LOD predicate are proven; candidate DAT class labels, other family details, selection, and damage are not                                                                                                                                          |
-| Fighters                                 | Eight FIGHTSD classes; eight native ordinals `29`–`36` → paired type-303 bases `4000`–`4134`                                                     | Ordinal table is original-binary-proven; DAT class join, side/formation offsets, launch/recovery and damage remain open                                                                                                                                                                                                         |
+| Capital ships                            | 30 CAPSHPSD classes; 29 native ordinal → type-301 bases `2010`–`2150` and `2510`–`2640`, plus separate Death Star `5010`/`5020`                  | P58A proves every DAT identity join. The `2560`–`2562` family and source LOD predicate are proven; production family drawing, other family details, selection, and damage are not                                                                                                                                              |
+| Fighters                                 | Eight FIGHTSD classes; eight native ordinals `29`–`36` → paired type-303 bases `4000`–`4134`                                                     | P58A proves every DAT identity join; side/formation offsets, production drawing, launch/recovery, and damage remain open                                                                                                                                                                                                        |
 | Faction banners and avatars              | Character portrait and some mini-icon candidates exist in GOKRES; tactical faction chrome BMPs are staged                                        | No complete banner/avatar-to-battle-state map                                                                                                                                                                                                                                                                                   |
 | Planets and backdrops                    | Tactical selector produces type-303 planet `5500 + selector` and palette `5530 + selector`; source screenshots show planet and empty-space views | `SYSTEMSD.picture_id` now selects the palette, and P57B2C2A/B prove scene light and device state; planet/backdrop production binding remains open                                                                                                                                                                               |
 | Weapon fire, explosions, shields, damage | Tactical BMP IDs and runtime procedural effects exist                                                                                            | No complete original effect-frame, mesh, texture, timing, sound, or damage-state lookup                                                                                                                                                                                                                                         |
-| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P57B2C2B prove staging, deterministic decoding, one three-LOD family, live selection, camera, placement, authored coordinates, palette, lighting, filtering, culling, depth, and material/device state. Lossless view acceptance, production 3D family selection, and the DAT-to-tactical resource join remain open |
+| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P58A prove staging, deterministic decoding, full browser transport, exact DAT joins, one three-LOD family, live selection, camera, placement, authored coordinates, palette, lighting, filtering, culling, depth, and material/device state. Lossless view acceptance and production 3D family selection remain open |
 | Battle audio                             | Original `TACTICAL.DLL` contains 66 WAVs                                                                                                         | Not covered by this image inventory; map event and cue separately                                                                                                                                                                                                                                                               |
 
 `RE-TAC-01`, `RE-TAC-02`, `RE-TAC-03`, `RE-BAT-01`, and `RE-DS-02` in the
@@ -68,10 +69,11 @@ captures. These are useful to classify art, but their compression, language,
 altered-campaign provenance, and state gaps prevent strict acceptance.
 
 The original ordinal table is visible in
-[`FUN_005ab650`](../../../ghidra/notes/FUN_005ab650.c). Its candidate DAT names
-in the JSON are labeled separately because the original vtable `+0x24`
-implementors have not yet been joined to `CAPSHPSD`/`FIGHTSD`. The same function
-selects Death Star bases `5010`/`5020`. `FUN_00596ad0`, `FUN_005c2e60`, and
+[`FUN_005ab650`](../../../ghidra/notes/FUN_005ab650.c). P58A joins it to the
+source-named registry in
+[`FUN_00597610_ship_db`](../../../ghidra/notes/FUN_00597610_ship_db.c) and the
+unique `CAPSHPSD`/`FIGHTSD` identities. The same path selects Death Star bases
+`5010`/`5020`. `FUN_00596ad0`, `FUN_005c2e60`, and
 `FUN_0059a850` establish the tactical planet arithmetic, but not its DAT input.
 P54 supplies reproducible, content-addressed raw extraction. P55 supplies
 deterministic binary-X and type-303 decoding with a verified runtime store.
@@ -98,9 +100,11 @@ proves authored coordinates and system palette selection.
 [P57B2C2A](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md)
 proves the source directional and ambient light rig.
 [P57B2C2B](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md)
-proves retained-mode device and material state. The DAT-to-tactical-vtable
-join, production 3D family selection, and original-runtime confirmation remain
-required before the procedural battle objects can be retired.
+proves retained-mode device and material state.
+[P58A](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md)
+proves the complete DAT identity join and transports all 87 meshes and 397
+textures. Production 3D family selection and original-runtime confirmation
+remain required before the procedural battle objects can be retired.
 
 ## External editor leads
 

@@ -16,8 +16,10 @@ pub mod message_log;
 pub mod panels;
 pub mod sector_window;
 pub mod system_window;
+mod tactical_asset_cache;
 #[cfg(feature = "interface-test-fixtures")]
 mod tactical_assets;
+mod tactical_resources;
 pub mod tactical_view;
 pub mod theme;
 pub mod victory_screen;
@@ -87,10 +89,16 @@ pub use system_window::{
     draw_system_windows, SystemWindowAction, SystemWindowState, SystemWindowTab,
     REFERENCE_RAIL_SLOTS, SYSTEM_WINDOW_CLIENT_WIDTH, SYSTEM_WINDOW_HEIGHT, SYSTEM_WINDOW_WIDTH,
 };
+pub use tactical_asset_cache::{set_tactical_asset_cache, tactical_asset_cache_counts};
 #[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
 pub use tactical_assets::install_native_tactical_lod_family;
 #[cfg(feature = "interface-test-fixtures")]
-pub use tactical_assets::{set_tactical_asset_cache, TacticalLodView};
+pub use tactical_assets::TacticalLodView;
+pub use tactical_resources::{
+    capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
+    TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
+    DEATH_STAR_DAT_ID, DEATH_STAR_TACTICAL_RESOURCE,
+};
 pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
 };

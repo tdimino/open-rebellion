@@ -428,7 +428,6 @@ fn install_runtime_pack(
     rebellion_data::set_file_cache(pack.game_files);
     rebellion_render::set_advisor_asset_cache(pack.advisor_frames, advisor_bitmaps);
     rebellion_render::set_bmp_cache(pack.bitmaps);
-    #[cfg(feature = "interface-test-fixtures")]
     rebellion_render::set_tactical_asset_cache(pack.tactical_meshes, pack.tactical_textures);
     macroquad::logging::info!(
         "runtime_asset_pack loaded game_files={} ui_bitmaps={} advisor_frames={} audio_files={} tactical_meshes={} tactical_textures={} bytes={}",
@@ -5584,6 +5583,7 @@ mod tactical_ground_tests {
                         fleet_roster_index: 0,
                         is_alliance: true,
                     },
+                    tactical_resource: rebellion_render::fighter_tactical_resource(DatId::new(3)),
                     source_position: rebellion_render::tactical_view::TacticalWorldPosition {
                         x: 0.0,
                         y: 0.0,
@@ -5604,6 +5604,7 @@ mod tactical_ground_tests {
                         fleet_roster_index: 1,
                         is_alliance: true,
                     },
+                    tactical_resource: rebellion_render::fighter_tactical_resource(DatId::new(3)),
                     source_position: rebellion_render::tactical_view::TacticalWorldPosition {
                         x: 0.0,
                         y: 0.0,
@@ -5653,6 +5654,8 @@ mod tactical_ground_tests {
                 fleet_roster_index: fleet_ship_index,
                 is_alliance: is_attacker,
             },
+            tactical_resource: rebellion_render::capital_ship_tactical_resource(DatId::new(1)),
+            death_star_resource: rebellion_render::death_star_tactical_resource(DatId::new(1)),
             source_position: rebellion_render::tactical_view::TacticalWorldPosition {
                 x: 0.0,
                 y: 0.0,

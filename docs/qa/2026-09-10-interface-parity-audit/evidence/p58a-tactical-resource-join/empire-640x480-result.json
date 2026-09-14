@@ -1,0 +1,667 @@
+{
+  "schema_version": 1,
+  "id": "tactical/empire/battle-entry/640x480",
+  "status": "pass",
+  "fixture_code": 66049,
+  "browser_version": "151.0.7922.34",
+  "browser_executable": "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "launch_arguments": [
+    "--mute-audio",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--no-first-run"
+  ],
+  "profile": "new-process-and-temporary-profile-per-scenario",
+  "muted": true,
+  "viewport": {
+    "id": "640x480",
+    "width": 640,
+    "height": 480,
+    "device_scale_factor": 1
+  },
+  "ready": {
+    "schema_version": 4,
+    "status": "battle-ready",
+    "family": "tactical",
+    "fixture_code": 66049,
+    "faction": "empire",
+    "proof_enabled": true,
+    "tactical_lod": "default",
+    "system": "Cathar",
+    "system_picture_id": 2,
+    "palette_resource_id": 5532,
+    "attacker_ships": 1,
+    "defender_ships": 1,
+    "fighters": 2,
+    "source_layout": {
+      "first_active_objects": 2,
+      "second_active_objects": 2,
+      "battle_extent": 106,
+      "outer_positive_z": 53,
+      "outer_negative_z": -53,
+      "inner_negative_z": -33,
+      "inner_positive_z": 33
+    },
+    "participants": [
+      {
+        "kind": "capital-ship",
+        "name": "Mon Calamari Cruiser",
+        "faction": "alliance",
+        "class_dat_id": 64,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 0,
+        "resource_base": 2010,
+        "opposing_resource_base": null,
+        "source_position": [
+          0,
+          0,
+          -53
+        ]
+      },
+      {
+        "kind": "capital-ship",
+        "name": "Strike Cruiser",
+        "faction": "empire",
+        "class_dat_id": 128,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 15,
+        "resource_base": 2510,
+        "opposing_resource_base": null,
+        "source_position": [
+          0,
+          0,
+          53
+        ]
+      },
+      {
+        "kind": "fighter-group",
+        "name": "A-wing",
+        "faction": "alliance",
+        "class_dat_id": 1,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 31,
+        "resource_base": 4020,
+        "opposing_resource_base": 4024,
+        "source_position": [
+          0,
+          0,
+          -33
+        ]
+      },
+      {
+        "kind": "fighter-group",
+        "name": "TIE Fighter",
+        "faction": "empire",
+        "class_dat_id": 5,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 33,
+        "resource_base": 4100,
+        "opposing_resource_base": 4104,
+        "source_position": [
+          0,
+          0,
+          33
+        ]
+      }
+    ],
+    "error": null
+  },
+  "screenshot_sha256": "c7ba0cbb0630efbf3b89e53ec3d44a5d55e34547abb16215f2663a94e2952531",
+  "two_frame_hashes": {
+    "first": "c7ba0cbb0630efbf3b89e53ec3d44a5d55e34547abb16215f2663a94e2952531",
+    "second": "c7ba0cbb0630efbf3b89e53ec3d44a5d55e34547abb16215f2663a94e2952531",
+    "equal": true
+  },
+  "message_index_rail": null,
+  "runtime_measurements": {
+    "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+    "frame_interval_ms": {
+      "median": 8.300000000000182,
+      "p95": 9.5,
+      "max": 9.900000000000091
+    },
+    "navigation_duration_ms": 16,
+    "wasm_memory_bytes": 89653248,
+    "js_heap_used_bytes": 43534113,
+    "js_heap_total_bytes": 49153765
+  },
+  "wasm_sha256": "22a5ff714c6ea0d31bb79a309caeb19039d5bd666184c9cca27bfb9808624fc0",
+  "runtime_pack_sha256": "7f0289265d9f85bfc971b8160edcab0da2425f1ed7246c35e570b6a07fdde631",
+  "requests": [
+    {
+      "url": "/",
+      "status": 200
+    },
+    {
+      "url": "/gl.js",
+      "status": 200
+    },
+    {
+      "url": "/open-rebellion-test.wasm",
+      "status": 200
+    },
+    {
+      "url": "/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "console": [
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_replay is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_interface_fixture is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "info",
+      "text": "[assets] render_profile=original-parity"
+    },
+    {
+      "type": "info",
+      "text": "runtime_asset_pack loaded game_files=52 ui_bitmaps=2303 advisor_frames=3988 audio_files=5 tactical_meshes=87 tactical_textures=397 bytes=40337367"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette_selector=2 palette_resource_id=5532 palette_flags=68 transform=authored_xyz_z_reflection light_directional_rgb=0.8 light_ambient_rgb=0.5 light_frame_source=5,5,-1 surface_to_light_rh=0.70014006,0.70014006,0.14002801 light_constraint=z render_quality=gouraud device_dither=false texture_filter=nearest mip_filter=none source_cull=d3dcull_ccw target_cull=back_cw depth_test=less_equal depth_write=true specular=false material=diffuse_plus_emissive diagnostics=2560:48/62/186/62,2561:25/28/84/28,2562:9/10/30/10 family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] lod_selection from=medium to=close resource_id=2560 view_depth=10 projection_scale=1 high_detail=true family_loads=1"
+    },
+    {
+      "type": "info",
+      "text": "[audio] music_volume=0.00 muted=true music_muted=true"
+    }
+  ],
+  "interaction_logs": [],
+  "probes": [
+    {
+      "type": "production-tactical-entry",
+      "system": "Cathar",
+      "attacker_ships": 1,
+      "defender_ships": 1,
+      "fighters": 2
+    },
+    {
+      "type": "tactical-shell",
+      "status": "source-bitmap-exact",
+      "resource_id": 1000,
+      "pixels_checked": 708
+    },
+    {
+      "type": "paused-control-bitmap",
+      "status": "source-bitmap-exact",
+      "resource_id": 1061,
+      "pixels_checked": 564
+    },
+    {
+      "type": "alliance-highlight-on",
+      "status": "source-bitmap-exact",
+      "resource_id": 1035,
+      "pixels_checked": 780
+    },
+    {
+      "type": "empire-highlight-on",
+      "status": "source-bitmap-exact",
+      "resource_id": 1037,
+      "pixels_checked": 779
+    },
+    {
+      "type": "pause-outside-edge",
+      "unchanged": true
+    },
+    {
+      "type": "pause-transparent-matte",
+      "source_pixel": [
+        1,
+        1
+      ],
+      "unchanged": true
+    },
+    {
+      "type": "resume",
+      "status": "source-bitmap-exact",
+      "resource_id": 1060,
+      "pixels_checked": 564
+    },
+    {
+      "type": "pause",
+      "status": "source-bitmap-exact",
+      "resource_id": 1061,
+      "pixels_checked": 564
+    },
+    {
+      "type": "paused-stability",
+      "stable": true,
+      "screenshot_sha256": "c7ba0cbb0630efbf3b89e53ec3d44a5d55e34547abb16215f2663a94e2952531"
+    },
+    {
+      "type": "alliance-highlight-off",
+      "status": "source-bitmap-exact",
+      "resource_id": 1034,
+      "pixels_checked": 780,
+      "wireframe": {
+        "status": "verified",
+        "changed_pixels": 48,
+        "faction_color_pixels": 43
+      }
+    },
+    {
+      "type": "alliance-highlight-restored",
+      "status": "source-bitmap-exact",
+      "resource_id": 1035,
+      "pixels_checked": 780
+    },
+    {
+      "type": "empire-highlight-off",
+      "status": "source-bitmap-exact",
+      "resource_id": 1036,
+      "pixels_checked": 779,
+      "wireframe": {
+        "status": "verified",
+        "changed_pixels": 48,
+        "faction_color_pixels": 43
+      }
+    },
+    {
+      "type": "empire-highlight-restored",
+      "status": "source-bitmap-exact",
+      "resource_id": 1037,
+      "pixels_checked": 779
+    },
+    {
+      "type": "zoom-in-transparent-matte",
+      "source_pixel": [
+        1,
+        1
+      ],
+      "unchanged": true
+    },
+    {
+      "type": "zoom-in-pressed",
+      "status": "source-bitmap-exact",
+      "resource_id": 1045,
+      "pixels_checked": 476
+    },
+    {
+      "type": "zoom-in",
+      "status": "source-bitmap-exact",
+      "resource_id": 1044,
+      "pixels_checked": 476,
+      "aperture_isolation": {
+        "status": "isolated",
+        "pixels_checked": 112284
+      }
+    },
+    {
+      "type": "zoom-out-transparent-matte",
+      "source_pixel": [
+        1,
+        1
+      ],
+      "unchanged": true
+    },
+    {
+      "type": "zoom-out-pressed",
+      "status": "source-bitmap-exact",
+      "resource_id": 1047,
+      "pixels_checked": 448
+    },
+    {
+      "type": "zoom-out",
+      "status": "source-bitmap-exact",
+      "resource_id": 1046,
+      "pixels_checked": 448,
+      "aperture_isolation": {
+        "status": "isolated",
+        "pixels_checked": 112284
+      }
+    },
+    {
+      "type": "source-bound-tactical-participants",
+      "executable_functions": [
+        "FUN_005ab650",
+        "FUN_005a9030"
+      ],
+      "layout": {
+        "first_active_objects": 2,
+        "second_active_objects": 2,
+        "battle_extent": 106,
+        "outer_positive_z": 53,
+        "outer_negative_z": -53,
+        "inner_negative_z": -33,
+        "inner_positive_z": 33
+      },
+      "participants": [
+        {
+          "kind": "capital-ship",
+          "name": "Mon Calamari Cruiser",
+          "faction": "alliance",
+          "class_dat_id": 64,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 0,
+          "resource_base": 2010,
+          "opposing_resource_base": null,
+          "source_position": [
+            0,
+            0,
+            -53
+          ]
+        },
+        {
+          "kind": "capital-ship",
+          "name": "Strike Cruiser",
+          "faction": "empire",
+          "class_dat_id": 128,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 15,
+          "resource_base": 2510,
+          "opposing_resource_base": null,
+          "source_position": [
+            0,
+            0,
+            53
+          ]
+        },
+        {
+          "kind": "fighter-group",
+          "name": "A-wing",
+          "faction": "alliance",
+          "class_dat_id": 1,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 31,
+          "resource_base": 4020,
+          "opposing_resource_base": 4024,
+          "source_position": [
+            0,
+            0,
+            -33
+          ]
+        },
+        {
+          "kind": "fighter-group",
+          "name": "TIE Fighter",
+          "faction": "empire",
+          "class_dat_id": 5,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 33,
+          "resource_base": 4100,
+          "opposing_resource_base": 4104,
+          "source_position": [
+            0,
+            0,
+            33
+          ]
+        }
+      ]
+    },
+    {
+      "type": "source-bound-tactical-3d-lod-family",
+      "meshes": [
+        "2560/1033",
+        "2561/1033",
+        "2562/1033"
+      ],
+      "textures": [
+        "SDESTI52.BMP/1033",
+        "SDESTI_M.BMP/1033"
+      ],
+      "selected_resources": [
+        2560
+      ],
+      "palette": {
+        "system_picture_id": 2,
+        "resource_id": 5532,
+        "flags": 68
+      },
+      "transform": "authored_xyz_z_reflection",
+      "family_loads": 1
+    },
+    {
+      "type": "source-traced-tactical-light-rig",
+      "executable_function": "FUN_005d4d10",
+      "direct3drm": {
+        "directional": {
+          "type": 3,
+          "rgb": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "frame_source": [
+            5,
+            5,
+            -1
+          ],
+          "target_source": [
+            0,
+            0,
+            0
+          ],
+          "constraint": "z"
+        },
+        "ambient": {
+          "type": 0,
+          "rgb": [
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      "surface_to_light_rh": [
+        0.70014006,
+        0.70014006,
+        0.14002801
+      ]
+    },
+    {
+      "type": "source-traced-tactical-render-state",
+      "executable_functions": [
+        "FUN_005c1c10",
+        "FUN_005d6e10"
+      ],
+      "direct3drm": {
+        "dither": false,
+        "render_quality": "gouraud",
+        "texture_filter": "nearest",
+        "mip_filter": "none",
+        "source_cull": "d3dcull_ccw",
+        "target_cull": "back_cw",
+        "depth_test": "less_equal",
+        "depth_write": true,
+        "specular": false,
+        "material": "diffuse_plus_emissive"
+      }
+    },
+    {
+      "type": "browser-runtime-measurements",
+      "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+      "frame_interval_ms": {
+        "median": 8.300000000000182,
+        "p95": 9.5,
+        "max": 9.900000000000091
+      },
+      "navigation_duration_ms": 16,
+      "wasm_memory_bytes": 89653248,
+      "js_heap_used_bytes": 43534113,
+      "js_heap_total_bytes": 49153765
+    },
+    {
+      "type": "tactical-3d-pixel-submission-negative-control",
+      "proof_fixture_code": 66049,
+      "control_fixture_code": 66050,
+      "changed_aperture_pixels": 20858,
+      "minimum_changed_pixels": 1000
+    }
+  ],
+  "comparison": {
+    "original_reference_source": "owned-original-or-curated-reference-only",
+    "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+    "implementation_baseline": null,
+    "status": "unbaselined",
+    "different_pixels": null,
+    "difference_ratio": null,
+    "tolerance": 0,
+    "masks": []
+  },
+  "interaction_comparisons": {
+    "alliance-highlight-off": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "alliance-highlight-restored": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "empire-highlight-off": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "highlights-restored": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "pause-outside-edge": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "pause-stable": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "pause-transparent-matte": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "paused-again": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "resumed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "zoom-in-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "zoom-in-transparent-matte": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "zoom-out-pressed": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "zoom-out-transparent-matte": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "zoom-restored": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    },
+    "zoomed-in": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    }
+  },
+  "cleanup": "closed"
+}

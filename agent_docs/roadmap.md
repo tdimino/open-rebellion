@@ -609,10 +609,16 @@ would tune around known simulation feedback defects.
   diffuse-plus-emissive materials; pass the focused four-case and complete
   28-case muted browser gates. Keep every strict tactical cell open pending A0
   evidence.
+- [x] Complete P58A tactical resource identity: join all 29 capital ships,
+  eight fighters, and the Death Star from stable DAT identities to their
+  original tactical ordinals and resource bases; replace approximate ship
+  sprite arithmetic; validate and pack all 87 meshes and 397 textures; and
+  pass the complete 28-case muted browser gate. Keep production family drawing,
+  A0 comparison, and every strict tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58 next proves the DAT-to-tactical-vtable join before
-  replacing procedural ships, fighters, planets, and effects.
+  states. P58B next renders each production participant from the joined family
+  before replacing procedural fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

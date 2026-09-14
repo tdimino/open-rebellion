@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58A",
+  "model": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "task_scope": "browser-artifact visual acceptance only",
+  "harness_run": {
+    "run_id": "2026-09-14T08-19-56-874Z-88119",
+    "passed": 28,
+    "executions": 28,
+    "failed": 0,
+    "status": "pass"
+  },
+  "result": {
+    "verdict": "provisional_A1_pass",
+    "ready_to_commit": true,
+    "severity_findings": [],
+    "observations": [
+      "Both faction captures visibly show the tactical bitmap interface, starfield, and textured source vessel.",
+      "The participant records preserve the exact four sampled DAT, tactical ordinal, and resource-base joins.",
+      "All 28 executions passed with four successful requests, muted audio, stable captures, no browser errors, and closed browser processes.",
+      "Both inspected records loaded the complete 87-mesh and 397-texture tactical runtime corpus."
+    ]
+  },
+  "limits": [
+    "Visible proof still renders the isolated 2560 family; participant identity does not prove that every joined family is drawn in production.",
+    "All 28 captures lack original baselines and remain unbaselined implementation evidence.",
+    "All 106 strict tactical cells remain open pending owned lossless original A0 comparison and their complete state matrices."
+  ]
+}

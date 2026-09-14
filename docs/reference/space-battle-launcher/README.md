@@ -76,12 +76,15 @@ and closes every process. Raw runs live under ignored
   dither off, Gouraud lighting, nearest/no-mip sampling, source
   `D3DCULL_CCW`, LessEqual depth with writes, specular off, and
   diffuse-plus-emissive materials.
+- P58A joins every capital ship, fighter, and Death Star DAT identity to the
+  original tactical ordinal and resource bases. The four-request pack now
+  carries all 87 meshes and 397 textures.
 - The complete bundle passes 28 of 28 muted browser cases across both factions
   and both viewports with one family load and no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
-bridge is test-only. DAT-to-tactical resource joins, production 3D family
-selection, native GPU and A0/A1 comparison,
+bridge is test-only. Production 3D family selection, native GPU and A0
+comparison,
 remaining commands, damage, effects, Death Star paths, results, audio, and
 return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
@@ -90,6 +93,7 @@ return routing remain open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58A tactical resource-join evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md)
 - [P57B2C2B retained-mode render-state evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md)
 - [P57B2C2A retained-mode light-rig evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md)
 - [P57B2C1 authored transform and system palette evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md)

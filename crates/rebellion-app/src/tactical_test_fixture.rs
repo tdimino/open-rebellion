@@ -258,6 +258,9 @@ struct FixtureParticipant<'a> {
     faction: &'static str,
     class_dat_id: u32,
     fleet_roster_index: usize,
+    tactical_ordinal: Option<u8>,
+    resource_base: Option<u32>,
+    opposing_resource_base: Option<u32>,
     source_position: [f32; 3],
 }
 
@@ -268,40 +271,72 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
     };
     let layout = session.source_layout;
     let mut participants = Vec::with_capacity(session.ships.len() + session.fighters.len());
-    participants.extend(session.ships.iter().map(|ship| FixtureParticipant {
-        kind: "capital-ship",
-        name: &ship.name,
-        faction: if ship.identity.is_alliance {
-            "alliance"
-        } else {
-            "empire"
-        },
-        class_dat_id: ship.identity.class_dat_id.index(),
-        fleet_roster_index: ship.identity.fleet_roster_index,
-        source_position: [
-            ship.source_position.x,
-            ship.source_position.y,
-            ship.source_position.z,
-        ],
+    participants.extend(session.ships.iter().map(|ship| {
+        let tactical_ordinal = ship
+            .tactical_resource
+            .map(|resource| resource.tactical_ordinal)
+            .or_else(|| {
+                ship.death_star_resource
+                    .map(|resource| resource.tactical_ordinal)
+            });
+        let resource_base = ship
+            .tactical_resource
+            .map(|resource| resource.mesh_resource_base)
+            .or_else(|| {
+                ship.death_star_resource
+                    .map(|resource| resource.resource_base_without_flag)
+            });
+        FixtureParticipant {
+            kind: "capital-ship",
+            name: &ship.name,
+            faction: if ship.identity.is_alliance {
+                "alliance"
+            } else {
+                "empire"
+            },
+            class_dat_id: ship.identity.class_dat_id.index(),
+            fleet_roster_index: ship.identity.fleet_roster_index,
+            tactical_ordinal,
+            resource_base,
+            opposing_resource_base: ship
+                .death_star_resource
+                .map(|resource| resource.resource_base_with_flag),
+            source_position: [
+                ship.source_position.x,
+                ship.source_position.y,
+                ship.source_position.z,
+            ],
+        }
     }));
-    participants.extend(session.fighters.iter().map(|fighter| FixtureParticipant {
-        kind: "fighter-group",
-        name: &fighter.name,
-        faction: if fighter.identity.is_alliance {
-            "alliance"
-        } else {
-            "empire"
-        },
-        class_dat_id: fighter.identity.class_dat_id.index(),
-        fleet_roster_index: fighter.identity.fleet_roster_index,
-        source_position: [
-            fighter.source_position.x,
-            fighter.source_position.y,
-            fighter.source_position.z,
-        ],
+    participants.extend(session.fighters.iter().map(|fighter| {
+        FixtureParticipant {
+            kind: "fighter-group",
+            name: &fighter.name,
+            faction: if fighter.identity.is_alliance {
+                "alliance"
+            } else {
+                "empire"
+            },
+            class_dat_id: fighter.identity.class_dat_id.index(),
+            fleet_roster_index: fighter.identity.fleet_roster_index,
+            tactical_ordinal: fighter
+                .tactical_resource
+                .map(|resource| resource.tactical_ordinal),
+            resource_base: fighter
+                .tactical_resource
+                .map(|resource| resource.first_side_resource_base),
+            opposing_resource_base: fighter
+                .tactical_resource
+                .map(|resource| resource.opposing_side_resource_base),
+            source_position: [
+                fighter.source_position.x,
+                fighter.source_position.y,
+                fighter.source_position.z,
+            ],
+        }
     }));
     emit(&FixtureRecord {
-        schema_version: 3,
+        schema_version: 4,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -338,7 +373,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 3,
+        schema_version: 4,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,

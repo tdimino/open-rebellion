@@ -98,6 +98,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P57B2C2B render-state evidence](evidence/2026-09-14-tactical-render-state.md)
   for filtering, culling, depth, device quality, material fields, muted browser
   proof, and the production-resource/A0 boundary.
+- Review the [P58A resource-join evidence](evidence/2026-09-14-tactical-resource-join.md)
+  for all ship/fighter DAT joins, complete 87-mesh/397-texture transport,
+  representative browser probes, and the production-draw/A0 boundary.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -187,8 +190,10 @@ uses authored coordinates with the source handedness boundary, and packages
 and selects the original system palette. P57B2C2A replaces the guessed light
 with the source directional and ambient rig. P57B2C2B restores filtering,
 culling, depth, dither, shading, specular, and diffuse/emissive material state.
-The DAT-to-tactical-resource join, production 3D draw path, and A0 comparisons
-remain open.
+P58A replaces approximate sprite arithmetic with all 29 capital-ship, eight
+fighter, and Death Star DAT resource joins, and transports all 87 meshes and
+397 textures through the four-request browser pack. Production 3D family
+drawing and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination
