@@ -75,9 +75,9 @@ pub enum CockpitButton {
     TroopFinder,
     /// Find a character or special force (F5).
     PersonnelFinder,
-    /// Open the original game-options destination (F7).
+    /// Open the original game-options destination (F1).
     GameOptions,
-    /// Open the Encyclopedia.
+    /// Open the Encyclopedia (F7).
     Encyclopedia,
     /// Open the Galactic Information Display menu.
     GalacticInformationDisplay,
@@ -342,7 +342,7 @@ const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
         pressed_resource: resources::strategy::ALLIANCE_TROOP_FINDER_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::GameOptions,
+        button: CockpitButton::Encyclopedia,
         command_id: 0x131,
         rect: CockpitViewport {
             x: 394.0,
@@ -350,11 +350,11 @@ const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 27.0,
             height: 16.0,
         },
-        normal_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
+        normal_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::Encyclopedia,
+        button: CockpitButton::GalacticInformationDisplay,
         command_id: 0x132,
         rect: CockpitViewport {
             x: 446.0,
@@ -362,8 +362,8 @@ const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 27.0,
             height: 16.0,
         },
-        normal_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
+        normal_resource: resources::strategy::ALLIANCE_GID_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_GID_PRESSED,
     },
 ];
 
@@ -417,7 +417,7 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
         pressed_resource: resources::strategy::EMPIRE_TROOP_FINDER_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::GameOptions,
+        button: CockpitButton::Encyclopedia,
         command_id: 0x131,
         rect: CockpitViewport {
             x: 465.0,
@@ -425,11 +425,11 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 35.0,
             height: 24.0,
         },
-        normal_resource: resources::strategy::EMPIRE_GAME_OPTIONS_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
+        normal_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::Encyclopedia,
+        button: CockpitButton::GalacticInformationDisplay,
         command_id: 0x132,
         rect: CockpitViewport {
             x: 519.0,
@@ -437,13 +437,13 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 37.0,
             height: 25.0,
         },
-        normal_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
+        normal_resource: resources::strategy::EMPIRE_GID_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_GID_PRESSED,
     },
 ];
 
-const ALLIANCE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::GalacticInformationDisplay,
+const ALLIANCE_GAME_OPTIONS_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::GameOptions,
     command_id: 0x133,
     rect: CockpitViewport {
         x: 3.0,
@@ -451,12 +451,12 @@ const ALLIANCE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
         width: 27.0,
         height: 41.0,
     },
-    normal_resource: resources::strategy::ALLIANCE_GID_NORMAL,
-    pressed_resource: resources::strategy::ALLIANCE_GID_PRESSED,
+    normal_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_NORMAL,
+    pressed_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
 };
 
-const EMPIRE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::GalacticInformationDisplay,
+const EMPIRE_GAME_OPTIONS_CONTROL: StrategicControlSpec = StrategicControlSpec {
+    button: CockpitButton::GameOptions,
     command_id: 0x133,
     rect: CockpitViewport {
         x: 79.0,
@@ -464,8 +464,8 @@ const EMPIRE_GID_CONTROL: StrategicControlSpec = StrategicControlSpec {
         width: 35.0,
         height: 57.0,
     },
-    normal_resource: resources::strategy::EMPIRE_GID_NORMAL,
-    pressed_resource: resources::strategy::EMPIRE_GID_PRESSED,
+    normal_resource: resources::strategy::EMPIRE_GAME_OPTIONS_NORMAL,
+    pressed_resource: resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
 };
 
 const ALLIANCE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
@@ -521,12 +521,20 @@ pub fn strategic_primary_controls(faction: CockpitFaction) -> &'static [Strategi
     }
 }
 
-/// Exact GID control created by `FUN_00427270` for a faction.
+/// GID control for a faction: the rightmost bottom control.
 #[must_use]
 pub fn strategic_gid_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
     match faction {
-        CockpitFaction::Alliance => &ALLIANCE_GID_CONTROL,
-        CockpitFaction::Empire => &EMPIRE_GID_CONTROL,
+        CockpitFaction::Alliance => &ALLIANCE_PRIMARY_CONTROLS[5],
+        CockpitFaction::Empire => &EMPIRE_PRIMARY_CONTROLS[5],
+    }
+}
+
+/// Side control outside the six bottom controls.
+fn strategic_side_control(faction: CockpitFaction) -> &'static StrategicControlSpec {
+    match faction {
+        CockpitFaction::Alliance => &ALLIANCE_GAME_OPTIONS_CONTROL,
+        CockpitFaction::Empire => &EMPIRE_GAME_OPTIONS_CONTROL,
     }
 }
 
@@ -728,6 +736,7 @@ pub fn draw_cockpit_egui_layer(
     ctx: &egui::Context,
     state: &mut CockpitState,
     cache: &mut BmpCache,
+    input_enabled: bool,
 ) -> Option<GidMode> {
     let layout = state.layout();
     let controls = strategic_primary_controls(state.faction);
@@ -743,7 +752,7 @@ pub fn draw_cockpit_egui_layer(
         &painter,
         layout,
         state,
-        strategic_gid_control(state.faction),
+        strategic_side_control(state.faction),
         primary_down,
     );
     draw_message_index_rail(ctx, cache, &painter, layout, state.faction);
@@ -752,7 +761,7 @@ pub fn draw_cockpit_egui_layer(
         draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
     }
 
-    let selected = draw_gid_menu(ctx, state, cache, layout);
+    let selected = draw_gid_menu(ctx, state, cache, layout, input_enabled);
     if let Some(mode) = selected {
         state.gid_mode = mode;
         state.gid_ui.menu_open = false;
@@ -1210,6 +1219,7 @@ fn draw_gid_menu(
     state: &mut CockpitState,
     cache: &mut BmpCache,
     layout: CockpitLayout,
+    input_enabled: bool,
 ) -> Option<GidMode> {
     if !state.gid_ui.menu_open {
         return None;
@@ -1225,6 +1235,9 @@ fn draw_gid_menu(
         .fade_in(false)
         .fixed_pos(root_pos)
         .show(ctx, |ui| {
+            if !input_enabled {
+                ui.disable();
+            }
             ui.set_width(158.0 * scale);
             let menu = gid_popup_frame().show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
@@ -1278,6 +1291,9 @@ fn draw_gid_menu(
             .fade_in(false)
             .fixed_pos(submenu_pos)
             .show(ctx, |ui| {
+                if !input_enabled {
+                    ui.disable();
+                }
                 ui.set_width(238.0 * scale);
                 let menu = gid_popup_frame().show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
@@ -1308,7 +1324,7 @@ fn draw_gid_menu(
         selected = selected.or(submenu.inner);
     }
 
-    if selected.is_none() {
+    if input_enabled && selected.is_none() {
         let (pressed, pointer, escape) = ctx.input(|input| {
             (
                 input.pointer.button_pressed(egui::PointerButton::Primary),
@@ -1316,9 +1332,11 @@ fn draw_gid_menu(
                 input.key_pressed(egui::Key::Escape),
             )
         });
+        let trigger_rect =
+            logical_rect_to_screen(layout, strategic_gid_control(state.faction).rect);
         let outside = pressed
             && pointer.is_some_and(|pointer| {
-                !root.response.rect.contains(pointer) && !submenu_rect.contains(pointer)
+                should_dismiss_gid_menu(pointer, root.response.rect, submenu_rect, trigger_rect)
             });
         if outside || escape {
             state.gid_ui.menu_open = false;
@@ -1354,7 +1372,7 @@ pub fn handle_cockpit_egui_input(
             control_at_pointer(cache, controls, layout, pointer).or_else(|| {
                 control_at_pointer(
                     cache,
-                    std::slice::from_ref(strategic_gid_control(state.faction)),
+                    std::slice::from_ref(strategic_side_control(state.faction)),
                     layout,
                     pointer,
                 )
@@ -1370,7 +1388,20 @@ pub fn handle_cockpit_egui_input(
         pointer_hit,
     );
 
-    clicked.or_else(|| keyboard_control(ctx))
+    clicked.or_else(|| {
+        (!ctx.wants_keyboard_input())
+            .then(|| keyboard_control(ctx))
+            .flatten()
+    })
+}
+
+fn should_dismiss_gid_menu(
+    pointer: egui::Pos2,
+    root: egui::Rect,
+    submenu: egui::Rect,
+    trigger: egui::Rect,
+) -> bool {
+    !root.contains(pointer) && !submenu.contains(pointer) && !trigger.contains(pointer)
 }
 
 fn update_control_capture(
@@ -1454,19 +1485,28 @@ fn control_at_pointer(
 }
 
 fn keyboard_control(ctx: &egui::Context) -> Option<CockpitButton> {
+    keyboard_control_from_inputs(ctx, is_key_pressed)
+}
+
+fn keyboard_control_from_inputs(
+    ctx: &egui::Context,
+    mut macroquad_key_pressed: impl FnMut(KeyCode) -> bool,
+) -> Option<CockpitButton> {
     let egui_key = ctx.input(|input| {
         [
+            (egui::Key::F1, CockpitButton::GameOptions),
             (egui::Key::F2, CockpitButton::SystemFinder),
             (egui::Key::F3, CockpitButton::FleetFinder),
             (egui::Key::F4, CockpitButton::TroopFinder),
             (egui::Key::F5, CockpitButton::PersonnelFinder),
-            (egui::Key::F7, CockpitButton::GameOptions),
+            (egui::Key::F7, CockpitButton::Encyclopedia),
         ]
         .into_iter()
         .find_map(|(key, button)| input.key_pressed(key).then_some(button))
     });
     egui_key.or_else(|| {
         [
+            KeyCode::F1,
             KeyCode::F2,
             KeyCode::F3,
             KeyCode::F4,
@@ -1474,18 +1514,19 @@ fn keyboard_control(ctx: &egui::Context) -> Option<CockpitButton> {
             KeyCode::F7,
         ]
         .into_iter()
-        .find(|key| is_key_pressed(*key))
+        .find(|key| macroquad_key_pressed(*key))
         .and_then(macroquad_accelerator)
     })
 }
 
 fn macroquad_accelerator(key: KeyCode) -> Option<CockpitButton> {
     match key {
+        KeyCode::F1 => Some(CockpitButton::GameOptions),
         KeyCode::F2 => Some(CockpitButton::SystemFinder),
         KeyCode::F3 => Some(CockpitButton::FleetFinder),
         KeyCode::F4 => Some(CockpitButton::TroopFinder),
         KeyCode::F5 => Some(CockpitButton::PersonnelFinder),
-        KeyCode::F7 => Some(CockpitButton::GameOptions),
+        KeyCode::F7 => Some(CockpitButton::Encyclopedia),
         _ => None,
     }
 }
@@ -1574,6 +1615,17 @@ mod tests {
     }
 
     #[test]
+    fn encyclopedia_command_routes_for_both_factions() {
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let control = strategic_primary_controls(faction)
+                .iter()
+                .find(|control| control.command_id == 0x131)
+                .expect("both command centers have an Encyclopedia control");
+            assert_eq!(control.button, CockpitButton::Encyclopedia);
+        }
+    }
+
+    #[test]
     fn alliance_primary_controls_match_recovered_constructor_records() {
         let controls = strategic_primary_controls(CockpitFaction::Alliance);
         let records: Vec<_> = controls
@@ -1641,7 +1693,7 @@ mod tests {
                     10007,
                 ),
                 (
-                    CockpitButton::GameOptions,
+                    CockpitButton::Encyclopedia,
                     0x131,
                     CockpitViewport {
                         x: 394.0,
@@ -1653,7 +1705,7 @@ mod tests {
                     10009,
                 ),
                 (
-                    CockpitButton::Encyclopedia,
+                    CockpitButton::GalacticInformationDisplay,
                     0x132,
                     CockpitViewport {
                         x: 446.0,
@@ -1699,33 +1751,78 @@ mod tests {
     fn gid_controls_match_recovered_constructor_records() {
         let alliance = strategic_gid_control(CockpitFaction::Alliance);
         assert_eq!(alliance.button, CockpitButton::GalacticInformationDisplay);
-        assert_eq!(alliance.command_id, 0x133);
+        assert_eq!(alliance.command_id, 0x132);
         assert_eq!(
             alliance.rect,
             CockpitViewport {
-                x: 3.0,
-                y: 355.0,
+                x: 446.0,
+                y: 406.0,
                 width: 27.0,
-                height: 41.0,
+                height: 16.0,
             }
         );
-        assert_eq!(alliance.normal_resource, 10013);
-        assert_eq!(alliance.pressed_resource, 10014);
+        assert_eq!(alliance.normal_resource, 10012);
+        assert_eq!(alliance.pressed_resource, 10011);
 
         let empire = strategic_gid_control(CockpitFaction::Empire);
         assert_eq!(empire.button, CockpitButton::GalacticInformationDisplay);
-        assert_eq!(empire.command_id, 0x133);
+        assert_eq!(empire.command_id, 0x132);
         assert_eq!(
             empire.rect,
             CockpitViewport {
-                x: 79.0,
-                y: 192.0,
-                width: 35.0,
-                height: 57.0,
+                x: 519.0,
+                y: 434.0,
+                width: 37.0,
+                height: 25.0,
             }
         );
-        assert_eq!(empire.normal_resource, 10027);
-        assert_eq!(empire.pressed_resource, 10028);
+        assert_eq!(empire.normal_resource, 10026);
+        assert_eq!(empire.pressed_resource, 10025);
+    }
+
+    #[test]
+    fn empire_globe_opens_game_options_without_moving_its_artwork() {
+        let globe = strategic_side_control(CockpitFaction::Empire);
+        assert_eq!(globe.button, CockpitButton::GameOptions);
+        assert_eq!(globe.command_id, 0x133);
+        assert_eq!(globe.normal_resource, 10027);
+        assert_eq!(globe.pressed_resource, 10028);
+        assert_viewport(globe.rect, 79.0, 192.0, 35.0, 57.0);
+        let controls = strategic_primary_controls(CockpitFaction::Empire);
+        assert_eq!(
+            controls[5].button,
+            CockpitButton::GalacticInformationDisplay
+        );
+        assert_eq!(
+            controls
+                .iter()
+                .filter(|c| c.button == CockpitButton::GalacticInformationDisplay)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn alliance_globe_opens_game_options_without_moving_its_artwork() {
+        let globe = strategic_side_control(CockpitFaction::Alliance);
+        assert_eq!(globe.button, CockpitButton::GameOptions);
+        assert_eq!(globe.command_id, 0x133);
+        assert_eq!(globe.normal_resource, 10013);
+        assert_eq!(globe.pressed_resource, 10014);
+        assert_viewport(globe.rect, 3.0, 355.0, 27.0, 41.0);
+
+        let controls = strategic_primary_controls(CockpitFaction::Alliance);
+        assert_eq!(
+            controls
+                .iter()
+                .filter(|c| c.button == CockpitButton::GalacticInformationDisplay)
+                .count(),
+            1
+        );
+        assert_eq!(
+            controls[5].button,
+            CockpitButton::GalacticInformationDisplay
+        );
     }
 
     #[test]
@@ -1863,6 +1960,38 @@ mod tests {
     }
 
     #[test]
+    fn gid_trigger_closes_through_command_dispatch_not_outside_dismissal() {
+        let root = egui::Rect::from_min_size(egui::pos2(425.0, 230.0), egui::vec2(158.0, 147.0));
+        let submenu = egui::Rect::from_min_size(egui::pos2(179.0, 230.0), egui::vec2(238.0, 42.0));
+        let trigger = egui::Rect::from_min_size(egui::pos2(446.0, 406.0), egui::vec2(27.0, 16.0));
+
+        assert!(!should_dismiss_gid_menu(
+            egui::pos2(450.0, 410.0),
+            root,
+            submenu,
+            trigger,
+        ));
+        assert!(!should_dismiss_gid_menu(
+            egui::pos2(430.0, 235.0),
+            root,
+            submenu,
+            trigger,
+        ));
+        assert!(!should_dismiss_gid_menu(
+            egui::pos2(200.0, 250.0),
+            root,
+            submenu,
+            trigger,
+        ));
+        assert!(should_dismiss_gid_menu(
+            egui::pos2(100.0, 100.0),
+            root,
+            submenu,
+            trigger,
+        ));
+    }
+
+    #[test]
     fn recovered_gid_menu_covers_distinct_native_commands_for_both_factions() {
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
             let mut commands = std::collections::HashSet::new();
@@ -1878,6 +2007,55 @@ mod tests {
             assert_eq!(commands.len(), 21);
             assert!(!commands.contains(&GidMode::DisplayOff.command_id()));
             assert_eq!(GidMode::DisplayOff.command_id(), 0x80);
+        }
+    }
+
+    #[test]
+    fn egui_function_keys_route_options_and_encyclopedia() {
+        for (key, expected) in [
+            (egui::Key::F1, Some(CockpitButton::GameOptions)),
+            (egui::Key::F7, Some(CockpitButton::Encyclopedia)),
+            (egui::Key::F2, Some(CockpitButton::SystemFinder)),
+            (egui::Key::F3, Some(CockpitButton::FleetFinder)),
+            (egui::Key::F4, Some(CockpitButton::TroopFinder)),
+            (egui::Key::F5, Some(CockpitButton::PersonnelFinder)),
+            (egui::Key::F6, None),
+        ] {
+            let ctx = egui::Context::default();
+            let input = egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                }],
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                assert_eq!(keyboard_control_from_inputs(ctx, |_| false), expected);
+            });
+        }
+    }
+
+    #[test]
+    fn macroquad_fallback_polls_options_and_encyclopedia_keys() {
+        for (key, expected) in [
+            (KeyCode::F1, Some(CockpitButton::GameOptions)),
+            (KeyCode::F7, Some(CockpitButton::Encyclopedia)),
+            (KeyCode::F2, Some(CockpitButton::SystemFinder)),
+            (KeyCode::F3, Some(CockpitButton::FleetFinder)),
+            (KeyCode::F4, Some(CockpitButton::TroopFinder)),
+            (KeyCode::F5, Some(CockpitButton::PersonnelFinder)),
+            (KeyCode::F6, None),
+        ] {
+            let ctx = egui::Context::default();
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                assert_eq!(
+                    keyboard_control_from_inputs(ctx, |polled| polled == key),
+                    expected,
+                );
+            });
         }
     }
 
@@ -1903,8 +2081,12 @@ mod tests {
             Some(CockpitButton::PersonnelFinder)
         );
         assert_eq!(
-            macroquad_accelerator(KeyCode::F7),
+            macroquad_accelerator(KeyCode::F1),
             Some(CockpitButton::GameOptions)
+        );
+        assert_eq!(
+            macroquad_accelerator(KeyCode::F7),
+            Some(CockpitButton::Encyclopedia)
         );
         assert_eq!(macroquad_accelerator(KeyCode::F6), None);
     }

@@ -67,7 +67,7 @@
     {"module": "ALBRIEF.DLL", "standard_bmp": 20, "rcdata_bin": 366, "custom_type_302_frames": 2684, "wav": 17},
     {"module": "EMBRIEF.DLL", "standard_bmp": 18, "rcdata_bin": 471, "custom_type_302_frames": 2738, "wav": 22},
     {"module": "TACTICAL.DLL", "standard_bmp": 288, "rcdata_bin": 1, "custom_type_301_meshes": 87, "type_301_bytes": 268936, "type_301_x0302_bin": 11, "type_301_x0303_bin": 76, "custom_type_303_textures": 397, "type_303_bytes": 1674840, "type_303_named": 59, "type_303_numeric": 338, "raw_staging": "p54_verified", "wav": 66},
-    {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66, "primary_control_bitmaps": {"Alliance": "10001-10012", "Empire": "10015-10026"}, "gid_control_bitmaps": {"Alliance": [10013, 10014], "Empire": [10027, 10028]}, "command_center_composition": {"Alliance shell": 900, "Imperial shell": 901, "Display Off bright galaxy": 902, "active GID dim galaxy": 903}, "gid_resources": {"Alliance markers largest to smallest": "10146-10149", "Empire markers smallest to largest": "10150-10153", "neutral markers smallest to largest": "10154-10157", "unexplored or unpopulated marker": 10158, "compact legend": 10168}},
+    {"module": "STRATEGY.DLL", "standard_bmp": 1042, "rcdata_bin": 96, "wav": 66, "primary_control_bitmaps": {"Alliance": "10001-10012", "Empire": "10015-10026"}, "gid_control_bitmaps": {"Alliance normal/pressed": [10012, 10011], "Empire normal/pressed": [10026, 10025]}, "game_options_control_bitmaps": {"Alliance normal/pressed": [10013, 10014], "Empire normal/pressed": [10027, 10028]}, "command_center_composition": {"Alliance shell": 900, "Imperial shell": 901, "Display Off bright galaxy": 902, "active GID dim galaxy": 903}, "gid_resources": {"Alliance markers largest to smallest": "10146-10149", "Empire markers smallest to largest": "10150-10153", "neutral markers smallest to largest": "10154-10157", "unexplored or unpopulated marker": 10158, "compact legend": 10168}},
     {"module": "EData", "images": 187, "dimensions": [400, 200]}
   ],
   "static_discoveries": [
@@ -209,7 +209,7 @@
           "exact rectangles and command IDs from FUN_00427270",
           "pointer capture, release cancellation, strict outer-edge rejection, and original palette-key masks",
           "six recognized commands with no replacement destination panels",
-          "F2 through F5 and F7 keyboard routing"
+          "F1 through F5 and F7 keyboard routing"
         ],
         "remaining": [
           "A0 original-runtime captures and the full native/browser matrix",
@@ -238,7 +238,7 @@
           "STRATEGY 902 Display Off and STRATEGY 903 active GID predicates",
           "source-aligned Alliance and Imperial aperture crops",
           "nearest-neighbor native and runtime-pack bitmap transport",
-          "exact faction GID control bitmap pairs, rectangles, and command 0x133",
+          "exact faction GID control bitmap pairs, rectangles, and command 0x132",
           "compact STRATEGY 10168 legend",
           "native 10146 through 10158 marker families and Popular Support thresholds",
           "transparent blue matte and fixed display-scaled marker sizes",

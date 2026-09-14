@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-09-14",
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "scope": "browser evidence and visual inspection only"
+  },
+  "status": "pass_a1",
+  "inspected_files": [
+    "docs/qa/2026-09-10-interface-parity-audit/evidence/pr11-cockpit-routing: all 16 PNGs, README.md, and full-summary.json",
+    ".artifacts/interface-parity/2026-09-14T20-47-43-278Z-69098: summary.json and all 152 result.json files",
+    ".artifacts/interface-parity/2026-09-14T20-52-21-860Z-78166: summary.json and all 40 result.json files"
+  ],
+  "observations": [
+    "Alliance and Empire display source-art cockpit controls at 640x480 and letterboxed 1280x800.",
+    "GID held, open, and closed states are distinct; closing restores the resting surface.",
+    "Game Options and Encyclopedia show faction-specific held bitmaps; release restores the surface with pending_original_window and no replacement destination.",
+    "The legacy E shortcut leaves the surface hash unchanged for both factions and viewports.",
+    "All 192 executions passed with exactly four successful startup requests.",
+    "All 192 launches include --mute-audio and report music muted; there are zero browser errors and all 192 browser processes recorded closed.",
+    "All 16 retained screenshot hashes match full-summary.json."
+  ],
+  "boundaries": [
+    "All captures are A1 and unbaselined; no original-runtime pixel parity or strict parity closure is claimed.",
+    "Original Game Options and Encyclopedia windows remain pending."
+  ],
+  "blockers": []
+}

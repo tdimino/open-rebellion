@@ -1174,9 +1174,6 @@ async fn main() {
                     show_save_load = true;
                 }
             }
-            if is_key_pressed(KeyCode::E) {
-                enc_state.open = !enc_state.open;
-            }
             if is_key_pressed(KeyCode::Tab) {
                 mod_manager_state.open = !mod_manager_state.open;
             }
@@ -2835,7 +2832,8 @@ async fn main() {
                 map_state.pointer_blocked = sector_window_state
                     .contains_screen_point(cockpit_layout, pointer)
                     || system_window_state.contains_screen_point(cockpit_layout, pointer)
-                    || cockpit_state.gid_ui.menu_open;
+                    || cockpit_state.gid_ui.menu_open
+                    || event_screen_state.is_active();
 
                 // Keep every macroquad map layer inside the shell's transparent
                 // galaxy aperture. The clip is cleared before the egui pass.
@@ -2877,9 +2875,12 @@ async fn main() {
                     draw_cockpit_background(ctx, &cockpit_state, &mut bmp_cache);
                     // Paint the native primary controls before floating
                     // windows. Input resolves after those windows register.
-                    if let Some(mode) =
-                        draw_cockpit_egui_layer(ctx, &mut cockpit_state, &mut bmp_cache)
-                    {
+                    if let Some(mode) = draw_cockpit_egui_layer(
+                        ctx,
+                        &mut cockpit_state,
+                        &mut bmp_cache,
+                        !event_screen_state.is_active(),
+                    ) {
                         macroquad::logging::info!(
                             "[interface] command=0x{:x} destination=gid status=selected label={}",
                             mode.command_id(),
@@ -3113,24 +3114,30 @@ async fn main() {
                     // Droid advisor (floating window, bottom-right)
                     draw_advisor(ctx, &mut advisor_state);
 
-                    // Story event screen overlay (top-most — over everything including advisor)
+                    // Story event screen overlay (top-most, including the advisor). Preserve
+                    // the pre-draw state so the click that dismisses an event cannot also
+                    // activate a cockpit control underneath it in the same frame.
+                    let event_screen_was_active = event_screen_state.is_active();
                     draw_event_screen(ctx, &mut event_screen_state, &mut bmp_cache);
 
-                    if let Some(btn) =
-                        handle_cockpit_egui_input(ctx, &mut cockpit_state, &mut bmp_cache)
-                    {
+                    let cockpit_command = (!event_screen_was_active
+                        && !event_screen_state.is_active())
+                    .then(|| handle_cockpit_egui_input(ctx, &mut cockpit_state, &mut bmp_cache));
+                    if let Some(btn) = cockpit_command.flatten() {
                         let (command, destination) = match btn {
                             CockpitButton::SystemFinder => (0x12d, "system_finder"),
                             CockpitButton::FleetFinder => (0x12e, "fleet_finder"),
                             CockpitButton::PersonnelFinder => (0x12f, "personnel_finder"),
                             CockpitButton::TroopFinder => (0x130, "troop_finder"),
-                            CockpitButton::GameOptions => (0x131, "game_options"),
-                            CockpitButton::Encyclopedia => (0x132, "encyclopedia"),
+                            CockpitButton::GameOptions => (0x133, "game_options"),
+                            CockpitButton::Encyclopedia => (0x131, "encyclopedia"),
                             CockpitButton::GalacticInformationDisplay => {
                                 cockpit_state.gid_ui.menu_open = !cockpit_state.gid_ui.menu_open;
                                 cockpit_state.gid_ui.category = None;
                                 macroquad::logging::info!(
-                                    "[interface] command=0x133 destination=gid_menu status={}",
+                                    "[interface] command=0x{:x} destination=gid_menu status={}",
+                                    rebellion_render::strategic_gid_control(cockpit_state.faction)
+                                        .command_id,
                                     if cockpit_state.gid_ui.menu_open {
                                         "opened_original"
                                     } else {

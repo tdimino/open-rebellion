@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "bash ../../scripts/build-interface-test-wasm.sh",
+    "test:unit": "node --test command-events.test.mjs browser-launch.test.mjs",
     "test:smoke": "node run.mjs --smoke",
     "test:gid": "node run.mjs --all",
     "test:gid:no-build": "node run.mjs --all --no-build",

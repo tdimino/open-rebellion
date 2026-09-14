@@ -22,6 +22,12 @@ the source of truth for scope, acceptance, and current work.
 | P58C | [Tactical fighters and projected selection](2026-09-14-tactical-fighters-selection.md) | [`p58c-tactical-fighters-selection/`](p58c-tactical-fighters-selection/) |
 | P58D | [Production fighter-detail journey](2026-09-14-tactical-fighter-detail-journey.md) | [`p58d-tactical-fighter-detail-journey/`](p58d-tactical-fighter-detail-journey/) |
 
+## Current strategic correction
+
+| Checkpoint | Report | Artifact bundle |
+|---|---|---|
+| PR #11 | [Cockpit routing correction](2026-09-14-cockpit-routing-correction.md) | [`pr11-cockpit-routing/`](pr11-cockpit-routing/) |
+
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must
 include its own `README.md` inventory and be linked from this index and the

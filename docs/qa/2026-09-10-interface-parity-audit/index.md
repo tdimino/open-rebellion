@@ -67,6 +67,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [Reverse-engineering data](reverse-engineering-ledger.json) | Machine-readable artifacts, discoveries, resource omissions, and work-package status. |
 | [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md) | Durable canvas, aperture, shared-transform, test, artifact-hash, and Astra acceptance record. |
 | [P46B strategic-control evidence](evidence/2026-09-11-strategic-command-controls.md) | Recovered six-control geometry, bitmap pairs, input masks, command mapping, tests, and browser acceptance. |
+| [PR #11 cockpit-routing correction](evidence/2026-09-14-cockpit-routing-correction.md) | Corrected `0x131` through `0x133` identities, F1/F7 routing, GID open/close behavior, and fail-closed original destinations. |
 | [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) | First-pass sector and system shells, tab resources, modeless lifecycle, rail routing, and browser evidence. |
 | [P46D detailed-system evidence](evidence/2026-09-11-detailed-system-tab-items.md) | Source-mapped GOKRES tab items, displayed labels, bounded scrollbar navigation, intelligence gating, selection state, tests, and browser acceptance. |
 | [P47A galaxy-backdrop evidence](evidence/2026-09-11-authored-galaxy-backdrop.md) | STRATEGY 902 identity, source-aligned placement, native/WASM texture transport, tests, captures, and open GID boundaries. |
@@ -147,7 +148,11 @@ the exact faction GID control, compact legend, native marker families, and
 support thresholds. Its
 [evidence record](evidence/2026-09-11-popular-support-gid.md) keeps the detailed
 legend, other modes and overlays, exact map input, and complete acceptance
-matrix open. P48 restores the code-built GID command tree. P50 adds its eight
+matrix open. PR #11 corrects `0x131` through `0x133`, F1/F7, and the GID
+control's same-button open and close path without introducing substitute
+windows. See the
+[routing correction](evidence/2026-09-14-cockpit-routing-correction.md).
+P48 restores the code-built GID command tree. P50 adds its eight
 original frame tiles and removes the non-native fade. The
 [frame evidence](evidence/2026-09-12-gid-menu-frame.md) leaves menu interior,
 typography, and exact geometry open.

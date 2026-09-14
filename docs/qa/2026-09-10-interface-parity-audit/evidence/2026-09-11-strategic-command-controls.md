@@ -26,8 +26,9 @@ pairs are listed as normal/pressed.
 | Fleet Finder | `0x12e` | `(157,407,27,15)`, `10004/10003` | `(199,434,37,24)`, `10018/10017` |
 | Personnel Finder | `0x12f` | `(258,405,27,16)`, `10006/10005` | `(412,433,34,22)`, `10020/10019` |
 | Troop Finder | `0x130` | `(209,405,27,16)`, `10008/10007` | `(253,433,34,22)`, `10022/10021` |
-| Game Options | `0x131` | `(394,405,27,16)`, `10010/10009` | `(465,434,35,24)`, `10024/10023` |
-| Encyclopedia | `0x132` | `(446,406,27,16)`, `10012/10011` | `(519,434,37,25)`, `10026/10025` |
+| Encyclopedia | `0x131` | `(394,405,27,16)`, `10010/10009` | `(465,434,35,24)`, `10024/10023` |
+| Galactic Information Display | `0x132` | `(446,406,27,16)`, `10012/10011` | `(519,434,37,25)`, `10026/10025` |
+| Game Options side globe | `0x133` | `(3,355,27,41)`, `10013/10014` | `(79,192,35,57)`, `10027/10028` |
 
 The official manual's Figure 3.8, retained as
 [`manual-069.jpg`](../reference-captures/manual-pages/manual-069.jpg), confirms
@@ -47,16 +48,18 @@ the six destinations and their physical order.
   BMPs.
 - `FUN_005fc140` paints each bitmap at its natural size. The control window
   rectangle clips any excess pixels.
-- `FUN_00422ce0` routes the six command IDs. F2 through F5 activate the four
-  finders, and F7 activates Game Options.
+- `FUN_00422ce0` routes the command IDs. F1 activates Game Options, F2 through
+  F5 activate the four finders, and F7 activates the Encyclopedia.
 
 ## Implementation boundary
 
 The controls paint on the faction shell's canonical background layer. Input is
 resolved after floating content registers its bounds, so a covered control
-cannot receive the covering window's click. All six commands are recognized
-and logged, but none opens a replacement panel. Their original destination
-windows remain the next implementation boundary.
+cannot receive the covering window's click. The original GID menu opens and
+closes through `0x132`. Game Options and Encyclopedia are recognized and
+logged, but fail closed until their authentic bitmap-driven windows are
+implemented. Event overlays suppress galaxy-map and cockpit pointer input, and
+egui keyboard ownership suppresses cockpit commands.
 
 The always-on replacement message and status bars previously covered these
 native control apertures. P46B withholds both reconstructed surfaces from the

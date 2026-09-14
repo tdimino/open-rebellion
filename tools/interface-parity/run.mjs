@@ -11,6 +11,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import pixelmatch from "pixelmatch";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
+import { performCommand } from "./command-events.mjs";
+import { launchBrowser } from "./browser-launch.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -358,9 +360,10 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
   const offsetX = (viewport.width - 640 * scale) / 2;
   const offsetY = (viewport.height - 480 * scale) / 2;
+  // Command 0x132: rightmost bottom control in cockpit.rs for each faction.
   const control = faction === "alliance"
-    ? { x: 3, y: 355, width: 27, height: 41 }
-    : { x: 79, y: 192, width: 35, height: 57 };
+    ? { x: 446, y: 406, width: 27, height: 16 }
+    : { x: 519, y: 434, width: 37, height: 25 };
   const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
   const interior = point(control.x + control.width / 2, control.y + control.height / 2);
   const outside = point(control.x - 2, control.y + control.height / 2);
@@ -377,15 +380,26 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   await page.mouse.move(interior.x, interior.y);
   await page.screenshot({ path: path.join(folder, "control-hover.png"), animations: "disabled" });
   await page.mouse.down();
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
   await page.screenshot({ path: path.join(folder, "control-pressed.png"), animations: "disabled" });
-  await page.mouse.up();
-  await page.waitForTimeout(80);
-  assert.ok(commandLines().some((line) => line.includes("destination=gid_menu status=opened")),
-    `${faction}: interior did not open the GID menu`);
+  const opened = "command=0x132 destination=gid_menu status=opened_original";
+  await performCommand(page, opened, () => page.mouse.up());
   const rootCapture = await page.screenshot({ path: path.join(folder, "menu-root.png"), animations: "disabled" });
   const rootFrame = verifyGidRootFrame(viewport, rootCapture, scenario.slug === "system");
   probes.push({ type: "control-click", x: interior.x, y: interior.y, opened: true,
     screenshot_sha256: sha256(rootCapture), root_frame: rootFrame });
+
+  const closed = "command=0x132 destination=gid_menu status=closed";
+  await performCommand(page, closed, () => page.mouse.click(interior.x, interior.y));
+  const closedCapture = await page.screenshot({ path: path.join(folder, "control-closed.png"),
+    animations: "disabled" });
+  assert.equal(sha256(closedCapture), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+    `${faction}: the GID control did not close its own menu cleanly`);
+  probes.push({ type: "control-click-close", x: interior.x, y: interior.y, opened: false,
+    screenshot_sha256: sha256(closedCapture) });
+  await performCommand(page, opened, () => page.mouse.click(interior.x, interior.y));
 
   if (scenario.category !== null) {
     const alternate = scenario.mode === "Uprisings" ? "Popular Support" : "Uprisings";
@@ -402,13 +416,13 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
         "GID root added an unproven synthetic row hover wash");
     }
     const alternateLeaf = point(222, 246 + (alternate === "Uprisings" ? 21 : 0));
-    await page.mouse.click(alternateLeaf.x, alternateLeaf.y);
+    await performCommand(page, `destination=gid status=selected label=${alternate}`,
+      () => page.mouse.click(alternateLeaf.x, alternateLeaf.y));
     await page.waitForFunction((expected) => window.__openRebellionInterfaceSelection?.mode === expected,
       alternate, { timeout: 2_000 });
     probes.push({ type: "alternate-mode", mode: alternate });
 
-    await page.mouse.click(interior.x, interior.y);
-    await page.waitForTimeout(80);
+    await performCommand(page, opened, () => page.mouse.click(interior.x, interior.y));
     const rootPoint = point(470, 246 + 21 * scenario.category);
     await page.mouse.move(rootPoint.x, rootPoint.y);
     await page.waitForTimeout(80);
@@ -420,11 +434,8 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     const submenuTop = Math.min(230 + 21 * scenario.category,
       470 - 21 * [2, 2, 2, 4, 6, 5][scenario.category]);
     const leafPoint = point(222, submenuTop + 16 + 21 * scenario.leaf);
-    await page.mouse.click(leafPoint.x, leafPoint.y);
-    await page.waitForTimeout(80);
     const expected = `destination=gid status=selected label=${scenario.mode}`;
-    assert.ok(commandLines().some((line) => line.includes(expected)),
-      `GID ${scenario.mode} did not route from category ${scenario.category} leaf ${scenario.leaf}: ${commandLines()}`);
+    await performCommand(page, expected, () => page.mouse.click(leafPoint.x, leafPoint.y));
     await page.waitForFunction((mode) => window.__openRebellionInterfaceSelection?.mode === mode,
       scenario.mode, { timeout: 2_000 });
     const selected = await page.evaluate(() => window.__openRebellionInterfaceSelection);
@@ -434,10 +445,8 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
       screenshot_sha256: sha256(selectedCapture) });
   } else if (scenario.slug === "display-off") {
     const displayOff = point(477, 372);
-    await page.mouse.click(displayOff.x, displayOff.y);
-    await page.waitForTimeout(80);
-    assert.ok(commandLines().some((line) => line.includes("destination=gid status=selected label=Display Off")),
-      `${faction}: root Display Off did not route`);
+    await performCommand(page, "destination=gid status=selected label=Display Off",
+      () => page.mouse.click(displayOff.x, displayOff.y));
     await page.waitForFunction(() => window.__openRebellionInterfaceSelection?.mode === "Display Off",
       null, { timeout: 2_000 });
     probes.push({ type: "root-selection", mode: "Display Off" });
@@ -448,6 +457,67 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     assert.equal(sha256(dismissed), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
       `${scenario.slug}: Escape left the original galaxy surface`);
     probes.push({ type: "menu-escape", screenshot_sha256: sha256(dismissed) });
+  }
+
+  if (scenario.slug === "popular-support") {
+    const commandControls = faction === "alliance"
+      ? [
+          { slug: "game-options", rect: { x: 3, y: 355, width: 27, height: 41 },
+            expected: "command=0x133 destination=game_options status=pending_original_window" },
+          { slug: "encyclopedia", rect: { x: 394, y: 405, width: 27, height: 16 },
+            expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
+        ]
+      : [
+          { slug: "game-options", rect: { x: 79, y: 192, width: 35, height: 57 },
+            expected: "command=0x133 destination=game_options status=pending_original_window" },
+          { slug: "encyclopedia", rect: { x: 465, y: 434, width: 35, height: 24 },
+            expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
+        ];
+    for (const command of commandControls) {
+      const center = point(command.rect.x + command.rect.width / 2,
+        command.rect.y + command.rect.height / 2);
+      await page.mouse.move(center.x, center.y);
+      const hover = await page.screenshot({ path: path.join(folder, `${command.slug}-hover.png`),
+        animations: "disabled" });
+      await page.mouse.down();
+      await page.evaluate(() => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }));
+      const pressed = await page.screenshot({
+        path: path.join(folder, `${command.slug}-pressed.png`), animations: "disabled",
+      });
+      const observed = await performCommand(page, command.expected, () => page.mouse.up());
+      const released = await page.screenshot({
+        path: path.join(folder, `${command.slug}-released.png`), animations: "disabled",
+      });
+      assert.notEqual(sha256(pressed), sha256(hover),
+        `${faction}: ${command.slug} did not show its original pressed resource`);
+      assert.equal(sha256(released), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+        `${faction}: ${command.slug} exposed a replacement destination`);
+      probes.push({ type: "physical-command", command: command.slug, expected: command.expected,
+        observed, hover_sha256: sha256(hover), pressed_sha256: sha256(pressed),
+        released_sha256: sha256(released) });
+    }
+
+    for (const [key, expected] of [
+      ["F1", "command=0x133 destination=game_options status=pending_original_window"],
+      ["F7", "command=0x131 destination=encyclopedia status=pending_original_window"],
+    ]) {
+      const observed = await performCommand(page, expected, () => page.keyboard.press(key));
+      probes.push({ type: "keyboard-command", key, expected, observed });
+    }
+
+    await page.keyboard.press("E");
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+    const legacyEncyclopedia = await page.screenshot({
+      path: path.join(folder, "legacy-encyclopedia-shortcut.png"), animations: "disabled",
+    });
+    assert.equal(sha256(legacyEncyclopedia), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+      `${faction}: legacy E shortcut exposed a replacement Encyclopedia`);
+    probes.push({ type: "legacy-encyclopedia-shortcut", key: "E", status: "fails-closed",
+      screenshot_sha256: sha256(legacyEncyclopedia) });
   }
 
   if (scenario.mode !== null && scenario.mode !== "Display Off") {
@@ -1291,17 +1361,18 @@ async function runScenario(server, executable, scenario, faction, viewport) {
   const requests = [];
   const errors = [];
   const consoleLines = [];
+  const launchAttempts = [];
   let browser;
   let context;
   let page;
   let result;
   try {
-    browser = await chromium.launch({
+    browser = await launchBrowser(chromium, {
       executablePath: executable,
       headless: true,
       args: browserManifest.launch_arguments,
       timeout: 30_000,
-    });
+    }, launchAttempts);
     context = await browser.newContext({
       viewport: { width: viewport.width, height: viewport.height },
       deviceScaleFactor: viewport.device_scale_factor,
@@ -1713,6 +1784,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     result = {
       schema_version: schemaVersion,
       id,
+      launch_attempts: launchAttempts,
       status: "pass",
       fixture_code: code,
       browser_version: browser.version(),
@@ -1741,6 +1813,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
     result = {
       schema_version: schemaVersion,
       id,
+      launch_attempts: launchAttempts,
       status: "fail",
       error: String(error.stack || error),
       requests,
@@ -1845,7 +1918,11 @@ async function main() {
     unbaselined: results.filter(({ comparison }) => comparison?.status === "unbaselined").length,
     unstable_screenshots: results.filter(({ two_frame_hashes }) => two_frame_hashes && !two_frame_hashes.equal).length,
     four_request_startups: results.filter(({ requests }) => requests?.length === 4).length,
-    muted_launches: results.length,
+    muted_launches: results.reduce((total, result) => total + result.launch_attempts.length, 0),
+    launch_timeouts: results.reduce((total, result) => total
+      + result.launch_attempts.filter(({ error_name }) => error_name === "TimeoutError").length, 0),
+    recovered_launch_timeouts: results.filter((result) => result.launch_attempts.length > 1
+      && result.launch_attempts.at(-1).status === "pass").length,
     browser_processes_closed: results.filter(({ cleanup }) => cleanup === "closed").length,
     raw_artifacts: path.relative(root, runDir),
   };
