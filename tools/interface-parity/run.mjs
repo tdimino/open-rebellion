@@ -1182,6 +1182,103 @@ async function probeTacticalProductionParticipants(
   }];
 }
 
+function parseFighterSceneResources(line) {
+  const match = line?.text.match(/resources=([^ ]+)/);
+  assert.ok(match, "fighter scene omitted selected resources");
+  return match[1].split(",").map((entry) => {
+    const fields = entry.match(/^(\d+):(\d+):(Close|Far|Indicator):([\d.]+)$/);
+    assert.ok(fields, `invalid fighter scene resource ${entry}`);
+    return {
+      object_id: Number(fields[1]),
+      resource_id: Number(fields[2]),
+      detail: fields[3].toLowerCase(),
+      view_span: Number(fields[4]),
+    };
+  });
+}
+
+async function probeTacticalFighterDetailJourney(
+  page, viewport, folder, stable, consoleLines,
+) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const zoomIn = point(498, 355);
+  const zoomOut = point(615, 355);
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
+  const clickRepeatedly = async (location, count) => {
+    for (let index = 0; index < count; index++) {
+      await page.mouse.click(location.x, location.y);
+      await page.waitForTimeout(40);
+    }
+  };
+
+  await clickRepeatedly(zoomIn, 14);
+  const far = await capture("fighter-detail-far");
+  await clickRepeatedly(zoomIn, 7);
+  const close = await capture("fighter-detail-close");
+  await clickRepeatedly(zoomOut, 7);
+  const returnFar = await capture("fighter-detail-return-far");
+  await clickRepeatedly(zoomOut, 11);
+  const returnIndicator = await capture("fighter-detail-return-indicator");
+
+  const sceneLines = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] fighter_scene"));
+  assert.equal(sceneLines.length, 9,
+    "fighter detail journey emitted the wrong number of state transitions");
+  const states = sceneLines.map(parseFighterSceneResources);
+  const details = states.map((state) => state.map(({ detail }) => detail));
+  assert.deepEqual(details, [
+    ["indicator", "indicator"],
+    ["far", "indicator"],
+    ["far", "far"],
+    ["close", "far"],
+    ["close", "close"],
+    ["close", "far"],
+    ["far", "far"],
+    ["far", "indicator"],
+    ["indicator", "indicator"],
+  ]);
+  assert.deepEqual(states.map((state) => state.map(({ resource_id }) => resource_id)), [
+    [4204, 4204],
+    [4029, 4204],
+    [4029, 4109],
+    [4024, 4109],
+    [4024, 4104],
+    [4024, 4109],
+    [4029, 4109],
+    [4029, 4204],
+    [4204, 4204],
+  ]);
+  for (const state of states) {
+    for (const { detail, view_span: viewSpan } of state) {
+      if (detail === "close") assert.ok(viewSpan < 5);
+      if (detail === "far") assert.ok(viewSpan >= 5 && viewSpan < 10);
+      if (detail === "indicator") assert.ok(viewSpan >= 10);
+    }
+  }
+
+  const frames = [stable.bytes, far, close, returnFar, returnIndicator];
+  const apertureHashes = frames.map((bytes) => tacticalApertureHash(viewport, bytes));
+  assert.equal(new Set(apertureHashes.slice(0, 3)).size, 3,
+    "fighter indicator, far, and close views did not produce distinct framebuffers");
+  const transitions = frames.slice(1).map((after, index) =>
+    verifyTacticalApertureIsolation(viewport, frames[index], after));
+  assert.ok(transitions.every(({ status }) => status === "isolated"),
+    "fighter detail journey changed pixels outside the tactical aperture");
+  return [{
+    type: "production-tactical-fighter-detail-journey",
+    controls: ["zoom-in", "zoom-out"],
+    executable_functions: ["FUN_005c7150", "FUN_005c63f0", "0x005d4af0"],
+    thresholds: { close_below: 5, far_below: 10, indicator_at_or_above: 10 },
+    states,
+    aperture_hashes: apertureHashes,
+    aperture_isolation: transitions,
+    family_loads: 2,
+  }];
+}
+
 async function runScenario(server, executable, scenario, faction, viewport) {
   const id = scenarioId(scenario, faction, viewport);
   const folder = path.resolve(runDir, id);
@@ -1250,6 +1347,10 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? await probeTacticalLodJourney(page, viewport, folder, stable)
         : scenario.slug === "battle-entry"
         ? await probeTactical(page, viewport, folder, stable)
+        : scenario.fighter_detail_journey
+        ? await probeTacticalFighterDetailJourney(
+          page, viewport, folder, stable, consoleLines,
+        )
         : scenario.production_participants
         ? await probeTacticalProductionParticipants(
           page, folder, stable, consoleLines, faction,
@@ -1259,13 +1360,14 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 7);
+      assert.equal(ready.schema_version, 8);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
       assert.equal(ready.production_participants, Boolean(scenario.production_participants));
       assert.equal(ready.suppress_capital_fallback,
         Boolean(scenario.suppress_capital_fallback));
+      assert.equal(ready.focus_player_fighter, Boolean(scenario.fighter_detail_journey));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -1533,12 +1635,12 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           assert.ok(fighterFamilyLogs.every(({ text }) =>
             /dimensions=32x32,16x16,2x2 .*texture_filter=nearest alpha=opaque source=FUN_005c63f0/.test(text)),
           "fighter family load did not preserve dimensions or source texture state");
-          assert.equal(fighterSceneLogs.length, 1,
-            "production participants did not emit one fighter scene submission");
+          assert.equal(fighterSceneLogs.length, scenario.fighter_detail_journey ? 9 : 1,
+            "production participants emitted the wrong fighter scene count");
           assert.match(fighterSceneLogs[0].text,
             /requested=2 rendered=2 families=4024,4104 resources=1001:4204:Indicator:[\d.]+,1002:4204:Indicator:[\d.]+ screen_positions=1001:[^; ]+;1002:[^ ]+ screen_bounds=1001:[^; ]+;1002:[^ ]+ source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0/,
             "production fighter scene used the wrong resource families, detail state, or positions");
-          assert.equal(cameraLogs.length, 1,
+          assert.equal(cameraLogs.length, scenario.fighter_detail_journey ? 40 : 1,
             "production participants did not use the source tactical camera");
           assert.equal(layoutLogs.length, 1,
             "production participants did not use the source tactical layout");
@@ -1667,15 +1769,17 @@ async function main() {
     assert.deepEqual(catalog.scenarios.map(({ slug }) => slug),
       ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",
         "lod-journey", "camera-journey", "production-participants",
+        "production-fighter-detail-journey",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, false, false]);
+      [true, false, true, true, true, true, true, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
-      [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined]);
+      [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
+        undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true, false, false, false]);
+      [false, false, false, false, false, true, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      [false, false, false, false, false, false, true, false, false]);
+      [false, false, false, false, false, false, true, false, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

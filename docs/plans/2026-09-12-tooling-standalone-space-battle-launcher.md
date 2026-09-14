@@ -34,14 +34,14 @@ process and closes its browser and local server when complete.
 T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md)
 preserves surviving hull damage and exact fighter roster losses. Campaign and
 test-only browser entry share the validated production tactical-entry function.
-P52 through [P58C](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md)
+P52 through [P58D](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md)
 restore the first authentic shell controls, complete tactical asset decode, one
 three-LOD family, source camera and layout, stable participants, authored
 coordinates, system palette, lighting, retained-mode render state, and exact
 DAT resource joins. Live capital ships render from their joined families;
 fighter groups use the original detail resources; and capital interactions use
 projected mesh bounds.
-The full muted harness passes 36 of 36 cases, and the four-request pack carries
+The full muted harness passes 40 of 40 cases, and the four-request pack carries
 all 87 meshes and 397 textures. Shared return/outcome routing, fighter and
 special-object rendering, original view acceptance, complete battle
 interactions, and all 106 visual cells remain open.
@@ -53,7 +53,7 @@ interactions, and all 106 visual cells remain open.
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58C prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital rendering, source fighter resources, and projected capital interaction. Close/far fighter journeys, squadron/task-force presentation, and original view acceptance remain open.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58D prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital rendering, source fighter resources, projected capital interaction, and the complete fighter detail journey. Squadron/task-force presentation and original view acceptance remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design

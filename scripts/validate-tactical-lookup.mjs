@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Check the documented native ordinal table and its explicitly candidate DAT labels.
+// Check the documented native ordinal table and its source-proven DAT identities.
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -15,11 +15,11 @@ const ships = read("data/base/json/CAPSHPSD.json").ships;
 const fighters = read("data/base/json/FIGHTSD.json").fighters;
 
 assert.equal(lookup.ordinal_to_resource_grade, "source-proven");
-assert.equal(lookup.candidate_dat_identity_grade, "candidate");
+assert.equal(lookup.dat_identity_grade, "source-proven");
 assert.equal(lookup.capital_ships.length, 29);
 assert.equal(lookup.fighters.length, 8);
-assert.deepEqual(lookup.capital_ship_columns, ["tactical_ordinal", "type301_resource_base", "candidate_capshpsd_id", "candidate_name"]);
-assert.deepEqual(lookup.fighter_columns, ["tactical_ordinal", "first_side_type303_base", "opposing_side_type303_base", "candidate_fightsd_id", "candidate_name"]);
+assert.deepEqual(lookup.capital_ship_columns, ["tactical_ordinal", "type301_resource_base", "capshpsd_id", "name"]);
+assert.deepEqual(lookup.fighter_columns, ["tactical_ordinal", "first_side_type303_base", "opposing_side_type303_base", "fightsd_id", "name"]);
 
 const expectedShipBases = [
   ...Array.from({ length: 15 }, (_, index) => 2010 + index * 10),
@@ -30,11 +30,12 @@ for (const [index, row] of lookup.capital_ships.entries()) {
   assert.equal(ordinal, index);
   assert.equal(base, expectedShipBases[index]);
   const record = ships.find((ship) => ship.id === datID);
-  assert.ok(record, `unknown candidate ship DAT ID ${datID}`);
+  assert.ok(record, `unknown ship DAT ID ${datID}`);
   assert.equal(names[String(record.text_stra_dll_id)], name);
 }
 assert.equal(new Set(lookup.capital_ships.map((row) => row[2])).size, 29);
-assert.equal(lookup.death_star.candidate_capshpsd_id, 136);
+assert.equal(lookup.death_star.capshpsd_id, 136);
+assert.equal(lookup.death_star.dat_identity_grade, "source-proven");
 assert.equal(lookup.death_star.resource_base_without_flag, 5010);
 assert.equal(lookup.death_star.resource_base_with_flag, 5020);
 
@@ -45,7 +46,7 @@ for (const [index, row] of lookup.fighters.entries()) {
   assert.equal(firstBase, expectedFighterBases[index]);
   assert.equal(otherBase, firstBase + 4);
   const record = fighters.find((fighter) => fighter.id === datID);
-  assert.ok(record, `unknown candidate fighter DAT ID ${datID}`);
+  assert.ok(record, `unknown fighter DAT ID ${datID}`);
   assert.equal(names[String(record.text_stra_dll_id)], name);
 }
 assert.equal(new Set(lookup.fighters.map((row) => row[3])).size, 8);
@@ -57,4 +58,4 @@ if (sourceArg) {
   assert.equal(digest, lookup.source_sha256, "original executable hash mismatch");
 }
 
-process.stdout.write("Validated 29 native ship ordinals, eight fighter ordinals, and candidate DAT labels\n");
+process.stdout.write("Validated 29 native ship ordinals, eight fighter ordinals, and source-proven DAT identities\n");

@@ -20,6 +20,7 @@ the source of truth for scope, acceptance, and current work.
 | P58A | [Tactical resource identity join](2026-09-14-tactical-resource-join.md) | [`p58a-tactical-resource-join/`](p58a-tactical-resource-join/) |
 | P58B | [Production tactical capital ships](2026-09-14-tactical-production-participants.md) | [`p58b-tactical-production-participants/`](p58b-tactical-production-participants/) |
 | P58C | [Tactical fighters and projected selection](2026-09-14-tactical-fighters-selection.md) | [`p58c-tactical-fighters-selection/`](p58c-tactical-fighters-selection/) |
+| P58D | [Production fighter-detail journey](2026-09-14-tactical-fighter-detail-journey.md) | [`p58d-tactical-fighter-detail-journey/`](p58d-tactical-fighter-detail-journey/) |
 
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must

@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-macroquad-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Browser-blue.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/Tests-660%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-671%20passing-green.svg" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey.svg" alt="License">
   <a href="https://tdimino.github.io/open-rebellion/"><img src="https://img.shields.io/badge/Docs-Ghidra%20RE-blueviolet.svg" alt="Ghidra RE Docs"></a>
 </p>
@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-14):** Workspace tests and the muted browser harness pass. Verified interface checkpoints include the shuttle, strategic shell, sector/system navigation, tactical shell, source-rendered capital ships and fighter detail resources, and projection-aligned capital interaction. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks squadron/task-force panels, commands, effects, original-view, multiplayer, and release gates still open.
+> **Verification (2026-09-14):** All 671 workspace tests and the 40-case muted tactical browser gate pass. Verified interface checkpoints include the shuttle, strategic shell, sector/system navigation, tactical shell, source-rendered capital ships, the complete fighter detail journey, and projection-aligned capital interaction. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks squadron/task-force controls, effects, original-view, multiplayer, and release gates still open.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|

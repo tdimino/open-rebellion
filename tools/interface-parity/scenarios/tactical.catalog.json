@@ -92,6 +92,17 @@
       "acceptance": "Provisional A1 production capital and fighter resource rendering plus projection-aligned interaction proof only. Object rotation, complete effects, and native A0 comparison remain open."
     },
     {
+      "slug": "production-fighter-detail-journey",
+      "description": "Live fighter groups cross the exact indicator, far, and close view-span thresholds through the original bitmap zoom controls without reloading either family",
+      "fixture_codes": { "alliance": 65802, "empire": 66058 },
+      "tactical_proof": false,
+      "production_participants": true,
+      "fighter_detail_journey": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 same-renderer fighter-detail and cache proof only. Formation, group commands, effects, damage, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },
