@@ -93,7 +93,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; one three-LOD family has source selection, live cached switching, source camera and targeting, production participant placement, authored coordinates, system palette, lighting, and retained-mode device/material state; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58A evidence](evidence/README.md), and [P58A evidence](evidence/2026-09-14-tactical-resource-join.md) |
+| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live production capital families use source selection, camera, targeting, placement, authored coordinates, system palette, lighting, and retained-mode device/material state; fighters and other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58B evidence](evidence/README.md), and [P58B evidence](evidence/2026-09-14-tactical-production-participants.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -125,8 +125,10 @@ rig created by `FUN_005d4d10`. P57B2C2B restores the explicit
 dither state and default filtering, culling, depth, shading, specular, diffuse,
 and emissive behavior through the source retained-mode path. P58A joins all 29
 capital ships, eight fighters, and the Death Star to their original tactical
-resources and transports all 87 meshes and 397 textures. Production 3D family
-drawing and A0 acceptance remain open.
+resources and transports all 87 meshes and 397 textures. P58B renders live
+production capital ships from exact joined families and source positions.
+Fighters, selection presentation, special objects, and A0 acceptance remain
+open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
@@ -364,6 +366,8 @@ adds the source directional and ambient light rig; see its
 source device and material state; see its
 [evidence](evidence/2026-09-14-tactical-render-state.md). The resource-family
 join is completed in P58A together with full tactical-corpus browser transport;
-see its [evidence](evidence/2026-09-14-tactical-resource-join.md). Production 3D
-family drawing, original A0 comparison, and all strict tactical
-acceptance cells remain open.
+see its [evidence](evidence/2026-09-14-tactical-resource-join.md). P58B adds
+production capital-family drawing; see its
+[evidence](evidence/2026-09-14-tactical-production-participants.md). Fighter
+rendering, selection presentation, original A0 comparison, and all strict
+tactical acceptance cells remain open.

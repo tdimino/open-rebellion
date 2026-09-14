@@ -4,11 +4,12 @@
 //! three-resource LOD family and reproduces the executable's selection rule.
 //! No DAT identity is inferred from the resource ordinal.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{io::Read, path::Path};
 
+use macroquad::camera::Camera;
 use macroquad::prelude::*;
 use macroquad::window::miniquad::{
     Backend, Comparison, CullFace, FrontFaceOrder, PipelineParams, UniformDesc, UniformType,
@@ -19,11 +20,13 @@ use crate::tactical_asset_cache::set_tactical_asset_cache;
 use crate::tactical_asset_cache::TACTICAL_OBJECT_CACHE;
 use crate::tactical_view::OriginalTacticalLayout;
 
+#[cfg(feature = "interface-test-fixtures")]
 pub const PROOF_MESH_KEYS: [&str; 3] = ["2560/1033", "2561/1033", "2562/1033"];
+#[cfg(feature = "interface-test-fixtures")]
 pub const PROOF_TEXTURE_KEYS: [&str; 2] = ["SDESTI52.BMP/1033", "SDESTI_M.BMP/1033"];
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
 pub const TACTICAL_PALETTE_FIRST: u32 = 5531;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
 pub const TACTICAL_PALETTE_LAST: u32 = 5557;
 
 const ORIGINAL_CLOSE_THRESHOLD: f32 = 15.0;
@@ -52,7 +55,9 @@ const ORIGINAL_CAMERA_INITIAL_STEP: i32 = 5;
 const ORIGINAL_LIGHT_FRAME_SOURCE_POSITION: [f32; 3] = [5.0, 5.0, -1.0];
 const ORIGINAL_AMBIENT_LIGHT_RGB: f32 = 0.5;
 const ORIGINAL_DIRECTIONAL_LIGHT_RGB: f32 = 0.8;
+#[cfg(any(feature = "interface-test-fixtures", test))]
 const ORIGINAL_DEVICE_DITHER: bool = false;
+#[cfg(any(feature = "interface-test-fixtures", test))]
 const ORIGINAL_SPECULAR_ENABLED: bool = false;
 
 fn original_tactical_texture_filter() -> FilterMode {
@@ -234,10 +239,12 @@ pub enum OriginalTacticalLod {
 }
 
 impl OriginalTacticalLod {
+    #[cfg(feature = "interface-test-fixtures")]
     const fn resource_id(self) -> u32 {
         2560 + self as u32
     }
 
+    #[cfg(feature = "interface-test-fixtures")]
     const fn label(self) -> &'static str {
         match self {
             Self::Close => "close",
@@ -255,16 +262,19 @@ pub struct TacticalLodView {
 }
 
 impl TacticalLodView {
+    #[cfg(any(feature = "interface-test-fixtures", test))]
     pub const CLOSE_FIXTURE: Self = Self {
         view_depth: 10.0,
         projection_scale: 1.0,
         high_detail: true,
     };
+    #[cfg(any(feature = "interface-test-fixtures", test))]
     pub const MEDIUM_FIXTURE: Self = Self {
         view_depth: 25.0,
         projection_scale: 1.0,
         high_detail: true,
     };
+    #[cfg(any(feature = "interface-test-fixtures", test))]
     pub const FAR_FIXTURE: Self = Self {
         view_depth: 50.0,
         projection_scale: 1.0,
@@ -273,6 +283,7 @@ impl TacticalLodView {
 
     /// Test-only bridge from the working tactical zoom control to a source
     /// view-depth range that crosses all three original LOD thresholds.
+    #[cfg(any(feature = "interface-test-fixtures", test))]
     pub(crate) fn from_fixture_zoom(zoom: f32) -> Self {
         Self {
             view_depth: 25.0 / zoom,
@@ -282,6 +293,7 @@ impl TacticalLodView {
     }
 }
 
+#[cfg(any(feature = "interface-test-fixtures", test))]
 impl Default for TacticalLodView {
     fn default() -> Self {
         Self::CLOSE_FIXTURE
@@ -333,165 +345,432 @@ const PALETTE_MAGIC: &[u8; 8] = b"ORTPAL00";
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_PROOF_OBJECT_BYTES: usize = 8 << 20;
 
-/// Install the P57 proof family from an ignored native runtime store.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn install_native_tactical_lod_family(runtime_root: &Path) -> Result<(), String> {
-    use serde::Deserialize;
-    use sha2::{Digest, Sha256};
+const EXPECTED_MESH_FAMILY_BASES: [u32; 29] = [
+    2010, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100, 2110, 2120, 2130, 2140, 2150, 2510,
+    2520, 2530, 2540, 2550, 2560, 2570, 2580, 2590, 2600, 2610, 2620, 2630, 2640,
+];
 
-    #[derive(Deserialize)]
-    struct Manifest {
-        schema_version: u32,
-        meshes: Vec<MeshRecord>,
-        textures: Vec<TextureRecord>,
-    }
-    #[derive(Deserialize)]
-    struct MeshRecord {
-        id: u32,
-        language: u32,
-        object_sha256: String,
-        object: String,
-        texture_bindings: Option<Vec<TextureBinding>>,
-    }
-    #[derive(Deserialize)]
-    struct TextureBinding {
-        resource_name: String,
-        resource_language: u32,
-    }
-    #[derive(Deserialize)]
-    struct TextureRecord {
-        identifier_kind: String,
-        #[serde(default)]
-        id: u32,
-        name: Option<String>,
-        language: u32,
-        kind: String,
-        palette_rule: Option<String>,
-        object_sha256: String,
-        object: String,
-    }
+#[cfg(not(target_arch = "wasm32"))]
+const EXPECTED_NUMERIC_TEXTURE_RANGES: [(u32, u32); 25] = [
+    (3020, 3025),
+    (3040, 3045),
+    (3060, 3065),
+    (3080, 3086),
+    (3100, 3106),
+    (3120, 3126),
+    (3140, 3145),
+    (3160, 3165),
+    (3180, 3185),
+    (3200, 3215),
+    (3220, 3235),
+    (3240, 3255),
+    (3260, 3266),
+    (3280, 3286),
+    (3300, 3306),
+    (3320, 3335),
+    (3340, 3355),
+    (3360, 3375),
+    (3520, 3527),
+    (3620, 3627),
+    (4000, 4039),
+    (4100, 4139),
+    (4200, 4204),
+    (5501, 5527),
+    (5531, 5557),
+];
 
-    let manifest_bytes = read_bounded(&runtime_root.join("manifest.json"))?;
-    let manifest: Manifest = serde_json::from_slice(&manifest_bytes)
-        .map_err(|error| format!("decode tactical runtime manifest: {error}"))?;
+#[cfg(not(target_arch = "wasm32"))]
+const EXPECTED_NUMERIC_TEXTURE_SINGLETONS: [u32; 9] =
+    [3500, 3510, 3600, 3610, 4044, 4049, 5010, 5020, 5030];
+
+#[cfg(not(target_arch = "wasm32"))]
+const EXPECTED_NAMED_TEXTURES: [&str; 59] = [
+    "ASSFRG52.BMP",
+    "ASSFRG_M.BMP",
+    "ATMAP.BMP",
+    "ATMAP_M.BMP",
+    "A_ESCR.BMP",
+    "A_ESCR_M.BMP",
+    "BCRSER52.BMP",
+    "BCRSER_M.BMP",
+    "BULK52.BMP",
+    "BULK_M.BMP",
+    "CARRAK52.BMP",
+    "CARRAK_M.BMP",
+    "CORVET52.BMP",
+    "CORVET_M.BMP",
+    "ESCARRIM.BMP",
+    "ESCARR_I.BMP",
+    "E_DRED52.BMP",
+    "E_DRED_M.BMP",
+    "GLMAP128.BMP",
+    "GLMAP_M.BMP",
+    "GUNSHIP.BMP",
+    "GUNSHP_M.BMP",
+    "INTERD.BMP",
+    "INTERD_M.BMP",
+    "LANCER52.BMP",
+    "LANCER_M.BMP",
+    "MONCAL52.BMP",
+    "MONCAL_M.BMP",
+    "NEBUL52.BMP",
+    "NEBUL_M.BMP",
+    "R1MAP.BMP",
+    "R1MAP_M.BMP",
+    "R2MAP.BMP",
+    "R2MAP_M.BMP",
+    "R3MAP2.BMP",
+    "R3MAP2_M.BMP",
+    "R4MAP.BMP",
+    "R4MAP_M.BMP",
+    "R5MAP.BMP",
+    "R5MAP_M.BMP",
+    "R_DRED52.BMP",
+    "R_DRED_M.BMP",
+    "SDESTI52.BMP",
+    "SDESTI_M.BMP",
+    "SDESTV52.BMP",
+    "SDESTV_M.BMP",
+    "SDSTI252.BMP",
+    "SDSTI2_M.BMP",
+    "SDSTV252.BMP",
+    "SDSTV2_M.BMP",
+    "SPDEST24.BMP",
+    "SPDEST52.BMP",
+    "SPDEST_S.BMP",
+    "STRGAL.BMP",
+    "STRGAL_M.BMP",
+    "STRIKE52.BMP",
+    "STRIKE_M.BMP",
+    "TUNA52.BMP",
+    "TUNA_M.BMP",
+];
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, serde::Deserialize)]
+struct NativeManifest {
+    schema_version: u32,
+    meshes: Vec<NativeMeshRecord>,
+    textures: Vec<NativeTextureRecord>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, serde::Deserialize)]
+struct NativeMeshRecord {
+    id: u32,
+    language: u32,
+    source_sha256: String,
+    object_sha256: String,
+    object: String,
+    vertices: usize,
+    faces: usize,
+    triangles: usize,
+    chunks: usize,
+    materials: usize,
+    texture_bindings: Option<Vec<NativeTextureBinding>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, serde::Deserialize)]
+struct NativeTextureBinding {
+    x_filename: String,
+    resource_name: String,
+    resource_language: u32,
+    resource_source_sha256: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, serde::Deserialize)]
+struct NativeTextureRecord {
+    identifier_kind: String,
+    #[serde(default)]
+    id: u32,
+    name: Option<String>,
+    language: u32,
+    kind: String,
+    #[serde(default)]
+    width: u32,
+    #[serde(default)]
+    height: u32,
+    palette_rule: Option<String>,
+    source_sha256: String,
+    object_sha256: String,
+    object: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn expected_mesh_ids() -> HashSet<u32> {
+    EXPECTED_MESH_FAMILY_BASES
+        .iter()
+        .flat_map(|base| [*base, *base + 1, *base + 2])
+        .collect()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn expected_numeric_texture_ids() -> HashSet<u32> {
+    let mut ids: HashSet<_> = EXPECTED_NUMERIC_TEXTURE_RANGES
+        .iter()
+        .flat_map(|(first, last)| *first..=*last)
+        .collect();
+    ids.extend(EXPECTED_NUMERIC_TEXTURE_SINGLETONS);
+    ids
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_native_manifest(manifest: &NativeManifest) -> Result<(), String> {
     if manifest.schema_version != 1 {
         return Err("unsupported tactical runtime manifest version".to_string());
     }
-    fn load_object(
-        root: &Path,
-        relative: &str,
-        digest: &str,
-        suffix: &str,
-    ) -> Result<Vec<u8>, String> {
-        if digest.len() != 64
-            || !digest
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-            || relative != format!("objects/{digest}{suffix}")
-        {
-            return Err("invalid content-addressed tactical object identity".to_string());
-        }
-        let bytes = read_bounded(&root.join(relative))?;
-        let actual = format!("{:x}", Sha256::digest(&bytes));
-        if actual != digest {
-            return Err("tactical runtime object failed SHA-256 verification".to_string());
-        }
-        Ok(bytes)
+    let expected_meshes = expected_mesh_ids();
+    let actual_meshes: HashSet<_> = manifest.meshes.iter().map(|record| record.id).collect();
+    if manifest.meshes.len() != expected_meshes.len() || actual_meshes != expected_meshes {
+        return Err(
+            "tactical runtime mesh identities do not match the original corpus".to_string(),
+        );
+    }
+    let expected_numeric = expected_numeric_texture_ids();
+    let expected_named: HashSet<_> = EXPECTED_NAMED_TEXTURES.iter().copied().collect();
+    let actual_numeric: HashSet<_> = manifest
+        .textures
+        .iter()
+        .filter(|record| record.identifier_kind == "id")
+        .map(|record| record.id)
+        .collect();
+    let actual_named: HashSet<_> = manifest
+        .textures
+        .iter()
+        .filter(|record| record.identifier_kind == "name")
+        .filter_map(|record| record.name.as_deref())
+        .collect();
+    if manifest.textures.len() != expected_numeric.len() + expected_named.len()
+        || actual_numeric != expected_numeric
+        || actual_named != expected_named
+    {
+        return Err(
+            "tactical runtime texture identities do not match the original corpus".to_string(),
+        );
     }
 
-    let expected_meshes = [
-        (2560, Some("SDESTI52.BMP")),
-        (2561, Some("SDESTI_M.BMP")),
-        (2562, None),
-    ];
+    let named_sources: HashMap<_, _> = manifest
+        .textures
+        .iter()
+        .filter_map(|record| {
+            record
+                .name
+                .as_deref()
+                .map(|name| (name, record.source_sha256.as_str()))
+        })
+        .collect();
+    for mesh in &manifest.meshes {
+        if mesh.language != 1033
+            || !valid_sha256(&mesh.source_sha256)
+            || mesh.vertices == 0
+            || mesh.faces == 0
+            || mesh.faces != mesh.triangles
+            || mesh.chunks == 0
+            || mesh.materials == 0
+        {
+            return Err(format!("invalid tactical mesh metadata {}/1033", mesh.id));
+        }
+        for binding in mesh.texture_bindings.as_deref().unwrap_or_default() {
+            if binding.resource_language != 1033
+                || !binding
+                    .x_filename
+                    .eq_ignore_ascii_case(&binding.resource_name)
+                || named_sources.get(binding.resource_name.as_str()).copied()
+                    != Some(binding.resource_source_sha256.as_str())
+            {
+                return Err(format!(
+                    "invalid tactical mesh texture binding {}/1033",
+                    mesh.id
+                ));
+            }
+        }
+    }
+    for texture in &manifest.textures {
+        if texture.language != 1033 || !valid_sha256(&texture.source_sha256) {
+            return Err("invalid tactical texture metadata".to_string());
+        }
+        let palette = texture.identifier_kind == "id" && (5531..=5557).contains(&texture.id);
+        let expected_rule = if palette {
+            None
+        } else if texture.identifier_kind == "id" && (5501..=5527).contains(&texture.id) {
+            Some("planet_pair")
+        } else {
+            Some("battle_active")
+        };
+        let expected_kind = if palette {
+            "palette_rgb24"
+        } else {
+            "indexed_rle"
+        };
+        if texture.kind != expected_kind
+            || texture.palette_rule.as_deref() != expected_rule
+            || (!palette && (texture.width == 0 || texture.height == 0))
+            || (palette && (texture.width != 0 || texture.height != 0))
+        {
+            return Err("invalid tactical texture kind or palette metadata".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_native_manifest(runtime_root: &Path) -> Result<NativeManifest, String> {
+    let manifest_bytes = read_bounded(&runtime_root.join("manifest.json"))?;
+    let manifest: NativeManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("decode tactical runtime manifest: {error}"))?;
+    validate_native_manifest(&manifest)?;
+    Ok(manifest)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_native_object(
+    root: &Path,
+    relative: &str,
+    digest: &str,
+    suffix: &str,
+) -> Result<Vec<u8>, String> {
+    use sha2::{Digest, Sha256};
+
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || relative != format!("objects/{digest}{suffix}")
+    {
+        return Err("invalid content-addressed tactical object identity".to_string());
+    }
+    let bytes = read_bounded(&root.join(relative))?;
+    let actual = format!("{:x}", Sha256::digest(&bytes));
+    if actual != digest {
+        return Err("tactical runtime object failed SHA-256 verification".to_string());
+    }
+    Ok(bytes)
+}
+
+/// Install the complete verified tactical runtime corpus for native play.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn install_native_tactical_assets(runtime_root: &Path) -> Result<(), String> {
+    let manifest = read_native_manifest(runtime_root)?;
+    let mut installed_meshes = HashMap::with_capacity(manifest.meshes.len());
+    for mesh in &manifest.meshes {
+        let key = format!("{}/{}", mesh.id, mesh.language);
+        if installed_meshes.contains_key(&key) {
+            return Err(format!("duplicate tactical mesh {key}"));
+        }
+        let bytes = load_native_object(runtime_root, &mesh.object, &mesh.object_sha256, ".mesh")?;
+        let decoded = decode_mesh_object(&bytes)?;
+        let triangles: usize = decoded
+            .chunks
+            .iter()
+            .map(|chunk| chunk.mesh.indices.len() / 3)
+            .sum();
+        let texture_names: HashSet<_> = decoded
+            .chunks
+            .iter()
+            .filter_map(|chunk| chunk.texture_name.as_deref())
+            .map(str::to_ascii_uppercase)
+            .collect();
+        let manifest_texture_names: HashSet<_> = mesh
+            .texture_bindings
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|binding| binding.resource_name.clone())
+            .collect();
+        if decoded.source_vertices != mesh.vertices
+            || decoded.source_faces != mesh.faces
+            || triangles != mesh.triangles
+            || decoded.chunks.len() != mesh.chunks
+            || decoded.materials != mesh.materials
+            || texture_names != manifest_texture_names
+        {
+            return Err(format!("tactical mesh object metadata mismatch {key}"));
+        }
+        installed_meshes.insert(key, bytes);
+    }
+
+    let mut installed_textures = HashMap::with_capacity(manifest.textures.len());
+    for texture in &manifest.textures {
+        let identifier = match texture.identifier_kind.as_str() {
+            "id" if texture.id > 0 => texture.id.to_string(),
+            "name" => texture
+                .name
+                .as_deref()
+                .filter(|name| !name.is_empty())
+                .map(str::to_ascii_uppercase)
+                .ok_or("named tactical texture lacks a name")?,
+            _ => return Err("invalid tactical texture identity".to_string()),
+        };
+        let key = format!("{identifier}/{}", texture.language);
+        if installed_textures.contains_key(&key) {
+            return Err(format!("duplicate tactical texture {key}"));
+        }
+        let bytes = load_native_object(
+            runtime_root,
+            &texture.object,
+            &texture.object_sha256,
+            ".texture",
+        )?;
+        if texture.kind == "palette_rgb24" {
+            decode_palette_object(&bytes, texture.id)?;
+        } else {
+            validate_indexed_texture_object(&bytes, texture)?;
+        }
+        installed_textures.insert(key, bytes);
+    }
+    set_tactical_asset_cache(installed_meshes, installed_textures);
+    Ok(())
+}
+
+/// Install only the historical P57 proof subset in fixture tests.
+#[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
+pub fn install_native_tactical_lod_family(runtime_root: &Path) -> Result<(), String> {
+    let manifest = read_native_manifest(runtime_root)?;
     let mut installed_meshes = HashMap::new();
-    for (mesh_id, expected_texture) in expected_meshes {
-        let matches: Vec<_> = manifest
+    for mesh_id in [2560, 2561, 2562] {
+        let mesh = manifest
             .meshes
             .iter()
-            .filter(|record| record.id == mesh_id && record.language == 1033)
-            .collect();
-        if matches.len() != 1 {
-            return Err(format!("tactical runtime lacks unique mesh {mesh_id}/1033"));
-        }
-        let mesh = matches[0];
-        let bindings = mesh.texture_bindings.as_deref().unwrap_or_default();
-        match expected_texture {
-            Some(texture_name)
-                if bindings.len() == 1
-                    && bindings[0].resource_name.eq_ignore_ascii_case(texture_name)
-                    && bindings[0].resource_language == 1033 => {}
-            None if bindings.is_empty() => {}
-            Some(texture_name) => {
-                return Err(format!("mesh {mesh_id} does not bind {texture_name}/1033"));
-            }
-            None => return Err(format!("mesh {mesh_id} unexpectedly binds a texture")),
-        }
+            .find(|record| record.id == mesh_id && record.language == 1033)
+            .ok_or_else(|| format!("tactical runtime lacks mesh {mesh_id}/1033"))?;
         installed_meshes.insert(
             format!("{mesh_id}/1033"),
-            load_object(runtime_root, &mesh.object, &mesh.object_sha256, ".mesh")?,
+            load_native_object(runtime_root, &mesh.object, &mesh.object_sha256, ".mesh")?,
         );
     }
 
     let mut installed_textures = HashMap::new();
-    for texture_name in ["SDESTI52.BMP", "SDESTI_M.BMP"] {
-        let matches: Vec<_> = manifest
-            .textures
-            .iter()
-            .filter(|record| {
-                record.identifier_kind == "name"
-                    && record
-                        .name
-                        .as_deref()
-                        .is_some_and(|name| name.eq_ignore_ascii_case(texture_name))
-                    && record.language == 1033
-            })
-            .collect();
-        if matches.len() != 1 {
-            return Err(format!("tactical runtime lacks unique {texture_name}/1033"));
-        }
-        let texture = matches[0];
-        if texture.kind != "indexed_rle" || texture.palette_rule.as_deref() != Some("battle_active")
-        {
-            return Err(format!(
-                "{texture_name} does not retain the active battle-palette rule"
-            ));
-        }
+    for texture in &manifest.textures {
+        let key = match (texture.identifier_kind.as_str(), texture.name.as_deref()) {
+            ("name", Some(name))
+                if ["SDESTI52.BMP", "SDESTI_M.BMP"]
+                    .iter()
+                    .any(|expected| name.eq_ignore_ascii_case(expected)) =>
+            {
+                format!("{}/{}", name.to_ascii_uppercase(), texture.language)
+            }
+            ("id", _) if (TACTICAL_PALETTE_FIRST..=TACTICAL_PALETTE_LAST).contains(&texture.id) => {
+                format!("{}/{}", texture.id, texture.language)
+            }
+            _ => continue,
+        };
         installed_textures.insert(
-            format!("{texture_name}/1033"),
-            load_object(
+            key,
+            load_native_object(
                 runtime_root,
                 &texture.object,
                 &texture.object_sha256,
-                ".texture",
-            )?,
-        );
-    }
-    for palette_id in TACTICAL_PALETTE_FIRST..=TACTICAL_PALETTE_LAST {
-        let matches: Vec<_> = manifest
-            .textures
-            .iter()
-            .filter(|record| {
-                record.identifier_kind == "id" && record.id == palette_id && record.language == 1033
-            })
-            .collect();
-        if matches.len() != 1 {
-            return Err(format!(
-                "tactical runtime lacks unique palette {palette_id}/1033"
-            ));
-        }
-        let palette = matches[0];
-        if palette.kind != "palette_rgb24" {
-            return Err(format!(
-                "tactical palette {palette_id}/1033 has the wrong runtime kind"
-            ));
-        }
-        installed_textures.insert(
-            format!("{palette_id}/1033"),
-            load_object(
-                runtime_root,
-                &palette.object,
-                &palette.object_sha256,
                 ".texture",
             )?,
         );
@@ -524,58 +803,109 @@ struct TacticalLodAsset {
     meshes: Vec<TacticalMeshChunk>,
 }
 
+impl TacticalLodAsset {
+    fn has_drawable_geometry(&self) -> bool {
+        !self.meshes.is_empty()
+            && self
+                .meshes
+                .iter()
+                .all(|chunk| chunk.mesh.vertices.len() >= 3 && chunk.mesh.indices.len() >= 3)
+    }
+}
+
 struct TacticalMeshChunk {
     mesh: Mesh,
     emissive: [f32; 3],
 }
 
-/// Lazily allocated GPU state for the source-bound P57 LOD family.
-pub(crate) struct TacticalProofRenderer {
+/// One source-bound capital-ship instance submitted by the live battle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TacticalRenderObject {
+    pub object_id: u32,
+    pub resource_base: u32,
+    pub position: Vec3,
+}
+
+/// Capital ships successfully submitted through the authentic 3D path.
+#[derive(Debug, Default)]
+pub(crate) struct TacticalDrawReport {
+    pub rendered_object_ids: Vec<u32>,
+    pub screen_positions: Vec<(u32, Vec2)>,
+}
+
+/// Lazily allocated GPU state shared by production participants and fixture proofs.
+pub(crate) struct TacticalAssetRenderer {
+    #[cfg(feature = "interface-test-fixtures")]
     attempted: bool,
     family_loads: usize,
+    #[cfg(feature = "interface-test-fixtures")]
     assets: Vec<TacticalLodAsset>,
+    participant_families: HashMap<u32, Vec<TacticalLodAsset>>,
+    participant_lods: HashMap<u32, OriginalTacticalLod>,
+    unavailable_families: HashSet<u32>,
     material: Option<Material>,
+    #[cfg(feature = "interface-test-fixtures")]
     current_lod: OriginalTacticalLod,
+    #[cfg(feature = "interface-test-fixtures")]
     view: TacticalLodView,
+    #[cfg(feature = "interface-test-fixtures")]
     logged_lod: Option<OriginalTacticalLod>,
     source_camera: Option<OriginalTacticalCamera>,
     logged_camera: Option<[u32; 12]>,
     source_layout: Option<OriginalTacticalLayout>,
     logged_layout: Option<OriginalTacticalLayout>,
     palette_selector: u8,
+    logged_participant_scene: bool,
 }
 
-impl Default for TacticalProofRenderer {
+impl Default for TacticalAssetRenderer {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "interface-test-fixtures")]
             attempted: false,
             family_loads: 0,
+            #[cfg(feature = "interface-test-fixtures")]
             assets: Vec::new(),
+            participant_families: HashMap::new(),
+            participant_lods: HashMap::new(),
+            unavailable_families: HashSet::new(),
             material: None,
+            #[cfg(feature = "interface-test-fixtures")]
             current_lod: OriginalTacticalLod::Medium,
+            #[cfg(feature = "interface-test-fixtures")]
             view: TacticalLodView::default(),
+            #[cfg(feature = "interface-test-fixtures")]
             logged_lod: None,
             source_camera: None,
             logged_camera: None,
             source_layout: None,
             logged_layout: None,
             palette_selector: 1,
+            logged_participant_scene: false,
         }
     }
 }
 
-impl TacticalProofRenderer {
+impl TacticalAssetRenderer {
     pub(crate) fn set_palette_selector(&mut self, selector: u8) {
         let selector = selector.clamp(1, 27);
         if self.palette_selector != selector {
             self.palette_selector = selector;
-            self.attempted = false;
-            self.assets.clear();
+            #[cfg(feature = "interface-test-fixtures")]
+            {
+                self.attempted = false;
+                self.assets.clear();
+                self.logged_lod = None;
+            }
+            self.participant_families.clear();
+            self.participant_lods.clear();
+            self.unavailable_families.clear();
             self.material = None;
-            self.logged_lod = None;
+            self.logged_participant_scene = false;
         }
     }
 
+    #[cfg(feature = "interface-test-fixtures")]
     pub(crate) fn set_view(&mut self, view: TacticalLodView) {
         self.view = view;
     }
@@ -589,9 +919,20 @@ impl TacticalProofRenderer {
             player_is_empire,
             layout.battle_extent,
         ));
+        self.participant_lods.clear();
         self.logged_camera = None;
         self.source_layout = Some(layout);
         self.logged_layout = None;
+        self.logged_participant_scene = false;
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    pub(crate) fn disable_original_camera(&mut self) {
+        self.source_camera = None;
+        self.logged_camera = None;
+        self.source_layout = None;
+        self.logged_layout = None;
+        self.logged_participant_scene = false;
     }
 
     pub(crate) fn zoom_in(&mut self) {
@@ -636,10 +977,11 @@ impl TacticalProofRenderer {
         }
     }
 
-    pub(crate) fn draw(&mut self, aperture: (f32, f32, f32, f32)) {
+    #[cfg(feature = "interface-test-fixtures")]
+    pub(crate) fn draw_proof(&mut self, aperture: (f32, f32, f32, f32)) {
         if !self.attempted {
             self.attempted = true;
-            if let Err(error) = self.load() {
+            if let Err(error) = self.load_proof() {
                 macroquad::logging::warn!("[tactical_3d] LOD family unavailable: {}", error);
             }
         }
@@ -749,6 +1091,7 @@ impl TacticalProofRenderer {
         }
         let material = self.material.as_ref().unwrap();
         gl_use_material(material);
+        material.set_uniform("ObjectTranslation", [0.0_f32; 4]);
         let asset = &self.assets[self.current_lod as usize];
         debug_assert_eq!(asset.resource_id, self.current_lod.resource_id());
         for chunk in &asset.meshes {
@@ -762,7 +1105,187 @@ impl TacticalProofRenderer {
         set_default_camera();
     }
 
-    fn load(&mut self) -> Result<(), String> {
+    /// Draw every mapped live capital ship through its joined three-LOD family.
+    pub(crate) fn draw_participants(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalRenderObject],
+    ) -> TacticalDrawReport {
+        let mut report = TacticalDrawReport::default();
+        if objects.is_empty() || self.source_camera.is_none() {
+            return report;
+        }
+
+        let mut resource_bases = objects
+            .iter()
+            .map(|object| object.resource_base)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        resource_bases.sort_unstable();
+        for resource_base in resource_bases {
+            if self.participant_families.contains_key(&resource_base)
+                || self.unavailable_families.contains(&resource_base)
+            {
+                continue;
+            }
+            if let Err(error) = self.load_participant_family(resource_base) {
+                self.unavailable_families.insert(resource_base);
+                macroquad::logging::warn!(
+                    "[tactical_3d] participant family base={} unavailable: {}",
+                    resource_base,
+                    error
+                );
+            }
+        }
+        if self.material.is_none() {
+            return report;
+        }
+
+        if let Some(layout) = self.source_layout {
+            if self.logged_layout != Some(layout) {
+                macroquad::logging::info!(
+                    "[tactical_3d] layout_source first_active_objects={} second_active_objects={} battle_extent={} outer_positive_z={} outer_negative_z={} inner_negative_z={} inner_positive_z={} source=FUN_005ab650",
+                    layout.first_active_objects,
+                    layout.second_active_objects,
+                    layout.battle_extent,
+                    layout.outer_positive_z,
+                    layout.outer_negative_z,
+                    layout.inner_negative_z,
+                    layout.inner_positive_z,
+                );
+                self.logged_layout = Some(layout);
+            }
+        }
+
+        let (x, y, width, height) = aperture;
+        let viewport = (
+            x.round() as i32,
+            (screen_height() - y - height).round() as i32,
+            width.round() as i32,
+            height.round() as i32,
+        );
+        let source_camera = self.source_camera.unwrap();
+        let pose = source_camera.pose();
+        let camera_key = [
+            pose.position.x.to_bits(),
+            pose.position.y.to_bits(),
+            pose.position.z.to_bits(),
+            pose.field.to_bits(),
+            pose.pitch_degrees as u32,
+            pose.yaw_degrees as u32,
+            pose.zoom_step as u32,
+            pose.orbit_step as u32,
+            pose.target_object_id.unwrap_or(0),
+            pose.target.x.to_bits(),
+            pose.target.y.to_bits(),
+            pose.target.z.to_bits(),
+        ];
+        if self.logged_camera != Some(camera_key) {
+            macroquad::logging::info!(
+                "[tactical_3d] camera_source pitch={} yaw={} field={} zoom_step={} orbit_step={} distance={} near={} far={} fovy_radians={} target_object_id={} target_x={} target_y={} target_z={} handedness=lh_y_up_to_rh_y_up",
+                pose.pitch_degrees,
+                pose.yaw_degrees,
+                pose.field,
+                pose.zoom_step,
+                pose.orbit_step,
+                source_camera.distance,
+                pose.near,
+                pose.far,
+                pose.fovy_radians,
+                pose.target_object_id.unwrap_or(0),
+                pose.target.x,
+                pose.target.y,
+                pose.target.z,
+            );
+            self.logged_camera = Some(camera_key);
+        }
+        let camera = Camera3D {
+            position: pose.position,
+            target: pose.target,
+            up: pose.up,
+            fovy: pose.fovy_radians,
+            aspect: Some(width / height),
+            viewport: Some(viewport),
+            z_near: pose.near,
+            z_far: pose.far,
+            ..Default::default()
+        };
+        let camera_matrix = camera.matrix();
+        set_camera(&camera);
+
+        let material = self.material.as_ref().unwrap();
+        gl_use_material(material);
+        let mut selected_resources = Vec::new();
+        let mut screen_positions = Vec::new();
+        for object in objects {
+            let Some(family) = self.participant_families.get(&object.resource_base) else {
+                continue;
+            };
+            let prior_lod = self
+                .participant_lods
+                .get(&object.object_id)
+                .copied()
+                .unwrap_or(OriginalTacticalLod::Medium);
+            let lod = select_original_tactical_lod(
+                prior_lod,
+                TacticalLodView {
+                    view_depth: pose.position.distance(object.position),
+                    projection_scale: 1.0,
+                    high_detail: true,
+                },
+            );
+            let asset = &family[lod as usize];
+            if !asset.has_drawable_geometry() {
+                continue;
+            }
+            self.participant_lods.insert(object.object_id, lod);
+            material.set_uniform(
+                "ObjectTranslation",
+                [object.position.x, object.position.y, object.position.z, 0.0],
+            );
+            for chunk in &asset.meshes {
+                material.set_uniform(
+                    "MaterialEmissive",
+                    [chunk.emissive[0], chunk.emissive[1], chunk.emissive[2], 0.0],
+                );
+                draw_mesh(&chunk.mesh);
+            }
+            report.rendered_object_ids.push(object.object_id);
+            if let Some(screen) = project_world_position(camera_matrix, object.position, aperture) {
+                report.screen_positions.push((object.object_id, screen));
+                screen_positions.push(format!(
+                    "{}:{:.3},{:.3}",
+                    object.object_id, screen.x, screen.y
+                ));
+            }
+            selected_resources.push(format!("{}:{}", object.object_id, asset.resource_id));
+        }
+        gl_use_default_material();
+        set_default_camera();
+
+        if !self.logged_participant_scene {
+            let mut families: Vec<_> = self.participant_families.keys().copied().collect();
+            families.sort_unstable();
+            macroquad::logging::info!(
+                "[tactical_3d] participant_scene requested={} rendered={} families={} resources={} screen_positions={} source_positions=true",
+                objects.len(),
+                report.rendered_object_ids.len(),
+                families
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                selected_resources.join(","),
+                screen_positions.join(";"),
+            );
+            self.logged_participant_scene = true;
+        }
+        report
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    fn load_proof(&mut self) -> Result<(), String> {
         let palette_resource_id = 5530 + u32::from(self.palette_selector);
         let (mesh_payloads, texture_payloads, palette_payload) = {
             let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
@@ -868,6 +1391,146 @@ impl TacticalProofRenderer {
         );
         Ok(())
     }
+
+    fn load_participant_family(&mut self, resource_base: u32) -> Result<(), String> {
+        let palette_resource_id = 5530 + u32::from(self.palette_selector);
+        let (mesh_payloads, palette_payload) = {
+            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+            let meshes = (0..3_u32)
+                .map(|offset| {
+                    let key = format!("{}/1033", resource_base + offset);
+                    cache
+                        .meshes
+                        .get(&key)
+                        .cloned()
+                        .map(|bytes| (resource_base + offset, bytes))
+                        .ok_or_else(|| format!("typed mesh entry {key} is missing"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let palette_key = format!("{palette_resource_id}/1033");
+            let palette = cache
+                .textures
+                .get(&palette_key)
+                .cloned()
+                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
+            (meshes, palette)
+        };
+        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
+
+        let mut decoded_meshes = Vec::with_capacity(3);
+        let mut texture_names = HashSet::new();
+        for (resource_id, bytes) in mesh_payloads {
+            let decoded = decode_mesh_object(&bytes)?;
+            for chunk in &decoded.chunks {
+                if let Some(name) = &chunk.texture_name {
+                    texture_names.insert(name.to_ascii_uppercase());
+                }
+            }
+            decoded_meshes.push((resource_id, decoded));
+        }
+        let texture_payloads = {
+            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+            texture_names
+                .iter()
+                .map(|name| {
+                    let key = format!("{name}/1033");
+                    cache
+                        .textures
+                        .get(&key)
+                        .cloned()
+                        .map(|bytes| (name.clone(), bytes))
+                        .ok_or_else(|| format!("typed texture entry {key} is missing"))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut textures = HashMap::with_capacity(texture_payloads.len());
+        for (name, bytes) in texture_payloads {
+            textures.insert(name, decode_indexed_texture(&bytes, &palette)?);
+        }
+        let white = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
+        white.set_filter(original_tactical_texture_filter());
+
+        let mut assets = Vec::with_capacity(3);
+        let mut diagnostics = Vec::with_capacity(3);
+        for (resource_id, mut decoded) in decoded_meshes {
+            for chunk in &mut decoded.chunks {
+                let texture = chunk
+                    .texture_name
+                    .as_ref()
+                    .and_then(|name| textures.get(&name.to_ascii_uppercase()))
+                    .cloned()
+                    .unwrap_or_else(|| white.clone());
+                chunk.mesh.texture = Some(texture);
+            }
+            let triangles: usize = decoded
+                .chunks
+                .iter()
+                .map(|chunk| chunk.mesh.indices.len() / 3)
+                .sum();
+            let render_vertices: usize = decoded
+                .chunks
+                .iter()
+                .map(|chunk| chunk.mesh.vertices.len())
+                .sum();
+            diagnostics.push(format!(
+                "{}:{}/{}/{}/{}",
+                resource_id,
+                decoded.source_vertices,
+                decoded.source_faces,
+                render_vertices,
+                triangles,
+            ));
+            assets.push(TacticalLodAsset {
+                resource_id,
+                meshes: decoded
+                    .chunks
+                    .into_iter()
+                    .map(|chunk| TacticalMeshChunk {
+                        mesh: chunk.mesh,
+                        emissive: chunk.emissive,
+                    })
+                    .collect(),
+            });
+        }
+
+        if self.material.is_none() {
+            self.material = Some(load_tactical_material()?);
+        }
+        self.participant_families.insert(resource_base, assets);
+        self.family_loads = self.family_loads.saturating_add(1);
+        let mut texture_names: Vec<_> = texture_names.into_iter().collect();
+        texture_names.sort();
+        macroquad::logging::info!(
+            "[tactical_3d] participant_family_loaded base={} resources={},{},{} textures={} palette_selector={} palette_resource_id={} diagnostics={} family_loads={}",
+            resource_base,
+            resource_base,
+            resource_base + 1,
+            resource_base + 2,
+            texture_names.join(","),
+            self.palette_selector,
+            palette_resource_id,
+            diagnostics.join(","),
+            self.family_loads,
+        );
+        Ok(())
+    }
+}
+
+fn project_world_position(
+    camera_matrix: Mat4,
+    position: Vec3,
+    aperture: (f32, f32, f32, f32),
+) -> Option<Vec2> {
+    let clip = camera_matrix * position.extend(1.0);
+    if !clip.is_finite() || clip.w <= 0.0 {
+        return None;
+    }
+    let ndc = clip.truncate() / clip.w;
+    let (x, y, width, height) = aperture;
+    Some(vec2(
+        x + (ndc.x + 1.0) * 0.5 * width,
+        y + (1.0 - ndc.y) * 0.5 * height,
+    ))
 }
 
 struct DecodedMeshChunk {
@@ -878,6 +1541,8 @@ struct DecodedMeshChunk {
 
 struct DecodedMeshObject {
     chunks: Vec<DecodedMeshChunk>,
+    #[cfg(not(target_arch = "wasm32"))]
+    materials: usize,
     source_vertices: usize,
     source_faces: usize,
 }
@@ -982,6 +1647,8 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
     }
     Ok(DecodedMeshObject {
         chunks: output,
+        #[cfg(not(target_arch = "wasm32"))]
+        materials,
         source_vertices,
         source_faces,
     })
@@ -1009,6 +1676,55 @@ fn decode_palette_object(
         *entry = [source[0], source[1], source[2], 255];
     }
     Ok(palette)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_indexed_texture_object(
+    bytes: &[u8],
+    record: &NativeTextureRecord,
+) -> Result<(), String> {
+    let mut reader = Reader::new(bytes);
+    reader.expect(TEXTURE_MAGIC)?;
+    let version = reader.u32()?;
+    let width = reader.u32()?;
+    let height = reader.u32()?;
+    let palette_id = reader.u32()?;
+    let palette_rule = reader.u32()?;
+    let pixels = reader.u32()? as usize;
+    let trailing = reader.u32()? as usize;
+    let expected_pixels = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or("tactical texture dimensions overflow")?;
+    let planet_pair = record.identifier_kind == "id" && (5501..=5527).contains(&record.id);
+    let expected_palette_id = if planet_pair { record.id + 30 } else { 0 };
+    let expected_palette_rule = if planet_pair { 2 } else { 1 };
+    let expected_trailing = if record.identifier_kind == "id" && (4200..=4204).contains(&record.id)
+    {
+        4
+    } else {
+        0
+    };
+    if version != 1
+        || width != record.width
+        || height != record.height
+        || width == 0
+        || height == 0
+        || width > u16::MAX.into()
+        || height > u16::MAX.into()
+        || palette_id != expected_palette_id
+        || palette_rule != expected_palette_rule
+        || pixels != expected_pixels
+        || pixels > 16_777_216
+        || trailing != expected_trailing
+    {
+        return Err("indexed tactical texture metadata mismatch".to_string());
+    }
+    reader.bytes(pixels)?;
+    reader.bytes(trailing)?;
+    if !reader.finished() {
+        return Err("indexed tactical texture has unexpected trailing bytes".to_string());
+    }
+    Ok(())
 }
 
 fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Texture2D, String> {
@@ -1070,6 +1786,7 @@ fn load_tactical_material() -> Result<Material, String> {
                 UniformDesc::new("SourceLightDirectionAmbient", UniformType::Float4),
                 UniformDesc::new("SourceLightColorDirectional", UniformType::Float4),
                 UniformDesc::new("MaterialEmissive", UniformType::Float4),
+                UniformDesc::new("ObjectTranslation", UniformType::Float4),
             ],
             ..Default::default()
         },
@@ -1090,6 +1807,7 @@ fn load_tactical_material() -> Result<Material, String> {
         [1.0, 1.0, 1.0, ORIGINAL_DIRECTIONAL_LIGHT_RGB],
     );
     material.set_uniform("MaterialEmissive", [0.0_f32; 4]);
+    material.set_uniform("ObjectTranslation", [0.0_f32; 4]);
     Ok(material)
 }
 
@@ -1169,8 +1887,9 @@ uniform mat4 Projection;
 uniform vec4 SourceLightDirectionAmbient;
 uniform vec4 SourceLightColorDirectional;
 uniform lowp vec4 MaterialEmissive;
+uniform vec4 ObjectTranslation;
 void main() {
-    gl_Position = Projection * Model * vec4(position, 1.0);
+    gl_Position = Projection * Model * vec4(position + ObjectTranslation.xyz, 1.0);
     uv = texcoord;
     tint = color0 / 255.0;
     lowp float diffuse = max(dot(normalize(normal.xyz), normalize(SourceLightDirectionAmbient.xyz)), 0.0);
@@ -1200,6 +1919,7 @@ struct Uniforms {
     float4 SourceLightDirectionAmbient;
     float4 SourceLightColorDirectional;
     float4 MaterialEmissive;
+    float4 ObjectTranslation;
 };
 struct Vertex {
     float3 position [[attribute(0)]];
@@ -1215,7 +1935,7 @@ struct RasterizerData {
 };
 vertex RasterizerData vertexShader(Vertex v [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
     RasterizerData out;
-    out.position = u.Projection * u.Model * float4(v.position, 1.0);
+    out.position = u.Projection * u.Model * float4(v.position + u.ObjectTranslation.xyz, 1.0);
     out.uv = v.texcoord;
     out.tint = v.color0 / 255.0;
     float diffuse = max(dot(normalize(v.normal.xyz), normalize(u.SourceLightDirectionAmbient.xyz)), 0.0);
@@ -1495,6 +2215,65 @@ mod tests {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn complete_tactical_corpus_identity_sets_are_exact() {
+        let meshes = expected_mesh_ids();
+        let numeric = expected_numeric_texture_ids();
+        let named: HashSet<_> = EXPECTED_NAMED_TEXTURES.iter().copied().collect();
+        assert_eq!(meshes.len(), 87);
+        assert_eq!(numeric.len(), 338);
+        assert_eq!(named.len(), 59);
+        assert!(meshes.contains(&2010));
+        assert!(meshes.contains(&2642));
+        assert!(!meshes.contains(&2009));
+        assert!(!numeric.contains(&4040));
+        assert!(numeric.contains(&4044));
+        assert!(numeric.contains(&5557));
+        assert!(named.contains("MONCAL52.BMP"));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "requires the ignored runtime store generated from an owned TACTICAL.DLL"]
+    fn owned_native_complete_corpus_installs_with_exact_counts() {
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../data/base/ui/tactical-dll/TACTICAL3D/runtime");
+        let manifest = read_native_manifest(&runtime).expect("validate original corpus manifest");
+
+        let mut replaced_mesh = manifest.clone();
+        replaced_mesh.meshes[0].id = 9999;
+        assert!(validate_native_manifest(&replaced_mesh).is_err());
+
+        let mut wrong_language = manifest.clone();
+        wrong_language.meshes[0].language = 0;
+        assert!(validate_native_manifest(&wrong_language).is_err());
+
+        let mut wrong_kind = manifest.clone();
+        wrong_kind.textures[0].kind = "palette_rgb24".to_string();
+        assert!(validate_native_manifest(&wrong_kind).is_err());
+
+        let mut broken_binding = manifest;
+        let binding = broken_binding
+            .meshes
+            .iter_mut()
+            .find_map(|record| record.texture_bindings.as_mut()?.first_mut())
+            .expect("original corpus contains a named texture binding");
+        binding.resource_name = "NOT-A-TACTICAL-TEXTURE.BMP".to_string();
+        assert!(validate_native_manifest(&broken_binding).is_err());
+
+        install_native_tactical_assets(&runtime).expect("install complete native tactical corpus");
+        let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+        assert_eq!(cache.meshes.len(), 87);
+        assert_eq!(cache.textures.len(), 397);
+        for key in ["2010/1033", "2510/1033", "2642/1033"] {
+            assert!(cache.meshes.contains_key(key), "missing mesh {key}");
+        }
+        for key in ["MONCAL52.BMP/1033", "STRIKE52.BMP/1033", "5531/1033"] {
+            assert!(cache.textures.contains_key(key), "missing texture {key}");
+        }
+    }
+
+    #[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
     #[test]
     #[ignore = "requires the ignored runtime store generated from an owned TACTICAL.DLL"]
     fn owned_native_lod_family_installs_with_exact_typed_keys() {

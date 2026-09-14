@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58B",
+  "model": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "task_scope": "browser-artifact visual acceptance only",
+  "harness_run": {
+    "run_id": "2026-09-14T12-50-47-039Z-71884",
+    "passed": 36,
+    "executions": 36,
+    "failed": 0,
+    "muted": 36,
+    "four_request_startups": 36,
+    "stable_captures": 36,
+    "closed_browser_processes": 36,
+    "unbaselined": 36,
+    "status": "pass"
+  },
+  "result": {
+    "verdict": "provisional_A1_pass",
+    "ready_to_commit": true,
+    "severity_findings": [],
+    "observations": [
+      "Both faction and viewport pairs show model pixels inside the original tactical aperture at the logged projections for mapped families 2010 and 2510 and LOD resources 2012 and 2512.",
+      "Matching 3D-off controls suppress capital fallbacks and remove those model pixels while preserving the surrounding scene.",
+      "Per-model differences contain 57 and 4 to 5 changed pixels at 640x480 and 151 and 9 to 10 changed pixels at 1280x800.",
+      "Bitmap shell proportions, controls, and viewport borders show no visible distortion.",
+      "All 36 executions passed muted four-request startup, stability, clean browser diagnostics, and process cleanup."
+    ]
+  },
+  "evidence_scope": {
+    "root": ".artifacts/interface-parity/2026-09-14T12-50-47-039Z-71884",
+    "inspected": "All 16 requested actual.png and frame-a.png images, eight matching result records, and the complete summary.",
+    "integrity": "All inspected screenshot hashes match their records.",
+    "review_type": "Artifact-only visual inspection, hash verification, and pixel comparison. Launch and cleanup confirmation relies on recorded evidence."
+  },
+  "limits": [
+    "Silhouettes alone do not establish exact family identity; logged resource joins and framebuffer controls provide the identity evidence.",
+    "Fighters, selection presentation, effects, Death Star paths, commands, outcomes, and audio remain open.",
+    "All 36 captures lack accepted lossless original baselines.",
+    "All 106 strict tactical cells remain open."
+  ]
+}

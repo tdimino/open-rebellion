@@ -55,6 +55,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical retained-mode light proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md) | Directional and ambient light types, colors, frame and target contract, transformed direction, muted browser evidence, and remaining filtering/culling/A0 boundary for P24/P57B2. |
 | [Tactical retained-mode render-state proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md) | Dither, Gouraud, filtering, culling, depth, specular, diffuse/emissive material behavior, muted browser evidence, and remaining production/A0 boundary for P24/P57B2. |
 | [Tactical resource-identity proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md) | Every ship/fighter DAT resource join, complete 87-mesh/397-texture browser transport, representative probes, and remaining production-draw/A0 boundary for P24/P58. |
+| [Production tactical capital-ship proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md) | Exact joined capital families rendered by live battle participants, paired 3D-off controls, muted 36-case browser gate, and remaining fighter/selection/A0 boundary for P24/P58. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

@@ -17,7 +17,6 @@ pub mod panels;
 pub mod sector_window;
 pub mod system_window;
 mod tactical_asset_cache;
-#[cfg(feature = "interface-test-fixtures")]
 mod tactical_assets;
 mod tactical_resources;
 pub mod tactical_view;
@@ -90,6 +89,8 @@ pub use system_window::{
     REFERENCE_RAIL_SLOTS, SYSTEM_WINDOW_CLIENT_WIDTH, SYSTEM_WINDOW_HEIGHT, SYSTEM_WINDOW_WIDTH,
 };
 pub use tactical_asset_cache::{set_tactical_asset_cache, tactical_asset_cache_counts};
+#[cfg(not(target_arch = "wasm32"))]
+pub use tactical_assets::install_native_tactical_assets;
 #[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
 pub use tactical_assets::install_native_tactical_lod_family;
 #[cfg(feature = "interface-test-fixtures")]

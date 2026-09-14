@@ -171,9 +171,10 @@ the [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-
 the [P57B2C2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md),
 and the [P57B2C2B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md).
 
-P58A completes the DAT-to-tactical-resource join. Next complete production 3D
-family selection and capture the same fixed views in the original executable
-and Open Rebellion.
+P58A completes the DAT-to-tactical-resource join. P58B now renders live
+production capital ships from their exact joined families. Next replace the
+fighter fallback, restore selection framing, and capture the same fixed views
+in the original executable and Open Rebellion.
 
 P57A packages all three meshes and both source-bound textures, preserves the
 far mesh's material diffuse color, and implements the original high- and
@@ -199,7 +200,9 @@ packages palettes 5531 through 5557, and selects
 P57B2C2B restores the source device and material state. P58A binds all 29
 capital ships, eight fighters, and the Death Star to their original ordinals
 and resource bases, removes approximate sprite arithmetic, and carries all 87
-meshes plus 397 textures in the four-request pack. Production 3D selection,
+meshes plus 397 textures in the four-request pack. P58B installs that corpus in
+production, lazily loads joined capital families, and draws live participants
+at their recovered source positions. Fighter rendering, selection framing,
 original A0 captures, native GPU comparison, and simulation-fingerprint proof
 remain open.
 
@@ -220,14 +223,15 @@ The full P57 gate remains open.
 
 ### P58. Fleet integration
 
-Status: in progress. P58A is complete. See the
-[P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md).
+Status: in progress. P58A and P58B are complete. See the
+[P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md)
+and [P58B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md).
 
 P58A finishes the DAT-to-tactical-ordinal join and validates full-corpus
-transport. P58B must draw the joined production ship families and then load
-only resources present in the battle. Continue with picking, selection, damage
-attachments, effects, and fallback diagnostics. Repeat for fighters, planets,
-the Death Star, and the remaining texture families.
+transport. P58B draws joined production capital-ship families, loads only
+resources present in the battle, and retains the 2D fallback when an exact
+family is unavailable. P58C continues with fighter sprites and selection
+framing, followed by damage attachments, effects, planets, and the Death Star.
 
 Gate: every mapped entity has provenance, no procedural replacement remains in
 accepted states, native/WASM and multiplayer simulation agree, and the relevant

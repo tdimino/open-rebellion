@@ -179,15 +179,16 @@ target. P57B2C1 removes inferred mesh normalization, preserves authored
 coordinates, and activates the complete system palette set. P57B2C2 recovers
 render state. P57B2C2A now restores the source directional and ambient
 light rig; P57B2C2B restores filtering, culling, depth, dither, shading,
-specular, and diffuse/emissive material behavior. P58A now completes every
-DAT-to-tactical-resource join and full-corpus browser transport. P58B owns
-production 3D family drawing. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
+specular, and diffuse/emissive material behavior. P58A completes every
+DAT-to-tactical-resource join and full-corpus browser transport. P58B renders
+live production capital ships from their exact joined families. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
 [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
 [P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md),
 [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md),
 [P57B2C2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md),
 [P57B2C2B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md),
-and [P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md).
+[P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md),
+and [P58B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md).
 
 ## Bundle acceptance record
 

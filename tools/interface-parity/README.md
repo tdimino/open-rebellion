@@ -32,8 +32,8 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 28 entry, negative-control,
-fixed-LOD, live-LOD, camera, faction, and viewport cases. The tactical probes cover pause stability,
+`node run.mjs --battle --all --no-build` for all 36 entry, negative-control,
+fixed-LOD, live-LOD, camera, production-participant, faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
 proof-on/off pixel differences. The camera journey also checks the recovered
@@ -41,9 +41,12 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 4 additionally asserts representative capital-ship and fighter
-DAT-to-tactical-resource joins, while every tactical run requires all 87 meshes
-and 397 textures in the four-request runtime pack.
+Fixture schema 6 additionally asserts representative capital-ship and fighter
+DAT-to-tactical-resource joins, exact production rendering of two joined
+capital-ship families, and a 3D-off control with both mapped 2D fallbacks
+suppressed. Per-object framebuffer probes require changed pixels around every
+logged model projection. Every tactical run requires all 87 meshes and 397
+textures in the four-request runtime pack.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

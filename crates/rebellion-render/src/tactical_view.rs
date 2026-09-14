@@ -30,7 +30,8 @@ use rebellion_core::world::GameWorld;
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::sector_window::planet_picture_id;
 #[cfg(feature = "interface-test-fixtures")]
-use crate::tactical_assets::{TacticalLodView, TacticalProofRenderer};
+use crate::tactical_assets::TacticalLodView;
+use crate::tactical_assets::{TacticalAssetRenderer, TacticalRenderObject};
 use crate::tactical_resources::{
     capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
     TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
@@ -1095,12 +1096,14 @@ pub struct TacticalState {
     /// Original Tactical Display faction-wireframe switches.
     pub highlight_alliance: bool,
     pub highlight_empire: bool,
+    render_original_participants: bool,
+    asset_renderer: TacticalAssetRenderer,
+    #[cfg(feature = "interface-test-fixtures")]
+    suppress_mapped_capital_fallback: bool,
     #[cfg(feature = "interface-test-fixtures")]
     proof_resource_2560: bool,
     #[cfg(feature = "interface-test-fixtures")]
     proof_lod_follows_zoom: bool,
-    #[cfg(feature = "interface-test-fixtures")]
-    proof_renderer: TacticalProofRenderer,
 }
 
 impl Default for TacticalState {
@@ -1114,12 +1117,14 @@ impl Default for TacticalState {
             zoom: 1.0,
             highlight_alliance: true,
             highlight_empire: true,
+            render_original_participants: true,
+            asset_renderer: TacticalAssetRenderer::default(),
+            #[cfg(feature = "interface-test-fixtures")]
+            suppress_mapped_capital_fallback: false,
             #[cfg(feature = "interface-test-fixtures")]
             proof_resource_2560: false,
             #[cfg(feature = "interface-test-fixtures")]
             proof_lod_follows_zoom: false,
-            #[cfg(feature = "interface-test-fixtures")]
-            proof_renderer: TacticalProofRenderer::default(),
         }
     }
 }
@@ -1140,14 +1145,14 @@ impl TacticalState {
         player_is_attacker: bool,
         tick: u64,
     ) {
-        self.session = Some(BattleSession::new(
-            world,
-            system,
-            attacker,
-            defender,
-            player_is_attacker,
-            tick,
-        ));
+        let session =
+            BattleSession::new(world, system, attacker, defender, player_is_attacker, tick);
+        let player_is_empire = player_is_attacker != session.attacker_is_alliance;
+        self.asset_renderer
+            .set_palette_selector(session.system_picture_id);
+        self.asset_renderer
+            .enable_original_camera(player_is_empire, session.source_layout);
+        self.session = Some(session);
         self.dragging_ship = None;
         self.drag_offset = (0.0, 0.0);
         self.camera_x = 0.0;
@@ -1155,8 +1160,10 @@ impl TacticalState {
         self.zoom = 1.0;
         self.highlight_alliance = true;
         self.highlight_empire = true;
+        self.render_original_participants = true;
         #[cfg(feature = "interface-test-fixtures")]
         {
+            self.suppress_mapped_capital_fallback = false;
             self.proof_resource_2560 = false;
             self.proof_lod_follows_zoom = false;
         }
@@ -1175,7 +1182,7 @@ impl TacticalState {
         self.sync_proof_palette();
         self.proof_resource_2560 = true;
         self.proof_lod_follows_zoom = false;
-        self.proof_renderer.set_view(view);
+        self.asset_renderer.set_view(view);
     }
 
     /// Drive all three source LOD slots through the authentic zoom controls.
@@ -1185,7 +1192,7 @@ impl TacticalState {
         self.proof_resource_2560 = true;
         self.proof_lod_follows_zoom = true;
         self.zoom = 2.0;
-        self.proof_renderer
+        self.asset_renderer
             .set_view(TacticalLodView::from_fixture_zoom(self.zoom));
     }
 
@@ -1199,7 +1206,7 @@ impl TacticalState {
             || OriginalTacticalLayout::from_active_counts(0, 0),
             |session| session.source_layout,
         );
-        self.proof_renderer
+        self.asset_renderer
             .enable_original_camera(player_is_empire, source_layout);
     }
 
@@ -1209,7 +1216,21 @@ impl TacticalState {
             .session
             .as_ref()
             .map_or(1, |session| session.system_picture_id);
-        self.proof_renderer.set_palette_selector(selector);
+        self.asset_renderer.set_palette_selector(selector);
+    }
+
+    /// Preserve the historical proof and negative-control fixtures without
+    /// submitting live participant families alongside the isolated object.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn disable_original_participant_rendering(&mut self) {
+        self.render_original_participants = false;
+        self.asset_renderer.disable_original_camera();
+    }
+
+    /// Remove mapped capital fallbacks in the browser-only framebuffer control.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn suppress_mapped_capital_fallback(&mut self) {
+        self.suppress_mapped_capital_fallback = true;
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -1617,13 +1638,11 @@ fn handle_original_tactical_controls(
             Some(TacticalHudControl::Pause) => return TacticalAction::TogglePause,
             Some(TacticalHudControl::ZoomIn) => {
                 state.zoom = (state.zoom * 1.25).min(2.0);
-                #[cfg(feature = "interface-test-fixtures")]
-                state.proof_renderer.zoom_in();
+                state.asset_renderer.zoom_in();
             }
             Some(TacticalHudControl::ZoomOut) => {
                 state.zoom = (state.zoom / 1.25).max(0.5);
-                #[cfg(feature = "interface-test-fixtures")]
-                state.proof_renderer.zoom_out();
+                state.asset_renderer.zoom_out();
             }
             Some(TacticalHudControl::CameraTarget) => {
                 let selected = state.session.as_ref().and_then(|session| {
@@ -1636,28 +1655,23 @@ fn handle_original_tactical_controls(
                 });
                 if let Some((_index, x, y, _source_position)) = selected {
                     (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
-                    #[cfg(feature = "interface-test-fixtures")]
-                    state.proof_renderer.focus_target(
+                    state.asset_renderer.focus_target(
                         u32::try_from(_index).unwrap_or(u32::MAX).saturating_add(1),
                         _source_position,
                     );
                 }
             }
             Some(TacticalHudControl::CameraLeft) => {
-                #[cfg(feature = "interface-test-fixtures")]
-                state.proof_renderer.turn_left();
+                state.asset_renderer.turn_left();
             }
             Some(TacticalHudControl::CameraRight) => {
-                #[cfg(feature = "interface-test-fixtures")]
-                state.proof_renderer.turn_right();
+                state.asset_renderer.turn_right();
             }
             Some(TacticalHudControl::CameraUp) => {
-                #[cfg(feature = "interface-test-fixtures")]
-                state.proof_renderer.pitch_up();
+                state.asset_renderer.pitch_up();
             }
             Some(TacticalHudControl::CameraDown) => {
-                #[cfg(feature = "interface-test-fixtures")]
-                state.proof_renderer.pitch_down();
+                state.asset_renderer.pitch_down();
             }
             Some(TacticalHudControl::HighlightAlliance) => {
                 state.highlight_alliance = !state.highlight_alliance;
@@ -1670,9 +1684,11 @@ fn handle_original_tactical_controls(
     }
     if is_key_pressed(KeyCode::Equal) {
         state.zoom = (state.zoom * 1.25).min(2.0);
+        state.asset_renderer.zoom_in();
     }
     if is_key_pressed(KeyCode::Minus) {
         state.zoom = (state.zoom / 1.25).max(0.5);
+        state.asset_renderer.zoom_out();
     }
     TacticalAction::None
 }
@@ -1736,21 +1752,59 @@ pub fn draw_tactical_view(
     set_tactical_aperture_clip(Some(canvas.aperture()));
     draw_starfield(canvas);
 
-    // 2. Transform the provisional 2D battle into the original aperture.
+    // 2. Submit mapped production capital ships through the original 3D
+    // resource families. Unmapped or unavailable objects retain the bounded
+    // 2D fallback below.
     let (scale, offset_x, offset_y) =
         canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
+    let production_objects = if state.render_original_participants {
+        state
+            .session
+            .as_ref()
+            .map(|session| {
+                session
+                    .ships
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, ship)| ship.alive)
+                    .filter_map(|(index, ship)| {
+                        ship.tactical_resource.map(|resource| TacticalRenderObject {
+                            object_id: u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1),
+                            resource_base: resource.mesh_resource_base,
+                            position: ship.source_position.rendered(),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let rendered_ship_indexes = state
+        .asset_renderer
+        .draw_participants(
+            {
+                let aperture = canvas.aperture();
+                (aperture.x, aperture.y, aperture.width, aperture.height)
+            },
+            &production_objects,
+        )
+        .rendered_object_ids
+        .into_iter()
+        .filter_map(|object_id| usize::try_from(object_id.saturating_sub(1)).ok())
+        .collect::<Vec<_>>();
 
     #[cfg(feature = "interface-test-fixtures")]
     if state.proof_resource_2560 {
         if state.proof_lod_follows_zoom {
             state
-                .proof_renderer
+                .asset_renderer
                 .set_view(TacticalLodView::from_fixture_zoom(state.zoom));
         }
         let aperture = canvas.aperture();
         state
-            .proof_renderer
-            .draw((aperture.x, aperture.y, aperture.width, aperture.height));
+            .asset_renderer
+            .draw_proof((aperture.x, aperture.y, aperture.width, aperture.height));
     }
 
     // Borrow session for rendering (immutable reads).
@@ -1803,8 +1857,13 @@ pub fn draw_tactical_view(
 
     // 4. Draw ships (macroquad primitives).
     let aperture = canvas.aperture();
-    for ship in &session.ships {
-        if !ship.alive {
+    for (ship_index, ship) in session.ships.iter().enumerate() {
+        #[cfg(feature = "interface-test-fixtures")]
+        let suppress_fixture_fallback =
+            state.suppress_mapped_capital_fallback && ship.tactical_resource.is_some();
+        #[cfg(not(feature = "interface-test-fixtures"))]
+        let suppress_fixture_fallback = false;
+        if !ship.alive || rendered_ship_indexes.contains(&ship_index) || suppress_fixture_fallback {
             continue;
         }
         let sx = offset_x + ship.x * scale;

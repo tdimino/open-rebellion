@@ -66,5 +66,5 @@
     [36, 4130, 4134, 8, "TIE Defender"]
   ],
   "fighter_columns": ["tactical_ordinal", "first_side_type303_base", "opposing_side_type303_base", "fightsd_id", "name"],
-  "unresolved": ["production family selection and retained-object lifetime", "remaining type-301 family construction and view rules", "fighter formation/color/distance offset", "battle event to effect resource", "tactical planet picture selector initialization", "original control-state and render geometry"]
+  "unresolved": ["selection framing and retained-object lifetime", "remaining type-301 family view rules", "fighter formation/color/distance offset and production rendering", "battle event to effect resource", "tactical planet picture selector initialization", "original control-state and render geometry"]
 }

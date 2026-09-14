@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-14):** Workspace tests and the muted browser harness pass. Verified interface checkpoints include the shuttle, strategic shell, sector/system navigation, tactical shell, and one source-rendered three-LOD ship family. All 87 tactical meshes and 397 textures now ship through the runtime pack, with exact DAT resource joins retained for every ship and fighter. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks production family rendering, original-view, complete tactical, multiplayer, and release gates still open.
+> **Verification (2026-09-14):** Workspace tests and the muted browser harness pass. Verified interface checkpoints include the shuttle, strategic shell, sector/system navigation, tactical shell, and source-rendered production capital ships. All 87 tactical meshes and 397 textures ship through the runtime pack, with exact DAT resource joins retained for every ship and fighter. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks fighters, commands, effects, original-view, multiplayer, and release gates still open.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|

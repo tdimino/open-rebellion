@@ -90,6 +90,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P57B2C2A tactical light-rig evidence](evidence/2026-09-14-tactical-light-rig.md) | Exact source directional and ambient lights, transformed direction, deterministic browser probe, and explicit filtering/culling/A0 limits. |
 | [P57B2C2B tactical render-state evidence](evidence/2026-09-14-tactical-render-state.md) | Source device defaults, explicit dither, filtering, culling, depth, material behavior, browser probe, and production/A0 limits. |
 | [P58A tactical resource-join evidence](evidence/2026-09-14-tactical-resource-join.md) | Complete DAT-to-ordinal/resource joins, full 87-mesh/397-texture browser pack, representative participant probes, and production-draw/A0 limits. |
+| [P58B production tactical-participant evidence](evidence/2026-09-14-tactical-production-participants.md) | Exact live capital-family rendering, paired 3D-off framebuffer proof, 36-case muted browser gate, and fighter/selection/A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -215,6 +216,11 @@ capital ships, fighters, and the Death Star from stable DAT identities to the
 original tactical resources and validates full-corpus browser transport. Its
 [evidence](evidence/2026-09-14-tactical-resource-join.md) keeps production
 family drawing, A0 comparison, and every tactical cell open.
+P58B then loads exact joined capital families on demand and draws live
+production participants at the recovered source positions. Its
+[evidence](evidence/2026-09-14-tactical-production-participants.md) keeps
+fighters, selection presentation, effects, commands, results, A0 comparison,
+and every tactical cell open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

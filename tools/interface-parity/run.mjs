@@ -668,6 +668,31 @@ function tacticalApertureChangedPixels(viewport, proofBytes, controlBytes) {
   return changed;
 }
 
+function tacticalModelRegionChangedPixels(viewport, proofBytes, controlBytes, center) {
+  const proof = PNG.sync.read(proofBytes);
+  const control = PNG.sync.read(controlBytes);
+  assert.equal(proof.width, control.width);
+  assert.equal(proof.height, control.height);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const radius = Math.ceil(12 * scale);
+  const x0 = Math.max(0, Math.floor(center.x - radius));
+  const y0 = Math.max(0, Math.floor(center.y - radius));
+  const x1 = Math.min(proof.width, Math.ceil(center.x + radius));
+  const y1 = Math.min(proof.height, Math.ceil(center.y + radius));
+  let changed = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const offset = (y * proof.width + x) * 4;
+      if (Math.abs(proof.data[offset] - control.data[offset]) > 2
+        || Math.abs(proof.data[offset + 1] - control.data[offset + 1]) > 2
+        || Math.abs(proof.data[offset + 2] - control.data[offset + 2]) > 2) {
+        changed++;
+      }
+    }
+  }
+  return changed;
+}
+
 function verifyTacticalProofNegativeControls(results, factions, viewports) {
   for (const faction of factions) {
     for (const viewport of viewports) {
@@ -695,6 +720,68 @@ function verifyTacticalProofNegativeControls(results, factions, viewports) {
           result.status = "fail";
           result.error = `tactical proof/control aperture differs by only ${changedPixels} pixels`;
         }
+        fs.writeFileSync(path.join(runDir, result.id, "result.json"),
+          `${JSON.stringify(result, null, 2)}\n`);
+      }
+    }
+  }
+}
+
+function verifyTacticalProductionParticipants(results, factions, viewports) {
+  for (const faction of factions) {
+    for (const viewport of viewports) {
+      const production = results.find(({ id }) =>
+        id === `tactical/${faction}/production-participants/${viewport.id}`);
+      const control = results.find(({ id }) =>
+        id === `tactical/${faction}/production-participants-3d-off/${viewport.id}`);
+      assert.ok(production && control,
+        `missing tactical production participant pair for ${faction}/${viewport.id}`);
+      if (production.status !== "pass" || control.status !== "pass") continue;
+      const productionImage = fs.readFileSync(path.join(runDir, production.id, "actual.png"));
+      const controlImage = fs.readFileSync(path.join(runDir, control.id, "actual.png"));
+      const changedPixels = tacticalApertureChangedPixels(
+        viewport, productionImage, controlImage,
+      );
+      const scale = Math.min(viewport.width / 640, viewport.height / 480);
+      const sceneLog = production.console.find(({ text }) =>
+        text.includes("[tactical_3d] participant_scene"));
+      const positionMatch = sceneLog?.text.match(/screen_positions=([^ ]+)/);
+      assert.ok(positionMatch, "production participant scene omitted projected positions");
+      const modelRegions = positionMatch[1].split(";").map((entry) => {
+        const match = entry.match(/^(\d+):(-?[\d.]+),(-?[\d.]+)$/);
+        assert.ok(match, `invalid projected participant position ${entry}`);
+        const center = { x: Number(match[2]), y: Number(match[3]) };
+        return {
+          object_id: Number(match[1]),
+          center,
+          changed_pixels: tacticalModelRegionChangedPixels(
+            viewport, productionImage, controlImage, center,
+          ),
+          minimum_changed_pixels: Math.ceil(2 * scale * scale),
+        };
+      });
+      assert.deepEqual(modelRegions.map(({ object_id }) => object_id), [1, 2]);
+      const minimumChanged = modelRegions.reduce(
+        (total, region) => total + region.minimum_changed_pixels, 0,
+      );
+      const probe = {
+        type: "production-tactical-participant-rendering",
+        resource_families: [2010, 2510],
+        selected_lod_resources: [2012, 2512],
+        changed_aperture_pixels: changedPixels,
+        minimum_changed_pixels: minimumChanged,
+        model_regions: modelRegions,
+      };
+      for (const result of [production, control]) result.probes.push(probe);
+      if (changedPixels < minimumChanged
+        || modelRegions.some((region) =>
+          region.changed_pixels < region.minimum_changed_pixels)) {
+        production.status = "fail";
+        control.status = "fail";
+        production.error = "production participant framebuffer lacks visible model pixels";
+        control.error = production.error;
+      }
+      for (const result of [production, control]) {
         fs.writeFileSync(path.join(runDir, result.id, "result.json"),
           `${JSON.stringify(result, null, 2)}\n`);
       }
@@ -1088,15 +1175,20 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? await probeTacticalLodJourney(page, viewport, folder, stable)
         : scenario.slug === "battle-entry"
         ? await probeTactical(page, viewport, folder, stable)
+        : scenario.production_participants
+        ? [{ type: "production-tactical-participants", enabled: true }]
         : scenario.tactical_proof
         ? [{ type: "tactical-lod-fixture", requested: ready.tactical_lod }]
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 4);
+      assert.equal(ready.schema_version, 6);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
+      assert.equal(ready.production_participants, Boolean(scenario.production_participants));
+      assert.equal(ready.suppress_capital_fallback,
+        Boolean(scenario.suppress_capital_fallback));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -1166,6 +1258,10 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         text.includes("[tactical_3d] camera_source"));
       const layoutLogs = consoleLines.filter(({ text }) =>
         text.includes("[tactical_3d] layout_source"));
+      const participantFamilyLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] participant_family_loaded"));
+      const participantSceneLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] participant_scene"));
       if (scenario.tactical_proof) {
         assert.equal(familyLogs.length, 1,
           "source-bound tactical LOD family did not emit exactly one load event");
@@ -1316,6 +1412,35 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       } else {
         assert.equal(familyLogs.length, 0, "negative control loaded the tactical LOD family");
         assert.equal(lodLogs.length, 0, "negative control submitted a tactical LOD mesh");
+        if (scenario.production_participants) {
+          assert.equal(participantFamilyLogs.length, 2,
+            "production participants did not load exactly two source families");
+          assert.deepEqual(participantFamilyLogs.map(({ text }) => {
+            const match = text.match(/base=(\d+)/);
+            assert.ok(match, "participant family log omitted its base");
+            return Number(match[1]);
+          }).sort((a, b) => a - b), [2010, 2510]);
+          assert.equal(participantSceneLogs.length, 1,
+            "production participants did not emit one scene submission");
+          assert.match(participantSceneLogs[0].text,
+            /requested=2 rendered=2 families=2010,2510 resources=1:2012,2:2512 screen_positions=1:[^; ]+;2:[^ ]+ source_positions=true/,
+            "production participant scene used the wrong resource families or positions");
+          assert.equal(cameraLogs.length, 1,
+            "production participants did not use the source tactical camera");
+          assert.equal(layoutLogs.length, 1,
+            "production participants did not use the source tactical layout");
+          probes.push({
+            type: "production-tactical-resource-families",
+            families: [2010, 2510],
+            selected_resources: [2012, 2512],
+            source_positions: true,
+          });
+        } else {
+          assert.equal(participantFamilyLogs.length, 0,
+            "negative control loaded a production participant family");
+          assert.equal(participantSceneLogs.length, 0,
+            "negative control submitted production participants");
+        }
       }
     }
     const runtimeMeasurements = battle ? await measureBrowserRuntime(page) : null;
@@ -1412,15 +1537,16 @@ async function main() {
     assert.equal(catalog.fixture_namespace, 1);
     assert.deepEqual(catalog.scenarios.map(({ slug }) => slug),
       ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",
-        "lod-journey", "camera-journey"]);
+        "lod-journey", "camera-journey", "production-participants",
+        "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true]);
+      [true, false, true, true, true, true, true, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
-      [2560, undefined, 2560, 2561, 2562, 2560, 2560]);
+      [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true, false]);
+      [false, false, false, false, false, true, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      [false, false, false, false, false, false, true]);
+      [false, false, false, false, false, false, true, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });
@@ -1469,6 +1595,7 @@ async function main() {
   if (battle && !scenarioFilter) {
     verifyTacticalProofNegativeControls(results, selectedFactions, selectedViewports);
     verifyTacticalLodFamily(results, selectedFactions, selectedViewports);
+    verifyTacticalProductionParticipants(results, selectedFactions, selectedViewports);
   }
 
   writeContactSheet(results);

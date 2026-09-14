@@ -34,14 +34,15 @@ process and closes its browser and local server when complete.
 T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md)
 preserves surviving hull damage and exact fighter roster losses. Campaign and
 test-only browser entry share the validated production tactical-entry function.
-P52 through [P58A](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md)
+P52 through [P58B](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md)
 restore the first authentic shell controls, complete tactical asset decode, one
 three-LOD family, source camera and layout, stable participants, authored
 coordinates, system palette, lighting, retained-mode render state, and exact
-DAT resource joins. The full muted harness passes 28 of 28 cases, and the
-four-request pack carries all 87 meshes and 397 textures. Shared return/outcome
-routing, production fleet 3D rendering, original view
-acceptance, complete battle interactions, and all 106 visual cells remain open.
+DAT resource joins. Live capital ships now render from their joined families.
+The full muted harness passes 36 of 36 cases, and the four-request pack carries
+all 87 meshes and 397 textures. Shared return/outcome routing, fighter and
+special-object rendering, original view acceptance, complete battle
+interactions, and all 106 visual cells remain open.
 
 ## Current contract and limits
 
@@ -50,7 +51,7 @@ acceptance, complete battle interactions, and all 106 visual cells remain open.
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58A prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, and exact identity joins. Production 3D rendering and selection, and original view acceptance remain open.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58B prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, and live production capital rendering. Fighters, selection presentation, and original view acceptance remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design
@@ -114,9 +115,9 @@ counts now derive the source battle extent and four lanes. The active combat
 replacement panels are removed. Production participants retain stable DAT and
 fleet-roster identity, use the recovered X slots and faction lanes, and route
 the target camera to the selected source-world point. P58A completes the exact
-DAT-to-resource join. Production 3D draw, task-force and squadron
-assignment, selected-unit data, ships, fighters, planets, effects, commands,
-results, and audio remain T3 work.
+DAT-to-resource join. P58B draws live production capital ships from their
+joined families. Task-force and squadron assignment, selected-unit data,
+fighters, planets, effects, commands, results, and audio remain T3 work.
 No `TAC-*` acceptance cell is closed.
 
 ### T4. Battle outcome and rare-state closure

@@ -19,6 +19,8 @@ const LOD_MEDIUM_SCENARIO: u32 = 4;
 const LOD_FAR_SCENARIO: u32 = 5;
 const LOD_JOURNEY_SCENARIO: u32 = 6;
 const CAMERA_JOURNEY_SCENARIO: u32 = 7;
+const PRODUCTION_PARTICIPANTS_SCENARIO: u32 = 8;
+const PRODUCTION_PARTICIPANTS_CONTROL_SCENARIO: u32 = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -65,6 +67,8 @@ pub(crate) struct TacticalFixtureRequest {
     pub faction: CockpitFaction,
     pub code: u32,
     pub proof_enabled: bool,
+    pub production_participants: bool,
+    pub suppress_capital_fallback: bool,
     lod_fixture: TacticalLodFixture,
 }
 
@@ -72,16 +76,21 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
     if code >> 16 != TACTICAL_FAMILY {
         return None;
     }
-    let (proof_enabled, lod_fixture) = match code & 0xff {
-        BATTLE_SCENARIO => (true, TacticalLodFixture::Default),
-        BATTLE_WITHOUT_PROOF_SCENARIO => (false, TacticalLodFixture::Default),
-        LOD_CLOSE_SCENARIO => (true, TacticalLodFixture::Close),
-        LOD_MEDIUM_SCENARIO => (true, TacticalLodFixture::Medium),
-        LOD_FAR_SCENARIO => (true, TacticalLodFixture::Far),
-        LOD_JOURNEY_SCENARIO => (true, TacticalLodFixture::Journey),
-        CAMERA_JOURNEY_SCENARIO => (true, TacticalLodFixture::CameraJourney),
-        _ => return None,
-    };
+    let (proof_enabled, production_participants, suppress_capital_fallback, lod_fixture) =
+        match code & 0xff {
+            BATTLE_SCENARIO => (true, false, false, TacticalLodFixture::Default),
+            BATTLE_WITHOUT_PROOF_SCENARIO => (false, false, false, TacticalLodFixture::Default),
+            LOD_CLOSE_SCENARIO => (true, false, false, TacticalLodFixture::Close),
+            LOD_MEDIUM_SCENARIO => (true, false, false, TacticalLodFixture::Medium),
+            LOD_FAR_SCENARIO => (true, false, false, TacticalLodFixture::Far),
+            LOD_JOURNEY_SCENARIO => (true, false, false, TacticalLodFixture::Journey),
+            CAMERA_JOURNEY_SCENARIO => (true, false, false, TacticalLodFixture::CameraJourney),
+            PRODUCTION_PARTICIPANTS_SCENARIO => (false, true, false, TacticalLodFixture::Default),
+            PRODUCTION_PARTICIPANTS_CONTROL_SCENARIO => {
+                (false, false, true, TacticalLodFixture::Default)
+            }
+            _ => return None,
+        };
     let faction = match (code >> 8) & 0xff {
         1 => CockpitFaction::Alliance,
         2 => CockpitFaction::Empire,
@@ -91,6 +100,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         faction,
         code,
         proof_enabled,
+        production_participants,
+        suppress_capital_fallback,
         lod_fixture,
     })
 }
@@ -201,6 +212,14 @@ pub(crate) fn apply(
     )
     .map_err(|error| format!("fixture battle entry failed: {error:?}"))?;
     #[cfg(feature = "interface-test-fixtures")]
+    if !request.production_participants {
+        tactical.disable_original_participant_rendering();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.suppress_capital_fallback {
+        tactical.suppress_mapped_capital_fallback();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if request.proof_enabled {
         tactical.enable_resource_2560_proof();
         if request.lod_fixture == TacticalLodFixture::Journey {
@@ -228,6 +247,8 @@ struct FixtureRecord<'a> {
     fixture_code: u32,
     faction: &'a str,
     proof_enabled: bool,
+    production_participants: bool,
+    suppress_capital_fallback: bool,
     tactical_lod: &'a str,
     system: &'a str,
     system_picture_id: u8,
@@ -336,7 +357,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         }
     }));
     emit(&FixtureRecord {
-        schema_version: 4,
+        schema_version: 6,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -346,6 +367,8 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             "empire"
         },
         proof_enabled: request.proof_enabled,
+        production_participants: request.production_participants,
+        suppress_capital_fallback: request.suppress_capital_fallback,
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
@@ -373,7 +396,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 4,
+        schema_version: 6,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -383,6 +406,8 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
             "empire"
         },
         proof_enabled: request.proof_enabled,
+        production_participants: request.production_participants,
+        suppress_capital_fallback: request.suppress_capital_fallback,
         tactical_lod: request.lod_fixture.label(),
         system: "",
         system_picture_id: 0,
@@ -411,6 +436,8 @@ mod tests {
         assert_eq!(decode(0x10201).unwrap().faction, CockpitFaction::Empire);
         assert!(decode(0x10101).unwrap().proof_enabled);
         assert!(!decode(0x10102).unwrap().proof_enabled);
+        assert!(decode(0x10108).unwrap().production_participants);
+        assert!(decode(0x10109).unwrap().suppress_capital_fallback);
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -432,7 +459,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10108).is_none());
+        assert!(decode(0x1010a).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

@@ -886,19 +886,19 @@ async fn main() {
         // gdata_path is data/base; staged UI BMPs live at data/base/ui/
         let ui_path = gdata_path.join("ui");
         bmp_cache.set_base_path(&ui_path);
-        #[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             let tactical_runtime = ui_path
                 .join("tactical-dll")
                 .join("TACTICAL3D")
                 .join("runtime");
             if tactical_runtime.is_dir() {
-                match rebellion_render::install_native_tactical_lod_family(&tactical_runtime) {
-                    Ok(()) => {
-                        macroquad::logging::info!("[tactical_3d] installed native P57 LOD family")
-                    }
+                match rebellion_render::install_native_tactical_assets(&tactical_runtime) {
+                    Ok(()) => macroquad::logging::info!(
+                        "[tactical_3d] installed complete native tactical corpus"
+                    ),
                     Err(error) => macroquad::logging::warn!(
-                        "[tactical_3d] native proof assets rejected: {}",
+                        "[tactical_3d] native tactical assets rejected: {}",
                         error
                     ),
                 }

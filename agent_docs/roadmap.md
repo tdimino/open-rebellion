@@ -615,10 +615,17 @@ would tune around known simulation feedback defects.
   sprite arithmetic; validate and pack all 87 meshes and 397 textures; and
   pass the complete 28-case muted browser gate. Keep production family drawing,
   A0 comparison, and every strict tactical cell open.
+- [x] Complete P58B production capital-family rendering: install the complete
+  source corpus in native and browser builds, load exact joined three-LOD
+  families on demand, render live Mon Calamari and Strike Cruiser participants
+  at their recovered source positions, and pass the hardened 36-case muted
+  browser gate with paired 3D-off framebuffer controls. Keep fighters,
+  selection presentation, effects, commands,
+  outcomes, A0 comparison, and every strict tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58B next renders each production participant from the joined family
-  before replacing procedural fighters, planets, and effects.
+  states. P58C next replaces procedural fighter groups and restores selection
+  framing before planets and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
