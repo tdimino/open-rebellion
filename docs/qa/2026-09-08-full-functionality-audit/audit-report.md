@@ -39,6 +39,8 @@ and `run-eval.sh`.
 
 ## Where work left off
 
+PR #11 now has a [native-tested Encyclopedia routing checkpoint](evidence/2026-09-14-pr11-encyclopedia-routing.md): command `0x131` opens the existing viewer for both factions and preserves selection. P35 remains failing; original layout, browser artwork, and browser acceptance are open. The broader command-ledger correction remains a later PR review step.
+
 The current continuation has verified the authentic bitmap main menu,
 save/load/delete, deterministic browser packaging, save continuation, exact
 native/WASM replay, fleet redispatch protection, and authoritative fleet

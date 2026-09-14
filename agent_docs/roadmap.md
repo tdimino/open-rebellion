@@ -18,6 +18,8 @@ The delivery notes before “Audit-Driven Parity” are historical implementatio
 records. They do not establish current parity or release acceptance; the active
 audit-driven milestones are the source of truth.
 
+PR #11 checkpoint (2026-09-14): `0x131` opens the existing Encyclopedia for both factions. [Native tests and evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-encyclopedia-routing.md) pass for routing; strict Clippy and original/browser Encyclopedia acceptance remain open.
+
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 

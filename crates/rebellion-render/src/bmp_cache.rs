@@ -418,10 +418,10 @@ pub mod resources {
         pub const ALLIANCE_TROOP_FINDER_PRESSED: u32 = 10007;
         /// Alliance Troop Finder, normal.
         pub const ALLIANCE_TROOP_FINDER_NORMAL: u32 = 10008;
-        /// Alliance Game Options, pressed.
-        pub const ALLIANCE_GAME_OPTIONS_PRESSED: u32 = 10009;
-        /// Alliance Game Options, normal.
-        pub const ALLIANCE_GAME_OPTIONS_NORMAL: u32 = 10010;
+        /// Alliance Encyclopedia, pressed.
+        pub const ALLIANCE_ENCYCLOPEDIA_PRESSED: u32 = 10009;
+        /// Alliance Encyclopedia, normal.
+        pub const ALLIANCE_ENCYCLOPEDIA_NORMAL: u32 = 10010;
         /// Alliance Galactic Information Display, pressed.
         pub const ALLIANCE_GID_PRESSED: u32 = 10011;
         /// Alliance Galactic Information Display, normal.
@@ -447,10 +447,10 @@ pub mod resources {
         pub const EMPIRE_TROOP_FINDER_PRESSED: u32 = 10021;
         /// Imperial Troop Finder, normal.
         pub const EMPIRE_TROOP_FINDER_NORMAL: u32 = 10022;
-        /// Imperial Game Options, pressed.
-        pub const EMPIRE_GAME_OPTIONS_PRESSED: u32 = 10023;
-        /// Imperial Game Options, normal.
-        pub const EMPIRE_GAME_OPTIONS_NORMAL: u32 = 10024;
+        /// Imperial Encyclopedia, pressed.
+        pub const EMPIRE_ENCYCLOPEDIA_PRESSED: u32 = 10023;
+        /// Imperial Encyclopedia, normal.
+        pub const EMPIRE_ENCYCLOPEDIA_NORMAL: u32 = 10024;
         /// Imperial Galactic Information Display, pressed.
         pub const EMPIRE_GID_PRESSED: u32 = 10025;
         /// Imperial Galactic Information Display, normal.

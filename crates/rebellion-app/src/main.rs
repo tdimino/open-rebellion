@@ -1,4 +1,5 @@
 mod audio;
+mod cockpit_routing;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
@@ -3136,7 +3137,17 @@ async fn main() {
                                 );
                                 return;
                             }
-                            CockpitButton::Encyclopedia => (0x132, "encyclopedia"),
+                            CockpitButton::Encyclopedia => {
+                                cockpit_routing::open_encyclopedia(
+                                    btn,
+                                    &mut cockpit_state,
+                                    &mut enc_state,
+                                );
+                                macroquad::logging::info!(
+                                    "[interface] command=0x131 destination=encyclopedia status=opened"
+                                );
+                                return;
+                            }
                             CockpitButton::GalacticInformationDisplay => {
                                 cockpit_state.gid_ui.menu_open = !cockpit_state.gid_ui.menu_open;
                                 cockpit_state.gid_ui.category = None;

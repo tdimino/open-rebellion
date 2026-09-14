@@ -344,7 +344,7 @@ const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
         pressed_resource: resources::strategy::ALLIANCE_TROOP_FINDER_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::GameOptions,
+        button: CockpitButton::Encyclopedia,
         command_id: 0x131,
         rect: CockpitViewport {
             x: 394.0,
@@ -352,8 +352,8 @@ const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 27.0,
             height: 16.0,
         },
-        normal_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
+        normal_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
+        pressed_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
     },
     StrategicControlSpec {
         button: CockpitButton::GalacticInformationDisplay,
@@ -419,7 +419,7 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
         pressed_resource: resources::strategy::EMPIRE_TROOP_FINDER_PRESSED,
     },
     StrategicControlSpec {
-        button: CockpitButton::GameOptions,
+        button: CockpitButton::Encyclopedia,
         command_id: 0x131,
         rect: CockpitViewport {
             x: 465.0,
@@ -427,8 +427,8 @@ const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
             width: 35.0,
             height: 24.0,
         },
-        normal_resource: resources::strategy::EMPIRE_GAME_OPTIONS_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
+        normal_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
+        pressed_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
     },
     StrategicControlSpec {
         button: CockpitButton::GalacticInformationDisplay,
@@ -1584,6 +1584,17 @@ mod tests {
     }
 
     #[test]
+    fn encyclopedia_command_routes_for_both_factions() {
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let control = strategic_primary_controls(faction)
+                .iter()
+                .find(|control| control.command_id == 0x131)
+                .expect("both command centers have an Encyclopedia control");
+            assert_eq!(control.button, CockpitButton::Encyclopedia);
+        }
+    }
+
+    #[test]
     fn alliance_primary_controls_match_recovered_constructor_records() {
         let controls = strategic_primary_controls(CockpitFaction::Alliance);
         let records: Vec<_> = controls
@@ -1651,7 +1662,7 @@ mod tests {
                     10007,
                 ),
                 (
-                    CockpitButton::GameOptions,
+                    CockpitButton::Encyclopedia,
                     0x131,
                     CockpitViewport {
                         x: 394.0,
