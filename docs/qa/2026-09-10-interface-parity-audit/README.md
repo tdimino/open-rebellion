@@ -110,6 +110,11 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58C fighter and selection evidence](evidence/2026-09-14-tactical-fighters-selection.md)
   for original type-303 fighter resources, exact detail thresholds,
   projection-aligned capital interactions, and the remaining A0 boundary.
+- Review the [P58D fighter-detail evidence](evidence/2026-09-14-tactical-fighter-detail-journey.md)
+  for the complete two-faction indicator, far, and close journey.
+- Review the [P58E group-presentation evidence](evidence/2026-09-14-tactical-group-presentation.md)
+  for all eight task-force controls, four RGBY fighter controls, source-shaped
+  hit testing, keyboard routes, selected fighter portraits, and A0 limits.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -209,8 +214,11 @@ production capital ships from their joined families at source positions. P58C
 renders source-mapped fighter groups and aligns capital selection and targeting
 with the projected meshes. P58D drives both production fighter families through
 their independent indicator, far, and close transitions with the original zoom
-controls and no family reload. Task-force and squadron panels, effects,
-commands, results, and A0 comparisons remain open.
+controls and no family reload. P58E restores all eight task-force controls,
+four RGBY fighter controls, group selection, source-shaped hit testing,
+F1 through F12 routing, and selected fighter detail panels. Automatic group
+distribution, effects, remaining commands, results, and A0 comparisons remain
+open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

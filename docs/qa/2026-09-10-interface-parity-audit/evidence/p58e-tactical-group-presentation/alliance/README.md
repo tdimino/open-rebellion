@@ -1,0 +1,5 @@
+# Alliance captures
+
+- [`640x480/`](640x480/) contains the native logical-canvas evidence.
+- [`1280x800-letterboxed/`](1280x800-letterboxed/) contains the scaled,
+  uniformly letterboxed evidence.

@@ -634,10 +634,15 @@ would tune around known simulation feedback defects.
   nine independent indicator/far/close transitions, retain both cached
   families, and pass the 40-case muted browser gate. Keep every strict tactical
   cell open pending A0.
+- [x] Complete P58E task-force and fighter-group presentation: restore all
+  eight task-force controls and four RGBY fighter controls from source art;
+  add source-shaped hit testing, mutual exclusion, Ctrl assignment, F1 through
+  F12 routing, and selected fighter portraits; then pass the 44-case muted
+  browser gate. Keep automatic production grouping and every strict tactical
+  cell open pending A0.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58E next restores task-force and squadron presentation before
-  damage, planets, and effects.
+  states. P58F next restores damage, planet, and effect presentation.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

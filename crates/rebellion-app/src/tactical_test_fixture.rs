@@ -22,6 +22,7 @@ const CAMERA_JOURNEY_SCENARIO: u32 = 7;
 const PRODUCTION_PARTICIPANTS_SCENARIO: u32 = 8;
 const PRODUCTION_PARTICIPANTS_CONTROL_SCENARIO: u32 = 9;
 const PRODUCTION_FIGHTER_DETAIL_JOURNEY_SCENARIO: u32 = 10;
+const GROUP_PRESENTATION_SCENARIO: u32 = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -71,6 +72,7 @@ pub(crate) struct TacticalFixtureRequest {
     pub production_participants: bool,
     pub suppress_capital_fallback: bool,
     pub focus_player_fighter: bool,
+    pub group_presentation: bool,
     lod_fixture: TacticalLodFixture,
 }
 
@@ -83,23 +85,65 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         production_participants,
         suppress_capital_fallback,
         focus_player_fighter,
+        group_presentation,
         lod_fixture,
     ) = match code & 0xff {
-        BATTLE_SCENARIO => (true, false, false, false, TacticalLodFixture::Default),
-        BATTLE_WITHOUT_PROOF_SCENARIO => (false, false, false, false, TacticalLodFixture::Default),
-        LOD_CLOSE_SCENARIO => (true, false, false, false, TacticalLodFixture::Close),
-        LOD_MEDIUM_SCENARIO => (true, false, false, false, TacticalLodFixture::Medium),
-        LOD_FAR_SCENARIO => (true, false, false, false, TacticalLodFixture::Far),
-        LOD_JOURNEY_SCENARIO => (true, false, false, false, TacticalLodFixture::Journey),
-        CAMERA_JOURNEY_SCENARIO => (true, false, false, false, TacticalLodFixture::CameraJourney),
-        PRODUCTION_PARTICIPANTS_SCENARIO => {
-            (false, true, false, false, TacticalLodFixture::Default)
-        }
-        PRODUCTION_PARTICIPANTS_CONTROL_SCENARIO => {
-            (false, false, true, false, TacticalLodFixture::Default)
-        }
+        BATTLE_SCENARIO => (
+            true,
+            false,
+            false,
+            false,
+            false,
+            TacticalLodFixture::Default,
+        ),
+        BATTLE_WITHOUT_PROOF_SCENARIO => (
+            false,
+            false,
+            false,
+            false,
+            false,
+            TacticalLodFixture::Default,
+        ),
+        LOD_CLOSE_SCENARIO => (true, false, false, false, false, TacticalLodFixture::Close),
+        LOD_MEDIUM_SCENARIO => (true, false, false, false, false, TacticalLodFixture::Medium),
+        LOD_FAR_SCENARIO => (true, false, false, false, false, TacticalLodFixture::Far),
+        LOD_JOURNEY_SCENARIO => (
+            true,
+            false,
+            false,
+            false,
+            false,
+            TacticalLodFixture::Journey,
+        ),
+        CAMERA_JOURNEY_SCENARIO => (
+            true,
+            false,
+            false,
+            false,
+            false,
+            TacticalLodFixture::CameraJourney,
+        ),
+        PRODUCTION_PARTICIPANTS_SCENARIO => (
+            false,
+            true,
+            false,
+            false,
+            false,
+            TacticalLodFixture::Default,
+        ),
+        PRODUCTION_PARTICIPANTS_CONTROL_SCENARIO => (
+            false,
+            false,
+            true,
+            false,
+            false,
+            TacticalLodFixture::Default,
+        ),
         PRODUCTION_FIGHTER_DETAIL_JOURNEY_SCENARIO => {
-            (false, true, false, true, TacticalLodFixture::Default)
+            (false, true, false, true, false, TacticalLodFixture::Default)
+        }
+        GROUP_PRESENTATION_SCENARIO => {
+            (false, true, false, false, true, TacticalLodFixture::Default)
         }
         _ => return None,
     };
@@ -115,6 +159,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         production_participants,
         suppress_capital_fallback,
         focus_player_fighter,
+        group_presentation,
         lod_fixture,
     })
 }
@@ -179,21 +224,33 @@ pub(crate) fn apply(
         .find(|(_, class)| class.is_empire && !class.is_alliance)
         .map(|(key, _)| key);
 
-    let make_fleet =
-        |is_alliance: bool, ship: CapitalShipKey, hull: u32, fighter: Option<FighterKey>| Fleet {
+    let player_is_alliance = request.faction == CockpitFaction::Alliance;
+    let make_fleet = |is_alliance: bool,
+                      ship: CapitalShipKey,
+                      hull: u32,
+                      fighter: Option<FighterKey>| {
+        let expanded = request.group_presentation && is_alliance == player_is_alliance;
+        let ship_count = if expanded { 8 } else { 1 };
+        let fighter_count = if expanded { 4 } else { 1 };
+        Fleet {
             location: system,
-            capital_ships: vec![ShipInstance::new(
-                ship,
-                i32::try_from(hull).unwrap_or(i32::MAX),
-                is_alliance,
-            )],
+            capital_ships: (0..ship_count)
+                .map(|_| {
+                    ShipInstance::new(ship, i32::try_from(hull).unwrap_or(i32::MAX), is_alliance)
+                })
+                .collect(),
             fighters: fighter
-                .map(|class| vec![FighterEntry { class, count: 12 }])
+                .map(|class| {
+                    (0..fighter_count)
+                        .map(|_| FighterEntry { class, count: 12 })
+                        .collect()
+                })
                 .unwrap_or_default(),
             characters: vec![],
             is_alliance,
             has_death_star: false,
-        };
+        }
+    };
     let attacker = world.fleets.insert(make_fleet(
         true,
         alliance_ship.0,
@@ -227,6 +284,10 @@ pub(crate) fn apply(
     #[cfg(feature = "interface-test-fixtures")]
     if request.focus_player_fighter {
         tactical.focus_player_fighter_for_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.group_presentation {
+        tactical.configure_group_presentation_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
     if !request.production_participants {
@@ -267,6 +328,7 @@ struct FixtureRecord<'a> {
     production_participants: bool,
     suppress_capital_fallback: bool,
     focus_player_fighter: bool,
+    group_presentation: bool,
     tactical_lod: &'a str,
     system: &'a str,
     system_picture_id: u8,
@@ -303,6 +365,11 @@ struct FixtureParticipant<'a> {
     initial_close_resource: Option<u32>,
     initial_far_resource: Option<u32>,
     initial_indicator_resource: Option<u32>,
+    task_force: Option<u8>,
+    fighter_group: Option<u8>,
+    active_close_resource: Option<u32>,
+    active_far_resource: Option<u32>,
+    active_indicator_resource: Option<u32>,
     source_position: [f32; 3],
 }
 
@@ -346,6 +413,11 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             initial_close_resource: None,
             initial_far_resource: None,
             initial_indicator_resource: None,
+            task_force: Some(ship.task_force),
+            fighter_group: None,
+            active_close_resource: None,
+            active_far_resource: None,
+            active_indicator_resource: None,
             source_position: [
                 ship.source_position.x,
                 ship.source_position.y,
@@ -383,6 +455,17 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             initial_indicator_resource: fighter
                 .tactical_resource
                 .map(|resource| resource.initial_indicator_resource(player_side)),
+            task_force: None,
+            fighter_group: Some(fighter.fighter_group),
+            active_close_resource: fighter.tactical_resource.map(|resource| {
+                resource.grouped_close_resource(player_side, fighter.fighter_group)
+            }),
+            active_far_resource: fighter
+                .tactical_resource
+                .map(|resource| resource.grouped_far_resource(player_side, fighter.fighter_group)),
+            active_indicator_resource: fighter.tactical_resource.map(|resource| {
+                resource.grouped_indicator_resource(player_side, fighter.fighter_group)
+            }),
             source_position: [
                 fighter.source_position.x,
                 fighter.source_position.y,
@@ -391,7 +474,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         }
     }));
     emit(&FixtureRecord {
-        schema_version: 8,
+        schema_version: 9,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -404,6 +487,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         production_participants: request.production_participants,
         suppress_capital_fallback: request.suppress_capital_fallback,
         focus_player_fighter: request.focus_player_fighter,
+        group_presentation: request.group_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
@@ -431,7 +515,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 8,
+        schema_version: 9,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -444,6 +528,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         production_participants: request.production_participants,
         suppress_capital_fallback: request.suppress_capital_fallback,
         focus_player_fighter: request.focus_player_fighter,
+        group_presentation: request.group_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: "",
         system_picture_id: 0,
@@ -475,6 +560,7 @@ mod tests {
         assert!(decode(0x10108).unwrap().production_participants);
         assert!(decode(0x10109).unwrap().suppress_capital_fallback);
         assert!(decode(0x1010a).unwrap().production_participants);
+        assert!(decode(0x1010b).unwrap().group_presentation);
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -496,7 +582,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x1010b).is_none());
+        assert!(decode(0x1010c).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

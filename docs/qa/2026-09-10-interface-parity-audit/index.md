@@ -94,6 +94,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58B production tactical-participant evidence](evidence/2026-09-14-tactical-production-participants.md) | Exact live capital-family rendering, paired 3D-off framebuffer proof, 36-case muted browser gate, and fighter/selection/A0 limits. |
 | [P58C tactical fighter and selection evidence](evidence/2026-09-14-tactical-fighters-selection.md) | Source-mapped fighter detail resources, projection-aligned selection and targeting, paired controls, and explicit A0 limits. |
 | [P58D fighter-detail journey evidence](evidence/2026-09-14-tactical-fighter-detail-journey.md) | Production indicator/far/close transitions, centered close sprites, no-reload proof, 40-case muted browser gate, and explicit A0 limits. |
+| [P58E task-force and fighter-group evidence](evidence/2026-09-14-tactical-group-presentation.md) | Eight task-force controls, four RGBY fighter controls, selected portraits, source-shaped input, 44-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -231,8 +232,11 @@ and every tactical cell open.
 P58C replaces the synthetic fighter markers with original type-303 detail
 resources and moves capital selection, focus, and targeting onto the projected
 mesh bounds. Its [evidence](evidence/2026-09-14-tactical-fighters-selection.md)
-keeps task-force and squadron panels, close/far journeys, damage, effects,
-commands, results, A0 comparison, and every tactical cell open.
+keeps the complete view and interaction matrix open. P58D proves the full
+fighter-detail journey. P58E restores the task-force and RGBY fighter-control
+strip, source-shaped input, keyboard routes, mutual exclusion, and selected
+fighter portraits. Automatic production grouping, damage, effects, commands,
+results, A0 comparison, and every tactical cell remain open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

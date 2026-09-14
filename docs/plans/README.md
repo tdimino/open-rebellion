@@ -9,9 +9,11 @@ lighting, filtering, culling, depth, and material/device state also pass their
 bounded gates. P58A proves every ship/fighter DAT resource join and packs all
 87 meshes plus 397 textures. P58B renders live production capital ships from
 their joined families. P58C renders the original fighter detail resources and
-aligns capital interactions with projected mesh bounds. Squadron/task-force
-presentation, close/far fighter journeys, effects, commands, outcomes, and A0
-comparison are next.
+aligns capital interactions with projected mesh bounds. P58D proves the full
+fighter-detail journey. P58E restores all eight task-force and four RGBY
+fighter controls, selection, source-shaped input, keyboard routes, and selected
+fighter portraits. Damage, planets, effects, commands, outcomes, automatic
+group distribution, and A0 comparison are next.
 
 The active
 [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
@@ -36,8 +38,9 @@ selection rule. P57B1 proves live same-renderer switching without asset churn.
 P57B2 now includes the original camera, authored transform, system palette,
 retained-mode light rig, filtering, culling, depth, and material/device state.
 P58A owns the exact DAT resource join and complete browser pack. P58B completes
-the first production capital-family draw path. Fighter rendering and A0
-acceptance remain open.
+the first production capital-family draw path. P58C through P58E add production
+fighter detail, the complete detail journey, and group presentation. Damage,
+special objects, remaining controls, and A0 acceptance remain open.
 Modern replacement models remain in a separate experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The

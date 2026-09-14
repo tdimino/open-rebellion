@@ -103,6 +103,17 @@
       "acceptance": "A1 same-renderer fighter-detail and cache proof only. Formation, group commands, effects, damage, and native A0 comparison remain open."
     },
     {
+      "slug": "production-group-presentation",
+      "description": "All eight task-force slots and all four fighter groups rendered and selected through original bitmap controls, source hotkeys, and DAT-joined RGBY fighter resources",
+      "fixture_codes": { "alliance": 65803, "empire": 66059 },
+      "tactical_proof": false,
+      "production_participants": true,
+      "group_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable task-force and fighter-group presentation proof only. Native A0 comparison and the remaining tactical command surface stay open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

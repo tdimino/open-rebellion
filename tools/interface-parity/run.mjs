@@ -561,7 +561,9 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   return probes;
 }
 
-function verifyTacticalBitmap(viewport, screenshotBytes, id, x0, y0, occluders = []) {
+function verifyTacticalBitmap(
+  viewport, screenshotBytes, id, x0, y0, occluders = [], ignoredRects = [],
+) {
   if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
     return { status: "non-native-scale", pixels_checked: 0 };
   }
@@ -579,6 +581,8 @@ function verifyTacticalBitmap(viewport, screenshotBytes, id, x0, y0, occluders =
   let pixelsChecked = 0;
   for (let y = 0; y < source.height; y++) {
     for (let x = 0; x < source.width; x++) {
+      if (ignoredRects.some((rect) => x >= rect.x && y >= rect.y
+        && x < rect.x + rect.width && y < rect.y + rect.height)) continue;
       const color = source.pixel(x, y);
       if (color[0] < 32 && color[1] < 32 && color[2] > 192) continue;
       const screenX = x0 + x;
@@ -1272,7 +1276,7 @@ function parseFighterSceneResources(line) {
 }
 
 async function probeTacticalFighterDetailJourney(
-  page, viewport, folder, stable, consoleLines,
+  page, viewport, folder, stable, consoleLines, ready,
 ) {
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
   const offsetX = (viewport.width - 640 * scale) / 2;
@@ -1314,17 +1318,18 @@ async function probeTacticalFighterDetailJourney(
     ["far", "indicator"],
     ["indicator", "indicator"],
   ]);
-  assert.deepEqual(states.map((state) => state.map(({ resource_id }) => resource_id)), [
-    [4204, 4204],
-    [4029, 4204],
-    [4029, 4109],
-    [4024, 4109],
-    [4024, 4104],
-    [4024, 4109],
-    [4029, 4109],
-    [4029, 4204],
-    [4204, 4204],
-  ]);
+  const fighterParticipants = ready.participants.filter(({ kind }) => kind === "fighter-group");
+  const activeResources = new Map(fighterParticipants.map((participant, index) => [1001 + index, {
+    close: participant.active_close_resource,
+    far: participant.active_far_resource,
+    indicator: participant.active_indicator_resource,
+  }]));
+  for (const state of states) {
+    for (const entry of state) {
+      assert.equal(entry.resource_id, activeResources.get(entry.object_id)?.[entry.detail],
+        `fighter ${entry.object_id} used the wrong ${entry.detail} group resource`);
+    }
+  }
   for (const state of states) {
     for (const { detail, view_span: viewSpan } of state) {
       if (detail === "close") assert.ok(viewSpan < 5);
@@ -1351,6 +1356,143 @@ async function probeTacticalFighterDetailJourney(
     aperture_isolation: transitions,
     family_loads: 2,
   }];
+}
+
+async function probeTacticalGroupPresentation(
+  page, viewport, folder, stable, consoleLines, ready, faction,
+) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
+  const labelMask = [{ x: 4, y: 2, width: 17, height: 14 }];
+  const playerFighter = ready.participants.find((participant) =>
+    participant.kind === "fighter-group" && participant.faction === faction
+      && participant.fighter_group === 3);
+  assert.ok(playerFighter, "group fixture omitted the player's gold fighter group");
+  const portraitResource = 2030 + playerFighter.tactical_ordinal - 29;
+  const taskButtons = Array.from({ length: 8 }, (_, index) => ({
+    id: index === 0 ? 1006 : 1005,
+    x: 60 + index * 26,
+    y: 2,
+  }));
+  const fighterButtons = [1012, 1013, 1014, 1015].map((id, index) => ({
+    id, x: 330 + index * 26, y: 2,
+  }));
+  const probes = [];
+  probes.push({
+    type: "task-force-header",
+    ...verifyTacticalBitmap(viewport, stable.bytes, faction === "alliance" ? 1001 : 1004,
+      10, 1, taskButtons),
+  });
+  probes.push({
+    type: "fighter-group-header",
+    ...verifyTacticalBitmap(viewport, stable.bytes, faction === "alliance" ? 1008 : 1010,
+      275, 1, fighterButtons),
+  });
+  for (const button of taskButtons) {
+    probes.push({
+      type: "task-force-initial",
+      slot: (button.x - 60) / 26 + 1,
+      ...verifyTacticalBitmap(
+        viewport, stable.bytes, button.id, button.x, button.y, [], labelMask,
+      ),
+    });
+  }
+  for (const [index, button] of fighterButtons.entries()) {
+    probes.push({
+      type: "fighter-group-initial",
+      slot: index + 1,
+      ...verifyTacticalBitmap(viewport, stable.bytes, button.id, button.x, button.y),
+    });
+  }
+
+  const matte = point(330.1, 2.1);
+  await page.mouse.click(matte.x, matte.y);
+  await page.waitForTimeout(80);
+  const matteFrame = await capture("group-transparent-matte");
+  assert.equal(sha256(matteFrame), sha256(stable.bytes),
+    "transparent fighter-group matte changed the paused battle");
+
+  const taskEight = point(254, 10);
+  await page.mouse.move(taskEight.x, taskEight.y);
+  await page.mouse.down({ button: "left" });
+  await page.waitForTimeout(80);
+  const taskEightHeld = await capture("task-force-8-held");
+  probes.push({ type: "task-force-8-held", ...verifyTacticalBitmap(
+    viewport, taskEightHeld, 1006, 242, 2, [], labelMask,
+  ) });
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(80);
+  const taskEightSelected = await capture("task-force-8-selected");
+  probes.push({ type: "task-force-8-selected", ...verifyTacticalBitmap(
+    viewport, taskEightSelected, 1006, 242, 2, [], labelMask,
+  ) });
+  probes.push({ type: "task-force-1-released", ...verifyTacticalBitmap(
+    viewport, taskEightSelected, 1005, 60, 2, [], labelMask,
+  ) });
+
+  const gold = point(420, 10);
+  await page.mouse.move(gold.x, gold.y);
+  await page.mouse.down({ button: "left" });
+  await page.waitForTimeout(80);
+  const goldHeld = await capture("gold-group-held");
+  probes.push({ type: "gold-group-held", ...verifyTacticalBitmap(
+    viewport, goldHeld, 1019, 408, 2,
+  ) });
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(80);
+  const goldSelected = await capture("gold-group-selected");
+  probes.push({ type: "gold-group-selected", ...verifyTacticalBitmap(
+    viewport, goldSelected, 1019, 408, 2,
+  ) });
+  probes.push({ type: "selected-fighter-panel", ...verifyTacticalBitmap(
+    viewport, goldSelected, 1307, 481, 27,
+    [{ id: portraitResource, x: 505, y: 76 }],
+    [{ x: 8, y: 7, width: 145, height: 27 }],
+  ) });
+  probes.push({ type: "selected-fighter-portrait", ...verifyTacticalBitmap(
+    viewport, goldSelected, portraitResource, 505, 76,
+  ) });
+
+  await page.keyboard.press("F1");
+  await page.waitForTimeout(80);
+  const taskOneHotkey = await capture("task-force-1-hotkey");
+  probes.push({ type: "task-force-1-hotkey", ...verifyTacticalBitmap(
+    viewport, taskOneHotkey, 1006, 60, 2, [], labelMask,
+  ) });
+  await page.keyboard.press("F12");
+  await page.waitForTimeout(80);
+  const goldHotkey = await capture("gold-group-hotkey");
+  probes.push({ type: "gold-group-f12-hotkey", ...verifyTacticalBitmap(
+    viewport, goldHotkey, 1019, 408, 2,
+  ) });
+
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_groups] task_force_selected slot=8 members=1")),
+  "task-force selection did not emit its deterministic state transition");
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_groups] fighter_group_selected slot=4 members=1")),
+  "fighter-group selection did not emit its deterministic state transition");
+  probes.push({
+    type: "source-task-force-fighter-group-presentation",
+    executable_functions: ["FUN_005c7150", "FUN_0059f680", "FUN_005ab650"],
+    task_force_resources: { normal: 1005, pressed: 1006, unassigned: 1007 },
+    fighter_group_resources: { normal: [1012, 1013, 1014, 1015], pressed: [1016, 1017, 1018, 1019] },
+    fighter_texture_resources: ready.participants
+      .filter(({ kind }) => kind === "fighter-group")
+      .map(({ faction: owner, fighter_group, active_close_resource,
+        active_far_resource, active_indicator_resource }) => ({
+        faction: owner,
+        fighter_group,
+        close: active_close_resource,
+        far: active_far_resource,
+        indicator: active_indicator_resource,
+      })),
+    keyboard: { task_forces: "F1-F8", fighter_groups: "F9-F12" },
+  });
+  return probes;
 }
 
 async function runScenario(server, executable, scenario, faction, viewport) {
@@ -1423,7 +1565,11 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? await probeTactical(page, viewport, folder, stable)
         : scenario.fighter_detail_journey
         ? await probeTacticalFighterDetailJourney(
-          page, viewport, folder, stable, consoleLines,
+          page, viewport, folder, stable, consoleLines, ready,
+        )
+        : scenario.group_presentation
+        ? await probeTacticalGroupPresentation(
+          page, viewport, folder, stable, consoleLines, ready, faction,
         )
         : scenario.production_participants
         ? await probeTacticalProductionParticipants(
@@ -1434,7 +1580,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 8);
+      assert.equal(ready.schema_version, 9);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1442,13 +1588,24 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       assert.equal(ready.suppress_capital_fallback,
         Boolean(scenario.suppress_capital_fallback));
       assert.equal(ready.focus_player_fighter, Boolean(scenario.fighter_detail_journey));
+      assert.equal(ready.group_presentation, Boolean(scenario.group_presentation));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
       assert.equal(ready.palette_resource_id, ready.system_picture_id + 5530);
       assert.ok(ready.attacker_ships > 0 && ready.defender_ships > 0);
       assert.ok(ready.fighters > 0);
-      assert.deepEqual(ready.source_layout, {
+      const groupLayout = faction === "alliance"
+        ? { first_active_objects: 12, second_active_objects: 2 }
+        : { first_active_objects: 2, second_active_objects: 12 };
+      assert.deepEqual(ready.source_layout, scenario.group_presentation ? {
+        ...groupLayout,
+        battle_extent: 136,
+        outer_positive_z: 68,
+        outer_negative_z: -68,
+        inner_negative_z: -48,
+        inner_positive_z: 48,
+      } : {
         first_active_objects: 2,
         second_active_objects: 2,
         battle_extent: 106,
@@ -1457,7 +1614,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         inner_negative_z: -33,
         inner_positive_z: 33,
       });
-      assert.equal(ready.participants.length, 4);
+      assert.equal(ready.participants.length, scenario.group_presentation ? 14 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -1482,27 +1639,63 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           close: 4104, far: 4109, indicator: 4204,
         }],
       ]);
-      for (const participant of ready.participants) {
-        const key = `${participant.kind}:${participant.faction}`;
-        assert.ok(expectedParticipantLanes.has(key), `unexpected participant ${key}`);
-        const expectedResource = expectedParticipantResources.get(key);
-        assert.equal(participant.class_dat_id, expectedResource.datId,
-          `${key} has the wrong stable DAT identity`);
-        assert.equal(participant.fleet_roster_index, 0);
-        assert.equal(participant.tactical_ordinal, expectedResource.ordinal,
-          `${key} has the wrong tactical ordinal`);
-        assert.equal(participant.resource_base, expectedResource.base,
-          `${key} has the wrong tactical resource base`);
-        assert.equal(participant.opposing_resource_base, expectedResource.opposingBase,
-          `${key} has the wrong opposing tactical resource base`);
-        assert.equal(participant.initial_close_resource, expectedResource.close,
-          `${key} has the wrong initial close resource`);
-        assert.equal(participant.initial_far_resource, expectedResource.far,
-          `${key} has the wrong initial far resource`);
-        assert.equal(participant.initial_indicator_resource, expectedResource.indicator,
-          `${key} has the wrong initial indicator resource`);
-        assert.deepEqual(participant.source_position,
-          [-0, 0, expectedParticipantLanes.get(key)], `${key} has the wrong source position`);
+      if (scenario.group_presentation) {
+        const playerShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === faction);
+        const opponentShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction !== faction);
+        const playerFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === faction);
+        const opponentFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction !== faction);
+        assert.deepEqual(playerShips.map(({ fleet_roster_index }) => fleet_roster_index),
+          [0, 1, 2, 3, 4, 5, 6, 7]);
+        assert.deepEqual(playerShips.map(({ task_force }) => task_force),
+          [0, 1, 2, 3, 4, 5, 6, 7]);
+        assert.equal(opponentShips.length, 1);
+        assert.deepEqual(playerFighters.map(({ fleet_roster_index }) => fleet_roster_index),
+          [0, 1, 2, 3]);
+        assert.deepEqual(playerFighters.map(({ fighter_group }) => fighter_group), [0, 1, 2, 3]);
+        assert.equal(opponentFighters.length, 1);
+        const playerBase = faction === "alliance" ? 4020 : 4100;
+        for (const fighter of playerFighters) {
+          assert.equal(fighter.active_close_resource, playerBase + fighter.fighter_group);
+          assert.equal(fighter.active_far_resource, playerBase + fighter.fighter_group + 5);
+          assert.equal(fighter.active_indicator_resource, 4200 + fighter.fighter_group);
+        }
+        assert.equal(opponentFighters[0].active_close_resource,
+          faction === "alliance" ? 4104 : 4024);
+        assert.equal(opponentFighters[0].active_far_resource,
+          faction === "alliance" ? 4109 : 4029);
+        assert.equal(opponentFighters[0].active_indicator_resource, 4204);
+        const playerShipZ = faction === "alliance" ? -68 : 68;
+        const playerFighterZ = faction === "alliance" ? -48 : 48;
+        assert.ok(playerShips.every(({ source_position }) => source_position[2] === playerShipZ));
+        assert.ok(playerFighters.every(({ source_position }) =>
+          source_position[2] === playerFighterZ));
+      } else {
+        for (const participant of ready.participants) {
+          const key = `${participant.kind}:${participant.faction}`;
+          assert.ok(expectedParticipantLanes.has(key), `unexpected participant ${key}`);
+          const expectedResource = expectedParticipantResources.get(key);
+          assert.equal(participant.class_dat_id, expectedResource.datId,
+            `${key} has the wrong stable DAT identity`);
+          assert.equal(participant.fleet_roster_index, 0);
+          assert.equal(participant.tactical_ordinal, expectedResource.ordinal,
+            `${key} has the wrong tactical ordinal`);
+          assert.equal(participant.resource_base, expectedResource.base,
+            `${key} has the wrong tactical resource base`);
+          assert.equal(participant.opposing_resource_base, expectedResource.opposingBase,
+            `${key} has the wrong opposing tactical resource base`);
+          assert.equal(participant.initial_close_resource, expectedResource.close,
+            `${key} has the wrong initial close resource`);
+          assert.equal(participant.initial_far_resource, expectedResource.far,
+            `${key} has the wrong initial far resource`);
+          assert.equal(participant.initial_indicator_resource, expectedResource.indicator,
+            `${key} has the wrong initial indicator resource`);
+          assert.deepEqual(participant.source_position,
+            [-0, 0, expectedParticipantLanes.get(key)], `${key} has the wrong source position`);
+        }
       }
       probes.push({
         type: "source-bound-tactical-participants",
@@ -1691,29 +1884,41 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           }).sort((a, b) => a - b), [2010, 2510]);
           assert.equal(participantSceneLogs.length, 1,
             "production participants did not emit one scene submission");
+          const expectedShipCount = ready.attacker_ships + ready.defender_ships;
           assert.match(participantSceneLogs[0].text,
-            /requested=2 rendered=2 families=2010,2510 resources=1:2012,2:2512 screen_positions=1:[^; ]+;2:[^ ]+ source_positions=true/,
-            "production participant scene used the wrong resource families or positions");
+            new RegExp(`requested=${expectedShipCount} rendered=${expectedShipCount} `
+              + "families=2010,2510 .*source_positions=true"),
+          "production participant scene used the wrong resource families or positions");
           assert.equal(participantBoundsLogs.length, 1,
             "production participants did not emit projected mesh bounds");
-          assert.match(participantBoundsLogs[0].text,
-            /screen_bounds=1:[^; ]+;2:[^ ]+ source_projection=true/,
+          assert.match(participantBoundsLogs[0].text, /source_projection=true/,
             "production participant bounds omitted source-projected ships");
-          assert.equal(fighterFamilyLogs.length, 2,
-            "production participants did not load exactly two fighter families");
+          const fighterParticipants = ready.participants
+            .filter(({ kind }) => kind === "fighter-group");
+          const expectedFighterFamilies = [...new Map(fighterParticipants.map((participant) => [
+            participant.active_close_resource,
+            [participant.active_close_resource, participant.active_far_resource,
+              participant.active_indicator_resource],
+          ])).values()].sort((left, right) => left[0] - right[0]);
+          assert.equal(fighterFamilyLogs.length, expectedFighterFamilies.length,
+            "production participants loaded the wrong number of fighter families");
           assert.deepEqual(fighterFamilyLogs.map(({ text }) => {
             const match = text.match(/close=(\d+) far=(\d+) indicator=(\d+)/);
             assert.ok(match, "fighter family log omitted its exact resources");
             return match.slice(1).map(Number);
-          }).sort((a, b) => a[0] - b[0]), [[4024, 4029, 4204], [4104, 4109, 4204]]);
+          }).sort((a, b) => a[0] - b[0]), expectedFighterFamilies);
           assert.ok(fighterFamilyLogs.every(({ text }) =>
             /dimensions=32x32,16x16,2x2 .*texture_filter=nearest alpha=opaque source=FUN_005c63f0/.test(text)),
           "fighter family load did not preserve dimensions or source texture state");
           assert.equal(fighterSceneLogs.length, scenario.fighter_detail_journey ? 9 : 1,
             "production participants emitted the wrong fighter scene count");
           assert.match(fighterSceneLogs[0].text,
-            /requested=2 rendered=2 families=4024,4104 resources=1001:4204:Indicator:[\d.]+,1002:4204:Indicator:[\d.]+ screen_positions=1001:[^; ]+;1002:[^ ]+ screen_bounds=1001:[^; ]+;1002:[^ ]+ source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0/,
+            new RegExp(`requested=${fighterParticipants.length} rendered=${fighterParticipants.length} `
+              + ".*source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"),
             "production fighter scene used the wrong resource families, detail state, or positions");
+          const initialFighterResources = parseFighterSceneResources(fighterSceneLogs[0]);
+          assert.deepEqual(initialFighterResources.map(({ resource_id }) => resource_id),
+            fighterParticipants.map(({ active_indicator_resource }) => active_indicator_resource));
           assert.equal(cameraLogs.length, scenario.fighter_detail_journey ? 40 : 1,
             "production participants did not use the source tactical camera");
           assert.equal(layoutLogs.length, 1,
@@ -1726,9 +1931,12 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           });
           probes.push({
             type: "production-tactical-fighter-families",
-            close_resources: [4024, 4104],
-            far_resources: [4029, 4109],
-            selected_resources: [4204, 4204],
+            close_resources: fighterParticipants.map(({ active_close_resource }) =>
+              active_close_resource),
+            far_resources: fighterParticipants.map(({ active_far_resource }) =>
+              active_far_resource),
+            selected_resources: fighterParticipants.map(({ active_indicator_resource }) =>
+              active_indicator_resource),
             source_thresholds: [5, 10],
             source_positions: true,
           });
@@ -1844,16 +2052,17 @@ async function main() {
       ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",
         "lod-journey", "camera-journey", "production-participants",
         "production-fighter-detail-journey",
+        "production-group-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, false, false, false]);
+      [true, false, true, true, true, true, true, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
-        undefined]);
+        undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true, false, false, false, false]);
+      [false, false, false, false, false, true, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      [false, false, false, false, false, false, true, false, false, false]);
+      [false, false, false, false, false, false, true, false, false, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

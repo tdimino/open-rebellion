@@ -48,6 +48,37 @@ impl TacticalFighterResource {
     pub const fn initial_indicator_resource(self, player_side: bool) -> u32 {
         4200 + self.initial_close_resource(player_side) % 10
     }
+
+    /// Select the active fighter-group colour recovered from the object's
+    /// `+0xbc` state through `FUN_005c7150`. Player groups use values 0–3
+    /// (red, blue, green, gold); opposing groups remain at the white `+4`
+    /// resource chosen by `FUN_005ab650`.
+    #[must_use]
+    pub const fn grouped_close_resource(self, player_side: bool, group: u8) -> u32 {
+        if player_side && group < 4 {
+            self.first_side_resource_base + group as u32
+        } else {
+            self.opposing_side_resource_base
+        }
+    }
+
+    /// Far fighter art is the active close resource plus five.
+    #[must_use]
+    pub const fn grouped_far_resource(self, player_side: bool, group: u8) -> u32 {
+        self.grouped_close_resource(player_side, group) + 5
+    }
+
+    /// The 2×2 distant indicator preserves the active group colour.
+    #[must_use]
+    pub const fn grouped_indicator_resource(self, player_side: bool, group: u8) -> u32 {
+        4200 + self.grouped_close_resource(player_side, group) % 10
+    }
+
+    /// Selected-fighter panel bitmap for the source registry ordinal.
+    #[must_use]
+    pub const fn hud_resource(self) -> u32 {
+        2030 + (self.tactical_ordinal - 29) as u32
+    }
 }
 
 /// The Death Star is selected outside the 29-entry capital-ship mesh table.
@@ -196,6 +227,12 @@ mod tests {
         assert_eq!(x_wing.initial_close_resource(false), 4004);
         assert_eq!(x_wing.initial_far_resource(true), 4009);
         assert_eq!(x_wing.initial_indicator_resource(true), 4204);
+        assert_eq!(x_wing.grouped_close_resource(true, 0), 4000);
+        assert_eq!(x_wing.grouped_close_resource(true, 3), 4003);
+        assert_eq!(x_wing.grouped_close_resource(false, 0), 4004);
+        assert_eq!(x_wing.grouped_far_resource(true, 2), 4007);
+        assert_eq!(x_wing.grouped_indicator_resource(true, 1), 4201);
+        assert_eq!(x_wing.hud_resource(), 2030);
         assert_eq!(
             fighter_tactical_resource(DatId::new(1)),
             Some(TacticalFighterResource {
@@ -208,6 +245,9 @@ mod tests {
         assert_eq!(tie.initial_close_resource(false), 4104);
         assert_eq!(tie.initial_far_resource(false), 4109);
         assert_eq!(tie.initial_indicator_resource(false), 4204);
+        assert_eq!(tie.grouped_close_resource(true, 3), 4103);
+        assert_eq!(tie.grouped_close_resource(false, 3), 4104);
+        assert_eq!(tie.hud_resource(), 2034);
     }
 
     #[test]

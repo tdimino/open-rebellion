@@ -130,8 +130,10 @@ production capital ships from exact joined families and source positions.
 P58C renders the exact close, far, and indicator fighter resources through the
 source detail thresholds and aligns capital selection and targeting with their
 projected bounds. P58D proves the complete two-faction production fighter-detail
-journey through the original zoom controls. Squadron and task-force panels,
-special objects, and A0 acceptance remain open.
+journey through the original zoom controls. P58E restores all eight task-force
+controls, four RGBY fighter controls, source-shaped input, keyboard routing,
+and selected fighter portraits. Automatic group distribution, special objects,
+and A0 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,

@@ -75,5 +75,13 @@
     "reduced_detail": {"far_below_view_span": 10.0, "indicator_at_or_above": 10.0},
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md"
   },
-  "unresolved": ["selected-object retained lifetime and squadron/task-force presentation", "remaining type-301 family view rules", "fighter formation and color variants", "battle event to effect resource", "tactical planet picture selector initialization", "remaining original control-state and render geometry"]
+  "group_presentation_contract": {
+    "fighter_group_values": {"red": 0, "blue": 1, "green": 2, "gold": 3, "unassigned": 4},
+    "player_group_resource_rule": "first_side_type303_base plus fighter_group for 0 through 3, or plus 4 when unassigned",
+    "opposing_group_resource_rule": "opposing_side_type303_base remains white",
+    "task_force_keys": "F1 through F8",
+    "fighter_group_keys": "F9 through F12 map to red, blue, green, and gold",
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md"
+  },
+  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "battle event to effect resource", "tactical planet picture selector initialization", "remaining original control-state and render geometry"]
 }

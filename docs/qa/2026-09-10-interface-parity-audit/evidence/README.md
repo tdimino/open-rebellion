@@ -21,6 +21,7 @@ the source of truth for scope, acceptance, and current work.
 | P58B | [Production tactical capital ships](2026-09-14-tactical-production-participants.md) | [`p58b-tactical-production-participants/`](p58b-tactical-production-participants/) |
 | P58C | [Tactical fighters and projected selection](2026-09-14-tactical-fighters-selection.md) | [`p58c-tactical-fighters-selection/`](p58c-tactical-fighters-selection/) |
 | P58D | [Production fighter-detail journey](2026-09-14-tactical-fighter-detail-journey.md) | [`p58d-tactical-fighter-detail-journey/`](p58d-tactical-fighter-detail-journey/) |
+| P58E | [Task-force and fighter-group presentation](2026-09-14-tactical-group-presentation.md) | [`p58e-tactical-group-presentation/`](p58e-tactical-group-presentation/) |
 
 ## Current strategic correction
 

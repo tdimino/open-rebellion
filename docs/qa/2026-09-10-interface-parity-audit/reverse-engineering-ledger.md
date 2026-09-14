@@ -220,8 +220,11 @@ type-303 fighter resource triplets, exact detail thresholds, production fighter
 pixels, and projection-aligned capital interactions. The
 [P58D evidence](evidence/2026-09-14-tactical-fighter-detail-journey.md) proves
 the nine independent indicator/far/close transitions through the original zoom
-controls without family reload. Squadron and task-force panels and original
-visual acceptance remain open.
+controls without family reload. The
+[P58E evidence](evidence/2026-09-14-tactical-group-presentation.md) restores all
+eight task-force and four RGBY controls, source-shaped input, Ctrl assignment,
+keyboard routes, and selected fighter portraits. Automatic production grouping
+and original visual acceptance remain open.
 
 ## Immediate implementation order
 

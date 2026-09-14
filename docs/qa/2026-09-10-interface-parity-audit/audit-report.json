@@ -62,7 +62,7 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_original_shell_first_controls_complete_tactical_corpus_transport_exact_dat_resource_joins_live_production_capital_and_source_fighter_detail_rendering_full_fighter_detail_journey_projection_aligned_capital_interaction_source_selection_live_cached_slot_journey_source_camera_dpad_selected_target_source_bound_participant_placement_authored_transform_system_palette_light_rig_and_retained_mode_device_material_state_pass_implementation_gates_task_force_squadron_effects_commands_original_view_and_all_106_cells_open",
+    "tactical_interface": "fail_original_shell_first_controls_complete_tactical_corpus_transport_exact_dat_resource_joins_live_production_capital_and_source_fighter_detail_rendering_full_fighter_detail_journey_task_force_and_rgby_group_presentation_projection_aligned_capital_interaction_source_selection_live_cached_slot_journey_source_camera_dpad_selected_target_source_bound_participant_placement_authored_transform_system_palette_light_rig_and_retained_mode_device_material_state_pass_implementation_gates_automatic_grouping_damage_effects_commands_original_view_and_all_106_cells_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
@@ -162,7 +162,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live production capital and fighter detail rendering, source-traced camera and projection-aligned capital interactions, active-force layout, stable source-bound participant placement, authored transform, system palette, lighting, and retained-mode device/material state pass implementation gates, but close/far fighter journeys, squadron/task-force presentation, special objects, original view acceptance, replacement battle content, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live production capital and fighter detail rendering, complete fighter-detail journey, task-force and RGBY group presentation, source-traced camera and projection-aligned capital interactions, active-force layout, stable source-bound participant placement, authored transform, system palette, lighting, and retained-mode device/material state pass implementation gates, but automatic grouping, damage, special objects, original view acceptance, replacement battle content, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -182,7 +182,9 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -285,9 +287,10 @@
     "p58b_tactical_production_participants": "evidence/2026-09-14-tactical-production-participants.md",
     "p58c_tactical_fighters_selection": "evidence/2026-09-14-tactical-fighters-selection.md",
     "p58d_tactical_fighter_detail_journey": "evidence/2026-09-14-tactical-fighter-detail-journey.md",
+    "p58e_tactical_group_presentation": "evidence/2026-09-14-tactical-group-presentation.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Complete P58E by restoring source-proven task-force and squadron presentation. Then wire damage, effect, planet, Death Star, command, and result states. Keep all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
+  "next_action": "Complete P58F by restoring source-proven damage, effect, and planet presentation. Then wire Death Star, command, and result states. Keep all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
 }
