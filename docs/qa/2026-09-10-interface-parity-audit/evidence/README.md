@@ -15,6 +15,7 @@ the source of truth for scope, acceptance, and current work.
 | P57B2B2 | [Battle layout](2026-09-13-tactical-battle-layout.md) | [`p57b2b2-tactical-layout/`](p57b2b2-tactical-layout/) |
 | P57B2B3 | [Participant placement](2026-09-13-tactical-participant-placement.md) | [`p57b2b3-tactical-participants/`](p57b2b3-tactical-participants/) |
 | P57B2C1 | [Authored transform and system palette](2026-09-13-tactical-transform-palette.md) | [`p57b2c1-tactical-transform-palette/`](p57b2c1-tactical-transform-palette/) |
+| P57B2C2A | [Retained-mode light rig](2026-09-14-tactical-light-rig.md) | [`p57b2c2a-tactical-light-rig/`](p57b2c2a-tactical-light-rig/) |
 
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must

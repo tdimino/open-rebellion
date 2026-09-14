@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit Report"
 description: "Evidence-backed diagnosis and execution plan for complete bitmap-driven UI parity"
 category: qa
 created: 2026-09-10
-updated: 2026-09-13
+updated: 2026-09-14
 tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 ---
 
@@ -93,7 +93,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; original 3D assets staged and decoded; one three-LOD family has source selection, live cached switching, a source-traced faction camera/D-pad proof, selected-object target routing, active-force extent/lanes, stable production participant placement, authored coordinates, and system palette selection; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md), [P57B2A evidence](evidence/2026-09-13-tactical-camera-contract.md), [P57B2B1 evidence](evidence/2026-09-13-tactical-target-control.md), [P57B2B2 evidence](evidence/2026-09-13-tactical-battle-layout.md), [P57B2B3 evidence](evidence/2026-09-13-tactical-participant-placement.md), and [P57B2C1 evidence](evidence/2026-09-13-tactical-transform-palette.md) |
+| First original tactical shell and control states; original 3D assets staged and decoded; one three-LOD family has source selection, live cached switching, a source-traced faction camera/D-pad proof, selected-object target routing, active-force extent/lanes, stable production participant placement, authored coordinates, system palette selection, and retained-mode lighting; battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 evidence](evidence/2026-09-12-tactical-shell-controls.md), [P53 evidence](evidence/2026-09-12-tactical-control-hit-states.md), [P54 evidence](evidence/2026-09-12-tactical-3d-staging.md), [P55 evidence](evidence/2026-09-12-tactical-3d-runtime-pack.md), [P56 evidence](evidence/2026-09-13-tactical-3d-render-proof.md), [P57A evidence](evidence/2026-09-13-tactical-3d-lod-family.md), [P57B1 evidence](evidence/2026-09-13-tactical-live-lod-journey.md), [P57B2A evidence](evidence/2026-09-13-tactical-camera-contract.md), [P57B2B1 evidence](evidence/2026-09-13-tactical-target-control.md), [P57B2B2 evidence](evidence/2026-09-13-tactical-battle-layout.md), [P57B2B3 evidence](evidence/2026-09-13-tactical-participant-placement.md), [P57B2C1 evidence](evidence/2026-09-13-tactical-transform-palette.md), and [P57B2C2A evidence](evidence/2026-09-14-tactical-light-rig.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -119,9 +119,11 @@ four tactical lanes. P57B2B3 binds stable DAT and original fleet-roster
 identity to production participants, places them in the recovered source slots,
 and targets the selected source-world point. P57B2C1 removes inferred mesh
 normalization, preserves authored coordinates across the handedness boundary,
-and selects the packed palette from `SYSTEMSD.picture_id`. The
-DAT-to-tactical-resource join, production 3D rendering, lighting, filtering,
-culling, and A0/A1 acceptance remain open.
+and selects the packed palette from `SYSTEMSD.picture_id`. P57B2C2A replaces
+the provisional light vector and intensity with the directional and ambient
+rig created by `FUN_005d4d10`. The DAT-to-tactical-resource join, production
+3D rendering, filtering, culling, remaining render state, and A0/A1 acceptance
+remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
@@ -154,7 +156,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode, one complete three-LOD family, recovered camera and targeting, source-bound participant placement, authored transform, and system palette selection pass implementation gates. Production fleet 3D rendering, the DAT-to-resource join, original view acceptance, procedural battle contents, and incomplete command, result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode, one complete three-LOD family, recovered camera and targeting, source-bound participant placement, authored transform, system palette selection, and source light rig pass implementation gates. Production fleet 3D rendering, the DAT-to-resource join, filtering, culling, original view acceptance, procedural battle contents, and incomplete command, result, special-state, and audio paths remain. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
@@ -353,6 +355,8 @@ target route, active-force extent, four tactical lanes, exact X-slot sequence,
 stable DAT and fleet-roster identity, and selected source-world target. See the
 [participant evidence](evidence/2026-09-13-tactical-participant-placement.md).
 P57B2C1 adds the source-authored mesh transform and system-selected palette;
-see its [evidence](evidence/2026-09-13-tactical-transform-palette.md). The
-resource-family join, production 3D draw path, remaining render-state fidelity,
-and all strict tactical acceptance cells remain open.
+see its [evidence](evidence/2026-09-13-tactical-transform-palette.md). P57B2C2A
+adds the source directional and ambient light rig; see its
+[evidence](evidence/2026-09-14-tactical-light-rig.md). The resource-family
+join, production 3D draw path, filtering, culling, remaining render-state
+fidelity, and all strict tactical acceptance cells remain open.

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P57B2C2A",
+  "model": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "task_scope": "browser-artifact visual acceptance only",
+  "focused_harness_run": {
+    "run_id": "2026-09-14T03-57-43-814Z-82864",
+    "passed": 4,
+    "executions": 4,
+    "failed": 0,
+    "status": "pass"
+  },
+  "full_harness_run": {
+    "run_id": "2026-09-14T03-58-48-182Z-83181",
+    "passed": 28,
+    "executions": 28,
+    "failed": 0,
+    "status": "pass"
+  },
+  "result": {
+    "verdict": "provisional_A1_pass",
+    "ready_to_commit": true,
+    "severity_findings": [],
+    "observations": [
+      "Both factions retain the complete bitmap tactical shell at 640x480 and in the centered 1280x800 letterbox.",
+      "The small source-bound ship mesh is visible in all four screenshots without obvious corrupt geometry, missing shell panels, or palette corruption.",
+      "Both detailed records contain exactly four HTTP 200 startup requests, muted=true, cleanup=closed, no errors, and one family load.",
+      "Both records contain the source-traced-tactical-light-rig probe for FUN_005d4d10 with directional type 3 RGB 0.8, source frame [5,5,-1], origin target, Z constraint, ambient type 0 RGB 0.5, and right-handed surface-to-light [0.70014006,0.70014006,0.14002801].",
+      "The focused and full summaries pass 4 of 4 and 28 of 28, with four-request startup, muted launch, closed browser process, and no unstable screenshot in every execution."
+    ]
+  },
+  "limits": [
+    "Commit readiness applies only to this provisional A1 implementation checkpoint.",
+    "There is no A0 baseline and no matching golden; source tracing was not independently re-performed by the browser reviewer.",
+    "All 106 tactical cells remain open; filtering, culling, and the production DAT-to-tactical join remain open.",
+    "The mesh size limits fine geometry and lighting assessment.",
+    "Only the 640x480 cases retain detailed JSON; the 1280x800 visuals were inspected directly and broader execution results come from the summaries."
+  ]
+}

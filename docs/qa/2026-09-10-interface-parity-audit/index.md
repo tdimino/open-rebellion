@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit"
 description: "Authoritative screenshot corpus, surface ledger, findings, and acceptance gates for reproducing every visible Rebellion interface state"
 category: qa
 created: 2026-09-10
-updated: 2026-09-13
+updated: 2026-09-14
 tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 ---
 
@@ -87,6 +87,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P57B2B2 tactical layout evidence](evidence/2026-09-13-tactical-battle-layout.md) | Source-recovered active-force extent, docked-fighter exclusion, four tactical lanes, browser proof, and explicit production-placement/A0 limits. |
 | [P57B2B3 tactical participant evidence](evidence/2026-09-13-tactical-participant-placement.md) | Stable DAT and fleet-roster identities, exact source X slots and faction lanes, selected-world-point targeting, and explicit resource-join/A0 limits. |
 | [P57B2C1 tactical transform/palette evidence](evidence/2026-09-13-tactical-transform-palette.md) | Direct authored mesh coordinates, complete system-palette transport, exact two-system selection, and explicit render-state/A0 limits. |
+| [P57B2C2A tactical light-rig evidence](evidence/2026-09-14-tactical-light-rig.md) | Exact source directional and ambient lights, transformed direction, deterministic browser probe, and explicit filtering/culling/A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -198,9 +199,12 @@ DAT-to-tactical-resource join, production 3D rendering, A0 comparison, and
 every tactical cell open. P57B2C1 preserves authored mesh coordinates instead
 of applying an inferred center-and-fit transform, stages all 27 original
 palettes, and selects `5530 + SYSTEMSD.picture_id`. Its
-[evidence](evidence/2026-09-13-tactical-transform-palette.md) keeps lighting,
+[evidence](evidence/2026-09-13-tactical-transform-palette.md) kept lighting,
 filtering, culling, the production resource join, A0 comparison, and every
-tactical cell open.
+tactical cell open. P57B2C2A then replaces the guessed proof lighting with the
+source `FUN_005d4d10` directional and ambient rig. Its
+[evidence](evidence/2026-09-14-tactical-light-rig.md) keeps filtering, culling,
+the production resource join, A0 comparison, and every tactical cell open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

@@ -3,7 +3,7 @@ title: "Tactical 3D Asset Pipeline"
 description: "Recover the original DirectX battle meshes and textures for deterministic native and browser rendering"
 category: plan
 created: 2026-09-12
-updated: 2026-09-13
+updated: 2026-09-14
 tags: [interface, parity, tactical, 3d, wasm, assets]
 status: in_progress
 ---
@@ -43,8 +43,11 @@ the owned original DLL directly:
   P57B2A recovers the initial faction camera, field zoom, clip planes, four
   orbit commands, and Direct3D-to-Macroquad handedness conversion. P57B2B1
   recovers command 9's selected-object target path and activates its bitmap
-  control. General layout, production identity binding, lighting, filtering,
-  culling, and A0 comparison remain open.
+  control. P57B2B2 through P57B2C1 recover layout, stable participant
+  identity, authored coordinates, and system palette selection. P57B2C2A
+  recovers the directional and ambient light rig. Production resource binding,
+  filtering, culling, remaining device/material state, and A0 comparison remain
+  open.
 
 The original executable used Direct3D Retained Mode 3D rendering. The previous
 claim that pre-rendered sprite sheets represented the authentic 1998 battle
@@ -156,18 +159,20 @@ culling remain open, so no tactical cell is accepted.
 
 ### P57. One three-LOD family
 
-Status: in progress. P57A, P57B1, P57B2A, P57B2B1, P57B2B2, P57B2B3, and P57B2C1 are complete. See the
+Status: in progress. P57A, P57B1, P57B2A, P57B2B1, P57B2B2, P57B2B3,
+P57B2C1, and P57B2C2A are complete. See the
 [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
 [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
 the [P57B2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-camera-contract.md),
 the [P57B2B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-target-control.md),
 the [P57B2B2 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-battle-layout.md),
 the [P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md),
-and the [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md).
+the [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md),
+and the [P57B2C2A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md).
 
-Next recover filtering, culling, material, and lighting rules, then complete
-the DAT-to-tactical-resource join and production 3D selection. Capture the same
-fixed views in the original executable and Open Rebellion.
+Next recover filtering, culling, and remaining material/device-quality rules,
+then complete the DAT-to-tactical-resource join and production 3D selection.
+Capture the same fixed views in the original executable and Open Rebellion.
 
 P57A packages all three meshes and both source-bound textures, preserves the
 far mesh's material diffuse color, and implements the original high- and
@@ -188,9 +193,11 @@ source X slots and faction lanes, preserving signed zero, and targets the
 selected source-world point. P57B2C1 removes provisional center-and-fit
 normalization, preserves authored coordinates across the handedness boundary,
 packages palettes 5531 through 5557, and selects
-`5530 + SYSTEMSD.picture_id`. P57B2 still retains the DAT-to-resource join,
-filtering, culling, lighting, production 3D selection, original A0/A1 captures,
-native GPU comparison, and simulation-fingerprint proof.
+`5530 + SYSTEMSD.picture_id`. P57B2C2A replaces the guessed light with
+`FUN_005d4d10`'s directional RGB `0.8` frame and ambient RGB `0.5` light.
+P57B2 still retains the DAT-to-resource join, filtering, culling, remaining
+material/device state, production 3D selection, original A0/A1 captures, native
+GPU comparison, and simulation-fingerprint proof.
 
 Gate: deterministic LOD transitions, no resource churn, accepted A0/A1 views,
 and no simulation fingerprint change. P57A proves the source predicate and
@@ -202,6 +209,8 @@ muted browser cases. P57B2B3 proves source-bound participant identities,
 positions, and selected-point targeting in four focused and 28 complete fresh
 muted browser cases. P57B2C1 proves authored transforms and two exact system
 palette selectors in four focused and 28 complete fresh muted browser cases.
+P57B2C2A proves the recovered light contract in the same four focused and 28
+complete fresh muted browser cases.
 The full P57 gate remains open.
 
 ### P58. Fleet integration

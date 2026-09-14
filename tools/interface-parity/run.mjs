@@ -1154,6 +1154,9 @@ async function runScenario(server, executable, scenario, faction, viewport) {
             + `palette_resource_id=${ready.palette_resource_id} palette_flags=68 `
             + `transform=authored_xyz_z_reflection .*family_loads=1`),
           "source-bound tactical LOD family did not load exactly once");
+        assert.match(familyLogs[0]?.text || "",
+          /light_directional_rgb=0\.8 light_ambient_rgb=0\.5 light_frame_source=5,5,-1 surface_to_light_rh=0\.70014006,0\.70014006,0\.14002801 light_constraint=z/,
+          "source-traced tactical light rig did not preserve its retained-mode contract");
         const expectedResources = scenario.expected_lod_sequence
           || [scenario.expected_lod_resource];
         assert.equal(lodLogs.length, expectedResources.length,
@@ -1179,6 +1182,24 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           },
           transform: "authored_xyz_z_reflection",
           family_loads: 1,
+        });
+        probes.push({
+          type: "source-traced-tactical-light-rig",
+          executable_function: "FUN_005d4d10",
+          direct3drm: {
+            directional: {
+              type: 3,
+              rgb: [0.8, 0.8, 0.8],
+              frame_source: [5, 5, -1],
+              target_source: [0, 0, 0],
+              constraint: "z",
+            },
+            ambient: {
+              type: 0,
+              rgb: [0.5, 0.5, 0.5],
+            },
+          },
+          surface_to_light_rh: [0.70014006, 0.70014006, 0.14002801],
         });
         if (scenario.camera_journey) {
           assert.equal(layoutLogs.length, 1,

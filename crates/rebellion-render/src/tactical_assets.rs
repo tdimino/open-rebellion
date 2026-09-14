@@ -11,7 +11,7 @@ use std::sync::{LazyLock, Mutex};
 use std::{io::Read, path::Path};
 
 use macroquad::prelude::*;
-use macroquad::window::miniquad::{Backend, Comparison, PipelineParams};
+use macroquad::window::miniquad::{Backend, Comparison, PipelineParams, UniformDesc, UniformType};
 
 use crate::tactical_view::OriginalTacticalLayout;
 
@@ -38,6 +38,34 @@ const ORIGINAL_CAMERA_PITCH: i32 = 30;
 const ORIGINAL_CAMERA_ALLIANCE_YAW: i32 = -30;
 const ORIGINAL_CAMERA_EMPIRE_YAW: i32 = 150;
 const ORIGINAL_CAMERA_INITIAL_STEP: i32 = 5;
+
+// `FUN_005d4d10` creates a D3DRMLIGHT_DIRECTIONAL at RGB 0.8 on a frame at
+// (5, 5, -1), aims that frame at the scene origin with D3DRMCONSTRAIN_Z, and
+// adds a separate RGB 0.5 ambient light to the scene. Direct3D's lighting
+// equation negates the directional-light ray vector to obtain the direction
+// from the surface to the light. Reflecting source Z at our handedness
+// boundary therefore produces the vector (5, 5, 1).
+const ORIGINAL_LIGHT_FRAME_SOURCE_POSITION: [f32; 3] = [5.0, 5.0, -1.0];
+const ORIGINAL_AMBIENT_LIGHT_RGB: f32 = 0.5;
+const ORIGINAL_DIRECTIONAL_LIGHT_RGB: f32 = 0.8;
+
+fn original_surface_to_light_direction() -> Vec3 {
+    authored_position(vec3(
+        ORIGINAL_LIGHT_FRAME_SOURCE_POSITION[0],
+        ORIGINAL_LIGHT_FRAME_SOURCE_POSITION[1],
+        ORIGINAL_LIGHT_FRAME_SOURCE_POSITION[2],
+    ))
+    .normalize()
+}
+
+#[cfg(test)]
+fn original_tactical_light_factor(normal: Vec3) -> f32 {
+    let diffuse = normal
+        .normalize()
+        .dot(original_surface_to_light_direction())
+        .max(0.0);
+    (ORIGINAL_AMBIENT_LIGHT_RGB + ORIGINAL_DIRECTIONAL_LIGHT_RGB * diffuse).min(1.0)
+}
 
 /// Source-traced tactical camera state from `FUN_005d9490`, `FUN_005d9620`,
 /// `FUN_005d9640`, `FUN_00595be0`, `FUN_005c1080`, and the command switch at
@@ -800,9 +828,14 @@ impl TacticalProofRenderer {
         self.assets = assets;
         self.family_loads = self.family_loads.saturating_add(1);
         macroquad::logging::info!(
-            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette_selector={} palette_resource_id={} palette_flags=68 transform=authored_xyz_z_reflection diagnostics={} family_loads={}",
+            "[tactical_3d] family_loaded base=2560 resources=2560,2561,2562 textures=SDESTI52.BMP,SDESTI_M.BMP palette_selector={} palette_resource_id={} palette_flags=68 transform=authored_xyz_z_reflection light_directional_rgb={} light_ambient_rgb={} light_frame_source=5,5,-1 surface_to_light_rh={},{},{} light_constraint=z diagnostics={} family_loads={}",
             self.palette_selector,
             palette_resource_id,
+            ORIGINAL_DIRECTIONAL_LIGHT_RGB,
+            ORIGINAL_AMBIENT_LIGHT_RGB,
+            original_surface_to_light_direction().x,
+            original_surface_to_light_direction().y,
+            original_surface_to_light_direction().z,
             diagnostics.join(","),
             self.family_loads,
         );
@@ -998,7 +1031,7 @@ fn load_tactical_material() -> Result<Material, String> {
             program: TACTICAL_METAL,
         },
     };
-    load_material(
+    let material = load_material(
         shader,
         MaterialParams {
             pipeline_params: PipelineParams {
@@ -1006,10 +1039,29 @@ fn load_tactical_material() -> Result<Material, String> {
                 depth_test: Comparison::LessOrEqual,
                 ..Default::default()
             },
+            uniforms: vec![
+                UniformDesc::new("SourceLightDirectionAmbient", UniformType::Float4),
+                UniformDesc::new("SourceLightColorDirectional", UniformType::Float4),
+            ],
             ..Default::default()
         },
     )
-    .map_err(|error| format!("compile tactical material: {error}"))
+    .map_err(|error| format!("compile tactical material: {error}"))?;
+    let direction = original_surface_to_light_direction();
+    material.set_uniform(
+        "SourceLightDirectionAmbient",
+        [
+            direction.x,
+            direction.y,
+            direction.z,
+            ORIGINAL_AMBIENT_LIGHT_RGB,
+        ],
+    );
+    material.set_uniform(
+        "SourceLightColorDirectional",
+        [1.0, 1.0, 1.0, ORIGINAL_DIRECTIONAL_LIGHT_RGB],
+    );
+    Ok(material)
 }
 
 struct Reader<'a> {
@@ -1081,20 +1133,23 @@ attribute vec2 texcoord;
 attribute vec4 color0;
 attribute vec4 normal;
 varying lowp vec2 uv;
-varying lowp float light;
+varying lowp vec3 light;
 varying lowp vec4 tint;
 uniform mat4 Model;
 uniform mat4 Projection;
+uniform vec4 SourceLightDirectionAmbient;
+uniform vec4 SourceLightColorDirectional;
 void main() {
     gl_Position = Projection * Model * vec4(position, 1.0);
     uv = texcoord;
     tint = color0 / 255.0;
-    light = 0.28 + 0.72 * max(dot(normalize(normal.xyz), normalize(vec3(-0.35, -0.5, 0.8))), 0.0);
+    lowp float diffuse = max(dot(normalize(normal.xyz), normalize(SourceLightDirectionAmbient.xyz)), 0.0);
+    light = min(vec3(1.0), vec3(SourceLightDirectionAmbient.w) + SourceLightColorDirectional.rgb * SourceLightColorDirectional.w * diffuse);
 }"#;
 
 const TACTICAL_FRAGMENT_GLSL: &str = r#"#version 100
 varying lowp vec2 uv;
-varying lowp float light;
+varying lowp vec3 light;
 varying lowp vec4 tint;
 uniform sampler2D Texture;
 void main() {
@@ -1105,7 +1160,13 @@ void main() {
 const TACTICAL_METAL: &str = r#"
 #include <metal_stdlib>
 using namespace metal;
-struct Uniforms { float4x4 Model; float4x4 Projection; float4 _Time; };
+struct Uniforms {
+    float4x4 Model;
+    float4x4 Projection;
+    float4 _Time;
+    float4 SourceLightDirectionAmbient;
+    float4 SourceLightColorDirectional;
+};
 struct Vertex {
     float3 position [[attribute(0)]];
     float2 texcoord [[attribute(1)]];
@@ -1115,7 +1176,7 @@ struct Vertex {
 struct RasterizerData {
     float4 position [[position]];
     float2 uv [[user(locn0)]];
-    float light [[user(locn1)]];
+    float3 light [[user(locn1)]];
     float4 tint [[user(locn2)]];
 };
 vertex RasterizerData vertexShader(Vertex v [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
@@ -1123,7 +1184,8 @@ vertex RasterizerData vertexShader(Vertex v [[stage_in]], constant Uniforms& u [
     out.position = u.Projection * u.Model * float4(v.position, 1.0);
     out.uv = v.texcoord;
     out.tint = v.color0 / 255.0;
-    out.light = 0.28 + 0.72 * max(dot(normalize(v.normal.xyz), normalize(float3(-0.35, -0.5, 0.8))), 0.0);
+    float diffuse = max(dot(normalize(v.normal.xyz), normalize(u.SourceLightDirectionAmbient.xyz)), 0.0);
+    out.light = min(float3(1.0), float3(u.SourceLightDirectionAmbient.w) + u.SourceLightColorDirectional.rgb * u.SourceLightColorDirectional.w * diffuse);
     return out;
 }
 fragment float4 fragmentShader(RasterizerData in [[stage_in]], texture2d<float> Texture [[texture(0)]], sampler TextureSmplr [[sampler(0)]]) {
@@ -1156,6 +1218,24 @@ mod tests {
         assert_eq!(
             authored_position(vec3(12.5, -3.25, 8.0)),
             vec3(12.5, -3.25, -8.0)
+        );
+    }
+
+    #[test]
+    fn source_light_rig_preserves_retained_mode_direction_and_intensity() {
+        let direction = original_surface_to_light_direction();
+        let inverse_length = 51.0_f32.sqrt().recip();
+        assert_near(direction.x, 5.0 * inverse_length);
+        assert_near(direction.y, 5.0 * inverse_length);
+        assert_near(direction.z, inverse_length);
+        assert_near(
+            original_tactical_light_factor(-direction),
+            ORIGINAL_AMBIENT_LIGHT_RGB,
+        );
+        assert_near(original_tactical_light_factor(direction), 1.0);
+        assert_near(
+            original_tactical_light_factor(vec3(-1.0, 1.0, 0.0)),
+            ORIGINAL_AMBIENT_LIGHT_RGB,
         );
     }
 

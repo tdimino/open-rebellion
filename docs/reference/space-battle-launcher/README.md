@@ -69,12 +69,15 @@ and closes every process. Raw runs live under ignored
 - P57B2C1 preserves the mesh's authored coordinates with only the recovered Z
   reflection, packages palettes 5531 through 5557, and selects
   `5530 + SYSTEMSD.picture_id`.
+- P57B2C2A restores `FUN_005d4d10`'s directional RGB `0.8` light frame at
+  source `(5,5,-1)`, its Z-constrained origin target, and the separate ambient
+  RGB `0.5` light.
 - The complete bundle passes 28 of 28 muted browser cases across both factions
   and both viewports with one family load and no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge is test-only. DAT-to-tactical resource joins, production 3D family
-selection, lighting, filtering, culling, native GPU and A0/A1 comparison,
+selection, filtering, culling, remaining material/device state, native GPU and A0/A1 comparison,
 remaining commands, damage, effects, Death Star paths, results, audio, and
 return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
@@ -83,6 +86,7 @@ return routing remain open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P57B2C2A retained-mode light-rig evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-light-rig.md)
 - [P57B2C1 authored transform and system palette evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md)
 - [P57B2B3 participant identity and placement evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md)
 - [P57B2B2 active-force layout evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-battle-layout.md)

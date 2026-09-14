@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-09-12
+updated: 2026-09-14
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -598,9 +598,15 @@ would tune around known simulation feedback defects.
   through 5557, select `5530 + SYSTEMSD.picture_id`, and pass the focused
   four-case and complete 28-case muted browser gates. Keep every strict
   tactical cell open pending A0 evidence.
+- [x] Complete P57B2C2A source light-rig recovery: replace the provisional
+  shader light with `FUN_005d4d10`'s directional RGB `0.8` frame at source
+  `(5,5,-1)`, Z-constrained origin target, ambient RGB `0.5`, and transformed
+  surface-to-light vector; pass the focused four-case and complete 28-case
+  muted browser gates. Keep every strict tactical cell open pending A0 evidence.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P57B2C2 next traces lighting, filtering, and culling. P58 then proves
+  states. P57B2C2B next traces filtering, culling, and remaining material/device
+  state. P58 then proves
   the DAT-to-tactical-vtable join before
   replacing procedural ships, fighters, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,

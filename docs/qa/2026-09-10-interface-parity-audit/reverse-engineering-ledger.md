@@ -3,7 +3,7 @@ title: "Interface Reverse-Engineering Ledger"
 description: "Executable and original-resource evidence queue for closing the original interface parity audit"
 category: qa
 created: 2026-09-10
-updated: 2026-09-11
+updated: 2026-09-14
 tags: [qa, interface, ghidra, resources, bitmap, wasm]
 ---
 
@@ -150,7 +150,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, faction camera, field zoom, handedness conversion, D-pad, selected-object target command, active-force layout, stable participant source placement, authored transform, and system palette source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through lighting, filtering, culling, the DAT-to-resource join, A0 comparison, and production 3D selection |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded; first three-LOD family, faction camera, field zoom, handedness conversion, D-pad, selected-object target command, active-force layout, stable participant source placement, authored transform, system palette, and source light rig source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through filtering, culling, remaining material/device state, the DAT-to-resource join, A0 comparison, and production 3D selection |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -202,9 +202,12 @@ world point to the camera. Its
 bounded recovery package. P57B2C1 proves that the original path preserves
 authored mesh coordinates without center/scale normalization, packages every
 system palette, and selects `5530 + SYSTEMSD.picture_id`; see its
-[evidence](evidence/2026-09-13-tactical-transform-palette.md). The
-DAT-to-tactical-resource join, filtering, culling, lighting, production 3D
-draw, and original visual acceptance remain open.
+[evidence](evidence/2026-09-13-tactical-transform-palette.md). The P57B2C2A
+light checkpoint recovers `FUN_005d4d10`'s directional RGB `0.8`
+frame at `(5,5,-1)`, origin target with Z constraint, and ambient RGB `0.5`;
+see its [evidence](evidence/2026-09-14-tactical-light-rig.md). The
+DAT-to-tactical-resource join, filtering, culling, remaining material/device
+state, production 3D draw, and original visual acceptance remain open.
 
 ## Immediate implementation order
 
