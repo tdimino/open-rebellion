@@ -402,8 +402,8 @@ Hunyuan3D/Meshy → raw GLBs (scripts/models-staging/)
   → strip-textures.mjs (geometry only) [not yet ported from WWW]
   → gltf-transform simplify (ratio 0.10) + optimize (weld, prune)
   → gltf-transform draco (14-bit position quantization)
-  → Blender batch render (8 directional frames)
-  → PNG sprite atlases (data/models/sprites/) [not yet created]
+  → (retired) Blender render of generated GLBs; direction sheets now come from the
+    original meshes via scripts/sprites/render_original_meshes.py (agent_docs/sprites.md)
 ```
 
 ### Scripts
@@ -419,8 +419,9 @@ uv run scripts/generate-rebellion-models.py --provider meshy   # Meshy only
 bash scripts/prepare-rebellion-models.sh                       # All staging
 bash scripts/prepare-rebellion-models.sh star-destroyer.glb    # Specific
 
-# Render sprite sheets (requires Blender)
-blender --background --python scripts/render-sprite-sheets.py  # All models
+# Render 8-direction sheets from the ORIGINAL meshes (spawns Blender; see agent_docs/sprites.md)
+uv run scripts/sprites/render_original_meshes.py --ids 2560 2561 2562   # proof family
+uv run scripts/sprites/render_original_meshes.py --all                  # 87 meshes
 ```
 
 ### Blender Addons
@@ -430,10 +431,11 @@ blender --background --python scripts/render-sprite-sheets.py  # All models
 
 ### Sprite Sheet Format
 
-8 directional frames per model (0°, 45°, 90°, ..., 315°):
-- Standard: 128x128 per frame → 1024x128 strip atlas
-- Hero units: 256x256 per frame → 2048x256 strip atlas
-- Output: `data/models/sprites/{unit-id}.png`
+8 directional frames per mesh (ship yaw 0°, 45°, ..., 315° under the recovered P57B2A camera and P57B2C2A light rig):
+- Standard: 128x128 per frame → 1024x128 strip (`--cell 128`); hero units `--cell 256` → 2048x256
+- Output: `data/models/sprites/{resource-id}.png` + `{resource-id}.json` (sprite-forge `atlas-v2`: cell, directions, states, anchor, provenance) and `data/models/sprites/provenance.json`
+- Classification: experimental-remaster review artifact, `runtime_eligible: false`; `data/models/` is gitignored
+- The former GLB renderer `scripts/render-sprite-sheets.py` was retired on 2026-09-14; generated GLBs have no place in the original-parity pipeline. Full guide: `agent_docs/sprites.md`
 
 ### Model Comparison Viewer
 
@@ -473,7 +475,8 @@ Each collection in `assets/references/ref-{category}/` contains:
 | `ref-facilities` | 9 | Military/industrial architecture |
 | `ref-missions` | 8 | Mission briefing scenes |
 | `ref-damage-diagrams` | 14 | Ship technical schematics |
-| `ref-squadron-sprites` | 14 | Top-down fighter sprites |
+| `ref-squadron-sprites` | 14 | Top-down fighter sprites (non-native: MetasharpNet `Names303` 128x128 upscales, palette discarded) |
+| `ref-fighter-textures` | 77 | Native type-303 fighter textures 4000-4134, mode P on battle palette 5531 (`scripts/sprites/export_fighter_textures.py`) |
 | `ref-battle-backgrounds` | 7 | Tactical combat space scenes |
 
 ### Scripts

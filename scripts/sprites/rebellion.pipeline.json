@@ -1,0 +1,81 @@
+{
+  "schema": "sprite-forge/pipeline-profile-v1",
+  "name": "open-rebellion",
+  "description": "Open Rebellion sprite tracks. A: 8-direction sheets from the 87 original TACTICAL.DLL meshes (experimental-remaster review artifact). B: advisor type-302 deterministic family transform records for the faithful-HD manifest plus Scale2x review candidates. C: native fighter texture reference set. Run from the repository root: python3 ~/.claude/skills/sprite-forge/scripts/run_pipeline.py scripts/sprites/rebellion.pipeline.json --stage render-meshes. Every stage is deterministic and free; nothing here calls a paid provider.",
+  "vars": {
+    "sprites": "${profile_dir}",
+    "scripts": "${profile_dir}/..",
+    "runtime": "data/base/ui/tactical-dll/TACTICAL3D/runtime",
+    "palette": "5531",
+    "cell": "128",
+    "mesh_sprites": "data/models/sprites",
+    "hd": "data/hd",
+    "advisor_review": "data/hd/review/type302",
+    "fighter_refs": "assets/references/ref-fighter-textures"
+  },
+  "palette": null,
+  "cell": [128, 128],
+  "directions": ["S", "SE", "E", "NE", "N", "NW", "W", "SW"],
+  "output_root": "data/models/sprites",
+  "stages": [
+    {
+      "name": "render-meshes",
+      "description": "Track A: Blender headless render of every type-301 mesh with the recovered P57B2A camera and P57B2C2A light rig; atlas-v2 sheets, provenance.json, review sheets. Run --stage render-meshes-proof first after any rig change.",
+      "stage": "${sprites}/render_original_meshes.py",
+      "args": {"all": true, "cell": "${cell}", "palette": "${palette}"},
+      "inputs": ["${runtime}/manifest.json", "${sprites}/render_original_meshes.py", "${sprites}/tactical3d.py"],
+      "outputs": ["${mesh_sprites}/provenance.json", "${mesh_sprites}/review/index.html"]
+    },
+    {
+      "name": "render-meshes-proof",
+      "description": "Track A proof family (Star Destroyer 2560/2561/2562), sub-minute; run before --stage render-meshes after any rig change.",
+      "stage": "${sprites}/render_original_meshes.py",
+      "args": {"ids": [2560, 2561, 2562], "cell": "${cell}", "palette": "${palette}"},
+      "inputs": ["${runtime}/manifest.json", "${sprites}/render_original_meshes.py", "${sprites}/tactical3d.py"],
+      "outputs": ["${mesh_sprites}/2560.png", "${mesh_sprites}/2561.png", "${mesh_sprites}/2562.png"]
+    },
+    {
+      "name": "advisor-generate",
+      "description": "Track B: nearest-4x mode-P records for the 68 authored advisor frames with chain provenance and P45C gates.",
+      "stage": "${scripts}/faithful_hd_pipeline.py",
+      "positional": ["generate"],
+      "args": {"kind": "advisor"},
+      "inputs": ["${sprites}/type302.py", "${scripts}/faithful_hd_pipeline.py"],
+      "outputs": ["${hd}/manifest.json"]
+    },
+    {
+      "name": "advisor-verify",
+      "description": "Track B: re-decode every advisor record and fail whole families atomically.",
+      "stage": "${scripts}/faithful_hd_pipeline.py",
+      "positional": ["verify"],
+      "args": {},
+      "inputs": ["${hd}/manifest.json"],
+      "outputs": []
+    },
+    {
+      "name": "advisor-export-alsprite-2001",
+      "description": "Track B tier 2 input: decode the Alliance 2001 family to mode-P PNGs for the Scale2x review candidate.",
+      "stage": "${sprites}/type302.py",
+      "positional": ["export"],
+      "args": {"dll": "alsprite-dll", "family": 2001, "out": "${advisor_review}/alsprite-2001/source"},
+      "inputs": ["${sprites}/type302.py"],
+      "outputs": ["${advisor_review}/alsprite-2001/source"]
+    },
+    {
+      "name": "advisor-scale2x-alsprite-2001",
+      "description": "Track B tier 2: palette-preserving Scale2x over the whole family (review candidate only; verify_record stays nearest-4x).",
+      "stage": "pixel_scale",
+      "args": {"mode": "scale2x", "family": "${advisor_review}/alsprite-2001/source", "output_dir": "${advisor_review}/alsprite-2001/scale2x"},
+      "inputs": ["${advisor_review}/alsprite-2001/source"],
+      "outputs": ["${advisor_review}/alsprite-2001/scale2x/family.json"]
+    },
+    {
+      "name": "fighter-textures",
+      "description": "Track C: export the 77 native type-303 fighter textures (ids 4000-4134) as mode-P PNGs on the selected battle palette.",
+      "stage": "${sprites}/export_fighter_textures.py",
+      "args": {"palette": "${palette}", "out": "${fighter_refs}"},
+      "inputs": ["${runtime}/manifest.json", "${sprites}/export_fighter_textures.py"],
+      "outputs": ["${fighter_refs}/palette.json", "${fighter_refs}/INDEX.md"]
+    }
+  ]
+}

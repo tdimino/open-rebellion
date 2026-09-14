@@ -101,3 +101,6 @@ scripts/download-ot-portraits*.py
 __pycache__/
 *.pyc
 .osgrep
+
+# Rendered mesh direction sheets (derived from original game data)
+data/models/
