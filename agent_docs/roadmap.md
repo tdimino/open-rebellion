@@ -24,6 +24,8 @@ PR #11 step 2 (2026-09-14): [Game Options routing](../docs/qa/2026-09-08-full-fu
 
 PR #11 step 3 (2026-09-14): [F1/F7 routing](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-keyboard-routing.md) passes native tests for both input paths. Full native/browser keyboard acceptance remains open.
 
+PR #11 step 4 (2026-09-14): [both GID mappings remain verified](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-gid-preservation.md) at `0x132`, with no code changes. Browser-harness coordinates and runtime acceptance remain later checklist items.
+
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 
