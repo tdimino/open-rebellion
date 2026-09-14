@@ -312,5 +312,122 @@ class FaithfulHdPipelineTests(unittest.TestCase):
             )
 
 
+def advisor_anchor_bmp(path: Path, width: int = 4, height: int = 2) -> None:
+    """8-bit uncompressed BMP with palette index i = (i, 0, 255 - i); pixel 0 is index 0."""
+    image = Image.new("P", (width, height))
+    palette = []
+    for index in range(256):
+        palette += [index, 0, 255 - index]
+    image.putpalette(palette)
+    image.putdata([0] + [1] * (width * height - 1))
+    image.save(path, format="BMP")
+
+
+def advisor_frame(path: Path, width: int, height: int, rows: list[list[int]]) -> None:
+    """Type-302 frame: header, row offsets, then per-row alternating skip/literal runs."""
+    import struct
+
+    payload = b""
+    offsets = []
+    for row in rows:
+        offsets.append(len(payload))
+        payload += bytes(row)
+    header = struct.pack("<HHI", width, height, len(payload)) + b"\0" * 9
+    path.write_bytes(header + b"".join(struct.pack("<I", o) for o in offsets) + payload)
+
+
+def advisor_family(root: Path, dll: str = "alsprite-dll", anchor_id: int = 2001) -> None:
+    bmp_dir = root / dll / "BMP"
+    frame_dir = root / dll / "TYPE302"
+    bmp_dir.mkdir(parents=True)
+    frame_dir.mkdir(parents=True)
+    advisor_anchor_bmp(bmp_dir / f"{anchor_id}.bmp")
+    # Frame A: row 0 skip 1, draw 2 (+4, +5), skip 1; row 1 draw all four (+1 +2 +3 +4).
+    advisor_frame(frame_dir / "2002.bin", 4, 2, [[1, 2, 4, 5, 1], [0, 4, 1, 2, 3, 4]])
+    # Frame B: only pixel (0,1) changes (+7); every other pixel is static.
+    advisor_frame(frame_dir / "2003.bin", 4, 2, [[4], [0, 1, 7, 3]])
+
+
+class AdvisorFamilyTests(unittest.TestCase):
+    def _families(self):
+        return {"alsprite-dll": [(2001, 2002, 2003)]}
+
+    def test_chain_decode_matches_manual_wrapping_add(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            advisor_family(root)
+            chain = [
+                root / "alsprite-dll" / "BMP" / "2001.bmp",
+                root / "alsprite-dll" / "TYPE302" / "2002.bin",
+                root / "alsprite-dll" / "TYPE302" / "2003.bin",
+            ]
+            first = PIPELINE.decode_chain(chain[:2])
+            second = PIPELINE.decode_chain(chain)
+            self.assertEqual(first.mode, "P")
+            self.assertEqual(list(first.tobytes()), [0, 5, 6, 1, 2, 3, 4, 5])
+            self.assertEqual(list(second.tobytes()), [0, 5, 6, 1, 9, 3, 4, 5])
+            self.assertEqual(first.info.get("transparency"), 0)
+
+    def test_generate_verify_and_atomic_family_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            advisor_family(root)
+            output_root = root / "hd"
+            manifest_path = output_root / "manifest.json"
+            t302 = PIPELINE._type302()
+            original_families = t302.AUTHORED_FAMILIES
+            try:
+                PIPELINE._type302 = lambda module=t302: module
+                t302.AUTHORED_FAMILIES = self._families()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                    io.StringIO()
+                ):
+                    result = PIPELINE.generate(
+                        PIPELINE.advisor_jobs(root, output_root, None), manifest_path, False, None
+                    )
+                    verified = PIPELINE.verify(manifest_path)
+                self.assertEqual(result, 0)
+                self.assertEqual(verified, 0)
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                record = manifest["assets"]["alsprite-dll/2003"]
+                self.assertEqual(record["asset_id"]["resource_type"], "TYPE302")
+                self.assertEqual(record["classification"]["family"], "alsprite-dll/2001")
+                self.assertEqual(record["route"]["family_transform"], "deterministic-family-transform")
+                self.assertEqual(record["gates"]["frame_index"], 1)
+                self.assertEqual(record["gates"]["frame_count"], 2)
+                self.assertEqual(record["gates"]["static_region_shimmer"], 0)
+                self.assertEqual(record["gates"]["cadence_seconds"], 0.15)
+                self.assertEqual(len(record["source"]["chain"]), 3)
+                self.assertFalse(record["approved"])
+                with Image.open(output_root / "alsprite-dll" / "2003.png") as produced:
+                    self.assertEqual(produced.mode, "P")
+
+                # Tamper with the first frame's output: its sibling must fail atomically too.
+                (output_root / "alsprite-dll" / "2002.png").write_bytes(b"changed")
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                    tampered = PIPELINE.verify(manifest_path)
+                self.assertEqual(tampered, 1)
+                self.assertIn("alsprite-dll/2003: family alsprite-dll/2001 fails atomically", stderr.getvalue())
+            finally:
+                t302.AUTHORED_FAMILIES = original_families
+
+    def test_incomplete_family_yields_no_jobs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            advisor_family(root)
+            (root / "alsprite-dll" / "TYPE302" / "2003.bin").unlink()
+            t302 = PIPELINE._type302()
+            original_families = t302.AUTHORED_FAMILIES
+            try:
+                PIPELINE._type302 = lambda module=t302: module
+                t302.AUTHORED_FAMILIES = self._families()
+                with contextlib.redirect_stderr(io.StringIO()):
+                    jobs = list(PIPELINE.advisor_jobs(root, root / "hd", None))
+                self.assertEqual(jobs, [])
+            finally:
+                t302.AUTHORED_FAMILIES = original_families
+
+
 if __name__ == "__main__":
     unittest.main()
