@@ -64,3 +64,8 @@ extract-assets:
 .PHONY: verify-assets
 verify-assets:
 	go run ./tools/stage-ui-assets --verify
+
+# Browser harness synchronization and launch-policy regressions (no browser).
+.PHONY: test-interface-harness
+test-interface-harness:
+	node --test tools/interface-parity/command-events.test.mjs tools/interface-parity/browser-launch.test.mjs
