@@ -28,6 +28,8 @@ PR #11 step 4 (2026-09-14): [both GID mappings remain verified](../docs/qa/2026-
 
 PR #11 step 5 (2026-09-14): [regression coverage is complete](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-regression-coverage.md) using the tests committed in steps 1–3. Browser acceptance remains a later checklist item.
 
+PR #11 step 6 (2026-09-14): [GID harness coordinates corrected](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-gid-harness-coordinates.md) for both factions and viewport sizes. Full browser execution remains step 7.
+
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 

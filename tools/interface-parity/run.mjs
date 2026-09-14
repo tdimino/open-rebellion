@@ -358,9 +358,10 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
   const offsetX = (viewport.width - 640 * scale) / 2;
   const offsetY = (viewport.height - 480 * scale) / 2;
+  // Command 0x132: rightmost bottom control in cockpit.rs for each faction.
   const control = faction === "alliance"
-    ? { x: 3, y: 355, width: 27, height: 41 }
-    : { x: 79, y: 192, width: 35, height: 57 };
+    ? { x: 446, y: 406, width: 27, height: 16 }
+    : { x: 519, y: 434, width: 37, height: 25 };
   const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
   const interior = point(control.x + control.width / 2, control.y + control.height / 2);
   const outside = point(control.x - 2, control.y + control.height / 2);
@@ -380,8 +381,8 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
   await page.screenshot({ path: path.join(folder, "control-pressed.png"), animations: "disabled" });
   await page.mouse.up();
   await page.waitForTimeout(80);
-  assert.ok(commandLines().some((line) => line.includes("destination=gid_menu status=opened")),
-    `${faction}: interior did not open the GID menu`);
+  assert.ok(commandLines().some((line) => line.includes("command=0x132 destination=gid_menu status=opened_original")),
+    `${faction}: interior did not open the GID menu through command 0x132`);
   const rootCapture = await page.screenshot({ path: path.join(folder, "menu-root.png"), animations: "disabled" });
   const rootFrame = verifyGidRootFrame(viewport, rootCapture, scenario.slug === "system");
   probes.push({ type: "control-click", x: interior.x, y: interior.y, opened: true,

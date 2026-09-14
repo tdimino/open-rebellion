@@ -39,6 +39,8 @@ and `run-eval.sh`.
 
 ## Where work left off
 
+PR #11 step 6 [corrects the GID harness coordinates](evidence/2026-09-14-pr11-gid-harness-coordinates.md) for both factions and requires command `0x132` in the opening log. Static geometry checks pass; the full browser gate remains pending.
+
 PR #11 step 5 [records existing regression coverage](evidence/2026-09-14-pr11-regression-coverage.md) for both factions and both keyboard input paths. Steps 1–3 supplied the tests; step 4 recorded 671 passing tests. Browser acceptance remains open.
 
 PR #11 step 4 [verifies preservation of both GID controls](evidence/2026-09-14-pr11-gid-preservation.md): `0x132` remains on the rightmost bottom control with the expected resources and rectangles. Existing tests pass; no Rust changes or browser/visual acceptance are claimed.
