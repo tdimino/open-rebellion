@@ -2,7 +2,7 @@
   "schema_version": 1,
   "source_binary": "REBEXE.EXE",
   "source_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
-  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c"],
+  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0"],
   "resource_module": "TACTICAL.DLL",
   "capital_ship_resource_type": 301,
   "fighter_resource_type": 303,
@@ -66,5 +66,14 @@
     [36, 4130, 4134, 8, "TIE Defender"]
   ],
   "fighter_columns": ["tactical_ordinal", "first_side_type303_base", "opposing_side_type303_base", "fightsd_id", "name"],
-  "unresolved": ["selection framing and retained-object lifetime", "remaining type-301 family view rules", "fighter formation/color/distance offset and production rendering", "battle event to effect resource", "tactical planet picture selector initialization", "original control-state and render geometry"]
+  "fighter_detail_contract": {
+    "initial": "far",
+    "close_resource": "player-side first base plus color state 4; opposing-side paired base",
+    "far_resource": "close resource plus 5",
+    "indicator_resource": "4200 plus close resource modulo 10",
+    "high_detail": {"close_below_view_span": 5.0, "far_from_inclusive_to_exclusive": [5.0, 10.0], "indicator_at_or_above": 10.0},
+    "reduced_detail": {"far_below_view_span": 10.0, "indicator_at_or_above": 10.0},
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md"
+  },
+  "unresolved": ["selected-object retained lifetime and squadron/task-force presentation", "remaining type-301 family view rules", "fighter formation/color variants and close/far camera journeys", "battle event to effect resource", "tactical planet picture selector initialization", "remaining original control-state and render geometry"]
 }
