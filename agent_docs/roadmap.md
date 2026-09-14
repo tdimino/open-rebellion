@@ -22,6 +22,8 @@ PR #11 checkpoint (2026-09-14): `0x131` opens the existing Encyclopedia for both
 
 PR #11 step 2 (2026-09-14): [Game Options routing](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-game-options-routing.md) has native-tested entry and return for both faction globes. Separate pending task: complete the original options layout, saved-game controls, tactical display settings, restart/exit semantics, and visual/browser acceptance.
 
+PR #11 step 3 (2026-09-14): [F1/F7 routing](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-keyboard-routing.md) passes native tests for both input paths. Full native/browser keyboard acceptance remains open.
+
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 

@@ -39,6 +39,8 @@ and `run-eval.sh`.
 
 ## Where work left off
 
+PR #11 step 3 has [native keyboard-routing evidence](evidence/2026-09-14-pr11-keyboard-routing.md): F1 opens Game Options and F7 opens Encyclopedia through both input paths. Physical native/browser keyboard acceptance and full surface parity remain open.
+
 PR #11 step 2 now has a [Game Options destination checkpoint](evidence/2026-09-14-pr11-game-options-routing.md): both `0x133` globes enter the distinct screen and return to the campaign. The user separated full screen repair into another task. P31 and original/browser acceptance remain open.
 
 PR #11 now has a [native-tested Encyclopedia routing checkpoint](evidence/2026-09-14-pr11-encyclopedia-routing.md): command `0x131` opens the existing viewer for both factions and preserves selection. P35 remains failing; original layout, browser artwork, and browser acceptance are open. The broader command-ledger correction remains a later PR review step.
