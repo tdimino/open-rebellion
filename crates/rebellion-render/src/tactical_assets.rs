@@ -32,6 +32,8 @@ pub const TACTICAL_PALETTE_LAST: u32 = 5557;
 const ORIGINAL_CLOSE_THRESHOLD: f32 = 15.0;
 const ORIGINAL_MEDIUM_THRESHOLD: f32 = 40.0;
 const ORIGINAL_REDUCED_DETAIL_THRESHOLD: f32 = 20.0;
+const ORIGINAL_FIGHTER_CLOSE_THRESHOLD: f32 = 5.0;
+const ORIGINAL_FIGHTER_INDICATOR_THRESHOLD: f32 = 10.0;
 
 const ORIGINAL_CAMERA_DISTANCE_SCALE: f32 = 1.7;
 const ORIGINAL_CAMERA_FAR_SCALE: f32 = 2.5;
@@ -236,6 +238,34 @@ pub enum OriginalTacticalLod {
     Close = 0,
     Medium = 1,
     Far = 2,
+}
+
+/// Original retained-mode fighter sprite state selected by `0x005d4af0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OriginalFighterDetail {
+    Close = 0,
+    Far = 1,
+    Indicator = 2,
+}
+
+/// Reproduce the original fighter sprite selection at apparent view spans 5
+/// and 10. The constructor starts every group in the far state.
+#[must_use]
+pub fn select_original_fighter_detail(
+    current: OriginalFighterDetail,
+    view_span: f32,
+    high_detail: bool,
+) -> OriginalFighterDetail {
+    if !view_span.is_finite() || view_span < 0.0 {
+        return current;
+    }
+    if view_span >= ORIGINAL_FIGHTER_INDICATOR_THRESHOLD {
+        OriginalFighterDetail::Indicator
+    } else if !high_detail || view_span >= ORIGINAL_FIGHTER_CLOSE_THRESHOLD {
+        OriginalFighterDetail::Far
+    } else {
+        OriginalFighterDetail::Close
+    }
 }
 
 impl OriginalTacticalLod {
@@ -818,6 +848,25 @@ struct TacticalMeshChunk {
     emissive: [f32; 3],
 }
 
+struct TacticalFighterAsset {
+    close_resource_id: u32,
+    close: Texture2D,
+    far_resource_id: u32,
+    far: Texture2D,
+    indicator_resource_id: u32,
+    indicator: Texture2D,
+}
+
+impl TacticalFighterAsset {
+    fn selected(&self, detail: OriginalFighterDetail) -> (u32, &Texture2D) {
+        match detail {
+            OriginalFighterDetail::Close => (self.close_resource_id, &self.close),
+            OriginalFighterDetail::Far => (self.far_resource_id, &self.far),
+            OriginalFighterDetail::Indicator => (self.indicator_resource_id, &self.indicator),
+        }
+    }
+}
+
 /// One source-bound capital-ship instance submitted by the live battle.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TacticalRenderObject {
@@ -826,11 +875,44 @@ pub(crate) struct TacticalRenderObject {
     pub position: Vec3,
 }
 
+/// One source-bound fighter group submitted by the live battle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TacticalFighterRenderObject {
+    pub object_id: u32,
+    pub close_resource_id: u32,
+    pub far_resource_id: u32,
+    pub indicator_resource_id: u32,
+    pub position: Vec3,
+}
+
+/// Screen-space footprint produced by the source tactical camera.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TacticalScreenProjection {
+    pub object_id: u32,
+    pub center: Vec2,
+    pub min: Vec2,
+    pub max: Vec2,
+}
+
+impl TacticalScreenProjection {
+    #[must_use]
+    pub(crate) fn contains(self, point: Vec2, minimum_radius: f32) -> bool {
+        let min = self
+            .min
+            .min(self.center - vec2(minimum_radius, minimum_radius));
+        let max = self
+            .max
+            .max(self.center + vec2(minimum_radius, minimum_radius));
+        point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y
+    }
+}
+
 /// Capital ships successfully submitted through the authentic 3D path.
 #[derive(Debug, Default)]
 pub(crate) struct TacticalDrawReport {
     pub rendered_object_ids: Vec<u32>,
     pub screen_positions: Vec<(u32, Vec2)>,
+    pub projections: Vec<TacticalScreenProjection>,
 }
 
 /// Lazily allocated GPU state shared by production participants and fixture proofs.
@@ -843,6 +925,9 @@ pub(crate) struct TacticalAssetRenderer {
     participant_families: HashMap<u32, Vec<TacticalLodAsset>>,
     participant_lods: HashMap<u32, OriginalTacticalLod>,
     unavailable_families: HashSet<u32>,
+    fighter_families: HashMap<u32, TacticalFighterAsset>,
+    fighter_details: HashMap<u32, OriginalFighterDetail>,
+    unavailable_fighter_families: HashSet<u32>,
     material: Option<Material>,
     #[cfg(feature = "interface-test-fixtures")]
     current_lod: OriginalTacticalLod,
@@ -856,6 +941,7 @@ pub(crate) struct TacticalAssetRenderer {
     logged_layout: Option<OriginalTacticalLayout>,
     palette_selector: u8,
     logged_participant_scene: bool,
+    logged_fighter_scene: bool,
 }
 
 impl Default for TacticalAssetRenderer {
@@ -869,6 +955,9 @@ impl Default for TacticalAssetRenderer {
             participant_families: HashMap::new(),
             participant_lods: HashMap::new(),
             unavailable_families: HashSet::new(),
+            fighter_families: HashMap::new(),
+            fighter_details: HashMap::new(),
+            unavailable_fighter_families: HashSet::new(),
             material: None,
             #[cfg(feature = "interface-test-fixtures")]
             current_lod: OriginalTacticalLod::Medium,
@@ -882,6 +971,7 @@ impl Default for TacticalAssetRenderer {
             logged_layout: None,
             palette_selector: 1,
             logged_participant_scene: false,
+            logged_fighter_scene: false,
         }
     }
 }
@@ -900,8 +990,12 @@ impl TacticalAssetRenderer {
             self.participant_families.clear();
             self.participant_lods.clear();
             self.unavailable_families.clear();
+            self.fighter_families.clear();
+            self.fighter_details.clear();
+            self.unavailable_fighter_families.clear();
             self.material = None;
             self.logged_participant_scene = false;
+            self.logged_fighter_scene = false;
         }
     }
 
@@ -920,10 +1014,12 @@ impl TacticalAssetRenderer {
             layout.battle_extent,
         ));
         self.participant_lods.clear();
+        self.fighter_details.clear();
         self.logged_camera = None;
         self.source_layout = Some(layout);
         self.logged_layout = None;
         self.logged_participant_scene = false;
+        self.logged_fighter_scene = false;
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -933,6 +1029,7 @@ impl TacticalAssetRenderer {
         self.source_layout = None;
         self.logged_layout = None;
         self.logged_participant_scene = false;
+        self.logged_fighter_scene = false;
     }
 
     pub(crate) fn zoom_in(&mut self) {
@@ -1218,6 +1315,7 @@ impl TacticalAssetRenderer {
         gl_use_material(material);
         let mut selected_resources = Vec::new();
         let mut screen_positions = Vec::new();
+        let mut screen_bounds = Vec::new();
         for object in objects {
             let Some(family) = self.participant_families.get(&object.resource_base) else {
                 continue;
@@ -1258,6 +1356,28 @@ impl TacticalAssetRenderer {
                     "{}:{:.3},{:.3}",
                     object.object_id, screen.x, screen.y
                 ));
+                let mut min = screen;
+                let mut max = screen;
+                for vertex in asset.meshes.iter().flat_map(|chunk| &chunk.mesh.vertices) {
+                    if let Some(projected) = project_world_position(
+                        camera_matrix,
+                        vertex.position + object.position,
+                        aperture,
+                    ) {
+                        min = min.min(projected);
+                        max = max.max(projected);
+                    }
+                }
+                report.projections.push(TacticalScreenProjection {
+                    object_id: object.object_id,
+                    center: screen,
+                    min,
+                    max,
+                });
+                screen_bounds.push(format!(
+                    "{}:{:.3},{:.3},{:.3},{:.3}",
+                    object.object_id, min.x, min.y, max.x, max.y
+                ));
             }
             selected_resources.push(format!("{}:{}", object.object_id, asset.resource_id));
         }
@@ -1279,7 +1399,145 @@ impl TacticalAssetRenderer {
                 selected_resources.join(","),
                 screen_positions.join(";"),
             );
+            macroquad::logging::info!(
+                "[tactical_3d] participant_bounds screen_bounds={} source_projection=true",
+                screen_bounds.join(";")
+            );
             self.logged_participant_scene = true;
+        }
+        report
+    }
+
+    /// Draw every mapped live fighter group through its original type-303
+    /// close, far, and two-by-two indicator resources.
+    pub(crate) fn draw_fighters(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalFighterRenderObject],
+    ) -> TacticalDrawReport {
+        let mut report = TacticalDrawReport::default();
+        let Some(source_camera) = self.source_camera else {
+            return report;
+        };
+        if objects.is_empty() {
+            return report;
+        }
+
+        let mut close_resources = objects
+            .iter()
+            .map(|object| object.close_resource_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        close_resources.sort_unstable();
+        for close_resource_id in close_resources {
+            if self.fighter_families.contains_key(&close_resource_id)
+                || self
+                    .unavailable_fighter_families
+                    .contains(&close_resource_id)
+            {
+                continue;
+            }
+            let Some(object) = objects
+                .iter()
+                .find(|object| object.close_resource_id == close_resource_id)
+            else {
+                continue;
+            };
+            if let Err(error) = self.load_fighter_family(*object) {
+                self.unavailable_fighter_families.insert(close_resource_id);
+                macroquad::logging::warn!(
+                    "[tactical_3d] fighter family close={} unavailable: {}",
+                    close_resource_id,
+                    error
+                );
+            }
+        }
+
+        let pose = source_camera.pose();
+        let camera = Camera3D {
+            position: pose.position,
+            target: pose.target,
+            up: pose.up,
+            fovy: pose.fovy_radians,
+            aspect: Some(aperture.2 / aperture.3),
+            viewport: None,
+            z_near: pose.near,
+            z_far: pose.far,
+            ..Default::default()
+        };
+        let camera_matrix = camera.matrix();
+        let camera_forward = (pose.target - pose.position).normalize();
+        let source_scale = aperture.2 / 444.0;
+        let mut selected_resources = Vec::new();
+        let mut screen_positions = Vec::new();
+        let mut screen_bounds = Vec::new();
+        for object in objects {
+            let Some(center) = project_world_position(camera_matrix, object.position, aperture)
+            else {
+                continue;
+            };
+            let axial_depth = (object.position - pose.position).dot(camera_forward).abs();
+            let view_span = axial_depth * pose.field;
+            let prior = self
+                .fighter_details
+                .get(&object.object_id)
+                .copied()
+                .unwrap_or(OriginalFighterDetail::Far);
+            let detail = select_original_fighter_detail(prior, view_span, true);
+            let Some(family) = self.fighter_families.get(&object.close_resource_id) else {
+                continue;
+            };
+            let (resource_id, texture) = family.selected(detail);
+            let size = vec2(texture.width(), texture.height()) * source_scale;
+            let min = center - size * 0.5;
+            let max = min + size;
+            draw_texture_ex(
+                texture,
+                min.x,
+                min.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(size),
+                    ..Default::default()
+                },
+            );
+            self.fighter_details.insert(object.object_id, detail);
+            report.rendered_object_ids.push(object.object_id);
+            report.screen_positions.push((object.object_id, center));
+            report.projections.push(TacticalScreenProjection {
+                object_id: object.object_id,
+                center,
+                min,
+                max,
+            });
+            selected_resources.push(format!(
+                "{}:{}:{:?}:{:.3}",
+                object.object_id, resource_id, detail, view_span
+            ));
+            screen_positions.push(format!(
+                "{}:{:.3},{:.3}",
+                object.object_id, center.x, center.y
+            ));
+            screen_bounds.push(format!(
+                "{}:{:.3},{:.3},{:.3},{:.3}",
+                object.object_id, min.x, min.y, max.x, max.y
+            ));
+        }
+
+        if !self.logged_fighter_scene {
+            let mut families = self.fighter_families.keys().copied().collect::<Vec<_>>();
+            families.sort_unstable();
+            macroquad::logging::info!(
+                "[tactical_3d] fighter_scene requested={} rendered={} families={} resources={} screen_positions={} screen_bounds={} source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0",
+                objects.len(),
+                report.rendered_object_ids.len(),
+                families.iter().map(u32::to_string).collect::<Vec<_>>().join(","),
+                selected_resources.join(","),
+                screen_positions.join(";"),
+                screen_bounds.join(";"),
+            );
+            self.logged_fighter_scene = true;
         }
         report
     }
@@ -1512,6 +1770,80 @@ impl TacticalAssetRenderer {
             diagnostics.join(","),
             self.family_loads,
         );
+        Ok(())
+    }
+
+    fn load_fighter_family(&mut self, object: TacticalFighterRenderObject) -> Result<(), String> {
+        let palette_resource_id = 5530 + u32::from(self.palette_selector);
+        let resource_ids = [
+            object.close_resource_id,
+            object.far_resource_id,
+            object.indicator_resource_id,
+        ];
+        let (payloads, palette_payload) = {
+            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+            let payloads = resource_ids
+                .iter()
+                .map(|resource_id| {
+                    let key = format!("{resource_id}/1033");
+                    cache
+                        .textures
+                        .get(&key)
+                        .cloned()
+                        .map(|bytes| (*resource_id, bytes))
+                        .ok_or_else(|| format!("typed texture entry {key} is missing"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let palette_key = format!("{palette_resource_id}/1033");
+            let palette = cache
+                .textures
+                .get(&palette_key)
+                .cloned()
+                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
+            (payloads, palette)
+        };
+        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
+        let mut textures = payloads
+            .into_iter()
+            .map(|(resource_id, bytes)| {
+                decode_indexed_texture(&bytes, &palette).map(|texture| (resource_id, texture))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let close = textures
+            .remove(&object.close_resource_id)
+            .ok_or("decoded fighter close texture is missing")?;
+        let far = textures
+            .remove(&object.far_resource_id)
+            .ok_or("decoded fighter far texture is missing")?;
+        let indicator = textures
+            .remove(&object.indicator_resource_id)
+            .ok_or("decoded fighter indicator texture is missing")?;
+        macroquad::logging::info!(
+            "[tactical_3d] fighter_family_loaded close={} far={} indicator={} dimensions={}x{},{}x{},{}x{} palette_selector={} palette_resource_id={} texture_filter=nearest alpha=opaque source=FUN_005c63f0",
+            object.close_resource_id,
+            object.far_resource_id,
+            object.indicator_resource_id,
+            close.width(),
+            close.height(),
+            far.width(),
+            far.height(),
+            indicator.width(),
+            indicator.height(),
+            self.palette_selector,
+            palette_resource_id,
+        );
+        self.fighter_families.insert(
+            object.close_resource_id,
+            TacticalFighterAsset {
+                close_resource_id: object.close_resource_id,
+                close,
+                far_resource_id: object.far_resource_id,
+                far,
+                indicator_resource_id: object.indicator_resource_id,
+                indicator,
+            },
+        );
+        self.family_loads = self.family_loads.saturating_add(1);
         Ok(())
     }
 }
@@ -1750,11 +2082,12 @@ fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Text
         || pixels > 16_777_216
         || palette_id != 0
         || palette_rule != 1
-        || trailing != 0
+        || !matches!(trailing, 0 | 4)
     {
-        return Err("invalid P56 indexed tactical texture header".to_string());
+        return Err("invalid indexed tactical texture header".to_string());
     }
     let indices = reader.bytes(pixels)?;
+    reader.bytes(trailing)?;
     if !reader.finished() {
         return Err("tactical texture object has trailing bytes".to_string());
     }
@@ -2212,6 +2545,35 @@ mod tests {
                 select_original_tactical_lod(current, TacticalLodView::from_fixture_zoom(zoom));
             assert_eq!(current, expected);
         }
+    }
+
+    #[test]
+    fn original_fighter_detail_uses_exact_source_thresholds() {
+        for (view_span, expected) in [
+            (0.0, OriginalFighterDetail::Close),
+            (4.999, OriginalFighterDetail::Close),
+            (5.0, OriginalFighterDetail::Far),
+            (9.999, OriginalFighterDetail::Far),
+            (10.0, OriginalFighterDetail::Indicator),
+            (100.0, OriginalFighterDetail::Indicator),
+        ] {
+            assert_eq!(
+                select_original_fighter_detail(OriginalFighterDetail::Far, view_span, true),
+                expected
+            );
+        }
+        assert_eq!(
+            select_original_fighter_detail(OriginalFighterDetail::Close, 1.0, false),
+            OriginalFighterDetail::Far
+        );
+        assert_eq!(
+            select_original_fighter_detail(OriginalFighterDetail::Indicator, f32::NAN, true),
+            OriginalFighterDetail::Indicator
+        );
+        assert_eq!(
+            select_original_fighter_detail(OriginalFighterDetail::Close, -1.0, true),
+            OriginalFighterDetail::Close
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]

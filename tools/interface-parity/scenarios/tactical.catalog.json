@@ -83,17 +83,17 @@
     },
     {
       "slug": "production-participants",
-      "description": "Live BattleSession capital ships rendered from their exact DAT-joined three-LOD tactical resource families",
+      "description": "Live BattleSession capital ships and fighter groups rendered from exact DAT-joined tactical resources with camera-projected selection and targeting",
       "fixture_codes": { "alliance": 65800, "empire": 66056 },
       "tactical_proof": false,
       "production_participants": true,
       "expected_status": "battle-ready",
       "audit_cells": [],
-      "acceptance": "Provisional A1 production resource-family rendering proof only. Fighters, object rotation, selection, effects, and native A0 comparison remain open."
+      "acceptance": "Provisional A1 production capital and fighter resource rendering plus projection-aligned interaction proof only. Object rotation, complete effects, and native A0 comparison remain open."
     },
     {
       "slug": "production-participants-3d-off",
-      "description": "Framebuffer negative control with both 3D submission and mapped capital fallbacks suppressed",
+      "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },
       "tactical_proof": false,
       "suppress_capital_fallback": true,

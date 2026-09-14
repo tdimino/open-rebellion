@@ -1,0 +1,27 @@
+{
+  "reviewer": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "reviewed_at": "2026-09-14",
+  "verdict": "qualified_a1_acceptance",
+  "inspected_files": {
+    "directory": "docs/qa/2026-09-10-interface-parity-audit/evidence/p58c-tactical-fighters-selection",
+    "coverage": "all_14_pngs_and_9_preexisting_jsons_with_screenshot_hashes_verified",
+    "additional_image": "docs/qa/2026-09-10-interface-parity-audit/reference-captures/lp-archive-expanded/tactical-own-ship-attacking.png"
+  },
+  "confirmed": [
+    "full_summary_reports_36_of_36_pass_with_four_request_startups_muted_launches_closed_processes_and_zero_unstable_screenshots",
+    "all_eight_detailed_scenarios_record_four_http_200_requests_matching_frame_hashes_isolated_profiles_muting_closed_cleanup_and_no_runtime_errors",
+    "both_factions_retain_cockpit_framing_capital_geometry_and_fighter_indicator_pixels_at_640x480_and_1280x800_letterboxed",
+    "negative_controls_omit_mapped_capital_and_fighter_rendering_while_retaining_the_cockpit",
+    "alliance_640x480_visibly_transitions_selected_deselected_selected_and_targeted_with_cockpit_framing_intact"
+  ],
+  "limitations": [
+    "no_1280x960_capture_or_result_was_supplied_the_large_viewport_is_1280x800_letterboxed",
+    "the_36_of_36_result_is_aggregate_and_eight_detailed_records_are_retained_in_this_bundle",
+    "stability_covers_paused_captures_and_cleanup_is_recorded_not_independently_observed_by_the_reviewer",
+    "negative_controls_load_the_pack_but_omit_source_asset_rendering",
+    "initial_fighters_resolve_to_tiny_indicator_resources_not_close_range_silhouettes",
+    "all_images_are_a1_and_all_36_comparisons_are_unbaselined"
+  ],
+  "next_gate": "capture_both_factions_from_an_owned_original_at_lossless_640x480_then_compare_the_required_tactical_states_and_keep_all_106_cells_open_until_that_gate_passes"
+}

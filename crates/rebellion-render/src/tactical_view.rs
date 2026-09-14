@@ -22,6 +22,8 @@
 //! }
 //! ```
 
+use std::collections::HashMap;
+
 use egui_macroquad::egui::{self, Color32, RichText, Vec2};
 use macroquad::prelude::*;
 use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey, FleetKey, SystemKey};
@@ -31,7 +33,10 @@ use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::sector_window::planet_picture_id;
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::TacticalLodView;
-use crate::tactical_assets::{TacticalAssetRenderer, TacticalRenderObject};
+use crate::tactical_assets::{
+    TacticalAssetRenderer, TacticalFighterRenderObject, TacticalRenderObject,
+    TacticalScreenProjection,
+};
 use crate::tactical_resources::{
     capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
     TacticalCapitalShipResource, TacticalDeathStarResource, TacticalFighterResource,
@@ -1101,6 +1106,8 @@ pub struct TacticalState {
     #[cfg(feature = "interface-test-fixtures")]
     suppress_mapped_capital_fallback: bool,
     #[cfg(feature = "interface-test-fixtures")]
+    suppress_mapped_fighter_fallback: bool,
+    #[cfg(feature = "interface-test-fixtures")]
     proof_resource_2560: bool,
     #[cfg(feature = "interface-test-fixtures")]
     proof_lod_follows_zoom: bool,
@@ -1121,6 +1128,8 @@ impl Default for TacticalState {
             asset_renderer: TacticalAssetRenderer::default(),
             #[cfg(feature = "interface-test-fixtures")]
             suppress_mapped_capital_fallback: false,
+            #[cfg(feature = "interface-test-fixtures")]
+            suppress_mapped_fighter_fallback: false,
             #[cfg(feature = "interface-test-fixtures")]
             proof_resource_2560: false,
             #[cfg(feature = "interface-test-fixtures")]
@@ -1164,6 +1173,7 @@ impl TacticalState {
         #[cfg(feature = "interface-test-fixtures")]
         {
             self.suppress_mapped_capital_fallback = false;
+            self.suppress_mapped_fighter_fallback = false;
             self.proof_resource_2560 = false;
             self.proof_lod_follows_zoom = false;
         }
@@ -1227,10 +1237,11 @@ impl TacticalState {
         self.asset_renderer.disable_original_camera();
     }
 
-    /// Remove mapped capital fallbacks in the browser-only framebuffer control.
+    /// Remove mapped participant fallbacks in the browser-only framebuffer control.
     #[cfg(feature = "interface-test-fixtures")]
     pub fn suppress_mapped_capital_fallback(&mut self) {
         self.suppress_mapped_capital_fallback = true;
+        self.suppress_mapped_fighter_fallback = true;
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -1752,17 +1763,17 @@ pub fn draw_tactical_view(
     set_tactical_aperture_clip(Some(canvas.aperture()));
     draw_starfield(canvas);
 
-    // 2. Submit mapped production capital ships through the original 3D
-    // resource families. Unmapped or unavailable objects retain the bounded
-    // 2D fallback below.
+    // 2. Submit mapped production participants through their original 3D and
+    // type-303 resource families. Unmapped or unavailable objects retain the
+    // bounded 2D fallback below.
     let (scale, offset_x, offset_y) =
         canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
-    let production_objects = if state.render_original_participants {
+    let (production_objects, production_fighters) = if state.render_original_participants {
         state
             .session
             .as_ref()
             .map(|session| {
-                session
+                let ships = session
                     .ships
                     .iter()
                     .enumerate()
@@ -1774,25 +1785,61 @@ pub fn draw_tactical_view(
                             position: ship.source_position.rendered(),
                         })
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                let fighters = session
+                    .fighters
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, fighter)| fighter.alive)
+                    .filter_map(|(index, fighter)| {
+                        fighter.tactical_resource.map(|resource| {
+                            let player_side = fighter.is_attacker == session.player_is_attacker;
+                            TacticalFighterRenderObject {
+                                object_id: u32::try_from(index)
+                                    .unwrap_or(u32::MAX)
+                                    .saturating_add(1001),
+                                close_resource_id: resource.initial_close_resource(player_side),
+                                far_resource_id: resource.initial_far_resource(player_side),
+                                indicator_resource_id: resource
+                                    .initial_indicator_resource(player_side),
+                                position: fighter.source_position.rendered(),
+                            }
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                (ships, fighters)
             })
             .unwrap_or_default()
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
-    let rendered_ship_indexes = state
+    let aperture = canvas.aperture();
+    let aperture_tuple = (aperture.x, aperture.y, aperture.width, aperture.height);
+    let ship_report = state
         .asset_renderer
-        .draw_participants(
-            {
-                let aperture = canvas.aperture();
-                (aperture.x, aperture.y, aperture.width, aperture.height)
-            },
-            &production_objects,
-        )
+        .draw_participants(aperture_tuple, &production_objects);
+    let fighter_report = state
+        .asset_renderer
+        .draw_fighters(aperture_tuple, &production_fighters);
+    let rendered_ship_indexes = ship_report
         .rendered_object_ids
         .into_iter()
         .filter_map(|object_id| usize::try_from(object_id.saturating_sub(1)).ok())
         .collect::<Vec<_>>();
+    let rendered_fighter_indexes = fighter_report
+        .rendered_object_ids
+        .into_iter()
+        .filter_map(|object_id| usize::try_from(object_id.saturating_sub(1001)).ok())
+        .collect::<Vec<_>>();
+    let ship_projections = ship_report
+        .projections
+        .into_iter()
+        .filter_map(|projection| {
+            usize::try_from(projection.object_id.saturating_sub(1))
+                .ok()
+                .map(|index| (index, projection))
+        })
+        .collect::<HashMap<_, _>>();
 
     #[cfg(feature = "interface-test-fixtures")]
     if state.proof_resource_2560 {
@@ -1985,9 +2032,28 @@ pub fn draw_tactical_view(
         }
     }
 
+    // The retained 3D submission and the interaction layer share these exact
+    // projected bounds. This replaces the obsolete arena-coordinate frame.
+    for (ship_index, projection) in &ship_projections {
+        let Some(ship) = session.ships.get(*ship_index) else {
+            continue;
+        };
+        if ship.alive && ship.selected {
+            draw_projected_selection_frame(*projection, canvas.scale);
+        }
+    }
+
     // 5. Draw fighter squadrons.
-    for fighter in &session.fighters {
-        if !fighter.alive {
+    for (fighter_index, fighter) in session.fighters.iter().enumerate() {
+        #[cfg(feature = "interface-test-fixtures")]
+        let suppress_fixture_fallback =
+            state.suppress_mapped_fighter_fallback && fighter.tactical_resource.is_some();
+        #[cfg(not(feature = "interface-test-fixtures"))]
+        let suppress_fixture_fallback = false;
+        if !fighter.alive
+            || rendered_fighter_indexes.contains(&fighter_index)
+            || suppress_fixture_fallback
+        {
             continue;
         }
         let fx = offset_x + fighter.x * scale;
@@ -2032,29 +2098,46 @@ pub fn draw_tactical_view(
             session.ships.get(effect.source),
             session.ships.get(effect.target),
         ) {
-            let sx = offset_x + src.x * scale;
-            let sy = offset_y + src.y * scale;
-            let tx = offset_x + tgt.x * scale;
-            let ty = offset_y + tgt.y * scale;
+            let source = tactical_ship_screen_position(
+                effect.source,
+                src,
+                &ship_projections,
+                scale,
+                offset_x,
+                offset_y,
+            );
+            let target = tactical_ship_screen_position(
+                effect.target,
+                tgt,
+                &ship_projections,
+                scale,
+                offset_x,
+                offset_y,
+            );
 
             let base_color = effect.kind.color();
             let alpha = (f32::from(effect.ttl) / 8.0).min(1.0);
             let color = Color::new(base_color.r, base_color.g, base_color.b, alpha);
 
             // Main beam.
-            draw_line(sx, sy, tx, ty, 2.0, color);
+            draw_line(source.x, source.y, target.x, target.y, 2.0, color);
 
             // Impact flash at target (brief bright circle).
             if effect.ttl > 5 {
                 let flash_r = 4.0 + f32::from(8 - effect.ttl) * 2.0;
-                draw_circle(tx, ty, flash_r, Color::new(1.0, 1.0, 0.8, alpha * 0.6));
+                draw_circle(
+                    target.x,
+                    target.y,
+                    flash_r,
+                    Color::new(1.0, 1.0, 0.8, alpha * 0.6),
+                );
             }
         }
     }
 
     // 6b. Draw targeting lines from player ships to their focus targets.
     if phase == BattlePhase::Combat {
-        for ship in &session.ships {
+        for (ship_index, ship) in session.ships.iter().enumerate() {
             if !ship.alive || !ship.selected {
                 continue;
             }
@@ -2064,15 +2147,45 @@ pub fn draw_tactical_view(
             if let Some(ft_idx) = ship.focus_target {
                 if let Some(target) = session.ships.get(ft_idx) {
                     if target.alive {
-                        let sx = offset_x + ship.x * scale;
-                        let sy = offset_y + ship.y * scale;
-                        let tx = offset_x + target.x * scale;
-                        let ty = offset_y + target.y * scale;
+                        let source = tactical_ship_screen_position(
+                            ship_index,
+                            ship,
+                            &ship_projections,
+                            scale,
+                            offset_x,
+                            offset_y,
+                        );
+                        let target = tactical_ship_screen_position(
+                            ft_idx,
+                            target,
+                            &ship_projections,
+                            scale,
+                            offset_x,
+                            offset_y,
+                        );
                         // Dashed targeting line.
-                        draw_line(sx, sy, tx, ty, 1.0, Color::new(1.0, 0.5, 0.0, 0.4));
+                        draw_line(
+                            source.x,
+                            source.y,
+                            target.x,
+                            target.y,
+                            1.0,
+                            Color::new(1.0, 0.5, 0.0, 0.4),
+                        );
                         // Target reticle on enemy.
-                        let r = DEFAULT_SHIP_SIZE * scale * 0.4;
-                        draw_circle_lines(tx, ty, r, 1.5, Color::new(1.0, 0.3, 0.0, 0.7));
+                        let r = ship_projections.get(&ft_idx).map_or(
+                            DEFAULT_SHIP_SIZE * scale * 0.4,
+                            |projection| {
+                                (projection.max - projection.min).max_element() * 0.6 + 3.0
+                            },
+                        );
+                        draw_circle_lines(
+                            target.x,
+                            target.y,
+                            r,
+                            1.5,
+                            Color::new(1.0, 0.3, 0.0, 0.7),
+                        );
                     }
                 }
             }
@@ -2123,7 +2236,14 @@ pub fn draw_tactical_view(
         );
     } else if phase == BattlePhase::Combat {
         let session = state.session.as_mut().unwrap();
-        handle_combat_input(session, scale, offset_x, offset_y, canvas.aperture());
+        handle_combat_input(
+            session,
+            scale,
+            offset_x,
+            offset_y,
+            canvas.aperture(),
+            &ship_projections,
+        );
     }
 
     if phase == BattlePhase::Combat {
@@ -2489,6 +2609,40 @@ pub fn draw_tactical_view(
 // Combat input handling
 // ---------------------------------------------------------------------------
 
+fn tactical_ship_screen_position(
+    ship_index: usize,
+    ship: &TacticalShip,
+    projections: &HashMap<usize, TacticalScreenProjection>,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+) -> macroquad::math::Vec2 {
+    projections.get(&ship_index).map_or_else(
+        || macroquad::math::Vec2::new(offset_x + ship.x * scale, offset_y + ship.y * scale),
+        |projection| projection.center,
+    )
+}
+
+fn draw_projected_selection_frame(projection: TacticalScreenProjection, canvas_scale: f32) {
+    let padding = 3.0 * canvas_scale;
+    let minimum_size = 10.0 * canvas_scale;
+    let minimum_half = macroquad::math::Vec2::splat(minimum_size * 0.5);
+    let origin = (projection.min - macroquad::math::Vec2::splat(padding))
+        .min(projection.center - minimum_half);
+    let max = (projection.max + macroquad::math::Vec2::splat(padding))
+        .max(projection.center + minimum_half);
+    let size = max - origin;
+    let corner = (size.min_element() * 0.28).clamp(3.0 * canvas_scale, 8.0 * canvas_scale);
+    let color = Color::new(1.0, 0.82, 0.12, 0.95);
+    let thickness = canvas_scale.max(1.0);
+    for (x, x_direction) in [(origin.x, 1.0), (origin.x + size.x, -1.0)] {
+        for (y, y_direction) in [(origin.y, 1.0), (origin.y + size.y, -1.0)] {
+            draw_line(x, y, x + corner * x_direction, y, thickness, color);
+            draw_line(x, y, x, y + corner * y_direction, thickness, color);
+        }
+    }
+}
+
 /// Handle mouse input during the combat phase.
 ///
 /// - Left-click: select a player ship.
@@ -2500,12 +2654,15 @@ fn handle_combat_input(
     offset_x: f32,
     offset_y: f32,
     aperture: NativeRect,
+    projections: &HashMap<usize, TacticalScreenProjection>,
 ) {
     let (mx, my) = mouse_position();
     let inside_battle = aperture.contains(mx, my);
     let arena_pointer_x = (mx - offset_x) / scale;
     let arena_pointer_y = (my - offset_y) / scale;
     let hit_radius = DEFAULT_SHIP_SIZE * 0.6;
+    let screen_pointer = macroquad::math::Vec2::new(mx, my);
+    let projected_hit_radius = 7.0 * (aperture.width / BATTLE_APERTURE.width);
 
     // Left-click: select player's ship.
     if inside_battle && is_mouse_button_pressed(MouseButton::Left) {
@@ -2517,9 +2674,14 @@ fn handle_combat_input(
             if ship.is_attacker != session.player_is_attacker {
                 continue;
             }
+            let projected_hit = projections.get(&i).is_some_and(|projection| {
+                projection.contains(screen_pointer, projected_hit_radius)
+            });
             let dx = arena_pointer_x - ship.x;
             let dy = arena_pointer_y - ship.y;
-            if dx * dx + dy * dy < hit_radius * hit_radius {
+            if projected_hit
+                || (!projections.contains_key(&i) && dx * dx + dy * dy < hit_radius * hit_radius)
+            {
                 hit = Some(i);
                 break;
             }
@@ -2536,6 +2698,11 @@ fn handle_combat_input(
                 session.ships[idx].selected = true;
             }
             session.selected_ship = Some(idx);
+            macroquad::logging::info!(
+                "[tactical_3d] selection object_id={} source_projection={}",
+                idx + 1,
+                projections.contains_key(&idx)
+            );
         } else {
             // Clicked empty space — deselect all.
             for s in &mut session.ships {
@@ -2556,9 +2723,14 @@ fn handle_combat_input(
             if ship.is_attacker == session.player_is_attacker {
                 continue;
             }
+            let projected_hit = projections.get(&i).is_some_and(|projection| {
+                projection.contains(screen_pointer, projected_hit_radius)
+            });
             let dx = arena_pointer_x - ship.x;
             let dy = arena_pointer_y - ship.y;
-            if dx * dx + dy * dy < hit_radius * hit_radius {
+            if projected_hit
+                || (!projections.contains_key(&i) && dx * dx + dy * dy < hit_radius * hit_radius)
+            {
                 target_hit = Some(i);
                 break;
             }
@@ -2566,11 +2738,30 @@ fn handle_combat_input(
 
         if let Some(target_idx) = target_hit {
             // Assign focus-fire to all selected player ships.
+            let mut assigned = Vec::new();
             for ship in &mut session.ships {
                 if ship.selected && ship.is_attacker == session.player_is_attacker && ship.alive {
                     ship.focus_target = Some(target_idx);
                 }
             }
+            for (index, ship) in session.ships.iter().enumerate() {
+                if ship.selected && ship.focus_target == Some(target_idx) {
+                    assigned.push(index + 1);
+                }
+            }
+            macroquad::logging::info!(
+                "[tactical_3d] focus source_object_ids={} target_object_id={} source_projection={}",
+                assigned
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                target_idx + 1,
+                projections.contains_key(&target_idx)
+                    && assigned
+                        .iter()
+                        .all(|object_id| projections.contains_key(&(*object_id - 1)))
+            );
         } else {
             // Right-clicked empty space — clear focus targets for selected ships.
             for ship in &mut session.ships {

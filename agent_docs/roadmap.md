@@ -622,10 +622,15 @@ would tune around known simulation feedback defects.
   browser gate with paired 3D-off framebuffer controls. Keep fighters,
   selection presentation, effects, commands,
   outcomes, A0 comparison, and every strict tactical cell open.
+- [x] Complete P58C tactical fighter rendering and projected interaction:
+  render the exact type-303 close, far, and indicator resources through the
+  recovered detail predicate; move capital selection, focus, targeting, and
+  framing onto projected mesh bounds; and pass the 36-case muted browser gate
+  with paired controls. Keep every strict tactical cell open pending A0.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58C next replaces procedural fighter groups and restores selection
-  framing before planets and effects.
+  states. P58D next restores task-force and squadron presentation plus the
+  close/far fighter camera journeys before damage, planets, and effects.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

@@ -104,6 +104,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58B production-participant evidence](evidence/2026-09-14-tactical-production-participants.md)
   for exact live capital-family rendering, paired 3D-off proof, the 36-case
   muted browser gate, and the fighter/selection/A0 boundary.
+- Review the [P58C fighter and selection evidence](evidence/2026-09-14-tactical-fighters-selection.md)
+  for original type-303 fighter resources, exact detail thresholds,
+  projection-aligned capital interactions, and the remaining A0 boundary.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -196,9 +199,10 @@ culling, depth, dither, shading, specular, and diffuse/emissive material state.
 P58A replaces approximate sprite arithmetic with all 29 capital-ship, eight
 fighter, and Death Star DAT resource joins, and transports all 87 meshes and
 397 textures through the four-request browser pack. P58B renders live
-production capital ships from their joined families at source positions.
-Fighter sprites, selection presentation, effects, commands, results, and A0
-comparisons remain open.
+production capital ships from their joined families at source positions. P58C
+renders source-mapped fighter groups and aligns capital selection and targeting
+with the projected meshes. Close/far fighter journeys, task-force and squadron
+panels, effects, commands, results, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

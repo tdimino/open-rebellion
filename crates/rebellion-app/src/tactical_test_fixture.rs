@@ -282,6 +282,9 @@ struct FixtureParticipant<'a> {
     tactical_ordinal: Option<u8>,
     resource_base: Option<u32>,
     opposing_resource_base: Option<u32>,
+    initial_close_resource: Option<u32>,
+    initial_far_resource: Option<u32>,
+    initial_indicator_resource: Option<u32>,
     source_position: [f32; 3],
 }
 
@@ -322,6 +325,9 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             opposing_resource_base: ship
                 .death_star_resource
                 .map(|resource| resource.resource_base_with_flag),
+            initial_close_resource: None,
+            initial_far_resource: None,
+            initial_indicator_resource: None,
             source_position: [
                 ship.source_position.x,
                 ship.source_position.y,
@@ -330,6 +336,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         }
     }));
     participants.extend(session.fighters.iter().map(|fighter| {
+        let player_side = fighter.is_attacker == session.player_is_attacker;
         FixtureParticipant {
             kind: "fighter-group",
             name: &fighter.name,
@@ -349,6 +356,15 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             opposing_resource_base: fighter
                 .tactical_resource
                 .map(|resource| resource.opposing_side_resource_base),
+            initial_close_resource: fighter
+                .tactical_resource
+                .map(|resource| resource.initial_close_resource(player_side)),
+            initial_far_resource: fighter
+                .tactical_resource
+                .map(|resource| resource.initial_far_resource(player_side)),
+            initial_indicator_resource: fighter
+                .tactical_resource
+                .map(|resource| resource.initial_indicator_resource(player_side)),
             source_position: [
                 fighter.source_position.x,
                 fighter.source_position.y,
@@ -357,7 +373,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         }
     }));
     emit(&FixtureRecord {
-        schema_version: 6,
+        schema_version: 7,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -396,7 +412,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 6,
+        schema_version: 7,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,

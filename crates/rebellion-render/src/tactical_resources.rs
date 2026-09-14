@@ -22,6 +22,34 @@ pub struct TacticalFighterResource {
     pub opposing_side_resource_base: u32,
 }
 
+impl TacticalFighterResource {
+    /// Initial gray close sprite selected by `FUN_005ab650` and
+    /// `FUN_005c63f0`. Player-side groups add the constructor's color state
+    /// `4` to the first base; opposing groups start directly at the paired
+    /// `+4` base.
+    #[must_use]
+    pub const fn initial_close_resource(self, player_side: bool) -> u32 {
+        if player_side {
+            self.first_side_resource_base + 4
+        } else {
+            self.opposing_side_resource_base
+        }
+    }
+
+    /// The retained fighter visual loads its far sprite at close ID `+5`.
+    #[must_use]
+    pub const fn initial_far_resource(self, player_side: bool) -> u32 {
+        self.initial_close_resource(player_side) + 5
+    }
+
+    /// The third retained visual is the two-by-two color indicator at
+    /// `4200 + (close ID % 10)`.
+    #[must_use]
+    pub const fn initial_indicator_resource(self, player_side: bool) -> u32 {
+        4200 + self.initial_close_resource(player_side) % 10
+    }
+}
+
 /// The Death Star is selected outside the 29-entry capital-ship mesh table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TacticalDeathStarResource {
@@ -158,14 +186,16 @@ mod tests {
 
     #[test]
     fn fighter_join_preserves_source_registry_permutations() {
-        assert_eq!(
-            fighter_tactical_resource(DatId::new(3)),
-            Some(TacticalFighterResource {
-                tactical_ordinal: 29,
-                first_side_resource_base: 4000,
-                opposing_side_resource_base: 4004,
-            })
-        );
+        let x_wing = TacticalFighterResource {
+            tactical_ordinal: 29,
+            first_side_resource_base: 4000,
+            opposing_side_resource_base: 4004,
+        };
+        assert_eq!(fighter_tactical_resource(DatId::new(3)), Some(x_wing));
+        assert_eq!(x_wing.initial_close_resource(true), 4004);
+        assert_eq!(x_wing.initial_close_resource(false), 4004);
+        assert_eq!(x_wing.initial_far_resource(true), 4009);
+        assert_eq!(x_wing.initial_indicator_resource(true), 4204);
         assert_eq!(
             fighter_tactical_resource(DatId::new(1)),
             Some(TacticalFighterResource {
@@ -174,6 +204,10 @@ mod tests {
                 opposing_side_resource_base: 4024,
             })
         );
+        let tie = fighter_tactical_resource(DatId::new(5)).unwrap();
+        assert_eq!(tie.initial_close_resource(false), 4104);
+        assert_eq!(tie.initial_far_resource(false), 4109);
+        assert_eq!(tie.initial_indicator_resource(false), 4204);
     }
 
     #[test]

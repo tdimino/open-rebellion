@@ -213,7 +213,10 @@ source-named tactical registry to every ship and fighter DAT identity, removes
 approximate sprite arithmetic, and browser-proves complete 87-mesh and
 397-texture transport. [P58B evidence](evidence/2026-09-14-tactical-production-participants.md)
 proves live production capital-family drawing at recovered source positions.
-Fighter rendering, selection framing, and original visual acceptance remain
+[P58C evidence](evidence/2026-09-14-tactical-fighters-selection.md) proves the
+type-303 fighter resource triplets, exact detail thresholds, production fighter
+pixels, and projection-aligned capital interactions. Close/far browser
+journeys, squadron and task-force panels, and original visual acceptance remain
 open.
 
 ## Immediate implementation order

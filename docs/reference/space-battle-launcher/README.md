@@ -81,19 +81,22 @@ and closes every process. Raw runs live under ignored
   carries all 87 meshes and 397 textures.
 - P58B renders two live production capital participants from exact families
   `2010` and `2510`, preserving source positions and the recovered view state.
+- P58C renders the exact type-303 fighter detail resources and uses projected
+  capital mesh bounds for selection, focus, targeting, and framing.
 - The complete bundle passes 36 of 36 muted browser cases across both factions
-  and both viewports with no runtime errors.
+  and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
-bridge is test-only. Fighter sprites, selection presentation, native GPU and A0
-comparison, remaining commands, damage, effects, Death Star paths, results,
-audio, and return routing remain open. All
+bridge is test-only. Close/far fighter journeys, squadron and task-force
+presentation, native GPU and A0 comparison, remaining commands, damage,
+effects, Death Star paths, results, audio, and return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
 
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58C tactical fighter and selection evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md)
 - [P58B production capital-participant evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md)
 - [P58A tactical resource-join evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md)
 - [P57B2C2B retained-mode render-state evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md)

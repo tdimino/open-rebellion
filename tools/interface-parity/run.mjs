@@ -668,13 +668,15 @@ function tacticalApertureChangedPixels(viewport, proofBytes, controlBytes) {
   return changed;
 }
 
-function tacticalModelRegionChangedPixels(viewport, proofBytes, controlBytes, center) {
+function tacticalModelRegionChangedPixels(
+  viewport, proofBytes, controlBytes, center, logicalRadius = 12,
+) {
   const proof = PNG.sync.read(proofBytes);
   const control = PNG.sync.read(controlBytes);
   assert.equal(proof.width, control.width);
   assert.equal(proof.height, control.height);
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const radius = Math.ceil(12 * scale);
+  const radius = Math.ceil(logicalRadius * scale);
   const x0 = Math.max(0, Math.floor(center.x - radius));
   const y0 = Math.max(0, Math.floor(center.y - radius));
   const x1 = Math.min(proof.width, Math.ceil(center.x + radius));
@@ -761,7 +763,25 @@ function verifyTacticalProductionParticipants(results, factions, viewports) {
         };
       });
       assert.deepEqual(modelRegions.map(({ object_id }) => object_id), [1, 2]);
-      const minimumChanged = modelRegions.reduce(
+      const fighterSceneLog = production.console.find(({ text }) =>
+        text.includes("[tactical_3d] fighter_scene"));
+      const fighterPositionMatch = fighterSceneLog?.text.match(/screen_positions=([^ ]+)/);
+      assert.ok(fighterPositionMatch, "production fighter scene omitted projected positions");
+      const fighterRegions = fighterPositionMatch[1].split(";").map((entry) => {
+        const match = entry.match(/^(\d+):(-?[\d.]+),(-?[\d.]+)$/);
+        assert.ok(match, `invalid projected fighter position ${entry}`);
+        const center = { x: Number(match[2]), y: Number(match[3]) };
+        return {
+          object_id: Number(match[1]),
+          center,
+          changed_pixels: tacticalModelRegionChangedPixels(
+            viewport, productionImage, controlImage, center, 4,
+          ),
+          minimum_changed_pixels: Math.ceil(scale * scale),
+        };
+      });
+      assert.deepEqual(fighterRegions.map(({ object_id }) => object_id), [1001, 1002]);
+      const minimumChanged = [...modelRegions, ...fighterRegions].reduce(
         (total, region) => total + region.minimum_changed_pixels, 0,
       );
       const probe = {
@@ -771,14 +791,15 @@ function verifyTacticalProductionParticipants(results, factions, viewports) {
         changed_aperture_pixels: changedPixels,
         minimum_changed_pixels: minimumChanged,
         model_regions: modelRegions,
+        fighter_regions: fighterRegions,
       };
       for (const result of [production, control]) result.probes.push(probe);
       if (changedPixels < minimumChanged
-        || modelRegions.some((region) =>
+        || [...modelRegions, ...fighterRegions].some((region) =>
           region.changed_pixels < region.minimum_changed_pixels)) {
         production.status = "fail";
         control.status = "fail";
-        production.error = "production participant framebuffer lacks visible model pixels";
+        production.error = "production participant framebuffer lacks visible source pixels";
         control.error = production.error;
       }
       for (const result of [production, control]) {
@@ -1108,6 +1129,63 @@ async function probeTacticalCameraJourney(page, viewport, folder, stable) {
   }));
 }
 
+function parseTacticalScenePositions(line, label) {
+  const match = line?.text.match(/screen_positions=([^ ]+)/);
+  assert.ok(match, `${label} omitted projected positions`);
+  return new Map(match[1].split(";").map((entry) => {
+    const position = entry.match(/^(\d+):(-?[\d.]+),(-?[\d.]+)$/);
+    assert.ok(position, `invalid ${label} projected position ${entry}`);
+    return [Number(position[1]), { x: Number(position[2]), y: Number(position[3]) }];
+  }));
+}
+
+async function probeTacticalProductionParticipants(
+  page, folder, stable, consoleLines, faction,
+) {
+  const participantLine = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] participant_scene"));
+  const positions = parseTacticalScenePositions(participantLine, "capital participant scene");
+  const playerObjectId = faction === "alliance" ? 1 : 2;
+  const targetObjectId = faction === "alliance" ? 2 : 1;
+  const player = positions.get(playerObjectId);
+  const target = positions.get(targetObjectId);
+  assert.ok(player && target, "production participant interaction positions are incomplete");
+
+  await page.mouse.click(player.x - 80, player.y, { button: "left" });
+  await page.waitForTimeout(80);
+  const deselected = await stableInteractionFrame(page, folder, "production-deselection");
+  await page.mouse.click(player.x, player.y, { button: "left" });
+  await page.waitForTimeout(80);
+  const selected = await stableInteractionFrame(page, folder, "production-selection");
+  await page.mouse.click(target.x, target.y, { button: "right" });
+  await page.waitForTimeout(80);
+  const targeted = await stableInteractionFrame(page, folder, "production-target");
+  assert.notEqual(sha256(deselected), sha256(stable.bytes),
+    "projected capital deselection produced no stable framebuffer change");
+  assert.equal(sha256(selected), sha256(stable.bytes),
+    "projected capital reselection did not restore the deterministic selection frame");
+  assert.notEqual(sha256(targeted), sha256(selected),
+    "projected capital targeting produced no stable framebuffer change");
+
+  const selectionLog = consoleLines.find(({ text }) =>
+    text.includes(`[tactical_3d] selection object_id=${playerObjectId}`));
+  const focusLog = consoleLines.find(({ text }) =>
+    text.includes(`[tactical_3d] focus source_object_ids=${playerObjectId} `)
+      && text.includes(`target_object_id=${targetObjectId}`));
+  assert.match(selectionLog?.text || "", /source_projection=true/,
+    "selection did not use the source projection");
+  assert.match(focusLog?.text || "", /source_projection=true/,
+    "focus targeting did not use the source projection");
+  return [{
+    type: "source-projected-tactical-interaction",
+    player_object_id: playerObjectId,
+    target_object_id: targetObjectId,
+    deselected_sha256: sha256(deselected),
+    selected_sha256: sha256(selected),
+    targeted_sha256: sha256(targeted),
+  }];
+}
+
 async function runScenario(server, executable, scenario, faction, viewport) {
   const id = scenarioId(scenario, faction, viewport);
   const folder = path.resolve(runDir, id);
@@ -1176,13 +1254,15 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : scenario.slug === "battle-entry"
         ? await probeTactical(page, viewport, folder, stable)
         : scenario.production_participants
-        ? [{ type: "production-tactical-participants", enabled: true }]
+        ? await probeTacticalProductionParticipants(
+          page, folder, stable, consoleLines, faction,
+        )
         : scenario.tactical_proof
         ? [{ type: "tactical-lod-fixture", requested: ready.tactical_lod }]
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 6);
+      assert.equal(ready.schema_version, 7);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1214,15 +1294,19 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       const expectedParticipantResources = new Map([
         ["capital-ship:alliance", {
           datId: 64, ordinal: 0, base: 2010, opposingBase: null,
+          close: null, far: null, indicator: null,
         }],
         ["capital-ship:empire", {
           datId: 128, ordinal: 15, base: 2510, opposingBase: null,
+          close: null, far: null, indicator: null,
         }],
         ["fighter-group:alliance", {
           datId: 1, ordinal: 31, base: 4020, opposingBase: 4024,
+          close: 4024, far: 4029, indicator: 4204,
         }],
         ["fighter-group:empire", {
           datId: 5, ordinal: 33, base: 4100, opposingBase: 4104,
+          close: 4104, far: 4109, indicator: 4204,
         }],
       ]);
       for (const participant of ready.participants) {
@@ -1238,6 +1322,12 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           `${key} has the wrong tactical resource base`);
         assert.equal(participant.opposing_resource_base, expectedResource.opposingBase,
           `${key} has the wrong opposing tactical resource base`);
+        assert.equal(participant.initial_close_resource, expectedResource.close,
+          `${key} has the wrong initial close resource`);
+        assert.equal(participant.initial_far_resource, expectedResource.far,
+          `${key} has the wrong initial far resource`);
+        assert.equal(participant.initial_indicator_resource, expectedResource.indicator,
+          `${key} has the wrong initial indicator resource`);
         assert.deepEqual(participant.source_position,
           [-0, 0, expectedParticipantLanes.get(key)], `${key} has the wrong source position`);
       }
@@ -1262,6 +1352,12 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         text.includes("[tactical_3d] participant_family_loaded"));
       const participantSceneLogs = consoleLines.filter(({ text }) =>
         text.includes("[tactical_3d] participant_scene"));
+      const participantBoundsLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] participant_bounds"));
+      const fighterFamilyLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] fighter_family_loaded"));
+      const fighterSceneLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] fighter_scene"));
       if (scenario.tactical_proof) {
         assert.equal(familyLogs.length, 1,
           "source-bound tactical LOD family did not emit exactly one load event");
@@ -1425,6 +1521,26 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           assert.match(participantSceneLogs[0].text,
             /requested=2 rendered=2 families=2010,2510 resources=1:2012,2:2512 screen_positions=1:[^; ]+;2:[^ ]+ source_positions=true/,
             "production participant scene used the wrong resource families or positions");
+          assert.equal(participantBoundsLogs.length, 1,
+            "production participants did not emit projected mesh bounds");
+          assert.match(participantBoundsLogs[0].text,
+            /screen_bounds=1:[^; ]+;2:[^ ]+ source_projection=true/,
+            "production participant bounds omitted source-projected ships");
+          assert.equal(fighterFamilyLogs.length, 2,
+            "production participants did not load exactly two fighter families");
+          assert.deepEqual(fighterFamilyLogs.map(({ text }) => {
+            const match = text.match(/close=(\d+) far=(\d+) indicator=(\d+)/);
+            assert.ok(match, "fighter family log omitted its exact resources");
+            return match.slice(1).map(Number);
+          }).sort((a, b) => a[0] - b[0]), [[4024, 4029, 4204], [4104, 4109, 4204]]);
+          assert.ok(fighterFamilyLogs.every(({ text }) =>
+            /dimensions=32x32,16x16,2x2 .*texture_filter=nearest alpha=opaque source=FUN_005c63f0/.test(text)),
+          "fighter family load did not preserve dimensions or source texture state");
+          assert.equal(fighterSceneLogs.length, 1,
+            "production participants did not emit one fighter scene submission");
+          assert.match(fighterSceneLogs[0].text,
+            /requested=2 rendered=2 families=4024,4104 resources=1001:4204:Indicator:[\d.]+,1002:4204:Indicator:[\d.]+ screen_positions=1001:[^; ]+;1002:[^ ]+ screen_bounds=1001:[^; ]+;1002:[^ ]+ source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0/,
+            "production fighter scene used the wrong resource families, detail state, or positions");
           assert.equal(cameraLogs.length, 1,
             "production participants did not use the source tactical camera");
           assert.equal(layoutLogs.length, 1,
@@ -1435,11 +1551,25 @@ async function runScenario(server, executable, scenario, faction, viewport) {
             selected_resources: [2012, 2512],
             source_positions: true,
           });
+          probes.push({
+            type: "production-tactical-fighter-families",
+            close_resources: [4024, 4104],
+            far_resources: [4029, 4109],
+            selected_resources: [4204, 4204],
+            source_thresholds: [5, 10],
+            source_positions: true,
+          });
         } else {
           assert.equal(participantFamilyLogs.length, 0,
             "negative control loaded a production participant family");
           assert.equal(participantSceneLogs.length, 0,
             "negative control submitted production participants");
+          assert.equal(participantBoundsLogs.length, 0,
+            "negative control projected production participant bounds");
+          assert.equal(fighterFamilyLogs.length, 0,
+            "negative control loaded production fighter families");
+          assert.equal(fighterSceneLogs.length, 0,
+            "negative control submitted production fighter groups");
         }
       }
     }

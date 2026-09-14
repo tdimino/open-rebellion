@@ -8,8 +8,10 @@ matrix. Source camera, authored mesh coordinates, system palette selection,
 lighting, filtering, culling, depth, and material/device state also pass their
 bounded gates. P58A proves every ship/fighter DAT resource join and packs all
 87 meshes plus 397 textures. P58B renders live production capital ships from
-their joined families. Fighter rendering, selection presentation, effects,
-commands, outcomes, and A0 comparison are next.
+their joined families. P58C renders the original fighter detail resources and
+aligns capital interactions with projected mesh bounds. Squadron/task-force
+presentation, close/far fighter journeys, effects, commands, outcomes, and A0
+comparison are next.
 
 The active
 [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
