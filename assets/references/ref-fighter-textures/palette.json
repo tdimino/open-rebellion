@@ -1,0 +1,2464 @@
+{
+  "schema": "open-rebellion/fighter-texture-refs-v1",
+  "palette_id": 5531,
+  "palette_sha256": "c0595361446c53dfc527c888a12bb2c4532b99098a5472e1e187b3066f28b4b8",
+  "palette_rgb": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      128,
+      0,
+      0
+    ],
+    [
+      0,
+      128,
+      0
+    ],
+    [
+      128,
+      128,
+      0
+    ],
+    [
+      0,
+      0,
+      128
+    ],
+    [
+      128,
+      0,
+      128
+    ],
+    [
+      0,
+      128,
+      128
+    ],
+    [
+      192,
+      192,
+      192
+    ],
+    [
+      192,
+      220,
+      192
+    ],
+    [
+      166,
+      202,
+      240
+    ],
+    [
+      10,
+      10,
+      10
+    ],
+    [
+      14,
+      14,
+      14
+    ],
+    [
+      18,
+      18,
+      18
+    ],
+    [
+      24,
+      24,
+      24
+    ],
+    [
+      28,
+      28,
+      28
+    ],
+    [
+      32,
+      32,
+      32
+    ],
+    [
+      36,
+      36,
+      36
+    ],
+    [
+      40,
+      40,
+      40
+    ],
+    [
+      44,
+      44,
+      44
+    ],
+    [
+      48,
+      48,
+      48
+    ],
+    [
+      54,
+      54,
+      54
+    ],
+    [
+      58,
+      58,
+      58
+    ],
+    [
+      62,
+      62,
+      62
+    ],
+    [
+      66,
+      66,
+      66
+    ],
+    [
+      72,
+      72,
+      72
+    ],
+    [
+      78,
+      78,
+      78
+    ],
+    [
+      82,
+      82,
+      82
+    ],
+    [
+      86,
+      86,
+      86
+    ],
+    [
+      92,
+      92,
+      92
+    ],
+    [
+      96,
+      96,
+      96
+    ],
+    [
+      100,
+      100,
+      100
+    ],
+    [
+      106,
+      106,
+      106
+    ],
+    [
+      110,
+      110,
+      110
+    ],
+    [
+      114,
+      114,
+      114
+    ],
+    [
+      120,
+      120,
+      120
+    ],
+    [
+      124,
+      124,
+      124
+    ],
+    [
+      132,
+      132,
+      132
+    ],
+    [
+      136,
+      136,
+      136
+    ],
+    [
+      140,
+      140,
+      140
+    ],
+    [
+      144,
+      144,
+      144
+    ],
+    [
+      148,
+      148,
+      148
+    ],
+    [
+      154,
+      154,
+      154
+    ],
+    [
+      160,
+      160,
+      160
+    ],
+    [
+      164,
+      164,
+      164
+    ],
+    [
+      168,
+      168,
+      168
+    ],
+    [
+      172,
+      172,
+      172
+    ],
+    [
+      178,
+      178,
+      178
+    ],
+    [
+      184,
+      184,
+      184
+    ],
+    [
+      190,
+      190,
+      190
+    ],
+    [
+      196,
+      196,
+      196
+    ],
+    [
+      200,
+      200,
+      200
+    ],
+    [
+      208,
+      208,
+      208
+    ],
+    [
+      212,
+      212,
+      212
+    ],
+    [
+      216,
+      216,
+      216
+    ],
+    [
+      224,
+      224,
+      224
+    ],
+    [
+      228,
+      228,
+      228
+    ],
+    [
+      232,
+      232,
+      232
+    ],
+    [
+      236,
+      236,
+      236
+    ],
+    [
+      47,
+      40,
+      38
+    ],
+    [
+      57,
+      48,
+      46
+    ],
+    [
+      66,
+      57,
+      54
+    ],
+    [
+      76,
+      65,
+      62
+    ],
+    [
+      86,
+      73,
+      70
+    ],
+    [
+      96,
+      82,
+      78
+    ],
+    [
+      105,
+      90,
+      85
+    ],
+    [
+      115,
+      99,
+      93
+    ],
+    [
+      125,
+      107,
+      101
+    ],
+    [
+      135,
+      115,
+      109
+    ],
+    [
+      144,
+      124,
+      117
+    ],
+    [
+      154,
+      132,
+      125
+    ],
+    [
+      161,
+      140,
+      134
+    ],
+    [
+      168,
+      149,
+      143
+    ],
+    [
+      175,
+      157,
+      152
+    ],
+    [
+      182,
+      166,
+      161
+    ],
+    [
+      188,
+      174,
+      169
+    ],
+    [
+      195,
+      182,
+      178
+    ],
+    [
+      202,
+      191,
+      187
+    ],
+    [
+      209,
+      199,
+      196
+    ],
+    [
+      34,
+      44,
+      53
+    ],
+    [
+      39,
+      51,
+      61
+    ],
+    [
+      44,
+      57,
+      69
+    ],
+    [
+      49,
+      64,
+      77
+    ],
+    [
+      54,
+      71,
+      85
+    ],
+    [
+      60,
+      78,
+      93
+    ],
+    [
+      65,
+      84,
+      100
+    ],
+    [
+      70,
+      91,
+      108
+    ],
+    [
+      75,
+      98,
+      116
+    ],
+    [
+      80,
+      104,
+      124
+    ],
+    [
+      85,
+      111,
+      132
+    ],
+    [
+      98,
+      122,
+      142
+    ],
+    [
+      112,
+      134,
+      152
+    ],
+    [
+      125,
+      145,
+      161
+    ],
+    [
+      138,
+      156,
+      171
+    ],
+    [
+      152,
+      168,
+      181
+    ],
+    [
+      165,
+      179,
+      191
+    ],
+    [
+      178,
+      190,
+      200
+    ],
+    [
+      192,
+      202,
+      210
+    ],
+    [
+      205,
+      213,
+      220
+    ],
+    [
+      52,
+      37,
+      33
+    ],
+    [
+      66,
+      45,
+      40
+    ],
+    [
+      80,
+      54,
+      47
+    ],
+    [
+      94,
+      62,
+      54
+    ],
+    [
+      108,
+      70,
+      61
+    ],
+    [
+      122,
+      78,
+      68
+    ],
+    [
+      136,
+      87,
+      75
+    ],
+    [
+      150,
+      95,
+      82
+    ],
+    [
+      164,
+      103,
+      89
+    ],
+    [
+      169,
+      112,
+      99
+    ],
+    [
+      174,
+      121,
+      109
+    ],
+    [
+      179,
+      130,
+      119
+    ],
+    [
+      184,
+      139,
+      129
+    ],
+    [
+      189,
+      149,
+      139
+    ],
+    [
+      194,
+      158,
+      149
+    ],
+    [
+      199,
+      167,
+      159
+    ],
+    [
+      204,
+      176,
+      169
+    ],
+    [
+      209,
+      185,
+      179
+    ],
+    [
+      214,
+      194,
+      189
+    ],
+    [
+      48,
+      55,
+      48
+    ],
+    [
+      57,
+      65,
+      57
+    ],
+    [
+      66,
+      75,
+      66
+    ],
+    [
+      75,
+      85,
+      75
+    ],
+    [
+      84,
+      95,
+      84
+    ],
+    [
+      93,
+      104,
+      93
+    ],
+    [
+      102,
+      114,
+      102
+    ],
+    [
+      111,
+      124,
+      111
+    ],
+    [
+      120,
+      134,
+      120
+    ],
+    [
+      130,
+      145,
+      130
+    ],
+    [
+      137,
+      151,
+      137
+    ],
+    [
+      144,
+      158,
+      144
+    ],
+    [
+      152,
+      164,
+      152
+    ],
+    [
+      160,
+      171,
+      160
+    ],
+    [
+      167,
+      178,
+      167
+    ],
+    [
+      175,
+      185,
+      175
+    ],
+    [
+      183,
+      191,
+      183
+    ],
+    [
+      190,
+      198,
+      190
+    ],
+    [
+      198,
+      205,
+      198
+    ],
+    [
+      40,
+      11,
+      0
+    ],
+    [
+      94,
+      8,
+      0
+    ],
+    [
+      148,
+      6,
+      0
+    ],
+    [
+      201,
+      3,
+      0
+    ],
+    [
+      230,
+      0,
+      0
+    ],
+    [
+      255,
+      43,
+      0
+    ],
+    [
+      255,
+      85,
+      0
+    ],
+    [
+      255,
+      128,
+      0
+    ],
+    [
+      255,
+      170,
+      0
+    ],
+    [
+      255,
+      213,
+      0
+    ],
+    [
+      255,
+      230,
+      60
+    ],
+    [
+      255,
+      255,
+      115
+    ],
+    [
+      255,
+      255,
+      230
+    ],
+    [
+      0,
+      0,
+      139
+    ],
+    [
+      0,
+      23,
+      158
+    ],
+    [
+      0,
+      46,
+      178
+    ],
+    [
+      0,
+      69,
+      197
+    ],
+    [
+      0,
+      92,
+      216
+    ],
+    [
+      0,
+      115,
+      236
+    ],
+    [
+      0,
+      138,
+      255
+    ],
+    [
+      42,
+      167,
+      255
+    ],
+    [
+      83,
+      197,
+      255
+    ],
+    [
+      125,
+      226,
+      255
+    ],
+    [
+      166,
+      255,
+      255
+    ],
+    [
+      255,
+      255,
+      255
+    ],
+    [
+      247,
+      255,
+      255
+    ],
+    [
+      239,
+      239,
+      247
+    ],
+    [
+      231,
+      239,
+      255
+    ],
+    [
+      214,
+      231,
+      255
+    ],
+    [
+      198,
+      214,
+      255
+    ],
+    [
+      189,
+      206,
+      247
+    ],
+    [
+      181,
+      206,
+      255
+    ],
+    [
+      189,
+      198,
+      239
+    ],
+    [
+      173,
+      189,
+      239
+    ],
+    [
+      156,
+      189,
+      247
+    ],
+    [
+      148,
+      181,
+      231
+    ],
+    [
+      140,
+      173,
+      231
+    ],
+    [
+      140,
+      165,
+      214
+    ],
+    [
+      156,
+      173,
+      214
+    ],
+    [
+      173,
+      181,
+      214
+    ],
+    [
+      192,
+      192,
+      192
+    ],
+    [
+      189,
+      198,
+      181
+    ],
+    [
+      198,
+      206,
+      189
+    ],
+    [
+      206,
+      198,
+      181
+    ],
+    [
+      198,
+      206,
+      206
+    ],
+    [
+      206,
+      214,
+      206
+    ],
+    [
+      214,
+      222,
+      214
+    ],
+    [
+      222,
+      231,
+      222
+    ],
+    [
+      173,
+      181,
+      181
+    ],
+    [
+      173,
+      181,
+      165
+    ],
+    [
+      173,
+      189,
+      165
+    ],
+    [
+      189,
+      181,
+      165
+    ],
+    [
+      181,
+      173,
+      148
+    ],
+    [
+      173,
+      181,
+      148
+    ],
+    [
+      165,
+      181,
+      148
+    ],
+    [
+      156,
+      173,
+      132
+    ],
+    [
+      173,
+      165,
+      132
+    ],
+    [
+      148,
+      156,
+      148
+    ],
+    [
+      140,
+      148,
+      132
+    ],
+    [
+      148,
+      148,
+      123
+    ],
+    [
+      132,
+      140,
+      123
+    ],
+    [
+      132,
+      140,
+      115
+    ],
+    [
+      123,
+      140,
+      107
+    ],
+    [
+      115,
+      123,
+      99
+    ],
+    [
+      115,
+      115,
+      115
+    ],
+    [
+      107,
+      107,
+      123
+    ],
+    [
+      107,
+      99,
+      115
+    ],
+    [
+      107,
+      99,
+      99
+    ],
+    [
+      99,
+      99,
+      99
+    ],
+    [
+      90,
+      90,
+      99
+    ],
+    [
+      82,
+      82,
+      90
+    ],
+    [
+      74,
+      74,
+      90
+    ],
+    [
+      74,
+      74,
+      82
+    ],
+    [
+      74,
+      74,
+      74
+    ],
+    [
+      66,
+      66,
+      74
+    ],
+    [
+      66,
+      66,
+      82
+    ],
+    [
+      57,
+      66,
+      82
+    ],
+    [
+      49,
+      66,
+      82
+    ],
+    [
+      49,
+      49,
+      57
+    ],
+    [
+      41,
+      41,
+      49
+    ],
+    [
+      33,
+      33,
+      41
+    ],
+    [
+      16,
+      16,
+      24
+    ],
+    [
+      8,
+      8,
+      8
+    ],
+    [
+      82,
+      90,
+      74
+    ],
+    [
+      90,
+      99,
+      82
+    ],
+    [
+      74,
+      74,
+      99
+    ],
+    [
+      57,
+      82,
+      123
+    ],
+    [
+      57,
+      90,
+      132
+    ],
+    [
+      74,
+      99,
+      140
+    ],
+    [
+      74,
+      107,
+      156
+    ],
+    [
+      74,
+      115,
+      165
+    ],
+    [
+      90,
+      115,
+      156
+    ],
+    [
+      107,
+      123,
+      148
+    ],
+    [
+      107,
+      123,
+      165
+    ],
+    [
+      115,
+      132,
+      173
+    ],
+    [
+      115,
+      140,
+      181
+    ],
+    [
+      132,
+      148,
+      189
+    ],
+    [
+      140,
+      156,
+      198
+    ],
+    [
+      148,
+      156,
+      189
+    ],
+    [
+      165,
+      165,
+      173
+    ],
+    [
+      140,
+      140,
+      165
+    ],
+    [
+      132,
+      132,
+      148
+    ],
+    [
+      123,
+      123,
+      132
+    ],
+    [
+      115,
+      115,
+      132
+    ],
+    [
+      132,
+      123,
+      115
+    ],
+    [
+      90,
+      132,
+      189
+    ],
+    [
+      99,
+      148,
+      206
+    ],
+    [
+      115,
+      148,
+      206
+    ],
+    [
+      115,
+      156,
+      214
+    ],
+    [
+      123,
+      165,
+      222
+    ],
+    [
+      255,
+      251,
+      240
+    ],
+    [
+      160,
+      160,
+      164
+    ],
+    [
+      128,
+      128,
+      128
+    ],
+    [
+      255,
+      0,
+      0
+    ],
+    [
+      0,
+      255,
+      0
+    ],
+    [
+      255,
+      255,
+      0
+    ],
+    [
+      0,
+      0,
+      255
+    ],
+    [
+      255,
+      0,
+      255
+    ],
+    [
+      0,
+      255,
+      255
+    ],
+    [
+      255,
+      255,
+      255
+    ]
+  ],
+  "id_range": [
+    4000,
+    4134
+  ],
+  "count": 77,
+  "sizes": {
+    "16x16": 36,
+    "32x32": 41
+  },
+  "families": [
+    "a-wing",
+    "b-wing",
+    "tie-bomber",
+    "tie-defender",
+    "tie-fighter",
+    "tie-interceptor",
+    "unknown",
+    "x-wing",
+    "y-wing"
+  ],
+  "files": [
+    {
+      "id": 4000,
+      "file": "4000-32x32-x-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "9e2865e825beb0b37f3bda540c2c7ef4379def62cdebd80ed574d8268d097141",
+      "source_sha256": "32b838f715ba228f191ac5629e524addccd96bd4cf0da95a57268486089e2dbe",
+      "indices_sha256": "86b120fd5888cc86980eb5856b6174127cba71194c458e9dc93aa7c1a1caf482",
+      "png_sha256": "045e538cd4261c6d712e6934f4218f25dc3135307434d381ed40ca1ac99f2a9f"
+    },
+    {
+      "id": 4001,
+      "file": "4001-32x32-x-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "addf7e3cd229510b46da19579e36b28a87ad8e8f1aa29981fefb1a675d83a43d",
+      "source_sha256": "65a4b53cd05db93aa138e7a80e0974e47b6bc873adb370d657268c8bdfd405a8",
+      "indices_sha256": "0e6249b823aca840538d12461d02b937a937b3db95e7a7b57db9b5d29efa1942",
+      "png_sha256": "c2c1d3374c29ad3a5539590a1f3243d148e6fee844b861fd07f60a4a935482cc"
+    },
+    {
+      "id": 4002,
+      "file": "4002-32x32-x-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "bfdad3e8b87d06f5bdb270d3cb0d6d15f945bccfb9c804403db2d46ced1a1f1f",
+      "source_sha256": "3814bbff8a8c8fe0a518b53394373e7205b5dd229b98d82ab68c1b723718b1ac",
+      "indices_sha256": "58052d92a2c7e67ee8527936b6562fec63b86579377f86e11e4135bd44fed253",
+      "png_sha256": "7708453b004e4d3580b8abffadf1782b77366429687c120015c600e25bc41951"
+    },
+    {
+      "id": 4003,
+      "file": "4003-32x32-x-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "38ce4689f021cb7e66766aeaa4280ee168ad69cc7666a9bd4f9273eb0d3221fa",
+      "source_sha256": "788a713e92edf8686abf7438e5349bf139da672efb18a18e35c45bfdeda2f3b0",
+      "indices_sha256": "e5014e16bc8508531b7ceaa6f4eb6762b106ce181166089a0db3a43922143374",
+      "png_sha256": "c885bc2628196279eeedbee4ae1e745fb70ca53e53f5bcdc4cc29044bd667fa4"
+    },
+    {
+      "id": 4004,
+      "file": "4004-32x32-x-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "ea012fabd76811a7d4cd6f75b5577400f93142c8e54b450549498d138150f982",
+      "source_sha256": "462ad467b523f610d19a60b790166c9c42a1f16226c4a22bb055b488ec41c000",
+      "indices_sha256": "1b64b4bb594e16a8318c1e4665786689fe9060cb49dd652a0d6aedb4c90810ab",
+      "png_sha256": "a14fc6e25f73d38622e6fff4cc685791f33d44b6b8e9c150435a64f0e46c5dd9"
+    },
+    {
+      "id": 4005,
+      "file": "4005-16x16-x-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "f7d4fae2167e71316750f1d8fd7c71b58f866a260cefafb2c532d1e70d0850a0",
+      "source_sha256": "51abcea16ff060b5f226dbd95782c0e7583f988269e7fa5d5dacc017334cf1e5",
+      "indices_sha256": "a5d0ae8a4f4c5abfb4007762f2099b16f71cc87f3cdfb728d29cbc5ed0f892b9",
+      "png_sha256": "95cb06b7791d9fa6346580909ca8e4d0876fae06fc088d8f0e7f33a0a6e18b1b"
+    },
+    {
+      "id": 4006,
+      "file": "4006-16x16-x-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "59d643a69cc6ea699be1481397079c7c5f9ee3e8586df4ad8408f618d00207db",
+      "source_sha256": "db05e5b76721c6194fbd61783efb4bf957212b844bfd98a9f7108c6326d46549",
+      "indices_sha256": "e37531d1e72aaf9d8784ff80589420e7928d2eaf3a292fd65743fa2d1a2d80a4",
+      "png_sha256": "a1fae3e12cf26072892eb901dabe3749ce41ea1b24f86e57f0023def157f6d97"
+    },
+    {
+      "id": 4007,
+      "file": "4007-16x16-x-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "42432760b8d6cebafdd40938eaf575d920b26f637617eedc604a8d305a9f6880",
+      "source_sha256": "46636b60a60e55ba1c3a57af0020a8d25b330cd484ae8f63402549061d0f1557",
+      "indices_sha256": "0298737e3671204f0d51dd1aa82a35b06bad8baa146d64edcbdc5e63edba5b0a",
+      "png_sha256": "0ca62332335863b2005636ae391d4c6c86f95dc844ef608105ee4df8105c2f92"
+    },
+    {
+      "id": 4008,
+      "file": "4008-16x16-x-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "1ff018ac0b2fe6abb3fe4a0e899f70fb072401be9ee5955c42cfca8e590f20c4",
+      "source_sha256": "c7c30ef90e75de45e19d686a5e01bbdb2d77572efb45f4f702f5f6cd041f40db",
+      "indices_sha256": "3dc1f65575eb4bf157b1f0125f850378220de9b14d2691a6ff393d659d9e2eaf",
+      "png_sha256": "1ed0cc14e085a4dabedd0aee2ca2f78ba042e165a3ae839ef7a2affe40af1262"
+    },
+    {
+      "id": 4009,
+      "file": "4009-16x16-x-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "x-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "e151970bc2d6766b7fd31503e27c95ff481eadcc2798f54141f4706a5b2f8440",
+      "source_sha256": "2c8fb46b2c1e5262809ed91bc375755ee05e7a788ebc8e6e0714bb7fc9a0b57f",
+      "indices_sha256": "11fd544e71d8a5bdfac8575a0d97d62102396635761a414ac954ad83eb4dc569",
+      "png_sha256": "78bb6f1382b235d450c714c5f2e3d14d575cdd94a3945ee346e53dcdb5d7063d"
+    },
+    {
+      "id": 4010,
+      "file": "4010-32x32-y-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "06a3e4afe183c5288f1b0d2d3584a6a41445576a6dc7827fb888bc9aa2797fa0",
+      "source_sha256": "52ad274d23b2e5cfb731ea5603c9d73f526bbbff07e6d821a62ba7bb52aa58dd",
+      "indices_sha256": "2d7baf3c07fdf2aa595481a44fd1236e629510464e7b2061c9e7c2465e1c372b",
+      "png_sha256": "6a445eec49a941eb48c63163315281f5eb57e47947c11dd123fc84f30b5fb804"
+    },
+    {
+      "id": 4011,
+      "file": "4011-32x32-y-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "94cf536ced77765370277c1a03aa4bdb05b8d861f3f90a87028523ca02e33071",
+      "source_sha256": "50db9e0f5e7e1ed1520adc472dac10e523c704e30fda603914c8ab5f1e1774bc",
+      "indices_sha256": "281e17d131d885e88f7be17a9553ee731142b63506d690ac47960fe50e942b81",
+      "png_sha256": "5f67e59316989ad6aa5dcf6303c9e79d72443a6fd501ff1472d2f3c49418f559"
+    },
+    {
+      "id": 4012,
+      "file": "4012-32x32-y-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "bd3f24e30c8ac54d1349c77fc6c3f63075df2285b7825a2d4605656e6d8995ca",
+      "source_sha256": "6563a8427660b8af75381f60853853dc1e06bd4467287934adb9d799f5a667cd",
+      "indices_sha256": "b49e36ffb72c9f6572df47565efe8360c782fe218b69ef1972de59f8eb9f8859",
+      "png_sha256": "d08f41de96c7c4e3e72c699cbc8891a8f515367410877494306a70aade580a6f"
+    },
+    {
+      "id": 4013,
+      "file": "4013-32x32-y-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "8bb60b064e3dbb743275be01cecdabefde31f7a4f6153defec9de0ad9e240872",
+      "source_sha256": "023009737404fa1fcb152f1328acd427773839b249e13bb23b1c0d9e9bc255bf",
+      "indices_sha256": "8836416bc421077dd5cfdd86b5e568b8e48429d5c525d8f2742925a32805b921",
+      "png_sha256": "5f9fd15a3533056dc0f568002f520f518e6623851db363161da59613f707ba65"
+    },
+    {
+      "id": 4014,
+      "file": "4014-32x32-y-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "52336fce85ed7759e4532d6fd076a831ba93e6267b976f247007ccae7d6a8be9",
+      "source_sha256": "94e65dd591bda1ae78954d2f0584da66a0f4b9b0f2e197f815a61843fdb0965b",
+      "indices_sha256": "3f1af04c008e6e765fd0c56bf1560e15954eb117e69bcc1723a867d51f2b9f91",
+      "png_sha256": "9bcf6aaeee0ff07ca82b87fcd61a214a10db270b2742945198bce6d08b1fad6e"
+    },
+    {
+      "id": 4015,
+      "file": "4015-16x16-y-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "4df673720b01629ce55e55ef293a29f029ee5f3488a3b1e9b26e7394689c3d80",
+      "source_sha256": "644a276ba778b9e873aafb165f954f14db462105836ac690b6e1d29ae7ab0f5a",
+      "indices_sha256": "67a3f1ff5ab9e793839c43ddcd9d201176aa634fea939032c17baefa8fa9f34c",
+      "png_sha256": "b627f3ae97c12ead365ded410e20c5512582a9c3962bb1c6277fc0c90f298e82"
+    },
+    {
+      "id": 4016,
+      "file": "4016-16x16-y-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "929112636fd5493cb77a7e763f654d3bee8f65762db2ec710e572209feeaaa93",
+      "source_sha256": "793602f815d63e53958dd542ea2e8997e50d5c450b9bd38564cf170df654cf2d",
+      "indices_sha256": "76bb29422714f86ebb46037cba9b10f4ea907590c9b64f2bbf3d3bde58af1c1c",
+      "png_sha256": "df58ad2295ffa1732969debff7839673368430e230f45b0ba13d2524f4018eda"
+    },
+    {
+      "id": 4017,
+      "file": "4017-16x16-y-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "6192f7757cb3f5dde7f0a0861425e96cc3788155e83c44fa54d6f223aa26a144",
+      "source_sha256": "e738b4ec3356bd9821e18e086f4054fd2bfae307d44c332393b39a11c361910b",
+      "indices_sha256": "d9daa9363f5007108a98ab0ab478a5cd6f2145cc4b82a944872991974c18768c",
+      "png_sha256": "5446b88cf98fc6688bb8f8a858135a441b003ccb10007d910cfa9d3ac8bd3dc7"
+    },
+    {
+      "id": 4018,
+      "file": "4018-16x16-y-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "6c57a1302a75fc088d229996ed9403410abaab0ade8151418d6bf39ddce2100f",
+      "source_sha256": "926dfb67d5ecc99a77c5d175466a07fe84c9322193d0d3833c1c33cd5de7f426",
+      "indices_sha256": "57f823e4b21c6c7fb35ca6043afaf183ff281d0c7e87233803ed5e14d41837bc",
+      "png_sha256": "8884c797418633ff534bcfe7b257b9ad9cea7028d31f052fcf4795f6e8c99df1"
+    },
+    {
+      "id": 4019,
+      "file": "4019-16x16-y-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "y-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "e255f75f17bd8de9cc1428a21c19f5e7bdcf03666560ad96099474d650288afe",
+      "source_sha256": "62126ed60b86cc90b003fa70a34590ca852c1086306dd542198a4e1de7c97e11",
+      "indices_sha256": "42dc654bd4e3831d8168a2fe55f47b44351ae01beed5bd2d6ac80eb3f96954f5",
+      "png_sha256": "892d87f86712a0655af88801696dbb4e3c6144caf8da8963c64d75854eef2804"
+    },
+    {
+      "id": 4020,
+      "file": "4020-32x32-a-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "dd192b47f72a47838e3854f67d8e7cda0a07797727d6d68572ba6c7a1eb16fc7",
+      "source_sha256": "37cee970311112cba0bcc0a79e0292826bd01385df28a67e0d74e08d148f6ff0",
+      "indices_sha256": "0cbdc33e6cfc7c4eac59d14385d35c75fee158318cf8f2ef257a8cf2347c5c55",
+      "png_sha256": "973c0baead22f75f8928b1b281efe055c62acf2af5984d1fde2f08ae2d3663cb"
+    },
+    {
+      "id": 4021,
+      "file": "4021-32x32-a-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "fa3a60ab7e35538bf7162541bd3f231fb00b424a6c27abe34a855a6ac04e4e84",
+      "source_sha256": "9f829cb67ccc179a2089f0914f8a0a06bb5dcde67f0937eb9713f7c9b31a2a1f",
+      "indices_sha256": "f7f36cb20c88372a94a7cf62e46263e43145e96822aef4b0fa7ee44bc396d451",
+      "png_sha256": "8f9183dfca35519f473506250efa48a9622c7de458d7dfbff059e21f2ce10b01"
+    },
+    {
+      "id": 4022,
+      "file": "4022-32x32-a-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "dbda0e3c2b908ab794e5f9f8a443d94f48067137b1b4ff9fc4795ac9ff4daf2d",
+      "source_sha256": "4ca3f93dce71c7b5428aa7c9f1c669a2aa19c31e16e36fbadefc3c0be1d809e4",
+      "indices_sha256": "a7d864880a792fef496116c21baf02f047007926928d4b36ce8146b09d54034a",
+      "png_sha256": "ff9a12f7b59d7e99a0ce4eff463d1d5f29d99d7d56bcdc28c646d9743c1eca26"
+    },
+    {
+      "id": 4023,
+      "file": "4023-32x32-a-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "43057fe043be006e4f3d6e9e901f72ed1fd3365c12421b9e691dddf2f530c7e3",
+      "source_sha256": "6cd7d5bb23e0621f7e488e4ba83b4809227a51d5d195f0dc492b0ae947068e27",
+      "indices_sha256": "05ff0b0c5f83aae294b67628423fa6f878f05f9c6f148fb6bb7f86f11c930d16",
+      "png_sha256": "64a2d2d7137ce3d96583e8e6b420223ba689a803fefd490af7e3df2ce0038be4"
+    },
+    {
+      "id": 4024,
+      "file": "4024-32x32-a-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "1e56ea992e5dacc71cc817cd742f9afe88b9be381bb944e4f86e618373339047",
+      "source_sha256": "5a57f5398ec6b13bb6720502ed58db0a08781443a28c932331e9778ee1121f37",
+      "indices_sha256": "467bbecc2fa6df9a29b6bd271bfec28f54595e8805bc6361663c83e9a6054574",
+      "png_sha256": "f1db382cd85fb9cc6d9690d26e01084a3d4e0ecbb37dbe7544c1cc28020b1877"
+    },
+    {
+      "id": 4025,
+      "file": "4025-16x16-a-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "41f308d3020dd6f3f2eb9cdbf5baca10d9c87c1e1a37c2125c8f01d488e2c189",
+      "source_sha256": "64311355fd200efb7b7f16d242562eac4590e6e3b0cb5c67a4bc8215cd9ac546",
+      "indices_sha256": "1624563e31b26658048d44543fb1ef35a27985a6ffc906815e924ca43f8596d4",
+      "png_sha256": "0d0df69c4378449981c72f4c557976b101d535c257c2dddce9efa7a7e77057d2"
+    },
+    {
+      "id": 4026,
+      "file": "4026-16x16-a-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "611cb1295cc4ed40f1d4b30f1c39185c082936e57654f4d6f9c1cdfef4b5d8de",
+      "source_sha256": "33d1d211aea54785c08c9fabda91b982f9b517393b4d4fc5193303ca4586e984",
+      "indices_sha256": "9fcad85ef2be24ac2564da0c848feb90d732fe95e82f2dd4dea6076bb68617e0",
+      "png_sha256": "3b3285ca5f63bd47de7c3977c2a56d0f4b542fba5cd31c480a8085b6bcb445af"
+    },
+    {
+      "id": 4027,
+      "file": "4027-16x16-a-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "52c84fea32fd37804d6b93514c8192c78f90b389a08b0bd0cc6a57ebcae0074c",
+      "source_sha256": "d3f6dfcacc326a5ad2d46fc491d48d1b66db6b2f16cbb2b720ccc8f4998d6584",
+      "indices_sha256": "78df778afa30dadc2433b8468a3d9bcd8f8fdf99c6f6e3f4bb54c1a1210c8117",
+      "png_sha256": "cf4f86f894d0cc9f784574ef49ab6b292b4f91c68867093466ea86ee1f2934fb"
+    },
+    {
+      "id": 4028,
+      "file": "4028-16x16-a-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "7a2ed3a4a1149a1d351fb603bc1557d56982bb7c14615b208dac62d31118d786",
+      "source_sha256": "cd60ffa5921ba8790c32b0b8604176176422e7c61c3b2c167f2bd6b54f3f6381",
+      "indices_sha256": "7f6494936f281545dc08fb2cbb5a2d082ca1181158e16911438864a3438cd57e",
+      "png_sha256": "a63971db10d81caa980cdc709e8c544593f6bfd9b2e605d5e944b6bbfc602b04"
+    },
+    {
+      "id": 4029,
+      "file": "4029-16x16-a-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "a-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "ead430116c50ed62ff8cee6e1d901b77144efcb4c18d0f59e63034db28201c45",
+      "source_sha256": "8478ec16cb7edad69e95135973593c029586b415f56e0a161101c723329a5ac7",
+      "indices_sha256": "45b98293152e4d4c45c3211d5c3aaa0d74e7c10f23e990419bfc7aca2eed2a2f",
+      "png_sha256": "38204d487bba3b306c76d95ca138de6559d2473d7bce1bb7fe8fa9cf3760ce75"
+    },
+    {
+      "id": 4030,
+      "file": "4030-32x32-b-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "8724fcb7ce320f041da696441b157bb554ea8b2b9c4514f709a794f3c55fcdcc",
+      "source_sha256": "071ac6c0ea4368034d27ae90cdb5fa0c918b7136a06af39add969b8e58ece649",
+      "indices_sha256": "27941dbc461f8efc96ba6d13e4a8e7c3a1eb9960732b95830a9532b8a228f9f5",
+      "png_sha256": "08999cb21e7016cc6cfedeb58ced0aa47d0da41caff53cf65ebb28e3f91de468"
+    },
+    {
+      "id": 4031,
+      "file": "4031-32x32-b-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "7d040f9e8d6489d2653392f2bad4e273fd779918242929a17ec07a50bd97d4b3",
+      "source_sha256": "2705d6e8509ba717ae64e6cbc18b7cc81dab828af39b2ebd5343a11c247ed95c",
+      "indices_sha256": "249ea354e3ea39c90cbe0457a94e9d8e58c1a10f97b19eb23e3e0636582efc37",
+      "png_sha256": "23d151e149f8f68be15dd59fcabe84cf064053a7e2ed5c9717c7a2f2fe742169"
+    },
+    {
+      "id": 4032,
+      "file": "4032-32x32-b-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "f2493847e7d5f847d1011e1785da97ba99778cced07d020c87c13a12b30ffbf3",
+      "source_sha256": "2fa650bcb1b424bc0947777e962f91bc26e8ca2782378c27d1d753eb0f6586cd",
+      "indices_sha256": "dfe1773e00ac092ac95a8b2caa2f9d08bae121a0ea6dab3a22600bef5229561c",
+      "png_sha256": "fc4285819183b8a70c892a44025d047b5fd6949bab780b17cae061afa98dd4a2"
+    },
+    {
+      "id": 4033,
+      "file": "4033-32x32-b-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "865aa62ca258a1aa5e55a66b9094a0f5aad21baa4e045af855cd146b52038291",
+      "source_sha256": "529fbd316831ff9a0a6da811416328d1fe57ff1dda0a281d7bdf02558a32d7f9",
+      "indices_sha256": "315303afdbc938ec0e962afed8ccc06232cb9b0e62fd4970c26ab1eafe06c6b1",
+      "png_sha256": "b65bb96d961c3d9df7b485b418628626d2d388377b2b9ce5f28ab5664ff91c41"
+    },
+    {
+      "id": 4034,
+      "file": "4034-32x32-b-wing.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "803280d36b6170f5480c0d921d3f4f322d5236eb39de8064c095d1dfd2489eff",
+      "source_sha256": "a6cd87d7b8ae5646fdf69df4d2026a64b440fe17ee356b7b87f1c6b346711a1a",
+      "indices_sha256": "f25dfe893544812dd6643a90218b29477c8697aba4e23c7334d217ca4f874952",
+      "png_sha256": "962393dc25f6e1c516e43b13abf845e6884f5863fcbfc2016613cc9815ac676e"
+    },
+    {
+      "id": 4035,
+      "file": "4035-16x16-b-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "6d3353e47116c3b760f7294fde24609bf9372cc053e473e8ccdf6bc2e6b297a6",
+      "source_sha256": "0d6862a6c1091c4cc5cc5c6e21d23c0605f452d5f602bb04d44ba55cb97ead06",
+      "indices_sha256": "2de79d179b86da9eb6b4b1482ccabbd4f8141581788342325cb4ce20d6eac74a",
+      "png_sha256": "e7f3de6f68b4e85749371ad3a01b588580cb5bbcdd3b8ff629e4ce626649bba5"
+    },
+    {
+      "id": 4036,
+      "file": "4036-16x16-b-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "34125fd2ffa1b747132b3add446e6879859a77fe1926c144b8bc961bb39ea983",
+      "source_sha256": "33cf597f4eab01e069792ea8e948c71c5b172d833a1b679d6bc28ebae69bf494",
+      "indices_sha256": "231bc302902c6225b57995e96451b61e26b092b8a452a92c221bb2dccd804b07",
+      "png_sha256": "fed31bc01c41b2de33f6bab4b4b1171885e2ee6c13b5d5b418aefbda0ce82c94"
+    },
+    {
+      "id": 4037,
+      "file": "4037-16x16-b-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "dd4ed9556985dddeed692b16106a9ce4dd74132d454235eb770e8ee6bda86b86",
+      "source_sha256": "7761a8e4542b58dc1b699ecbc157b3d2ca58ba4e997ba5ac8bfcc8e147dece8d",
+      "indices_sha256": "8095765c4972732601605642f5f31cd5c4621605d7d5f323d650c5a9fb05bf63",
+      "png_sha256": "ed80fccdb909ca9bea867ef90e4c425601a55c8474fe24d534c51bf2913c50f8"
+    },
+    {
+      "id": 4038,
+      "file": "4038-16x16-b-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "7e6a86a0e259df60f8b0f1d0b47d97dd4c05c2e21642f01e9942fb37894580a0",
+      "source_sha256": "8ac7a421f77cafb06bc0f2284c904b29dd9c532c616314986d43156f3702efdd",
+      "indices_sha256": "e72a50a2b6041310bc3d858c40cadb2acf17f199cd3e6143007c4eab76c82625",
+      "png_sha256": "51791679892cbbd633e0d65ce3b8fc03eb3f06d121c84539147bb2219157a3d1"
+    },
+    {
+      "id": 4039,
+      "file": "4039-16x16-b-wing.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "b-wing",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "724c2db3f0cfaf392ad56109e48214a928607963ac093cfdf948a58c42f3c380",
+      "source_sha256": "9f31284d4f1be4bbd1ee711c7704237697fdf0990eb8ae1fd73d52c94fa3b378",
+      "indices_sha256": "cab1d093173be03b455c6db4917f95dc8587e6574970bfbe06d1d16cfeab04f4",
+      "png_sha256": "d72213c7ba4b4fe971ed2c0512e106d8a79991ea8ed58732877d23ef0e9d98ea"
+    },
+    {
+      "id": 4044,
+      "file": "4044-32x32-unknown.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "unknown",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "b963c73b7159c4a7f31426910ab5684878345edab4771cb9184af8cfc3541bce",
+      "source_sha256": "87f3f149db003e0d891339001f2686fc991dc91b3a863ba6d9bc620d2075b20b",
+      "indices_sha256": "b371adc50463f6aa3f535d1ac2225c6f879c40ac4a64dd235e5edfbcbb466834",
+      "png_sha256": "5503df52310b4d660a9ea0097afd8016ebbd44f3623e82f4398489339ebaa2ac"
+    },
+    {
+      "id": 4049,
+      "file": "4049-16x16-unknown.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "unknown",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "7065b769e623febea2fceef37f7e2d95114b5bb4f4ddcc5df8b6eb64b0d68a1c",
+      "source_sha256": "23d97cc8a35852925d4eb0f85b64d7d185812677e823e8b786be9b3c41648220",
+      "indices_sha256": "6a9cccc404b20675e716f0ba0b5b31f81a4d48717686f1cd40c8b6d4195deff0",
+      "png_sha256": "5d8789a19106046ee42b90dd3e76e4a2d952c396642e6b523184740b079e6da4"
+    },
+    {
+      "id": 4100,
+      "file": "4100-32x32-tie-fighter.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "60cb85a3f774dac75be6250bd571947559d6ca4e5161d40cef6db4a81345a218",
+      "source_sha256": "bc2e3d81825783950d313c2fe9484d3201a9fbf7d30b49b83db58f3e06373724",
+      "indices_sha256": "48a4866f8a725ce1741dac48e53b3b69fbcce9e07da03a74653cdd5adcd404df",
+      "png_sha256": "4c5a1772194690a98fe385da47fc95ca64c4100b58c949a46143eb3c51f965a9"
+    },
+    {
+      "id": 4101,
+      "file": "4101-32x32-tie-fighter.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "94290531542e8bc282f6cf542b4bf24b41a0ce9d76199a8f228c19fa8269e6ba",
+      "source_sha256": "03bfc055c66f206e6f3388e6b5f9955bade82d2698d4e1c71373cec81fa9b5b4",
+      "indices_sha256": "a7d6e9aa8c1ad47ce29c86658e8aed75c27db290364e035ca6101c307b888c97",
+      "png_sha256": "d1354490eeb496b9d42a96267826de49da93c67409936d25d234c094339b8404"
+    },
+    {
+      "id": 4102,
+      "file": "4102-32x32-tie-fighter.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "dd473badf5b56cad25edb503dd3fb25aa85f779e8f68cdf440b7a90a9c69fe59",
+      "source_sha256": "423d5d114b71e76f83018caa5758111d3fde0119d2fef5817400d9beb3f4f502",
+      "indices_sha256": "a918a6bb9dcc4a1d56c76b5eff3a7c6ec2857da018b5530882d7c534f77433bd",
+      "png_sha256": "5828402f20a8d47d58fd1acc773f030fa33c4e2ccdcd1975cd4defabf4507c21"
+    },
+    {
+      "id": 4103,
+      "file": "4103-32x32-tie-fighter.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "bc96ba28fbb5f55fe663b4b3d4e53766ed9ed99ac554b78358a5df50eea2c160",
+      "source_sha256": "690aeddcdff9087b8c19d3bf51d3194a2fe64af4e851fcd7ab3422ec288dc167",
+      "indices_sha256": "51932546ba1f430e21bd9b27014d409b6de12492defc88a8d5e105b634117b8c",
+      "png_sha256": "184e32d4bed65e59b136a7b042b4dd7d1ed7aaf4b9ffd7380d7e334cc2b07e50"
+    },
+    {
+      "id": 4104,
+      "file": "4104-32x32-tie-fighter.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "a4c883315518458a820f171cbc5b741c0e5a75e2b23652f7e9bc789d0487f11d",
+      "source_sha256": "48c105ebf5eb51fc08a939f50f76392d56391e258674f538973f1f97aee2f689",
+      "indices_sha256": "0ecf3222fe8ea9e200fe36c41b5ae0baed7cf49a2e2d895fbedef2788c2ce825",
+      "png_sha256": "f7c1aaa55831b6365fc43d660c6813b96adfec39cb4599000c7c2655a7f90e66"
+    },
+    {
+      "id": 4105,
+      "file": "4105-16x16-tie-fighter.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "9af028847eea2b26c3798b23de056197d9384a961ca3fb44ab3aa874de17b57f",
+      "source_sha256": "6c4c2119fb3381a9902ca6b413acb0c4e6b0ac413bce4128a66eaa99146486e4",
+      "indices_sha256": "dd16a69f1fe66d299f1fa1ced4030ec7195b42b62219d84486310ca314d97082",
+      "png_sha256": "28db968a7a832e62024b27adca3282b6c05bada5a4841e5f300f1157e1ba0b0b"
+    },
+    {
+      "id": 4106,
+      "file": "4106-16x16-tie-fighter.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "2409f4fbfa6d5932818f8e92649493249220716ea0a75171023b4fb3a5ae6eed",
+      "source_sha256": "dd6bc582546eac964255d2804d54e75ae031649587ad565341d11a41d33b17f6",
+      "indices_sha256": "56bbbbf0297c9789af9c962c814de7a6dedcc4f1c8b0c68ddc17adf51c008789",
+      "png_sha256": "348d2e6144090d117cc5e3de47a0820333ddb12c82bc45afdd07987d84c29e24"
+    },
+    {
+      "id": 4107,
+      "file": "4107-16x16-tie-fighter.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "d19fb70b1a161b4e342814f71ca8073c293ef11cc867ea72ed14b130a3f4780f",
+      "source_sha256": "a920244f9a73f20193122ae9161ad875f94c73db61c77574ed2c1635fed63488",
+      "indices_sha256": "de674c351eb776397f907612407f134595bdcb66a351ee8f7fd6fbe2d830482e",
+      "png_sha256": "6e640b8fd082de322cec710edf08882cc10c45a8fd061992dc1a00d7b6557a7a"
+    },
+    {
+      "id": 4108,
+      "file": "4108-16x16-tie-fighter.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "3537c462ad4a6e78896f5ab7b8736664afb37f914297a9a2a7bbe64996d8a0a9",
+      "source_sha256": "6e4a2cadf06436e2973f97088421261bac83cf54c7eb7440077d0043b74cc23f",
+      "indices_sha256": "82521b3514d993702526e394da50d0f30de4bc7e6e20dbd3873f3a1c6761689b",
+      "png_sha256": "eb963cb0224abd11bbbe75e4bfe628b131f81ec134cea4f3584f3dfd223100d9"
+    },
+    {
+      "id": 4109,
+      "file": "4109-16x16-tie-fighter.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-fighter",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "48e5f0354c02cc60307cdd42aa1ff79ece529e0895c1390042d178740978f2e3",
+      "source_sha256": "8ba55e3dffd2a240c1867fb356f147d81ecc632cd68e1843d19c87c9ce67ee5e",
+      "indices_sha256": "7c73bb838290a6add908f99c946bfd974421019be8ef9d9c38cbe8c3e791031f",
+      "png_sha256": "37e2f8ed327ef0f1c5c0c3195ec6fb1e535debc759c40e9e9916d47e82d88f9b"
+    },
+    {
+      "id": 4110,
+      "file": "4110-32x32-tie-interceptor.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "b811afbaf2b2a6b25acba21c4c0fa8a1a9f97a1daf30bc46d1c5d27621961d3e",
+      "source_sha256": "644bcd147a3726683facfb0b8b0466e509cbed5122789e59d5ceaa83e2e14bf5",
+      "indices_sha256": "4feda176dbee1d370e15491c251a76e9953defd45fe12328722d8d6fc9169f2a",
+      "png_sha256": "3095190fff29e99dd2a212197941baed4d1d99dd43e399cd5cbe7a6afc7dca25"
+    },
+    {
+      "id": 4111,
+      "file": "4111-32x32-tie-interceptor.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "205062964b46d547aaf0df663a9387e776bdf2bf0f2ee85cb78d945ba4a9ef86",
+      "source_sha256": "888c5c5c064710fa3755759c884fca29a7f546e4b22bcaf799dea74809cd025d",
+      "indices_sha256": "d47f27223532d0c6e59f6b6ace128238d4e2484af7c2364d6a83907dbc8081bd",
+      "png_sha256": "fff9f8decbd335b36e70f6b6872dd10c5f7807b69792711baaf528a342520035"
+    },
+    {
+      "id": 4112,
+      "file": "4112-32x32-tie-interceptor.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "939d96a9dec9149030e47a0497fb4eb685ae14f5ecc73715eaddc26446dd0462",
+      "source_sha256": "a4ebbcdcf72cdc7cf15d4bc5b88f47fbd973c57cdda725de1fccfce47021893b",
+      "indices_sha256": "85a618dba7a510823f6398a6d24f1a08ca50ea6e693de15e0453803bb84e5876",
+      "png_sha256": "d0c605bb60cba520e64500232aa343d4dd7317a30ba09dbc81531c08498c154c"
+    },
+    {
+      "id": 4113,
+      "file": "4113-32x32-tie-interceptor.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "ef09e04f4e6f5e6720d3125955afc9ec42183c3d1a817513b7f6b89e2f8a10e6",
+      "source_sha256": "0ddc0836f6b245bde67fb0dcae2db2a5240726c0460244e30de6825b74ff635c",
+      "indices_sha256": "ba7760f5efb14e44c0c65e53c5ee2d1ccdbbcf9133f8fb5dcdf2e776b133afc8",
+      "png_sha256": "b9d5631105be9d8092575bed783fc0b57c3e17e6adc664a884d28de7dff61b6c"
+    },
+    {
+      "id": 4114,
+      "file": "4114-32x32-tie-interceptor.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "c45ce9b9c47ecec90a19e67eb6ea9ea4679ee15295f811946d4e46878a23a3ef",
+      "source_sha256": "b67ac04aac0f0fdc9ce4780ffa50491604c495757dc27ebc2172d41f375a5945",
+      "indices_sha256": "b35cc3f50469e46a24e0ef7791c613671d298c7862b6bbae80b7084cb6f500b7",
+      "png_sha256": "0ca4d55703f00543460e1e9599c3d151fc88236e31ad71e070251c44a745e0c9"
+    },
+    {
+      "id": 4115,
+      "file": "4115-16x16-tie-interceptor.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "677837b3302185dcfbca7c9c635d1f3c137ac8a46ca9a9d8e7bce394e488e944",
+      "source_sha256": "b00506cca682c99fd28652fa8b02ba792888aca03b0594937ef0c3453fee6b19",
+      "indices_sha256": "be355fdf9db10efc1301e04a6b272a7f7d88dd5856eadec827764c000ce6b1e5",
+      "png_sha256": "769aae63a2a4aec763ebd976635ab016c8385a125b0dfb51df6f14b412b97f34"
+    },
+    {
+      "id": 4116,
+      "file": "4116-16x16-tie-interceptor.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "41f2a48465b6ba381bfe0f7f586d6c262b91e8d0129d7f1017e79f85a0ac4b98",
+      "source_sha256": "fc2d4d66743175a35c4659cf6710537d2ed4dea17c688c86129a8207daaea0ef",
+      "indices_sha256": "cad51bbeb9d70100a9f7e08ed583bb5a643f912e3abff60804dfa53b18318064",
+      "png_sha256": "491fac2450191bc7fd72f5d94d80a8c1aef25f65c7d76028b60e720e3ea41d03"
+    },
+    {
+      "id": 4117,
+      "file": "4117-16x16-tie-interceptor.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "12eefcb685118ae6562656bc25d442214deae328f6ad42af9cdd5d6376dc4b41",
+      "source_sha256": "de069b97e783ca4cc164e400ac72efa0a4b4fbf579b62e788e96b0f698ef83a1",
+      "indices_sha256": "43f2262f82a1347b7ed1a5172e957b48cdb0570dcfce48e4c4032caa66441f2a",
+      "png_sha256": "4803787a861b77b40de0d2ee28ec2173a997b9982ee87bfbed5a644c9764636a"
+    },
+    {
+      "id": 4118,
+      "file": "4118-16x16-tie-interceptor.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "1fc36f782f3a7996f4bf9c509a035bda22d89e7b3a933f68ec774dcfcd4ee4fd",
+      "source_sha256": "c9e90a70798bc8d998277fe88dfaf245e402bae1315b1cbb456416a0a2136286",
+      "indices_sha256": "f4547a2d8d704ac35fb8439722cf797ea9b1ac3cfa44fdf1663134ba35fd5999",
+      "png_sha256": "0beb85c4aeb5b0079752d4980b53dc7873308b1a6f2efe844274dddb57b6737c"
+    },
+    {
+      "id": 4119,
+      "file": "4119-16x16-tie-interceptor.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-interceptor",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "3f52462f4a662e08d9413f090621b53e2a49a8582ce6b420d23fb9d0ec85832d",
+      "source_sha256": "c0dbb936ffb96262a3183d3f9cf28cb728e4166aaed90fea5326d72fe9115d65",
+      "indices_sha256": "970e822a8f5f4e157fc4533f7f46248199e69d9dfa944100229732aededa1b26",
+      "png_sha256": "af73dc08bb0d123ca27d202ebbc39054c2fcb6bf59ff0e76bd691091dc4e87f3"
+    },
+    {
+      "id": 4120,
+      "file": "4120-32x32-tie-bomber.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "d1e4c53f522e84c6995a9c986b81a5c6fc50f84d09833a14d2cf46994e7e7afa",
+      "source_sha256": "930756be722faf06aed3733ff5314d5e9a75e4102343a3266ab29837068b8c4f",
+      "indices_sha256": "e2e42a01bc130e25b2ead7b4000080b811f71e7371085ae5fe4d7bb95eaed1e5",
+      "png_sha256": "8ae47d9341a300aa300485e19fe77d01ec76b8e94da0fbf7fa2ecd6eb490ec03"
+    },
+    {
+      "id": 4121,
+      "file": "4121-32x32-tie-bomber.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "f52df8240e1df3254b611ae276f699445e61acd88686c1eb4a93bab2dea67804",
+      "source_sha256": "b480d0964c0d5931ea509793a880ca1d25cd0645448ea1b439314577698ca856",
+      "indices_sha256": "05b0e223dae3b3feb0f7ac08ddaa04b41f8277bfbedf9ce5774c50a3c58c07f8",
+      "png_sha256": "1e1b3353aa60a2c1a1e6367815ac84bde119ffe0a05839a834f4810564c778fd"
+    },
+    {
+      "id": 4122,
+      "file": "4122-32x32-tie-bomber.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "5154244910537e832a9d70693101cc5ec91626a060a94fa2160103464983b5d5",
+      "source_sha256": "612b5155b2beb0693a787a53a63fc35f89b92659ec061a852dfb76a58e5f2b7b",
+      "indices_sha256": "71a358bab1fa4e213bc9750cecfecfe781a81454a74ed14f53f51cb6d838a526",
+      "png_sha256": "6ebdcba574a522c44f17eabfac648592ed44336493665d64e5984dc33470063c"
+    },
+    {
+      "id": 4123,
+      "file": "4123-32x32-tie-bomber.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "e08693788d450af95f0dae6bbe8b23efd88b2a1035f6ab370d60e64a73d9f90b",
+      "source_sha256": "affc823c11d52605e6712b1cbebfb116dd47ab0b3e6a6495e8c326f462511d9e",
+      "indices_sha256": "a044d5a7a9df879aa08fa64a842aa4bfc1180832f03deadf8897a8afa7907673",
+      "png_sha256": "d273a73e35fe0d03db62bfbda6cbc6d393de209373e914cbba6453accbf859d8"
+    },
+    {
+      "id": 4124,
+      "file": "4124-32x32-tie-bomber.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "6bb11ef64bf3676af2a8287b02afea166106040cd7452617d2310a7fa3b88efa",
+      "source_sha256": "a241e9282f117bd88d1787c494f1b3897d4a2a6cf69de6ba1861a7259fe1da20",
+      "indices_sha256": "c23eb621f18d0b29fa75939a8458821f2a213349fec6b954c8f7886e9c9f1149",
+      "png_sha256": "491c5673cfc2158282dea7b54435e3cd853a99790adf6d609eed8e403aa897bd"
+    },
+    {
+      "id": 4125,
+      "file": "4125-16x16-tie-bomber.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "adb70ec080f830685dee8428a35d39e67a84394f321a2b0872583d5bcd17a60d",
+      "source_sha256": "b3b6c9dd9c8ea8df7b5861eff5aabf90f1df291aa8b151946b877cadd6df31c9",
+      "indices_sha256": "b27f6530c8544b608d256fd64695b0c6333436a432f2f59e6afb23cda1ba82b7",
+      "png_sha256": "37c91220b2dc6bd854f67aa283b86d1d5d6d0b9a3b83ed58ef624e31e6cbf579"
+    },
+    {
+      "id": 4126,
+      "file": "4126-16x16-tie-bomber.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "71a578e272faf617a1b3b28b96dd700d9435f1450f7c510a56305da80fd5ffdd",
+      "source_sha256": "d98e2411ca37845ae05651e18d5a36beceaec660bea93fc921a6ec4e34d94c3e",
+      "indices_sha256": "dd242edd1336e7fdfecd645061c599dd5c9eb64e0e885386221489dbdbd6094d",
+      "png_sha256": "8cf4d8d2d1f90b2a76d5d4ac38e2139685ef78e96cd9fc200a31437478d1f6df"
+    },
+    {
+      "id": 4127,
+      "file": "4127-16x16-tie-bomber.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "38bd1bd854626667a2d9f81f06af536d2a89a65644619cfc464dd91a1605cf13",
+      "source_sha256": "f592c07da0ec32d72a5daa562b0ecdac32ad0c259a6d726caf027555db7079ac",
+      "indices_sha256": "4fbf09839b394a1878316e20b78c3ea0ca240f30cb4d5173dbd0d91e1efd9166",
+      "png_sha256": "9a84c67f104befdbc97c272a91fdbe80572abae8a8e4fac473cad4e6d429423b"
+    },
+    {
+      "id": 4128,
+      "file": "4128-16x16-tie-bomber.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "5d7b6acda1edfdada0e1b3c37491b68316bd385474e26535ad147af5ca76cf06",
+      "source_sha256": "648945220c3276e22c78bf28760e19e713668e5da3960b6b01940578db39d77a",
+      "indices_sha256": "eeef0d073a6f468eea55b496d27e832bf1755771816b179ef8b1d46157eaab0b",
+      "png_sha256": "7aa6a24339fa238e09d9852604513707c2d74c355651863e463a3be13e45938b"
+    },
+    {
+      "id": 4129,
+      "file": "4129-16x16-tie-bomber.png",
+      "size": [
+        16,
+        16
+      ],
+      "family": "tie-bomber",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "08f362709b86c7f549f80f5dfb3d8ba6e81345d70e94ea3b74210e89593375a8",
+      "source_sha256": "2d056806f5d0be1d0c2671658ae42dc55b6809437d4eacee42281f11bd0db0c1",
+      "indices_sha256": "63b7ab30dee4557f991a759da11812de0d06d38d6cb46afda8228b84e9d3bcbc",
+      "png_sha256": "9b7fe2a888438bf71cca82db8cbc0f3a09b11b9b5edce0f481373e8f3dd66a7e"
+    },
+    {
+      "id": 4130,
+      "file": "4130-32x32-tie-defender.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-defender",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "1e8b46967b8283f13e53e8f845a8bd24f4edb891ffdafb33465d93ea0f116f9d",
+      "source_sha256": "97487dfbfb507340845728af05d5c001b191495f59aad7cdef8d0f6beedd679d",
+      "indices_sha256": "a82ab32b44ff75f637fef7daa87471208f436884af945be7462dbc85188b9055",
+      "png_sha256": "9690104d7dd27e63e22dbcb7e60671c26d62a2f4a65bbdf6991f7871717ad8af"
+    },
+    {
+      "id": 4131,
+      "file": "4131-32x32-tie-defender.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-defender",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "3a6fe93e368d9fca8a23d56c1314e1b7a62392a71cdd850ec2a26bee61af85de",
+      "source_sha256": "043e975ee828548b6569af1a6a80d95a84254234925c33831a28bd9b86bbd573",
+      "indices_sha256": "179c2c0931e8d1a44d06e69f31a53515178d75e82def7052d0ef54e4798a5e5e",
+      "png_sha256": "e520157e925505fcaf360ecbd6d1661f21462448ac11cd97d23bdf94a58a9554"
+    },
+    {
+      "id": 4132,
+      "file": "4132-32x32-tie-defender.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-defender",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "a95bb3089dea24185fc35caf20ca53f1c1cfb899208fca7700a17ff3c426e084",
+      "source_sha256": "e63d0e03b5f39328cb262a22f5711735c78a3b03cd1f5b49ba8cb189a77c0bc9",
+      "indices_sha256": "877fc2ea795690f834e41048d518ec69b762ec62bd74b3e68af155ffd712427a",
+      "png_sha256": "bfddc0899402e1b451f15b47daee48bbceb44b04390f5303dff9bc7171b2f61e"
+    },
+    {
+      "id": 4133,
+      "file": "4133-32x32-tie-defender.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-defender",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "9ae8d63a23a275f991616ddf37eb294f307e44003727bd9337a241553b6a87bf",
+      "source_sha256": "bad2b68166617f85447efd13c0adb881fdba777acc6299b90d7154d3b989a9f9",
+      "indices_sha256": "5e7fe86d70f315f64c5481b269483e05bb3de24825c71739eac67c4ab9421d18",
+      "png_sha256": "87d071712c456ed5aa5c0397fa29f7b2d3a2217321a45d86195313ab9c7bbed3"
+    },
+    {
+      "id": 4134,
+      "file": "4134-32x32-tie-defender.png",
+      "size": [
+        32,
+        32
+      ],
+      "family": "tie-defender",
+      "palette_rule": "battle_active",
+      "trailing_bytes": 0,
+      "object_sha256": "4c927292c050aee7eaf468d8c582296f60edc41e29d7f328ae1c7497d00462d2",
+      "source_sha256": "9a59526378f42652a76d51e804504ce72e394210729c898c4fae1f5f63e92f72",
+      "indices_sha256": "0e7c1005ac44dc6d76eb021f78b136bb6c8340277ce5d533119d718d0c444eea",
+      "png_sha256": "6f2d1c0df0335cce9d5239875fb68bcf9b1ead2be4e91c99fbca5a5aa41fd532"
+    }
+  ]
+}

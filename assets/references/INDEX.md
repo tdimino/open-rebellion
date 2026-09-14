@@ -35,7 +35,8 @@ Original game EData extracts at 400x200 — the source art before DLL compressio
 | [ref-missions](ref-missions/) | 8 | Mission event panels |
 | [ref-planets](ref-planets/) | 9 | Planet panels |
 | [ref-battle-backgrounds](ref-battle-backgrounds/) | 7 | Tactical combat backgrounds |
-| [ref-squadron-sprites](ref-squadron-sprites/) | 14 | Fighter squadron sprites |
+| [ref-squadron-sprites](ref-squadron-sprites/) | 14 | Fighter squadron sprites. **Non-native**: MetasharpNet `Names303` 128x128 upscales with the palette discarded; never a fidelity reference |
+| [ref-fighter-textures](ref-fighter-textures/) | 77 | Native type-303 fighter textures 4000-4134 as mode-P PNGs on battle palette 5531, with `palette.json` digests (`scripts/sprites/export_fighter_textures.py`) |
 
 ## NJO Total Conversion References
 
@@ -56,6 +57,6 @@ Original game EData extracts at 400x200 — the source art before DLL compressio
 | GOKRES damage diagrams (21000-26999) | ref-damage-diagrams + ref-cross-sections |
 | STRATEGY event screens (6000-6999) | ref-mcquarrie-rotj + ref-illustrated-books/rotj-pages + ref-missions |
 | STRATEGY character panels (1000-1999) | ref-swccg-cards + ref-characters + ref-illustrated-books/characters-pages |
-| TACTICAL ship sprites (2000-2999) | ref-squadron-sprites + ref-galactic-battlegrounds |
+| TACTICAL ship sprites (2000-2999) | ref-galactic-battlegrounds (+ ref-squadron-sprites for silhouette only; ref-fighter-textures for native fighter pixels) |
 | TACTICAL HUD (1000-1999) | ref-gb-concept-art + ref-swg-tcg-art |
 | COMMON buttons/chrome (10000-15999) | ref-gb-concept-art |

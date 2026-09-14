@@ -14,6 +14,9 @@ Usage:
     uv run scripts/curate-references.py --category capital-ships  # one category
     uv run scripts/curate-references.py --upscale          # upscale via waifu2x (4x)
     uv run scripts/curate-references.py --list             # show categories and counts
+
+The squadron sprites this script curates are MetasharpNet ``Names303`` upscales (non-native).
+For the native fighter textures use ``scripts/sprites/export_fighter_textures.py`` (agent_docs/sprites.md).
 """
 
 import argparse
