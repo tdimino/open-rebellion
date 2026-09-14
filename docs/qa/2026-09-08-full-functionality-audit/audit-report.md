@@ -39,6 +39,8 @@ and `run-eval.sh`.
 
 ## Where work left off
 
+PR #11 after rebase [passes the freshly rebuilt browser gate](evidence/2026-09-14-pr11-rebased-browser-gate.md) at `e7533c6` on upstream `741bcfb`: **152/152 passed, zero failures or launch retries**. Cleanup and artifact hashes are verified; external independent review remains the user’s follow-up.
+
 PR #11 step 7 [now passes the complete automated browser gate](evidence/2026-09-14-pr11-browser-gate-fixed.md): **152/152 passed, zero failures or launch retries** after event-and-paint synchronization and recorded startup recovery. The initial failed evidence is preserved. Independent Astra live acceptance remains unavailable, so the broader checkpoint is not closed.
 
 PR #11 step 6 [corrects the GID harness coordinates](evidence/2026-09-14-pr11-gid-harness-coordinates.md) for both factions and requires command `0x132` in the opening log. Static geometry checks pass; the full browser gate remains pending.

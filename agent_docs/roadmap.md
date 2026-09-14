@@ -32,6 +32,8 @@ PR #11 step 6 (2026-09-14): [GID harness coordinates corrected](../docs/qa/2026-
 
 PR #11 step 7 (2026-09-14): [fixed automated browser gate passes 152/152](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-browser-gate-fixed.md), with zero launch retries. Initial failures remain documented; required independent Astra live acceptance is still pending.
 
+PR #11 rebase verification (2026-09-14): [fresh browser artifacts pass 152/152](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-14-pr11-rebased-browser-gate.md) at `e7533c6` on upstream `741bcfb`, with no launch retries. Independent live review remains pending.
+
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*
 
