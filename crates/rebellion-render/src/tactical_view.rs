@@ -34,8 +34,8 @@ use crate::sector_window::planet_picture_id;
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::TacticalLodView;
 use crate::tactical_assets::{
-    TacticalAssetRenderer, TacticalFighterRenderObject, TacticalRenderObject,
-    TacticalScreenProjection,
+    TacticalAssetRenderer, TacticalEffectRenderObject, TacticalFighterRenderObject,
+    TacticalRenderObject, TacticalScreenProjection,
 };
 use crate::tactical_resources::{
     capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
@@ -78,6 +78,9 @@ const DEFAULT_SHIP_SIZE: f32 = 40.0;
 
 /// Fighter squadron icon size.
 const FIGHTER_SIZE: f32 = 16.0;
+
+/// `_DAT_0066d154`, used by both `FUN_005d3cc0` and `FUN_005d41a0`.
+const ORIGINAL_TACTICAL_EFFECT_FRAME_SECONDS: f32 = 0.1;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
@@ -413,6 +416,8 @@ pub struct BattleSession {
     pub combat_tick: u32,
     /// Active weapon fire visual effects (source ship idx -> target ship idx).
     pub weapon_effects: Vec<WeaponEffect>,
+    /// Target-attached original type-303 hit, damage, and destruction sequences.
+    pub impact_effects: Vec<TacticalImpactEffect>,
     /// Whether combat is paused.
     pub paused: bool,
     /// Combat speed multiplier (1 = normal, 2 = fast, 4 = faster).
@@ -436,6 +441,69 @@ pub struct WeaponEffect {
     pub ttl: u8,
 }
 
+/// One target-attached type-303 impact sequence selected by the original
+/// tactical effect dispatcher at `FUN_005d3e90`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TacticalImpactEffect {
+    pub target: usize,
+    pub sequence: OriginalTacticalEffectSequence,
+    pub frame: u8,
+    frame_elapsed: f32,
+}
+
+/// Original target sprite states. The discriminants preserve the priority and
+/// mutual-exclusion bits tested by `FUN_005d3e90`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OriginalTacticalEffectSequence {
+    IonHit = 0x04,
+    StandardHit = 0x08,
+    IonDamage = 0x10,
+    StandardDamage = 0x20,
+    TurbolaserDamage = 0x40,
+    Destroyed = 0x80,
+}
+
+impl OriginalTacticalEffectSequence {
+    #[must_use]
+    pub const fn resource_base(self) -> u32 {
+        match self {
+            Self::IonHit => 3180,
+            Self::StandardHit => 3060,
+            Self::IonDamage => 3240,
+            Self::StandardDamage => 3120,
+            Self::TurbolaserDamage => 3300,
+            Self::Destroyed => 3360,
+        }
+    }
+
+    #[must_use]
+    pub const fn frame_count(self) -> u8 {
+        match self {
+            Self::IonHit | Self::StandardHit => 6,
+            Self::IonDamage | Self::Destroyed => 16,
+            Self::StandardDamage | Self::TurbolaserDamage => 7,
+        }
+    }
+
+    #[must_use]
+    pub const fn source_size(self) -> (u16, u16) {
+        match self {
+            Self::IonHit | Self::StandardHit | Self::StandardDamage | Self::TurbolaserDamage => {
+                (32, 32)
+            }
+            Self::IonDamage => (64, 32),
+            Self::Destroyed => (64, 64),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OriginalTacticalImpactStage {
+    Hit = 0,
+    Damage = 1,
+    Destroyed = 2,
+}
+
 /// Type of weapon for visual rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WeaponKind {
@@ -455,6 +523,71 @@ impl WeaponKind {
             WeaponKind::FighterAttack => Color::new(1.0, 0.8, 0.2, 0.6), // yellow
         }
     }
+
+    /// `SHIP_TAKE_*_HIT` codes delivered to the original render dispatcher.
+    const fn original_impact_code(self) -> u8 {
+        match self {
+            Self::LaserCannon | Self::FighterAttack => 1,
+            Self::IonCannon => 2,
+            Self::Turbolaser => 3,
+        }
+    }
+}
+
+/// Reproduce the resource branch in `FUN_005d3e90`. Its first argument uses
+/// the `SHIP_TAKE_*_HIT` ordering recovered from `FUN_005a7500`; its second is
+/// the target effect stage returned immediately after hit resolution.
+fn original_tactical_effect_sequence(
+    weapon: WeaponKind,
+    stage: OriginalTacticalImpactStage,
+) -> OriginalTacticalEffectSequence {
+    match stage {
+        OriginalTacticalImpactStage::Hit if weapon.original_impact_code() == 2 => {
+            OriginalTacticalEffectSequence::IonHit
+        }
+        OriginalTacticalImpactStage::Hit => OriginalTacticalEffectSequence::StandardHit,
+        OriginalTacticalImpactStage::Damage if weapon.original_impact_code() == 2 => {
+            OriginalTacticalEffectSequence::IonDamage
+        }
+        OriginalTacticalImpactStage::Damage if weapon.original_impact_code() == 3 => {
+            OriginalTacticalEffectSequence::TurbolaserDamage
+        }
+        OriginalTacticalImpactStage::Damage => OriginalTacticalEffectSequence::StandardDamage,
+        OriginalTacticalImpactStage::Destroyed => OriginalTacticalEffectSequence::Destroyed,
+    }
+}
+
+fn queue_original_tactical_impact(
+    effects: &mut Vec<TacticalImpactEffect>,
+    target: usize,
+    weapon: WeaponKind,
+    stage: OriginalTacticalImpactStage,
+) -> bool {
+    let sequence = original_tactical_effect_sequence(weapon, stage);
+    let incoming = sequence as u8;
+    if let Some(current) = effects.iter_mut().find(|effect| effect.target == target) {
+        let active = current.sequence as u8;
+        if incoming <= active
+            || (incoming & 0x70 != 0 && active & 0x70 != 0)
+            || (incoming & 0x0c != 0 && active & 0x0c != 0)
+        {
+            return false;
+        }
+        *current = TacticalImpactEffect {
+            target,
+            sequence,
+            frame: 0,
+            frame_elapsed: 0.0,
+        };
+    } else {
+        effects.push(TacticalImpactEffect {
+            target,
+            sequence,
+            frame: 0,
+            frame_elapsed: 0.0,
+        });
+    }
+    true
 }
 
 /// Battle outcome.
@@ -531,6 +664,7 @@ impl BattleSession {
             start_tick: tick,
             combat_tick: 0,
             weapon_effects: Vec::new(),
+            impact_effects: Vec::new(),
             paused: true,
             combat_speed: 1,
             step_accumulator: 0.0,
@@ -815,6 +949,20 @@ impl BattleSession {
     // Combat step — one tick of real-time combat
     // -------------------------------------------------------------------
 
+    fn advance_presentational_effects(&mut self, elapsed: f32) {
+        if !elapsed.is_finite() || elapsed <= 0.0 {
+            return;
+        }
+        self.impact_effects.retain_mut(|effect| {
+            effect.frame_elapsed += elapsed;
+            while effect.frame_elapsed >= ORIGINAL_TACTICAL_EFFECT_FRAME_SECONDS {
+                effect.frame_elapsed -= ORIGINAL_TACTICAL_EFFECT_FRAME_SECONDS;
+                effect.frame = effect.frame.saturating_add(1);
+            }
+            effect.frame < effect.sequence.frame_count()
+        });
+    }
+
     /// Advance combat by one tick. Applies weapon fire, shield regen, hull
     /// damage, and fighter engagement. Produces weapon effects for rendering.
     ///
@@ -871,6 +1019,7 @@ impl BattleSession {
             &atk_alive,
             &def_alive,
             &mut new_effects,
+            &mut self.impact_effects,
             self.combat_tick,
         );
         Self::fire_side(
@@ -878,6 +1027,7 @@ impl BattleSession {
             &def_alive,
             &atk_alive,
             &mut new_effects,
+            &mut self.impact_effects,
             self.combat_tick,
         );
         self.weapon_effects.extend(new_effects);
@@ -933,6 +1083,7 @@ impl BattleSession {
         firing: &[usize],
         targets: &[usize],
         effects: &mut Vec<WeaponEffect>,
+        impact_effects: &mut Vec<TacticalImpactEffect>,
         tick: u32,
     ) {
         if targets.is_empty() {
@@ -982,14 +1133,22 @@ impl BattleSession {
             let damage = (fire_power + variance).max(1);
 
             // Apply damage: shields first, then hull.
-            let target = &mut ships[target_idx];
-            let shield_absorb = damage.min(target.shield);
-            target.shield -= shield_absorb;
-            let hull_damage = damage - shield_absorb;
-            target.hull_current = (target.hull_current - hull_damage).max(0);
-            if target.hull_current == 0 {
-                target.alive = false;
-            }
+            let impact_stage = {
+                let target = &mut ships[target_idx];
+                let shield_absorb = damage.min(target.shield);
+                target.shield -= shield_absorb;
+                let hull_damage = damage - shield_absorb;
+                target.hull_current = (target.hull_current - hull_damage).max(0);
+                if target.hull_current == 0 {
+                    target.alive = false;
+                    OriginalTacticalImpactStage::Destroyed
+                } else if hull_damage > 0 {
+                    OriginalTacticalImpactStage::Damage
+                } else {
+                    OriginalTacticalImpactStage::Hit
+                }
+            };
+            queue_original_tactical_impact(impact_effects, target_idx, kind, impact_stage);
 
             // Create visual effect.
             effects.push(WeaponEffect {
@@ -1319,6 +1478,72 @@ impl TacticalState {
                 fighter.fighter_group = fighter_group.min(3);
                 fighter_group = fighter_group.saturating_add(1);
             }
+        }
+    }
+
+    /// Display one stable frame from every source-selected impact family.
+    /// This bridge is compiled only into interface-fixture builds.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_effect_presentation_fixture(&mut self) {
+        let focus = {
+            let Some(session) = self.session.as_mut() else {
+                return;
+            };
+            let targets = session
+                .ships
+                .iter()
+                .enumerate()
+                .filter(|(_, ship)| ship.is_attacker == session.player_is_attacker)
+                .map(|(index, _)| index)
+                .take(6)
+                .collect::<Vec<_>>();
+            let fixtures = [
+                (WeaponKind::LaserCannon, OriginalTacticalImpactStage::Hit, 2),
+                (WeaponKind::IonCannon, OriginalTacticalImpactStage::Hit, 2),
+                (
+                    WeaponKind::LaserCannon,
+                    OriginalTacticalImpactStage::Damage,
+                    3,
+                ),
+                (
+                    WeaponKind::IonCannon,
+                    OriginalTacticalImpactStage::Damage,
+                    7,
+                ),
+                (
+                    WeaponKind::Turbolaser,
+                    OriginalTacticalImpactStage::Damage,
+                    2,
+                ),
+                (
+                    WeaponKind::LaserCannon,
+                    OriginalTacticalImpactStage::Destroyed,
+                    8,
+                ),
+            ];
+            session.impact_effects.clear();
+            for (target, (weapon, stage, frame)) in targets.iter().copied().zip(fixtures) {
+                queue_original_tactical_impact(&mut session.impact_effects, target, weapon, stage);
+                if let Some(effect) = session
+                    .impact_effects
+                    .iter_mut()
+                    .find(|effect| effect.target == target)
+                {
+                    effect.frame = frame.min(effect.sequence.frame_count().saturating_sub(1));
+                }
+            }
+            session.paused = true;
+            targets.get(2).and_then(|&target| {
+                session.ships.get(target).map(|ship| {
+                    (
+                        u32::try_from(target).unwrap_or(u32::MAX).saturating_add(1),
+                        ship.source_position.rendered(),
+                    )
+                })
+            })
+        };
+        if let Some((object_id, position)) = focus {
+            self.asset_renderer.focus_target(object_id, position);
         }
     }
 
@@ -2184,6 +2409,7 @@ pub fn draw_tactical_view(
         if session.phase == BattlePhase::Combat && !session.paused {
             // Step at ~4 ticks per second (at 60fps), scaled by combat_speed.
             let dt = get_frame_time();
+            session.advance_presentational_effects(dt);
             let ticks_per_sec = 4.0 * session.combat_speed as f32;
             session.step_accumulator += dt * ticks_per_sec;
             while session.step_accumulator >= 1.0 {
@@ -2221,7 +2447,9 @@ pub fn draw_tactical_view(
     // bounded 2D fallback below.
     let (scale, offset_x, offset_y) =
         canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
-    let (production_objects, production_fighters) = if state.render_original_participants {
+    let (production_objects, production_fighters, production_effects) = if state
+        .render_original_participants
+    {
         state
             .session
             .as_ref()
@@ -2262,11 +2490,28 @@ pub fn draw_tactical_view(
                         })
                     })
                     .collect::<Vec<_>>();
-                (ships, fighters)
+                let effects = session
+                    .impact_effects
+                    .iter()
+                    .filter_map(|effect| {
+                        let ship = session.ships.get(effect.target)?;
+                        let (source_width, source_height) = effect.sequence.source_size();
+                        Some(TacticalEffectRenderObject {
+                            object_id: u32::try_from(effect.target)
+                                .unwrap_or(u32::MAX)
+                                .saturating_add(1),
+                            resource_id: effect.sequence.resource_base() + u32::from(effect.frame),
+                            source_width,
+                            source_height,
+                            position: ship.source_position.rendered(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                (ships, fighters, effects)
             })
             .unwrap_or_default()
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), Vec::new())
     };
     let ship_report = state
         .asset_renderer
@@ -2274,6 +2519,9 @@ pub fn draw_tactical_view(
     let fighter_report = state
         .asset_renderer
         .draw_fighters(aperture_tuple, &production_fighters);
+    let effect_report = state
+        .asset_renderer
+        .draw_effects(aperture_tuple, &production_effects);
     let rendered_ship_indexes = ship_report
         .rendered_object_ids
         .into_iter()
@@ -2302,6 +2550,11 @@ pub fn draw_tactical_view(
                 .map(|index| (index, projection))
         })
         .collect::<HashMap<_, _>>();
+    let rendered_effect_targets = effect_report
+        .rendered_object_ids
+        .into_iter()
+        .filter_map(|object_id| usize::try_from(object_id.saturating_sub(1)).ok())
+        .collect::<HashSet<_>>();
 
     #[cfg(feature = "interface-test-fixtures")]
     if state.proof_resource_2560 {
@@ -2593,8 +2846,9 @@ pub fn draw_tactical_view(
             // Main beam.
             draw_line(source.x, source.y, target.x, target.y, 2.0, color);
 
-            // Impact flash at target (brief bright circle).
-            if effect.ttl > 5 {
+            // Retain the bounded fallback only when an authentic target frame
+            // was unavailable for this event.
+            if effect.ttl > 5 && !rendered_effect_targets.contains(&effect.target) {
                 let flash_r = 4.0 + f32::from(8 - effect.ttl) * 2.0;
                 draw_circle(
                     target.x,
@@ -3465,11 +3719,126 @@ mod tests {
             start_tick: 0,
             combat_tick: 0,
             weapon_effects: Vec::new(),
+            impact_effects: Vec::new(),
             paused: true,
             combat_speed: 1,
             step_accumulator: 0.0,
             winner: None,
         }
+    }
+
+    #[test]
+    fn original_effect_dispatch_preserves_resources_sizes_and_priority_groups() {
+        let cases = [
+            (
+                WeaponKind::LaserCannon,
+                OriginalTacticalImpactStage::Hit,
+                OriginalTacticalEffectSequence::StandardHit,
+                3060,
+                6,
+                (32, 32),
+            ),
+            (
+                WeaponKind::IonCannon,
+                OriginalTacticalImpactStage::Hit,
+                OriginalTacticalEffectSequence::IonHit,
+                3180,
+                6,
+                (32, 32),
+            ),
+            (
+                WeaponKind::LaserCannon,
+                OriginalTacticalImpactStage::Damage,
+                OriginalTacticalEffectSequence::StandardDamage,
+                3120,
+                7,
+                (32, 32),
+            ),
+            (
+                WeaponKind::IonCannon,
+                OriginalTacticalImpactStage::Damage,
+                OriginalTacticalEffectSequence::IonDamage,
+                3240,
+                16,
+                (64, 32),
+            ),
+            (
+                WeaponKind::Turbolaser,
+                OriginalTacticalImpactStage::Damage,
+                OriginalTacticalEffectSequence::TurbolaserDamage,
+                3300,
+                7,
+                (32, 32),
+            ),
+            (
+                WeaponKind::LaserCannon,
+                OriginalTacticalImpactStage::Destroyed,
+                OriginalTacticalEffectSequence::Destroyed,
+                3360,
+                16,
+                (64, 64),
+            ),
+        ];
+        for (weapon, stage, expected, base, frames, size) in cases {
+            let actual = original_tactical_effect_sequence(weapon, stage);
+            assert_eq!(actual, expected);
+            assert_eq!(actual.resource_base(), base);
+            assert_eq!(actual.frame_count(), frames);
+            assert_eq!(actual.source_size(), size);
+        }
+
+        let mut effects = Vec::new();
+        assert!(queue_original_tactical_impact(
+            &mut effects,
+            4,
+            WeaponKind::IonCannon,
+            OriginalTacticalImpactStage::Hit,
+        ));
+        assert!(!queue_original_tactical_impact(
+            &mut effects,
+            4,
+            WeaponKind::LaserCannon,
+            OriginalTacticalImpactStage::Hit,
+        ));
+        assert!(queue_original_tactical_impact(
+            &mut effects,
+            4,
+            WeaponKind::LaserCannon,
+            OriginalTacticalImpactStage::Damage,
+        ));
+        assert!(!queue_original_tactical_impact(
+            &mut effects,
+            4,
+            WeaponKind::Turbolaser,
+            OriginalTacticalImpactStage::Damage,
+        ));
+        assert!(queue_original_tactical_impact(
+            &mut effects,
+            4,
+            WeaponKind::IonCannon,
+            OriginalTacticalImpactStage::Destroyed,
+        ));
+        assert_eq!(
+            effects[0].sequence,
+            OriginalTacticalEffectSequence::Destroyed
+        );
+    }
+
+    #[test]
+    fn original_effect_frames_advance_at_ten_hertz_and_expire_exactly() {
+        let mut session = test_session(Vec::new(), Vec::new(), true);
+        queue_original_tactical_impact(
+            &mut session.impact_effects,
+            0,
+            WeaponKind::LaserCannon,
+            OriginalTacticalImpactStage::Hit,
+        );
+        session.advance_presentational_effects(0.099);
+        assert_eq!(session.impact_effects[0].frame, 0);
+        session.advance_presentational_effects(0.001_1);
+        assert_eq!(session.impact_effects[0].frame, 1);
+        session.advance_presentational_effects(0.5);
+        assert!(session.impact_effects.is_empty());
     }
 
     #[test]

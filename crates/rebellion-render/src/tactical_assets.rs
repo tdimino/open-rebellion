@@ -375,6 +375,13 @@ const PALETTE_MAGIC: &[u8; 8] = b"ORTPAL00";
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_PROOF_OBJECT_BYTES: usize = 8 << 20;
 
+fn is_original_effect_resource(resource_id: u32) -> bool {
+    matches!(
+        resource_id,
+        3060..=3065 | 3120..=3126 | 3180..=3185 | 3240..=3255 | 3300..=3306 | 3360..=3375
+    )
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 const EXPECTED_MESH_FAMILY_BASES: [u32; 29] = [
     2010, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100, 2110, 2120, 2130, 2140, 2150, 2510,
@@ -863,6 +870,11 @@ struct TacticalPlanetAsset {
     texture: Texture2D,
 }
 
+struct TacticalEffectAsset {
+    texture: Texture2D,
+    transparent_index: u8,
+}
+
 impl TacticalFighterAsset {
     fn selected(&self, detail: OriginalFighterDetail) -> (u32, &Texture2D) {
         match detail {
@@ -888,6 +900,16 @@ pub(crate) struct TacticalFighterRenderObject {
     pub close_resource_id: u32,
     pub far_resource_id: u32,
     pub indicator_resource_id: u32,
+    pub position: Vec3,
+}
+
+/// One original target-attached type-303 effect frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TacticalEffectRenderObject {
+    pub object_id: u32,
+    pub resource_id: u32,
+    pub source_width: u16,
+    pub source_height: u16,
     pub position: Vec3,
 }
 
@@ -934,6 +956,8 @@ pub(crate) struct TacticalAssetRenderer {
     fighter_families: HashMap<u32, TacticalFighterAsset>,
     fighter_details: HashMap<u32, OriginalFighterDetail>,
     unavailable_fighter_families: HashSet<u32>,
+    effect_textures: HashMap<u32, TacticalEffectAsset>,
+    unavailable_effect_textures: HashSet<u32>,
     planet: Option<TacticalPlanetAsset>,
     unavailable_planet: Option<u32>,
     material: Option<Material>,
@@ -950,6 +974,7 @@ pub(crate) struct TacticalAssetRenderer {
     palette_selector: u8,
     logged_participant_scene: bool,
     logged_fighter_scene: Option<String>,
+    logged_effect_scene: Option<String>,
     logged_planet_scene: Option<u32>,
 }
 
@@ -967,6 +992,8 @@ impl Default for TacticalAssetRenderer {
             fighter_families: HashMap::new(),
             fighter_details: HashMap::new(),
             unavailable_fighter_families: HashSet::new(),
+            effect_textures: HashMap::new(),
+            unavailable_effect_textures: HashSet::new(),
             planet: None,
             unavailable_planet: None,
             material: None,
@@ -983,6 +1010,7 @@ impl Default for TacticalAssetRenderer {
             palette_selector: 1,
             logged_participant_scene: false,
             logged_fighter_scene: None,
+            logged_effect_scene: None,
             logged_planet_scene: None,
         }
     }
@@ -1005,11 +1033,14 @@ impl TacticalAssetRenderer {
             self.fighter_families.clear();
             self.fighter_details.clear();
             self.unavailable_fighter_families.clear();
+            self.effect_textures.clear();
+            self.unavailable_effect_textures.clear();
             self.planet = None;
             self.unavailable_planet = None;
             self.material = None;
             self.logged_participant_scene = false;
             self.logged_fighter_scene = None;
+            self.logged_effect_scene = None;
             self.logged_planet_scene = None;
         }
     }
@@ -1620,6 +1651,108 @@ impl TacticalAssetRenderer {
         report
     }
 
+    /// Draw active target-attached hit, damage, and destruction frames through
+    /// the exact type-303 resources selected by `FUN_005d3e90`.
+    pub(crate) fn draw_effects(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalEffectRenderObject],
+    ) -> TacticalDrawReport {
+        let mut report = TacticalDrawReport::default();
+        let Some(source_camera) = self.source_camera else {
+            return report;
+        };
+        if objects.is_empty() {
+            return report;
+        }
+
+        let mut resource_ids = objects
+            .iter()
+            .map(|object| object.resource_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        resource_ids.sort_unstable();
+        for resource_id in resource_ids {
+            if self.effect_textures.contains_key(&resource_id)
+                || self.unavailable_effect_textures.contains(&resource_id)
+            {
+                continue;
+            }
+            if let Err(error) = self.load_effect_texture(resource_id) {
+                self.unavailable_effect_textures.insert(resource_id);
+                macroquad::logging::warn!(
+                    "[tactical_3d] effect resource={} unavailable: {}",
+                    resource_id,
+                    error
+                );
+            }
+        }
+
+        let pose = source_camera.pose();
+        let camera = Camera3D {
+            position: pose.position,
+            target: pose.target,
+            up: pose.up,
+            fovy: pose.fovy_radians,
+            aspect: Some(aperture.2 / aperture.3),
+            viewport: None,
+            z_near: pose.near,
+            z_far: pose.far,
+            ..Default::default()
+        };
+        let camera_matrix = camera.matrix();
+        let source_scale = aperture.2 / 444.0;
+        let mut rendered = Vec::new();
+        for object in objects {
+            let Some(center) = project_world_position(camera_matrix, object.position, aperture)
+            else {
+                continue;
+            };
+            let Some(asset) = self.effect_textures.get(&object.resource_id) else {
+                continue;
+            };
+            let size = vec2(
+                f32::from(object.source_width) * source_scale,
+                f32::from(object.source_height) * source_scale,
+            );
+            let min = center - size * 0.5;
+            draw_texture_ex(
+                &asset.texture,
+                min.x,
+                min.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(size),
+                    ..Default::default()
+                },
+            );
+            report.rendered_object_ids.push(object.object_id);
+            report.screen_positions.push((object.object_id, center));
+            report.projections.push(TacticalScreenProjection {
+                object_id: object.object_id,
+                center,
+                min,
+                max: min + size,
+            });
+            rendered.push(format!(
+                "{}:{}:{}:{:.3},{:.3}",
+                object.object_id, object.resource_id, asset.transparent_index, center.x, center.y
+            ));
+        }
+        let signature = rendered.join(";");
+        if self.logged_effect_scene.as_deref() != Some(signature.as_str()) {
+            macroquad::logging::info!(
+                "[tactical_3d] effect_scene requested={} rendered={} resources={} frame_seconds=0.1 source_positions=true source=FUN_005d39a0,FUN_005d3e90,FUN_005d41a0",
+                objects.len(),
+                report.rendered_object_ids.len(),
+                signature,
+            );
+            self.logged_effect_scene = Some(signature);
+        }
+        report
+    }
+
     #[cfg(feature = "interface-test-fixtures")]
     fn load_proof(&mut self) -> Result<(), String> {
         let palette_resource_id = 5530 + u32::from(self.palette_selector);
@@ -1925,6 +2058,50 @@ impl TacticalAssetRenderer {
         Ok(())
     }
 
+    fn load_effect_texture(&mut self, resource_id: u32) -> Result<(), String> {
+        if !is_original_effect_resource(resource_id) {
+            return Err(format!("invalid tactical effect resource {resource_id}"));
+        }
+        let palette_resource_id = 5530 + u32::from(self.palette_selector);
+        let (texture_payload, palette_payload) = {
+            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+            let texture_key = format!("{resource_id}/1033");
+            let palette_key = format!("{palette_resource_id}/1033");
+            let texture = cache
+                .textures
+                .get(&texture_key)
+                .cloned()
+                .ok_or_else(|| format!("typed texture entry {texture_key} is missing"))?;
+            let palette = cache
+                .textures
+                .get(&palette_key)
+                .cloned()
+                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
+            (texture, palette)
+        };
+        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
+        let (texture, transparent_index) =
+            decode_indexed_effect_texture(&texture_payload, &palette)?;
+        macroquad::logging::info!(
+            "[tactical_3d] effect_loaded resource={} dimensions={}x{} palette_selector={} palette_resource_id={} texture_filter=nearest transparent_index={} source=FUN_005d38d0",
+            resource_id,
+            texture.width(),
+            texture.height(),
+            self.palette_selector,
+            palette_resource_id,
+            transparent_index,
+        );
+        self.effect_textures.insert(
+            resource_id,
+            TacticalEffectAsset {
+                texture,
+                transparent_index,
+            },
+        );
+        self.family_loads = self.family_loads.saturating_add(1);
+        Ok(())
+    }
+
     fn load_planet(&mut self, resource_id: u32) -> Result<(), String> {
         if !(5501..=5527).contains(&resource_id) {
             return Err(format!("invalid tactical planet resource {resource_id}"));
@@ -2186,6 +2363,65 @@ fn validate_indexed_texture_object(
 
 fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Texture2D, String> {
     decode_indexed_texture_with_rule(bytes, palette, 0, 1)
+}
+
+fn decode_indexed_effect_rgba(
+    bytes: &[u8],
+    palette: &[[u8; 4]; 256],
+) -> Result<(u16, u16, Vec<u8>, u8), String> {
+    let mut reader = Reader::new(bytes);
+    reader.expect(TEXTURE_MAGIC)?;
+    if reader.u32()? != 1 {
+        return Err("unsupported tactical texture object version".to_string());
+    }
+    let width = reader.u32()?;
+    let height = reader.u32()?;
+    let palette_id = reader.u32()?;
+    let palette_rule = reader.u32()?;
+    let pixels = reader.u32()? as usize;
+    let trailing = reader.u32()? as usize;
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or("tactical texture dimensions overflow")?;
+    if width == 0
+        || height == 0
+        || width > u16::MAX.into()
+        || height > u16::MAX.into()
+        || pixels != expected
+        || pixels > 16_777_216
+        || palette_id != 0
+        || palette_rule != 1
+        || !matches!(trailing, 0 | 4)
+    {
+        return Err("invalid indexed tactical effect header".to_string());
+    }
+    let indices = reader.bytes(pixels)?;
+    reader.bytes(trailing)?;
+    if !reader.finished() {
+        return Err("tactical effect texture has trailing bytes".to_string());
+    }
+    let transparent_index = *indices
+        .first()
+        .ok_or("tactical effect texture contains no pixels")?;
+    let mut rgba = Vec::with_capacity(pixels * 4);
+    for index in indices {
+        let mut color = palette[usize::from(*index)];
+        if *index == transparent_index {
+            color[3] = 0;
+        }
+        rgba.extend_from_slice(&color);
+    }
+    Ok((width as u16, height as u16, rgba, transparent_index))
+}
+
+fn decode_indexed_effect_texture(
+    bytes: &[u8],
+    palette: &[[u8; 4]; 256],
+) -> Result<(Texture2D, u8), String> {
+    let (width, height, rgba, transparent_index) = decode_indexed_effect_rgba(bytes, palette)?;
+    let texture = Texture2D::from_rgba8(width, height, &rgba);
+    texture.set_filter(original_tactical_texture_filter());
+    Ok((texture, transparent_index))
 }
 
 fn decode_indexed_texture_with_rule(
@@ -2489,6 +2725,25 @@ mod tests {
         assert_eq!(palette[0], [0, 255, 17, 255]);
         assert_eq!(palette[255], [255, 0, 17, 255]);
         assert!(decode_palette_object(&bytes, resource_id + 1).is_err());
+    }
+
+    #[test]
+    fn tactical_effect_decoder_keys_the_uniform_border_index_only() {
+        let mut bytes = Vec::from(TEXTURE_MAGIC.as_slice());
+        for value in [1_u32, 2, 2, 0, 1, 4, 0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[7, 8, 8, 7]);
+        let mut palette = [[0_u8; 4]; 256];
+        palette[7] = [0, 0, 0, 255];
+        palette[8] = [12, 34, 56, 255];
+        let (width, height, rgba, transparent_index) =
+            decode_indexed_effect_rgba(&bytes, &palette).unwrap();
+        assert_eq!((width, height, transparent_index), (2, 2, 7));
+        assert_eq!(
+            rgba,
+            vec![0, 0, 0, 0, 12, 34, 56, 255, 12, 34, 56, 255, 0, 0, 0, 0]
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]

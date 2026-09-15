@@ -15,6 +15,7 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
+| Practical space-battle launcher implementation | approximately 64% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -93,7 +94,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital families, source-mapped fighter detail resources, and projection-aligned capital interactions use the recovered camera, placement, authored coordinates, system palette, lighting, and retained-mode state; other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58C evidence](evidence/README.md), and [P58C evidence](evidence/2026-09-14-tactical-fighters-selection.md) |
+| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital families, fighter detail resources, system-selected planets, and six target-impact families use the recovered camera, placement, palette, lighting, retained-mode state, effect priority, and 10 Hz lifecycle; other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58F2 evidence](evidence/README.md), and [P58F2 evidence](evidence/2026-09-14-tactical-impact-effects.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -134,8 +135,10 @@ journey through the original zoom controls. P58E restores all eight task-force
 controls, four RGBY fighter controls, source-shaped input, keyboard routing,
 and selected fighter portraits. P58F1 binds the current system picture to its
 exact 256 by 256 planet and paired palette in production battles. Automatic
-group distribution, exact planet placement, damage, effects, special objects,
-and A0 acceptance remain open.
+group distribution and exact planet placement remain open. P58F2 restores the
+six hit, damage, and destruction target-sprite families with their exact frame
+counts, sizes, priority groups, and 10 Hz lifecycle. Projectile geometry,
+shield or field effects, special objects, and A0 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
@@ -170,7 +173,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode and transport, exact ship/fighter DAT resource joins, one complete three-LOD family, recovered camera and targeting, source-bound participant placement, authored transform, system palette, lighting, and retained-mode device/material state pass implementation gates. Production fleet 3D family rendering, original view acceptance, procedural battle contents, and incomplete command, result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode and transport, exact ship/fighter DAT joins, production capital/fighter/planet rendering, group controls, and all six target-impact sprite families pass implementation gates. Original view acceptance, projectile and shield fields, automatic grouping, exact planet placement, and incomplete command, result, special-state, and audio paths remain. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |

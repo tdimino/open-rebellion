@@ -118,6 +118,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F1 tactical-planet evidence](evidence/2026-09-14-tactical-planets.md)
   for the system selector chain, exact planet and palette pair, production
   browser submission, provisional placement, and A0 limits.
+- Review the [P58F2 tactical-impact evidence](evidence/2026-09-14-tactical-impact-effects.md)
+  for the six source-selected frame families, 10 Hz lifecycle, priority,
+  transparent target attachment, 48-case browser gate, and A0 limits.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -155,8 +158,8 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 62%
-implemented after P58F1. Its formal acceptance remains 0 of 106 tactical cells
+Within that total, the standalone space-battle launcher is approximately 64%
+implemented after P58F2. Its formal acceptance remains 0 of 106 tactical cells
 because exact original-view evidence and the remaining battle states are open.
 
 The first recovered implementation tranche now packages and renders the four
@@ -224,9 +227,11 @@ their independent indicator, far, and close transitions with the original zoom
 controls and no family reload. P58E restores all eight task-force controls,
 four RGBY fighter controls, group selection, source-shaped hit testing,
 F1 through F12 routing, and selected fighter detail panels. P58F1 restores the
-exact system-selected planet and paired palette to production battles.
-Automatic group distribution, exact planet placement, effects, remaining
-commands, results, and A0 comparisons remain open.
+exact system-selected planet and paired palette to production battles. P58F2
+restores the six source-selected hit, damage, and destruction sprite families,
+their 10 Hz lifecycle, priority groups, indexed transparency, and target
+attachment. Automatic group distribution, exact planet placement, projectile
+and shield fields, remaining commands, results, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

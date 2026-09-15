@@ -1,0 +1,16 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "medium",
+  "task": "browser_visual_acceptance",
+  "verdict": "pass",
+  "ready_to_commit": true,
+  "inspected_conditions": [
+    "Six visually distinct effect frames are present per faction in both layouts.",
+    "Effects are fully inside the tactical aperture and aligned along the visible ship lane.",
+    "No visible black matte rectangles, blank panels, or effect clipping are present.",
+    "Pixel edges are crisp and consistent with nearest-neighbor scaling.",
+    "Native and letterboxed views preserve composition with consistent centered side bars."
+  ],
+  "findings": [],
+  "acceptance_boundary": "Qualified A1 visual implementation evidence only. Original indexed asset provenance cannot be established from the contact sheet alone. Browser results were supplied evidence, not independently reverified. Lossless original-executable A0 comparison, projectile geometry, shield or field effects, exact planet placement, and all 106 strict tactical cells remain open."
+}

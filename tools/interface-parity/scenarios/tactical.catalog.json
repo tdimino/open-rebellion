@@ -114,6 +114,17 @@
       "acceptance": "A1 executable task-force and fighter-group presentation proof only. Native A0 comparison and the remaining tactical command surface stay open."
     },
     {
+      "slug": "production-effect-presentation",
+      "description": "All six executable-selected target effect families rendered as transparent, palette-bound type-303 frames on production capital positions",
+      "fixture_codes": { "alliance": 65804, "empire": 66060 },
+      "tactical_proof": false,
+      "production_participants": true,
+      "effect_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable resource, frame, timing, transparency, priority, and production-position proof only. Projectile geometry, shield fields, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

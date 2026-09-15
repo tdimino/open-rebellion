@@ -2,7 +2,7 @@
   "schema_version": 1,
   "source_binary": "REBEXE.EXE",
   "source_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
-  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0", "ghidra/notes/tactical-planet-resource-path.md"],
+  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0", "ghidra/notes/tactical-planet-resource-path.md", "ghidra/notes/tactical-impact-effect-path.md"],
   "resource_module": "TACTICAL.DLL",
   "capital_ship_resource_type": 301,
   "fighter_resource_type": 303,
@@ -96,5 +96,23 @@
     "placement_grade": "provisional-A1",
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md"
   },
-  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "battle event to effect resource", "tactical planet retained-frame transform and visibility", "remaining original control-state and render geometry"]
+  "impact_effect_contract": {
+    "resource_type": 303,
+    "frame_seconds": 0.1,
+    "selection_source": "SHIP_TAKE_LASER_HIT, SHIP_TAKE_ION_HIT, SHIP_TAKE_TURBO_HIT, or SHIP_TAKE_TORPEDO_HIT plus post-hit stage",
+    "priority": "reject incoming state when its bit is not greater than active; 0x04 and 0x08 exclude one another; 0x10, 0x20, and 0x40 exclude one another; 0x80 may replace lower states",
+    "sequences": [
+      {"role": "standard_hit", "state_bit": 8, "resource_base": 3060, "frames": 6, "draw_size": [32, 32]},
+      {"role": "ion_hit", "state_bit": 4, "resource_base": 3180, "frames": 6, "draw_size": [32, 32]},
+      {"role": "standard_damage", "state_bit": 32, "resource_base": 3120, "frames": 7, "draw_size": [32, 32]},
+      {"role": "ion_damage", "state_bit": 16, "resource_base": 3240, "frames": 16, "draw_size": [64, 32]},
+      {"role": "turbolaser_damage", "state_bit": 64, "resource_base": 3300, "frames": 7, "draw_size": [32, 32]},
+      {"role": "destroyed", "state_bit": 128, "resource_base": 3360, "frames": 16, "draw_size": [64, 64]}
+    ],
+    "source_functions": ["FUN_005a7500", "FUN_005d39a0", "FUN_005d3e90", "FUN_005d41a0"],
+    "identity_grade": "source-proven",
+    "visual_grade": "provisional-A1",
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md"
+  },
+  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "retained-mode projectile geometry", "shield or field event semantics for bases 3520 and 3620", "fighter impact emission", "tactical planet retained-frame transform and visibility", "remaining original control-state and render geometry"]
 }

@@ -645,10 +645,17 @@ would tune around known simulation feedback defects.
   `5500 + selector` and palette `5530 + selector`, reject mismatched pairs,
   and pass the 44-case muted browser gate. Keep exact retained-frame placement,
   visibility conditions, and every strict tactical cell open pending A0.
+- [x] Complete P58F2 tactical impact effects: recover the executable hit-message
+  and stage dispatcher, restore all six type-303 hit, damage, and destruction
+  families with exact frame counts, draw sizes, priority, 10 Hz cadence,
+  indexed transparency, and target attachment, and pass the 48-case muted
+  browser gate. Keep retained projectile geometry, shield or field semantics,
+  fighter emission, audio, and every strict tactical cell open pending A0.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F2 next traces and restores damage and effect presentation without
-  inferring event-to-resource joins from inventory order.
+  states. P58F3 next traces retained projectile and shield or field event paths,
+  then restores selected-unit damage presentation without inferring joins from
+  resource order.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

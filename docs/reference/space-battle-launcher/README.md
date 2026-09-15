@@ -31,6 +31,7 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-participants-3d-off` | 65801 | 66057 | Participant-only framebuffer control with the common planet retained |
 | `production-fighter-detail-journey` | 65802 | 66058 | Full indicator, far, and close fighter sequence |
 | `production-group-presentation` | 65803 | 66059 | Eight task-force and four RGBY control journeys |
+| `production-effect-presentation` | 65804 | 66060 | Six source-selected hit, damage, and destruction frames |
 
 ## Run it
 
@@ -96,20 +97,24 @@ and closes every process. Raw runs live under ignored
 - P58F1 restores `5500 + SYSTEMSD.picture_id` as the production tactical
   planet with its exact `5530 + SYSTEMSD.picture_id` palette. Its current
   left-edge placement is provisional A1 evidence.
-- The complete bundle passes 44 of 44 muted browser cases across both factions
+- P58F2 restores the six target-attached type-303 hit, damage, and destruction
+  families selected by the source event and stage branches. It preserves exact
+  frame counts, draw sizes, priority, indexed transparency, and 10 Hz cadence.
+- The complete bundle passes 48 of 48 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
-distribution, native GPU and A0 comparison, remaining commands, damage,
-  exact planet placement, effects, Death Star paths, results, audio, and return
-  routing remain open. All
+distribution, native GPU and A0 comparison, remaining commands, exact planet
+placement, retained projectile and shield fields, Death Star paths, results,
+audio, and return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
 
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F2 tactical impact-effect evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md)
 - [P58F1 system-selected planet evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md)
 - [P58E task-force and fighter-group evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md)
 - [P58D tactical fighter-detail journey evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md)

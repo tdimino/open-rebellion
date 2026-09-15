@@ -1358,6 +1358,63 @@ async function probeTacticalFighterDetailJourney(
   }];
 }
 
+async function probeTacticalEffectPresentation(folder, stable, consoleLines, ready) {
+  const firstTarget = ready.faction === "alliance" ? 0 : 1;
+  const expected = [
+    { target: firstTarget, resource_base: 3060, resource_id: 3062, frame: 2,
+      frame_count: 6, source_size: [32, 32] },
+    { target: firstTarget + 1, resource_base: 3180, resource_id: 3182, frame: 2,
+      frame_count: 6, source_size: [32, 32] },
+    { target: firstTarget + 2, resource_base: 3120, resource_id: 3123, frame: 3,
+      frame_count: 7, source_size: [32, 32] },
+    { target: firstTarget + 3, resource_base: 3240, resource_id: 3247, frame: 7,
+      frame_count: 16, source_size: [64, 32] },
+    { target: firstTarget + 4, resource_base: 3300, resource_id: 3302, frame: 2,
+      frame_count: 7, source_size: [32, 32] },
+    { target: firstTarget + 5, resource_base: 3360, resource_id: 3368, frame: 8,
+      frame_count: 16, source_size: [64, 64] },
+  ];
+  assert.deepEqual(ready.effects, expected,
+    "effect fixture did not expose the six exact source-selected frames");
+
+  const loadLines = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] effect_loaded"));
+  assert.equal(loadLines.length, expected.length,
+    "effect fixture did not load exactly six source frames");
+  const loadedResources = loadLines.map(({ text }) => {
+    const match = text.match(/resource=(\d+)/);
+    assert.ok(match, "effect load omitted its resource identity");
+    assert.match(text,
+      /palette_selector=\d+ palette_resource_id=\d+ texture_filter=nearest transparent_index=\d+ source=FUN_005d38d0/,
+      "effect load omitted its palette, transparency, filter, or source contract");
+    return Number(match[1]);
+  }).sort((left, right) => left - right);
+  assert.deepEqual(loadedResources,
+    expected.map(({ resource_id: resourceId }) => resourceId).sort((left, right) => left - right));
+
+  const sceneLines = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] effect_scene"));
+  assert.equal(sceneLines.length, 1,
+    "paused effect fixture emitted the wrong number of scene states");
+  assert.match(sceneLines[0].text,
+    /requested=6 rendered=6 .* frame_seconds=0\.1 source_positions=true source=FUN_005d39a0,FUN_005d3e90,FUN_005d41a0/,
+    "effect scene omitted its target, timing, or executable contract");
+  for (const { target, resource_id: resourceId } of expected) {
+    assert.match(sceneLines[0].text, new RegExp(`${target + 1}:${resourceId}:\\d+:`),
+      `effect ${resourceId} was not attached to source object ${target + 1}`);
+  }
+  fs.writeFileSync(path.join(folder, "effect-families.png"), stable.bytes);
+  return [{
+    type: "source-traced-tactical-impact-effects",
+    executable_functions: [
+      "FUN_005a7500", "FUN_005d39a0", "FUN_005d3e90", "FUN_005d41a0",
+    ],
+    frame_seconds: 0.1,
+    transparency: "type-303-border-index",
+    effects: expected,
+  }];
+}
+
 async function probeTacticalGroupPresentation(
   page, viewport, folder, stable, consoleLines, ready, faction,
 ) {
@@ -1571,6 +1628,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? await probeTacticalGroupPresentation(
           page, viewport, folder, stable, consoleLines, ready, faction,
         )
+        : scenario.effect_presentation
+        ? await probeTacticalEffectPresentation(folder, stable, consoleLines, ready)
         : scenario.production_participants
         ? await probeTacticalProductionParticipants(
           page, folder, stable, consoleLines, faction,
@@ -1580,7 +1639,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 10);
+      assert.equal(ready.schema_version, 11);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1589,6 +1648,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         Boolean(scenario.suppress_capital_fallback));
       assert.equal(ready.focus_player_fighter, Boolean(scenario.fighter_detail_journey));
       assert.equal(ready.group_presentation, Boolean(scenario.group_presentation));
+      assert.equal(ready.effect_presentation, Boolean(scenario.effect_presentation));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -1599,6 +1659,9 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       const groupLayout = faction === "alliance"
         ? { first_active_objects: 12, second_active_objects: 2 }
         : { first_active_objects: 2, second_active_objects: 12 };
+      const effectLayout = faction === "alliance"
+        ? { first_active_objects: 7, second_active_objects: 2 }
+        : { first_active_objects: 2, second_active_objects: 7 };
       assert.deepEqual(ready.source_layout, scenario.group_presentation ? {
         ...groupLayout,
         battle_extent: 136,
@@ -1606,6 +1669,13 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         outer_negative_z: -68,
         inner_negative_z: -48,
         inner_positive_z: 48,
+      } : scenario.effect_presentation ? {
+        ...effectLayout,
+        battle_extent: 121,
+        outer_positive_z: 60.5,
+        outer_negative_z: -60.5,
+        inner_negative_z: -40.5,
+        inner_positive_z: 40.5,
       } : {
         first_active_objects: 2,
         second_active_objects: 2,
@@ -1615,7 +1685,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         inner_negative_z: -33,
         inner_positive_z: 33,
       });
-      assert.equal(ready.participants.length, scenario.group_presentation ? 14 : 4);
+      assert.equal(ready.participants.length,
+        scenario.group_presentation ? 14 : scenario.effect_presentation ? 9 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -1674,6 +1745,25 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         assert.ok(playerShips.every(({ source_position }) => source_position[2] === playerShipZ));
         assert.ok(playerFighters.every(({ source_position }) =>
           source_position[2] === playerFighterZ));
+      } else if (scenario.effect_presentation) {
+        const playerShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === faction);
+        const opponentShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction !== faction);
+        const playerFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === faction);
+        const opponentFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction !== faction);
+        assert.deepEqual(playerShips.map(({ fleet_roster_index }) => fleet_roster_index),
+          [0, 1, 2, 3, 4, 5]);
+        assert.equal(opponentShips.length, 1);
+        assert.equal(playerFighters.length, 1);
+        assert.equal(opponentFighters.length, 1);
+        const playerShipZ = faction === "alliance" ? -60.5 : 60.5;
+        const playerFighterZ = faction === "alliance" ? -40.5 : 40.5;
+        assert.ok(playerShips.every(({ source_position: position }) => position[2] === playerShipZ));
+        assert.ok(playerFighters.every(({ source_position: position }) =>
+          position[2] === playerFighterZ));
       } else {
         for (const participant of ready.participants) {
           const key = `${participant.kind}:${participant.faction}`;
@@ -2091,16 +2181,17 @@ async function main() {
         "lod-journey", "camera-journey", "production-participants",
         "production-fighter-detail-journey",
         "production-group-presentation",
+        "production-effect-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, false, false, false, false]);
+      [true, false, true, true, true, true, true, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
-        undefined, undefined]);
+        undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true, false, false, false, false, false]);
+      [false, false, false, false, false, true, false, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      [false, false, false, false, false, false, true, false, false, false, false]);
+      [false, false, false, false, false, false, true, false, false, false, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

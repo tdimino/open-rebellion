@@ -31,7 +31,7 @@ mixing, or genuine two-peer ordering.
 | 5 | `TACTICALRESULT_UPDATE`; callers and setters around `FUN_0040a700` states `7`–`9` and `0x15`–`0x17`; `FUN_005445d0_combat_result`; Battle Alert and Death Star callbacks | Results composition, simulate/observe flow, reports, media routing, and strategic return |
 | 6 | `FUN_005bae60`; vtable `0x0066c748`; audio-manager callers; TACTICAL WAVE `13000`–`13065`; TEXTTACT `MDATA.401`–`MDATA.406` | Event-to-SFX/voice mapping, faction variants, and the missing tactical-audio staging path |
 | 7 | `FUN_00596ad0`, `FUN_005c2e60`, `FUN_005d4d10`, `FUN_005d9eb0`, `FUN_005da150`, `FUN_005d59e0`; retained-mode COM slots | Back plane, quality, filtering, culling, material, and lighting rules. Palette realization is proven in P57B2C1, the light rig in P57B2C2A, and remaining device/material state in P57B2C2B. |
-| 8 | Fire/hit/down/fix handlers from the event registry; type-303 families `3020`–`3375`, `3500`–`3527`, `3600`–`3627`, `4200`–`4204`, `5030` | Weapon, shield, impact, explosion, subsystem, repair, and Death Star effect predicates and timing |
+| 8 | `FUN_005a7500`, `FUN_005d39a0`, `FUN_005d3e90`, `FUN_005d41a0`, `FUN_005d3de0`, `FUN_005ee590`; field toggles around `FUN_005b2520`; type-303 families `3020`–`3375`, `3500`–`3527`, `3600`–`3627`, `4200`–`4204`, `5030` | P58F2 completes target-attached hit, damage, and destruction sprite selection and timing. Retained projectile geometry, shield or field semantics, fighter emission, subsystem, repair, and Death Star effects remain open. |
 | 9 | Fixture schema and shared result path | Stable seed/clock, explicit system/fleet/class DAT IDs, original ordinal/resources, state fingerprints, event trace, losses, winner, reports, and destination |
 | 10 | `FUN_005f9860`, `FUN_005f7ea0`, DirectPlay packet/ack helpers and imports | Original wait, pause, departure, timeout, and synchronization semantics; not a standalone-launcher prerequisite |
 
@@ -113,6 +113,12 @@ mixing, or genuine two-peer ordering.
   P58C implements that bounded contract. P58D proves all nine independent
   transitions caused by the two recovered fighter lanes through the original
   zoom controls.
+- `FUN_005a7500` proves laser, ion, turbolaser, and torpedo hit-message codes.
+  `FUN_005d3e90` maps those codes and the post-hit stage to six state/resource
+  families. `FUN_005d39a0` supplies exact frame counts and draw sizes, and
+  `FUN_005d41a0` advances them every 0.1 seconds. P58F2 implements the target
+  sprites and keeps `FUN_005d3de0`/`FUN_005ee590` projectile geometry plus the
+  3520/3620 field semantics open.
 
 ## A0-only boundary
 

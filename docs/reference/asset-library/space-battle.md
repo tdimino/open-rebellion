@@ -59,8 +59,8 @@ missing custom resource types.
 | Fighters                                 | Eight FIGHTSD classes; eight native ordinals `29`–`36` → paired type-303 bases `4000`–`4134`, with indicator family `4200`–`4204`                 | P58A proves every DAT identity join. P58C renders close, far, and indicator resources through the exact view-span thresholds. P58D proves every independent transition in a centered production journey. P58E restores RGBY presentation and selected fighter portraits. Automatic group distribution, side/formation offsets, launch/recovery, and damage remain open                                                     |
 | Faction banners and avatars              | Character portrait and some mini-icon candidates exist in GOKRES; tactical faction chrome BMPs are staged                                        | No complete banner/avatar-to-battle-state map                                                                                                                                                                                                                                                                                   |
 | Planets and backdrops                    | Tactical selector produces type-303 planet `5500 + selector` and palette `5530 + selector`; source screenshots show planet and empty-space views | P58F1 source-binds `SYSTEMSD.picture_id` to the exact planet and palette pair, renders it in production battles, and proves both factions and viewports. Exact retained-frame placement and visibility remain open                                                                                                              |
-| Weapon fire, explosions, shields, damage | Tactical BMP IDs and runtime procedural effects exist                                                                                            | No complete original effect-frame, mesh, texture, timing, sound, or damage-state lookup                                                                                                                                                                                                                                         |
-| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P58F1 prove staging, deterministic decoding, full browser transport, exact DAT joins, live capital, fighter, and system-planet rendering, LOD, camera, placement, projection, palette, lighting, filtering, culling, depth, material/device state, fighter detail transitions, and group presentation. Lossless view acceptance remains open |
+| Weapon fire, explosions, shields, damage | Six target-sprite families occupy bases 3060, 3120, 3180, 3240, 3300, and 3360; retained projectile and field families are separate              | P58F2 proves the exact hit-message and stage mapping, state priority, frame count, draw size, 10 Hz lifecycle, indexed transparency, and target attachment. Retained projectile geometry, shield or field semantics, fighter emission, audio, and A0 comparison remain open                                                           |
+| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P58F2 prove staging, deterministic decoding, full browser transport, exact DAT joins, live capital, fighter, planet, and target-effect rendering, LOD, camera, placement, projection, palette, lighting, filtering, culling, depth, material/device state, fighter detail transitions, and group presentation. Lossless view acceptance remains open |
 | Battle audio                             | Original `TACTICAL.DLL` contains 66 WAVs                                                                                                         | Not covered by this image inventory; map event and cue separately                                                                                                                                                                                                                                                               |
 
 `RE-TAC-01`, `RE-TAC-02`, `RE-TAC-03`, `RE-BAT-01`, and `RE-DS-02` in the
@@ -81,6 +81,11 @@ unique `CAPSHPSD`/`FIGHTSD` identities. The same path selects Death Star bases
 planet selector, resource arithmetic, and paired palette. P58F1 binds that
 selector to `SYSTEMSD.picture_id` and renders the exact production pair while
 retaining placement as provisional A1 evidence.
+`FUN_005a7500`, `FUN_005d39a0`, `FUN_005d3e90`, and `FUN_005d41a0`
+establish the six target-effect families, message and stage branches, priority,
+frame counts, draw sizes, and 0.1-second cadence. P58F2 renders those source
+frames at live target positions while retaining projectile and field paths as
+explicit open work.
 P54 supplies reproducible, content-addressed raw extraction. P55 supplies
 deterministic binary-X and type-303 decoding with a verified runtime store.
 [P56](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md)
@@ -118,8 +123,10 @@ proves the live fighter transition journey.
 [P58E](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md)
 restores task-force and RGBY presentation.
 [P58F1](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md)
-restores system-selected planet resources and their exact palettes. Automatic
-group distribution, exact planet placement, special objects, and
+restores system-selected planet resources and their exact palettes.
+[P58F2](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md)
+restores the six target-impact sprite families. Automatic group distribution,
+exact planet placement, projectile and shield fields, special objects, and
 original-runtime confirmation remain required before every procedural battle
 object can be retired.
 

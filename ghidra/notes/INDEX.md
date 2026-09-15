@@ -34,6 +34,7 @@ updated: 2026-03-16
 | File | Subsystem | Key Functions |
 |------|-----------|---------------|
 | [space-combat.md](space-combat.md) | Space combat auto-resolve — 7-phase pipeline | FUN_00549910, FUN_00544030, FUN_00544130, FUN_005443f0, FUN_005444e0, FUN_005445d0 |
+| [tactical-impact-effect-path.md](tactical-impact-effect-path.md) | Tactical hit, damage, and destruction sprite dispatch | FUN_005a7500, FUN_005d39a0, FUN_005d3e90, FUN_005d41a0 |
 | [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | [bombardment.md](bombardment.md) | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
 

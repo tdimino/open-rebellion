@@ -20,7 +20,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 62% |
+| Practical space-battle launcher implementation | approximately 64% |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
@@ -98,6 +98,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58D fighter-detail journey evidence](evidence/2026-09-14-tactical-fighter-detail-journey.md) | Production indicator/far/close transitions, centered close sprites, no-reload proof, 40-case muted browser gate, and explicit A0 limits. |
 | [P58E task-force and fighter-group evidence](evidence/2026-09-14-tactical-group-presentation.md) | Eight task-force controls, four RGBY fighter controls, selected portraits, source-shaped input, 44-case muted browser gate, and explicit A0 limits. |
 | [P58F1 tactical-planet evidence](evidence/2026-09-14-tactical-planets.md) | Source-bound system selector, exact 256 by 256 planet and palette pair, 44-case muted browser gate, provisional placement, and explicit A0 limits. |
+| [P58F2 tactical-impact evidence](evidence/2026-09-14-tactical-impact-effects.md) | Six source-selected hit, damage, and destruction families, exact 10 Hz lifecycle and priority, transparent target attachment, 48-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -238,10 +239,12 @@ mesh bounds. Its [evidence](evidence/2026-09-14-tactical-fighters-selection.md)
 keeps the complete view and interaction matrix open. P58D proves the full
 fighter-detail journey. P58E restores the task-force and RGBY fighter-control
 strip, source-shaped input, keyboard routes, mutual exclusion, and selected
-fighter portraits. Automatic production grouping, damage, effects, commands,
-results, A0 comparison, and every tactical cell remain open. P58F1 restores
-the exact system-selected planet and paired palette. Exact retained-frame
-placement and visibility remain open with the other tactical boundaries.
+fighter portraits. P58F1 restores the exact system-selected planet and paired
+palette. P58F2 restores all six source-selected target-impact families with
+their exact frame counts, draw sizes, 10 Hz lifecycle, priority, transparency,
+and source-position attachment. Automatic production grouping, exact planet
+placement, projectile and shield fields, commands, results, A0 comparison, and
+every tactical cell remain open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

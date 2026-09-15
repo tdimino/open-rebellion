@@ -60,6 +60,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical fighter and projected-selection proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md) | Exact fighter detail resources, projected capital interaction, paired controls, muted 36-case browser gate, and remaining squadron/task-force/A0 boundary for P24/P58. |
 | [Tactical fighter-detail journey proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md) | Independent indicator/far/close transitions, visible centered close sprites, muted 40-case browser gate, and remaining squadron/task-force/A0 boundary for P24/P58. |
 | [Tactical group-presentation proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md) | Eight task-force controls, four RGBY fighter controls, source-shaped input, selected portraits, muted 44-case browser gate, and remaining automatic-grouping/A0 boundary for P24/P58. |
+| [Tactical impact-effect proof](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md) | Six source-selected hit, damage, and destruction families, exact 10 Hz lifecycle and priority, target attachment, muted 48-case browser gate, and remaining projectile/shield/A0 boundary for P24/P58. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 
