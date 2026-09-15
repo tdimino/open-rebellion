@@ -1,0 +1,5 @@
+# Captures are copyrighted game output and are never committed (CLAUDE.md).
+# Only their SHA-256, metadata, and the accepted-original registration enter the repo.
+*.png
+*.bmp
+captures/
