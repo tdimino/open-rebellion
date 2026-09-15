@@ -671,10 +671,16 @@ would tune around known simulation feedback defects.
   frame reset; and pass the 60-case muted browser gate. Keep combat-driven
   subsystem damage, interactive command delivery, A0, and every strict
   tactical cell open.
+- [x] Complete P58F6 live subsystem damage: route capital and fighter fire
+  through one source-derived damage function; preserve inclusive shield-loss
+  probability, hull overflow, all five subsystem thresholds and hit limits,
+  condition recalculation, and tractor-source cancellation; then pass the
+  64-case muted browser gate. Keep exact RNG sequencing, repair, movement
+  penalties, A0, and every strict tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F6 next connects subsystem condition to combat damage and restores
-  the next source-proven tactical command-state bundle.
+  states. P58F7 next restores source-proven subsystem repair and the engine and
+  tractor movement effects that complete the live condition loop.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

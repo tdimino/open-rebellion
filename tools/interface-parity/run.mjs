@@ -1567,7 +1567,9 @@ function nativeRectPixelCount(viewport, screenshot, rect, matches) {
   return count;
 }
 
-function probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready) {
+function probeTacticalSelectedDamagePresentation(
+  viewport, folder, stable, ready, expectedDamage = null,
+) {
   const selected = ready.selected_ship;
   assert.ok(selected, "selected-damage fixture omitted its selected ship");
   const expected = ready.faction === "alliance"
@@ -1577,14 +1579,17 @@ function probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready
   assert.equal(selected.class_dat_id, expected.class_dat_id);
   assert.equal(selected.hud_resource, expected.hud_resource);
   assert.ok(selected.hull_max > 0 && selected.shield_max > 0);
-  assert.equal(selected.hull_current, Math.max(1, Math.trunc(selected.hull_max * 2 / 5)));
-  assert.equal(selected.shield_current, Math.max(0, Math.trunc(selected.shield_max / 4)));
+  assert.equal(selected.hull_current, expectedDamage?.hull
+    ?? Math.max(1, Math.trunc(selected.hull_max * 2 / 5)));
+  assert.equal(selected.shield_current, expectedDamage?.shield
+    ?? Math.max(0, Math.trunc(selected.shield_max / 4)));
 
   const screenshot = PNG.sync.read(stable.bytes);
   const shieldPixels = nativeRectPixelCount(
     viewport,
     screenshot,
-    { x: 514, y: 107, width: 40 * selected.shield_current / selected.shield_max, height: 8 },
+    { x: 514, y: 107, width: selected.shield_current > 0
+      ? 40 * selected.shield_current / selected.shield_max : 40, height: 8 },
     (red, green, blue) => red === 0 && green === 0 && blue === 255,
   );
   const hullPixels = nativeRectPixelCount(
@@ -1595,7 +1600,11 @@ function probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready
       ? (red, green, blue) => red === 0 && green >= 48 && blue === 255
       : (red, green, blue) => red === 255 && green === 0 && blue === 0,
   );
-  assert.ok(shieldPixels > 0, "selected ship shield meter produced no exact blue pixels");
+  if (selected.shield_current > 0) {
+    assert.ok(shieldPixels > 0, "selected ship shield meter produced no exact blue pixels");
+  } else {
+    assert.equal(shieldPixels, 0, "empty selected ship shield meter retained blue pixels");
+  }
   assert.ok(hullPixels > 0, "selected ship hull meter produced no exact faction pixels");
 
   let panelProof = { status: "non-native-scale", pixels_checked: 0 };
@@ -1655,6 +1664,45 @@ function probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready
     panel_proof: panelProof,
     portrait_proof: portraitProof,
   }];
+}
+
+function probeTacticalLiveSubsystemDamagePresentation(viewport, folder, stable, ready) {
+  const selected = ready.selected_ship;
+  assert.ok(selected, "live subsystem fixture omitted its selected ship");
+  const probes = probeTacticalSelectedDamagePresentation(
+    viewport,
+    folder,
+    stable,
+    ready,
+    { hull: selected.hull_max - 11, shield: 0 },
+  );
+  const expectedLimits = [4, 4, 4, 4, 2];
+  const expectedHits = [1, 2, 3, 4, 2];
+  const expectedPercentages = [74, 49, 24, 0, 0];
+  const expectedResources = [1204, 1208, 1212, 1216, 1221];
+  assert.deepEqual(selected.subsystem_hit_limits, expectedLimits);
+  assert.deepEqual(selected.subsystem_damage_hits, expectedHits);
+  assert.deepEqual(selected.subsystem_percentages, expectedPercentages);
+  assert.deepEqual(selected.subsystem_resources, expectedResources);
+  const subsystemProofs = expectedResources.map((resourceId, index) =>
+    verifyTacticalBitmap(viewport, stable.bytes, resourceId, 491 + index * 27, 130));
+  fs.writeFileSync(path.join(folder, "live-subsystem-damage.png"), stable.bytes);
+  probes.push({
+    type: "source-traced-live-subsystem-damage",
+    executable_functions: [
+      "FUN_005b54d0", "FUN_005b1970", "FUN_005b1770", "FUN_005b0400",
+      "FUN_005b0460", "FUN_005b1790", "FUN_005b17f0", "FUN_005b1bc0",
+      "FUN_005b1680", "FUN_005b16b0", "FUN_005b16e0", "FUN_005b1710",
+      "FUN_005b1740",
+    ],
+    hit_limits: expectedLimits,
+    damage_hits: expectedHits,
+    percentages: expectedPercentages,
+    resources: expectedResources,
+    subsystem_proofs: subsystemProofs,
+    rng_contract: "inclusive-0-through-100-range-with-deterministic-session-bridge",
+  });
+  return probes;
 }
 
 function probeTacticalSubsystemFieldCommandPresentation(viewport, folder, stable, ready) {
@@ -1925,6 +1973,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? await probeTacticalProjectileFieldPresentation(folder, stable, consoleLines, ready)
         : scenario.subsystem_field_command_presentation
         ? probeTacticalSubsystemFieldCommandPresentation(viewport, folder, stable, ready)
+        : scenario.live_subsystem_damage_presentation
+        ? probeTacticalLiveSubsystemDamagePresentation(viewport, folder, stable, ready)
         : scenario.selected_damage_presentation
         ? probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready)
         : scenario.production_participants
@@ -1936,7 +1986,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 14);
+      assert.equal(ready.schema_version, 15);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1952,6 +2002,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         Boolean(scenario.selected_damage_presentation));
       assert.equal(ready.subsystem_field_command_presentation,
         Boolean(scenario.subsystem_field_command_presentation));
+      assert.equal(ready.live_subsystem_damage_presentation,
+        Boolean(scenario.live_subsystem_damage_presentation));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -1981,7 +2033,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         inner_negative_z: -40.5,
         inner_positive_z: 40.5,
       } : scenario.projectile_field_presentation
-        || scenario.subsystem_field_command_presentation ? {
+        || scenario.subsystem_field_command_presentation
+        || scenario.live_subsystem_damage_presentation ? {
         ...projectileFieldLayout,
         battle_extent: 112,
         outer_positive_z: 56,
@@ -2001,7 +2054,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         scenario.group_presentation ? 14
           : scenario.effect_presentation ? 9
           : scenario.projectile_field_presentation
-            || scenario.subsystem_field_command_presentation ? 8 : 4);
+            || scenario.subsystem_field_command_presentation
+            || scenario.live_subsystem_damage_presentation ? 8 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -2080,7 +2134,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         assert.ok(playerFighters.every(({ source_position: position }) =>
           position[2] === playerFighterZ));
       } else if (scenario.projectile_field_presentation
-        || scenario.subsystem_field_command_presentation) {
+        || scenario.subsystem_field_command_presentation
+        || scenario.live_subsystem_damage_presentation) {
         const allianceShips = ready.participants.filter((participant) =>
           participant.kind === "capital-ship" && participant.faction === "alliance");
         const empireShips = ready.participants.filter((participant) =>
@@ -2520,19 +2575,20 @@ async function main() {
         "production-projectile-field-presentation",
         "production-selected-damage-presentation",
         "production-subsystem-field-command-presentation",
+        "production-live-subsystem-damage-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
       [true, false, true, true, true, true, true, false, false, false, false, false, false, false,
-        false]);
+        false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
-        undefined, undefined, undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
       [false, false, false, false, false, true, false, false, false, false, false, false, false,
-        false, false]);
+        false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
       [false, false, false, false, false, false, true, false, false, false, false, false, false,
-        false, false]);
+        false, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

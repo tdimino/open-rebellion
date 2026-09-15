@@ -15,7 +15,7 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 73% |
+| Practical space-battle launcher implementation | approximately 75% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -94,7 +94,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital families, fighter detail resources, system-selected planets, effects, fields, selected-capital damage, subsystem condition, and exact field-source state use recovered source contracts; other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58F5 evidence](evidence/README.md), and [P58F5 evidence](evidence/2026-09-15-tactical-subsystem-field-commands.md) |
+| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital families, fighter detail resources, system-selected planets, effects, fields, selected-capital damage, subsystem condition, exact field-source state, and live subsystem damage use recovered source contracts; other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58F6 evidence](evidence/README.md), and [P58F6 evidence](evidence/2026-09-15-tactical-live-subsystem-damage.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -144,8 +144,11 @@ gravity priority. P58F4 restores selected panel 1302, source-ordinal capital
 portraits, matte transparency, and live faction-correct shield and hull meters.
 P58F5 restores the five source-quantized subsystem-condition families and
 retains exact tractor and gravity source IDs with the original source-side
-capacity limits. Combat-driven subsystem damage, interactive command delivery,
-power allocation, special objects, and A0 acceptance remain open.
+capacity limits. P58F6 routes capital and fighter fire through the recovered
+shield-overflow, hull-loss, subsystem-selection, condition, and tractor-source
+cancellation path. Exact RNG sequencing, repair, movement effects, interactive
+command delivery, power allocation, special objects, and A0 acceptance remain
+open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
@@ -180,7 +183,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode and transport, exact ship/fighter DAT joins, production capital/fighter/planet rendering, group controls, effects, fields, selected-capital damage, subsystem condition, and exact field-source state pass implementation gates. Original view acceptance, automatic grouping, exact planet placement, combat-driven subsystem damage, interactive commands, power allocation, and incomplete result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode and transport, exact ship/fighter DAT joins, production capital/fighter/planet rendering, group controls, effects, fields, selected-capital damage, subsystem condition, exact field-source state, and live subsystem damage pass implementation gates. Original view acceptance, automatic grouping, exact planet placement, exact RNG sequencing, repair, movement effects, interactive commands, power allocation, and incomplete result, special-state, and audio paths remain. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
@@ -390,8 +393,8 @@ production capital-family drawing; see its
 [evidence](evidence/2026-09-14-tactical-production-participants.md). P58C adds
 source fighter detail resources and projection-aligned capital interactions;
 see its [evidence](evidence/2026-09-14-tactical-fighters-selection.md). P58F1
-through P58F5 restore system-selected planets, effects, fields,
-selected-capital damage and subsystem condition, and exact field-source
-identity; see the
-[P58F5 evidence](evidence/2026-09-15-tactical-subsystem-field-commands.md).
+through P58F6 restore system-selected planets, effects, fields,
+selected-capital damage and subsystem condition, exact field-source identity,
+and live subsystem mutation; see the
+[P58F6 evidence](evidence/2026-09-15-tactical-live-subsystem-damage.md).
 Original A0 comparison and all strict tactical acceptance cells remain open.

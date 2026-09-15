@@ -52,9 +52,10 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 60 entry, negative-control,
+`node run.mjs --battle --all --no-build` for all 64 entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, selected-damage, subsystem/field-command,
+live-subsystem-damage,
 faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
@@ -63,7 +64,7 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 14 additionally asserts representative capital-ship and fighter
+Fixture schema 15 additionally asserts representative capital-ship and fighter
 DAT-to-tactical-resource joins, exact production rendering of two joined
 capital-ship families, exact fighter close/far/indicator resource triplets,
 the test-only fighter focus used by the detail journey, and a 3D-off control
@@ -87,6 +88,9 @@ The subsystem/field-command snapshot checks all five source-quantized condition
 families at their exact panel positions, exact tractor and gravity source IDs,
 one-target tractor and four-target gravity capacity, gravity priority, and
 visible-kind frame reset.
+The live-subsystem-damage snapshot sends deterministic hits through the shared
+production damage path and checks source-derived hit limits, all five hit
+counters, condition percentages and resource bands, and tractor cancellation.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "role": "browser visual acceptance only"
+  },
+  "verdict": "pass",
+  "acceptance_scope": "P58F6 A1 visual acceptance of retained browser artifacts, not strict A0 original-game parity.",
+  "inspected_surfaces": [
+    "Alliance at 640x480",
+    "Alliance at 1280x800 letterboxed",
+    "Empire at 640x480",
+    "Empire at 1280x800 letterboxed"
+  ],
+  "visual_findings": [
+    "Both faction selected-capital panels are intact without blank, corrupt, clipped, or visibly mismatched bitmap surfaces.",
+    "All five subsystem tiles are visible and consistently aligned at native and letterboxed sizes.",
+    "Ship portraits, empty shield meters, nearly full faction-color hull meters, cockpit shells, planets, star fields, and controls remain visually coherent.",
+    "All four supporting results pass with stable paired screenshots and no recorded errors; native panel and subsystem tiles have exact source-bitmap checks."
+  ],
+  "evidence_checks": {
+    "focused_cases": "4 of 4 passed",
+    "complete_matrix": "64 of 64 passed",
+    "four_request_startups": 64,
+    "browser_errors": 0,
+    "muted_launches": 64,
+    "closed_browser_processes": 64,
+    "native_panel_pixels_checked": 21736,
+    "native_bitmap_pixels_checked_per_subsystem_resource": 330,
+    "contact_sheet_sha256": "0e3cf27ae278e5dcb59b0aa4e26c6a7af46d78cec29200245354844ffd66dfc9"
+  },
+  "limitations": [
+    "The review inspected retained evidence rather than launching another browser session.",
+    "Portrait checks are composited rather than wholly pixel-exact.",
+    "Exact bitmap checks apply only at native size; scaled viewport checks are visual.",
+    "Original-reference comparisons remain unbaselined, so this does not establish strict A0 parity or independently prove live combat behavior."
+  ],
+  "blocking_findings": [],
+  "ready_to_commit": true
+}

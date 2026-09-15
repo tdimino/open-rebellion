@@ -113,12 +113,16 @@ and closes every process. Raw runs live under ignored
 - P58F5 restores the five subsystem-condition resource families, exact source
   quantization and placement, and exact tractor and gravity source identity,
   capacity, priority, and frame reset.
-- The complete bundle passes 60 of 60 muted browser cases across both factions
+- P58F6 routes live capital and fighter fire through one source-derived damage
+  path with shield overflow, hull loss, five subsystem thresholds and limits,
+  condition recalculation, and tractor-source cancellation.
+- The complete bundle passes 64 of 64 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
-distribution, native GPU and A0 comparison, combat-driven subsystem damage,
+distribution, native GPU and A0 comparison, exact RNG sequencing, subsystem
+repair, engine and tractor movement effects,
 remaining interactive commands, exact planet placement, power allocation, Death Star paths,
 results, audio, and return routing remain
 open. All
@@ -128,6 +132,7 @@ open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F6 live subsystem-damage evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-live-subsystem-damage.md)
 - [P58F5 subsystem and field-command evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-field-commands.md)
 - [P58F4 selected-capital damage evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-selected-damage.md)
 - [P58F3 tactical projectile and field evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md)

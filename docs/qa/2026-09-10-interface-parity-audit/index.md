@@ -20,7 +20,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 73% |
+| Practical space-battle launcher implementation | approximately 75% |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
@@ -102,6 +102,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58F3 projectile and field evidence](evidence/2026-09-14-tactical-projectile-fields.md) | Retained projectile variants, exact thresholds, scales, colors, interpolation and lifecycle, both 10 Hz field families, gravity priority, 52-case muted browser gate, and explicit A0 limits. |
 | [P58F4 selected-capital damage evidence](evidence/2026-09-15-tactical-selected-damage.md) | Panel 1302, source-ordinal capital portraits, matte transparency, live faction-correct shield and hull meters, 56-case muted browser gate, and explicit A0 limits. |
 | [P58F5 subsystem and field-command evidence](evidence/2026-09-15-tactical-subsystem-field-commands.md) | Five subsystem-condition families, exact quantization and placement, exact field-source identity and capacity, 60-case muted browser gate, and explicit A0 limits. |
+| [P58F6 live subsystem-damage evidence](evidence/2026-09-15-tactical-live-subsystem-damage.md) | Source-derived live shield overflow, hull loss, subsystem thresholds and limits, condition recalculation, tractor cancellation, 64-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -249,8 +250,10 @@ and source-position attachment. P58F3 restores retained projectile meshes,
 threshold branches, colors, interpolation, duration, and tractor/gravity field
 animation and priority. P58F4 and P58F5 restore the selected-capital panel,
 portrait, hull and shield meters, five subsystem-condition families, and exact
-field-source identity and capacities. Automatic production grouping, exact planet placement,
-command timing, power allocation, commands, results, A0
+field-source identity and capacities. P58F6 connects live capital and fighter
+damage to those subsystem states and cancels depleted tractor sources.
+Automatic production grouping, exact planet placement, exact RNG sequencing,
+repair, movement effects, command timing, power allocation, commands, results, A0
 comparison, and every tactical cell remain open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
