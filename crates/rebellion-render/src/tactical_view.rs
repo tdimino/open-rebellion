@@ -65,13 +65,16 @@ const DEPLOY_ZONE_FRACTION: f32 = 0.3;
 const TACTICAL_TASKFORCE_PANEL_ATTACKER: u32 = 1001;
 const TACTICAL_TASKFORCE_PANEL_DEFENDER: u32 = 1002;
 
-/// Weapon recharge gauge BMP IDs (5-step animation, 0%→100%).
-/// Frame 0 (empty) = 1206, frame 4 (full) = 1210.
-const TACTICAL_RECHARGE_GAUGE_BASE: u32 = 1206;
-const TACTICAL_RECHARGE_GAUGE_STEPS: u32 = 5;
+/// Selected-capital-ship display panel.
+const TACTICAL_SELECTED_SHIP_PANEL: u32 = 1302;
 
-/// Hull integrity + shield strength combined display panel.
-const TACTICAL_HULL_SHIELD_PANEL: u32 = 1302;
+/// Native meter apertures inside TACTICAL 1302. The left meter is shield
+/// strength; the right meter is hull integrity in the selected ship's faction
+/// colour, as shown by both faction reference captures.
+const TACTICAL_SELECTED_SHIELD_METER: NativeRect = NativeRect::new(514.0, 107.0, 40.0, 8.0);
+const TACTICAL_SELECTED_HULL_METER: NativeRect = NativeRect::new(585.0, 107.0, 39.0, 8.0);
+const TACTICAL_SELECTED_SHIP_ART_X: f32 = 507.0;
+const TACTICAL_SELECTED_SHIP_ART_Y: f32 = 37.0;
 
 /// Default ship icon size when no sprite is available.
 const DEFAULT_SHIP_SIZE: f32 = 40.0;
@@ -1862,6 +1865,32 @@ impl TacticalState {
         }
     }
 
+    /// Select one production capital ship and install stable live damage for
+    /// the selected-HUD browser gate. This bridge never enters production.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_selected_damage_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let Some(index) = session
+            .ships
+            .iter()
+            .position(|ship| ship.alive && ship.is_attacker == session.player_is_attacker)
+        else {
+            return;
+        };
+        for ship in &mut session.ships {
+            ship.selected = false;
+        }
+        let ship = &mut session.ships[index];
+        ship.selected = true;
+        ship.hull_current = (ship.hull_max * 2 / 5).max(1);
+        ship.shield = (ship.shield_max / 4).max(0);
+        session.selected_ship = Some(index);
+        session.selected_fighter_group = None;
+        session.paused = true;
+    }
+
     /// End the current battle — clears session. Returns the session for
     /// result processing by the caller.
     pub fn end_battle(&mut self) -> Option<BattleSession> {
@@ -2066,6 +2095,9 @@ struct TacticalGroupHud<'a> {
     selected_task_force: Option<u8>,
     selected_fighter_group: Option<u8>,
     selected_ship_name: Option<&'a str>,
+    selected_ship_hud: Option<u32>,
+    selected_ship_hull: Option<(i32, i32)>,
+    selected_ship_shield: Option<(i32, i32)>,
     selected_fighter_name: Option<&'a str>,
     selected_fighter_hud: Option<u32>,
 }
@@ -2096,6 +2128,9 @@ impl<'a> TacticalGroupHud<'a> {
                 ship.alive && ship.selected && ship.is_attacker == session.player_is_attacker
             })
             .map(|ship| ship.name.as_str());
+        let selected_ship = session.ships.iter().find(|ship| {
+            ship.alive && ship.selected && ship.is_attacker == session.player_is_attacker
+        });
         let selected_fighter = session.selected_fighter_group.and_then(|group| {
             session.fighters.iter().find(|fighter| {
                 fighter.alive
@@ -2110,12 +2145,41 @@ impl<'a> TacticalGroupHud<'a> {
             selected_task_force,
             selected_fighter_group: session.selected_fighter_group,
             selected_ship_name,
+            selected_ship_hud: selected_ship
+                .and_then(|ship| ship.tactical_resource)
+                .map(TacticalCapitalShipResource::hud_resource),
+            selected_ship_hull: selected_ship.map(|ship| (ship.hull_current, ship.hull_max)),
+            selected_ship_shield: selected_ship.map(|ship| (ship.shield, ship.shield_max)),
             selected_fighter_name: selected_fighter.map(|fighter| fighter.name.as_str()),
             selected_fighter_hud: selected_fighter
                 .and_then(|fighter| fighter.tactical_resource)
                 .map(TacticalFighterResource::hud_resource),
         }
     }
+}
+
+fn tactical_meter_fraction(current: i32, maximum: i32) -> f32 {
+    if maximum <= 0 {
+        0.0
+    } else {
+        (current as f32 / maximum as f32).clamp(0.0, 1.0)
+    }
+}
+
+fn draw_tactical_selected_meter(
+    canvas: TacticalCanvas,
+    rect: NativeRect,
+    fraction: f32,
+    color: Color,
+) {
+    let (x, y) = canvas.point(rect.x, rect.y);
+    draw_rectangle(
+        x,
+        y,
+        rect.width * canvas.scale * fraction.clamp(0.0, 1.0),
+        rect.height * canvas.scale,
+        color,
+    );
 }
 
 fn selected_player_task_force(session: &BattleSession) -> Option<u8> {
@@ -2413,12 +2477,41 @@ fn draw_original_tactical_hud(
     let panel_resource = if groups.selected_fighter_group.is_some() {
         1307
     } else if groups.selected_ship_name.is_some() {
-        1302
+        TACTICAL_SELECTED_SHIP_PANEL
     } else {
         1301
     };
     draw_tactical_bitmap(cache, panel_resource, canvas, 481.0, 27.0);
     if let (Some(name), Some(group)) = (groups.selected_ship_name, groups.selected_task_force) {
+        if let Some(resource) = groups.selected_ship_hud {
+            draw_tactical_bitmap(
+                cache,
+                resource,
+                canvas,
+                TACTICAL_SELECTED_SHIP_ART_X,
+                TACTICAL_SELECTED_SHIP_ART_Y,
+            );
+        }
+        if let Some((shield, maximum)) = groups.selected_ship_shield {
+            draw_tactical_selected_meter(
+                canvas,
+                TACTICAL_SELECTED_SHIELD_METER,
+                tactical_meter_fraction(shield, maximum),
+                Color::new(0.0, 0.0, 1.0, 1.0),
+            );
+        }
+        if let Some((hull, maximum)) = groups.selected_ship_hull {
+            draw_tactical_selected_meter(
+                canvas,
+                TACTICAL_SELECTED_HULL_METER,
+                tactical_meter_fraction(hull, maximum),
+                if player_is_alliance {
+                    Color::new(0.0, 0.2, 1.0, 1.0)
+                } else {
+                    Color::new(1.0, 0.0, 0.0, 1.0)
+                },
+            );
+        }
         let (x, y) = canvas.point(497.0, 48.0);
         draw_text(name, x, y, 11.0 * canvas.scale, WHITE);
         let (x, y) = canvas.point(497.0, 69.0);
@@ -3500,21 +3593,6 @@ pub fn draw_tactical_view(
                         };
                         ui.label(RichText::new(status_text).color(status_color).strong());
 
-                        // Weapon recharge gauge: 5-step animation from TACTICAL.DLL.
-                        // Cycles through IDs 1206-1210 based on combat tick.
-                        // Each full cycle = 20 ticks (4 ticks per step).
-                        let gauge_step = (combat_tick / 4) % TACTICAL_RECHARGE_GAUGE_STEPS;
-                        let gauge_id = TACTICAL_RECHARGE_GAUGE_BASE + gauge_step;
-                        if let Some(tex) = bmp_cache.get(ctx, DllSource::Tactical, gauge_id) {
-                            let size = tex.size();
-                            let h = 20.0_f32;
-                            let w = h * size[0] as f32 / size[1] as f32;
-                            ui.add(egui::Image::new(egui::load::SizedTexture::new(
-                                tex.id(),
-                                Vec2::new(w, h),
-                            )));
-                        }
-
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Speed controls.
                             let speed_label = format!("{combat_speed}x");
@@ -3627,9 +3705,9 @@ pub fn draw_tactical_view(
                         ui.heading(RichText::new(name).color(Color32::from_rgb(255, 220, 100)));
                         ui.separator();
 
-                        // Hull/shield display panel background (TACTICAL.DLL ID 1302).
+                        // Selected-ship panel background (TACTICAL.DLL ID 1302).
                         if let Some(tex) =
-                            bmp_cache.get(ctx, DllSource::Tactical, TACTICAL_HULL_SHIELD_PANEL)
+                            bmp_cache.get(ctx, DllSource::Tactical, TACTICAL_SELECTED_SHIP_PANEL)
                         {
                             let size = tex.size();
                             let w = 180.0_f32.min(size[0] as f32);

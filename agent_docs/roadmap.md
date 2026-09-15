@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Development milestones from Galaxy Viewer through Release packaging"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-09-14
+updated: 2026-09-15
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -658,11 +658,16 @@ would tune around known simulation feedback defects.
   priority; then pass the 52-case muted browser gate with selector-color
   framebuffer probes. Keep exact command timing, fighter emission, special
   weapons, audio, and every strict tactical cell open pending A0.
+- [x] Complete P58F4 selected-capital damage presentation: bind the source
+  tactical ordinal to portraits `2001` through `2029`, composite their lime
+  mats over original panel `1302`, render live shield and hull values with
+  faction-correct colors, and pass the 56-case muted browser gate. Keep power
+  allocation, commands, destroyed selection, Death Star states, and every
+  strict tactical cell open pending A0.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F4 next restores selected-unit damage presentation without
-  inferring joins from resource order, then traces exact field command timing
-  and remaining tactical command states.
+  states. P58F5 next traces exact field command timing and restores the next
+  source-proven tactical command-state bundle.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

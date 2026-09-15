@@ -20,7 +20,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 67% |
+| Practical space-battle launcher implementation | approximately 70% |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
@@ -100,6 +100,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58F1 tactical-planet evidence](evidence/2026-09-14-tactical-planets.md) | Source-bound system selector, exact 256 by 256 planet and palette pair, 44-case muted browser gate, provisional placement, and explicit A0 limits. |
 | [P58F2 tactical-impact evidence](evidence/2026-09-14-tactical-impact-effects.md) | Six source-selected hit, damage, and destruction families, exact 10 Hz lifecycle and priority, transparent target attachment, 48-case muted browser gate, and explicit A0 limits. |
 | [P58F3 projectile and field evidence](evidence/2026-09-14-tactical-projectile-fields.md) | Retained projectile variants, exact thresholds, scales, colors, interpolation and lifecycle, both 10 Hz field families, gravity priority, 52-case muted browser gate, and explicit A0 limits. |
+| [P58F4 selected-capital damage evidence](evidence/2026-09-15-tactical-selected-damage.md) | Panel 1302, source-ordinal capital portraits, matte transparency, live faction-correct shield and hull meters, 56-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -246,7 +247,7 @@ their exact frame counts, draw sizes, 10 Hz lifecycle, priority, transparency,
 and source-position attachment. P58F3 restores retained projectile meshes,
 threshold branches, colors, interpolation, duration, and tractor/gravity field
 animation and priority. Automatic production grouping, exact planet placement,
-command timing, selected-unit damage presentation, commands, results, A0
+command timing, power allocation, commands, results, A0
 comparison, and every tactical cell remain open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,

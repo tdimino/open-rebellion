@@ -62,11 +62,11 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_original_shell_first_controls_complete_tactical_corpus_transport_exact_dat_resource_joins_live_production_capital_source_fighter_detail_system_selected_planet_six_target_impact_families_retained_projectiles_and_tractor_gravity_fields_full_fighter_detail_journey_task_force_and_rgby_group_presentation_projection_aligned_capital_interaction_source_selection_live_cached_slot_journey_source_camera_dpad_selected_target_source_bound_participant_placement_authored_transform_system_palette_light_rig_retained_mode_device_material_state_and_exact_effect_lifecycles_pass_implementation_gates_automatic_grouping_exact_planet_placement_command_timing_selected_unit_damage_special_objects_original_view_and_all_106_cells_open",
+    "tactical_interface": "fail_original_shell_first_controls_complete_tactical_corpus_transport_exact_dat_resource_joins_live_production_capital_source_fighter_detail_system_selected_planet_effects_fields_selected_capital_damage_presentation_group_presentation_projection_aligned_interaction_source_camera_placement_transform_palette_light_and_retained_mode_state_pass_implementation_gates_automatic_grouping_exact_planet_placement_command_timing_power_allocation_special_objects_original_view_and_all_106_cells_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
-    "space_battle_launcher_practical_progress": "approximately_67_percent_planning_estimate_0_of_106_strict_cells_accepted",
+    "space_battle_launcher_practical_progress": "approximately_70_percent_planning_estimate_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
   },
@@ -163,7 +163,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live capital, fighter, planet, group, six target-impact families, retained projectiles, and tractor/gravity fields, source-traced camera and interaction, authored transform, palette, lighting, retained-mode device/material state, and exact effect lifecycles pass implementation gates, but automatic grouping, exact planet placement, command timing, selected-unit damage, special objects, original view acceptance, replacement battle content, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live capital, fighter, planet, group, effects, fields, and selected-capital damage presentation pass implementation gates, but automatic grouping, exact planet placement, command timing, power allocation, special objects, original view acceptance, replacement battle content, and incomplete command, result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -188,7 +188,8 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-selected-damage.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -299,5 +300,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Complete P58F4 by source-mapping selected-unit damage presentation, then trace exact field command timing and remaining tactical commands. Keep exact planet placement and all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
+  "next_action": "Complete P58F5 by tracing exact field command timing and restoring the next source-proven tactical command-state bundle. Keep exact planet placement and all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
 }

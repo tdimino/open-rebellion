@@ -26,6 +26,7 @@ const PRODUCTION_FIGHTER_DETAIL_JOURNEY_SCENARIO: u32 = 10;
 const GROUP_PRESENTATION_SCENARIO: u32 = 11;
 const EFFECT_PRESENTATION_SCENARIO: u32 = 12;
 const PROJECTILE_FIELD_PRESENTATION_SCENARIO: u32 = 13;
+const SELECTED_DAMAGE_PRESENTATION_SCENARIO: u32 = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -78,6 +79,7 @@ pub(crate) struct TacticalFixtureRequest {
     pub group_presentation: bool,
     pub effect_presentation: bool,
     pub projectile_field_presentation: bool,
+    pub selected_damage_presentation: bool,
     lod_fixture: TacticalLodFixture,
 }
 
@@ -93,6 +95,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         group_presentation,
         effect_presentation,
         projectile_field_presentation,
+        selected_damage_presentation,
         lod_fixture,
     ) = match code & 0xff {
         BATTLE_SCENARIO => (
@@ -103,9 +106,11 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             false,
             false,
+            false,
             TacticalLodFixture::Default,
         ),
         BATTLE_WITHOUT_PROOF_SCENARIO => (
+            false,
             false,
             false,
             false,
@@ -123,10 +128,12 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             false,
             false,
+            false,
             TacticalLodFixture::Close,
         ),
         LOD_MEDIUM_SCENARIO => (
             true,
+            false,
             false,
             false,
             false,
@@ -143,10 +150,12 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             false,
             false,
+            false,
             TacticalLodFixture::Far,
         ),
         LOD_JOURNEY_SCENARIO => (
             true,
+            false,
             false,
             false,
             false,
@@ -163,11 +172,13 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             false,
             false,
+            false,
             TacticalLodFixture::CameraJourney,
         ),
         PRODUCTION_PARTICIPANTS_SCENARIO => (
             false,
             true,
+            false,
             false,
             false,
             false,
@@ -183,6 +194,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             false,
             false,
+            false,
             TacticalLodFixture::Default,
         ),
         PRODUCTION_FIGHTER_DETAIL_JOURNEY_SCENARIO => (
@@ -190,6 +202,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             true,
             false,
             true,
+            false,
             false,
             false,
             false,
@@ -203,6 +216,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             true,
             false,
             false,
+            false,
             TacticalLodFixture::Default,
         ),
         EFFECT_PRESENTATION_SCENARIO => (
@@ -213,11 +227,24 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             true,
             false,
+            false,
             TacticalLodFixture::Default,
         ),
         PROJECTILE_FIELD_PRESENTATION_SCENARIO => (
             false,
             true,
+            false,
+            false,
+            false,
+            false,
+            true,
+            false,
+            TacticalLodFixture::Default,
+        ),
+        SELECTED_DAMAGE_PRESENTATION_SCENARIO => (
+            false,
+            true,
+            false,
             false,
             false,
             false,
@@ -242,6 +269,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         group_presentation,
         effect_presentation,
         projectile_field_presentation,
+        selected_damage_presentation,
         lod_fixture,
     })
 }
@@ -394,6 +422,10 @@ pub(crate) fn apply(
         tactical.configure_projectile_field_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
+    if request.selected_damage_presentation {
+        tactical.configure_selected_damage_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if !request.production_participants {
         tactical.disable_original_participant_rendering();
     }
@@ -435,6 +467,7 @@ struct FixtureRecord<'a> {
     group_presentation: bool,
     effect_presentation: bool,
     projectile_field_presentation: bool,
+    selected_damage_presentation: bool,
     tactical_lod: &'a str,
     system: &'a str,
     system_picture_id: u8,
@@ -448,7 +481,20 @@ struct FixtureRecord<'a> {
     effects: Vec<FixtureEffect>,
     projectiles: Vec<FixtureProjectile>,
     fields: Vec<FixtureField>,
+    selected_ship: Option<FixtureSelectedShip<'a>>,
     error: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct FixtureSelectedShip<'a> {
+    name: &'a str,
+    faction: &'static str,
+    class_dat_id: u32,
+    hud_resource: Option<u32>,
+    hull_current: i32,
+    hull_max: i32,
+    shield_current: i32,
+    shield_max: i32,
 }
 
 #[derive(Serialize)]
@@ -664,8 +710,27 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             })
         })
         .collect();
+    let selected_ship = session.selected_ship.and_then(|index| {
+        let ship = session.ships.get(index)?;
+        Some(FixtureSelectedShip {
+            name: &ship.name,
+            faction: if ship.identity.is_alliance {
+                "alliance"
+            } else {
+                "empire"
+            },
+            class_dat_id: ship.identity.class_dat_id.index(),
+            hud_resource: ship
+                .tactical_resource
+                .map(|resource| resource.hud_resource()),
+            hull_current: ship.hull_current,
+            hull_max: ship.hull_max,
+            shield_current: ship.shield,
+            shield_max: ship.shield_max,
+        })
+    });
     emit(&FixtureRecord {
-        schema_version: 12,
+        schema_version: 13,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -681,6 +746,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         group_presentation: request.group_presentation,
         effect_presentation: request.effect_presentation,
         projectile_field_presentation: request.projectile_field_presentation,
+        selected_damage_presentation: request.selected_damage_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
@@ -706,13 +772,14 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         effects,
         projectiles,
         fields,
+        selected_ship,
         error: None,
     });
 }
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 12,
+        schema_version: 13,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -728,6 +795,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         group_presentation: request.group_presentation,
         effect_presentation: request.effect_presentation,
         projectile_field_presentation: request.projectile_field_presentation,
+        selected_damage_presentation: request.selected_damage_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: "",
         system_picture_id: 0,
@@ -741,6 +809,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         effects: Vec::new(),
         projectiles: Vec::new(),
         fields: Vec::new(),
+        selected_ship: None,
         error: Some(error),
     });
 }
@@ -766,6 +835,7 @@ mod tests {
         assert!(decode(0x1010b).unwrap().group_presentation);
         assert!(decode(0x1010c).unwrap().effect_presentation);
         assert!(decode(0x1010d).unwrap().projectile_field_presentation);
+        assert!(decode(0x1010e).unwrap().selected_damage_presentation);
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -787,7 +857,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x1010e).is_none());
+        assert!(decode(0x1010f).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

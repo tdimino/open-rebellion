@@ -52,7 +52,7 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 52 entry, negative-control,
+`node run.mjs --battle --all --no-build` for all 56 entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
@@ -62,7 +62,7 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 12 additionally asserts representative capital-ship and fighter
+Fixture schema 13 additionally asserts representative capital-ship and fighter
 DAT-to-tactical-resource joins, exact production rendering of two joined
 capital-ship families, exact fighter close/far/indicator resource triplets,
 the test-only fighter focus used by the detail journey, and a 3D-off control
@@ -79,6 +79,9 @@ requires all three retained projectile variants and material selectors, exact
 source-to-target interpolation and lifecycle, visible selector-colored pixels,
 both 128 by 128 field families, 10 Hz animation, and gravity-over-tractor
 priority with tractor restoration.
+The selected-damage snapshot checks panel 1302, the exact source-ordinal
+capital portrait, lime-matte composition, live shield and hull fractions, and
+faction-correct meter colors.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

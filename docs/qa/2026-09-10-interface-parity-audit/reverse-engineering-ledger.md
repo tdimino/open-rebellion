@@ -152,7 +152,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/impact/projectile/field rendering, camera, placement, authored transform, palette, light, and retained-mode device/material state source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through selected-unit damage, exact command timing, remaining controls, and A0 comparison |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering and selected-capital damage presentation source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact command timing, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -224,7 +224,11 @@ controls without family reload. The
 [P58E evidence](evidence/2026-09-14-tactical-group-presentation.md) restores all
 eight task-force and four RGBY controls, source-shaped input, Ctrl assignment,
 keyboard routes, and selected fighter portraits. Automatic production grouping
-and original visual acceptance remain open.
+and original visual acceptance remain open. The
+[P58F4 evidence](evidence/2026-09-15-tactical-selected-damage.md) then binds
+source tactical ordinals to capital portraits `2001` through `2029`, composites
+their lime mats over panel `1302`, and renders live faction-correct shield and
+hull meters. Power allocation and exact command timing remain open.
 
 ## Immediate implementation order
 

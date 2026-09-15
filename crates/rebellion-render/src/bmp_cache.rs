@@ -1545,6 +1545,13 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
     }
 }
 
+/// Return whether a tactical selected-ship portrait uses the original lime
+/// compositing matte. These 29 portraits are layered over the green display
+/// in bitmap 1302; treating the matte as opaque erases the authored grid.
+fn uses_lime_screen_transparency(source: DllSource, resource_id: u32) -> bool {
+    source == DllSource::Tactical && (2001..=2029).contains(&resource_id)
+}
+
 fn decode_macroquad_texture(
     bytes: &[u8],
     source: DllSource,
@@ -1602,6 +1609,12 @@ fn decode_rgba_image(
     if uses_blue_screen_transparency(source, resource_id) {
         for pixel in rgba.pixels_mut() {
             if pixel[0] < 32 && pixel[1] < 32 && pixel[2] > 192 {
+                pixel[3] = 0;
+            }
+        }
+    } else if uses_lime_screen_transparency(source, resource_id) {
+        for pixel in rgba.pixels_mut() {
+            if pixel[0] == 0 && pixel[1] == 255 && pixel[2] == 0 {
                 pixel[3] = 0;
             }
         }
@@ -1893,6 +1906,26 @@ mod tests {
         let panel = decode_color_image(&encoded, DllSource::Tactical, 1302).unwrap();
         assert_eq!(control.pixels[0].a(), 0);
         assert_eq!(panel.pixels[0].a(), 255);
+    }
+
+    #[test]
+    fn tactical_selected_ship_lime_matte_is_transparent() {
+        let mut image = image::RgbaImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgba([0, 255, 0, 255]));
+        image.put_pixel(1, 0, image::Rgba([90, 100, 110, 255]));
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        let decoded = decode_rgba_image(&encoded, DllSource::Tactical, 2001).unwrap();
+        assert_eq!(decoded.get_pixel(0, 0).0, [0, 255, 0, 0]);
+        assert_eq!(decoded.get_pixel(1, 0).0, [90, 100, 110, 255]);
+
+        let panel = decode_rgba_image(&encoded, DllSource::Tactical, 1302).unwrap();
+        assert_eq!(panel.get_pixel(0, 0).0, [0, 255, 0, 255]);
     }
 
     #[test]

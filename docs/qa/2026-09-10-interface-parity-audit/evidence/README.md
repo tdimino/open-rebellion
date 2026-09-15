@@ -25,6 +25,7 @@ the source of truth for scope, acceptance, and current work.
 | P58F1 | [System-selected tactical planets](2026-09-14-tactical-planets.md) | [`p58f1-tactical-planets/`](p58f1-tactical-planets/) |
 | P58F2 | [Tactical impact effects](2026-09-14-tactical-impact-effects.md) | [`p58f2-tactical-impact-effects/`](p58f2-tactical-impact-effects/) |
 | P58F3 | [Tactical projectiles and fields](2026-09-14-tactical-projectile-fields.md) | [`p58f3-tactical-projectile-fields/`](p58f3-tactical-projectile-fields/) |
+| P58F4 | [Selected-capital damage presentation](2026-09-15-tactical-selected-damage.md) | [`p58f4-tactical-selected-damage/`](p58f4-tactical-selected-damage/) |
 
 ## Current strategic correction
 

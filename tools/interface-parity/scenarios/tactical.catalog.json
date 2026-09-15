@@ -139,6 +139,20 @@
       "acceptance": "A1 executable geometry, material-selector, duration, interpolation, field-resource, lifecycle, and priority proof only. Field command timing, special weapons, and native A0 comparison remain open."
     },
     {
+      "slug": "production-selected-damage-presentation",
+      "description": "Source-ordinal selected-capital portrait plus live shield and hull meters rendered inside the original 1302 HUD panel",
+      "fixture_codes": {
+        "alliance": 65806,
+        "empire": 66062
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "selected_damage_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 source-registry portrait join, original matte composition, and live damage-meter proof only. Power allocation, commands, destroyed selection, Death Star, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

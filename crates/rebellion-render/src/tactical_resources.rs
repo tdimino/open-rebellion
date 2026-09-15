@@ -14,6 +14,18 @@ pub struct TacticalCapitalShipResource {
     pub mesh_resource_base: u32,
 }
 
+impl TacticalCapitalShipResource {
+    /// Selected-capital-ship portrait in the original right-hand HUD.
+    ///
+    /// The 29-entry bitmap table uses the same source registry ordinal as the
+    /// type-301 mesh table recovered from `FUN_00597610`; it is not CAPSHPSD
+    /// record order.
+    #[must_use]
+    pub const fn hud_resource(self) -> u32 {
+        2001 + self.tactical_ordinal as u32
+    }
+}
+
 /// Original type-303 fighter graphics selected for one fighter class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TacticalFighterResource {
@@ -207,6 +219,24 @@ mod tests {
                 tactical_ordinal: 20,
                 mesh_resource_base: 2560,
             })
+        );
+        assert_eq!(
+            capital_ship_tactical_resource(DatId::new(64))
+                .unwrap()
+                .hud_resource(),
+            2001
+        );
+        assert_eq!(
+            capital_ship_tactical_resource(DatId::new(128))
+                .unwrap()
+                .hud_resource(),
+            2016
+        );
+        assert_eq!(
+            capital_ship_tactical_resource(DatId::new(133))
+                .unwrap()
+                .hud_resource(),
+            2021
         );
         assert_eq!(capital_ship_tactical_resource(DEATH_STAR_DAT_ID), None);
         assert_eq!(

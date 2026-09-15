@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "role": "browser visual acceptance only"
+  },
+  "verdict": "pass",
+  "acceptance_scope": "P58F4 A1 visual acceptance of the final rebuilt retained browser artifact, not strict A0 original-game parity.",
+  "inspected_surfaces": [
+    "Alliance at 640x480",
+    "Alliance at 1280x800 letterboxed",
+    "Empire at 640x480",
+    "Empire at 1280x800 letterboxed"
+  ],
+  "visual_findings": [
+    "Tactical HUD panel 1302 is visible on all four surfaces.",
+    "Selected capital portraits are visible without lime rectangles.",
+    "Shield meters are blue, Alliance hull meters are blue, and Imperial hull meters are red.",
+    "No blank, corrupt, or clipped HUD panel is evident."
+  ],
+  "evidence_checks": {
+    "focused_cases": "4 of 4 passed",
+    "complete_matrix": "56 of 56 passed",
+    "four_request_startups": 56,
+    "browser_errors": 0,
+    "muted_launches": 56,
+    "closed_browser_processes": 56,
+    "contact_sheet": "Visually inspected with the image inspection tool.",
+    "golden_status": "All 56 cases remain unbaselined against A0 original-game captures."
+  },
+  "limitations": [
+    "The review inspected retained screenshots and JSON evidence rather than launching a fresh browser session.",
+    "The complete matrix result is reported harness evidence; the visual review inspected the four contact-sheet surfaces.",
+    "No matching A0 golden screenshots exist for these cells, so resource identity is corroborated by source and framebuffer probes rather than original-runtime pixel comparison."
+  ],
+  "blocking_findings": []
+}

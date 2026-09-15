@@ -1533,6 +1533,113 @@ async function probeTacticalProjectileFieldPresentation(folder, stable, consoleL
   ];
 }
 
+function nativeRectPixelCount(viewport, screenshot, rect, matches) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const x0 = Math.ceil(offsetX + rect.x * scale);
+  const y0 = Math.ceil(offsetY + rect.y * scale);
+  const x1 = Math.floor(offsetX + (rect.x + rect.width) * scale);
+  const y1 = Math.floor(offsetY + (rect.y + rect.height) * scale);
+  let count = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const offset = (y * screenshot.width + x) * 4;
+      if (matches(...screenshot.data.subarray(offset, offset + 3))) count++;
+    }
+  }
+  return count;
+}
+
+function probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready) {
+  const selected = ready.selected_ship;
+  assert.ok(selected, "selected-damage fixture omitted its selected ship");
+  const expected = ready.faction === "alliance"
+    ? { class_dat_id: 64, hud_resource: 2001 }
+    : { class_dat_id: 128, hud_resource: 2016 };
+  assert.equal(selected.faction, ready.faction);
+  assert.equal(selected.class_dat_id, expected.class_dat_id);
+  assert.equal(selected.hud_resource, expected.hud_resource);
+  assert.ok(selected.hull_max > 0 && selected.shield_max > 0);
+  assert.equal(selected.hull_current, Math.max(1, Math.trunc(selected.hull_max * 2 / 5)));
+  assert.equal(selected.shield_current, Math.max(0, Math.trunc(selected.shield_max / 4)));
+
+  const screenshot = PNG.sync.read(stable.bytes);
+  const shieldPixels = nativeRectPixelCount(
+    viewport,
+    screenshot,
+    { x: 514, y: 107, width: 40 * selected.shield_current / selected.shield_max, height: 8 },
+    (red, green, blue) => red === 0 && green === 0 && blue === 255,
+  );
+  const hullPixels = nativeRectPixelCount(
+    viewport,
+    screenshot,
+    { x: 585, y: 107, width: 39 * selected.hull_current / selected.hull_max, height: 8 },
+    ready.faction === "alliance"
+      ? (red, green, blue) => red === 0 && green >= 48 && blue === 255
+      : (red, green, blue) => red === 255 && green === 0 && blue === 0,
+  );
+  assert.ok(shieldPixels > 0, "selected ship shield meter produced no exact blue pixels");
+  assert.ok(hullPixels > 0, "selected ship hull meter produced no exact faction pixels");
+
+  let panelProof = { status: "non-native-scale", pixels_checked: 0 };
+  let portraitProof = { status: "non-native-scale", opaque_pixels_checked: 0 };
+  if (viewport.width === 640 && viewport.height === 480 && viewport.device_scale_factor === 1) {
+    panelProof = verifyTacticalBitmap(viewport, stable.bytes, 1302, 481, 27, [], [
+      { x: 10, y: 8, width: 130, height: 42 },
+      { x: 33, y: 80, width: 40, height: 8 },
+      { x: 104, y: 80, width: 39, height: 8 },
+      { x: 12, y: 183, width: 130, height: 24 },
+    ]);
+    const portrait = decodeIndexedBmp(fs.readFileSync(path.join(
+      root, `data/base/ui/tactical-dll/BMP/${selected.hud_resource}.bmp`,
+    )));
+    const panel = decodeIndexedBmp(fs.readFileSync(path.join(
+      root, "data/base/ui/tactical-dll/BMP/1302.bmp",
+    )));
+    let opaquePixels = 0;
+    let exactOpaquePixels = 0;
+    for (let y = 0; y < portrait.height; y++) {
+      for (let x = 0; x < portrait.width; x++) {
+        const color = portrait.pixel(x, y);
+        if (color[0] < 32 && color[1] > 192 && color[2] < 32) continue;
+        opaquePixels++;
+        const offset = ((37 + y) * screenshot.width + 507 + x) * 4;
+        if (Array.from(screenshot.data.subarray(offset, offset + 3))
+          .every((channel, index) => channel === color[index])) exactOpaquePixels++;
+      }
+    }
+    assert.ok(opaquePixels > 0 && exactOpaquePixels > opaquePixels / 2,
+      "selected ship portrait did not retain a majority of exact source pixels");
+    const matteOffset = (37 * screenshot.width + 507) * 4;
+    assert.deepEqual(
+      Array.from(screenshot.data.subarray(matteOffset, matteOffset + 3)),
+      panel.pixel(26, 10),
+      "selected ship lime matte erased the underlying 1302 display grid",
+    );
+    portraitProof = {
+      status: "source-bitmap-composited",
+      resource_id: selected.hud_resource,
+      opaque_pixels_checked: opaquePixels,
+      exact_opaque_pixels: exactOpaquePixels,
+      lime_matte_reveals_panel: true,
+    };
+  }
+  fs.writeFileSync(path.join(folder, "selected-damage.png"), stable.bytes);
+  return [{
+    type: "source-mapped-selected-capital-damage",
+    source_registry_function: "FUN_00597610",
+    panel_resource: 1302,
+    portrait_resource: selected.hud_resource,
+    shield: { current: selected.shield_current, maximum: selected.shield_max,
+      exact_color_pixels: shieldPixels },
+    hull: { current: selected.hull_current, maximum: selected.hull_max,
+      exact_color_pixels: hullPixels, faction_color: ready.faction },
+    panel_proof: panelProof,
+    portrait_proof: portraitProof,
+  }];
+}
+
 async function probeTacticalGroupPresentation(
   page, viewport, folder, stable, consoleLines, ready, faction,
 ) {
@@ -1750,6 +1857,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? await probeTacticalEffectPresentation(folder, stable, consoleLines, ready)
         : scenario.projectile_field_presentation
         ? await probeTacticalProjectileFieldPresentation(folder, stable, consoleLines, ready)
+        : scenario.selected_damage_presentation
+        ? probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready)
         : scenario.production_participants
         ? await probeTacticalProductionParticipants(
           page, folder, stable, consoleLines, faction,
@@ -1759,7 +1868,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 12);
+      assert.equal(ready.schema_version, 13);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1771,6 +1880,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       assert.equal(ready.effect_presentation, Boolean(scenario.effect_presentation));
       assert.equal(ready.projectile_field_presentation,
         Boolean(scenario.projectile_field_presentation));
+      assert.equal(ready.selected_damage_presentation,
+        Boolean(scenario.selected_damage_presentation));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -2334,16 +2445,19 @@ async function main() {
         "production-group-presentation",
         "production-effect-presentation",
         "production-projectile-field-presentation",
+        "production-selected-damage-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, false, false, false, false, false, false]);
+      [true, false, true, true, true, true, true, false, false, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
-        undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true, false, false, false, false, false, false, false]);
+      [false, false, false, false, false, true, false, false, false, false, false, false, false,
+        false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      [false, false, false, false, false, false, true, false, false, false, false, false, false]);
+      [false, false, false, false, false, false, true, false, false, false, false, false, false,
+        false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

@@ -34,7 +34,7 @@ process and closes its browser and local server when complete.
 T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md)
 preserves surviving hull damage and exact fighter roster losses. Campaign and
 test-only browser entry share the validated production tactical-entry function.
-P52 through [P58F3](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md)
+P52 through [P58F4](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-selected-damage.md)
 restore the first authentic shell controls, complete tactical asset decode, one
 three-LOD family, source camera and layout, stable participants, authored
 coordinates, system palette, lighting, retained-mode render state, and exact
@@ -42,27 +42,29 @@ DAT resource joins. Live capital ships render from their joined families;
 fighter groups use the original detail resources; and capital interactions use
 projected mesh bounds. The original task-force and RGBY fighter-control strip,
 group selection, keyboard routes, and selected fighter portraits also work.
-The full muted harness passes 52 of 52 cases, and the four-request pack carries
+The full muted harness passes 56 of 56 cases, and the four-request pack carries
 all 87 meshes and 397 textures. Production battles now load the exact
 system-selected 256 by 256 planet and paired palette. Six target-impact
 families now preserve exact frames, sizes, priority, transparency, attachment,
 and 10 Hz timing. Retained projectiles now preserve exact geometry variants,
 thresholds, scales, material selectors, interpolation, and duration. Tractor
 and gravity fields use their original 128-by-128 frame families, source counts,
-10 Hz timing, and shared gravity priority. Shared return/outcome routing, exact
-field command timing, selected-unit damage, exact planet placement, special objects, original
+10 Hz timing, and shared gravity priority. Selected-capital panel 1302 now uses
+source-ordinal portraits plus live faction-correct shield and hull meters.
+Shared return/outcome routing, exact
+field command timing, power allocation, exact planet placement, special objects, original
 view acceptance, complete battle interactions, and all 106 visual cells remain
-open. The practical launcher estimate is about 67% implemented. This planning
+open. The practical launcher estimate is about 70% implemented. This planning
 estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
 
 ## Current contract and limits
 
 - Campaign combat enters `GameMode::TacticalCombat` through the validated `begin_player_battle` function in `crates/rebellion-app/src/tactical_flow.rs`. The same main loop calls `draw_tactical_view` and applies battle results back to `GameWorld`; return/outcome orchestration is still inline and must be shared before a direct-launch fixture can claim complete campaign-path equivalence.
-- `crates/rebellion-render/src/tactical_view.rs` already models placement, combat, results, ships, fighters, selection, retreat, pause, speed, and auto-resolution. Its current HUD and results composition are replacement egui UI, not the original bitmap interface.
+- `crates/rebellion-render/src/tactical_view.rs` already models placement, combat, results, ships, fighters, selection, retreat, pause, speed, and auto-resolution. The selected-capital path now uses original panel 1302, but power allocation and results composition remain incomplete or replacement UI.
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F3 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, six target-impact families, retained projectiles, and tractor/gravity fields. Automatic group distribution, exact planet placement, exact field command timing, selected-unit damage, and original view acceptance remain open.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F4 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, effects, fields, and selected-capital damage presentation. Automatic group distribution, exact planet placement, exact field command timing, power allocation, and original view acceptance remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design
@@ -132,7 +134,8 @@ capital selection and targeting with projected mesh bounds. P58E restores the
 task-force and squadron controls. P58F1 binds the exact system-selected planet
 and paired palette. P58F2 restores all six target-impact sprite families and
 their lifecycle. P58F3 restores retained projectile and tractor/gravity field
-presentation. Automatic group assignment, selected-unit data and damage,
+presentation. P58F4 restores the selected-capital panel, portrait identity,
+and live shield and hull meters. Automatic group assignment, power allocation,
 fighter launch/recovery and damage, exact planet placement, exact field
 command timing, commands, results, and audio remain T3 work.
 No `TAC-*` acceptance cell is closed.

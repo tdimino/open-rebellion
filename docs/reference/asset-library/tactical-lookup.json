@@ -135,5 +135,16 @@
     "visual_grade": "provisional-A1",
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md"
   },
-  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "exact field combat-command timing", "unused white projectile material branch", "fighter impact emission", "tactical planet retained-frame transform and visibility", "selected-unit damage presentation", "remaining original control-state and render geometry"]
+  "selected_capital_damage_contract": {
+    "panel_resource": 1302,
+    "portrait_resource_rule": "2001 plus tactical ordinal",
+    "portrait_resource_range": [2001, 2029],
+    "portrait_matte": "pure lime transparent",
+    "shield_meter": "live shield divided by shield_max, blue",
+    "hull_meter": "live hull_current divided by hull_max, Alliance blue or Empire red",
+    "identity_grade": "source-proven",
+    "visual_grade": "provisional-A1",
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-selected-damage.md"
+  },
+  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "exact field combat-command timing", "unused white projectile material branch", "fighter impact emission", "tactical planet retained-frame transform and visibility", "power allocation and remaining selected-unit states", "remaining original control-state and render geometry"]
 }
