@@ -152,7 +152,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering, selected-capital damage and subsystem condition, exact field-source identity, and live subsystem mutation source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact RNG sequencing, subsystem repair, movement effects, interactive command events, remaining controls, and A0 comparison |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering, selected-capital damage, live subsystem mutation, repair, and mobility source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, maneuver-mode production, physical movement integration, interactive command events, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -224,17 +224,21 @@ controls without family reload. The
 [P58E evidence](evidence/2026-09-14-tactical-group-presentation.md) restores all
 eight task-force and four RGBY controls, source-shaped input, Ctrl assignment,
 keyboard routes, and selected fighter portraits. Automatic production grouping
-and original visual acceptance remain open. The
-[P58F4 evidence](evidence/2026-09-15-tactical-selected-damage.md) then binds
+and original visual acceptance remain open. P58F1 through P58F3 restore the
+system-selected planet, target effects, projectiles, and tractor/gravity fields.
+The [P58F4 evidence](evidence/2026-09-15-tactical-selected-damage.md) then binds
 source tactical ordinals to capital portraits `2001` through `2029`, composites
 their lime mats over panel `1302`, and renders live faction-correct shield and
-Hull meters and condition families are connected to the live damage path in
-[P58F6 evidence](evidence/2026-09-15-tactical-live-subsystem-damage.md).
-restores all five subsystem-condition bitmap families through the exact source
-quantization and placement. It also supersedes anonymous field counts with
-exact tractor and gravity source IDs, enforces the one-target and four-target
-source capacities, and preserves gravity priority and frame reset. Combat-driven
-subsystem damage, interactive command events, and power allocation remain open.
+hull meters. [P58F5 evidence](evidence/2026-09-15-tactical-subsystem-field-commands.md)
+restores all five subsystem-condition bitmap families through exact source
+quantization and placement, plus exact field identities and capacities.
+[P58F6 evidence](evidence/2026-09-15-tactical-live-subsystem-damage.md)
+connects those conditions to the live damage path. The
+[P58F7 evidence](evidence/2026-09-15-tactical-subsystem-repair-mobility.md)
+restores the repair cadence and selection plus the engine-condition and active
+tractor-drag mobility calculation. Exact global RNG sequencing, the
+maneuver-mode producer, physical movement integration, interactive command
+events, power allocation, and original visual acceptance remain open.
 
 ## Immediate implementation order
 

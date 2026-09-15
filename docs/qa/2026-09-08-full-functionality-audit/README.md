@@ -65,6 +65,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical selected-capital damage proof](../2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-selected-damage.md) | Panel 1302, source-ordinal portrait identity, live shield/hull meters, muted 56-case browser gate, and remaining subsystem/command/A0 boundary for P24/P58. |
 | [Tactical subsystem and field-command proof](../2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-field-commands.md) | Five source-quantized subsystem families, exact field-source identity and capacity, muted 60-case browser gate, and remaining combat-driven/interactive/A0 boundary for P24/P58. |
 | [Tactical live subsystem-damage proof](../2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-live-subsystem-damage.md) | Shared source-derived capital/fighter damage, five subsystem thresholds and limits, tractor cancellation, muted 64-case browser gate, and remaining repair/movement/A0 boundary for P24/P58. |
+| [Tactical subsystem-repair and mobility proof](../2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-repair-mobility.md) | Source-derived repair cadence and selection, engine condition, tractor drag, muted 68-case browser gate, and remaining physical-movement/A0 boundary for P24/P58. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

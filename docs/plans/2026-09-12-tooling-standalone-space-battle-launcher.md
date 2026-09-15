@@ -34,7 +34,7 @@ process and closes its browser and local server when complete.
 T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md)
 preserves surviving hull damage and exact fighter roster losses. Campaign and
 test-only browser entry share the validated production tactical-entry function.
-P52 through [P58F6](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-live-subsystem-damage.md)
+P52 through [P58F7](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-repair-mobility.md)
 restore the first authentic shell controls, complete tactical asset decode, one
 three-LOD family, source camera and layout, stable participants, authored
 coordinates, system palette, lighting, retained-mode render state, and exact
@@ -42,7 +42,7 @@ DAT resource joins. Live capital ships render from their joined families;
 fighter groups use the original detail resources; and capital interactions use
 projected mesh bounds. The original task-force and RGBY fighter-control strip,
 group selection, keyboard routes, and selected fighter portraits also work.
-The full muted harness passes 64 of 64 cases, and the four-request pack carries
+The full muted harness passes 68 of 68 cases, and the four-request pack carries
 all 87 meshes and 397 textures. Production battles now load the exact
 system-selected 256 by 256 planet and paired palette. Six target-impact
 families now preserve exact frames, sizes, priority, transparency, attachment,
@@ -55,11 +55,13 @@ faction-correct shield and hull meters, and all five source-quantized subsystem
 condition families.
 Capital and fighter fire now share the recovered shield-overflow, hull-loss,
 subsystem-hit, condition, and tractor-cancellation path.
-Shared return/outcome routing, exact RNG sequencing, subsystem repair, engine
-and tractor movement effects, interactive field commands, power allocation,
+The source repair cadence and selection plus engine-condition and active
+tractor-drag mobility now complete the live subsystem loop.
+Shared return/outcome routing, exact global RNG sequencing, maneuver-mode
+production, physical movement integration, interactive field commands, power allocation,
 exact planet placement, special objects, original
 view acceptance, complete battle interactions, and all 106 visual cells remain
-open. The practical launcher estimate is about 75% implemented. This planning
+open. The practical launcher estimate is about 77% implemented. This planning
 estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
 
 ## Current contract and limits
@@ -69,7 +71,7 @@ estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F6 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, effects, fields, selected-capital damage and subsystem condition, exact field-source identity, and live subsystem mutation. Automatic group distribution, exact planet placement, exact RNG sequencing, repair, movement penalties, interactive commands, power allocation, and original view acceptance remain open.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F7 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, effects, fields, selected-capital damage and subsystem condition, exact field-source identity, live subsystem mutation, repair, and mobility. Automatic group distribution, exact planet placement, exact global RNG sequencing, maneuver-mode production, physical movement integration, interactive commands, power allocation, and original view acceptance remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design
@@ -141,10 +143,11 @@ and paired palette. P58F2 restores all six target-impact sprite families and
 their lifecycle. P58F3 restores retained projectile and tractor/gravity field
 presentation. P58F4 restores the selected-capital panel, portrait identity,
 and live shield and hull meters. P58F5 restores the five subsystem-condition
-families and exact field-source identity and capacity. Automatic group
-assignment, exact RNG sequencing, subsystem repair, power allocation, fighter
-launch/recovery and damage, exact planet placement, interactive commands,
-results, and audio remain T3 work.
+families and exact field-source identity and capacity. P58F6 and P58F7 restore
+live damage, repair, and mobility. Automatic group assignment, exact global RNG
+sequencing, maneuver-mode production, physical movement integration, power
+allocation, fighter launch/recovery and damage, exact planet placement,
+interactive commands, results, and audio remain T3 work.
 No `TAC-*` acceptance cell is closed.
 
 ### T4. Battle outcome and rare-state closure

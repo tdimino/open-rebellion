@@ -31,7 +31,7 @@ mixing, or genuine two-peer ordering.
 | 5 | `TACTICALRESULT_UPDATE`; callers and setters around `FUN_0040a700` states `7`–`9` and `0x15`–`0x17`; `FUN_005445d0_combat_result`; Battle Alert and Death Star callbacks | Results composition, simulate/observe flow, reports, media routing, and strategic return |
 | 6 | `FUN_005bae60`; vtable `0x0066c748`; audio-manager callers; TACTICAL WAVE `13000`–`13065`; TEXTTACT `MDATA.401`–`MDATA.406` | Event-to-SFX/voice mapping, faction variants, and the missing tactical-audio staging path |
 | 7 | `FUN_00596ad0`, `FUN_005c2e60`, `FUN_005d4d10`, `FUN_005d9eb0`, `FUN_005da150`, `FUN_005d59e0`; retained-mode COM slots | Back plane, quality, filtering, culling, material, and lighting rules. Palette realization is proven in P57B2C1, the light rig in P57B2C2A, and remaining device/material state in P57B2C2B. |
-| 8 | `FUN_005a7500`, `FUN_005d39a0`, `FUN_005d3e90`, `FUN_005d41a0`, `FUN_005d3de0`, `FUN_005ee590`, `LAB_005eeb90`; field handlers `FUN_005b23e0` through `FUN_005b25d0`, `FUN_005d3ac0`, `FUN_005d3cc0`; subsystem constructors `FUN_005e45f0`, `FUN_005e7540`, `FUN_005e77c0`; damage path `FUN_005b54d0`, `0x005b1970`, `0x005b1ab0`, `FUN_005b05c0`, `FUN_0040b8a0`; BMP families `1201`–`1225`; type-303 families `3020`–`3375`, `3500`–`3527`, `3600`–`3627`, `4200`–`4204`, `5030` | P58F2 completes target-attached hit, damage, and destruction sprite selection and timing. P58F3 completes retained projectile geometry, thresholds, colors, interpolation and duration, plus tractor/gravity frame selection and animation. P58F5 completes subsystem resources, quantization, placement, exact field-source identity, capacity, priority, and frame reset. P58F6 completes live shield overflow, hull loss, subsystem selection and limits, condition recalculation, and tractor cancellation. Exact RNG sequencing, interactive command events, fighter emission, repair, movement effects, and Death Star effects remain open. |
+| 8 | `FUN_005a7500`, `FUN_005d39a0`, `FUN_005d3e90`, `FUN_005d41a0`, `FUN_005d3de0`, `FUN_005ee590`, `LAB_005eeb90`; field handlers `FUN_005b23e0` through `FUN_005b25d0`, `FUN_005d3ac0`, `FUN_005d3cc0`; subsystem constructors `FUN_005e45f0`, `FUN_005e7540`, `FUN_005e77c0`; damage path `FUN_005b54d0`, `0x005b1970`, `0x005b1ab0`, `FUN_005b05c0`, `FUN_0040b8a0`; repair and mobility `FUN_005b0330`, `FUN_005b1490`, `FUN_005b16b0`, `FUN_005b1790`, `FUN_005b17f0`; BMP families `1201`–`1225`; type-303 families `3020`–`3375`, `3500`–`3527`, `3600`–`3627`, `4200`–`4204`, `5030` | P58F2 completes target-attached hit, damage, and destruction sprite selection and timing. P58F3 completes retained projectile geometry, thresholds, colors, interpolation and duration, plus tractor/gravity frame selection and animation. P58F5 completes subsystem resources, quantization, placement, exact field-source identity, capacity, priority, and frame reset. P58F6 completes live shield overflow, hull loss, subsystem selection and limits, condition recalculation, and tractor cancellation. P58F7 completes repair cadence and selection plus engine-condition and active tractor-drag mobility. Exact global RNG sequencing, maneuver-mode production, physical movement integration, interactive command events, fighter emission, and Death Star effects remain open. |
 | 9 | Fixture schema and shared result path | Stable seed/clock, explicit system/fleet/class DAT IDs, original ordinal/resources, state fingerprints, event trace, losses, winner, reports, and destination |
 | 10 | `FUN_005f9860`, `FUN_005f7ea0`, DirectPlay packet/ack helpers and imports | Original wait, pause, departure, timeout, and synchronization semantics; not a standalone-launcher prerequisite |
 
@@ -131,8 +131,13 @@ mixing, or genuine two-peer ordering.
   selection thresholds. Capital vtable target `0x005b1970` applies hits,
   `0x005b1ab0` removes them during repair, and `FUN_0040b8a0` counts the normal
   and damaged hyperdrive fields. P58F6 implements live damage and tractor
-  cancellation. Exact RNG sequencing, repair cadence, engine mode bonuses,
-  and tractor movement penalties remain open.
+  cancellation.
+- `FUN_005b0330` and `FUN_005b1490` establish the repair timer, inclusive
+  damage-control roll, uniform outstanding-hit selection, and subsystem order.
+  `FUN_005b16b0`, `FUN_005b1790`, and `FUN_005b17f0` establish engine condition,
+  effective tractor power, and tractor drag. P58F7 implements those contracts.
+  Exact global RNG sequencing, the maneuver-mode producer, physical movement
+  integration, and interactive field commands remain open.
 
 ## A0-only boundary
 

@@ -181,6 +181,20 @@
       "acceptance": "A1 executable branch, threshold, component-capacity, live state, and resource proof only. Original RNG sequence, repair, command input, engine mode bonuses, active tractor speed penalties, and native A0 comparison remain open."
     },
     {
+      "slug": "production-subsystem-repair-mobility-presentation",
+      "description": "Selected production capital after one source-selected engine repair while an enemy tractor source reduces effective sublight power",
+      "fixture_codes": {
+        "alliance": 65809,
+        "empire": 66065
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "subsystem_repair_mobility_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable repair interval, chance, hit-selection order, engine-damage, maneuver-bonus seam, active-tractor power, live state, and resource proof only. Original RNG sequence, maneuver-bonus producer, interactive command input, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

@@ -133,6 +133,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F6 live subsystem-damage evidence](evidence/2026-09-15-tactical-live-subsystem-damage.md)
   for source-derived shield overflow, hull loss, subsystem hit selection and
   limits, condition recalculation, tractor cancellation, and the 64-case gate.
+- Review the [P58F7 subsystem-repair and mobility evidence](evidence/2026-09-15-tactical-subsystem-repair-mobility.md)
+  for source-derived repair cadence and selection, sublight-engine condition,
+  tractor drag, complete field containment, and the 68-case gate.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -170,8 +173,8 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 75%
-implemented after P58F6. Its formal acceptance remains 0 of 106 tactical cells
+Within that total, the standalone space-battle launcher is approximately 77%
+implemented after P58F7. Its formal acceptance remains 0 of 106 tactical cells
 because exact original-view evidence and the remaining battle states are open.
 
 The first recovered implementation tranche now packages and renders the four
@@ -251,11 +254,12 @@ meters. P58F5 restores all five source-quantized subsystem-condition families,
 exact tractor and gravity source identities, their source-side capacity limits,
 gravity priority, and frame reset. P58F6 connects capital and fighter fire to
 the recovered shield-overflow, hull-loss, subsystem-selection, condition, and
-tractor-cancellation path. Automatic group distribution, exact planet
-placement, exact RNG sequencing, repair, engine and tractor movement effects,
-interactive command delivery,
-power allocation, remaining commands, results, and A0
-comparisons remain open.
+tractor-cancellation path. P58F7 restores the 50-second repair cadence,
+inclusive damage-control roll, source subsystem order, engine-condition math,
+and active tractor drag used by the mobility contract. Automatic group
+distribution, exact planet placement, exact global RNG sequencing, the
+maneuver-mode bonus producer, physical movement integration, interactive
+command delivery, power allocation, results, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

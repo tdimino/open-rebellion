@@ -57,10 +57,12 @@ maximum hull. Shield generators, weapons, and tractor beam subtract 25 percent
 of their maximum value per hit and clamp at zero. Their ratio getters are
 `FUN_005b1710`, `FUN_005b1680`, and `FUN_005b1740`.
 
-Sublight engines use the same hull and 25-percent-per-hit basis in
-`FUN_005b17f0` and `FUN_005b16b0`. That routine also applies mode bonuses and
-the current tractor power of every source holding the ship. Those movement
-terms remain outside P58F6.
+`FUN_005b17f0` establishes a separate sublight rule. It does not scale the
+target's engine power by hull. It subtracts 25 percent of base power plus the
+current mode bonus for each engine hit, then subtracts the effective tractor
+power of every source holding the ship. `FUN_005b16b0` returns that value over
+base engine power. P58F7 supersedes the earlier hull-scaling interpretation;
+see [the repair and mobility note](tactical-subsystem-repair-mobility.md).
 
 `FUN_005b1bc0` subtracts the hyperdrive hit count from its installed component
 count. `FUN_005b16e0` divides the remainder by the component count. The HUD
@@ -72,6 +74,8 @@ quantizer selects resources 1201 through 1225.
 P58F6 routes live capital-ship and fighter damage through the recovered shield,
 hull, threshold, counter, component-capacity, condition, and tractor-cancel
 branches. The Rust session retains deterministic 0-through-100 draws using its
-existing combat seed. Joining the executable's global RNG sequence, engine
-mode bonuses, active tractor speed penalties, repair, interactive command
-delivery, and lossless original-runtime comparison remains open.
+existing combat seed. P58F7 adds the recovered repair cadence and selection
+plus engine and active tractor condition penalties. Joining the executable's
+global RNG sequence, the maneuver-bonus producer, physical movement
+integration, interactive command delivery, and lossless original-runtime
+comparison remains open.

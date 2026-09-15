@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "role": "browser visual acceptance only"
+  },
+  "verdict": "pass",
+  "acceptance_scope": "P58F7 A1 visual acceptance of retained browser artifacts, not strict A0 original-game parity.",
+  "inspected_surfaces": [
+    "Alliance at 640x480",
+    "Alliance at 1280x800 letterboxed",
+    "Empire at 640x480",
+    "Empire at 1280x800 letterboxed"
+  ],
+  "correction_history": [
+    "The first candidate was rejected because the Alliance tractor field crossed the lower battle boundary.",
+    "The fixture was centered through the existing selected-object camera path and gained a source-bounds containment assertion.",
+    "The corrected screenshots are byte-identical between the reviewed run and the final focused evidence run."
+  ],
+  "visual_findings": [
+    "Both factions and viewports render the tactical HUD, selected capital portrait, planet, starfield, five subsystem indicators, and complete tractor field.",
+    "No unintended clipping, blank panels, distortion, or visible synthetic replacement UI appears in the corrected evidence.",
+    "Every field source-bounds containment probe is true."
+  ],
+  "evidence_checks": {
+    "focused_cases": "4 of 4 passed",
+    "complete_matrix": "68 of 68 passed",
+    "four_request_startups": 68,
+    "browser_errors": 0,
+    "muted_launches": 68,
+    "closed_browser_processes": 68,
+    "native_bitmap_pixels_checked_per_subsystem_resource": 330,
+    "contact_sheet_sha256": "cf55823b10abd8bc3f41fc77d65292fc13ef55857f97b895bd39aedb247e136b"
+  },
+  "limitations": [
+    "The accepted review inspected retained evidence rather than launching another browser session.",
+    "Exact bitmap checks apply only at native size; scaled viewport checks are visual.",
+    "Original-reference comparisons remain unbaselined.",
+    "The evidence does not independently prove exact RNG, maneuver-bonus production, physical movement, or interactive command delivery."
+  ],
+  "blocking_findings": [],
+  "ready_to_commit": true
+}

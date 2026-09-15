@@ -28,6 +28,7 @@ the source of truth for scope, acceptance, and current work.
 | P58F4 | [Selected-capital damage presentation](2026-09-15-tactical-selected-damage.md) | [`p58f4-tactical-selected-damage/`](p58f4-tactical-selected-damage/) |
 | P58F5 | [Subsystem and field-command presentation](2026-09-15-tactical-subsystem-field-commands.md) | [`p58f5-tactical-subsystem-field-commands/`](p58f5-tactical-subsystem-field-commands/) |
 | P58F6 | [Live subsystem damage](2026-09-15-tactical-live-subsystem-damage.md) | [`p58f6-tactical-live-subsystem-damage/`](p58f6-tactical-live-subsystem-damage/) |
+| P58F7 | [Subsystem repair and mobility](2026-09-15-tactical-subsystem-repair-mobility.md) | [`p58f7-tactical-subsystem-repair-mobility/`](p58f7-tactical-subsystem-repair-mobility/) |
 
 ## Current strategic correction
 

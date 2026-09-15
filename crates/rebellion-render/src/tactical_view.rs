@@ -95,6 +95,10 @@ const ORIGINAL_ION_PROJECTILE_THRESHOLD: f32 = 32.0;
 const ORIGINAL_TORPEDO_PROJECTILE_THRESHOLD: f32 = 12.8;
 const ORIGINAL_PROJECTILE_DURATION_SHORT: f32 = 1.0;
 const ORIGINAL_PROJECTILE_DURATION_LONG: f32 = 2.0;
+/// `FUN_005b0330` resets the subsystem-repair timer to 50 * 1000 ms.
+const ORIGINAL_SUBSYSTEM_REPAIR_INTERVAL_TICKS: u32 = 200;
+/// `FUN_005b05c0` converts the CAPSHPSD sublight rating by 0.4 * 0.6.
+const ORIGINAL_SUBLIGHT_ENGINE_SCALE: f32 = 0.24;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
@@ -346,6 +350,14 @@ pub struct TacticalShip {
     /// Source damage counters. The first four cap at four hits; hyperdrive
     /// caps at the number of installed normal and damaged-drive components.
     pub subsystem_damage: TacticalSubsystemDamage,
+    /// Normalized maximum sublight power stored at source offset `+0x3f8`.
+    pub sublight_engine_power: f32,
+    /// Maximum tractor power stored at source offset `+0x3b8`.
+    pub tractor_beam_power: f32,
+    /// Current maneuver-mode adjustment supplied to `FUN_005b17f0`.
+    pub engine_mode_bonus: f32,
+    /// Inclusive 1 through 100 repair chance used by `FUN_005b1490`.
+    pub damage_control: u8,
     /// True if this ship belongs to the attacker side.
     pub is_attacker: bool,
     /// True if the ship is still alive.
@@ -428,15 +440,56 @@ impl TacticalSubsystemDamage {
             self.hyperdrive,
         ]
     }
+
+    #[must_use]
+    pub const fn total_hits(self) -> u16 {
+        self.shields as u16
+            + self.weapons as u16
+            + self.tractor as u16
+            + self.engines as u16
+            + self.hyperdrive as u16
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TacticalSubsystemKind {
+pub enum TacticalSubsystemKind {
     Shields,
     Weapons,
     Tractor,
     Engines,
     Hyperdrive,
+}
+
+impl TacticalSubsystemKind {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Shields => "shields",
+            Self::Weapons => "weapons",
+            Self::Tractor => "tractor",
+            Self::Engines => "engines",
+            Self::Hyperdrive => "hyperdrive",
+        }
+    }
+}
+
+/// One source-selected subsystem repair applied during live tactical combat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TacticalSubsystemRepair {
+    pub ship: usize,
+    pub kind: TacticalSubsystemKind,
+    pub hits_before: u8,
+    pub hits_after: u8,
+}
+
+/// Effective sublight state after engine damage and active tractor sources.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TacticalSubsystemMobility {
+    pub base_engine_power: f32,
+    pub engine_mode_bonus: f32,
+    pub active_tractor_power: f32,
+    pub effective_engine_power: f32,
+    pub engine_percent: u8,
 }
 
 impl TacticalSubsystemCondition {
@@ -484,7 +537,14 @@ impl TacticalSubsystemCondition {
             shields: hull_bound_percent(capacity.shields, hull_current, hull_max, damage.shields),
             weapons: hull_bound_percent(capacity.weapons, hull_current, hull_max, damage.weapons),
             tractor: hull_bound_percent(capacity.tractor, hull_current, hull_max, damage.tractor),
-            engines: hull_bound_percent(capacity.engines, hull_current, hull_max, damage.engines),
+            // FUN_005b17f0 does not apply the hull ratio to sublight power.
+            // Active tractor sources and maneuver mode are applied by the
+            // session-wide refresh after this local baseline is formed.
+            engines: if capacity.engines {
+                100_u8.saturating_sub(damage.engines.saturating_mul(25))
+            } else {
+                0
+            },
             hyperdrive,
         }
     }
@@ -528,6 +588,24 @@ impl TacticalShip {
         }
         self.refresh_subsystem_condition();
         kind == TacticalSubsystemKind::Tractor && self.subsystem_condition.tractor == 0
+    }
+
+    fn remove_subsystem_hit(&mut self, kind: TacticalSubsystemKind) -> Option<(u8, u8)> {
+        let hits = match kind {
+            TacticalSubsystemKind::Shields => &mut self.subsystem_damage.shields,
+            TacticalSubsystemKind::Weapons => &mut self.subsystem_damage.weapons,
+            TacticalSubsystemKind::Tractor => &mut self.subsystem_damage.tractor,
+            TacticalSubsystemKind::Engines => &mut self.subsystem_damage.engines,
+            TacticalSubsystemKind::Hyperdrive => &mut self.subsystem_damage.hyperdrive,
+        };
+        if *hits == 0 {
+            return None;
+        }
+        let before = *hits;
+        *hits -= 1;
+        let after = *hits;
+        self.refresh_subsystem_condition();
+        Some((before, after))
     }
 }
 
@@ -609,6 +687,8 @@ pub struct BattleSession {
     pub impact_effects: Vec<TacticalImpactEffect>,
     /// Target-attached tractor/gravity field selected through one shared slot.
     pub field_effects: Vec<TacticalFieldEffect>,
+    /// Source-selected subsystem repairs emitted by the latest combat step.
+    pub subsystem_repairs: Vec<TacticalSubsystemRepair>,
     /// Whether combat is paused.
     pub paused: bool,
     /// Combat speed multiplier (1 = normal, 2 = fast, 4 = faster).
@@ -1024,6 +1104,121 @@ fn remove_tractor_source(effects: &mut Vec<TacticalFieldEffect>, source: usize) 
     effects.retain(|effect| effect.visible_kind().is_some());
 }
 
+fn original_effective_tractor_power(ship: &TacticalShip) -> f32 {
+    if !ship.alive || !ship.subsystem_capacity.tractor || ship.tractor_beam_power <= 0.0 {
+        return 0.0;
+    }
+    let hull_ratio = if ship.hull_max > 0 {
+        ship.hull_current.max(0) as f32 / ship.hull_max as f32
+    } else {
+        0.0
+    };
+    (ship.tractor_beam_power * hull_ratio
+        - ship.tractor_beam_power * 0.25 * f32::from(ship.subsystem_damage.tractor))
+    .max(0.0)
+}
+
+fn original_tactical_mobility(
+    ships: &[TacticalShip],
+    field_effects: &[TacticalFieldEffect],
+    target: usize,
+) -> Option<TacticalSubsystemMobility> {
+    let ship = ships.get(target)?;
+    if !ship.subsystem_capacity.engines || ship.sublight_engine_power <= 0.0 {
+        return Some(TacticalSubsystemMobility {
+            base_engine_power: ship.sublight_engine_power.max(0.0),
+            engine_mode_bonus: ship.engine_mode_bonus,
+            active_tractor_power: 0.0,
+            effective_engine_power: 0.0,
+            engine_percent: 0,
+        });
+    }
+    let active_tractor_power = field_effects
+        .iter()
+        .filter(|effect| effect.target == target)
+        .flat_map(|effect| effect.tractor_sources.iter().copied())
+        .filter_map(|source| ships.get(source))
+        .map(original_effective_tractor_power)
+        .sum::<f32>();
+    let undamaged_power = (ship.sublight_engine_power + ship.engine_mode_bonus).max(0.0);
+    let effective_engine_power = (undamaged_power
+        - undamaged_power * 0.25 * f32::from(ship.subsystem_damage.engines)
+        - active_tractor_power)
+        .max(0.0);
+    let engine_percent =
+        (effective_engine_power * 100.0 / ship.sublight_engine_power).clamp(0.0, 100.0) as u8;
+    Some(TacticalSubsystemMobility {
+        base_engine_power: ship.sublight_engine_power,
+        engine_mode_bonus: ship.engine_mode_bonus,
+        active_tractor_power,
+        effective_engine_power,
+        engine_percent,
+    })
+}
+
+fn refresh_original_subsystem_conditions(
+    ships: &mut [TacticalShip],
+    field_effects: &[TacticalFieldEffect],
+) {
+    let engine_percentages: Vec<u8> = (0..ships.len())
+        .map(|target| {
+            original_tactical_mobility(ships, field_effects, target)
+                .map_or(0, |mobility| mobility.engine_percent)
+        })
+        .collect();
+    for (ship, engine_percent) in ships.iter_mut().zip(engine_percentages) {
+        ship.refresh_subsystem_condition();
+        ship.subsystem_condition.engines = engine_percent;
+    }
+}
+
+fn original_subsystem_repair_kind(
+    damage: TacticalSubsystemDamage,
+    mut ordinal: u16,
+) -> Option<TacticalSubsystemKind> {
+    if ordinal == 0 || ordinal > damage.total_hits() {
+        return None;
+    }
+    // FUN_005b1490 selects uniformly among individual outstanding hits in
+    // engine, shield, hyperdrive, tractor, weapon order.
+    for (kind, hits) in [
+        (TacticalSubsystemKind::Engines, damage.engines),
+        (TacticalSubsystemKind::Shields, damage.shields),
+        (TacticalSubsystemKind::Hyperdrive, damage.hyperdrive),
+        (TacticalSubsystemKind::Tractor, damage.tractor),
+        (TacticalSubsystemKind::Weapons, damage.weapons),
+    ] {
+        if ordinal <= u16::from(hits) {
+            return Some(kind);
+        }
+        ordinal -= u16::from(hits);
+    }
+    None
+}
+
+fn attempt_original_subsystem_repair(
+    ship: &mut TacticalShip,
+    ship_index: usize,
+    chance_roll: u8,
+    selection_roll: u16,
+) -> Option<TacticalSubsystemRepair> {
+    if ship.subsystem_damage.total_hits() == 0
+        || ship.damage_control == 0
+        || !(1..=100).contains(&chance_roll)
+        || chance_roll > ship.damage_control
+    {
+        return None;
+    }
+    let kind = original_subsystem_repair_kind(ship.subsystem_damage, selection_roll)?;
+    let (hits_before, hits_after) = ship.remove_subsystem_hit(kind)?;
+    Some(TacticalSubsystemRepair {
+        ship: ship_index,
+        kind,
+        hits_before,
+        hits_after,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OriginalTacticalDamageRolls {
     shield: u8,
@@ -1068,51 +1263,54 @@ fn apply_original_capital_damage(
     damage: i32,
     rolls: OriginalTacticalDamageRolls,
 ) -> OriginalTacticalImpactStage {
-    let Some(ship) = ships.get_mut(target) else {
-        return OriginalTacticalImpactStage::Hit;
+    let (hull_before, hull_after, tractor_disabled) = {
+        let Some(ship) = ships.get_mut(target) else {
+            return OriginalTacticalImpactStage::Hit;
+        };
+        if !ship.alive || ship.hull_current <= 0 || damage <= 0 {
+            return OriginalTacticalImpactStage::Hit;
+        }
+
+        let hull_before = ship.hull_current;
+        let shield_before = ship.shield;
+        let shield_after = shield_before.saturating_sub(damage);
+        ship.shield = shield_after;
+
+        let mut tractor_disabled = false;
+        if shield_before > 0 {
+            let shield_loss_percent =
+                (100.0 / shield_before as f32) * (shield_before - shield_after) as f32;
+            if f32::from(rolls.shield) <= shield_loss_percent.max(1.0) {
+                tractor_disabled |= ship.add_subsystem_hit(TacticalSubsystemKind::Shields);
+            }
+        }
+
+        if ship.shield < 0 {
+            // FUN_005b54d0 carries negative shield overflow into hull and enforces
+            // at least one hull point on the shield-crossing branch.
+            let hull_damage = (-ship.shield).max(1);
+            ship.shield = 0;
+            ship.hull_current = ship.hull_current.saturating_sub(hull_damage).max(0);
+            let score = f32::from(rolls.hull)
+                + (ship.hull_current - hull_before) as f32 * 100.0 / hull_before as f32;
+            if let Some(kind) = original_hull_subsystem_kind(score) {
+                tractor_disabled |= ship.add_subsystem_hit(kind);
+            }
+        }
+
+        if ship.hull_current == 0 {
+            ship.alive = false;
+        }
+        (hull_before, ship.hull_current, tractor_disabled)
     };
-    if !ship.alive || ship.hull_current <= 0 || damage <= 0 {
-        return OriginalTacticalImpactStage::Hit;
-    }
-
-    let hull_before = ship.hull_current;
-    let shield_before = ship.shield;
-    let shield_after = shield_before.saturating_sub(damage);
-    ship.shield = shield_after;
-
-    let mut tractor_disabled = false;
-    if shield_before > 0 {
-        let shield_loss_percent =
-            (100.0 / shield_before as f32) * (shield_before - shield_after) as f32;
-        if f32::from(rolls.shield) <= shield_loss_percent.max(1.0) {
-            tractor_disabled |= ship.add_subsystem_hit(TacticalSubsystemKind::Shields);
-        }
-    }
-
-    if ship.shield < 0 {
-        // FUN_005b54d0 carries negative shield overflow into hull and enforces
-        // at least one hull point on the shield-crossing branch.
-        let hull_damage = (-ship.shield).max(1);
-        ship.shield = 0;
-        ship.hull_current = ship.hull_current.saturating_sub(hull_damage).max(0);
-        let score = f32::from(rolls.hull)
-            + (ship.hull_current - hull_before) as f32 * 100.0 / hull_before as f32;
-        if let Some(kind) = original_hull_subsystem_kind(score) {
-            tractor_disabled |= ship.add_subsystem_hit(kind);
-        }
-    }
-
-    ship.refresh_subsystem_condition();
-    if ship.hull_current == 0 {
-        ship.alive = false;
-    }
     if tractor_disabled {
         remove_tractor_source(field_effects, target);
     }
+    refresh_original_subsystem_conditions(ships, field_effects);
 
-    if ship.hull_current == 0 {
+    if hull_after == 0 {
         OriginalTacticalImpactStage::Destroyed
-    } else if ship.hull_current < hull_before {
+    } else if hull_after < hull_before {
         OriginalTacticalImpactStage::Damage
     } else {
         OriginalTacticalImpactStage::Hit
@@ -1195,6 +1393,7 @@ impl BattleSession {
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
             field_effects: Vec::new(),
+            subsystem_repairs: Vec::new(),
             paused: true,
             combat_speed: 1,
             step_accumulator: 0.0,
@@ -1214,13 +1413,17 @@ impl BattleSession {
         {
             return false;
         }
-        set_original_tactical_field(
+        let changed = set_original_tactical_field(
             &mut self.field_effects,
             source,
             target,
             OriginalTacticalFieldKind::Tractor,
             active,
-        )
+        );
+        if changed {
+            refresh_original_subsystem_conditions(&mut self.ships, &self.field_effects);
+        }
+        changed
     }
 
     /// Start or stop one source's gravity-field contribution on a live target.
@@ -1243,6 +1446,12 @@ impl BattleSession {
             OriginalTacticalFieldKind::Gravity,
             active,
         )
+    }
+
+    /// Return the source-derived sublight state for one live participant.
+    #[must_use]
+    pub fn subsystem_mobility(&self, target: usize) -> Option<TacticalSubsystemMobility> {
+        original_tactical_mobility(&self.ships, &self.field_effects, target)
     }
 
     /// Expand a fleet's composition into individual TacticalShip/TacticalFighter entries.
@@ -1314,6 +1523,11 @@ impl BattleSession {
                 ),
                 subsystem_capacity,
                 subsystem_damage,
+                sublight_engine_power: class.sub_light_engine as f32
+                    * ORIGINAL_SUBLIGHT_ENGINE_SCALE,
+                tractor_beam_power: class.tractor_beam_power as f32,
+                engine_mode_bonus: 0.0,
+                damage_control: u8::try_from(class.damage_control.min(100)).unwrap_or(100),
                 is_attacker,
                 alive: true,
                 selected: false,
@@ -1574,6 +1788,7 @@ impl BattleSession {
         }
 
         self.combat_tick += 1;
+        self.subsystem_repairs.clear();
 
         // Process retreating ships: advance retreat progress, move off-screen.
         for ship in &mut self.ships {
@@ -1638,6 +1853,36 @@ impl BattleSession {
                     ship.shield = (ship.shield + regen).min(ship.shield_max);
                 }
             }
+        }
+
+        // FUN_005b0330 invokes FUN_005b1490 every 50,000 ms. Four combat
+        // steps represent one source second, so one repair attempt occurs per
+        // ship every 200 steps. The global executable RNG sequence remains a
+        // separate parity gate; ranges and deterministic replay are preserved.
+        if self
+            .combat_tick
+            .is_multiple_of(ORIGINAL_SUBSYSTEM_REPAIR_INTERVAL_TICKS)
+        {
+            for (ship_index, ship) in self.ships.iter_mut().enumerate() {
+                let hits = ship.subsystem_damage.total_hits();
+                if hits == 0 {
+                    continue;
+                }
+                let seed = self
+                    .combat_tick
+                    .wrapping_mul(53)
+                    .wrapping_add(ship_index as u32 * 29)
+                    .wrapping_add(11);
+                let chance_roll = u8::try_from(seed % 100 + 1).unwrap_or(100);
+                let selection_roll =
+                    u16::try_from(seed.rotate_left(9) % u32::from(hits) + 1).unwrap_or(hits);
+                if let Some(repair) =
+                    attempt_original_subsystem_repair(ship, ship_index, chance_roll, selection_roll)
+                {
+                    self.subsystem_repairs.push(repair);
+                }
+            }
+            refresh_original_subsystem_conditions(&mut self.ships, &self.field_effects);
         }
 
         // Phase: Fighter engagement (every 2 ticks).
@@ -2283,6 +2528,14 @@ impl TacticalState {
         if alliance.len() < 3 || empire.len() < 3 {
             return;
         }
+        session.field_effects.clear();
+        assert!(session.set_tractor_field(empire[0], alliance[1], true));
+        assert!(session.set_tractor_field(empire[2], alliance[1], true));
+        assert!(session.set_tractor_field(alliance[0], empire[1], true));
+        assert!(session.set_gravity_field(alliance[2], empire[1], true));
+        // P58F5 is a resource-band presentation fixture. Field changes now
+        // refresh production mobility, so install its deliberately chosen
+        // five-band display state after those production mutations complete.
         if let Some(index) = session.selected_ship {
             session.ships[index].subsystem_condition = TacticalSubsystemCondition {
                 shields: 0,
@@ -2292,11 +2545,6 @@ impl TacticalState {
                 hyperdrive: 75,
             };
         }
-        session.field_effects.clear();
-        assert!(session.set_tractor_field(empire[0], alliance[1], true));
-        assert!(session.set_tractor_field(empire[2], alliance[1], true));
-        assert!(session.set_tractor_field(alliance[0], empire[1], true));
-        assert!(session.set_gravity_field(alliance[2], empire[1], true));
         session.advance_presentational_effects(0.4);
         session.paused = true;
         for _ in 0..4 {
@@ -2359,6 +2607,73 @@ impl TacticalState {
             }
         }
         session.paused = true;
+    }
+
+    /// Present one source-selected repair while an enemy tractor source lowers
+    /// the selected ship's effective sublight condition. Direct setup remains
+    /// test-only; repair selection and mobility use production functions.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_subsystem_repair_mobility_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let Some(target) = session.ships.iter().position(|ship| {
+            ship.alive
+                && ship.is_attacker == session.player_is_attacker
+                && ship
+                    .subsystem_capacity
+                    .hit_limits()
+                    .iter()
+                    .all(|limit| *limit > 0)
+        }) else {
+            return;
+        };
+        let Some(source) = session.ships.iter().enumerate().find_map(|(index, ship)| {
+            (index != target && ship.alive && ship.is_attacker != session.player_is_attacker)
+                .then_some(index)
+        }) else {
+            return;
+        };
+
+        for ship in &mut session.ships {
+            ship.selected = false;
+        }
+        session.ships[target].selected = true;
+        session.ships[target].hull_current = session.ships[target].hull_max;
+        session.ships[target].sublight_engine_power = 100.0;
+        session.ships[target].engine_mode_bonus = 0.0;
+        session.ships[target].damage_control = 100;
+        session.ships[target].subsystem_damage = TacticalSubsystemDamage {
+            shields: 1,
+            weapons: 2,
+            tractor: 1,
+            engines: 2,
+            hyperdrive: 1,
+        };
+        session.ships[source].hull_current = session.ships[source].hull_max;
+        session.ships[source].subsystem_capacity.tractor = true;
+        session.ships[source].tractor_beam_power = 25.0;
+        session.ships[source].subsystem_damage.tractor = 0;
+        session.field_effects.clear();
+        session.subsystem_repairs.clear();
+        session.selected_ship = Some(target);
+        session.selected_fighter_group = None;
+        let _ = session.set_tractor_field(source, target, true);
+
+        if let Some(repair) =
+            attempt_original_subsystem_repair(&mut session.ships[target], target, 1, 1)
+        {
+            session.subsystem_repairs.push(repair);
+        }
+        refresh_original_subsystem_conditions(&mut session.ships, &session.field_effects);
+        let target_object_id = u32::try_from(target).unwrap_or(u32::MAX).saturating_add(1);
+        let target_position = session.ships[target].source_position.rendered();
+        let (camera_x, camera_y) =
+            camera_offset_for_target(session.ships[target].x, session.ships[target].y);
+        session.paused = true;
+        (self.camera_x, self.camera_y) = (camera_x, camera_y);
+        self.asset_renderer
+            .focus_target(target_object_id, target_position);
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -4611,6 +4926,10 @@ mod tests {
                 hyperdrive: 0,
             },
             subsystem_damage: TacticalSubsystemDamage::default(),
+            sublight_engine_power: 100.0,
+            tractor_beam_power: 25.0,
+            engine_mode_bonus: 0.0,
+            damage_control: 100,
             is_attacker: is_alliance,
             alive,
             selected: false,
@@ -4674,6 +4993,7 @@ mod tests {
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
             field_effects: Vec::new(),
+            subsystem_repairs: Vec::new(),
             paused: true,
             combat_speed: 1,
             step_accumulator: 0.0,
@@ -5021,6 +5341,88 @@ mod tests {
             TacticalSubsystemDamage::default(),
         );
         assert_eq!(unavailable.percentages(), [0; 5]);
+    }
+
+    #[test]
+    fn subsystem_repair_selection_preserves_source_hit_order() {
+        let damage = TacticalSubsystemDamage {
+            shields: 1,
+            weapons: 1,
+            tractor: 2,
+            engines: 2,
+            hyperdrive: 1,
+        };
+        assert_eq!(damage.total_hits(), 7);
+        let expected = [
+            TacticalSubsystemKind::Engines,
+            TacticalSubsystemKind::Engines,
+            TacticalSubsystemKind::Shields,
+            TacticalSubsystemKind::Hyperdrive,
+            TacticalSubsystemKind::Tractor,
+            TacticalSubsystemKind::Tractor,
+            TacticalSubsystemKind::Weapons,
+        ];
+        for (index, kind) in expected.into_iter().enumerate() {
+            assert_eq!(
+                original_subsystem_repair_kind(damage, index as u16 + 1),
+                Some(kind)
+            );
+        }
+        assert_eq!(original_subsystem_repair_kind(damage, 0), None);
+        assert_eq!(original_subsystem_repair_kind(damage, 8), None);
+    }
+
+    #[test]
+    fn subsystem_repair_uses_inclusive_damage_control_chance() {
+        let mut ship = test_ship(64, 0, true, true);
+        ship.subsystem_capacity.engines = true;
+        ship.subsystem_damage.engines = 2;
+        ship.damage_control = 40;
+        ship.refresh_subsystem_condition();
+        assert_eq!(attempt_original_subsystem_repair(&mut ship, 0, 0, 1), None);
+        assert_eq!(attempt_original_subsystem_repair(&mut ship, 0, 41, 1), None);
+        let repair = attempt_original_subsystem_repair(&mut ship, 0, 40, 1)
+            .expect("inclusive chance boundary should repair one engine hit");
+        assert_eq!(repair.kind, TacticalSubsystemKind::Engines);
+        assert_eq!((repair.hits_before, repair.hits_after), (2, 1));
+        assert_eq!(ship.subsystem_damage.engines, 1);
+        assert_eq!(ship.subsystem_condition.engines, 75);
+        assert_eq!(ORIGINAL_SUBSYSTEM_REPAIR_INTERVAL_TICKS, 50 * 4);
+    }
+
+    #[test]
+    fn engine_condition_uses_damage_mode_and_active_tractor_power_not_hull() {
+        let mut target = test_ship(64, 0, true, true);
+        target.hull_current = 10;
+        target.hull_max = 100;
+        target.subsystem_capacity.engines = true;
+        target.sublight_engine_power = 100.0;
+        target.engine_mode_bonus = 20.0;
+        target.subsystem_damage.engines = 1;
+
+        let mut source = test_ship(128, 0, false, true);
+        source.hull_current = 50;
+        source.hull_max = 100;
+        source.subsystem_capacity.tractor = true;
+        source.tractor_beam_power = 40.0;
+        source.subsystem_damage.tractor = 1;
+
+        let mut session = test_session(vec![target, source], Vec::new(), true);
+        assert!(session.set_tractor_field(1, 0, true));
+        let held = session.subsystem_mobility(0).unwrap();
+        assert_eq!(held.base_engine_power, 100.0);
+        assert_eq!(held.engine_mode_bonus, 20.0);
+        assert_eq!(held.active_tractor_power, 10.0);
+        assert_eq!(held.effective_engine_power, 80.0);
+        assert_eq!(held.engine_percent, 80);
+        assert_eq!(session.ships[0].subsystem_condition.engines, 80);
+
+        assert!(session.set_tractor_field(1, 0, false));
+        let released = session.subsystem_mobility(0).unwrap();
+        assert_eq!(released.active_tractor_power, 0.0);
+        assert_eq!(released.effective_engine_power, 90.0);
+        assert_eq!(released.engine_percent, 90);
+        assert_eq!(session.ships[0].subsystem_condition.engines, 90);
     }
 
     #[test]
