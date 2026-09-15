@@ -27,6 +27,10 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `lod-far` | 65797 | 66053 | Resource 2562 |
 | `lod-journey` | 65798 | 66054 | Live 2560, 2561, 2562, 2561, 2560 journey with one family load |
 | `camera-journey` | 65799 | 66055 | Source camera entry plus zoom, yaw, pitch, and selected-object target sequence |
+| `production-participants` | 65800 | 66056 | Live capital ships, fighters, projected interaction, and system-selected planet |
+| `production-participants-3d-off` | 65801 | 66057 | Participant-only framebuffer control with the common planet retained |
+| `production-fighter-detail-journey` | 65802 | 66058 | Full indicator, far, and close fighter sequence |
+| `production-group-presentation` | 65803 | 66059 | Eight task-force and four RGBY control journeys |
 
 ## Run it
 
@@ -89,19 +93,24 @@ and closes every process. Raw runs live under ignored
 - P58E restores all eight task-force controls and four RGBY fighter controls,
   source-shaped input, Ctrl assignment, F1 through F12 routing, and selected
   fighter portraits.
+- P58F1 restores `5500 + SYSTEMSD.picture_id` as the production tactical
+  planet with its exact `5530 + SYSTEMSD.picture_id` palette. Its current
+  left-edge placement is provisional A1 evidence.
 - The complete bundle passes 44 of 44 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
 distribution, native GPU and A0 comparison, remaining commands, damage,
-effects, Death Star paths, results, audio, and return routing remain open. All
+  exact planet placement, effects, Death Star paths, results, audio, and return
+  routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
 
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F1 system-selected planet evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md)
 - [P58E task-force and fighter-group evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md)
 - [P58D tactical fighter-detail journey evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md)
 - [P58C tactical fighter and selection evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md)

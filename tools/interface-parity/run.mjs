@@ -1580,7 +1580,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 9);
+      assert.equal(ready.schema_version, 10);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1592,6 +1592,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
+      assert.equal(ready.planet_resource_id, ready.system_picture_id + 5500);
       assert.equal(ready.palette_resource_id, ready.system_picture_id + 5530);
       assert.ok(ready.attacker_ships > 0 && ready.defender_ships > 0);
       assert.ok(ready.fighters > 0);
@@ -1724,6 +1725,43 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         text.includes("[tactical_3d] fighter_family_loaded"));
       const fighterSceneLogs = consoleLines.filter(({ text }) =>
         text.includes("[tactical_3d] fighter_scene"));
+      const planetLoadLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] planet_loaded"));
+      const planetSceneLogs = consoleLines.filter(({ text }) =>
+        text.includes("[tactical_3d] planet_scene"));
+      const expectsPlanet = Boolean(
+        scenario.production_participants || scenario.suppress_capital_fallback,
+      );
+      assert.equal(planetLoadLogs.length, expectsPlanet ? 1 : 0,
+        "tactical scene loaded the wrong number of system-selected planets");
+      assert.equal(planetSceneLogs.length, expectsPlanet ? 1 : 0,
+        "tactical scene submitted the wrong number of system-selected planets");
+      if (expectsPlanet) {
+        assert.match(planetLoadLogs[0]?.text || "",
+          new RegExp(`resource=${ready.planet_resource_id} `
+            + `palette_resource_id=${ready.palette_resource_id} dimensions=256x256 `
+            + "texture_filter=nearest alpha=opaque "
+            + "source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60"),
+        "tactical planet load used the wrong resource, palette, or source state");
+        assert.match(planetSceneLogs[0]?.text || "",
+          new RegExp(`resource=${ready.planet_resource_id} `
+            + `palette_resource_id=${ready.palette_resource_id} dimensions=256x256 `
+            + "source_position=left_edge_provisional "),
+        "tactical planet scene used the wrong resource or provisional placement");
+        probes.push({
+          type: "system-selected-tactical-planet",
+          executable_functions: [
+            "FUN_0040b0e0", "FUN_00509610", "FUN_00595d60", "FUN_0059a850",
+            "FUN_00596ad0", "FUN_005c2e60",
+          ],
+          system_picture_id: ready.system_picture_id,
+          planet_resource_id: ready.planet_resource_id,
+          palette_resource_id: ready.palette_resource_id,
+          dimensions: [256, 256],
+          texture_filter: "nearest",
+          placement_acceptance: "provisional-A1-only",
+        });
+      }
       if (scenario.tactical_proof) {
         assert.equal(familyLogs.length, 1,
           "source-bound tactical LOD family did not emit exactly one load event");

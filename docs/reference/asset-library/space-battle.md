@@ -58,9 +58,9 @@ missing custom resource types.
 | Capital ships                            | 30 CAPSHPSD classes; 29 native ordinals → type-301 bases `2010`–`2150` and `2510`–`2640`, plus separate Death Star `5010`/`5020`                  | P58A proves every DAT identity join. P58B installs the corpus and renders joined production families. P58C aligns selection and targeting with projected bounds. Damage and exhaustive family views remain open                                                                                                                   |
 | Fighters                                 | Eight FIGHTSD classes; eight native ordinals `29`–`36` → paired type-303 bases `4000`–`4134`, with indicator family `4200`–`4204`                 | P58A proves every DAT identity join. P58C renders close, far, and indicator resources through the exact view-span thresholds. P58D proves every independent transition in a centered production journey. P58E restores RGBY presentation and selected fighter portraits. Automatic group distribution, side/formation offsets, launch/recovery, and damage remain open                                                     |
 | Faction banners and avatars              | Character portrait and some mini-icon candidates exist in GOKRES; tactical faction chrome BMPs are staged                                        | No complete banner/avatar-to-battle-state map                                                                                                                                                                                                                                                                                   |
-| Planets and backdrops                    | Tactical selector produces type-303 planet `5500 + selector` and palette `5530 + selector`; source screenshots show planet and empty-space views | `SYSTEMSD.picture_id` now selects the palette, and P57B2C2A/B prove scene light and device state; planet/backdrop production binding remains open                                                                                                                                                                               |
+| Planets and backdrops                    | Tactical selector produces type-303 planet `5500 + selector` and palette `5530 + selector`; source screenshots show planet and empty-space views | P58F1 source-binds `SYSTEMSD.picture_id` to the exact planet and palette pair, renders it in production battles, and proves both factions and viewports. Exact retained-frame placement and visibility remain open                                                                                                              |
 | Weapon fire, explosions, shields, damage | Tactical BMP IDs and runtime procedural effects exist                                                                                            | No complete original effect-frame, mesh, texture, timing, sound, or damage-state lookup                                                                                                                                                                                                                                         |
-| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P58E prove staging, deterministic decoding, full browser transport, exact DAT joins, live capital and fighter rendering, LOD, camera, placement, projection, palette, lighting, filtering, culling, depth, material/device state, fighter detail transitions, and group presentation. Lossless view acceptance remains open |
+| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P58F1 prove staging, deterministic decoding, full browser transport, exact DAT joins, live capital, fighter, and system-planet rendering, LOD, camera, placement, projection, palette, lighting, filtering, culling, depth, material/device state, fighter detail transitions, and group presentation. Lossless view acceptance remains open |
 | Battle audio                             | Original `TACTICAL.DLL` contains 66 WAVs                                                                                                         | Not covered by this image inventory; map event and cue separately                                                                                                                                                                                                                                                               |
 
 `RE-TAC-01`, `RE-TAC-02`, `RE-TAC-03`, `RE-BAT-01`, and `RE-DS-02` in the
@@ -76,8 +76,11 @@ The original ordinal table is visible in
 source-named registry in
 [`FUN_00597610_ship_db`](../../../ghidra/notes/FUN_00597610_ship_db.c) and the
 unique `CAPSHPSD`/`FIGHTSD` identities. The same path selects Death Star bases
-`5010`/`5020`. `FUN_00596ad0`, `FUN_005c2e60`, and
-`FUN_0059a850` establish the tactical planet arithmetic, but not its DAT input.
+`5010`/`5020`. `FUN_0040b0e0`, `FUN_00509610`, `FUN_00595d60`,
+`FUN_0059a850`, `FUN_00596ad0`, and `FUN_005c2e60` establish the tactical
+planet selector, resource arithmetic, and paired palette. P58F1 binds that
+selector to `SYSTEMSD.picture_id` and renders the exact production pair while
+retaining placement as provisional A1 evidence.
 P54 supplies reproducible, content-addressed raw extraction. P55 supplies
 deterministic binary-X and type-303 decoding with a verified runtime store.
 [P56](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-render-proof.md)
@@ -113,9 +116,12 @@ renders original fighter detail resources and aligns capital interaction with
 projected mesh bounds. [P58D](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md)
 proves the live fighter transition journey.
 [P58E](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md)
-restores task-force and RGBY presentation. Automatic group distribution,
-special objects, and original-runtime confirmation remain required before
-every procedural battle object can be retired.
+restores task-force and RGBY presentation.
+[P58F1](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md)
+restores system-selected planet resources and their exact palettes. Automatic
+group distribution, exact planet placement, special objects, and
+original-runtime confirmation remain required before every procedural battle
+object can be retired.
 
 ## External editor leads
 

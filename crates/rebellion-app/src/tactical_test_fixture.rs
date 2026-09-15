@@ -332,6 +332,7 @@ struct FixtureRecord<'a> {
     tactical_lod: &'a str,
     system: &'a str,
     system_picture_id: u8,
+    planet_resource_id: u32,
     palette_resource_id: u32,
     attacker_ships: usize,
     defender_ships: usize,
@@ -474,7 +475,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         }
     }));
     emit(&FixtureRecord {
-        schema_version: 9,
+        schema_version: 10,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -491,6 +492,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
+        planet_resource_id: 5500 + u32::from(session.system_picture_id),
         palette_resource_id: 5530 + u32::from(session.system_picture_id),
         attacker_ships: session.ships.iter().filter(|ship| ship.is_attacker).count(),
         defender_ships: session
@@ -515,7 +517,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 9,
+        schema_version: 10,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -532,6 +534,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         tactical_lod: request.lod_fixture.label(),
         system: "",
         system_picture_id: 0,
+        planet_resource_id: 0,
         palette_resource_id: 0,
         attacker_ships: 0,
         defender_ships: 0,

@@ -27,7 +27,7 @@ mixing, or genuine two-peer ordering.
 | 1 | `FUN_005c14d0`; root vtable `0x0066c960`; subordinate vtables `0x0066ca10`, `0x0066c9f8`, `0x0066c9f0`, `0x0066c9e8`, `0x0066c9d8`, `0x0066c9d0`, `0x0066c9c0`, `0x0066c9b8`, `0x0066c9b0`, `0x0066c9a0`, `0x0066c998`, `0x0066c990`; TEXTTACT cross-references | Code-built controls, geometry, visibility/enabled predicates, pause/wait/observe overlays, modals, and actions across `TAC-01`, `TAC-02`, `TAC-03`, `TAC-05`, and `TAC-06` |
 | 2 | `FUN_005a7500`; vtables `0x0066c2d0`, `0x0066bdd0`, `0x0066bdb8`, `0x0066c390`, `0x0066c380`, `0x0066c370`; registered event slots | Concrete handlers for groups, targets, missions, formations, navigation, damage, recovery, retreat, pause, results, and Death Star events |
 | 3 | `FUN_00597610_ship_db`; registry order consumed by `FUN_005ab650`; `CAPSHPSD.DAT`; `FIGHTSD.DAT` | Complete in P58A: definitive ship/fighter ordinal-to-DAT identity and removal of the approximate `class_to_sprite_id` path |
-| 4 | `FUN_005ab650`, `FUN_005a9030`, `FUN_005adfa0`, `FUN_005c1100`, `FUN_005c12a0`, `FUN_00595be0`, `FUN_005c1080`, `FUN_005d9640`, `FUN_005c7150`, `FUN_005c63f0`, `FUN_0059f680`, `FUN_005cfec0`, `0x005d4af0`; preserve `SYSTEMSD.picture_id` | Production placement on the recovered force-dependent extent and lanes, fighter groups, bounds, planet selection, resource family, production camera distance, and stable selected-object frame binding. Authored coordinates and handedness are proven in P57B2C1, live capital-family drawing in P58B, fighter resources plus projected capital interaction in P58C, all independent fighter-detail transitions in P58D, and source-backed task-force and RGBY presentation in P58E. Automatic production grouping remains open. |
+| 4 | `FUN_005ab650`, `FUN_005a9030`, `FUN_005adfa0`, `FUN_005c1100`, `FUN_005c12a0`, `FUN_00595be0`, `FUN_005c1080`, `FUN_005d9640`, `FUN_005c7150`, `FUN_005c63f0`, `FUN_0059f680`, `FUN_005cfec0`, `0x005d4af0`; preserve `SYSTEMSD.picture_id` | Production placement on the recovered force-dependent extent and lanes, fighter groups, bounds, planet selection, resource family, production camera distance, and stable selected-object frame binding. Authored coordinates and handedness are proven in P57B2C1, live capital-family drawing in P58B, fighter resources plus projected capital interaction in P58C, all independent fighter-detail transitions in P58D, source-backed task-force and RGBY presentation in P58E, and the exact system-selected planet pair in P58F1. Automatic production grouping and exact planet placement remain open. |
 | 5 | `TACTICALRESULT_UPDATE`; callers and setters around `FUN_0040a700` states `7`–`9` and `0x15`–`0x17`; `FUN_005445d0_combat_result`; Battle Alert and Death Star callbacks | Results composition, simulate/observe flow, reports, media routing, and strategic return |
 | 6 | `FUN_005bae60`; vtable `0x0066c748`; audio-manager callers; TACTICAL WAVE `13000`–`13065`; TEXTTACT `MDATA.401`–`MDATA.406` | Event-to-SFX/voice mapping, faction variants, and the missing tactical-audio staging path |
 | 7 | `FUN_00596ad0`, `FUN_005c2e60`, `FUN_005d4d10`, `FUN_005d9eb0`, `FUN_005da150`, `FUN_005d59e0`; retained-mode COM slots | Back plane, quality, filtering, culling, material, and lighting rules. Palette realization is proven in P57B2C1, the light rig in P57B2C2A, and remaining device/material state in P57B2C2B. |
@@ -82,9 +82,14 @@ mixing, or genuine two-peer ordering.
 - `FUN_005a9030`, `FUN_005adfa0`, and `FUN_005caf70` pass authored coordinates
   directly to retained-mode objects; P57B2C1 therefore removes the provisional
   center-and-fit transform and keeps only Z reflection and winding reversal.
-- `FUN_00596ad0` supplies base `5530`; `FUN_005c2e60` loads
-  `5530 + SYSTEMSD.picture_id`, copies 256 RGB triples, and realizes flags
-  `0x44`. P57B2C1 packages all 27 palettes and browser-proves selectors 1 and 2.
+- `FUN_0040b0e0` obtains the current system picture selector through
+  `FUN_00509610`, then forwards it through `FUN_00595d60` to
+  `FUN_0059a850`. `FUN_00596ad0` returns type-303 planet
+  `5500 + selector`; `FUN_005c2e60` adds 30, copies 256 RGB triples from the
+  paired palette, and realizes flags `0x44`. P57B2C1 packages all 27 palettes.
+  P58F1 binds the selector to `SYSTEMSD.picture_id` and browser-proves planets
+  5501 and 5502 with palettes 5531 and 5532. Exact retained-frame placement
+  and visibility remain open.
 - `FUN_005d4d10` creates directional light type `3` at RGB `0.8`, positions
   its frame at source `(5,5,-1)`, aims at the origin with
   `D3DRMCONSTRAIN_Z`, and adds ambient light type `0` at RGB `0.5`.

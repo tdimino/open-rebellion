@@ -132,7 +132,9 @@ source detail thresholds and aligns capital selection and targeting with their
 projected bounds. P58D proves the complete two-faction production fighter-detail
 journey through the original zoom controls. P58E restores all eight task-force
 controls, four RGBY fighter controls, source-shaped input, keyboard routing,
-and selected fighter portraits. Automatic group distribution, special objects,
+and selected fighter portraits. P58F1 binds the current system picture to its
+exact 256 by 256 planet and paired palette in production battles. Automatic
+group distribution, exact planet placement, damage, effects, special objects,
 and A0 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six

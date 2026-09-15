@@ -1,0 +1,33 @@
+{
+  "configured_model": "gpt-6-astra",
+  "configured_effort": "medium",
+  "reported_model": "GPT-6",
+  "reported_effort": "not exposed",
+  "verdict": "PASS: limited P58F1 visual acceptance",
+  "ready_to_commit": true,
+  "inspected": [
+    "contact-sheet.png",
+    "alliance/640x480/result.json",
+    "alliance/1280x800-letterboxed/result.json",
+    "empire/640x480/result.json",
+    "empire/1280x800-letterboxed/result.json",
+    "full-summary.json"
+  ],
+  "passed": [
+    "Both planets visibly occupy the authentic tactical aperture at both viewports.",
+    "Uniform scaling and centered side bars preserve the 640x480 layout at 1280x800.",
+    "Alliance shows a bright blue-white planet; Empire shows a visibly distinct dark teal planet.",
+    "No apparent blank or broken UI is present in the inspected captures.",
+    "Alliance uses Abregado picture 1, planet 5501, and palette 5531. Empire uses Cathar picture 2, planet 5502, and palette 5532.",
+    "Each record contains one planet load and one scene submission, four successful startup requests, fresh muted browser and muted music, matching capture hashes, no recorded browser, runtime, or missing-asset errors, and browser closure.",
+    "The full summary reports 44 of 44 passes, stable captures, four-request startups, muted launches, and closed browsers."
+  ],
+  "findings": [],
+  "boundaries": [
+    "Readiness applies only to the requested visual acceptance gate.",
+    "Left-edge placement remains provisional A1 only.",
+    "No A0 parity is claimed and none of the 106 strict tactical cells are accepted.",
+    "All 44 summary captures remain unbaselined.",
+    "Existing image and browser records were inspected. Astra did not rerun a live browser or review code and documentation."
+  ]
+}

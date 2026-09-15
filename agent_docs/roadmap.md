@@ -640,9 +640,15 @@ would tune around known simulation feedback defects.
   F12 routing, and selected fighter portraits; then pass the 44-case muted
   browser gate. Keep automatic production grouping and every strict tactical
   cell open pending A0.
+- [x] Complete P58F1 system-selected tactical planets: recover the executable
+  selector chain, bind `SYSTEMSD.picture_id` to type-303 planet
+  `5500 + selector` and palette `5530 + selector`, reject mismatched pairs,
+  and pass the 44-case muted browser gate. Keep exact retained-frame placement,
+  visibility conditions, and every strict tactical cell open pending A0.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F next restores damage, planet, and effect presentation.
+  states. P58F2 next traces and restores damage and effect presentation without
+  inferring event-to-resource joins from inventory order.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

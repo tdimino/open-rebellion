@@ -857,6 +857,12 @@ struct TacticalFighterAsset {
     indicator: Texture2D,
 }
 
+struct TacticalPlanetAsset {
+    resource_id: u32,
+    palette_resource_id: u32,
+    texture: Texture2D,
+}
+
 impl TacticalFighterAsset {
     fn selected(&self, detail: OriginalFighterDetail) -> (u32, &Texture2D) {
         match detail {
@@ -928,6 +934,8 @@ pub(crate) struct TacticalAssetRenderer {
     fighter_families: HashMap<u32, TacticalFighterAsset>,
     fighter_details: HashMap<u32, OriginalFighterDetail>,
     unavailable_fighter_families: HashSet<u32>,
+    planet: Option<TacticalPlanetAsset>,
+    unavailable_planet: Option<u32>,
     material: Option<Material>,
     #[cfg(feature = "interface-test-fixtures")]
     current_lod: OriginalTacticalLod,
@@ -942,6 +950,7 @@ pub(crate) struct TacticalAssetRenderer {
     palette_selector: u8,
     logged_participant_scene: bool,
     logged_fighter_scene: Option<String>,
+    logged_planet_scene: Option<u32>,
 }
 
 impl Default for TacticalAssetRenderer {
@@ -958,6 +967,8 @@ impl Default for TacticalAssetRenderer {
             fighter_families: HashMap::new(),
             fighter_details: HashMap::new(),
             unavailable_fighter_families: HashSet::new(),
+            planet: None,
+            unavailable_planet: None,
             material: None,
             #[cfg(feature = "interface-test-fixtures")]
             current_lod: OriginalTacticalLod::Medium,
@@ -972,6 +983,7 @@ impl Default for TacticalAssetRenderer {
             palette_selector: 1,
             logged_participant_scene: false,
             logged_fighter_scene: None,
+            logged_planet_scene: None,
         }
     }
 }
@@ -993,10 +1005,67 @@ impl TacticalAssetRenderer {
             self.fighter_families.clear();
             self.fighter_details.clear();
             self.unavailable_fighter_families.clear();
+            self.planet = None;
+            self.unavailable_planet = None;
             self.material = None;
             self.logged_participant_scene = false;
             self.logged_fighter_scene = None;
+            self.logged_planet_scene = None;
         }
+    }
+
+    /// Draw the system-selected original tactical planet behind the retained
+    /// participant scene. The resource and palette identities are recovered
+    /// from `FUN_0059a850`, `FUN_00596ad0`, and `FUN_005c2e60`. Its provisional
+    /// left-edge placement follows the best available native screenshots and
+    /// remains outside strict A0 acceptance until the retained-frame transform
+    /// is recovered.
+    pub(crate) fn draw_planet(&mut self, aperture: (f32, f32, f32, f32)) -> bool {
+        let resource_id = 5500 + u32::from(self.palette_selector);
+        if self.planet.as_ref().map(|planet| planet.resource_id) != Some(resource_id)
+            && self.unavailable_planet != Some(resource_id)
+        {
+            if let Err(error) = self.load_planet(resource_id) {
+                self.unavailable_planet = Some(resource_id);
+                macroquad::logging::warn!(
+                    "[tactical_3d] planet resource={} unavailable: {}",
+                    resource_id,
+                    error
+                );
+            }
+        }
+        let Some(planet) = self
+            .planet
+            .as_ref()
+            .filter(|planet| planet.resource_id == resource_id)
+        else {
+            return false;
+        };
+        let source_scale = aperture.3 / 439.0;
+        let size = vec2(planet.texture.width(), planet.texture.height()) * source_scale;
+        let x = aperture.0 - size.x * 0.5;
+        let y = aperture.1;
+        draw_texture_ex(
+            &planet.texture,
+            x,
+            y,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(size),
+                ..Default::default()
+            },
+        );
+        if self.logged_planet_scene != Some(resource_id) {
+            macroquad::logging::info!(
+                "[tactical_3d] planet_scene resource={} palette_resource_id={} dimensions={}x{} source_position=left_edge_provisional source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60,FUN_00509610,FUN_0040b0e0",
+                resource_id,
+                planet.palette_resource_id,
+                planet.texture.width(),
+                planet.texture.height(),
+            );
+            self.logged_planet_scene = Some(resource_id);
+        }
+        true
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -1855,6 +1924,53 @@ impl TacticalAssetRenderer {
         self.family_loads = self.family_loads.saturating_add(1);
         Ok(())
     }
+
+    fn load_planet(&mut self, resource_id: u32) -> Result<(), String> {
+        if !(5501..=5527).contains(&resource_id) {
+            return Err(format!("invalid tactical planet resource {resource_id}"));
+        }
+        let palette_resource_id = resource_id + 30;
+        let (texture_payload, palette_payload) = {
+            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+            let texture_key = format!("{resource_id}/1033");
+            let palette_key = format!("{palette_resource_id}/1033");
+            let texture = cache
+                .textures
+                .get(&texture_key)
+                .cloned()
+                .ok_or_else(|| format!("typed texture entry {texture_key} is missing"))?;
+            let palette = cache
+                .textures
+                .get(&palette_key)
+                .cloned()
+                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
+            (texture, palette)
+        };
+        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
+        let texture =
+            decode_indexed_texture_with_rule(&texture_payload, &palette, palette_resource_id, 2)?;
+        if texture.width() != 256.0 || texture.height() != 256.0 {
+            return Err(format!(
+                "tactical planet {resource_id} has invalid dimensions {}x{}",
+                texture.width(),
+                texture.height()
+            ));
+        }
+        macroquad::logging::info!(
+            "[tactical_3d] planet_loaded resource={} palette_resource_id={} dimensions={}x{} texture_filter=nearest alpha=opaque source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60",
+            resource_id,
+            palette_resource_id,
+            texture.width(),
+            texture.height(),
+        );
+        self.planet = Some(TacticalPlanetAsset {
+            resource_id,
+            palette_resource_id,
+            texture,
+        });
+        self.family_loads = self.family_loads.saturating_add(1);
+        Ok(())
+    }
 }
 
 fn project_world_position(
@@ -2069,6 +2185,15 @@ fn validate_indexed_texture_object(
 }
 
 fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Texture2D, String> {
+    decode_indexed_texture_with_rule(bytes, palette, 0, 1)
+}
+
+fn decode_indexed_texture_with_rule(
+    bytes: &[u8],
+    palette: &[[u8; 4]; 256],
+    expected_palette_id: u32,
+    expected_palette_rule: u32,
+) -> Result<Texture2D, String> {
     let mut reader = Reader::new(bytes);
     reader.expect(TEXTURE_MAGIC)?;
     if reader.u32()? != 1 {
@@ -2089,8 +2214,8 @@ fn decode_indexed_texture(bytes: &[u8], palette: &[[u8; 4]; 256]) -> Result<Text
         || height > u16::MAX.into()
         || pixels != expected
         || pixels > 16_777_216
-        || palette_id != 0
-        || palette_rule != 1
+        || palette_id != expected_palette_id
+        || palette_rule != expected_palette_rule
         || !matches!(trailing, 0 | 4)
     {
         return Err("invalid indexed tactical texture header".to_string());
@@ -2364,6 +2489,40 @@ mod tests {
         assert_eq!(palette[0], [0, 255, 17, 255]);
         assert_eq!(palette[255], [255, 0, 17, 255]);
         assert!(decode_palette_object(&bytes, resource_id + 1).is_err());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn tactical_planet_object_requires_its_exact_paired_palette() {
+        let resource_id = 5507_u32;
+        let palette_resource_id = resource_id + 30;
+        let width = 256_u32;
+        let height = 256_u32;
+        let pixels = width * height;
+        let mut bytes = Vec::from(TEXTURE_MAGIC.as_slice());
+        for value in [1_u32, width, height, palette_resource_id, 2, pixels, 0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.resize(bytes.len() + pixels as usize, 0);
+        let record = NativeTextureRecord {
+            identifier_kind: "id".to_string(),
+            id: resource_id,
+            name: None,
+            language: 1033,
+            kind: "indexed_rle".to_string(),
+            width,
+            height,
+            palette_rule: Some("planet_pair".to_string()),
+            source_sha256: "0".repeat(64),
+            object_sha256: "0".repeat(64),
+            object: "objects/unused.texture".to_string(),
+        };
+        validate_indexed_texture_object(&bytes, &record).unwrap();
+
+        let palette_offset = TEXTURE_MAGIC.len() + 3 * std::mem::size_of::<u32>();
+        bytes[palette_offset..palette_offset + 4]
+            .copy_from_slice(&(palette_resource_id + 1).to_le_bytes());
+        assert!(validate_indexed_texture_object(&bytes, &record).is_err());
     }
 
     #[test]

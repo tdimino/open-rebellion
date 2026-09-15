@@ -1118,6 +1118,7 @@ pub struct TacticalState {
     pub highlight_empire: bool,
     warmed_font_sizes: HashSet<u16>,
     render_original_participants: bool,
+    render_original_planet: bool,
     asset_renderer: TacticalAssetRenderer,
     #[cfg(feature = "interface-test-fixtures")]
     suppress_mapped_capital_fallback: bool,
@@ -1142,6 +1143,7 @@ impl Default for TacticalState {
             highlight_empire: true,
             warmed_font_sizes: HashSet::new(),
             render_original_participants: true,
+            render_original_planet: true,
             asset_renderer: TacticalAssetRenderer::default(),
             #[cfg(feature = "interface-test-fixtures")]
             suppress_mapped_capital_fallback: false,
@@ -1187,6 +1189,7 @@ impl TacticalState {
         self.highlight_alliance = true;
         self.highlight_empire = true;
         self.render_original_participants = true;
+        self.render_original_planet = true;
         #[cfg(feature = "interface-test-fixtures")]
         {
             self.suppress_mapped_capital_fallback = false;
@@ -1251,6 +1254,7 @@ impl TacticalState {
     #[cfg(feature = "interface-test-fixtures")]
     pub fn disable_original_participant_rendering(&mut self) {
         self.render_original_participants = false;
+        self.render_original_planet = false;
         self.asset_renderer.disable_original_camera();
     }
 
@@ -1259,6 +1263,9 @@ impl TacticalState {
     pub fn suppress_mapped_capital_fallback(&mut self) {
         self.suppress_mapped_capital_fallback = true;
         self.suppress_mapped_fighter_fallback = true;
+        // Keep the common system backdrop present so the paired framebuffer
+        // remains a participant-only negative control.
+        self.render_original_planet = true;
     }
 
     /// Center the source camera on the player's first production fighter group
@@ -2203,6 +2210,11 @@ pub fn draw_tactical_view(
     draw_tactical_bitmap(bmp_cache, resources::tactical::BACKGROUND, canvas, 0.0, 0.0);
     set_tactical_aperture_clip(Some(canvas.aperture()));
     draw_starfield(canvas);
+    let aperture = canvas.aperture();
+    let aperture_tuple = (aperture.x, aperture.y, aperture.width, aperture.height);
+    if state.render_original_planet {
+        state.asset_renderer.draw_planet(aperture_tuple);
+    }
 
     // 2. Submit mapped production participants through their original 3D and
     // type-303 resource families. Unmapped or unavailable objects retain the
@@ -2256,8 +2268,6 @@ pub fn draw_tactical_view(
     } else {
         (Vec::new(), Vec::new())
     };
-    let aperture = canvas.aperture();
-    let aperture_tuple = (aperture.x, aperture.y, aperture.width, aperture.height);
     let ship_report = state
         .asset_renderer
         .draw_participants(aperture_tuple, &production_objects);

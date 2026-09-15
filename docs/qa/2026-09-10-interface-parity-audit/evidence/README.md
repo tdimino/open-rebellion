@@ -22,6 +22,7 @@ the source of truth for scope, acceptance, and current work.
 | P58C | [Tactical fighters and projected selection](2026-09-14-tactical-fighters-selection.md) | [`p58c-tactical-fighters-selection/`](p58c-tactical-fighters-selection/) |
 | P58D | [Production fighter-detail journey](2026-09-14-tactical-fighter-detail-journey.md) | [`p58d-tactical-fighter-detail-journey/`](p58d-tactical-fighter-detail-journey/) |
 | P58E | [Task-force and fighter-group presentation](2026-09-14-tactical-group-presentation.md) | [`p58e-tactical-group-presentation/`](p58e-tactical-group-presentation/) |
+| P58F1 | [System-selected tactical planets](2026-09-14-tactical-planets.md) | [`p58f1-tactical-planets/`](p58f1-tactical-planets/) |
 
 ## Current strategic correction
 

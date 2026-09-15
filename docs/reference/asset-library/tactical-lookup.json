@@ -2,7 +2,7 @@
   "schema_version": 1,
   "source_binary": "REBEXE.EXE",
   "source_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
-  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0"],
+  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0", "ghidra/notes/tactical-planet-resource-path.md"],
   "resource_module": "TACTICAL.DLL",
   "capital_ship_resource_type": 301,
   "fighter_resource_type": 303,
@@ -83,5 +83,18 @@
     "fighter_group_keys": "F9 through F12 map to red, blue, green, and gold",
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md"
   },
-  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "battle event to effect resource", "tactical planet picture selector initialization", "remaining original control-state and render geometry"]
+  "planet_contract": {
+    "selector": "SYSTEMSD.picture_id",
+    "planet_resource": "5500 plus selector",
+    "palette_resource": "5530 plus selector",
+    "resource_type": 303,
+    "dimensions": [256, 256],
+    "texture_filter": "nearest",
+    "alpha": "opaque",
+    "source_functions": ["FUN_0040b0e0", "FUN_00509610", "FUN_00595d60", "FUN_0059a850", "FUN_00596ad0", "FUN_005c2e60"],
+    "identity_grade": "source-proven",
+    "placement_grade": "provisional-A1",
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md"
+  },
+  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "battle event to effect resource", "tactical planet retained-frame transform and visibility", "remaining original control-state and render geometry"]
 }
