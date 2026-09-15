@@ -2,7 +2,7 @@
   "schema_version": 1,
   "source_binary": "REBEXE.EXE",
   "source_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
-  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0", "ghidra/notes/tactical-planet-resource-path.md", "ghidra/notes/tactical-impact-effect-path.md"],
+  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0", "ghidra/notes/tactical-planet-resource-path.md", "ghidra/notes/tactical-impact-effect-path.md", "ghidra/notes/tactical-projectile-field-path.md"],
   "resource_module": "TACTICAL.DLL",
   "capital_ship_resource_type": 301,
   "fighter_resource_type": 303,
@@ -114,5 +114,26 @@
     "visual_grade": "provisional-A1",
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md"
   },
-  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "retained-mode projectile geometry", "shield or field event semantics for bases 3520 and 3620", "fighter impact emission", "tactical planet retained-frame transform and visibility", "remaining original control-state and render geometry"]
+  "projectile_field_contract": {
+    "projectile_source_functions": ["FUN_005b1ea0", "FUN_005b1f60", "FUN_005b2080", "FUN_005b2c70", "FUN_005d3de0", "FUN_005ee590", "LAB_005eeb90"],
+    "thresholds": {"laser": 28.8, "turbolaser": 34.666668, "ion": 32.0, "torpedo": 12.8},
+    "shape_variants": [1, 2, 3],
+    "source_vertices": 12,
+    "longitudinal_scales": [0.2, 0.4, 0.5, 0.65, 0.75, 1.0],
+    "material_selectors": {"alliance": 0, "empire": 1, "ion": 2},
+    "duration_seconds": {"variant_1": 1, "variant_2": 1, "variant_3": 2},
+    "interpolation": "captured source to live target",
+    "raster_compatibility": "exact source mesh plus one-device-pixel floor for 0.001-unit faces",
+    "field_source_functions": ["FUN_005b23e0", "FUN_005b2440", "FUN_005b24d0", "FUN_005b2480", "FUN_005d3ac0", "FUN_005d3cc0"],
+    "fields": {
+      "tractor": {"resource_range": [3620, 3627], "frames": 8, "size": [128, 128]},
+      "gravity": {"resource_range": [3520, 3527], "frames": 8, "size": [128, 128]}
+    },
+    "frame_seconds": 0.1,
+    "priority": "gravity preempts tractor in one shared target slot; tractor restores after the last gravity source ends",
+    "identity_grade": "source-proven",
+    "visual_grade": "provisional-A1",
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md"
+  },
+  "unresolved": ["automatic production task-force and fighter-group distribution", "remaining type-301 family view rules", "fighter formation offsets", "exact field combat-command timing", "unused white projectile material branch", "fighter impact emission", "tactical planet retained-frame transform and visibility", "selected-unit damage presentation", "remaining original control-state and render geometry"]
 }

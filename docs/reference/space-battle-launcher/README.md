@@ -100,20 +100,25 @@ and closes every process. Raw runs live under ignored
 - P58F2 restores the six target-attached type-303 hit, damage, and destruction
   families selected by the source event and stage branches. It preserves exact
   frame counts, draw sizes, priority, indexed transparency, and 10 Hz cadence.
-- The complete bundle passes 48 of 48 muted browser cases across both factions
+- P58F3 restores the three retained projectile mesh variants, exact weapon
+  thresholds, scales, material selectors, interpolation and duration. It also
+  restores the tractor and gravity frame families, source counts, 10 Hz
+  animation, and shared gravity priority.
+- The complete bundle passes 52 of 52 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
 distribution, native GPU and A0 comparison, remaining commands, exact planet
-placement, retained projectile and shield fields, Death Star paths, results,
-audio, and return routing remain open. All
+placement, exact field command timing, selected-unit damage, Death Star paths,
+results, audio, and return routing remain open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
 
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F3 tactical projectile and field evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md)
 - [P58F2 tactical impact-effect evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md)
 - [P58F1 system-selected planet evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-planets.md)
 - [P58E task-force and fighter-group evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md)

@@ -1,0 +1,854 @@
+{
+  "schema_version": 1,
+  "id": "tactical/empire/production-projectile-field-presentation/640x480",
+  "launch_attempts": [
+    {
+      "attempt": 1,
+      "status": "pass",
+      "duration_ms": 124.65049999998882
+    }
+  ],
+  "status": "pass",
+  "fixture_code": 66061,
+  "browser_version": "151.0.7922.34",
+  "browser_executable": "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "launch_arguments": [
+    "--mute-audio",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--no-first-run"
+  ],
+  "profile": "new-process-and-temporary-profile-per-scenario",
+  "muted": true,
+  "viewport": {
+    "id": "640x480",
+    "width": 640,
+    "height": 480,
+    "device_scale_factor": 1
+  },
+  "ready": {
+    "schema_version": 12,
+    "status": "battle-ready",
+    "family": "tactical",
+    "fixture_code": 66061,
+    "faction": "empire",
+    "proof_enabled": false,
+    "production_participants": true,
+    "suppress_capital_fallback": false,
+    "focus_player_fighter": false,
+    "group_presentation": false,
+    "effect_presentation": false,
+    "projectile_field_presentation": true,
+    "tactical_lod": "default",
+    "system": "Cathar",
+    "system_picture_id": 2,
+    "planet_resource_id": 5502,
+    "palette_resource_id": 5532,
+    "attacker_ships": 3,
+    "defender_ships": 3,
+    "fighters": 2,
+    "source_layout": {
+      "first_active_objects": 4,
+      "second_active_objects": 4,
+      "battle_extent": 112,
+      "outer_positive_z": 56,
+      "outer_negative_z": -56,
+      "inner_negative_z": -36,
+      "inner_positive_z": 36
+    },
+    "participants": [
+      {
+        "kind": "capital-ship",
+        "name": "Mon Calamari Cruiser",
+        "faction": "alliance",
+        "class_dat_id": 64,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 0,
+        "resource_base": 2010,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "task_force": 0,
+        "fighter_group": null,
+        "active_close_resource": null,
+        "active_far_resource": null,
+        "active_indicator_resource": null,
+        "source_position": [
+          0,
+          0,
+          -56
+        ]
+      },
+      {
+        "kind": "capital-ship",
+        "name": "Mon Calamari Cruiser",
+        "faction": "alliance",
+        "class_dat_id": 64,
+        "fleet_roster_index": 1,
+        "tactical_ordinal": 0,
+        "resource_base": 2010,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "task_force": 0,
+        "fighter_group": null,
+        "active_close_resource": null,
+        "active_far_resource": null,
+        "active_indicator_resource": null,
+        "source_position": [
+          5,
+          0,
+          -56
+        ]
+      },
+      {
+        "kind": "capital-ship",
+        "name": "Mon Calamari Cruiser",
+        "faction": "alliance",
+        "class_dat_id": 64,
+        "fleet_roster_index": 2,
+        "tactical_ordinal": 0,
+        "resource_base": 2010,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "task_force": 0,
+        "fighter_group": null,
+        "active_close_resource": null,
+        "active_far_resource": null,
+        "active_indicator_resource": null,
+        "source_position": [
+          -5,
+          0,
+          -56
+        ]
+      },
+      {
+        "kind": "capital-ship",
+        "name": "Strike Cruiser",
+        "faction": "empire",
+        "class_dat_id": 128,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 15,
+        "resource_base": 2510,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "task_force": 0,
+        "fighter_group": null,
+        "active_close_resource": null,
+        "active_far_resource": null,
+        "active_indicator_resource": null,
+        "source_position": [
+          0,
+          0,
+          56
+        ]
+      },
+      {
+        "kind": "capital-ship",
+        "name": "Strike Cruiser",
+        "faction": "empire",
+        "class_dat_id": 128,
+        "fleet_roster_index": 1,
+        "tactical_ordinal": 15,
+        "resource_base": 2510,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "task_force": 0,
+        "fighter_group": null,
+        "active_close_resource": null,
+        "active_far_resource": null,
+        "active_indicator_resource": null,
+        "source_position": [
+          5,
+          0,
+          56
+        ]
+      },
+      {
+        "kind": "capital-ship",
+        "name": "Strike Cruiser",
+        "faction": "empire",
+        "class_dat_id": 128,
+        "fleet_roster_index": 2,
+        "tactical_ordinal": 15,
+        "resource_base": 2510,
+        "opposing_resource_base": null,
+        "initial_close_resource": null,
+        "initial_far_resource": null,
+        "initial_indicator_resource": null,
+        "task_force": 0,
+        "fighter_group": null,
+        "active_close_resource": null,
+        "active_far_resource": null,
+        "active_indicator_resource": null,
+        "source_position": [
+          -5,
+          0,
+          56
+        ]
+      },
+      {
+        "kind": "fighter-group",
+        "name": "A-wing",
+        "faction": "alliance",
+        "class_dat_id": 1,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 31,
+        "resource_base": 4020,
+        "opposing_resource_base": 4024,
+        "initial_close_resource": 4024,
+        "initial_far_resource": 4029,
+        "initial_indicator_resource": 4204,
+        "task_force": null,
+        "fighter_group": 4,
+        "active_close_resource": 4024,
+        "active_far_resource": 4029,
+        "active_indicator_resource": 4204,
+        "source_position": [
+          0,
+          0,
+          -36
+        ]
+      },
+      {
+        "kind": "fighter-group",
+        "name": "TIE Fighter",
+        "faction": "empire",
+        "class_dat_id": 5,
+        "fleet_roster_index": 0,
+        "tactical_ordinal": 33,
+        "resource_base": 4100,
+        "opposing_resource_base": 4104,
+        "initial_close_resource": 4104,
+        "initial_far_resource": 4109,
+        "initial_indicator_resource": 4204,
+        "task_force": null,
+        "fighter_group": 4,
+        "active_close_resource": 4104,
+        "active_far_resource": 4109,
+        "active_indicator_resource": 4204,
+        "source_position": [
+          0,
+          0,
+          36
+        ]
+      }
+    ],
+    "effects": [],
+    "projectiles": [
+      {
+        "source": 0,
+        "target": 3,
+        "kind": "laser",
+        "longitudinal_scale": 0.5,
+        "shape_variant": 2,
+        "color_selector": 0,
+        "elapsed": 0.5,
+        "duration": 1,
+        "progress": 0.5
+      },
+      {
+        "source": 4,
+        "target": 1,
+        "kind": "turbolaser",
+        "longitudinal_scale": 0.65,
+        "shape_variant": 1,
+        "color_selector": 1,
+        "elapsed": 0.5,
+        "duration": 1,
+        "progress": 0.5
+      },
+      {
+        "source": 2,
+        "target": 5,
+        "kind": "ion",
+        "longitudinal_scale": 1,
+        "shape_variant": 3,
+        "color_selector": 2,
+        "elapsed": 0.5,
+        "duration": 2,
+        "progress": 0.25
+      }
+    ],
+    "fields": [
+      {
+        "target": 1,
+        "resource_id": 3623,
+        "frame": 3,
+        "tractor_sources": 1,
+        "gravity_sources": 0
+      },
+      {
+        "target": 4,
+        "resource_id": 3525,
+        "frame": 5,
+        "tractor_sources": 1,
+        "gravity_sources": 1
+      }
+    ],
+    "error": null
+  },
+  "screenshot_sha256": "51c93644dfae09d71bef47d17f64aad946d530f9f4ba0351818acfc38bffc469",
+  "two_frame_hashes": {
+    "first": "51c93644dfae09d71bef47d17f64aad946d530f9f4ba0351818acfc38bffc469",
+    "second": "51c93644dfae09d71bef47d17f64aad946d530f9f4ba0351818acfc38bffc469",
+    "equal": true
+  },
+  "message_index_rail": null,
+  "runtime_measurements": {
+    "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+    "frame_interval_ms": {
+      "median": 8.300000000000068,
+      "p95": 8.799999999999955,
+      "max": 9.200000000000045
+    },
+    "navigation_duration_ms": 18,
+    "wasm_memory_bytes": 89653248,
+    "js_heap_used_bytes": 44547642,
+    "js_heap_total_bytes": 46797938
+  },
+  "wasm_sha256": "c32c17935426f9819cfbd930ea70c02caf20ce49cd81ddd7c5ab7bfd2ce99717",
+  "runtime_pack_sha256": "7f0289265d9f85bfc971b8160edcab0da2425f1ed7246c35e570b6a07fdde631",
+  "requests": [
+    {
+      "url": "/",
+      "status": 200
+    },
+    {
+      "url": "/gl.js",
+      "status": 200
+    },
+    {
+      "url": "/open-rebellion-test.wasm",
+      "status": 200
+    },
+    {
+      "url": "/data/runtime.orpk",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "console": [
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_replay is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "log",
+      "text": "Plugin open_rebellion_interface_fixture is present in JS bundle, but is not used in the rust code."
+    },
+    {
+      "type": "info",
+      "text": "[assets] render_profile=original-parity"
+    },
+    {
+      "type": "info",
+      "text": "runtime_asset_pack loaded game_files=52 ui_bitmaps=2303 advisor_frames=3988 audio_files=5 tactical_meshes=87 tactical_textures=397 bytes=40337367"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] planet_loaded resource=5502 palette_resource_id=5532 dimensions=256x256 texture_filter=nearest alpha=opaque source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] planet_scene resource=5502 palette_resource_id=5532 dimensions=256x256 source_position=left_edge_provisional source=FUN_0059a850,FUN_00596ad0,FUN_005c2e60,FUN_00509610,FUN_0040b0e0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_family_loaded base=2010 resources=2010,2011,2012 textures=MONCAL52.BMP,MONCAL_M.BMP palette_selector=2 palette_resource_id=5532 diagnostics=2010:60/56/168/56,2011:38/34/102/34,2012:22/22/66/22 family_loads=2"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_family_loaded base=2510 resources=2510,2511,2512 textures=STRIKE52.BMP,STRIKE_M.BMP palette_selector=2 palette_resource_id=5532 diagnostics=2510:58/53/159/53,2511:30/32/96/32,2512:10/16/48/16 family_loads=3"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] layout_source first_active_objects=4 second_active_objects=4 battle_extent=112 outer_positive_z=56 outer_negative_z=-56 inner_negative_z=-36 inner_positive_z=36 source=FUN_005ab650"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] camera_source pitch=30 yaw=150 field=0.29282 zoom_step=9 orbit_step=5 distance=190.40001 near=1 far=476.00003 fovy_radians=0.5697134 target_object_id=0 target_x=0 target_y=0 target_z=0 handedness=lh_y_up_to_rh_y_up"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_scene requested=6 rendered=6 families=2010,2510 resources=1:2012,2:2012,3:2012,4:2512,5:2512,6:2512 screen_positions=1:238.000,395.411;2:215.326,405.457;3:261.077,385.187;4:238.000,159.642;5:224.484,166.858;6:251.658,152.351 source_positions=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] participant_bounds screen_bounds=1:235.109,391.359,240.897,399.116;2:212.565,401.370,218.253,409.193;3:258.052,381.171,263.943,388.859;4:237.518,158.815,238.483,160.475;5:224.016,166.025,224.972,167.703;6:251.161,151.529,252.136,153.172 source_projection=true"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_family_loaded close=4024 far=4029 indicator=4204 dimensions=32x32,16x16,2x2 palette_selector=2 palette_resource_id=5532 texture_filter=nearest alpha=opaque source=FUN_005c63f0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_family_loaded close=4104 far=4109 indicator=4204 dimensions=32x32,16x16,2x2 palette_selector=2 palette_resource_id=5532 texture_filter=nearest alpha=opaque source=FUN_005c63f0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] fighter_scene requested=2 rendered=2 families=4024,4104 resources=1001:4204:Indicator:46.624,1002:4204:Indicator:64.882 screen_positions=1001:238.000,332.242;1002:238.000,186.605 screen_bounds=1001:237.000,331.242,239.000,333.242;1002:237.000,185.605,239.000,187.605 source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] projectile_scene requested=3 rendered=3 projectiles=2001:2:0.500:0.500:238.000,247.500;2002:1:0.650:0.500:221.063,255.968;2003:3:1.000:0.250:257.684,301.299 selectors=0,1,2 durations=1,1,2 interpolation=source_to_live_target geometry=source_mesh raster_compat=device_pixel_floor source=FUN_005b1ea0,FUN_005b1f60,FUN_005b2080,FUN_005b2c70,FUN_005d3de0,FUN_005ee590,LAB_005eeb90"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] effect_loaded resource=3525 dimensions=128x128 palette_selector=2 palette_resource_id=5532 texture_filter=nearest transparent_index=0 source=FUN_005d38d0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] effect_loaded resource=3623 dimensions=128x128 palette_selector=2 palette_resource_id=5532 texture_filter=nearest transparent_index=0 source=FUN_005d38d0"
+    },
+    {
+      "type": "info",
+      "text": "[tactical_3d] field_scene requested=2 rendered=2 resources=2:3623:0:215.326,405.457;5:3525:0:224.484,166.858 frame_seconds=0.1 source_size=128x128 priority=gravity_over_tractor source_positions=true source=FUN_005b23e0,FUN_005b24d0,FUN_005b2440,FUN_005b2480,FUN_005d3ac0,FUN_005d3cc0"
+    },
+    {
+      "type": "info",
+      "text": "[audio] music_volume=0.00 muted=true music_muted=true"
+    }
+  ],
+  "interaction_logs": [],
+  "probes": [
+    {
+      "type": "production-tactical-entry",
+      "system": "Cathar",
+      "attacker_ships": 3,
+      "defender_ships": 3,
+      "fighters": 2
+    },
+    {
+      "type": "source-traced-tactical-projectiles",
+      "executable_functions": [
+        "FUN_005b1ea0",
+        "FUN_005b1f60",
+        "FUN_005b2080",
+        "FUN_005b2c70",
+        "FUN_005d3de0",
+        "FUN_005ee590",
+        "LAB_005eeb90"
+      ],
+      "thresholds": {
+        "laser": 28.8,
+        "turbolaser": 34.666668,
+        "ion": 32,
+        "torpedo": 12.8
+      },
+      "source_vertices": 12,
+      "shape_variants": [
+        1,
+        2,
+        3
+      ],
+      "material_selectors": {
+        "alliance": 0,
+        "empire": 1,
+        "ion": 2
+      },
+      "durations": [
+        1,
+        1,
+        2
+      ],
+      "raster_compatibility": "one-device-pixel floor for source 0.001-unit faces",
+      "framebuffer_color_pixels": [
+        {
+          "object_id": 2001,
+          "color_selector": 0,
+          "matching_pixels": 4
+        },
+        {
+          "object_id": 2002,
+          "color_selector": 1,
+          "matching_pixels": 3
+        },
+        {
+          "object_id": 2003,
+          "color_selector": 2,
+          "matching_pixels": 5
+        }
+      ],
+      "projectiles": [
+        {
+          "source": 0,
+          "target": 3,
+          "kind": "laser",
+          "longitudinal_scale": 0.5,
+          "shape_variant": 2,
+          "color_selector": 0,
+          "elapsed": 0.5,
+          "duration": 1,
+          "progress": 0.5
+        },
+        {
+          "source": 4,
+          "target": 1,
+          "kind": "turbolaser",
+          "longitudinal_scale": 0.65,
+          "shape_variant": 1,
+          "color_selector": 1,
+          "elapsed": 0.5,
+          "duration": 1,
+          "progress": 0.5
+        },
+        {
+          "source": 2,
+          "target": 5,
+          "kind": "ion",
+          "longitudinal_scale": 1,
+          "shape_variant": 3,
+          "color_selector": 2,
+          "elapsed": 0.5,
+          "duration": 2,
+          "progress": 0.25
+        }
+      ]
+    },
+    {
+      "type": "source-traced-tactical-fields",
+      "executable_functions": [
+        "FUN_005b23e0",
+        "FUN_005b24d0",
+        "FUN_005b2440",
+        "FUN_005b2480",
+        "FUN_005d3ac0",
+        "FUN_005d3cc0"
+      ],
+      "families": {
+        "tractor": [
+          3620,
+          3627
+        ],
+        "gravity": [
+          3520,
+          3527
+        ]
+      },
+      "source_size": [
+        128,
+        128
+      ],
+      "frame_seconds": 0.1,
+      "priority": "gravity-over-tractor-with-tractor-restoration",
+      "fields": [
+        {
+          "target": 1,
+          "resource_id": 3623,
+          "frame": 3,
+          "tractor_sources": 1,
+          "gravity_sources": 0
+        },
+        {
+          "target": 4,
+          "resource_id": 3525,
+          "frame": 5,
+          "tractor_sources": 1,
+          "gravity_sources": 1
+        }
+      ]
+    },
+    {
+      "type": "source-bound-tactical-participants",
+      "executable_functions": [
+        "FUN_005ab650",
+        "FUN_005a9030"
+      ],
+      "layout": {
+        "first_active_objects": 4,
+        "second_active_objects": 4,
+        "battle_extent": 112,
+        "outer_positive_z": 56,
+        "outer_negative_z": -56,
+        "inner_negative_z": -36,
+        "inner_positive_z": 36
+      },
+      "participants": [
+        {
+          "kind": "capital-ship",
+          "name": "Mon Calamari Cruiser",
+          "faction": "alliance",
+          "class_dat_id": 64,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 0,
+          "resource_base": 2010,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "task_force": 0,
+          "fighter_group": null,
+          "active_close_resource": null,
+          "active_far_resource": null,
+          "active_indicator_resource": null,
+          "source_position": [
+            0,
+            0,
+            -56
+          ]
+        },
+        {
+          "kind": "capital-ship",
+          "name": "Mon Calamari Cruiser",
+          "faction": "alliance",
+          "class_dat_id": 64,
+          "fleet_roster_index": 1,
+          "tactical_ordinal": 0,
+          "resource_base": 2010,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "task_force": 0,
+          "fighter_group": null,
+          "active_close_resource": null,
+          "active_far_resource": null,
+          "active_indicator_resource": null,
+          "source_position": [
+            5,
+            0,
+            -56
+          ]
+        },
+        {
+          "kind": "capital-ship",
+          "name": "Mon Calamari Cruiser",
+          "faction": "alliance",
+          "class_dat_id": 64,
+          "fleet_roster_index": 2,
+          "tactical_ordinal": 0,
+          "resource_base": 2010,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "task_force": 0,
+          "fighter_group": null,
+          "active_close_resource": null,
+          "active_far_resource": null,
+          "active_indicator_resource": null,
+          "source_position": [
+            -5,
+            0,
+            -56
+          ]
+        },
+        {
+          "kind": "capital-ship",
+          "name": "Strike Cruiser",
+          "faction": "empire",
+          "class_dat_id": 128,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 15,
+          "resource_base": 2510,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "task_force": 0,
+          "fighter_group": null,
+          "active_close_resource": null,
+          "active_far_resource": null,
+          "active_indicator_resource": null,
+          "source_position": [
+            0,
+            0,
+            56
+          ]
+        },
+        {
+          "kind": "capital-ship",
+          "name": "Strike Cruiser",
+          "faction": "empire",
+          "class_dat_id": 128,
+          "fleet_roster_index": 1,
+          "tactical_ordinal": 15,
+          "resource_base": 2510,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "task_force": 0,
+          "fighter_group": null,
+          "active_close_resource": null,
+          "active_far_resource": null,
+          "active_indicator_resource": null,
+          "source_position": [
+            5,
+            0,
+            56
+          ]
+        },
+        {
+          "kind": "capital-ship",
+          "name": "Strike Cruiser",
+          "faction": "empire",
+          "class_dat_id": 128,
+          "fleet_roster_index": 2,
+          "tactical_ordinal": 15,
+          "resource_base": 2510,
+          "opposing_resource_base": null,
+          "initial_close_resource": null,
+          "initial_far_resource": null,
+          "initial_indicator_resource": null,
+          "task_force": 0,
+          "fighter_group": null,
+          "active_close_resource": null,
+          "active_far_resource": null,
+          "active_indicator_resource": null,
+          "source_position": [
+            -5,
+            0,
+            56
+          ]
+        },
+        {
+          "kind": "fighter-group",
+          "name": "A-wing",
+          "faction": "alliance",
+          "class_dat_id": 1,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 31,
+          "resource_base": 4020,
+          "opposing_resource_base": 4024,
+          "initial_close_resource": 4024,
+          "initial_far_resource": 4029,
+          "initial_indicator_resource": 4204,
+          "task_force": null,
+          "fighter_group": 4,
+          "active_close_resource": 4024,
+          "active_far_resource": 4029,
+          "active_indicator_resource": 4204,
+          "source_position": [
+            0,
+            0,
+            -36
+          ]
+        },
+        {
+          "kind": "fighter-group",
+          "name": "TIE Fighter",
+          "faction": "empire",
+          "class_dat_id": 5,
+          "fleet_roster_index": 0,
+          "tactical_ordinal": 33,
+          "resource_base": 4100,
+          "opposing_resource_base": 4104,
+          "initial_close_resource": 4104,
+          "initial_far_resource": 4109,
+          "initial_indicator_resource": 4204,
+          "task_force": null,
+          "fighter_group": 4,
+          "active_close_resource": 4104,
+          "active_far_resource": 4109,
+          "active_indicator_resource": 4204,
+          "source_position": [
+            0,
+            0,
+            36
+          ]
+        }
+      ]
+    },
+    {
+      "type": "system-selected-tactical-planet",
+      "executable_functions": [
+        "FUN_0040b0e0",
+        "FUN_00509610",
+        "FUN_00595d60",
+        "FUN_0059a850",
+        "FUN_00596ad0",
+        "FUN_005c2e60"
+      ],
+      "system_picture_id": 2,
+      "planet_resource_id": 5502,
+      "palette_resource_id": 5532,
+      "dimensions": [
+        256,
+        256
+      ],
+      "texture_filter": "nearest",
+      "placement_acceptance": "provisional-A1-only"
+    },
+    {
+      "type": "production-tactical-resource-families",
+      "families": [
+        2010,
+        2510
+      ],
+      "selected_resources": [
+        2012,
+        2512
+      ],
+      "source_positions": true
+    },
+    {
+      "type": "production-tactical-fighter-families",
+      "close_resources": [
+        4024,
+        4104
+      ],
+      "far_resources": [
+        4029,
+        4109
+      ],
+      "selected_resources": [
+        4204,
+        4204
+      ],
+      "source_thresholds": [
+        5,
+        10
+      ],
+      "source_positions": true
+    },
+    {
+      "type": "browser-runtime-measurements",
+      "sample": "60 paused requestAnimationFrame intervals after cold fixture load",
+      "frame_interval_ms": {
+        "median": 8.300000000000068,
+        "p95": 8.799999999999955,
+        "max": 9.200000000000045
+      },
+      "navigation_duration_ms": 18,
+      "wasm_memory_bytes": 89653248,
+      "js_heap_used_bytes": 44547642,
+      "js_heap_total_bytes": 46797938
+    }
+  ],
+  "comparison": {
+    "original_reference_source": "owned-original-or-curated-reference-only",
+    "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+    "implementation_baseline": null,
+    "status": "unbaselined",
+    "different_pixels": null,
+    "difference_ratio": null,
+    "tolerance": 0,
+    "masks": []
+  },
+  "interaction_comparisons": {
+    "projectiles-and-fields": {
+      "original_reference_source": "owned-original-or-curated-reference-only",
+      "original_reference_root": "docs/qa/2026-09-10-interface-parity-audit/reference-captures",
+      "implementation_baseline": null,
+      "status": "unbaselined",
+      "different_pixels": null,
+      "difference_ratio": null,
+      "tolerance": 0,
+      "masks": []
+    }
+  },
+  "cleanup": "closed"
+}

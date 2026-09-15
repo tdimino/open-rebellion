@@ -651,11 +651,18 @@ would tune around known simulation feedback defects.
   indexed transparency, and target attachment, and pass the 48-case muted
   browser gate. Keep retained projectile geometry, shield or field semantics,
   fighter emission, audio, and every strict tactical cell open pending A0.
+- [x] Complete P58F3 tactical projectiles and fields: recover all retained
+  projectile vertices and face variants, weapon thresholds, longitudinal
+  scales, material selectors, interpolation and duration; restore both
+  128-by-128 field families, 10 Hz animation, source counts, and shared gravity
+  priority; then pass the 52-case muted browser gate with selector-color
+  framebuffer probes. Keep exact command timing, fighter emission, special
+  weapons, audio, and every strict tactical cell open pending A0.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F3 next traces retained projectile and shield or field event paths,
-  then restores selected-unit damage presentation without inferring joins from
-  resource order.
+  states. P58F4 next restores selected-unit damage presentation without
+  inferring joins from resource order, then traces exact field command timing
+  and remaining tactical command states.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

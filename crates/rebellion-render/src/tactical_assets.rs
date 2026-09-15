@@ -378,7 +378,14 @@ const MAX_PROOF_OBJECT_BYTES: usize = 8 << 20;
 fn is_original_effect_resource(resource_id: u32) -> bool {
     matches!(
         resource_id,
-        3060..=3065 | 3120..=3126 | 3180..=3185 | 3240..=3255 | 3300..=3306 | 3360..=3375
+        3060..=3065
+            | 3120..=3126
+            | 3180..=3185
+            | 3240..=3255
+            | 3300..=3306
+            | 3360..=3375
+            | 3520..=3527
+            | 3620..=3627
     )
 }
 
@@ -913,6 +920,19 @@ pub(crate) struct TacticalEffectRenderObject {
     pub position: Vec3,
 }
 
+/// One source-traced retained projectile submitted by the live battle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TacticalProjectileRenderObject {
+    pub object_id: u32,
+    pub origin: Vec3,
+    pub target: Vec3,
+    pub progress: f32,
+    pub longitudinal_scale: f32,
+    pub shape_variant: u8,
+    pub color_selector: u8,
+    pub color: Color,
+}
+
 /// Screen-space footprint produced by the source tactical camera.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TacticalScreenProjection {
@@ -975,6 +995,8 @@ pub(crate) struct TacticalAssetRenderer {
     logged_participant_scene: bool,
     logged_fighter_scene: Option<String>,
     logged_effect_scene: Option<String>,
+    logged_field_scene: Option<String>,
+    logged_projectile_scene: Option<String>,
     logged_planet_scene: Option<u32>,
 }
 
@@ -1011,6 +1033,8 @@ impl Default for TacticalAssetRenderer {
             logged_participant_scene: false,
             logged_fighter_scene: None,
             logged_effect_scene: None,
+            logged_field_scene: None,
+            logged_projectile_scene: None,
             logged_planet_scene: None,
         }
     }
@@ -1041,6 +1065,8 @@ impl TacticalAssetRenderer {
             self.logged_participant_scene = false;
             self.logged_fighter_scene = None;
             self.logged_effect_scene = None;
+            self.logged_field_scene = None;
+            self.logged_projectile_scene = None;
             self.logged_planet_scene = None;
         }
     }
@@ -1120,6 +1146,9 @@ impl TacticalAssetRenderer {
         self.logged_layout = None;
         self.logged_participant_scene = false;
         self.logged_fighter_scene = None;
+        self.logged_effect_scene = None;
+        self.logged_field_scene = None;
+        self.logged_projectile_scene = None;
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -1130,6 +1159,9 @@ impl TacticalAssetRenderer {
         self.logged_layout = None;
         self.logged_participant_scene = false;
         self.logged_fighter_scene = None;
+        self.logged_effect_scene = None;
+        self.logged_field_scene = None;
+        self.logged_projectile_scene = None;
     }
 
     pub(crate) fn zoom_in(&mut self) {
@@ -1717,6 +1749,14 @@ impl TacticalAssetRenderer {
                 f32::from(object.source_height) * source_scale,
             );
             let min = center - size * 0.5;
+            let max = min + size;
+            if max.x < aperture.0
+                || min.x > aperture.0 + aperture.2
+                || max.y < aperture.1
+                || min.y > aperture.1 + aperture.3
+            {
+                continue;
+            }
             draw_texture_ex(
                 &asset.texture,
                 min.x,
@@ -1733,7 +1773,7 @@ impl TacticalAssetRenderer {
                 object_id: object.object_id,
                 center,
                 min,
-                max: min + size,
+                max,
             });
             rendered.push(format!(
                 "{}:{}:{}:{:.3},{:.3}",
@@ -1749,6 +1789,222 @@ impl TacticalAssetRenderer {
                 signature,
             );
             self.logged_effect_scene = Some(signature);
+        }
+        report
+    }
+
+    /// Draw the target-attached tractor/gravity field selected by
+    /// `FUN_005d3ac0`. Both modes share one slot, so callers submit only the
+    /// currently visible family after applying the executable's priority.
+    pub(crate) fn draw_fields(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalEffectRenderObject],
+    ) -> TacticalDrawReport {
+        let mut report = TacticalDrawReport::default();
+        let Some(source_camera) = self.source_camera else {
+            return report;
+        };
+        if objects.is_empty() {
+            return report;
+        }
+
+        let mut resource_ids = objects
+            .iter()
+            .map(|object| object.resource_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        resource_ids.sort_unstable();
+        for resource_id in resource_ids {
+            if self.effect_textures.contains_key(&resource_id)
+                || self.unavailable_effect_textures.contains(&resource_id)
+            {
+                continue;
+            }
+            if let Err(error) = self.load_effect_texture(resource_id) {
+                self.unavailable_effect_textures.insert(resource_id);
+                macroquad::logging::warn!(
+                    "[tactical_3d] field resource={} unavailable: {}",
+                    resource_id,
+                    error
+                );
+            }
+        }
+
+        let pose = source_camera.pose();
+        let camera = Camera3D {
+            position: pose.position,
+            target: pose.target,
+            up: pose.up,
+            fovy: pose.fovy_radians,
+            aspect: Some(aperture.2 / aperture.3),
+            viewport: None,
+            z_near: pose.near,
+            z_far: pose.far,
+            ..Default::default()
+        };
+        let camera_matrix = camera.matrix();
+        let source_scale = aperture.2 / 444.0;
+        let mut rendered = Vec::new();
+        for object in objects {
+            let Some(center) = project_world_position(camera_matrix, object.position, aperture)
+            else {
+                continue;
+            };
+            let Some(asset) = self.effect_textures.get(&object.resource_id) else {
+                continue;
+            };
+            let size = vec2(
+                f32::from(object.source_width) * source_scale,
+                f32::from(object.source_height) * source_scale,
+            );
+            let min = center - size * 0.5;
+            let max = min + size;
+            if max.x < aperture.0
+                || min.x > aperture.0 + aperture.2
+                || max.y < aperture.1
+                || min.y > aperture.1 + aperture.3
+            {
+                continue;
+            }
+            draw_texture_ex(
+                &asset.texture,
+                min.x,
+                min.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(size),
+                    ..Default::default()
+                },
+            );
+            report.rendered_object_ids.push(object.object_id);
+            report.screen_positions.push((object.object_id, center));
+            report.projections.push(TacticalScreenProjection {
+                object_id: object.object_id,
+                center,
+                min,
+                max,
+            });
+            rendered.push(format!(
+                "{}:{}:{}:{:.3},{:.3}",
+                object.object_id, object.resource_id, asset.transparent_index, center.x, center.y
+            ));
+        }
+        let signature = rendered.join(";");
+        if self.logged_field_scene.as_deref() != Some(signature.as_str()) {
+            macroquad::logging::info!(
+                "[tactical_3d] field_scene requested={} rendered={} resources={} frame_seconds=0.1 source_size=128x128 priority=gravity_over_tractor source_positions=true source=FUN_005b23e0,FUN_005b24d0,FUN_005b2440,FUN_005b2480,FUN_005d3ac0,FUN_005d3cc0",
+                objects.len(),
+                report.rendered_object_ids.len(),
+                signature,
+            );
+            self.logged_field_scene = Some(signature);
+        }
+        report
+    }
+
+    /// Draw the retained projectile meshes constructed by `FUN_005ee590` at
+    /// their source-to-moving-target interpolation point from `LAB_005eeb90`.
+    pub(crate) fn draw_projectiles(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalProjectileRenderObject],
+    ) -> TacticalDrawReport {
+        let mut report = TacticalDrawReport::default();
+        let Some(source_camera) = self.source_camera else {
+            return report;
+        };
+        if objects.is_empty() {
+            return report;
+        }
+        let (x, y, width, height) = aperture;
+        let pose = source_camera.pose();
+        let camera = Camera3D {
+            position: pose.position,
+            target: pose.target,
+            up: pose.up,
+            fovy: pose.fovy_radians,
+            aspect: Some(width / height),
+            viewport: Some((
+                x.round() as i32,
+                (screen_height() - y - height).round() as i32,
+                width.round() as i32,
+                height.round() as i32,
+            )),
+            z_near: pose.near,
+            z_far: pose.far,
+            ..Default::default()
+        };
+        let camera_matrix = camera.matrix();
+        set_camera(&camera);
+        let mut rendered = Vec::new();
+        let mut raster_compatibility_segments = Vec::new();
+        for object in objects {
+            let progress = object.progress.clamp(0.0, 1.0);
+            let position = object.origin.lerp(object.target, progress);
+            let Some(center) = project_world_position(camera_matrix, position, aperture) else {
+                continue;
+            };
+            let travel = object.target - object.origin;
+            let forward = if travel.is_finite() && travel.length_squared() > f32::EPSILON {
+                travel.normalize()
+            } else {
+                vec3(0.0, 0.0, 1.0)
+            };
+            let tip_position = position + forward * object.longitudinal_scale;
+            let Some(tip) = project_world_position(camera_matrix, tip_position, aperture) else {
+                continue;
+            };
+            let min = vec2(center.x.min(tip.x), center.y.min(tip.y));
+            let max = vec2(center.x.max(tip.x), center.y.max(tip.y));
+            if max.x < x || min.x > x + width || max.y < y || min.y > y + height {
+                continue;
+            }
+            let mesh = original_projectile_mesh(*object, position);
+            draw_mesh(&mesh);
+            raster_compatibility_segments.push((center, tip, object.color));
+            report.rendered_object_ids.push(object.object_id);
+            report.screen_positions.push((object.object_id, center));
+            report.projections.push(TacticalScreenProjection {
+                object_id: object.object_id,
+                center,
+                min,
+                max,
+            });
+            rendered.push(format!(
+                "{}:{}:{:.3}:{:.3}:{:.3},{:.3}",
+                object.object_id,
+                object.shape_variant,
+                object.longitudinal_scale,
+                progress,
+                center.x,
+                center.y
+            ));
+        }
+        set_default_camera();
+        // Direct3D Retained Mode rasterized the source's 0.001-unit projectile
+        // faces as visible device lines. Modern WebGL drops those sub-pixel
+        // triangles. Preserve the exact submitted mesh above, then restore its
+        // native one-device-pixel coverage along the same projected axis.
+        let device_pixel = (aperture.2 / 444.0).max(1.0);
+        for (center, tip, color) in raster_compatibility_segments {
+            draw_line(center.x, center.y, tip.x, tip.y, device_pixel, color);
+        }
+        let signature = rendered.join(";");
+        if self.logged_projectile_scene.as_deref() != Some(signature.as_str()) {
+            macroquad::logging::info!(
+                "[tactical_3d] projectile_scene requested={} rendered={} projectiles={} selectors={} durations=1,1,2 interpolation=source_to_live_target geometry=source_mesh raster_compat=device_pixel_floor source=FUN_005b1ea0,FUN_005b1f60,FUN_005b2080,FUN_005b2c70,FUN_005d3de0,FUN_005ee590,LAB_005eeb90",
+                objects.len(),
+                report.rendered_object_ids.len(),
+                signature,
+                objects
+                    .iter()
+                    .map(|object| object.color_selector.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            self.logged_projectile_scene = Some(signature);
         }
         report
     }
@@ -2165,6 +2421,68 @@ fn project_world_position(
         x + (ndc.x + 1.0) * 0.5 * width,
         y + (1.0 - ndc.y) * 0.5 * height,
     ))
+}
+
+// Twelve source vertices written by `FUN_005ee590`. Variants select different
+// double-sided triangle lists over the same retained-mode mesh.
+const ORIGINAL_PROJECTILE_VERTICES: [[f32; 3]; 12] = [
+    [0.0, -0.001, 0.0],
+    [0.0, 0.0, 1.0],
+    [0.0, 0.001, 0.0],
+    [0.0, 0.0, 1.0 / 3.0],
+    [0.0, -0.001, 2.0 / 3.0],
+    [0.0, 0.001, 2.0 / 3.0],
+    [0.1, -0.001, 0.0],
+    [0.1, 0.0, 1.0],
+    [0.1, 0.001, 1.0],
+    [-0.1, -0.001, 0.0],
+    [-0.1, 0.0, 1.0],
+    [-0.1, 0.001, 1.0],
+];
+const ORIGINAL_PROJECTILE_VARIANT_1: [u16; 6] = [0, 1, 2, 2, 1, 0];
+const ORIGINAL_PROJECTILE_VARIANT_2: [u16; 12] = [0, 3, 2, 2, 3, 0, 4, 1, 5, 5, 1, 4];
+const ORIGINAL_PROJECTILE_VARIANT_3: [u16; 12] = [6, 7, 8, 8, 7, 6, 9, 10, 11, 11, 10, 9];
+
+fn original_projectile_mesh(object: TacticalProjectileRenderObject, position: Vec3) -> Mesh {
+    let travel = object.target - object.origin;
+    let forward = if travel.is_finite() && travel.length_squared() > f32::EPSILON {
+        travel.normalize()
+    } else {
+        vec3(0.0, 0.0, 1.0)
+    };
+    let reference_up = if forward.y.abs() < 0.99 {
+        vec3(0.0, 1.0, 0.0)
+    } else {
+        vec3(1.0, 0.0, 0.0)
+    };
+    let right = reference_up.cross(forward).normalize();
+    let up = forward.cross(right).normalize();
+    let vertices = ORIGINAL_PROJECTILE_VERTICES
+        .iter()
+        .map(|source| {
+            let world = position
+                + right * source[0]
+                + up * source[1]
+                + forward * source[2] * object.longitudinal_scale;
+            Vertex {
+                position: world,
+                uv: Vec2::ZERO,
+                color: object.color.into(),
+                normal: forward.extend(0.0),
+            }
+        })
+        .collect();
+    let indices = match object.shape_variant {
+        2 => ORIGINAL_PROJECTILE_VARIANT_2.as_slice(),
+        3 => ORIGINAL_PROJECTILE_VARIANT_3.as_slice(),
+        _ => ORIGINAL_PROJECTILE_VARIANT_1.as_slice(),
+    }
+    .to_vec();
+    Mesh {
+        vertices,
+        indices,
+        texture: None,
+    }
 }
 
 struct DecodedMeshChunk {
@@ -2677,6 +2995,44 @@ mod tests {
             authored_position(vec3(12.5, -3.25, 8.0)),
             vec3(12.5, -3.25, -8.0)
         );
+    }
+
+    #[test]
+    fn retained_projectile_mesh_preserves_source_vertices_faces_and_longitudinal_scale() {
+        let object = TacticalProjectileRenderObject {
+            object_id: 1,
+            origin: Vec3::ZERO,
+            target: vec3(0.0, 0.0, 10.0),
+            progress: 0.5,
+            longitudinal_scale: 0.5,
+            shape_variant: 1,
+            color_selector: 0,
+            color: RED,
+        };
+        let first = original_projectile_mesh(object, vec3(0.0, 0.0, 5.0));
+        assert_eq!(first.vertices.len(), 12);
+        assert_eq!(first.indices, ORIGINAL_PROJECTILE_VARIANT_1);
+        assert_near(first.vertices[1].position.z, 5.5);
+        assert_near(first.vertices[0].position.y, -0.001);
+
+        let second = original_projectile_mesh(
+            TacticalProjectileRenderObject {
+                shape_variant: 2,
+                ..object
+            },
+            Vec3::ZERO,
+        );
+        assert_eq!(second.indices, ORIGINAL_PROJECTILE_VARIANT_2);
+        let third = original_projectile_mesh(
+            TacticalProjectileRenderObject {
+                shape_variant: 3,
+                ..object
+            },
+            Vec3::ZERO,
+        );
+        assert_eq!(third.indices, ORIGINAL_PROJECTILE_VARIANT_3);
+        assert_near(third.vertices[6].position.x, 0.1);
+        assert_near(third.vertices[9].position.x, -0.1);
     }
 
     #[test]

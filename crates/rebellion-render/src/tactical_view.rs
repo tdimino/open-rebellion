@@ -35,7 +35,7 @@ use crate::sector_window::planet_picture_id;
 use crate::tactical_assets::TacticalLodView;
 use crate::tactical_assets::{
     TacticalAssetRenderer, TacticalEffectRenderObject, TacticalFighterRenderObject,
-    TacticalRenderObject, TacticalScreenProjection,
+    TacticalProjectileRenderObject, TacticalRenderObject, TacticalScreenProjection,
 };
 use crate::tactical_resources::{
     capital_ship_tactical_resource, death_star_tactical_resource, fighter_tactical_resource,
@@ -81,6 +81,12 @@ const FIGHTER_SIZE: f32 = 16.0;
 
 /// `_DAT_0066d154`, used by both `FUN_005d3cc0` and `FUN_005d41a0`.
 const ORIGINAL_TACTICAL_EFFECT_FRAME_SECONDS: f32 = 0.1;
+const ORIGINAL_LASER_PROJECTILE_THRESHOLD: f32 = 28.8;
+const ORIGINAL_TURBOLASER_PROJECTILE_THRESHOLD: f32 = 34.666_668;
+const ORIGINAL_ION_PROJECTILE_THRESHOLD: f32 = 32.0;
+const ORIGINAL_TORPEDO_PROJECTILE_THRESHOLD: f32 = 12.8;
+const ORIGINAL_PROJECTILE_DURATION_SHORT: f32 = 1.0;
+const ORIGINAL_PROJECTILE_DURATION_LONG: f32 = 2.0;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
@@ -418,6 +424,8 @@ pub struct BattleSession {
     pub weapon_effects: Vec<WeaponEffect>,
     /// Target-attached original type-303 hit, damage, and destruction sequences.
     pub impact_effects: Vec<TacticalImpactEffect>,
+    /// Target-attached tractor/gravity field selected through one shared slot.
+    pub field_effects: Vec<TacticalFieldEffect>,
     /// Whether combat is paused.
     pub paused: bool,
     /// Combat speed multiplier (1 = normal, 2 = fast, 4 = faster).
@@ -437,8 +445,80 @@ pub struct WeaponEffect {
     pub target: usize,
     /// Weapon type determines color and rendering.
     pub kind: WeaponKind,
-    /// Remaining frames to display this effect.
-    pub ttl: u8,
+    /// Source point is captured once, matching the retained projectile frame.
+    pub source_position: TacticalWorldPosition,
+    /// Existing 2D simulation source used only when the original camera path is unavailable.
+    pub fallback_source: [f32; 2],
+    /// Source constructor scale along the projectile's local Z axis.
+    pub longitudinal_scale: f32,
+    /// One of the three exact triangle families built by `FUN_005ee590`.
+    pub shape_variant: u8,
+    /// Direct3DRM material selector: 0 red, 1 green, 2 blue.
+    pub color_selector: u8,
+    /// Source lifecycle timer and exact one- or two-second duration.
+    pub elapsed: f32,
+    pub duration: f32,
+}
+
+impl WeaponEffect {
+    #[must_use]
+    pub fn progress(&self) -> f32 {
+        if self.duration <= 0.0 {
+            1.0
+        } else {
+            (self.elapsed / self.duration).clamp(0.0, 1.0)
+        }
+    }
+
+    fn color(&self) -> Color {
+        match self.color_selector {
+            1 => Color::new(0.0, 1.0, 0.0, 1.0),
+            2 => Color::new(0.0, 0.0, 1.0, 1.0),
+            _ => Color::new(1.0, 0.0, 0.0, 1.0),
+        }
+    }
+}
+
+/// One target's shared tractor/gravity field slot from `FUN_005d3ac0`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TacticalFieldEffect {
+    pub target: usize,
+    tractor_sources: u8,
+    gravity_sources: u8,
+    pub frame: u8,
+    frame_elapsed: f32,
+}
+
+/// The source field selector uses bit 1 for tractor and bit 2 for gravity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OriginalTacticalFieldKind {
+    Tractor = 1,
+    Gravity = 2,
+}
+
+impl TacticalFieldEffect {
+    fn visible_kind(self) -> Option<OriginalTacticalFieldKind> {
+        if self.gravity_sources > 0 {
+            Some(OriginalTacticalFieldKind::Gravity)
+        } else if self.tractor_sources > 0 {
+            Some(OriginalTacticalFieldKind::Tractor)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub fn resource_id(self) -> Option<u32> {
+        self.visible_kind().map(|kind| match kind {
+            OriginalTacticalFieldKind::Gravity => 3520 + u32::from(self.frame),
+            OriginalTacticalFieldKind::Tractor => 3620 + u32::from(self.frame),
+        })
+    }
+
+    #[must_use]
+    pub fn source_counts(self) -> (u8, u8) {
+        (self.tractor_sources, self.gravity_sources)
+    }
 }
 
 /// One target-attached type-303 impact sequence selected by the original
@@ -514,16 +594,6 @@ pub enum WeaponKind {
 }
 
 impl WeaponKind {
-    #[must_use]
-    pub fn color(self) -> Color {
-        match self {
-            WeaponKind::Turbolaser => Color::new(0.0, 1.0, 0.0, 0.8), // green
-            WeaponKind::IonCannon => Color::new(0.3, 0.5, 1.0, 0.8),  // blue
-            WeaponKind::LaserCannon => Color::new(1.0, 0.2, 0.2, 0.8), // red
-            WeaponKind::FighterAttack => Color::new(1.0, 0.8, 0.2, 0.6), // yellow
-        }
-    }
-
     /// `SHIP_TAKE_*_HIT` codes delivered to the original render dispatcher.
     const fn original_impact_code(self) -> u8 {
         match self {
@@ -531,6 +601,59 @@ impl WeaponKind {
             Self::IonCannon => 2,
             Self::Turbolaser => 3,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct OriginalProjectileProfile {
+    longitudinal_scale: f32,
+    shape_variant: u8,
+    color_selector: u8,
+    duration: f32,
+}
+
+fn original_projectile_profile(
+    weapon: WeaponKind,
+    event_strength: f32,
+    source_tactical_ordinal: Option<u8>,
+    source_is_alliance: bool,
+) -> OriginalProjectileProfile {
+    let strength = if event_strength.is_finite() {
+        event_strength.max(0.0)
+    } else {
+        0.0
+    };
+    let (longitudinal_scale, shape_variant) = match weapon {
+        WeaponKind::LaserCannon if strength >= ORIGINAL_LASER_PROJECTILE_THRESHOLD => (0.5, 2),
+        WeaponKind::LaserCannon => (0.5, 1),
+        WeaponKind::Turbolaser if strength < ORIGINAL_TURBOLASER_PROJECTILE_THRESHOLD => (0.65, 1),
+        WeaponKind::Turbolaser
+            if matches!(source_tactical_ordinal, Some(11 | 13 | 14 | 22 | 25)) =>
+        {
+            (0.75, 2)
+        }
+        WeaponKind::Turbolaser => (1.0, 3),
+        WeaponKind::IonCannon if strength >= ORIGINAL_ION_PROJECTILE_THRESHOLD => (1.0, 3),
+        WeaponKind::IonCannon => (0.4, 1),
+        WeaponKind::FighterAttack if strength >= ORIGINAL_TORPEDO_PROJECTILE_THRESHOLD => (1.0, 3),
+        WeaponKind::FighterAttack => (0.2, 1),
+    };
+    let color_selector = if weapon == WeaponKind::IonCannon {
+        2
+    } else if source_is_alliance {
+        0
+    } else {
+        1
+    };
+    OriginalProjectileProfile {
+        longitudinal_scale,
+        shape_variant,
+        color_selector,
+        duration: if shape_variant == 3 {
+            ORIGINAL_PROJECTILE_DURATION_LONG
+        } else {
+            ORIGINAL_PROJECTILE_DURATION_SHORT
+        },
     }
 }
 
@@ -586,6 +709,84 @@ fn queue_original_tactical_impact(
             frame: 0,
             frame_elapsed: 0.0,
         });
+    }
+    true
+}
+
+fn queue_original_tactical_projectile(
+    effects: &mut Vec<WeaponEffect>,
+    ships: &[TacticalShip],
+    source: usize,
+    target: usize,
+    weapon: WeaponKind,
+    event_strength: f32,
+) -> bool {
+    let (Some(source_ship), Some(_)) = (ships.get(source), ships.get(target)) else {
+        return false;
+    };
+    let profile = original_projectile_profile(
+        weapon,
+        event_strength,
+        source_ship
+            .tactical_resource
+            .map(|resource| resource.tactical_ordinal),
+        source_ship.identity.is_alliance,
+    );
+    effects.push(WeaponEffect {
+        source,
+        target,
+        kind: weapon,
+        source_position: source_ship.source_position,
+        fallback_source: [source_ship.x, source_ship.y],
+        longitudinal_scale: profile.longitudinal_scale,
+        shape_variant: profile.shape_variant,
+        color_selector: profile.color_selector,
+        elapsed: 0.0,
+        duration: profile.duration,
+    });
+    true
+}
+
+fn set_original_tactical_field(
+    effects: &mut Vec<TacticalFieldEffect>,
+    target: usize,
+    kind: OriginalTacticalFieldKind,
+    active: bool,
+) -> bool {
+    let existing = effects.iter().position(|effect| effect.target == target);
+    if existing.is_none() && !active {
+        return false;
+    }
+    let index = existing.unwrap_or_else(|| {
+        effects.push(TacticalFieldEffect {
+            target,
+            tractor_sources: 0,
+            gravity_sources: 0,
+            frame: 0,
+            frame_elapsed: 0.0,
+        });
+        effects.len() - 1
+    });
+    let effect = &mut effects[index];
+    let previous = effect.visible_kind();
+    let sources = match kind {
+        OriginalTacticalFieldKind::Tractor => &mut effect.tractor_sources,
+        OriginalTacticalFieldKind::Gravity => &mut effect.gravity_sources,
+    };
+    if active {
+        *sources = sources.saturating_add(1);
+    } else if *sources > 0 {
+        *sources -= 1;
+    } else {
+        return false;
+    }
+    let current = effect.visible_kind();
+    if current != previous {
+        effect.frame = 0;
+        effect.frame_elapsed = 0.0;
+    }
+    if current.is_none() {
+        effects.remove(index);
     }
     true
 }
@@ -665,11 +866,41 @@ impl BattleSession {
             combat_tick: 0,
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
+            field_effects: Vec::new(),
             paused: true,
             combat_speed: 1,
             step_accumulator: 0.0,
             winner: None,
         }
+    }
+
+    /// Start or stop one source's tractor-field contribution on a live target.
+    /// Multiple sources are counted, matching `FUN_005b23e0`/`FUN_005b2440`.
+    pub fn set_tractor_field(&mut self, target: usize, active: bool) -> bool {
+        if target >= self.ships.len() {
+            return false;
+        }
+        set_original_tactical_field(
+            &mut self.field_effects,
+            target,
+            OriginalTacticalFieldKind::Tractor,
+            active,
+        )
+    }
+
+    /// Start or stop one source's gravity-field contribution on a live target.
+    /// Gravity preempts tractor in the shared visual slot until its last source
+    /// ends, matching `FUN_005b24d0`/`FUN_005b2480`.
+    pub fn set_gravity_field(&mut self, target: usize, active: bool) -> bool {
+        if target >= self.ships.len() {
+            return false;
+        }
+        set_original_tactical_field(
+            &mut self.field_effects,
+            target,
+            OriginalTacticalFieldKind::Gravity,
+            active,
+        )
     }
 
     /// Expand a fleet's composition into individual TacticalShip/TacticalFighter entries.
@@ -953,6 +1184,10 @@ impl BattleSession {
         if !elapsed.is_finite() || elapsed <= 0.0 {
             return;
         }
+        self.weapon_effects.retain_mut(|effect| {
+            effect.elapsed += elapsed;
+            effect.elapsed < effect.duration
+        });
         self.impact_effects.retain_mut(|effect| {
             effect.frame_elapsed += elapsed;
             while effect.frame_elapsed >= ORIGINAL_TACTICAL_EFFECT_FRAME_SECONDS {
@@ -961,6 +1196,13 @@ impl BattleSession {
             }
             effect.frame < effect.sequence.frame_count()
         });
+        for effect in &mut self.field_effects {
+            effect.frame_elapsed += elapsed;
+            while effect.frame_elapsed >= ORIGINAL_TACTICAL_EFFECT_FRAME_SECONDS {
+                effect.frame_elapsed -= ORIGINAL_TACTICAL_EFFECT_FRAME_SECONDS;
+                effect.frame = (effect.frame + 1) % 8;
+            }
+        }
     }
 
     /// Advance combat by one tick. Applies weapon fire, shield regen, hull
@@ -973,12 +1215,6 @@ impl BattleSession {
         }
 
         self.combat_tick += 1;
-
-        // Decay existing weapon effects.
-        self.weapon_effects.retain_mut(|e| {
-            e.ttl = e.ttl.saturating_sub(1);
-            e.ttl > 0
-        });
 
         // Process retreating ships: advance retreat progress, move off-screen.
         for ship in &mut self.ships {
@@ -1150,13 +1386,16 @@ impl BattleSession {
             };
             queue_original_tactical_impact(impact_effects, target_idx, kind, impact_stage);
 
-            // Create visual effect.
-            effects.push(WeaponEffect {
-                source: fire_idx,
-                target: target_idx,
+            // Create the source retained projectile with its exact material,
+            // shape, scale, and duration branch.
+            queue_original_tactical_projectile(
+                effects,
+                ships,
+                fire_idx,
+                target_idx,
                 kind,
-                ttl: 8,
-            });
+                damage as f32,
+            );
         }
     }
 
@@ -1544,6 +1783,82 @@ impl TacticalState {
         };
         if let Some((object_id, position)) = focus {
             self.asset_renderer.focus_target(object_id, position);
+        }
+    }
+
+    /// Freeze all three projectile shapes plus both shared field families on
+    /// live production participants for deterministic browser inspection.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_projectile_field_fixture(&mut self) {
+        {
+            let Some(session) = self.session.as_mut() else {
+                return;
+            };
+            let alliance = session
+                .ships
+                .iter()
+                .enumerate()
+                .filter(|(_, ship)| ship.identity.is_alliance)
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            let empire = session
+                .ships
+                .iter()
+                .enumerate()
+                .filter(|(_, ship)| !ship.identity.is_alliance)
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            if alliance.len() < 3 || empire.len() < 3 {
+                return;
+            }
+            session.weapon_effects.clear();
+            let projectile_fixtures = [
+                (
+                    alliance[0],
+                    empire[0],
+                    WeaponKind::LaserCannon,
+                    ORIGINAL_LASER_PROJECTILE_THRESHOLD,
+                ),
+                (
+                    empire[1],
+                    alliance[1],
+                    WeaponKind::Turbolaser,
+                    ORIGINAL_TURBOLASER_PROJECTILE_THRESHOLD - 1.0,
+                ),
+                (
+                    alliance[2],
+                    empire[2],
+                    WeaponKind::IonCannon,
+                    ORIGINAL_ION_PROJECTILE_THRESHOLD,
+                ),
+            ];
+            for (source, target, weapon, strength) in projectile_fixtures {
+                queue_original_tactical_projectile(
+                    &mut session.weapon_effects,
+                    &session.ships,
+                    source,
+                    target,
+                    weapon,
+                    strength,
+                );
+            }
+            for effect in &mut session.weapon_effects {
+                effect.elapsed = 0.5;
+            }
+
+            session.field_effects.clear();
+            session.set_tractor_field(alliance[1], true);
+            session.set_tractor_field(empire[1], true);
+            session.set_gravity_field(empire[1], true);
+            session.field_effects[0].frame = 3;
+            session.field_effects[1].frame = 5;
+            session.paused = true;
+        }
+        // Widen the source camera field without moving any participant. This
+        // keeps both opposing field targets and the projectile paths inside
+        // the 444x439 aperture for one deterministic inspection frame.
+        for _ in 0..4 {
+            self.asset_renderer.zoom_out();
         }
     }
 
@@ -2447,9 +2762,13 @@ pub fn draw_tactical_view(
     // bounded 2D fallback below.
     let (scale, offset_x, offset_y) =
         canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
-    let (production_objects, production_fighters, production_effects) = if state
-        .render_original_participants
-    {
+    let (
+        production_objects,
+        production_fighters,
+        production_fields,
+        production_projectiles,
+        production_effects,
+    ) = if state.render_original_participants {
         state
             .session
             .as_ref()
@@ -2507,11 +2826,47 @@ pub fn draw_tactical_view(
                         })
                     })
                     .collect::<Vec<_>>();
-                (ships, fighters, effects)
+                let fields = session
+                    .field_effects
+                    .iter()
+                    .filter_map(|effect| {
+                        let ship = session.ships.get(effect.target)?;
+                        Some(TacticalEffectRenderObject {
+                            object_id: u32::try_from(effect.target)
+                                .unwrap_or(u32::MAX)
+                                .saturating_add(1),
+                            resource_id: effect.resource_id()?,
+                            source_width: 128,
+                            source_height: 128,
+                            position: ship.source_position.rendered(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let projectiles = session
+                    .weapon_effects
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, effect)| {
+                        let target = session.ships.get(effect.target)?;
+                        Some(TacticalProjectileRenderObject {
+                            object_id: u32::try_from(index)
+                                .unwrap_or(u32::MAX)
+                                .saturating_add(2001),
+                            origin: effect.source_position.rendered(),
+                            target: target.source_position.rendered(),
+                            progress: effect.progress(),
+                            longitudinal_scale: effect.longitudinal_scale,
+                            shape_variant: effect.shape_variant,
+                            color_selector: effect.color_selector,
+                            color: effect.color(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                (ships, fighters, fields, projectiles, effects)
             })
             .unwrap_or_default()
     } else {
-        (Vec::new(), Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
     };
     let ship_report = state
         .asset_renderer
@@ -2519,6 +2874,12 @@ pub fn draw_tactical_view(
     let fighter_report = state
         .asset_renderer
         .draw_fighters(aperture_tuple, &production_fighters);
+    let projectile_report = state
+        .asset_renderer
+        .draw_projectiles(aperture_tuple, &production_projectiles);
+    let _field_report = state
+        .asset_renderer
+        .draw_fields(aperture_tuple, &production_fields);
     let effect_report = state
         .asset_renderer
         .draw_effects(aperture_tuple, &production_effects);
@@ -2554,6 +2915,11 @@ pub fn draw_tactical_view(
         .rendered_object_ids
         .into_iter()
         .filter_map(|object_id| usize::try_from(object_id.saturating_sub(1)).ok())
+        .collect::<HashSet<_>>();
+    let rendered_projectiles = projectile_report
+        .rendered_object_ids
+        .into_iter()
+        .filter_map(|object_id| usize::try_from(object_id.saturating_sub(2001)).ok())
         .collect::<HashSet<_>>();
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -2816,19 +3182,17 @@ pub fn draw_tactical_view(
         }
     }
 
-    // 6. Draw weapon fire effects (laser lines between ships).
-    for effect in &session.weapon_effects {
-        if let (Some(src), Some(tgt)) = (
+    // 6. The normal path above submits the executable's retained projectile
+    // meshes. Keep this bounded 2D fallback only when the source camera cannot
+    // render a projectile.
+    for (effect_index, effect) in session.weapon_effects.iter().enumerate() {
+        if let (Some(_src), Some(tgt)) = (
             session.ships.get(effect.source),
             session.ships.get(effect.target),
         ) {
-            let source = tactical_ship_screen_position(
-                effect.source,
-                src,
-                &ship_projections,
-                scale,
-                offset_x,
-                offset_y,
+            let source = macroquad::math::Vec2::new(
+                offset_x + effect.fallback_source[0] * scale,
+                offset_y + effect.fallback_source[1] * scale,
             );
             let target = tactical_ship_screen_position(
                 effect.target,
@@ -2839,17 +3203,32 @@ pub fn draw_tactical_view(
                 offset_y,
             );
 
-            let base_color = effect.kind.color();
-            let alpha = (f32::from(effect.ttl) / 8.0).min(1.0);
+            let alpha = (1.0 - effect.progress()).clamp(0.0, 1.0);
+            let base_color = effect.color();
             let color = Color::new(base_color.r, base_color.g, base_color.b, alpha);
-
-            // Main beam.
-            draw_line(source.x, source.y, target.x, target.y, 2.0, color);
+            if !rendered_projectiles.contains(&effect_index) {
+                let current = source.lerp(target, effect.progress());
+                let travel = target - source;
+                let direction = if travel.length_squared() > f32::EPSILON {
+                    travel.normalize()
+                } else {
+                    macroquad::math::Vec2::X
+                };
+                let tail = current - direction * (2.0 * canvas.scale).max(1.0);
+                draw_line(
+                    tail.x,
+                    tail.y,
+                    current.x,
+                    current.y,
+                    canvas.scale.max(1.0),
+                    color,
+                );
+            }
 
             // Retain the bounded fallback only when an authentic target frame
             // was unavailable for this event.
-            if effect.ttl > 5 && !rendered_effect_targets.contains(&effect.target) {
-                let flash_r = 4.0 + f32::from(8 - effect.ttl) * 2.0;
+            if effect.progress() < 0.375 && !rendered_effect_targets.contains(&effect.target) {
+                let flash_r = 4.0 + effect.progress() * 16.0;
                 draw_circle(
                     target.x,
                     target.y,
@@ -3720,6 +4099,7 @@ mod tests {
             combat_tick: 0,
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
+            field_effects: Vec::new(),
             paused: true,
             combat_speed: 1,
             step_accumulator: 0.0,
@@ -3839,6 +4219,142 @@ mod tests {
         assert_eq!(session.impact_effects[0].frame, 1);
         session.advance_presentational_effects(0.5);
         assert!(session.impact_effects.is_empty());
+    }
+
+    #[test]
+    fn original_projectile_profiles_preserve_thresholds_shapes_scales_colors_and_durations() {
+        let cases = [
+            (
+                WeaponKind::LaserCannon,
+                28.7,
+                Some(0),
+                true,
+                (0.5, 1, 0, 1.0),
+            ),
+            (
+                WeaponKind::LaserCannon,
+                ORIGINAL_LASER_PROJECTILE_THRESHOLD,
+                Some(0),
+                true,
+                (0.5, 2, 0, 1.0),
+            ),
+            (
+                WeaponKind::Turbolaser,
+                30.0,
+                Some(15),
+                false,
+                (0.65, 1, 1, 1.0),
+            ),
+            (
+                WeaponKind::Turbolaser,
+                40.0,
+                Some(14),
+                false,
+                (0.75, 2, 1, 1.0),
+            ),
+            (
+                WeaponKind::Turbolaser,
+                40.0,
+                Some(15),
+                false,
+                (1.0, 3, 1, 2.0),
+            ),
+            (
+                WeaponKind::IonCannon,
+                ORIGINAL_ION_PROJECTILE_THRESHOLD,
+                Some(0),
+                true,
+                (1.0, 3, 2, 2.0),
+            ),
+            (
+                WeaponKind::FighterAttack,
+                10.0,
+                None,
+                true,
+                (0.2, 1, 0, 1.0),
+            ),
+        ];
+        for (weapon, strength, ordinal, alliance, expected) in cases {
+            let profile = original_projectile_profile(weapon, strength, ordinal, alliance);
+            assert_eq!(
+                (
+                    profile.longitudinal_scale,
+                    profile.shape_variant,
+                    profile.color_selector,
+                    profile.duration,
+                ),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn retained_projectile_interpolates_and_expires_by_source_duration() {
+        let ships = vec![test_ship(64, 0, true, true), test_ship(128, 0, false, true)];
+        let mut session = test_session(ships, Vec::new(), true);
+        assert!(queue_original_tactical_projectile(
+            &mut session.weapon_effects,
+            &session.ships,
+            0,
+            1,
+            WeaponKind::LaserCannon,
+            ORIGINAL_LASER_PROJECTILE_THRESHOLD,
+        ));
+        assert_eq!(session.weapon_effects[0].shape_variant, 2);
+        session.advance_presentational_effects(0.5);
+        assert_eq!(session.weapon_effects[0].progress(), 0.5);
+        session.advance_presentational_effects(0.499);
+        assert_eq!(session.weapon_effects.len(), 1);
+        session.advance_presentational_effects(0.002);
+        assert!(session.weapon_effects.is_empty());
+    }
+
+    #[test]
+    fn gravity_field_preempts_tractor_then_restores_it_at_ten_hertz() {
+        let mut session = test_session(Vec::new(), Vec::new(), true);
+        assert!(set_original_tactical_field(
+            &mut session.field_effects,
+            4,
+            OriginalTacticalFieldKind::Tractor,
+            true,
+        ));
+        assert_eq!(session.field_effects[0].resource_id(), Some(3620));
+        session.advance_presentational_effects(0.1);
+        assert_eq!(session.field_effects[0].resource_id(), Some(3621));
+        assert!(set_original_tactical_field(
+            &mut session.field_effects,
+            4,
+            OriginalTacticalFieldKind::Gravity,
+            true,
+        ));
+        assert_eq!(session.field_effects[0].resource_id(), Some(3520));
+        assert!(set_original_tactical_field(
+            &mut session.field_effects,
+            4,
+            OriginalTacticalFieldKind::Tractor,
+            true,
+        ));
+        assert_eq!(session.field_effects[0].source_counts(), (2, 1));
+        assert!(set_original_tactical_field(
+            &mut session.field_effects,
+            4,
+            OriginalTacticalFieldKind::Gravity,
+            false,
+        ));
+        assert_eq!(session.field_effects[0].resource_id(), Some(3620));
+        assert!(set_original_tactical_field(
+            &mut session.field_effects,
+            4,
+            OriginalTacticalFieldKind::Tractor,
+            false,
+        ));
+        assert!(set_original_tactical_field(
+            &mut session.field_effects,
+            4,
+            OriginalTacticalFieldKind::Tractor,
+            false,
+        ));
+        assert!(session.field_effects.is_empty());
     }
 
     #[test]

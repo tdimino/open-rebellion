@@ -1415,6 +1415,124 @@ async function probeTacticalEffectPresentation(folder, stable, consoleLines, rea
   }];
 }
 
+async function probeTacticalProjectileFieldPresentation(folder, stable, consoleLines, ready) {
+  const expectedProjectiles = [
+    { source: 0, target: 3, kind: "laser", longitudinal_scale: 0.5,
+      shape_variant: 2, color_selector: 0, elapsed: 0.5, duration: 1, progress: 0.5 },
+    { source: 4, target: 1, kind: "turbolaser", longitudinal_scale: 0.65,
+      shape_variant: 1, color_selector: 1, elapsed: 0.5, duration: 1, progress: 0.5 },
+    { source: 2, target: 5, kind: "ion", longitudinal_scale: 1,
+      shape_variant: 3, color_selector: 2, elapsed: 0.5, duration: 2, progress: 0.25 },
+  ];
+  const expectedFields = [
+    { target: 1, resource_id: 3623, frame: 3, tractor_sources: 1, gravity_sources: 0 },
+    { target: 4, resource_id: 3525, frame: 5, tractor_sources: 1, gravity_sources: 1 },
+  ];
+  assert.deepEqual(ready.projectiles, expectedProjectiles,
+    "projectile fixture did not expose the exact source profiles");
+  assert.deepEqual(ready.fields, expectedFields,
+    "field fixture did not preserve tractor/gravity priority and resources");
+  assert.deepEqual(ready.effects, [],
+    "projectile/field fixture unexpectedly installed an impact sequence");
+
+  const loadLines = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] effect_loaded"));
+  assert.equal(loadLines.length, 2,
+    "field fixture did not load exactly two source frames");
+  const loaded = loadLines.map(({ text }) => {
+    const match = text.match(/resource=(\d+)/);
+    assert.ok(match, "field load omitted its resource identity");
+    assert.match(text,
+      /texture_filter=nearest transparent_index=\d+ source=FUN_005d38d0/,
+      "field load omitted its transparency, filter, or decoder contract");
+    return Number(match[1]);
+  }).sort((left, right) => left - right);
+  assert.deepEqual(loaded, [3525, 3623]);
+
+  const fieldLines = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] field_scene"));
+  assert.equal(fieldLines.length, 1,
+    "field fixture emitted the wrong number of stable scene states");
+  assert.match(fieldLines[0].text,
+    /requested=2 rendered=2 .*frame_seconds=0\.1 source_size=128x128 priority=gravity_over_tractor .*source=FUN_005b23e0,FUN_005b24d0,FUN_005b2440,FUN_005b2480,FUN_005d3ac0,FUN_005d3cc0/,
+    "field scene omitted its dimensions, timing, priority, or source contract");
+  for (const { target, resource_id: resourceId } of expectedFields) {
+    assert.match(fieldLines[0].text, new RegExp(`${target + 1}:${resourceId}:\\d+:`),
+      `field ${resourceId} was not attached to source object ${target + 1}`);
+  }
+
+  const projectileLines = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] projectile_scene"));
+  assert.equal(projectileLines.length, 1,
+    "projectile fixture emitted the wrong number of stable scene states");
+  assert.match(projectileLines[0].text,
+    /requested=3 rendered=3 .*selectors=0,1,2 durations=1,1,2 interpolation=source_to_live_target geometry=source_mesh raster_compat=device_pixel_floor .*FUN_005ee590,LAB_005eeb90/,
+    "projectile scene omitted its shapes, colors, lifecycle, geometry, or interpolation source");
+  for (const [index, projectile] of expectedProjectiles.entries()) {
+    assert.match(projectileLines[0].text,
+      new RegExp(`${index + 2001}:${projectile.shape_variant}:`
+        + `${projectile.longitudinal_scale.toFixed(3)}:${projectile.progress.toFixed(3)}:`),
+      `projectile ${index} omitted its exact shape, scale, or progress`);
+  }
+  const projectileCenters = [...projectileLines[0].text.matchAll(
+    /(20\d\d):\d+:[\d.]+:[\d.]+:([\d.]+),([\d.]+)/g,
+  )].map((match) => ({ object_id: Number(match[1]), x: Number(match[2]), y: Number(match[3]) }));
+  assert.equal(projectileCenters.length, expectedProjectiles.length,
+    "projectile scene did not expose all framebuffer probe centers");
+  const screenshot = PNG.sync.read(stable.bytes);
+  const selectorPixelCounts = projectileCenters.map((center, index) => {
+    const selector = expectedProjectiles[index].color_selector;
+    let matchingPixels = 0;
+    for (let y = Math.max(0, Math.round(center.y) - 6);
+      y <= Math.min(screenshot.height - 1, Math.round(center.y) + 6); y++) {
+      for (let x = Math.max(0, Math.round(center.x) - 6);
+        x <= Math.min(screenshot.width - 1, Math.round(center.x) + 6); x++) {
+        const offset = (y * screenshot.width + x) * 4;
+        const [red, green, blue] = screenshot.data.subarray(offset, offset + 3);
+        const matches = selector === 0
+          ? red >= 48 && green <= 24 && blue <= 24
+          : selector === 1
+            ? green >= 48 && red <= 24 && blue <= 24
+            : blue >= 48 && red <= 24 && green <= 24;
+        if (matches) matchingPixels++;
+      }
+    }
+    assert.ok(matchingPixels > 0,
+      `projectile ${center.object_id} produced no selector ${selector} framebuffer pixels`);
+    return { object_id: center.object_id, color_selector: selector, matching_pixels: matchingPixels };
+  });
+  fs.writeFileSync(path.join(folder, "projectiles-and-fields.png"), stable.bytes);
+  return [
+    {
+      type: "source-traced-tactical-projectiles",
+      executable_functions: [
+        "FUN_005b1ea0", "FUN_005b1f60", "FUN_005b2080", "FUN_005b2c70",
+        "FUN_005d3de0", "FUN_005ee590", "LAB_005eeb90",
+      ],
+      thresholds: { laser: 28.8, turbolaser: 34.666668, ion: 32, torpedo: 12.8 },
+      source_vertices: 12,
+      shape_variants: [1, 2, 3],
+      material_selectors: { alliance: 0, empire: 1, ion: 2 },
+      durations: [1, 1, 2],
+      raster_compatibility: "one-device-pixel floor for source 0.001-unit faces",
+      framebuffer_color_pixels: selectorPixelCounts,
+      projectiles: expectedProjectiles,
+    },
+    {
+      type: "source-traced-tactical-fields",
+      executable_functions: [
+        "FUN_005b23e0", "FUN_005b24d0", "FUN_005b2440", "FUN_005b2480",
+        "FUN_005d3ac0", "FUN_005d3cc0",
+      ],
+      families: { tractor: [3620, 3627], gravity: [3520, 3527] },
+      source_size: [128, 128],
+      frame_seconds: 0.1,
+      priority: "gravity-over-tractor-with-tractor-restoration",
+      fields: expectedFields,
+    },
+  ];
+}
+
 async function probeTacticalGroupPresentation(
   page, viewport, folder, stable, consoleLines, ready, faction,
 ) {
@@ -1630,6 +1748,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         )
         : scenario.effect_presentation
         ? await probeTacticalEffectPresentation(folder, stable, consoleLines, ready)
+        : scenario.projectile_field_presentation
+        ? await probeTacticalProjectileFieldPresentation(folder, stable, consoleLines, ready)
         : scenario.production_participants
         ? await probeTacticalProductionParticipants(
           page, folder, stable, consoleLines, faction,
@@ -1639,7 +1759,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 11);
+      assert.equal(ready.schema_version, 12);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -1649,6 +1769,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       assert.equal(ready.focus_player_fighter, Boolean(scenario.fighter_detail_journey));
       assert.equal(ready.group_presentation, Boolean(scenario.group_presentation));
       assert.equal(ready.effect_presentation, Boolean(scenario.effect_presentation));
+      assert.equal(ready.projectile_field_presentation,
+        Boolean(scenario.projectile_field_presentation));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -1662,6 +1784,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       const effectLayout = faction === "alliance"
         ? { first_active_objects: 7, second_active_objects: 2 }
         : { first_active_objects: 2, second_active_objects: 7 };
+      const projectileFieldLayout = { first_active_objects: 4, second_active_objects: 4 };
       assert.deepEqual(ready.source_layout, scenario.group_presentation ? {
         ...groupLayout,
         battle_extent: 136,
@@ -1676,6 +1799,13 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         outer_negative_z: -60.5,
         inner_negative_z: -40.5,
         inner_positive_z: 40.5,
+      } : scenario.projectile_field_presentation ? {
+        ...projectileFieldLayout,
+        battle_extent: 112,
+        outer_positive_z: 56,
+        outer_negative_z: -56,
+        inner_negative_z: -36,
+        inner_positive_z: 36,
       } : {
         first_active_objects: 2,
         second_active_objects: 2,
@@ -1686,7 +1816,9 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         inner_positive_z: 33,
       });
       assert.equal(ready.participants.length,
-        scenario.group_presentation ? 14 : scenario.effect_presentation ? 9 : 4);
+        scenario.group_presentation ? 14
+          : scenario.effect_presentation ? 9
+          : scenario.projectile_field_presentation ? 8 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -1764,6 +1896,25 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         assert.ok(playerShips.every(({ source_position: position }) => position[2] === playerShipZ));
         assert.ok(playerFighters.every(({ source_position: position }) =>
           position[2] === playerFighterZ));
+      } else if (scenario.projectile_field_presentation) {
+        const allianceShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === "alliance");
+        const empireShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === "empire");
+        const allianceFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === "alliance");
+        const empireFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === "empire");
+        assert.deepEqual(allianceShips.map(({ fleet_roster_index }) => fleet_roster_index),
+          [0, 1, 2]);
+        assert.deepEqual(empireShips.map(({ fleet_roster_index }) => fleet_roster_index),
+          [0, 1, 2]);
+        assert.equal(allianceFighters.length, 1);
+        assert.equal(empireFighters.length, 1);
+        assert.ok(allianceShips.every(({ source_position: position }) => position[2] === -56));
+        assert.ok(empireShips.every(({ source_position: position }) => position[2] === 56));
+        assert.equal(allianceFighters[0].source_position[2], -36);
+        assert.equal(empireFighters[0].source_position[2], 36);
       } else {
         for (const participant of ready.participants) {
           const key = `${participant.kind}:${participant.faction}`;
@@ -2182,16 +2333,17 @@ async function main() {
         "production-fighter-detail-journey",
         "production-group-presentation",
         "production-effect-presentation",
+        "production-projectile-field-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, false, false, false, false, false]);
+      [true, false, true, true, true, true, true, false, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
-        undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true, false, false, false, false, false, false]);
+      [false, false, false, false, false, true, false, false, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      [false, false, false, false, false, false, true, false, false, false, false, false]);
+      [false, false, false, false, false, false, true, false, false, false, false, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

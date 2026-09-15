@@ -5638,6 +5638,7 @@ mod tactical_ground_tests {
             combat_tick: 1,
             weapon_effects: vec![],
             impact_effects: vec![],
+            field_effects: vec![],
             paused: false,
             combat_speed: 1,
             step_accumulator: 0.0,

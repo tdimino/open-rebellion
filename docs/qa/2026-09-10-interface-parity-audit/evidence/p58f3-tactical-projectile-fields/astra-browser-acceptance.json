@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "role": "browser visual acceptance only"
+  },
+  "verdict": "pass",
+  "acceptance_scope": "Retained browser evidence only, not strict original-game A0 parity.",
+  "inspected_surfaces": [
+    "Alliance at 640x480",
+    "Alliance at 1280x800 letterboxed",
+    "Empire at 640x480",
+    "Empire at 1280x800 letterboxed"
+  ],
+  "visual_findings": [
+    "All four views show the tactical HUD frame.",
+    "All four views show red, green, and blue projectile traces.",
+    "All four views show tractor and gravity fields.",
+    "No unintended HUD or field clipping is visible.",
+    "No obvious blank or corrupt surface is visible."
+  ],
+  "evidence_checks": {
+    "focused_cases": "4 of 4 passed",
+    "complete_matrix": "52 of 52 passed",
+    "four_request_startups": 52,
+    "browser_errors": 0,
+    "muted_launches": 52,
+    "closed_browser_processes": 52,
+    "framebuffer_probe": "Nonzero pixels for each projectile color selector in both factions and viewports.",
+    "field_probe": "Tractor resource 3623 at frame 3 and gravity resource 3525 at frame 5."
+  },
+  "limitations": [
+    "The review inspected retained screenshots and JSON evidence rather than launching a fresh browser session.",
+    "Projectile traces are only a few pixels, particularly at 640x480, and are corroborated by framebuffer probes.",
+    "Static captures do not establish animation, interaction behavior, or original-game parity."
+  ],
+  "blocking_findings": []
+}

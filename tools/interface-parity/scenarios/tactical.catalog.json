@@ -125,6 +125,20 @@
       "acceptance": "A1 executable resource, frame, timing, transparency, priority, and production-position proof only. Projectile geometry, shield fields, and native A0 comparison remain open."
     },
     {
+      "slug": "production-projectile-field-presentation",
+      "description": "All three retained projectile mesh variants plus tractor and gravity fields rendered on live production participants with source colors, scale, interpolation, timing, and priority",
+      "fixture_codes": {
+        "alliance": 65805,
+        "empire": 66061
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "projectile_field_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable geometry, material-selector, duration, interpolation, field-resource, lifecycle, and priority proof only. Field command timing, special weapons, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

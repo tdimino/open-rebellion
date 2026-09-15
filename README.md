@@ -40,7 +40,7 @@ Open Rebellion reads the original game data files, converts them to clean JSON, 
 
 ### Current development state
 
-> **Verification (2026-09-14):** All 683 workspace tests and the 48-case muted tactical browser gate pass. Verified checkpoints include the shuttle, strategic shell, sector/system navigation, tactical shell, source-rendered ships and fighters, group controls, system-selected planets, and original target-impact effects. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks projectile, shield, original-view, multiplayer, and release gates still open.
+> **Verification (2026-09-14):** All 687 workspace tests and the 52-case muted tactical browser gate pass. Verified checkpoints include the shuttle, strategic shell, sector/system navigation, tactical shell, source-rendered ships and fighters, group controls, system-selected planets, target-impact effects, retained projectiles, and tractor/gravity fields. The [interface audit](docs/qa/2026-09-10-interface-parity-audit/) tracks original-view, command, multiplayer, and release gates still open.
 
 | Layer | Implementation status | Release acceptance |
 |-------|-----------------------|--------------------|
