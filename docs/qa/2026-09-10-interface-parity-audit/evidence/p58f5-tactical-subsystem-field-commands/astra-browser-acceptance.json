@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "role": "browser visual acceptance only"
+  },
+  "verdict": "pass",
+  "acceptance_scope": "P58F5 A1 visual acceptance of retained browser artifacts, not strict A0 original-game parity.",
+  "inspected_surfaces": [
+    "Alliance at 640x480",
+    "Alliance at 1280x800 letterboxed",
+    "Empire at 640x480",
+    "Empire at 1280x800 letterboxed"
+  ],
+  "visual_findings": [
+    "All five selected-capital subsystem condition tiles are visible, aligned, and consistently scaled in panel 1302.",
+    "Blue tractor and red/yellow gravity field effects are visible in all four views without blank or corrupt surfaces.",
+    "Faction portraits, colors, and scene variants remain visually coherent.",
+    "No unintended clipping or apparent invented overlay is visible.",
+    "All four supporting results pass with stable paired screenshots and no recorded errors; native subsystem tiles have exact source-bitmap checks."
+  ],
+  "evidence_checks": {
+    "focused_cases": "4 of 4 passed",
+    "complete_matrix": "60 of 60 passed",
+    "four_request_startups": 60,
+    "browser_errors": 0,
+    "muted_launches": 60,
+    "closed_browser_processes": 60,
+    "native_bitmap_pixels_checked_per_resource": 330,
+    "contact_sheet_sha256": "531326984e1861a37c4acb49f7cda70825d2ac0b143a8cb15852edc60d6dc11d"
+  },
+  "limitations": [
+    "The review inspected the supplied contact sheet rather than launching another browser session.",
+    "Letterboxed scaling was visually accepted; exact pixel checks apply only at native size.",
+    "Strict A0 original-runtime parity remains unproven because all comparisons are unbaselined."
+  ],
+  "blocking_findings": [],
+  "ready_to_commit": true
+}

@@ -41,13 +41,15 @@ advances it through eight 128 by 128 frames at 0.1 seconds per frame:
 Tractor sources start and stop through `FUN_005b23e0` and `FUN_005b2440`.
 Gravity sources start and stop through `FUN_005b24d0` and `FUN_005b2480`.
 Gravity takes visible priority in the shared slot. When its last source ends,
-an active tractor field becomes visible again. Multiple source counts are
-preserved rather than collapsed to one boolean.
+an active tractor field becomes visible again. P58F5 later recovered the exact
+source identities and source-side capacity rules in
+[`tactical-subsystem-field-command-path.md`](tactical-subsystem-field-command-path.md).
 
 ## Acceptance boundary
 
 P58F3 proves the constructor constants, mesh variants, colors, duration,
-interpolation, field families, timing, source counts, priority, browser
-transport, and framebuffer presentation. Exact combat-command start and stop
-timing, the unused white material branch, fighter emission, special-weapon
+interpolation, field families, animation timing, source counts, priority,
+browser transport, and framebuffer presentation. P58F5 supersedes the count
+model with exact source identities and capacity rules. Combat-driven command
+events, the unused white material branch, fighter emission, special-weapon
 states, audio, and lossless original-runtime pixel comparison remain open.

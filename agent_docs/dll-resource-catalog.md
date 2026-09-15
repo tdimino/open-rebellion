@@ -118,14 +118,18 @@ Tactical combat view — HUD, ship/fighter sprites, squadron controls, weapon sy
 - 1021-1024: Death Star laser controls + gauge
 - 1105-1108: Maneuvers/tactics/missions buttons
 - 1170-1195: Recover/attack buttons (per-faction × 3 states)
-- 1206-1210: Weapon recharge gauge (0-100% in 5 steps)
+- 1201-1205: Selected-capital shield-generator condition, five source bands
+- 1206-1210: Selected-capital weapon condition, five source bands
+- 1211-1215: Selected-capital tractor-beam condition, five source bands
+- 1216-1220: Selected-capital sublight-engine condition, five source bands
+- 1221-1225: Selected-capital hyperdrive condition, five source bands
 - 1302: Hull integrity + shield strength panel
 - 2001-2130: ~130 tactical ship sprites (the 3D renders used in combat view)
 
 Custom type 301 contains 87 binary DirectX `.x` meshes. Custom type 303
 contains 397 texture payloads, including named tactical textures and numeric
-16×16 through 256×256 textures. The current extractor and browser pack omit
-both custom types and all tactical WAV resources.
+16×16 through 256×256 textures. The current staging and browser-pack path
+includes all 87 meshes and 397 textures. Tactical WAV resources remain omitted.
 
 ## ALSPRITE.DLL (16MB) — 38 BMPs + 752 BIN + 1,640 type-302 frames + 213 WAV
 

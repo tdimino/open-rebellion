@@ -75,6 +75,11 @@ const TACTICAL_SELECTED_SHIELD_METER: NativeRect = NativeRect::new(514.0, 107.0,
 const TACTICAL_SELECTED_HULL_METER: NativeRect = NativeRect::new(585.0, 107.0, 39.0, 8.0);
 const TACTICAL_SELECTED_SHIP_ART_X: f32 = 507.0;
 const TACTICAL_SELECTED_SHIP_ART_Y: f32 = 37.0;
+/// `FUN_005e45f0` and `FUN_005e7540` place the five condition indicators at
+/// panel-local x positions 10, 37, 64, 91, and 118 with y 103.
+const TACTICAL_SUBSYSTEM_RESOURCE_BASES: [u32; 5] = [1201, 1206, 1211, 1216, 1221];
+const TACTICAL_SUBSYSTEM_X: [f32; 5] = [491.0, 518.0, 545.0, 572.0, 599.0];
+const TACTICAL_SUBSYSTEM_Y: f32 = 130.0;
 
 /// Default ship icon size when no sprite is available.
 const DEFAULT_SHIP_SIZE: f32 = 40.0;
@@ -333,6 +338,9 @@ pub struct TacticalShip {
     /// Shield strength (0-100 scale).
     pub shield: i32,
     pub shield_max: i32,
+    /// Shield, weapon, tractor, engine, and hyperdrive condition percentages.
+    /// Values are independent of the live hull and shield-energy meters.
+    pub subsystem_condition: TacticalSubsystemCondition,
     /// True if this ship belongs to the attacker side.
     pub is_attacker: bool,
     /// True if the ship is still alive.
@@ -359,6 +367,48 @@ pub struct TacticalShip {
     pub retreat_progress: f32,
     /// True if this ship successfully retreated (survived, not destroyed).
     pub retreated: bool,
+}
+
+/// The five selected-capital condition values consumed by the original HUD.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TacticalSubsystemCondition {
+    pub shields: u8,
+    pub weapons: u8,
+    pub tractor: u8,
+    pub engines: u8,
+    pub hyperdrive: u8,
+}
+
+impl TacticalSubsystemCondition {
+    #[must_use]
+    pub const fn percentages(self) -> [u8; 5] {
+        [
+            self.shields,
+            self.weapons,
+            self.tractor,
+            self.engines,
+            self.hyperdrive,
+        ]
+    }
+
+    #[must_use]
+    pub fn resource_ids(self) -> [u32; 5] {
+        let percentages = self.percentages();
+        std::array::from_fn(|index| {
+            TACTICAL_SUBSYSTEM_RESOURCE_BASES[index]
+                + u32::from(original_tactical_condition_band(percentages[index]))
+        })
+    }
+}
+
+fn original_tactical_condition_band(percent: u8) -> u8 {
+    match percent {
+        0 => 0,
+        1..=24 => 1,
+        25..=49 => 2,
+        50..=74 => 3,
+        75..=u8::MAX => 4,
+    }
 }
 
 /// One fighter squadron in the battle.
@@ -483,11 +533,11 @@ impl WeaponEffect {
 }
 
 /// One target's shared tractor/gravity field slot from `FUN_005d3ac0`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TacticalFieldEffect {
     pub target: usize,
-    tractor_sources: u8,
-    gravity_sources: u8,
+    tractor_sources: Vec<usize>,
+    gravity_sources: Vec<usize>,
     pub frame: u8,
     frame_elapsed: f32,
 }
@@ -500,10 +550,10 @@ enum OriginalTacticalFieldKind {
 }
 
 impl TacticalFieldEffect {
-    fn visible_kind(self) -> Option<OriginalTacticalFieldKind> {
-        if self.gravity_sources > 0 {
+    fn visible_kind(&self) -> Option<OriginalTacticalFieldKind> {
+        if !self.gravity_sources.is_empty() {
             Some(OriginalTacticalFieldKind::Gravity)
-        } else if self.tractor_sources > 0 {
+        } else if !self.tractor_sources.is_empty() {
             Some(OriginalTacticalFieldKind::Tractor)
         } else {
             None
@@ -511,7 +561,7 @@ impl TacticalFieldEffect {
     }
 
     #[must_use]
-    pub fn resource_id(self) -> Option<u32> {
+    pub fn resource_id(&self) -> Option<u32> {
         self.visible_kind().map(|kind| match kind {
             OriginalTacticalFieldKind::Gravity => 3520 + u32::from(self.frame),
             OriginalTacticalFieldKind::Tractor => 3620 + u32::from(self.frame),
@@ -519,8 +569,16 @@ impl TacticalFieldEffect {
     }
 
     #[must_use]
-    pub fn source_counts(self) -> (u8, u8) {
-        (self.tractor_sources, self.gravity_sources)
+    pub fn source_counts(&self) -> (u8, u8) {
+        (
+            u8::try_from(self.tractor_sources.len()).unwrap_or(u8::MAX),
+            u8::try_from(self.gravity_sources.len()).unwrap_or(u8::MAX),
+        )
+    }
+
+    #[must_use]
+    pub fn source_ids(&self) -> (&[usize], &[usize]) {
+        (&self.tractor_sources, &self.gravity_sources)
     }
 }
 
@@ -752,10 +810,37 @@ fn queue_original_tactical_projectile(
 
 fn set_original_tactical_field(
     effects: &mut Vec<TacticalFieldEffect>,
+    source: usize,
     target: usize,
     kind: OriginalTacticalFieldKind,
     active: bool,
 ) -> bool {
+    if active {
+        let duplicate = effects.iter().any(|effect| {
+            effect.target == target
+                && match kind {
+                    OriginalTacticalFieldKind::Tractor => effect.tractor_sources.contains(&source),
+                    OriginalTacticalFieldKind::Gravity => effect.gravity_sources.contains(&source),
+                }
+        });
+        if duplicate {
+            return false;
+        }
+        let source_assignments = effects
+            .iter()
+            .filter(|effect| match kind {
+                OriginalTacticalFieldKind::Tractor => effect.tractor_sources.contains(&source),
+                OriginalTacticalFieldKind::Gravity => effect.gravity_sources.contains(&source),
+            })
+            .count();
+        let source_limit = match kind {
+            OriginalTacticalFieldKind::Tractor => 1,
+            OriginalTacticalFieldKind::Gravity => 4,
+        };
+        if source_assignments >= source_limit {
+            return false;
+        }
+    }
     let existing = effects.iter().position(|effect| effect.target == target);
     if existing.is_none() && !active {
         return false;
@@ -763,8 +848,8 @@ fn set_original_tactical_field(
     let index = existing.unwrap_or_else(|| {
         effects.push(TacticalFieldEffect {
             target,
-            tractor_sources: 0,
-            gravity_sources: 0,
+            tractor_sources: Vec::new(),
+            gravity_sources: Vec::new(),
             frame: 0,
             frame_elapsed: 0.0,
         });
@@ -777,11 +862,12 @@ fn set_original_tactical_field(
         OriginalTacticalFieldKind::Gravity => &mut effect.gravity_sources,
     };
     if active {
-        *sources = sources.saturating_add(1);
-    } else if *sources > 0 {
-        *sources -= 1;
+        sources.push(source);
     } else {
-        return false;
+        let Some(source_index) = sources.iter().position(|candidate| *candidate == source) else {
+            return false;
+        };
+        sources.remove(source_index);
     }
     let current = effect.visible_kind();
     if current != previous {
@@ -878,13 +964,20 @@ impl BattleSession {
     }
 
     /// Start or stop one source's tractor-field contribution on a live target.
-    /// Multiple sources are counted, matching `FUN_005b23e0`/`FUN_005b2440`.
-    pub fn set_tractor_field(&mut self, target: usize, active: bool) -> bool {
-        if target >= self.ships.len() {
+    /// One tractor source can hold one target while a target can retain several
+    /// exact sources, matching `FUN_005b23e0` through `FUN_005b25d0`.
+    pub fn set_tractor_field(&mut self, source: usize, target: usize, active: bool) -> bool {
+        if source >= self.ships.len()
+            || target >= self.ships.len()
+            || source == target
+            || !self.ships[source].alive
+            || !self.ships[target].alive
+        {
             return false;
         }
         set_original_tactical_field(
             &mut self.field_effects,
+            source,
             target,
             OriginalTacticalFieldKind::Tractor,
             active,
@@ -892,14 +985,21 @@ impl BattleSession {
     }
 
     /// Start or stop one source's gravity-field contribution on a live target.
-    /// Gravity preempts tractor in the shared visual slot until its last source
-    /// ends, matching `FUN_005b24d0`/`FUN_005b2480`.
-    pub fn set_gravity_field(&mut self, target: usize, active: bool) -> bool {
-        if target >= self.ships.len() {
+    /// One gravity source can hold four exact targets. Gravity preempts tractor
+    /// in each target's shared visual slot, matching `FUN_005b24d0` through
+    /// `FUN_005b2550`.
+    pub fn set_gravity_field(&mut self, source: usize, target: usize, active: bool) -> bool {
+        if source >= self.ships.len()
+            || target >= self.ships.len()
+            || source == target
+            || !self.ships[source].alive
+            || !self.ships[target].alive
+        {
             return false;
         }
         set_original_tactical_field(
             &mut self.field_effects,
+            source,
             target,
             OriginalTacticalFieldKind::Gravity,
             active,
@@ -958,6 +1058,14 @@ impl BattleSession {
                 hull_max: class.hull.cast_signed(),
                 shield: class.shield_strength.cast_signed(),
                 shield_max: class.shield_strength.cast_signed(),
+                subsystem_condition: TacticalSubsystemCondition {
+                    shields: u8::from(class.shield_strength > 0) * 100,
+                    weapons: u8::from(turbolaser_total + ion_cannon_total + laser_cannon_total > 0)
+                        * 100,
+                    tractor: u8::from(class.tractor_beam_power > 0) * 100,
+                    engines: u8::from(class.sub_light_engine > 0) * 100,
+                    hyperdrive: u8::from(class.hyperdrive > 0) * 100,
+                },
                 is_attacker,
                 alive: true,
                 selected: false,
@@ -1850,9 +1958,9 @@ impl TacticalState {
             }
 
             session.field_effects.clear();
-            session.set_tractor_field(alliance[1], true);
-            session.set_tractor_field(empire[1], true);
-            session.set_gravity_field(empire[1], true);
+            session.set_tractor_field(empire[0], alliance[1], true);
+            session.set_tractor_field(alliance[0], empire[1], true);
+            session.set_gravity_field(alliance[2], empire[1], true);
             session.field_effects[0].frame = 3;
             session.field_effects[1].frame = 5;
             session.paused = true;
@@ -1889,6 +1997,52 @@ impl TacticalState {
         session.selected_ship = Some(index);
         session.selected_fighter_group = None;
         session.paused = true;
+    }
+
+    /// Install all five selected-capital condition bands plus source-identified
+    /// tractor and gravity locks for deterministic browser inspection.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_subsystem_field_command_fixture(&mut self) {
+        self.configure_selected_damage_fixture();
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let alliance = session
+            .ships
+            .iter()
+            .enumerate()
+            .filter(|(_, ship)| ship.identity.is_alliance)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let empire = session
+            .ships
+            .iter()
+            .enumerate()
+            .filter(|(_, ship)| !ship.identity.is_alliance)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if alliance.len() < 3 || empire.len() < 3 {
+            return;
+        }
+        if let Some(index) = session.selected_ship {
+            session.ships[index].subsystem_condition = TacticalSubsystemCondition {
+                shields: 0,
+                weapons: 24,
+                tractor: 25,
+                engines: 50,
+                hyperdrive: 75,
+            };
+        }
+        session.field_effects.clear();
+        assert!(session.set_tractor_field(empire[0], alliance[1], true));
+        assert!(session.set_tractor_field(empire[2], alliance[1], true));
+        assert!(session.set_tractor_field(alliance[0], empire[1], true));
+        assert!(session.set_gravity_field(alliance[2], empire[1], true));
+        session.advance_presentational_effects(0.4);
+        session.paused = true;
+        for _ in 0..4 {
+            self.asset_renderer.zoom_out();
+        }
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -2098,6 +2252,7 @@ struct TacticalGroupHud<'a> {
     selected_ship_hud: Option<u32>,
     selected_ship_hull: Option<(i32, i32)>,
     selected_ship_shield: Option<(i32, i32)>,
+    selected_ship_subsystems: Option<TacticalSubsystemCondition>,
     selected_fighter_name: Option<&'a str>,
     selected_fighter_hud: Option<u32>,
 }
@@ -2150,6 +2305,7 @@ impl<'a> TacticalGroupHud<'a> {
                 .map(TacticalCapitalShipResource::hud_resource),
             selected_ship_hull: selected_ship.map(|ship| (ship.hull_current, ship.hull_max)),
             selected_ship_shield: selected_ship.map(|ship| (ship.shield, ship.shield_max)),
+            selected_ship_subsystems: selected_ship.map(|ship| ship.subsystem_condition),
             selected_fighter_name: selected_fighter.map(|fighter| fighter.name.as_str()),
             selected_fighter_hud: selected_fighter
                 .and_then(|fighter| fighter.tactical_resource)
@@ -2511,6 +2667,17 @@ fn draw_original_tactical_hud(
                     Color::new(1.0, 0.0, 0.0, 1.0)
                 },
             );
+        }
+        if let Some(subsystems) = groups.selected_ship_subsystems {
+            for (index, resource_id) in subsystems.resource_ids().into_iter().enumerate() {
+                draw_tactical_bitmap(
+                    cache,
+                    resource_id,
+                    canvas,
+                    TACTICAL_SUBSYSTEM_X[index],
+                    TACTICAL_SUBSYSTEM_Y,
+                );
+            }
         }
         let (x, y) = canvas.point(497.0, 48.0);
         draw_text(name, x, y, 11.0 * canvas.scale, WHITE);
@@ -4060,9 +4227,7 @@ fn handle_placement_input(
 
 /// Draw a simple starfield background.
 #[expect(
-    clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
 fn draw_starfield(canvas: TacticalCanvas) {
@@ -4115,6 +4280,13 @@ mod tests {
             hull_max: 1,
             shield: 0,
             shield_max: 0,
+            subsystem_condition: TacticalSubsystemCondition {
+                shields: 0,
+                weapons: 0,
+                tractor: 0,
+                engines: 0,
+                hyperdrive: 0,
+            },
             is_attacker: is_alliance,
             alive,
             selected: false,
@@ -4392,6 +4564,7 @@ mod tests {
         let mut session = test_session(Vec::new(), Vec::new(), true);
         assert!(set_original_tactical_field(
             &mut session.field_effects,
+            1,
             4,
             OriginalTacticalFieldKind::Tractor,
             true,
@@ -4401,6 +4574,7 @@ mod tests {
         assert_eq!(session.field_effects[0].resource_id(), Some(3621));
         assert!(set_original_tactical_field(
             &mut session.field_effects,
+            2,
             4,
             OriginalTacticalFieldKind::Gravity,
             true,
@@ -4408,6 +4582,7 @@ mod tests {
         assert_eq!(session.field_effects[0].resource_id(), Some(3520));
         assert!(set_original_tactical_field(
             &mut session.field_effects,
+            3,
             4,
             OriginalTacticalFieldKind::Tractor,
             true,
@@ -4415,6 +4590,7 @@ mod tests {
         assert_eq!(session.field_effects[0].source_counts(), (2, 1));
         assert!(set_original_tactical_field(
             &mut session.field_effects,
+            2,
             4,
             OriginalTacticalFieldKind::Gravity,
             false,
@@ -4422,17 +4598,67 @@ mod tests {
         assert_eq!(session.field_effects[0].resource_id(), Some(3620));
         assert!(set_original_tactical_field(
             &mut session.field_effects,
+            1,
             4,
             OriginalTacticalFieldKind::Tractor,
             false,
         ));
         assert!(set_original_tactical_field(
             &mut session.field_effects,
+            3,
             4,
             OriginalTacticalFieldKind::Tractor,
             false,
         ));
         assert!(session.field_effects.is_empty());
+    }
+
+    #[test]
+    fn exact_field_sources_enforce_one_tractor_and_four_gravity_targets() {
+        let ships = (0..6)
+            .map(|index| test_ship(64, index, true, true))
+            .collect();
+        let mut session = test_session(ships, Vec::new(), true);
+
+        assert!(session.set_tractor_field(0, 1, true));
+        assert!(!session.set_tractor_field(0, 1, true));
+        assert!(!session.set_tractor_field(0, 2, true));
+        assert!(!session.set_tractor_field(2, 1, false));
+        assert!(session.set_tractor_field(0, 1, false));
+        assert!(session.set_tractor_field(0, 2, true));
+
+        for target in 1..=4 {
+            assert!(session.set_gravity_field(0, target, true));
+        }
+        assert!(!session.set_gravity_field(0, 1, true));
+        assert!(!session.set_gravity_field(0, 5, true));
+        assert!(!session.set_gravity_field(1, 4, false));
+        assert!(session.set_gravity_field(0, 4, false));
+        assert!(session.set_gravity_field(0, 5, true));
+
+        let target_two = session
+            .field_effects
+            .iter()
+            .find(|effect| effect.target == 2)
+            .expect("target two should retain both field kinds");
+        assert_eq!(target_two.source_ids(), (&[0][..], &[0][..]));
+        assert_eq!(target_two.resource_id(), Some(3520));
+    }
+
+    #[test]
+    fn subsystem_condition_uses_exact_five_source_bands() {
+        let condition = TacticalSubsystemCondition {
+            shields: 0,
+            weapons: 24,
+            tractor: 25,
+            engines: 50,
+            hyperdrive: 75,
+        };
+        assert_eq!(condition.resource_ids(), [1201, 1207, 1213, 1219, 1225]);
+        assert_eq!(original_tactical_condition_band(1), 1);
+        assert_eq!(original_tactical_condition_band(49), 2);
+        assert_eq!(original_tactical_condition_band(74), 3);
+        assert_eq!(original_tactical_condition_band(100), 4);
     }
 
     #[test]

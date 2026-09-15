@@ -664,10 +664,17 @@ would tune around known simulation feedback defects.
   faction-correct colors, and pass the 56-case muted browser gate. Keep power
   allocation, commands, destroyed selection, Death Star states, and every
   strict tactical cell open pending A0.
+- [x] Complete P58F5 selected-capital subsystem and field-source presentation:
+  restore the five source-quantized condition families at their exact panel
+  positions; retain exact tractor and gravity source IDs; enforce one tractor
+  target and four gravity targets per source; preserve gravity priority and
+  frame reset; and pass the 60-case muted browser gate. Keep combat-driven
+  subsystem damage, interactive command delivery, A0, and every strict
+  tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F5 next traces exact field command timing and restores the next
-  source-proven tactical command-state bundle.
+  states. P58F6 next connects subsystem condition to combat damage and restores
+  the next source-proven tactical command-state bundle.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

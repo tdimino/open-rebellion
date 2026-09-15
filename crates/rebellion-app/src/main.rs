@@ -5682,6 +5682,13 @@ mod tactical_ground_tests {
             hull_max: 100,
             shield: 0,
             shield_max: 0,
+            subsystem_condition: rebellion_render::tactical_view::TacticalSubsystemCondition {
+                shields: 0,
+                weapons: 0,
+                tractor: 0,
+                engines: 0,
+                hyperdrive: 0,
+            },
             is_attacker,
             alive,
             selected: false,

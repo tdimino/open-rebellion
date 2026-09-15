@@ -42,7 +42,9 @@ and
 for current positions, browser source-pixel proof, and open mappings. P58F4
 maps selected-capital portraits `2001` through `2029` from the same source
 tactical ordinal, composites their lime mats over panel `1302`, and renders
-live shield and hull values in its authored apertures.
+live shield and hull values in its authored apertures. P58F5 maps the five
+22 by 15 subsystem-condition families `1201` through `1225` and their exact
+source quantization and placement.
 
 The earlier renderer treated IDs `2001`–`2130` as a linear tactical ship-sprite
 block, but the extracted BMP inventory contains only **43** IDs inside that
@@ -58,12 +60,12 @@ missing custom resource types.
 
 | Graphic family                           | Current inventory                                                                                                                                | Semantic mapping status                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Capital ships                            | 30 CAPSHPSD classes; 29 native ordinals → type-301 bases `2010`–`2150` and `2510`–`2640`, BMP portraits `2001`–`2029`, plus separate Death Star `5010`/`5020`                  | P58A proves every DAT identity join. P58B installs the corpus and renders joined production families. P58C aligns selection and targeting with projected bounds. P58F4 restores selected portraits and live shield/hull meters. Exhaustive family, power-allocation, destroyed, and Death Star views remain open                                                                                                                   |
+| Capital ships                            | 30 CAPSHPSD classes; 29 native ordinals → type-301 bases `2010`–`2150` and `2510`–`2640`, BMP portraits `2001`–`2029`, five condition families `1201`–`1225`, plus separate Death Star `5010`/`5020`                  | P58A proves every DAT identity join. P58B installs the corpus and renders joined production families. P58C aligns selection and targeting with projected bounds. P58F4 restores selected portraits and live shield/hull meters. P58F5 restores all five subsystem-condition families and exact quantization. Combat-driven damage, power allocation, destroyed, and Death Star views remain open                                                                                                                   |
 | Fighters                                 | Eight FIGHTSD classes; eight native ordinals `29`–`36` → paired type-303 bases `4000`–`4134`, with indicator family `4200`–`4204`                 | P58A proves every DAT identity join. P58C renders close, far, and indicator resources through the exact view-span thresholds. P58D proves every independent transition in a centered production journey. P58E restores RGBY presentation and selected fighter portraits. Automatic group distribution, side/formation offsets, launch/recovery, and damage remain open                                                     |
 | Faction banners and avatars              | Character portrait and some mini-icon candidates exist in GOKRES; tactical faction chrome BMPs are staged                                        | No complete banner/avatar-to-battle-state map                                                                                                                                                                                                                                                                                   |
 | Planets and backdrops                    | Tactical selector produces type-303 planet `5500 + selector` and palette `5530 + selector`; source screenshots show planet and empty-space views | P58F1 source-binds `SYSTEMSD.picture_id` to the exact planet and palette pair, renders it in production battles, and proves both factions and viewports. Exact retained-frame placement and visibility remain open                                                                                                              |
-| Weapon fire, explosions, shields, damage | Six target-sprite families occupy bases 3060, 3120, 3180, 3240, 3300, and 3360; retained projectile meshes and field families 3520/3620 are separate | P58F2 proves the target-sprite mapping and lifecycle. P58F3 proves all projectile geometry variants, thresholds, scales, faction/ion colors, interpolation and duration, plus tractor/gravity frames, source counts, 10 Hz animation, and gravity priority. P58F4 proves selected-capital shield/hull presentation. Exact command timing, fighter emission, audio, and A0 comparison remain open |
-| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P58F4 prove staging, deterministic decoding, full browser transport, exact DAT joins, and live capital, fighter, planet, target-effect, projectile, field, and selected-capital damage rendering. Lossless view acceptance remains open |
+| Weapon fire, explosions, shields, damage | Six target-sprite families occupy bases 3060, 3120, 3180, 3240, 3300, and 3360; retained projectile meshes and field families 3520/3620 are separate | P58F2 proves the target-sprite mapping and lifecycle. P58F3 proves all projectile geometry variants, thresholds, scales, faction/ion colors, interpolation and duration, plus tractor/gravity frames and 10 Hz animation. P58F5 proves exact field-source identities, source-side capacities, gravity priority, and frame reset. Interactive command events, fighter emission, audio, and A0 comparison remain open |
+| Battle meshes and textures               | Original `TACTICAL.DLL` contains 87 type-301 meshes and 397 type-303 texture/palette resources                                                   | P54 through P58F5 prove staging, deterministic decoding, full browser transport, exact DAT joins, and live capital, fighter, planet, target-effect, projectile, field, selected-capital damage, and subsystem-condition rendering. Lossless view acceptance remains open |
 | Battle audio                             | Original `TACTICAL.DLL` contains 66 WAVs                                                                                                         | Not covered by this image inventory; map event and cue separately                                                                                                                                                                                                                                                               |
 
 `RE-TAC-01`, `RE-TAC-02`, `RE-TAC-03`, `RE-BAT-01`, and `RE-DS-02` in the
@@ -136,9 +138,12 @@ restores the six target-impact sprite families.
 restores retained projectiles and tractor/gravity fields.
 [P58F4](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-selected-damage.md)
 restores panel 1302, capital portraits, matte transparency, and live shield and
-hull meters. Automatic group
-distribution, exact planet placement, exact field command timing,
-power allocation, special objects, and original-runtime confirmation
+hull meters.
+[P58F5](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-field-commands.md)
+restores the five subsystem-condition families plus exact field-source identity
+and capacity. Automatic group distribution, exact planet placement,
+combat-driven subsystem damage, interactive commands, power allocation,
+special objects, and original-runtime confirmation
 remain required before every procedural battle object can be retired.
 
 ## External editor leads

@@ -27,6 +27,7 @@ const GROUP_PRESENTATION_SCENARIO: u32 = 11;
 const EFFECT_PRESENTATION_SCENARIO: u32 = 12;
 const PROJECTILE_FIELD_PRESENTATION_SCENARIO: u32 = 13;
 const SELECTED_DAMAGE_PRESENTATION_SCENARIO: u32 = 14;
+const SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO: u32 = 15;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -80,6 +81,7 @@ pub(crate) struct TacticalFixtureRequest {
     pub effect_presentation: bool,
     pub projectile_field_presentation: bool,
     pub selected_damage_presentation: bool,
+    pub subsystem_field_command_presentation: bool,
     lod_fixture: TacticalLodFixture,
 }
 
@@ -87,6 +89,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
     if code >> 16 != TACTICAL_FAMILY {
         return None;
     }
+    let scenario = code & 0xff;
     let (
         proof_enabled,
         production_participants,
@@ -97,7 +100,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         projectile_field_presentation,
         selected_damage_presentation,
         lod_fixture,
-    ) = match code & 0xff {
+    ) = match scenario {
         BATTLE_SCENARIO => (
             true,
             false,
@@ -252,6 +255,17 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             true,
             TacticalLodFixture::Default,
         ),
+        SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO => (
+            false,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            TacticalLodFixture::Default,
+        ),
         _ => return None,
     };
     let faction = match (code >> 8) & 0xff {
@@ -270,6 +284,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         effect_presentation,
         projectile_field_presentation,
         selected_damage_presentation,
+        subsystem_field_command_presentation: scenario
+            == SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO,
         lod_fixture,
     })
 }
@@ -340,9 +356,12 @@ pub(crate) fn apply(
                       hull: u32,
                       fighter: Option<FighterKey>| {
         let expanded = request.projectile_field_presentation
+            || request.subsystem_field_command_presentation
             || ((request.group_presentation || request.effect_presentation)
                 && is_alliance == player_is_alliance);
-        let ship_count = if request.projectile_field_presentation {
+        let ship_count = if request.projectile_field_presentation
+            || request.subsystem_field_command_presentation
+        {
             3
         } else if request.effect_presentation && expanded {
             6
@@ -426,6 +445,10 @@ pub(crate) fn apply(
         tactical.configure_selected_damage_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
+    if request.subsystem_field_command_presentation {
+        tactical.configure_subsystem_field_command_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if !request.production_participants {
         tactical.disable_original_participant_rendering();
     }
@@ -468,6 +491,7 @@ struct FixtureRecord<'a> {
     effect_presentation: bool,
     projectile_field_presentation: bool,
     selected_damage_presentation: bool,
+    subsystem_field_command_presentation: bool,
     tactical_lod: &'a str,
     system: &'a str,
     system_picture_id: u8,
@@ -495,6 +519,8 @@ struct FixtureSelectedShip<'a> {
     hull_max: i32,
     shield_current: i32,
     shield_max: i32,
+    subsystem_percentages: [u8; 5],
+    subsystem_resources: [u32; 5],
 }
 
 #[derive(Serialize)]
@@ -527,6 +553,8 @@ struct FixtureField {
     frame: u8,
     tractor_sources: u8,
     gravity_sources: u8,
+    tractor_source_ids: Vec<usize>,
+    gravity_source_ids: Vec<usize>,
 }
 
 #[derive(Serialize)]
@@ -701,12 +729,15 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         .iter()
         .filter_map(|effect| {
             let (tractor_sources, gravity_sources) = effect.source_counts();
+            let (tractor_source_ids, gravity_source_ids) = effect.source_ids();
             Some(FixtureField {
                 target: effect.target,
                 resource_id: effect.resource_id()?,
                 frame: effect.frame,
                 tractor_sources,
                 gravity_sources,
+                tractor_source_ids: tractor_source_ids.to_vec(),
+                gravity_source_ids: gravity_source_ids.to_vec(),
             })
         })
         .collect();
@@ -727,10 +758,12 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             hull_max: ship.hull_max,
             shield_current: ship.shield,
             shield_max: ship.shield_max,
+            subsystem_percentages: ship.subsystem_condition.percentages(),
+            subsystem_resources: ship.subsystem_condition.resource_ids(),
         })
     });
     emit(&FixtureRecord {
-        schema_version: 13,
+        schema_version: 14,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -747,6 +780,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         effect_presentation: request.effect_presentation,
         projectile_field_presentation: request.projectile_field_presentation,
         selected_damage_presentation: request.selected_damage_presentation,
+        subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
@@ -779,7 +813,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 13,
+        schema_version: 14,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -796,6 +830,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         effect_presentation: request.effect_presentation,
         projectile_field_presentation: request.projectile_field_presentation,
         selected_damage_presentation: request.selected_damage_presentation,
+        subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: "",
         system_picture_id: 0,
@@ -836,6 +871,11 @@ mod tests {
         assert!(decode(0x1010c).unwrap().effect_presentation);
         assert!(decode(0x1010d).unwrap().projectile_field_presentation);
         assert!(decode(0x1010e).unwrap().selected_damage_presentation);
+        assert!(
+            decode(0x1010f)
+                .unwrap()
+                .subsystem_field_command_presentation
+        );
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -857,7 +897,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x1010f).is_none());
+        assert!(decode(0x10110).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

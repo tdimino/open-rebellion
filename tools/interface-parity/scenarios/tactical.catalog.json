@@ -153,6 +153,20 @@
       "acceptance": "A1 source-registry portrait join, original matte composition, and live damage-meter proof only. Power allocation, commands, destroyed selection, Death Star, and native A0 comparison remain open."
     },
     {
+      "slug": "production-subsystem-field-command-presentation",
+      "description": "All five source-quantized selected-capital condition indicators plus source-identified tractor and gravity lock state",
+      "fixture_codes": {
+        "alliance": 65807,
+        "empire": 66063
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "subsystem_field_command_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable resource, quantization, placement, source-identity, capacity, priority, and frame-reset proof only. Combat-driven subsystem damage, command input, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

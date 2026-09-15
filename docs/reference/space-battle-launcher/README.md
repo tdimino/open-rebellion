@@ -34,6 +34,7 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-effect-presentation` | 65804 | 66060 | Six source-selected hit, damage, and destruction frames |
 | `production-projectile-field-presentation` | 65805 | 66061 | Retained projectile variants plus tractor and gravity fields |
 | `production-selected-damage-presentation` | 65806 | 66062 | Panel 1302, source-ordinal capital portrait, and live shield/hull meters |
+| `production-subsystem-field-command-presentation` | 65807 | 66063 | Five subsystem condition bands plus exact tractor and gravity source state |
 
 ## Run it
 
@@ -104,18 +105,21 @@ and closes every process. Raw runs live under ignored
   frame counts, draw sizes, priority, indexed transparency, and 10 Hz cadence.
 - P58F3 restores the three retained projectile mesh variants, exact weapon
   thresholds, scales, material selectors, interpolation and duration. It also
-  restores the tractor and gravity frame families, source counts, 10 Hz
+  restores the tractor and gravity frame families, 10 Hz
   animation, and shared gravity priority.
 - P58F4 restores selected-capital panel 1302, maps portraits `2001` through
   `2029` from the source tactical ordinal, removes their lime matte, and
   renders live faction-correct shield and hull meters.
-- The complete bundle passes 56 of 56 muted browser cases across both factions
+- P58F5 restores the five subsystem-condition resource families, exact source
+  quantization and placement, and exact tractor and gravity source identity,
+  capacity, priority, and frame reset.
+- The complete bundle passes 60 of 60 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
-distribution, native GPU and A0 comparison, remaining commands, exact planet
-placement, exact field command timing, power allocation, Death Star paths,
+distribution, native GPU and A0 comparison, combat-driven subsystem damage,
+remaining interactive commands, exact planet placement, power allocation, Death Star paths,
 results, audio, and return routing remain
 open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
@@ -124,6 +128,7 @@ open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F5 subsystem and field-command evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-field-commands.md)
 - [P58F4 selected-capital damage evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-selected-damage.md)
 - [P58F3 tactical projectile and field evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-projectile-fields.md)
 - [P58F2 tactical impact-effect evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md)

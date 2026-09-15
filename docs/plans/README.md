@@ -12,9 +12,10 @@ their joined families. P58C renders the original fighter detail resources and
 aligns capital interactions with projected mesh bounds. P58D proves the full
 fighter-detail journey. P58E restores all eight task-force and four RGBY
 fighter controls, selection, source-shaped input, keyboard routes, and selected
-fighter portraits. P58F1 through P58F4 restore system-selected planets,
-target impacts, projectiles, fields, and selected-capital damage presentation.
-Commands, outcomes, automatic
+fighter portraits. P58F1 through P58F5 restore system-selected planets,
+target impacts, projectiles, fields, selected-capital damage and subsystem
+condition, and exact field-source identity. Combat-driven subsystem damage,
+interactive commands, outcomes, automatic
 group distribution, and A0 comparison are next.
 
 The active
@@ -42,8 +43,10 @@ retained-mode light rig, filtering, culling, depth, and material/device state.
 P58A owns the exact DAT resource join and complete browser pack. P58B completes
 the first production capital-family draw path. P58C through P58E add production
 fighter detail, the complete detail journey, and group presentation. P58F1
-through P58F4 add planets, effects, fields, and selected-capital damage.
-Special objects, power allocation, remaining controls, and A0 acceptance remain open.
+through P58F5 add planets, effects, fields, selected-capital damage and
+subsystem condition, and exact field-source identity. Combat-driven subsystem
+damage, special objects, power allocation, remaining controls, and A0
+acceptance remain open.
 Modern replacement models remain in a separate experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The

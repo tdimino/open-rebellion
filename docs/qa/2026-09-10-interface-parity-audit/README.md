@@ -127,6 +127,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F4 selected-damage evidence](evidence/2026-09-15-tactical-selected-damage.md)
   for source-ordinal capital portraits, panel 1302 matte composition, live
   faction-correct shield and hull meters, 56-case browser gate, and A0 limits.
+- Review the [P58F5 subsystem and field-command evidence](evidence/2026-09-15-tactical-subsystem-field-commands.md)
+  for all five subsystem families, exact quantization and placement, exact
+  field-source identity and capacity, 60-case browser gate, and A0 limits.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -164,8 +167,8 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 70%
-implemented after P58F4. Its formal acceptance remains 0 of 106 tactical cells
+Within that total, the standalone space-battle launcher is approximately 73%
+implemented after P58F5. Its formal acceptance remains 0 of 106 tactical cells
 because exact original-view evidence and the remaining battle states are open.
 
 The first recovered implementation tranche now packages and renders the four
@@ -241,7 +244,10 @@ thresholds, faction/ion material selectors, source-to-target interpolation,
 one- and two-second lifecycles, and both 10 Hz tractor/gravity field families
 with gravity priority. P58F4 restores panel 1302, exact source-ordinal capital
 portraits, lime-matte composition, and live faction-correct shield and hull
-meters. Automatic group distribution, exact planet placement, command timing,
+meters. P58F5 restores all five source-quantized subsystem-condition families,
+exact tractor and gravity source identities, their source-side capacity limits,
+gravity priority, and frame reset. Automatic group distribution, exact planet
+placement, combat-driven subsystem damage, interactive command delivery,
 power allocation, remaining commands, results, and A0
 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
