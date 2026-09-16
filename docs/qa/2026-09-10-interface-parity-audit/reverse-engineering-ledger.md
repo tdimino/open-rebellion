@@ -152,7 +152,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering, selected-capital damage, live subsystem mutation, repair, and mobility source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, maneuver-mode production, physical movement integration, interactive command events, remaining controls, and A0 comparison |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering, selected-capital damage, live subsystem mutation, repair, maneuver state, velocity, and physical integration source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, interactive maneuver delivery, turning, collision and formation behavior, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -236,9 +236,12 @@ quantization and placement, plus exact field identities and capacities.
 connects those conditions to the live damage path. The
 [P58F7 evidence](evidence/2026-09-15-tactical-subsystem-repair-mobility.md)
 restores the repair cadence and selection plus the engine-condition and active
-tractor-drag mobility calculation. Exact global RNG sequencing, the
-maneuver-mode producer, physical movement integration, interactive command
-events, power allocation, and original visual acceptance remain open.
+tractor-drag mobility calculation.
+[P58F8 evidence](evidence/2026-09-16-tactical-maneuver-movement.md)
+restores the maneuver-state bonus, effective-power velocity, signed faction
+movement, and millisecond position integration. Exact global RNG sequencing,
+interactive command events, turning, collision and formation behavior, power
+allocation, and original visual acceptance remain open.
 
 ## Immediate implementation order
 

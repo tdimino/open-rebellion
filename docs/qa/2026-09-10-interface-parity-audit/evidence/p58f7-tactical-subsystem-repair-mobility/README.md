@@ -21,6 +21,8 @@ full source-bounds containment for the 128 by 128 field. Every complete-matrix
 case starts in a fresh muted browser, makes four successful requests, records
 stable frames and clean diagnostics, and closes its browser.
 
-This is passing A1 implementation evidence. Exact global RNG equivalence,
-maneuver-bonus producers, physical movement integration, interactive commands,
-original A0 comparison, and all 106 strict tactical cells remain open.
+This is passing historical A1 implementation evidence. P58F8 supersedes its
+provisional maneuver seam with the recovered producer and physical integration.
+Exact global RNG equivalence, interactive commands, turning, collision and
+formation behavior, original A0 comparison, and all 106 strict tactical cells
+remain open.

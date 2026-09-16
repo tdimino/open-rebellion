@@ -682,10 +682,15 @@ would tune around known simulation feedback defects.
   sublight-engine condition, active tractor drag, and full field-frame
   containment; then pass the 68-case muted browser gate. Keep exact global RNG
   sequencing, physical movement, A0, and every strict tactical cell open.
+- [x] Complete P58F8 maneuver and movement: restore the source one-through-nine
+  maneuver bonus, effective-power velocity, signed faction direction, and
+  250-millisecond position integration; then pass the 72-case muted browser
+  gate. Keep interactive maneuver delivery, turning, collision, formation,
+  A0, and every strict tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F8 next recovers the maneuver-mode producer and connects effective
-  engine power to physical movement before restoring interactive field commands.
+  states. P58F9 next connects movement state to interactive maneuver commands,
+  then recovers turning, collision, and formation behavior.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

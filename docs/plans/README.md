@@ -12,12 +12,12 @@ their joined families. P58C renders the original fighter detail resources and
 aligns capital interactions with projected mesh bounds. P58D proves the full
 fighter-detail journey. P58E restores all eight task-force and four RGBY
 fighter controls, selection, source-shaped input, keyboard routes, and selected
-fighter portraits. P58F1 through P58F7 restore system-selected planets,
+fighter portraits. P58F1 through P58F8 restore system-selected planets,
 target impacts, projectiles, fields, selected-capital damage and subsystem
 condition, exact field-source identity, and source-derived live subsystem
-damage with tractor cancellation, repair, and mobility. Exact global RNG
-sequencing, maneuver-mode production, physical movement integration,
-interactive commands, outcomes, automatic
+damage with tractor cancellation, repair, mobility, maneuver-state production,
+velocity, and physical integration. Exact global RNG sequencing, interactive
+maneuver delivery, turning, collision and formation behavior, outcomes, automatic
 group distribution, and A0 comparison are next.
 
 The active
@@ -45,10 +45,12 @@ retained-mode light rig, filtering, culling, depth, and material/device state.
 P58A owns the exact DAT resource join and complete browser pack. P58B completes
 the first production capital-family draw path. P58C through P58E add production
 fighter detail, the complete detail journey, and group presentation. P58F1
-through P58F7 add planets, effects, fields, selected-capital damage and
+through P58F8 add planets, effects, fields, selected-capital damage and
 subsystem condition, exact field-source identity, live subsystem damage,
-repair, and mobility. Physical movement, special objects, power allocation,
-remaining controls, and A0 acceptance remain open.
+repair, mobility, maneuver-state production, velocity, and physical
+integration. Interactive maneuver delivery, turning, collision and formation
+behavior, special objects, power allocation, remaining controls, and A0
+acceptance remain open.
 Modern replacement models remain in a separate experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The

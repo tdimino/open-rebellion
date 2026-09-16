@@ -3,7 +3,7 @@ title: "Ghidra RE Notes — Index"
 description: "Master index of 5,127 decompiled C files, 8 Jython scripts, and recovered subsystem notes"
 category: "ghidra"
 created: 2026-03-13
-updated: 2026-03-16
+updated: 2026-09-16
 ---
 
 # Ghidra RE Notes — Index
@@ -39,6 +39,7 @@ updated: 2026-03-16
 | [tactical-subsystem-field-command-path.md](tactical-subsystem-field-command-path.md) | Selected-capital subsystem bands and exact tractor/gravity source identity | FUN_005e45f0, FUN_005e7540, FUN_005e77c0, FUN_005b23e0 through FUN_005b25d0 |
 | [tactical-subsystem-damage-path.md](tactical-subsystem-damage-path.md) | Live shield, hull, subsystem-hit, component-capacity, condition, and tractor-cancel rules | FUN_005b54d0, FUN_005b05c0, 0x005b1970, FUN_005b1770 through FUN_005b1bc0 |
 | [tactical-subsystem-repair-mobility.md](tactical-subsystem-repair-mobility.md) | Subsystem repair cadence and selection plus engine and tractor mobility formulas | FUN_005b0330, FUN_005b1490, FUN_005b1ab0, FUN_005b17f0, FUN_005b16b0, FUN_005b1790 |
+| [tactical-maneuver-movement.md](tactical-maneuver-movement.md) | Maneuver-state bonus, effective-power velocity, constructor direction state, and position integration | FUN_005ad750, FUN_005afb70, FUN_005b2f30, FUN_005cd640, FUN_005b0f70 |
 | [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | [bombardment.md](bombardment.md) | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
 

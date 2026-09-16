@@ -192,7 +192,21 @@
       "subsystem_repair_mobility_presentation": true,
       "expected_status": "battle-ready",
       "audit_cells": [],
-      "acceptance": "A1 executable repair interval, chance, hit-selection order, engine-damage, maneuver-bonus seam, active-tractor power, live state, and resource proof only. Original RNG sequence, maneuver-bonus producer, interactive command input, and native A0 comparison remain open."
+      "acceptance": "Historical A1 executable repair interval, chance, hit-selection order, engine-damage, active-tractor power, live state, and resource proof. P58F8 supersedes the provisional maneuver seam. Original RNG sequence, interactive command input, and native A0 comparison remain open."
+    },
+    {
+      "slug": "production-maneuver-movement-presentation",
+      "description": "Selected production capital advanced for one exact 250 ms step through the source maneuver-mode producer, forward-alignment velocity, and millisecond integrator",
+      "fixture_codes": {
+        "alliance": 65810,
+        "empire": 66066
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "maneuver_movement_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable maneuver-value, clamped bonus, straight-ahead alignment, velocity, and position-integration proof only. Turning, collision response, interactive command delivery, and native A0 comparison remain open."
     },
     {
       "slug": "production-participants-3d-off",

@@ -99,6 +99,11 @@ const ORIGINAL_PROJECTILE_DURATION_LONG: f32 = 2.0;
 const ORIGINAL_SUBSYSTEM_REPAIR_INTERVAL_TICKS: u32 = 200;
 /// `FUN_005b05c0` converts the CAPSHPSD sublight rating by 0.4 * 0.6.
 const ORIGINAL_SUBLIGHT_ENGINE_SCALE: f32 = 0.24;
+/// Tactical combat advances four authoritative simulation steps per second.
+const ORIGINAL_TACTICAL_STEP_MILLISECONDS: f32 = 250.0;
+/// `FUN_005ad750` and `FUN_005afb70` clamp the active mode contribution.
+const ORIGINAL_ENGINE_MODE_MIN_BONUS: f32 = 1.0;
+const ORIGINAL_ENGINE_MODE_MAX_BONUS: f32 = 9.0;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
@@ -171,6 +176,47 @@ pub struct TacticalWorldPosition {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+/// Source retained-mode direction or velocity vector.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TacticalWorldVector {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl TacticalWorldVector {
+    const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+
+    /// `FUN_005b0f70` initializes the current vector with `FUN_0059fb10`.
+    const SOURCE_FORWARD: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    };
+
+    fn normalized(self) -> Self {
+        let magnitude = self.x.hypot(self.y).hypot(self.z);
+        if magnitude > f32::EPSILON {
+            Self {
+                x: self.x / magnitude,
+                y: self.y / magnitude,
+                z: self.z / magnitude,
+            }
+        } else {
+            Self::ZERO
+        }
+    }
+
+    fn dot(self, other: Self) -> f32 {
+        self.x
+            .mul_add(other.x, self.y.mul_add(other.y, self.z * other.z))
+    }
 }
 
 impl TacticalWorldPosition {
@@ -330,6 +376,12 @@ pub struct TacticalShip {
     pub death_star_resource: Option<TacticalDeathStarResource>,
     /// Original retained-mode position at battle initialization.
     pub source_position: TacticalWorldPosition,
+    /// Current retained-mode forward direction at offsets `+0x10` through `+0x18`.
+    pub source_forward: TacticalWorldVector,
+    /// Desired retained-mode direction at offsets `+0x20` through `+0x28`.
+    pub source_desired_forward: TacticalWorldVector,
+    /// Latest source velocity stored at offsets `+0x6c` through `+0x74`.
+    pub source_velocity: TacticalWorldVector,
     /// Display name (from `CapitalShipClass`).
     pub name: String,
     /// Position on the battlefield (logical coords).
@@ -354,8 +406,8 @@ pub struct TacticalShip {
     pub sublight_engine_power: f32,
     /// Maximum tractor power stored at source offset `+0x3b8`.
     pub tractor_beam_power: f32,
-    /// Current maneuver-mode adjustment supplied to `FUN_005b17f0`.
-    pub engine_mode_bonus: f32,
+    /// Active state-record value at offset `+0x4c`, or no active record.
+    pub maneuver_state_value: Option<f32>,
     /// Inclusive 1 through 100 repair chance used by `FUN_005b1490`.
     pub damage_control: u8,
     /// True if this ship belongs to the attacker side.
@@ -1118,16 +1170,38 @@ fn original_effective_tractor_power(ship: &TacticalShip) -> f32 {
     .max(0.0)
 }
 
+/// Recover the active maneuver contribution returned by `FUN_005ad750` and
+/// `FUN_005afb70`. Missing state records return one. Active records return
+/// `9 - value`, clamped to the inclusive source range one through nine.
+fn original_engine_mode_bonus(maneuver_state_value: Option<f32>) -> f32 {
+    maneuver_state_value.map_or(ORIGINAL_ENGINE_MODE_MIN_BONUS, |value| {
+        (ORIGINAL_ENGINE_MODE_MAX_BONUS - value).clamp(
+            ORIGINAL_ENGINE_MODE_MIN_BONUS,
+            ORIGINAL_ENGINE_MODE_MAX_BONUS,
+        )
+    })
+}
+
+/// `FUN_005b2f30` multiplies effective engine power by the non-negative dot
+/// product between the current and desired retained-mode direction vectors.
+fn original_movement_alignment(ship: &TacticalShip) -> f32 {
+    ship.source_forward
+        .normalized()
+        .dot(ship.source_desired_forward.normalized())
+        .clamp(0.0, 1.0)
+}
+
 fn original_tactical_mobility(
     ships: &[TacticalShip],
     field_effects: &[TacticalFieldEffect],
     target: usize,
 ) -> Option<TacticalSubsystemMobility> {
     let ship = ships.get(target)?;
+    let engine_mode_bonus = original_engine_mode_bonus(ship.maneuver_state_value);
     if !ship.subsystem_capacity.engines || ship.sublight_engine_power <= 0.0 {
         return Some(TacticalSubsystemMobility {
             base_engine_power: ship.sublight_engine_power.max(0.0),
-            engine_mode_bonus: ship.engine_mode_bonus,
+            engine_mode_bonus,
             active_tractor_power: 0.0,
             effective_engine_power: 0.0,
             engine_percent: 0,
@@ -1140,7 +1214,7 @@ fn original_tactical_mobility(
         .filter_map(|source| ships.get(source))
         .map(original_effective_tractor_power)
         .sum::<f32>();
-    let undamaged_power = (ship.sublight_engine_power + ship.engine_mode_bonus).max(0.0);
+    let undamaged_power = (ship.sublight_engine_power + engine_mode_bonus).max(0.0);
     let effective_engine_power = (undamaged_power
         - undamaged_power * 0.25 * f32::from(ship.subsystem_damage.engines)
         - active_tractor_power)
@@ -1149,7 +1223,7 @@ fn original_tactical_mobility(
         (effective_engine_power * 100.0 / ship.sublight_engine_power).clamp(0.0, 100.0) as u8;
     Some(TacticalSubsystemMobility {
         base_engine_power: ship.sublight_engine_power,
-        engine_mode_bonus: ship.engine_mode_bonus,
+        engine_mode_bonus,
         active_tractor_power,
         effective_engine_power,
         engine_percent,
@@ -1454,6 +1528,65 @@ impl BattleSession {
         original_tactical_mobility(&self.ships, &self.field_effects, target)
     }
 
+    /// Return the exact non-negative current-to-desired direction multiplier
+    /// consumed by the original capital-ship movement routine.
+    #[must_use]
+    pub fn movement_alignment(&self, target: usize) -> Option<f32> {
+        self.ships.get(target).map(original_movement_alignment)
+    }
+
+    /// Set or clear the active state-record value consumed by the recovered
+    /// maneuver-mode producer. Command routing will call this once restored.
+    pub fn set_maneuver_state_value(&mut self, target: usize, value: Option<f32>) -> bool {
+        let Some(ship) = self.ships.get_mut(target) else {
+            return false;
+        };
+        if value.is_some_and(|value| !value.is_finite()) {
+            return false;
+        }
+        ship.maneuver_state_value = value;
+        refresh_original_subsystem_conditions(&mut self.ships, &self.field_effects);
+        true
+    }
+
+    /// Apply `FUN_005b2f30`'s recovered velocity contract and
+    /// `FUN_005cd640`'s millisecond-to-second position integrator. The original
+    /// turn and collision branches remain a separate command-path gate.
+    fn advance_original_tactical_movement(&mut self, delta_milliseconds: f32) {
+        if !delta_milliseconds.is_finite() || delta_milliseconds <= 0.0 {
+            return;
+        }
+        let movement = self
+            .ships
+            .iter()
+            .enumerate()
+            .map(|(index, ship)| {
+                let effective_engine_power =
+                    original_tactical_mobility(&self.ships, &self.field_effects, index)
+                        .map_or(0.0, |mobility| mobility.effective_engine_power);
+                let alignment = original_movement_alignment(ship);
+                (effective_engine_power, alignment)
+            })
+            .collect::<Vec<_>>();
+        let seconds = delta_milliseconds * 0.001;
+        for (ship, (effective_engine_power, alignment)) in self.ships.iter_mut().zip(movement) {
+            if !ship.alive || ship.retreating {
+                ship.source_velocity = TacticalWorldVector::ZERO;
+                continue;
+            }
+            let forward = ship.source_forward.normalized();
+            let speed = effective_engine_power * alignment;
+            ship.source_velocity = TacticalWorldVector {
+                x: forward.x * speed,
+                y: forward.y * speed,
+                z: forward.z * speed,
+            };
+            ship.source_position.x += ship.source_velocity.x * seconds;
+            ship.source_position.y += ship.source_velocity.y * seconds;
+            ship.source_position.z += ship.source_velocity.z * seconds;
+        }
+    }
+
     /// Expand a fleet's composition into individual TacticalShip/TacticalFighter entries.
     fn expand_fleet(
         world: &GameWorld,
@@ -1497,7 +1630,6 @@ impl BattleSession {
                     + u8::from(class.hyperdrive_if_damaged > 0),
             };
             let subsystem_damage = TacticalSubsystemDamage::default();
-
             ships.push(TacticalShip {
                 class_key: ship.class,
                 identity: TacticalObjectIdentity {
@@ -1508,6 +1640,9 @@ impl BattleSession {
                 tactical_resource,
                 death_star_resource,
                 source_position: TacticalWorldPosition::ORIGIN,
+                source_forward: TacticalWorldVector::SOURCE_FORWARD,
+                source_desired_forward: TacticalWorldVector::ZERO,
+                source_velocity: TacticalWorldVector::ZERO,
                 name: class.name.clone(),
                 x: 0.0,
                 y: 0.0,
@@ -1526,7 +1661,7 @@ impl BattleSession {
                 sublight_engine_power: class.sub_light_engine as f32
                     * ORIGINAL_SUBLIGHT_ENGINE_SCALE,
                 tractor_beam_power: class.tractor_beam_power as f32,
-                engine_mode_bonus: 0.0,
+                maneuver_state_value: None,
                 damage_control: u8::try_from(class.damage_control.min(100)).unwrap_or(100),
                 is_attacker,
                 alive: true,
@@ -1805,6 +1940,7 @@ impl BattleSession {
                 }
             }
         }
+        self.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
 
         // Collect alive (non-retreating) ship indices per side for combat.
         let atk_alive: Vec<usize> = self
@@ -2641,7 +2777,7 @@ impl TacticalState {
         session.ships[target].selected = true;
         session.ships[target].hull_current = session.ships[target].hull_max;
         session.ships[target].sublight_engine_power = 100.0;
-        session.ships[target].engine_mode_bonus = 0.0;
+        session.ships[target].maneuver_state_value = Some(9.0);
         session.ships[target].damage_control = 100;
         session.ships[target].subsystem_damage = TacticalSubsystemDamage {
             shields: 1,
@@ -2666,6 +2802,55 @@ impl TacticalState {
             session.subsystem_repairs.push(repair);
         }
         refresh_original_subsystem_conditions(&mut session.ships, &session.field_effects);
+        let target_object_id = u32::try_from(target).unwrap_or(u32::MAX).saturating_add(1);
+        let target_position = session.ships[target].source_position.rendered();
+        let (camera_x, camera_y) =
+            camera_offset_for_target(session.ships[target].x, session.ships[target].y);
+        session.paused = true;
+        (self.camera_x, self.camera_y) = (camera_x, camera_y);
+        self.asset_renderer
+            .focus_target(target_object_id, target_position);
+    }
+
+    /// Advance one selected production capital through the recovered
+    /// maneuver producer, velocity contract, and 250 ms source integrator.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_maneuver_movement_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let Some(target) = session.ships.iter().position(|ship| {
+            ship.alive
+                && ship.is_attacker == session.player_is_attacker
+                && ship.subsystem_capacity.engines
+        }) else {
+            return;
+        };
+        for ship in &mut session.ships {
+            ship.selected = false;
+            ship.source_velocity = TacticalWorldVector::ZERO;
+        }
+        session.ships[target].selected = true;
+        session.ships[target].hull_current = session.ships[target].hull_max;
+        session.ships[target].sublight_engine_power = 100.0;
+        session.ships[target].subsystem_damage.engines = 1;
+        session.ships[target].source_forward = if session.ships[target].identity.is_alliance {
+            TacticalWorldVector::SOURCE_FORWARD
+        } else {
+            TacticalWorldVector {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+            }
+        };
+        session.ships[target].source_desired_forward = session.ships[target].source_forward;
+        session.field_effects.clear();
+        session.selected_ship = Some(target);
+        session.selected_fighter_group = None;
+        assert!(session.set_maneuver_state_value(target, Some(4.0)));
+        session.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+        refresh_original_subsystem_conditions(&mut session.ships, &session.field_effects);
+
         let target_object_id = u32::try_from(target).unwrap_or(u32::MAX).saturating_add(1);
         let target_position = session.ships[target].source_position.rendered();
         let (camera_x, camera_y) =
@@ -4904,6 +5089,25 @@ mod tests {
             tactical_resource: capital_ship_tactical_resource(DatId::new(dat_id)),
             death_star_resource: death_star_tactical_resource(DatId::new(dat_id)),
             source_position: TacticalWorldPosition::ORIGIN,
+            source_forward: if is_alliance {
+                TacticalWorldVector::SOURCE_FORWARD
+            } else {
+                TacticalWorldVector {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -1.0,
+                }
+            },
+            source_desired_forward: if is_alliance {
+                TacticalWorldVector::SOURCE_FORWARD
+            } else {
+                TacticalWorldVector {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -1.0,
+                }
+            },
+            source_velocity: TacticalWorldVector::ZERO,
             name: format!("ship-{dat_id}"),
             x: 0.0,
             y: 0.0,
@@ -4928,7 +5132,7 @@ mod tests {
             subsystem_damage: TacticalSubsystemDamage::default(),
             sublight_engine_power: 100.0,
             tractor_beam_power: 25.0,
-            engine_mode_bonus: 0.0,
+            maneuver_state_value: None,
             damage_control: 100,
             is_attacker: is_alliance,
             alive,
@@ -5397,7 +5601,7 @@ mod tests {
         target.hull_max = 100;
         target.subsystem_capacity.engines = true;
         target.sublight_engine_power = 100.0;
-        target.engine_mode_bonus = 20.0;
+        target.maneuver_state_value = Some(4.0);
         target.subsystem_damage.engines = 1;
 
         let mut source = test_ship(128, 0, false, true);
@@ -5411,18 +5615,71 @@ mod tests {
         assert!(session.set_tractor_field(1, 0, true));
         let held = session.subsystem_mobility(0).unwrap();
         assert_eq!(held.base_engine_power, 100.0);
-        assert_eq!(held.engine_mode_bonus, 20.0);
+        assert_eq!(held.engine_mode_bonus, 5.0);
         assert_eq!(held.active_tractor_power, 10.0);
-        assert_eq!(held.effective_engine_power, 80.0);
-        assert_eq!(held.engine_percent, 80);
-        assert_eq!(session.ships[0].subsystem_condition.engines, 80);
+        assert_eq!(held.effective_engine_power, 68.75);
+        assert_eq!(held.engine_percent, 68);
+        assert_eq!(session.ships[0].subsystem_condition.engines, 68);
 
         assert!(session.set_tractor_field(1, 0, false));
         let released = session.subsystem_mobility(0).unwrap();
         assert_eq!(released.active_tractor_power, 0.0);
-        assert_eq!(released.effective_engine_power, 90.0);
-        assert_eq!(released.engine_percent, 90);
-        assert_eq!(session.ships[0].subsystem_condition.engines, 90);
+        assert_eq!(released.effective_engine_power, 78.75);
+        assert_eq!(released.engine_percent, 78);
+        assert_eq!(session.ships[0].subsystem_condition.engines, 78);
+    }
+
+    #[test]
+    fn maneuver_state_produces_the_source_clamped_one_through_nine_bonus() {
+        assert_eq!(original_engine_mode_bonus(None), 1.0);
+        assert_eq!(original_engine_mode_bonus(Some(0.0)), 9.0);
+        assert_eq!(original_engine_mode_bonus(Some(4.0)), 5.0);
+        assert_eq!(original_engine_mode_bonus(Some(8.0)), 1.0);
+        assert_eq!(original_engine_mode_bonus(Some(9.0)), 1.0);
+        assert_eq!(original_engine_mode_bonus(Some(-1.0)), 9.0);
+    }
+
+    #[test]
+    fn movement_uses_effective_power_alignment_and_millisecond_integration() {
+        let mut alliance = test_ship(64, 0, true, true);
+        alliance.subsystem_capacity.engines = true;
+        alliance.source_position.z = -56.0;
+        alliance.sublight_engine_power = 100.0;
+        alliance.maneuver_state_value = Some(4.0);
+        alliance.subsystem_damage.engines = 1;
+
+        let mut empire = test_ship(128, 0, false, true);
+        empire.subsystem_capacity.engines = true;
+        empire.source_position.z = 56.0;
+        empire.sublight_engine_power = 100.0;
+        empire.maneuver_state_value = Some(4.0);
+        empire.subsystem_damage.engines = 1;
+
+        let mut session = test_session(vec![alliance, empire], Vec::new(), true);
+        session.advance_original_tactical_movement(250.0);
+        assert_eq!(session.ships[0].source_velocity.z, 78.75);
+        assert_eq!(session.ships[1].source_velocity.z, -78.75);
+        assert_eq!(session.ships[0].source_position.z, -36.3125);
+        assert_eq!(session.ships[1].source_position.z, 36.3125);
+
+        session.ships[0].source_desired_forward = TacticalWorldVector {
+            x: 0.0,
+            y: 0.0,
+            z: -1.0,
+        };
+        session.advance_original_tactical_movement(250.0);
+        assert_eq!(session.ships[0].source_velocity, TacticalWorldVector::ZERO);
+        assert_eq!(session.ships[0].source_position.z, -36.3125);
+
+        session.ships[0].source_forward = TacticalWorldVector {
+            x: 0.0,
+            y: 1.0,
+            z: 0.0,
+        };
+        session.ships[0].source_desired_forward = session.ships[0].source_forward;
+        session.advance_original_tactical_movement(250.0);
+        assert_eq!(session.ships[0].source_velocity.y, 78.75);
+        assert_eq!(session.ships[0].source_position.y, 19.6875);
     }
 
     #[test]

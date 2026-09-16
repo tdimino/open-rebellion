@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "role": "browser visual acceptance only"
+  },
+  "verdict": "pass",
+  "acceptance_scope": "P58F8 A1 visual acceptance of retained browser artifacts, not strict A0 original-game parity.",
+  "inspected_surfaces": [
+    "Alliance at 640x480",
+    "Alliance at 1280x800 letterboxed",
+    "Empire at 640x480",
+    "Empire at 1280x800 letterboxed"
+  ],
+  "visual_findings": [
+    "Authentic faction tactical bitmap cockpits, ship portraits, meters, starfields, planets, ship markers, command controls, target displays, and status surfaces are visible.",
+    "Both viewports preserve the complete cockpit without visible stretching or clipping.",
+    "Faction portraits, planetary imagery, and meter colors remain distinct and readable."
+  ],
+  "evidence_checks": {
+    "focused_cases": "4 of 4 passed",
+    "complete_matrix": "72 of 72 passed",
+    "four_request_startups": 72,
+    "browser_errors": 0,
+    "muted_launches": 72,
+    "closed_browser_processes": 72,
+    "contact_sheet_sha256": "a2cd5844ba194f8ac504683c5ca513ca16edce987092f01a500a4d999eb1cf9d"
+  },
+  "limitations": [
+    "The accepted review inspected retained browser captures rather than operating movement controls.",
+    "The movement contract is independently asserted by the deterministic harness, not by the static visual review.",
+    "Original-reference comparisons remain unbaselined."
+  ],
+  "blocking_findings": [],
+  "ready_to_commit": true
+}

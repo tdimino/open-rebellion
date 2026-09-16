@@ -3,7 +3,7 @@ title: "Ghidra Reverse Engineering — REBEXE.EXE"
 description: "Working decompilation corpus for Star Wars Rebellion (1998), including simulation findings and an incomplete interface evidence set"
 category: ghidra
 created: 2026-03-13
-updated: 2026-09-13
+updated: 2026-09-16
 tags: [ghidra, reverse-engineering, rebexe, decompilation, combat, ai, gnprtb]
 ---
 
@@ -95,6 +95,11 @@ temporary user home. The bounded decompilation of
 [`FUN_005a9030`](notes/FUN_005a9030.c), its callers, and placement scalars
 recovered exact tactical participant X slots and faction lanes without writing
 to the saved project.
+
+For P58F8, Ghidra 12.1.3 recovered the maneuver-state bonus, stationary
+constructor direction state, effective-power velocity, and millisecond
+position integration. See
+[`tactical-maneuver-movement.md`](notes/tactical-maneuver-movement.md).
 
 ## Decompiled Functions by Game System
 

@@ -1724,9 +1724,9 @@ function probeTacticalSubsystemRepairMobilityPresentation(
   assert.deepEqual(selected.subsystem_percentages, expectedPercentages);
   assert.deepEqual(selected.subsystem_resources, expectedResources);
   assert.equal(selected.base_engine_power, 100);
-  assert.equal(selected.engine_mode_bonus, 0);
+  assert.equal(selected.engine_mode_bonus, 1);
   assert.equal(selected.active_tractor_power, 25);
-  assert.equal(selected.effective_engine_power, 50);
+  assert.equal(selected.effective_engine_power, 50.75);
   assert.equal(selected.damage_control, 100);
   assert.equal(ready.subsystem_repairs.length, 1);
   assert.deepEqual(ready.subsystem_repairs[0], {
@@ -1780,6 +1780,64 @@ function probeTacticalSubsystemRepairMobilityPresentation(
     effective_engine_power: selected.effective_engine_power,
     field_source_bounds_contained: true,
     subsystem_proofs: subsystemProofs,
+  });
+  return probes;
+}
+
+function probeTacticalManeuverMovementPresentation(viewport, folder, stable, ready) {
+  const selected = ready.selected_ship;
+  assert.ok(selected, "maneuver movement fixture omitted its selected ship");
+  const probes = probeTacticalSelectedDamagePresentation(
+    viewport,
+    folder,
+    stable,
+    ready,
+    { hull: selected.hull_max, shield: selected.shield_max },
+  );
+  const alliance = ready.faction === "alliance";
+  const initialZ = alliance ? -56 : 56;
+  const directionZ = alliance ? 1 : -1;
+  const expectedZ = initialZ + directionZ * 78.75 * 0.25;
+  assert.equal(selected.base_engine_power, 100);
+  assert.equal(selected.maneuver_state_value, 4);
+  assert.equal(selected.engine_mode_bonus, 5);
+  assert.ok(Math.abs(selected.active_tractor_power) === 0);
+  assert.equal(selected.effective_engine_power, 78.75);
+  assert.equal(selected.movement_alignment, 1);
+  assert.ok(Math.abs(selected.source_forward[0]) === 0
+    && Math.abs(selected.source_forward[1]) === 0
+    && selected.source_forward[2] === directionZ);
+  assert.ok(Math.abs(selected.source_desired_forward[0]) === 0
+    && Math.abs(selected.source_desired_forward[1]) === 0
+    && selected.source_desired_forward[2] === directionZ);
+  assert.ok(Math.abs(selected.source_velocity[0]) === 0
+    && Math.abs(selected.source_velocity[1]) === 0
+    && selected.source_velocity[2] === directionZ * 78.75);
+  assert.ok(Math.abs(selected.source_position[0]) === 0
+    && selected.source_position[1] === 0
+    && selected.source_position[2] === expectedZ);
+  const selectedParticipant = ready.participants.find((participant) =>
+    participant.kind === "capital-ship"
+      && participant.faction === ready.faction
+      && participant.fleet_roster_index === 0);
+  assert.ok(selectedParticipant, "maneuver movement fixture omitted its selected participant");
+  assert.deepEqual(selectedParticipant.source_position, selected.source_position,
+    "render participant did not consume the integrated source position");
+  fs.writeFileSync(path.join(folder, "maneuver-movement.png"), stable.bytes);
+  probes.push({
+    type: "source-traced-tactical-maneuver-movement",
+    executable_functions: [
+      "FUN_005ad750", "FUN_005afb70", "FUN_005b17f0", "FUN_005b2f30", "FUN_005cd640",
+    ],
+    maneuver_state_value: selected.maneuver_state_value,
+    engine_mode_bonus: selected.engine_mode_bonus,
+    effective_engine_power: selected.effective_engine_power,
+    alignment: selected.movement_alignment,
+    delta_milliseconds: 250,
+    initial_position: [-0, 0, initialZ],
+    velocity: selected.source_velocity,
+    integrated_position: selected.source_position,
+    rendered_participant_position: selectedParticipant.source_position,
   });
   return probes;
 }
@@ -2058,6 +2116,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? probeTacticalSubsystemRepairMobilityPresentation(
           viewport, folder, stable, ready, consoleLines,
         )
+        : scenario.maneuver_movement_presentation
+        ? probeTacticalManeuverMovementPresentation(viewport, folder, stable, ready)
         : scenario.selected_damage_presentation
         ? probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready)
         : scenario.production_participants
@@ -2069,7 +2129,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 16);
+      assert.equal(ready.schema_version, 17);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -2089,6 +2149,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         Boolean(scenario.live_subsystem_damage_presentation));
       assert.equal(ready.subsystem_repair_mobility_presentation,
         Boolean(scenario.subsystem_repair_mobility_presentation));
+      assert.equal(ready.maneuver_movement_presentation,
+        Boolean(scenario.maneuver_movement_presentation));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -2120,7 +2182,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       } : scenario.projectile_field_presentation
         || scenario.subsystem_field_command_presentation
         || scenario.live_subsystem_damage_presentation
-        || scenario.subsystem_repair_mobility_presentation ? {
+        || scenario.subsystem_repair_mobility_presentation
+        || scenario.maneuver_movement_presentation ? {
         ...projectileFieldLayout,
         battle_extent: 112,
         outer_positive_z: 56,
@@ -2142,7 +2205,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           : scenario.projectile_field_presentation
             || scenario.subsystem_field_command_presentation
             || scenario.live_subsystem_damage_presentation
-            || scenario.subsystem_repair_mobility_presentation ? 8 : 4);
+            || scenario.subsystem_repair_mobility_presentation
+            || scenario.maneuver_movement_presentation ? 8 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -2223,7 +2287,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       } else if (scenario.projectile_field_presentation
         || scenario.subsystem_field_command_presentation
         || scenario.live_subsystem_damage_presentation
-        || scenario.subsystem_repair_mobility_presentation) {
+        || scenario.subsystem_repair_mobility_presentation
+        || scenario.maneuver_movement_presentation) {
         const allianceShips = ready.participants.filter((participant) =>
           participant.kind === "capital-ship" && participant.faction === "alliance");
         const empireShips = ready.participants.filter((participant) =>
@@ -2238,8 +2303,11 @@ async function runScenario(server, executable, scenario, faction, viewport) {
           [0, 1, 2]);
         assert.equal(allianceFighters.length, 1);
         assert.equal(empireFighters.length, 1);
-        assert.ok(allianceShips.every(({ source_position: position }) => position[2] === -56));
-        assert.ok(empireShips.every(({ source_position: position }) => position[2] === 56));
+        const movedFaction = scenario.maneuver_movement_presentation ? faction : null;
+        assert.ok(allianceShips.every(({ fleet_roster_index: roster, source_position: position }) =>
+          position[2] === (movedFaction === "alliance" && roster === 0 ? -36.3125 : -56)));
+        assert.ok(empireShips.every(({ fleet_roster_index: roster, source_position: position }) =>
+          position[2] === (movedFaction === "empire" && roster === 0 ? 36.3125 : 56)));
         assert.equal(allianceFighters[0].source_position[2], -36);
         assert.equal(empireFighters[0].source_position[2], 36);
       } else {
@@ -2665,19 +2733,21 @@ async function main() {
         "production-subsystem-field-command-presentation",
         "production-live-subsystem-damage-presentation",
         "production-subsystem-repair-mobility-presentation",
+        "production-maneuver-movement-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
       [true, false, true, true, true, true, true, false, false, false, false, false, false, false,
-        false, false, false]);
+        false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
       [false, false, false, false, false, true, false, false, false, false, false, false, false,
-        false, false, false, false]);
+        false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
       [false, false, false, false, false, false, true, false, false, false, false, false, false,
-        false, false, false, false]);
+        false, false, false, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

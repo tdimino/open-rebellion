@@ -52,10 +52,10 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 68 entry, negative-control,
+`node run.mjs --battle --all --no-build` for all 72 entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, selected-damage, subsystem/field-command,
-live-subsystem-damage, subsystem-repair/mobility,
+live-subsystem-damage, subsystem-repair/mobility, maneuver/movement,
 faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
@@ -64,7 +64,7 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 16 additionally asserts representative capital-ship and fighter
+Fixture schema 17 additionally asserts representative capital-ship and fighter
 DAT-to-tactical-resource joins, exact production rendering of two joined
 capital-ship families, exact fighter close/far/indicator resource triplets,
 the test-only fighter focus used by the detail journey, and a 3D-off control
@@ -94,6 +94,9 @@ counters, condition percentages and resource bands, and tractor cancellation.
 The repair/mobility snapshot checks the source timer, inclusive repair roll,
 subsystem selection, engine condition, active tractor drag, bitmap bands, and
 full 128-by-128 field containment inside the tactical aperture.
+The maneuver/movement snapshot checks the recovered state-to-bonus producer,
+effective-power velocity, signed faction direction, exact 250-millisecond
+integration, and equality between integrated and rendered source positions.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

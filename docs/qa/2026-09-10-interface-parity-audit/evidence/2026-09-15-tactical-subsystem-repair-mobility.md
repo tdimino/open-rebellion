@@ -5,6 +5,10 @@ ships now attempt source-derived subsystem repair every 50 seconds, select one
 outstanding hit in the executable's category order, and refresh engine
 condition from engine damage and all active tractor sources.
 
+P58F8 supersedes this checkpoint's provisional zero-default maneuver seam with
+the recovered one-through-nine producer and physical integration contract. The
+retained P58F7 artifact remains the historical evidence for this gate.
+
 ## Implemented contract
 
 | Surface | Mapping |
@@ -56,6 +60,6 @@ This is qualified A1 implementation evidence. The repair timer, chance range,
 category order, counter decrement, sublight conversion, engine-hit penalty,
 tractor-source penalty, visible condition resources, and browser rendering are
 proven in the production tactical state path. Exact global RNG equivalence,
-maneuver-bonus producers, physical movement integration, interactive command
-delivery, lossless A0 comparison, and all 106 strict tactical cells remain
-open.
+interactive command delivery, turning, collision and formation behavior,
+lossless A0 comparison, and all 106 strict tactical cells remain open. The
+maneuver producer and physical integration are closed by P58F8.

@@ -52,9 +52,9 @@ effective = effective - (tractor_max * 0.25 * tractor_hits)
 effective = max(effective, 0)
 ```
 
-P58F7 models the current mode bonus as an explicit zero-default seam. The exact
-command or maneuver state that produces each bonus remains a later recovery
-gate.
+P58F7 modeled the current mode bonus as an explicit zero-default seam. P58F8
+supersedes that provisional boundary with the recovered one-through-nine
+producer documented in [tactical-maneuver-movement.md](tactical-maneuver-movement.md).
 
 ## P58F7 boundary
 
@@ -65,6 +65,6 @@ condition refresh in the production battle session. The browser fixture proves
 one engine repair from two hits to one, followed by a 25-point tractor penalty:
 base power 100, repaired engine power 75, and effective power 50.
 
-Exact global RNG equivalence, maneuver-bonus producers, interactive command
-delivery, physical movement integration, and lossless original-runtime pixels
-remain open.
+Exact global RNG equivalence, interactive command delivery, turning, collision
+and formation behavior, and lossless original-runtime pixels remain open. The
+maneuver producer and physical integration are closed by P58F8.

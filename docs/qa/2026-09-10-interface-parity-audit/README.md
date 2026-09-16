@@ -136,6 +136,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F7 subsystem-repair and mobility evidence](evidence/2026-09-15-tactical-subsystem-repair-mobility.md)
   for source-derived repair cadence and selection, sublight-engine condition,
   tractor drag, complete field containment, and the 68-case gate.
+- Review the [P58F8 maneuver and movement evidence](evidence/2026-09-16-tactical-maneuver-movement.md)
+  for the recovered maneuver-state bonus, effective-power velocity, signed
+  faction movement, 250-millisecond integration, and the 72-case gate.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -173,8 +176,8 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 77%
-implemented after P58F7. Its formal acceptance remains 0 of 106 tactical cells
+Within that total, the standalone space-battle launcher is approximately 80%
+implemented after P58F8. Its formal acceptance remains 0 of 106 tactical cells
 because exact original-view evidence and the remaining battle states are open.
 
 The first recovered implementation tranche now packages and renders the four
@@ -256,10 +259,12 @@ gravity priority, and frame reset. P58F6 connects capital and fighter fire to
 the recovered shield-overflow, hull-loss, subsystem-selection, condition, and
 tractor-cancellation path. P58F7 restores the 50-second repair cadence,
 inclusive damage-control roll, source subsystem order, engine-condition math,
-and active tractor drag used by the mobility contract. Automatic group
-distribution, exact planet placement, exact global RNG sequencing, the
-maneuver-mode bonus producer, physical movement integration, interactive
-command delivery, power allocation, results, and A0 comparisons remain open.
+and active tractor drag used by the mobility contract. P58F8 restores the
+maneuver-state bonus, effective-power velocity, and millisecond position
+integration while preserving the original stationary constructor state.
+Automatic group distribution, exact planet placement, exact global RNG
+sequencing, interactive command delivery, turning, collision and formation
+behavior, power allocation, results, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination
