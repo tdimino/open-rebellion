@@ -3,7 +3,7 @@ title: "Batched Interface Parity Execution Plan"
 description: "Current plan for restoring the original bitmap interface in coherent, independently accepted browser bundles"
 category: plan
 created: 2026-09-11
-updated: 2026-09-14
+updated: 2026-09-17
 tags: [interface, parity, bitmap, browser, astra, qa]
 status: active
 ---
@@ -32,6 +32,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
+| Practical space-battle launcher implementation | approximately 84% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -80,7 +81,7 @@ matrix passes.
 | UIP-B06 | Space-battle interface | Both tactical HUDs, units, assignments, selection, targeting, navigation, maneuvers, tactics, missions, damage, recovery, retreat, Death Star, trench run, results, and strategic return. Use the [standalone test-launcher plan](2026-09-12-tooling-standalone-space-battle-launcher.md), [tactical 3D asset plan](2026-09-12-feat-tactical-3d-asset-pipeline.md), and [asset library](../reference/asset-library/README.md). | All 106 TAC-01 through TAC-07 baseline cells are implemented and accepted |
 | UIP-B07 | Multiplayer and release acceptance | Original provider, host, join, ready, wait, sync, chat, pause, save/load, resign, disconnect, reconnect, errors, cross-browser, and A0 closure | Two real peers and every required interface cell pass the release matrix |
 
-## Current execution focus: P57B original tactical view rules; UIP-B06 continues
+## Current execution focus: P58F tactical simulation; UIP-B06 continues
 
 P46C established the first UIP-B01 checkpoint. Selecting a galaxy system opens
 the recovered 235x360 modeless sector window instead of the invented right
@@ -180,10 +181,18 @@ coordinates, and activates the complete system palette set. P57B2C2 recovers
 render state. P57B2C2A now restores the source directional and ambient
 light rig; P57B2C2B restores filtering, culling, depth, dither, shading,
 specular, and diffuse/emissive material behavior. P58A completes every
-DAT-to-tactical-resource join and full-corpus browser transport. P58B renders
-live production capital ships from their exact joined families. P58C renders
-source fighter detail resources and moves capital interactions to projected
-mesh bounds. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
+DAT-to-tactical-resource join and full-corpus browser transport. P58B through
+P58E restore live capital ships, fighter details, projected interaction,
+production detail transitions, and original task-force and RGBY controls.
+P58F1 through P58F8 add the exact system-selected planet, impact effects,
+projectile and field effects, selected damage presentation, live subsystem
+damage and repair, mobility, and physical integration. P58F9 restores the
+original command panels and exact assignment codes. P58F10 now executes the
+four recovered maneuver waypoints, Hold, and the first Recover carrier state.
+The muted tactical matrix passes 80 of 80 cases across both factions and both
+viewports. Exact turning and waypoint completion, fighter ingress and docking,
+attack execution, collision, formation, A0 comparison, and all 106 strict
+tactical cells remain open. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
 [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
 [P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md),
 [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md),
@@ -191,7 +200,8 @@ mesh bounds. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evi
 [P57B2C2B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-render-state.md),
 [P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md),
 [P58B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md),
-and [P58C evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md).
+[P58C evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md),
+and [P58F10 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md).
 
 ## Bundle acceptance record
 

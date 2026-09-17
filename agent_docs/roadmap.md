@@ -693,10 +693,17 @@ would tune around known simulation feedback defects.
   commit/cancel semantics; then pass the 76-case muted browser gate. Keep order
   execution, Death Star enablement, turning, collision, formation, A0, and
   every strict tactical cell open.
+- [x] Complete P58F10 tactical order execution: connect Left Hook, Right Hook,
+  Hammer, and Anvil to the recovered pi-over-eight, 0.75-scale waypoint
+  executors; execute Hold by clearing movement intent; and start Recover
+  through same-side carrier reservation and Returning state 2. Pass the
+  80-case muted browser gate. Keep exact turning, waypoint completion, carrier
+  ingress and docking, attack executors, Death Star execution, collision,
+  formation, A0, and every strict tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F10 next connects committed recover and maneuver orders to their
-  execution paths, then recovers turning, collision, and formation behavior.
+  states. P58F11 next recovers exact turning and waypoint completion, then
+  closes fighter ingress and docking, collision, and formation behavior.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

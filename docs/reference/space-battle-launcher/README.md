@@ -129,14 +129,17 @@ and closes every process. Raw runs live under ignored
 - P58F9 restores the original Maneuvers and Tactics and Missions panels, exact
   shared order and tactic codes, source-shaped controls, disabled states, and
   selected-unit cancel and commit behavior.
-- The complete bundle passes 76 of 76 muted browser cases across both factions
+- P58F10 connects all four maneuver orders to recovered waypoint construction,
+  executes Hold by clearing movement intent, and starts Recover through
+  same-side carrier reservation and Returning state 2.
+- The complete bundle passes 80 of 80 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
 distribution, native GPU and A0 comparison, exact global RNG sequencing,
-command execution, turning, collision and formation
-behavior, exact planet placement, power allocation, Death Star
+turning and waypoint completion, full fighter recovery, attack executors,
+collision and formation behavior, exact planet placement, power allocation, Death Star
 paths, results, audio, and return routing remain
 open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
@@ -145,6 +148,7 @@ open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F10 tactical order-execution evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md)
 - [P58F9 tactical command-assignment evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md)
 - [P58F8 maneuver and movement evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-16-tactical-maneuver-movement.md)
 - [P58F7 subsystem-repair and mobility evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-repair-mobility.md)

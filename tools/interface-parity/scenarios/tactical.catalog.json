@@ -223,6 +223,20 @@
       "acceptance": "A1 executable panel, bitmap, hit-mask, disabled-state, cancel, and exact order-code delivery proof. Order execution, Death Star enablement, turning, collision response, and native A0 comparison remain open."
     },
     {
+      "slug": "production-command-execution-presentation",
+      "description": "Recovered maneuver waypoint execution, Hold stop behavior, and fighter carrier-return state entered through committed production orders",
+      "fixture_codes": {
+        "alliance": 65812,
+        "empire": 66068
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "command_execution_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable maneuver waypoint, desired-direction, Hold stop, carrier reservation, and fighter Returning-state proof. Exact capital turning, carrier ingress and docking, collision response, attack executors, Death Star execution, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

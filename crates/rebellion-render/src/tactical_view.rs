@@ -104,6 +104,10 @@ const ORIGINAL_TACTICAL_STEP_MILLISECONDS: f32 = 250.0;
 /// `FUN_005ad750` and `FUN_005afb70` clamp the active mode contribution.
 const ORIGINAL_ENGINE_MODE_MIN_BONUS: f32 = 1.0;
 const ORIGINAL_ENGINE_MODE_MAX_BONUS: f32 = 9.0;
+/// `_DAT_0066d07c`, applied after each source maneuver rotation.
+const ORIGINAL_MANEUVER_WAYPOINT_SCALE: f32 = 0.75;
+/// `_DAT_0066d094` and `_DAT_0066d098` multiply pi by +/- one eighth.
+const ORIGINAL_MANEUVER_ANGLE: f32 = std::f32::consts::PI / 8.0;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
@@ -491,6 +495,8 @@ pub struct TacticalShip {
     pub source_desired_forward: TacticalWorldVector,
     /// Latest source velocity stored at offsets `+0x6c` through `+0x74`.
     pub source_velocity: TacticalWorldVector,
+    /// Active executor waypoint assigned through `FUN_005a8f70`.
+    pub source_waypoint: Option<TacticalWorldPosition>,
     /// Display name (from `CapitalShipClass`).
     pub name: String,
     /// Position on the battlefield (logical coords).
@@ -515,6 +521,8 @@ pub struct TacticalShip {
     pub sublight_engine_power: f32,
     /// Maximum tractor power stored at source offset `+0x3b8`.
     pub tractor_beam_power: f32,
+    /// Number of fighter squadrons this hull can recover.
+    pub fighter_capacity: u32,
     /// Active state-record value at offset `+0x4c`, or no active record.
     pub maneuver_state_value: Option<f32>,
     /// Inclusive 1 through 100 repair chance used by `FUN_005b1490`.
@@ -549,6 +557,30 @@ pub struct TacticalShip {
     pub retreat_progress: f32,
     /// True if this ship successfully retreated (survived, not destroyed).
     pub retreated: bool,
+}
+
+/// Source fighter recovery state stored at object offset `+0x35c`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TacticalFighterRecoveryState {
+    #[default]
+    AwaitingCarrier,
+    Reserved,
+    Returning,
+    Docking,
+    Recovered,
+}
+
+impl TacticalFighterRecoveryState {
+    #[must_use]
+    pub const fn source_code(self) -> u8 {
+        match self {
+            Self::AwaitingCarrier => 0,
+            Self::Reserved => 1,
+            Self::Returning => 2,
+            Self::Docking => 3,
+            Self::Recovered => 4,
+        }
+    }
 }
 
 /// The five selected-capital condition values consumed by the original HUD.
@@ -810,6 +842,10 @@ pub struct TacticalFighter {
     pub order: TacticalOrder,
     /// Source Surround or Stand Off behavior assigned with a maneuver.
     pub tactic: TacticalTactic,
+    /// Current `FUN_005cf980` recovery executor state.
+    pub recovery_state: TacticalFighterRecoveryState,
+    /// Capital-ship index reserved as this squadron's recovery carrier.
+    pub recovery_target: Option<usize>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1760,6 +1796,7 @@ impl BattleSession {
                 source_forward: TacticalWorldVector::SOURCE_FORWARD,
                 source_desired_forward: TacticalWorldVector::ZERO,
                 source_velocity: TacticalWorldVector::ZERO,
+                source_waypoint: None,
                 name: class.name.clone(),
                 x: 0.0,
                 y: 0.0,
@@ -1778,6 +1815,7 @@ impl BattleSession {
                 sublight_engine_power: class.sub_light_engine as f32
                     * ORIGINAL_SUBLIGHT_ENGINE_SCALE,
                 tractor_beam_power: class.tractor_beam_power as f32,
+                fighter_capacity: class.fighter_capacity,
                 maneuver_state_value: None,
                 damage_control: u8::try_from(class.damage_control.min(100)).unwrap_or(100),
                 is_attacker,
@@ -1826,6 +1864,8 @@ impl BattleSession {
                 selected: false,
                 order: TacticalOrder::None,
                 tactic: TacticalTactic::StandOff,
+                recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
+                recovery_target: None,
             });
         }
     }
@@ -2631,6 +2671,84 @@ impl TacticalState {
             if fighter.alive && fighter.is_attacker == session.player_is_attacker {
                 fighter.fighter_group = 0;
             }
+        }
+        session.ships[ship_index].selected = true;
+        session.selected_ship = Some(ship_index);
+        session.selected_fighter_group = None;
+        session.paused = true;
+        self.command_panel = TacticalCommandPanel::Display;
+    }
+
+    /// Commit one recovered capital maneuver and one fighter recovery order
+    /// through the production assignment and executor path.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_command_execution_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let Some(ship_index) = session.ships.iter().position(|ship| {
+            ship.alive
+                && ship.is_attacker == session.player_is_attacker
+                && ship.fighter_capacity > 0
+        }) else {
+            return;
+        };
+        for ship in &mut session.ships {
+            ship.selected = false;
+        }
+        for fighter in &mut session.fighters {
+            fighter.selected = false;
+            if fighter.alive && fighter.is_attacker == session.player_is_attacker {
+                fighter.fighter_group = 0;
+            }
+        }
+        let forward_z = if session.ships[ship_index].identity.is_alliance {
+            1.0
+        } else {
+            -1.0
+        };
+        session.ships[ship_index].source_forward = TacticalWorldVector {
+            x: 0.0,
+            y: 0.0,
+            z: forward_z,
+        };
+        session.ships[ship_index].selected = true;
+        session.selected_ship = Some(ship_index);
+        session.selected_fighter_group = None;
+        assign_selected_command(
+            session,
+            TacticalOrder::LeftHook,
+            Some(TacticalTactic::Surround),
+        );
+
+        if let Some(hold_index) = session.ships.iter().enumerate().find_map(|(index, ship)| {
+            (index != ship_index && ship.alive && ship.is_attacker == session.player_is_attacker)
+                .then_some(index)
+        }) {
+            session.ships[ship_index].selected = false;
+            let hold_ship = &mut session.ships[hold_index];
+            hold_ship.selected = true;
+            hold_ship.source_desired_forward = hold_ship.source_forward;
+            hold_ship.source_velocity = hold_ship.source_forward;
+            hold_ship.source_waypoint = Some(hold_ship.source_position);
+            session.selected_ship = Some(hold_index);
+            assign_selected_command(session, TacticalOrder::HoldPosition, None);
+        }
+
+        for ship in &mut session.ships {
+            ship.selected = false;
+        }
+        for fighter in &mut session.fighters {
+            fighter.selected = fighter.alive
+                && fighter.is_attacker == session.player_is_attacker
+                && fighter.fighter_group == 0;
+        }
+        session.selected_ship = None;
+        session.selected_fighter_group = Some(0);
+        assign_selected_command(session, TacticalOrder::Recover, None);
+
+        for fighter in &mut session.fighters {
+            fighter.selected = false;
         }
         session.ships[ship_index].selected = true;
         session.selected_ship = Some(ship_index);
@@ -3626,6 +3744,172 @@ fn selected_command_values(session: &BattleSession) -> (TacticalOrder, TacticalT
         })
 }
 
+fn source_delta(to: TacticalWorldPosition, from: TacticalWorldPosition) -> TacticalWorldVector {
+    TacticalWorldVector {
+        x: to.x - from.x,
+        y: to.y - from.y,
+        z: to.z - from.z,
+    }
+}
+
+fn original_maneuver_waypoint(
+    order: TacticalOrder,
+    current: TacticalWorldPosition,
+    target: TacticalWorldPosition,
+) -> Option<TacticalWorldPosition> {
+    let delta = source_delta(target, current);
+    let (sin, cos) = match order {
+        TacticalOrder::LeftHook | TacticalOrder::Anvil => ORIGINAL_MANEUVER_ANGLE.sin_cos(),
+        TacticalOrder::RightHook | TacticalOrder::Hammer => (-ORIGINAL_MANEUVER_ANGLE).sin_cos(),
+        _ => return None,
+    };
+    let rotated = match order {
+        TacticalOrder::LeftHook | TacticalOrder::RightHook => TacticalWorldVector {
+            x: cos.mul_add(delta.x, -sin * delta.z),
+            y: delta.y,
+            z: cos.mul_add(delta.z, sin * delta.x),
+        },
+        TacticalOrder::Hammer | TacticalOrder::Anvil => TacticalWorldVector {
+            x: delta.x,
+            y: cos.mul_add(delta.y, sin * delta.z),
+            z: cos.mul_add(delta.z, -sin * delta.y),
+        },
+        _ => return None,
+    };
+    Some(TacticalWorldPosition {
+        x: current.x + rotated.x * ORIGINAL_MANEUVER_WAYPOINT_SCALE,
+        y: current.y + rotated.y * ORIGINAL_MANEUVER_WAYPOINT_SCALE,
+        z: current.z + rotated.z * ORIGINAL_MANEUVER_WAYPOINT_SCALE,
+    })
+}
+
+fn original_maneuver_target(
+    ships: &[TacticalShip],
+    source: usize,
+    order: TacticalOrder,
+) -> Option<TacticalWorldPosition> {
+    let source_ship = ships.get(source)?;
+    let opponents = ships
+        .iter()
+        .filter(|ship| ship.alive && ship.is_attacker != source_ship.is_attacker)
+        .collect::<Vec<_>>();
+    let count = opponents.len() as f32;
+    if count == 0.0 {
+        return None;
+    }
+    let anchor = opponents
+        .iter()
+        .fold(TacticalWorldPosition::ORIGIN, |sum, ship| {
+            TacticalWorldPosition {
+                x: sum.x + ship.source_position.x / count,
+                y: sum.y + ship.source_position.y / count,
+                z: sum.z + ship.source_position.z / count,
+            }
+        });
+    let delta = source_delta(anchor, source_ship.source_position);
+    let selector = match order {
+        TacticalOrder::LeftHook => TacticalWorldVector {
+            x: -delta.z,
+            y: delta.y,
+            z: delta.x,
+        },
+        TacticalOrder::RightHook => TacticalWorldVector {
+            x: delta.z,
+            y: delta.y,
+            z: -delta.x,
+        },
+        TacticalOrder::Hammer => TacticalWorldVector {
+            x: delta.x,
+            y: -delta.y,
+            z: delta.z,
+        },
+        TacticalOrder::Anvil => delta,
+        _ => return None,
+    }
+    .normalized();
+    let mut selected = None;
+    let mut selected_score = f32::NEG_INFINITY;
+    for opponent in opponents {
+        let position = opponent.source_position;
+        let score = selector.dot(TacticalWorldVector {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+        });
+        if score > selected_score {
+            selected = Some(position);
+            selected_score = score;
+        }
+    }
+    selected
+}
+
+fn begin_original_capital_order(
+    session: &mut BattleSession,
+    selected: &[usize],
+    order: TacticalOrder,
+) {
+    for &index in selected {
+        if order == TacticalOrder::HoldPosition {
+            let ship = &mut session.ships[index];
+            ship.source_waypoint = None;
+            ship.source_desired_forward = TacticalWorldVector::ZERO;
+            ship.source_velocity = TacticalWorldVector::ZERO;
+            continue;
+        }
+        if !matches!(
+            order,
+            TacticalOrder::LeftHook
+                | TacticalOrder::RightHook
+                | TacticalOrder::Hammer
+                | TacticalOrder::Anvil
+        ) {
+            continue;
+        }
+        let current = session.ships[index].source_position;
+        let waypoint = original_maneuver_target(&session.ships, index, order)
+            .and_then(|target| original_maneuver_waypoint(order, current, target));
+        let ship = &mut session.ships[index];
+        if let Some(waypoint) = waypoint {
+            ship.source_waypoint = Some(waypoint);
+            ship.source_desired_forward = source_delta(waypoint, current).normalized();
+        } else {
+            // `FUN_005ca6d0` returns the object to no-orders when no executor
+            // target can be created.
+            ship.order = TacticalOrder::None;
+            ship.source_waypoint = None;
+            ship.source_desired_forward = TacticalWorldVector::ZERO;
+            ship.source_velocity = TacticalWorldVector::ZERO;
+        }
+    }
+}
+
+fn begin_original_fighter_recovery(session: &mut BattleSession, selected: &[usize]) {
+    let mut carrier_slots = session
+        .ships
+        .iter()
+        .enumerate()
+        .filter(|(_, ship)| ship.alive && ship.fighter_capacity > 0)
+        .map(|(index, ship)| (index, ship.is_attacker, ship.fighter_capacity))
+        .collect::<Vec<_>>();
+    for &fighter_index in selected {
+        let fighter = &mut session.fighters[fighter_index];
+        // `FUN_005cf940` always resets the state before `FUN_005cf980`
+        // reserves a compatible carrier and begins the inbound leg.
+        fighter.recovery_state = TacticalFighterRecoveryState::AwaitingCarrier;
+        fighter.recovery_target = None;
+        if let Some((carrier, _, remaining)) = carrier_slots
+            .iter_mut()
+            .find(|(_, side, remaining)| *side == fighter.is_attacker && *remaining > 0)
+        {
+            fighter.recovery_state = TacticalFighterRecoveryState::Reserved;
+            fighter.recovery_target = Some(*carrier);
+            *remaining -= 1;
+            fighter.recovery_state = TacticalFighterRecoveryState::Returning;
+        }
+    }
+}
+
 fn assign_selected_command(
     session: &mut BattleSession,
     order: TacticalOrder,
@@ -3633,8 +3917,10 @@ fn assign_selected_command(
 ) -> (usize, usize) {
     let mut capital_members = 0;
     let mut fighter_members = 0;
+    let mut selected_capitals = Vec::new();
+    let mut selected_fighters = Vec::new();
     if session.selected_fighter_group.is_some() {
-        for fighter in &mut session.fighters {
+        for (index, fighter) in session.fighters.iter_mut().enumerate() {
             if fighter.alive
                 && fighter.selected
                 && fighter.is_attacker == session.player_is_attacker
@@ -3643,19 +3929,29 @@ fn assign_selected_command(
                 if let Some(tactic) = tactic {
                     fighter.tactic = tactic;
                 }
+                if order != TacticalOrder::Recover {
+                    fighter.recovery_state = TacticalFighterRecoveryState::AwaitingCarrier;
+                    fighter.recovery_target = None;
+                }
+                selected_fighters.push(index);
                 fighter_members += 1;
             }
         }
     } else {
-        for ship in &mut session.ships {
+        for (index, ship) in session.ships.iter_mut().enumerate() {
             if ship.alive && ship.selected && ship.is_attacker == session.player_is_attacker {
                 ship.order = order;
                 if let Some(tactic) = tactic {
                     ship.tactic = tactic;
                 }
+                selected_capitals.push(index);
                 capital_members += 1;
             }
         }
+    }
+    begin_original_capital_order(session, &selected_capitals, order);
+    if order == TacticalOrder::Recover {
+        begin_original_fighter_recovery(session, &selected_fighters);
     }
     (capital_members, fighter_members)
 }
@@ -5970,6 +6266,7 @@ mod tests {
                 }
             },
             source_velocity: TacticalWorldVector::ZERO,
+            source_waypoint: None,
             name: format!("ship-{dat_id}"),
             x: 0.0,
             y: 0.0,
@@ -5994,6 +6291,7 @@ mod tests {
             subsystem_damage: TacticalSubsystemDamage::default(),
             sublight_engine_power: 100.0,
             tractor_beam_power: 25.0,
+            fighter_capacity: 1,
             maneuver_state_value: None,
             damage_control: 100,
             is_attacker: is_alliance,
@@ -6035,6 +6333,8 @@ mod tests {
             selected: false,
             order: TacticalOrder::None,
             tactic: TacticalTactic::StandOff,
+            recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
+            recovery_target: None,
         }
     }
 
@@ -6546,6 +6846,101 @@ mod tests {
         session.advance_original_tactical_movement(250.0);
         assert_eq!(session.ships[0].source_velocity.y, 78.75);
         assert_eq!(session.ships[0].source_position.y, 19.6875);
+    }
+
+    #[test]
+    fn maneuver_waypoints_preserve_source_rotations_and_scale() {
+        let current = TacticalWorldPosition {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let target = TacticalWorldPosition {
+            x: 9.0,
+            y: 6.0,
+            z: 15.0,
+        };
+        let (sin, cos) = ORIGINAL_MANEUVER_ANGLE.sin_cos();
+        let close = |left: f32, right: f32| assert!((left - right).abs() < 0.000_01);
+
+        let left = original_maneuver_waypoint(TacticalOrder::LeftHook, current, target).unwrap();
+        close(left.x, 1.0 + (cos * 8.0 - sin * 12.0) * 0.75);
+        close(left.y, 5.0);
+        close(left.z, 3.0 + (cos * 12.0 + sin * 8.0) * 0.75);
+
+        let right = original_maneuver_waypoint(TacticalOrder::RightHook, current, target).unwrap();
+        close(right.x, 1.0 + (cos * 8.0 + sin * 12.0) * 0.75);
+        close(right.y, 5.0);
+        close(right.z, 3.0 + (cos * 12.0 - sin * 8.0) * 0.75);
+
+        let hammer = original_maneuver_waypoint(TacticalOrder::Hammer, current, target).unwrap();
+        close(hammer.x, 7.0);
+        close(hammer.y, 2.0 + (cos * 4.0 - sin * 12.0) * 0.75);
+        close(hammer.z, 3.0 + (cos * 12.0 + sin * 4.0) * 0.75);
+
+        let anvil = original_maneuver_waypoint(TacticalOrder::Anvil, current, target).unwrap();
+        close(anvil.x, 7.0);
+        close(anvil.y, 2.0 + (cos * 4.0 + sin * 12.0) * 0.75);
+        close(anvil.z, 3.0 + (cos * 12.0 - sin * 4.0) * 0.75);
+    }
+
+    #[test]
+    fn committed_maneuver_hold_and_recover_enter_original_executors() {
+        let mut player = test_ship(64, 0, true, true);
+        player.selected = true;
+        player.source_position.z = -50.0;
+        player.fighter_capacity = 2;
+        let mut enemy = test_ship(128, 0, false, true);
+        enemy.source_position = TacticalWorldPosition {
+            x: 10.0,
+            y: 4.0,
+            z: 50.0,
+        };
+        let mut fighter = test_fighter(1, true);
+        fighter.selected = true;
+        let mut session = test_session(vec![player, enemy], vec![fighter], true);
+        session.selected_ship = Some(0);
+
+        assert_eq!(
+            assign_selected_command(
+                &mut session,
+                TacticalOrder::LeftHook,
+                Some(TacticalTactic::Surround),
+            ),
+            (1, 0)
+        );
+        assert_eq!(session.ships[0].order, TacticalOrder::LeftHook);
+        assert_eq!(session.ships[0].tactic, TacticalTactic::Surround);
+        assert!(session.ships[0].source_waypoint.is_some());
+        assert_ne!(
+            session.ships[0].source_desired_forward,
+            TacticalWorldVector::ZERO
+        );
+
+        assert_eq!(
+            assign_selected_command(&mut session, TacticalOrder::HoldPosition, None),
+            (1, 0)
+        );
+        assert_eq!(session.ships[0].source_waypoint, None);
+        assert_eq!(
+            session.ships[0].source_desired_forward,
+            TacticalWorldVector::ZERO
+        );
+        assert_eq!(session.ships[0].source_velocity, TacticalWorldVector::ZERO);
+
+        session.ships[0].selected = false;
+        session.selected_ship = None;
+        session.selected_fighter_group = Some(0);
+        assert_eq!(
+            assign_selected_command(&mut session, TacticalOrder::Recover, None),
+            (0, 1)
+        );
+        assert_eq!(session.fighters[0].order, TacticalOrder::Recover);
+        assert_eq!(
+            session.fighters[0].recovery_state,
+            TacticalFighterRecoveryState::Returning
+        );
+        assert_eq!(session.fighters[0].recovery_target, Some(0));
     }
 
     #[test]
@@ -7104,7 +7499,9 @@ mod tests {
     fn maneuver_confirm_commits_and_cancel_preserves_selected_capital_orders() {
         let mut ship = test_ship(64, 0, true, true);
         ship.selected = true;
-        let mut session = test_session(vec![ship], Vec::new(), true);
+        let mut enemy = test_ship(128, 0, false, true);
+        enemy.source_position.z = 50.0;
+        let mut session = test_session(vec![ship, enemy], Vec::new(), true);
         session.selected_ship = Some(0);
         let mut state = TacticalState {
             session: Some(session),

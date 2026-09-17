@@ -163,7 +163,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live capital, fighter, planet, group, effects, fields, selected-capital damage, subsystem condition, exact field-source presentation, live subsystem damage, repair, mobility, maneuver state, velocity, position integration, and authentic command assignment pass implementation gates, but automatic grouping, exact planet placement, exact global RNG sequencing, order execution, turning, collision and formation behavior, power allocation, special objects, original view acceptance, replacement battle content, and incomplete result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live capital, fighter, planet, group, effects, fields, selected-capital damage, subsystem condition, exact field-source presentation, live subsystem damage, repair, mobility, maneuver state, velocity, position integration, authentic command assignment, maneuver waypoints, Hold, and the first Recover carrier state pass implementation gates, but automatic grouping, exact planet placement, exact global RNG sequencing, turning and waypoint completion, full fighter recovery, attack executors, collision and formation behavior, power allocation, special objects, original view acceptance, replacement battle content, and incomplete result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -194,7 +194,8 @@
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-live-subsystem-damage.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-repair-mobility.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-16-tactical-maneuver-movement.md",
-      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md"
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md",
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },

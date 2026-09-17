@@ -1,0 +1,44 @@
+{
+  "verdict": "pass",
+  "confidence": "high for qualified A1 screenshot and recorded-state evidence",
+  "evidence_level": "qualified A1 implementation evidence; not A0 original-game parity",
+  "inspected_files": [
+    "contact-sheet.png",
+    "alliance/640x480/command-execution.png",
+    "alliance/640x480/result.json",
+    "alliance/1280x800-letterboxed/command-execution.png",
+    "alliance/1280x800-letterboxed/result.json",
+    "empire/640x480/command-execution.png",
+    "empire/640x480/result.json",
+    "empire/1280x800-letterboxed/command-execution.png",
+    "empire/1280x800-letterboxed/result.json",
+    "focused-summary.json",
+    "full-summary.json"
+  ],
+  "findings": {
+    "critical": [],
+    "major": [],
+    "minor": [],
+    "informational": [
+      "Some battlefield ships extend beyond the lower scene boundary; shell controls remain fully framed. Full participant visibility is not established."
+    ]
+  },
+  "confirmed_claims": [
+    "Both factions retain a legible tactical bitmap shell at 640x480 and centered proportional framing at 1280x800.",
+    "No blank panels, clipped shell controls, obvious bitmap mapping failures, missing assets, browser errors, audio-policy violations, unstable screenshots, or cleanup failures are present in the retained evidence.",
+    "All four records show Left Hook order 7 and Surround tactic 1 with finite waypoints and normalized desired directions.",
+    "All four records show Hold order 11 with no waypoint and zero desired direction.",
+    "All four records show Recover order 2 in state 2 with a same-faction carrier.",
+    "Focused and complete matrices passed 4 of 4 and 80 of 80 with fresh muted launches and closed browser processes."
+  ],
+  "limitations": [
+    "The review inspected retained paused fixture evidence rather than replaying the browser journey.",
+    "The snapshots prove resulting execution state, not completed turning, maneuver travel, carrier ingress, or docking.",
+    "All visual comparisons remain unbaselined. Original-game A0 parity is not proven.",
+    "The complete matrix was assessed through its summary rather than every underlying frame."
+  ],
+  "required_followups": [
+    "Retain an original-game comparison before any A0 parity claim.",
+    "Close turning, maneuver completion, carrier ingress, and docking in later gates."
+  ]
+}
