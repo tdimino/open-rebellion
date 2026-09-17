@@ -312,5 +312,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Continue P58F10 by connecting committed recover and maneuver orders to their execution paths, then recover turning, collision, and formation behavior. Keep exact global RNG sequencing, exact planet placement, and all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
+  "next_action": "Continue P58F11 by recovering current-to-desired turning, waypoint completion, and fighter recovery ingress and docking, then recover attack executors, collision, and formation behavior. Keep exact global RNG sequencing, exact planet placement, and all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
 }
