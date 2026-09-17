@@ -209,6 +209,20 @@
       "acceptance": "A1 executable maneuver-value, clamped bonus, straight-ahead alignment, velocity, and position-integration proof only. Turning, collision response, interactive command delivery, and native A0 comparison remain open."
     },
     {
+      "slug": "production-command-assignment-presentation",
+      "description": "Both authentic selected-unit command panels with source bitmap controls, cancel semantics, and committed maneuver, tactic, capital-target, and fighter-recovery orders",
+      "fixture_codes": {
+        "alliance": 65811,
+        "empire": 66067
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "command_assignment_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable panel, bitmap, hit-mask, disabled-state, cancel, and exact order-code delivery proof. Order execution, Death Star enablement, turning, collision response, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "role": "browser visual acceptance only"
+  },
+  "verdict": "pass",
+  "acceptance_scope": "P58F9 qualified A1 visual implementation evidence, not strict A0 original-game parity.",
+  "inspected_surfaces": [
+    "Alliance selected unit, Hammer plus Surround, Attack Capital Ships, and Recover at 640x480",
+    "Empire selected unit, Hammer plus Surround, Attack Capital Ships, and Recover at 640x480",
+    "Alliance Hammer plus Surround and Recover at 1280x800 letterboxed",
+    "Empire Hammer plus Surround and Recover at 1280x800 letterboxed"
+  ],
+  "visual_findings": [
+    "Bitmap panels are visible and nonblank with consistent alignment and proportional scaling.",
+    "Control art, highlighted selections, and disabled states are coherent across both factions.",
+    "Native and letterboxed views show no apparent clipping, corruption, or visibly invented panel art."
+  ],
+  "evidence_checks": {
+    "focused_cases": "4 of 4 passed",
+    "complete_matrix": "76 of 76 passed",
+    "four_request_startups": 76,
+    "browser_errors": 0,
+    "muted_launches": 76,
+    "closed_browser_processes": 76,
+    "contact_sheet_sha256": "dfdff5605bd01092ec6de548fb270b6eecfc38a8d2b68b26497adb31e8c13646"
+  },
+  "limitations": [
+    "The contact sheet supports visual implementation acceptance only.",
+    "The deterministic harness independently proves interaction and command-state behavior.",
+    "Original-reference comparisons remain unbaselined."
+  ],
+  "blocking_findings": [],
+  "ready_to_commit": true,
+  "acceptance_boundary": "All 106 strict A0 parity cells remain open."
+}

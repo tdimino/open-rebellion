@@ -139,6 +139,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F8 maneuver and movement evidence](evidence/2026-09-16-tactical-maneuver-movement.md)
   for the recovered maneuver-state bonus, effective-power velocity, signed
   faction movement, 250-millisecond integration, and the 72-case gate.
+- Review the [P58F9 tactical command-assignment evidence](evidence/2026-09-17-tactical-command-assignment.md)
+  for both original command panels, exact order and tactic codes, source-shaped
+  controls, cancel/commit behavior, group delivery, and the 76-case gate.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -176,8 +179,8 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 80%
-implemented after P58F8. Its formal acceptance remains 0 of 106 tactical cells
+Within that total, the standalone space-battle launcher is approximately 82%
+implemented after P58F9. Its formal acceptance remains 0 of 106 tactical cells
 because exact original-view evidence and the remaining battle states are open.
 
 The first recovered implementation tranche now packages and renders the four
@@ -262,8 +265,10 @@ inclusive damage-control roll, source subsystem order, engine-condition math,
 and active tractor drag used by the mobility contract. P58F8 restores the
 maneuver-state bonus, effective-power velocity, and millisecond position
 integration while preserving the original stationary constructor state.
-Automatic group distribution, exact planet placement, exact global RNG
-sequencing, interactive command delivery, turning, collision and formation
+P58F9 restores the bitmap-driven Maneuvers and Tactics and Missions panels,
+exact order and tactic codes, disabled states, and selected-unit commit and
+cancel behavior. Automatic group distribution, exact planet placement, exact
+global RNG sequencing, order execution, turning, collision and formation
 behavior, power allocation, results, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object

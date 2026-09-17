@@ -20,7 +20,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 80% |
+| Practical space-battle launcher implementation | approximately 82% |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
@@ -105,6 +105,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58F6 live subsystem-damage evidence](evidence/2026-09-15-tactical-live-subsystem-damage.md) | Source-derived live shield overflow, hull loss, subsystem thresholds and limits, condition recalculation, tractor cancellation, 64-case muted browser gate, and explicit A0 limits. |
 | [P58F7 subsystem-repair and mobility evidence](evidence/2026-09-15-tactical-subsystem-repair-mobility.md) | Source-derived repair cadence and selection, engine condition, tractor drag, complete field containment, 68-case muted browser gate, and explicit A0 limits. |
 | [P58F8 maneuver and movement evidence](evidence/2026-09-16-tactical-maneuver-movement.md) | Recovered maneuver-state bonus, effective-power velocity, signed faction movement, 250-millisecond integration, 72-case muted browser gate, and explicit command/A0 limits. |
+| [P58F9 tactical command-assignment evidence](evidence/2026-09-17-tactical-command-assignment.md) | Original command panels, exact order and tactic codes, source-shaped controls, cancel/commit behavior, group delivery, 76-case muted browser gate, and explicit execution/A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -256,10 +257,12 @@ field-source identity and capacities. P58F6 connects live capital and fighter
 damage to those subsystem states and cancels depleted tractor sources. P58F7
 restores the repair timer and subsystem selection plus the engine-condition and
 tractor-drag mobility calculation. P58F8 restores the maneuver-state bonus,
-effective-power velocity, and millisecond position integration. Automatic
-production grouping, exact planet placement, exact global RNG sequencing,
-interactive command timing, turning, collision and formation behavior, power
-allocation, results, A0 comparison, and every tactical cell remain open.
+effective-power velocity, and millisecond position integration. P58F9 restores
+both bitmap-driven command panels, exact order and tactic codes, disabled
+states, and selected-unit commit and cancel behavior. Automatic production
+grouping, exact planet placement, exact global RNG sequencing, order execution,
+turning, collision and formation behavior, power allocation, results, A0
+comparison, and every tactical cell remain open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,
 tactical, dialog, encyclopedia, advisor-control, and voice resources remain

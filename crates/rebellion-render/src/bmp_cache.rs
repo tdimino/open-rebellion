@@ -759,6 +759,40 @@ pub mod resources {
         /// Tactical command button: Missions, pressed state.
         pub const BTN_MISSIONS_PRESSED: u32 = 1108;
 
+        /// Tactical assignment: confirm, normal state.
+        pub const BTN_ASSIGN_CONFIRM_NORMAL: u32 = 1113;
+        /// Tactical assignment: confirm, pressed state.
+        pub const BTN_ASSIGN_CONFIRM_PRESSED: u32 = 1114;
+        /// Tactical assignment: cancel, normal state.
+        pub const BTN_ASSIGN_CANCEL_NORMAL: u32 = 1115;
+        /// Tactical assignment: cancel, pressed state.
+        pub const BTN_ASSIGN_CANCEL_PRESSED: u32 = 1116;
+        /// Tactical tactic toggle: Stand Off selected.
+        pub const BTN_TACTIC_STAND_OFF: u32 = 1117;
+        /// Tactical tactic toggle: Surround selected.
+        pub const BTN_TACTIC_SURROUND: u32 = 1118;
+
+        /// Tactical maneuver: left hook, normal state.
+        pub const BTN_LEFT_HOOK_NORMAL: u32 = 1133;
+        /// Tactical maneuver: left hook, pressed state.
+        pub const BTN_LEFT_HOOK_PRESSED: u32 = 1134;
+        /// Tactical maneuver: right hook, normal state.
+        pub const BTN_RIGHT_HOOK_NORMAL: u32 = 1135;
+        /// Tactical maneuver: right hook, pressed state.
+        pub const BTN_RIGHT_HOOK_PRESSED: u32 = 1136;
+        /// Tactical maneuver: hammer, normal state.
+        pub const BTN_HAMMER_NORMAL: u32 = 1137;
+        /// Tactical maneuver: hammer, pressed state.
+        pub const BTN_HAMMER_PRESSED: u32 = 1138;
+        /// Tactical maneuver: anvil, normal state.
+        pub const BTN_ANVIL_NORMAL: u32 = 1139;
+        /// Tactical maneuver: anvil, pressed state.
+        pub const BTN_ANVIL_PRESSED: u32 = 1140;
+        /// Tactical maneuver: hold position, normal state.
+        pub const BTN_HOLD_POSITION_NORMAL: u32 = 1141;
+        /// Tactical maneuver: hold position, pressed state.
+        pub const BTN_HOLD_POSITION_PRESSED: u32 = 1142;
+
         /// Tactical command button: withdraw from battle, normal state.
         pub const BTN_WITHDRAW_FROM_BATTLE_NORMAL: u32 = 1149;
         /// Tactical command button: withdraw from battle, pressed state.
@@ -815,6 +849,21 @@ pub mod resources {
 
         /// Right-side hull integrity and shield strength panel.
         pub const RIGHT_PANEL_HULL_AND_SHIELD: u32 = 1302;
+        /// Tactical missions assignment panel.
+        pub const MISSIONS_PANEL: u32 = 1308;
+        /// Tactical maneuvers and tactics assignment panel.
+        pub const MANEUVERS_PANEL: u32 = 1309;
+
+        /// Maneuver confirmation graphic: left hook.
+        pub const MANEUVER_HUD_LEFT_HOOK: u32 = 2101;
+        /// Maneuver confirmation graphic: right hook.
+        pub const MANEUVER_HUD_RIGHT_HOOK: u32 = 2102;
+        /// Maneuver confirmation graphic: hammer.
+        pub const MANEUVER_HUD_HAMMER: u32 = 2103;
+        /// Maneuver confirmation graphic: anvil.
+        pub const MANEUVER_HUD_ANVIL: u32 = 2104;
+        /// Maneuver confirmation graphic: hold position.
+        pub const MANEUVER_HUD_HOLD_POSITION: u32 = 2105;
 
         /// Mission HUD: attack capital ships (Alliance).
         pub const MISSIONS_HUD_ATTACK_CAPITAL_SHIPS_ALLIANCE: u32 = 2151;

@@ -687,10 +687,16 @@ would tune around known simulation feedback defects.
   250-millisecond position integration; then pass the 72-case muted browser
   gate. Keep interactive maneuver delivery, turning, collision, formation,
   A0, and every strict tactical cell open.
+- [x] Complete P58F9 tactical command assignment: restore the original
+  Maneuvers and Tactics and Missions panels, exact shared order and tactic
+  codes, source-shaped controls, disabled states, group delivery, and
+  commit/cancel semantics; then pass the 76-case muted browser gate. Keep order
+  execution, Death Star enablement, turning, collision, formation, A0, and
+  every strict tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F9 next connects movement state to interactive maneuver commands,
-  then recovers turning, collision, and formation behavior.
+  states. P58F10 next connects committed recover and maneuver orders to their
+  execution paths, then recovers turning, collision, and formation behavior.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

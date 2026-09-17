@@ -52,10 +52,11 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 72 entry, negative-control,
+`node run.mjs --battle --all --no-build` for all 76 entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, selected-damage, subsystem/field-command,
 live-subsystem-damage, subsystem-repair/mobility, maneuver/movement,
+command-assignment,
 faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
@@ -64,7 +65,7 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 17 additionally asserts representative capital-ship and fighter
+Fixture schema 18 additionally asserts representative capital-ship and fighter
 DAT-to-tactical-resource joins, exact production rendering of two joined
 capital-ship families, exact fighter close/far/indicator resource triplets,
 the test-only fighter focus used by the detail journey, and a 3D-off control
@@ -97,6 +98,10 @@ full 128-by-128 field containment inside the tactical aperture.
 The maneuver/movement snapshot checks the recovered state-to-bonus producer,
 effective-power velocity, signed faction direction, exact 250-millisecond
 integration, and equality between integrated and rendered source positions.
+The command-assignment journey opens both source panels, verifies their exact
+normal, pressed, and disabled BMP states, cancels without mutation, commits
+Hammer with Surround and Attack Capital Ships to selected capitals, and commits
+Recover to a selected fighter group.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

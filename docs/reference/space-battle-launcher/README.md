@@ -126,13 +126,16 @@ and closes every process. Raw runs live under ignored
 - P58F8 restores the one-through-nine maneuver-state bonus, effective-power
   velocity, signed faction movement, and 250-millisecond source-position
   integration while preserving the stationary constructor state.
-- The complete bundle passes 72 of 72 muted browser cases across both factions
+- P58F9 restores the original Maneuvers and Tactics and Missions panels, exact
+  shared order and tactic codes, source-shaped controls, disabled states, and
+  selected-unit cancel and commit behavior.
+- The complete bundle passes 76 of 76 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
-distribution, native GPU and A0 comparison, exact global RNG sequencing, the
-remaining interactive maneuver commands, turning, collision and formation
+distribution, native GPU and A0 comparison, exact global RNG sequencing,
+command execution, turning, collision and formation
 behavior, exact planet placement, power allocation, Death Star
 paths, results, audio, and return routing remain
 open. All
@@ -142,6 +145,7 @@ open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F9 tactical command-assignment evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md)
 - [P58F8 maneuver and movement evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-16-tactical-maneuver-movement.md)
 - [P58F7 subsystem-repair and mobility evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-repair-mobility.md)
 - [P58F6 live subsystem-damage evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-live-subsystem-damage.md)

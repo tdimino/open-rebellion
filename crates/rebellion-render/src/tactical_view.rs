@@ -355,6 +355,115 @@ pub enum BattlePhase {
     Results,
 }
 
+/// One command from the original unified tactical order field at source offset `+0x68`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TacticalOrder {
+    #[default]
+    None,
+    Recover,
+    AttackFighters,
+    AttackCapitalShips,
+    AttackDeathStar,
+    LeftHook,
+    RightHook,
+    Hammer,
+    Anvil,
+    HoldPosition,
+}
+
+impl TacticalOrder {
+    /// Exact numeric value consumed by the original tactical runtime.
+    #[must_use]
+    pub const fn source_code(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Recover => 2,
+            Self::AttackFighters => 4,
+            Self::AttackCapitalShips => 5,
+            Self::AttackDeathStar => 6,
+            Self::LeftHook => 7,
+            Self::RightHook => 8,
+            Self::Hammer => 9,
+            Self::Anvil => 10,
+            Self::HoldPosition => 11,
+        }
+    }
+
+    #[must_use]
+    const fn label(self) -> &'static str {
+        match self {
+            Self::None => "No Orders",
+            Self::Recover => "Recover",
+            Self::AttackFighters => "Attack Fighters",
+            Self::AttackCapitalShips => "Attack Capital Ships",
+            Self::AttackDeathStar => "Attack Death Star",
+            Self::LeftHook => "Left Hook",
+            Self::RightHook => "Right Hook",
+            Self::Hammer => "Hammer",
+            Self::Anvil => "Anvil",
+            Self::HoldPosition => "Hold Position",
+        }
+    }
+
+    #[must_use]
+    const fn maneuver_graphic(self) -> Option<u32> {
+        use resources::tactical as art;
+        match self {
+            Self::LeftHook => Some(art::MANEUVER_HUD_LEFT_HOOK),
+            Self::RightHook => Some(art::MANEUVER_HUD_RIGHT_HOOK),
+            Self::Hammer => Some(art::MANEUVER_HUD_HAMMER),
+            Self::Anvil => Some(art::MANEUVER_HUD_ANVIL),
+            Self::HoldPosition => Some(art::MANEUVER_HUD_HOLD_POSITION),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    const fn mission_graphic(self, player_is_alliance: bool) -> Option<u32> {
+        use resources::tactical as art;
+        match (self, player_is_alliance) {
+            (Self::AttackCapitalShips, true) => {
+                Some(art::MISSIONS_HUD_ATTACK_CAPITAL_SHIPS_ALLIANCE)
+            }
+            (Self::AttackFighters, true) => Some(art::MISSIONS_HUD_ATTACK_FIGHTERS_ALLIANCE),
+            (Self::Recover, true) => Some(art::MISSIONS_HUD_RECOVER_ALLIANCE),
+            (Self::AttackDeathStar, true) => Some(art::MISSIONS_HUD_ATTACK_DEATH_STAR_ALLIANCE),
+            (Self::AttackCapitalShips, false) => {
+                Some(art::MISSIONS_HUD_ATTACK_CAPITAL_SHIPS_EMPIRE)
+            }
+            (Self::AttackFighters, false) => Some(art::MISSIONS_HUD_ATTACK_FIGHTERS_EMPIRE),
+            (Self::Recover, false) => Some(art::MISSIONS_HUD_RECOVER_EMPIRE),
+            _ => None,
+        }
+    }
+}
+
+/// The source tactical behavior toggle at offset `+0x38`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TacticalTactic {
+    Surround,
+    #[default]
+    StandOff,
+}
+
+impl TacticalTactic {
+    #[must_use]
+    pub const fn source_code(self) -> u8 {
+        match self {
+            Self::Surround => 1,
+            Self::StandOff => 2,
+        }
+    }
+
+    #[must_use]
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Surround => "Surround",
+            Self::StandOff => "Stand Off",
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Ship instance (per-hull in the battle)
 // ---------------------------------------------------------------------------
@@ -416,6 +525,10 @@ pub struct TacticalShip {
     pub alive: bool,
     /// Whether this ship is currently selected by the player.
     pub selected: bool,
+    /// Unified source order code assigned through the command panel.
+    pub order: TacticalOrder,
+    /// Source Surround or Stand Off behavior assigned with a maneuver.
+    pub tactic: TacticalTactic,
     /// Zero-based task-force assignment shown in the eight source HUD slots.
     pub task_force: u8,
     /// Index into the fleet's `capital_ships` for damage application.
@@ -693,6 +806,10 @@ pub struct TacticalFighter {
     pub fighter_group: u8,
     /// Fighter groups are selected as a unit; individual fighters are not.
     pub selected: bool,
+    /// Unified source order code assigned through the command panel.
+    pub order: TacticalOrder,
+    /// Source Surround or Stand Off behavior assigned with a maneuver.
+    pub tactic: TacticalTactic,
 }
 
 // ---------------------------------------------------------------------------
@@ -1666,6 +1783,8 @@ impl BattleSession {
                 is_attacker,
                 alive: true,
                 selected: false,
+                order: TacticalOrder::None,
+                tactic: TacticalTactic::StandOff,
                 // Source initialization of the first task force is known;
                 // automatic distribution across later slots is not yet.
                 task_force: 0,
@@ -1705,6 +1824,8 @@ impl BattleSession {
                 // FUN_005c63f0 initializes color state to 4 (white/unassigned).
                 fighter_group: 4,
                 selected: false,
+                order: TacticalOrder::None,
+                tactic: TacticalTactic::StandOff,
             });
         }
     }
@@ -2249,6 +2370,19 @@ impl BattleSession {
 // TacticalState — top-level UI state
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum TacticalCommandPanel {
+    #[default]
+    Display,
+    Maneuvers {
+        pending_order: TacticalOrder,
+        pending_tactic: TacticalTactic,
+    },
+    Missions {
+        pending_order: TacticalOrder,
+    },
+}
+
 /// Persistent state for the tactical combat view across frames.
 pub struct TacticalState {
     /// The current battle session (None when not in combat).
@@ -2265,6 +2399,7 @@ pub struct TacticalState {
     /// Original Tactical Display faction-wireframe switches.
     pub highlight_alliance: bool,
     pub highlight_empire: bool,
+    command_panel: TacticalCommandPanel,
     warmed_font_sizes: HashSet<u16>,
     render_original_participants: bool,
     render_original_planet: bool,
@@ -2290,6 +2425,7 @@ impl Default for TacticalState {
             zoom: 1.0,
             highlight_alliance: true,
             highlight_empire: true,
+            command_panel: TacticalCommandPanel::Display,
             warmed_font_sizes: HashSet::new(),
             render_original_participants: true,
             render_original_planet: true,
@@ -2337,6 +2473,7 @@ impl TacticalState {
         self.zoom = 1.0;
         self.highlight_alliance = true;
         self.highlight_empire = true;
+        self.command_panel = TacticalCommandPanel::Display;
         self.render_original_participants = true;
         self.render_original_planet = true;
         #[cfg(feature = "interface-test-fixtures")]
@@ -2469,6 +2606,37 @@ impl TacticalState {
                 fighter_group = fighter_group.saturating_add(1);
             }
         }
+    }
+
+    /// Select one player capital and make the first player fighter group
+    /// addressable through the authentic command panels. Production play
+    /// reaches the same state through the task-force and fighter controls.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_command_assignment_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let Some(ship_index) = session
+            .ships
+            .iter()
+            .position(|ship| ship.alive && ship.is_attacker == session.player_is_attacker)
+        else {
+            return;
+        };
+        for ship in &mut session.ships {
+            ship.selected = false;
+        }
+        for fighter in &mut session.fighters {
+            fighter.selected = false;
+            if fighter.alive && fighter.is_attacker == session.player_is_attacker {
+                fighter.fighter_group = 0;
+            }
+        }
+        session.ships[ship_index].selected = true;
+        session.selected_ship = Some(ship_index);
+        session.selected_fighter_group = None;
+        session.paused = true;
+        self.command_panel = TacticalCommandPanel::Display;
     }
 
     /// Display one stable frame from every source-selected impact family.
@@ -2865,6 +3033,7 @@ impl TacticalState {
     /// result processing by the caller.
     pub fn end_battle(&mut self) -> Option<BattleSession> {
         self.dragging_ship = None;
+        self.command_panel = TacticalCommandPanel::Display;
         self.session.take()
     }
 
@@ -2912,6 +3081,24 @@ enum TacticalHudControl {
     CameraDown,
     HighlightAlliance,
     HighlightEmpire,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TacticalCommandControl {
+    OpenManeuvers,
+    OpenMissions,
+    LeftHook,
+    RightHook,
+    Hammer,
+    Anvil,
+    HoldPosition,
+    ToggleTactic,
+    AttackCapitalShips,
+    AttackFighters,
+    Recover,
+    AttackDeathStar,
+    Confirm,
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3008,6 +3195,176 @@ const FIGHTER_GROUP_PRESSED_ART: [u32; 4] = [
     resources::tactical::BTN_GOLD_SQUADRON_PRESSED,
 ];
 
+const DISPLAY_COMMAND_CONTROLS: [TacticalCommandControl; 2] = [
+    TacticalCommandControl::OpenMissions,
+    TacticalCommandControl::OpenManeuvers,
+];
+
+const MANEUVER_COMMAND_CONTROLS: [TacticalCommandControl; 8] = [
+    TacticalCommandControl::Hammer,
+    TacticalCommandControl::Anvil,
+    TacticalCommandControl::LeftHook,
+    TacticalCommandControl::RightHook,
+    TacticalCommandControl::HoldPosition,
+    TacticalCommandControl::ToggleTactic,
+    TacticalCommandControl::Confirm,
+    TacticalCommandControl::Cancel,
+];
+
+const MISSION_COMMAND_CONTROLS: [TacticalCommandControl; 6] = [
+    TacticalCommandControl::AttackCapitalShips,
+    TacticalCommandControl::AttackFighters,
+    TacticalCommandControl::Recover,
+    TacticalCommandControl::AttackDeathStar,
+    TacticalCommandControl::Confirm,
+    TacticalCommandControl::Cancel,
+];
+
+fn tactical_command_spec(
+    control: TacticalCommandControl,
+    player_is_alliance: bool,
+) -> (NativeRect, u32) {
+    use resources::tactical as art;
+    match control {
+        TacticalCommandControl::OpenMissions => (
+            NativeRect::new(493.0, 237.0, 58.0, 22.0),
+            art::BTN_MISSIONS_NORMAL,
+        ),
+        TacticalCommandControl::OpenManeuvers => (
+            NativeRect::new(561.0, 237.0, 58.0, 22.0),
+            art::BTN_MANEUVERS_TACTICS_NORMAL,
+        ),
+        TacticalCommandControl::LeftHook => (
+            NativeRect::new(494.0, 186.0, 28.0, 28.0),
+            art::BTN_LEFT_HOOK_NORMAL,
+        ),
+        TacticalCommandControl::RightHook => (
+            NativeRect::new(524.0, 186.0, 28.0, 28.0),
+            art::BTN_RIGHT_HOOK_NORMAL,
+        ),
+        TacticalCommandControl::Hammer => (
+            NativeRect::new(494.0, 156.0, 28.0, 28.0),
+            art::BTN_HAMMER_NORMAL,
+        ),
+        TacticalCommandControl::Anvil => (
+            NativeRect::new(524.0, 156.0, 28.0, 28.0),
+            art::BTN_ANVIL_NORMAL,
+        ),
+        TacticalCommandControl::HoldPosition => (
+            NativeRect::new(556.0, 171.0, 28.0, 28.0),
+            art::BTN_HOLD_POSITION_NORMAL,
+        ),
+        TacticalCommandControl::ToggleTactic => (
+            NativeRect::new(592.0, 159.0, 24.0, 52.0),
+            art::BTN_TACTIC_STAND_OFF,
+        ),
+        TacticalCommandControl::AttackCapitalShips => (
+            NativeRect::new(499.0, 156.0, 46.0, 26.0),
+            if player_is_alliance {
+                art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_NORMAL
+            } else {
+                art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_NORMAL
+            },
+        ),
+        TacticalCommandControl::AttackFighters => (
+            NativeRect::new(499.0, 186.0, 46.0, 26.0),
+            if player_is_alliance {
+                art::BTN_ATTACK_FIGHTERS_ALLIANCE_NORMAL
+            } else {
+                art::BTN_ATTACK_FIGHTERS_EMPIRE_NORMAL
+            },
+        ),
+        TacticalCommandControl::Recover => (
+            NativeRect::new(567.0, 156.0, 46.0, 26.0),
+            if player_is_alliance {
+                art::BTN_RECOVER_ALLIANCE_NORMAL
+            } else {
+                art::BTN_RECOVER_EMPIRE_NORMAL
+            },
+        ),
+        TacticalCommandControl::AttackDeathStar => (
+            NativeRect::new(567.0, 186.0, 46.0, 26.0),
+            art::BTN_ATTACK_DEATH_STAR_NORMAL,
+        ),
+        TacticalCommandControl::Confirm => (
+            NativeRect::new(547.0, 229.0, 27.0, 25.0),
+            art::BTN_ASSIGN_CONFIRM_NORMAL,
+        ),
+        TacticalCommandControl::Cancel => (
+            NativeRect::new(587.0, 229.0, 27.0, 25.0),
+            art::BTN_ASSIGN_CANCEL_NORMAL,
+        ),
+    }
+}
+
+fn tactical_command_controls(panel: TacticalCommandPanel) -> &'static [TacticalCommandControl] {
+    match panel {
+        TacticalCommandPanel::Display => &DISPLAY_COMMAND_CONTROLS,
+        TacticalCommandPanel::Maneuvers { .. } => &MANEUVER_COMMAND_CONTROLS,
+        TacticalCommandPanel::Missions { .. } => &MISSION_COMMAND_CONTROLS,
+    }
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "A containing native bitmap rectangle guarantees finite nonnegative local pixels."
+)]
+fn tactical_command_control_at(
+    cache: &mut BmpCache,
+    panel: TacticalCommandPanel,
+    has_selection: bool,
+    selected_fighter: bool,
+    player_is_alliance: bool,
+    x: f32,
+    y: f32,
+) -> Option<TacticalCommandControl> {
+    if !has_selection {
+        return None;
+    }
+    tactical_command_controls(panel)
+        .iter()
+        .copied()
+        .find(|control| {
+            if (*control == TacticalCommandControl::Recover && !selected_fighter)
+                || *control == TacticalCommandControl::AttackDeathStar
+            {
+                return false;
+            }
+            let (rect, resource) = tactical_command_spec(*control, player_is_alliance);
+            if !rect.contains(x, y) {
+                return false;
+            }
+            cache.is_resource_hit(
+                DllSource::Tactical,
+                resource,
+                (x - rect.x).floor() as usize,
+                (y - rect.y).floor() as usize,
+            )
+        })
+}
+
+#[cfg(test)]
+fn tactical_command_rect_control_at(
+    panel: TacticalCommandPanel,
+    has_selection: bool,
+    selected_fighter: bool,
+    x: f32,
+    y: f32,
+) -> Option<TacticalCommandControl> {
+    if !has_selection {
+        return None;
+    }
+    tactical_command_controls(panel)
+        .iter()
+        .copied()
+        .find(|control| {
+            (*control != TacticalCommandControl::Recover || selected_fighter)
+                && *control != TacticalCommandControl::AttackDeathStar
+                && tactical_command_spec(*control, true).0.contains(x, y)
+        })
+}
+
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -3071,6 +3428,8 @@ struct TacticalGroupHud<'a> {
     selected_ship_subsystems: Option<TacticalSubsystemCondition>,
     selected_fighter_name: Option<&'a str>,
     selected_fighter_hud: Option<u32>,
+    selected_order: TacticalOrder,
+    selected_tactic: TacticalTactic,
 }
 
 impl<'a> TacticalGroupHud<'a> {
@@ -3126,6 +3485,14 @@ impl<'a> TacticalGroupHud<'a> {
             selected_fighter_hud: selected_fighter
                 .and_then(|fighter| fighter.tactical_resource)
                 .map(TacticalFighterResource::hud_resource),
+            selected_order: selected_fighter.map_or_else(
+                || selected_ship.map_or(TacticalOrder::None, |ship| ship.order),
+                |fighter| fighter.order,
+            ),
+            selected_tactic: selected_fighter.map_or_else(
+                || selected_ship.map_or(TacticalTactic::StandOff, |ship| ship.tactic),
+                |fighter| fighter.tactic,
+            ),
         }
     }
 }
@@ -3239,6 +3606,60 @@ fn select_fighter_group(session: &mut BattleSession, group: u8) -> bool {
     true
 }
 
+fn selected_command_values(session: &BattleSession) -> (TacticalOrder, TacticalTactic) {
+    if let Some(group) = session.selected_fighter_group {
+        if let Some(fighter) = session.fighters.iter().find(|fighter| {
+            fighter.alive
+                && fighter.selected
+                && fighter.is_attacker == session.player_is_attacker
+                && fighter.fighter_group == group
+        }) {
+            return (fighter.order, fighter.tactic);
+        }
+    }
+    session
+        .ships
+        .iter()
+        .find(|ship| ship.alive && ship.selected && ship.is_attacker == session.player_is_attacker)
+        .map_or((TacticalOrder::None, TacticalTactic::StandOff), |ship| {
+            (ship.order, ship.tactic)
+        })
+}
+
+fn assign_selected_command(
+    session: &mut BattleSession,
+    order: TacticalOrder,
+    tactic: Option<TacticalTactic>,
+) -> (usize, usize) {
+    let mut capital_members = 0;
+    let mut fighter_members = 0;
+    if session.selected_fighter_group.is_some() {
+        for fighter in &mut session.fighters {
+            if fighter.alive
+                && fighter.selected
+                && fighter.is_attacker == session.player_is_attacker
+            {
+                fighter.order = order;
+                if let Some(tactic) = tactic {
+                    fighter.tactic = tactic;
+                }
+                fighter_members += 1;
+            }
+        }
+    } else {
+        for ship in &mut session.ships {
+            if ship.alive && ship.selected && ship.is_attacker == session.player_is_attacker {
+                ship.order = order;
+                if let Some(tactic) = tactic {
+                    ship.tactic = tactic;
+                }
+                capital_members += 1;
+            }
+        }
+    }
+    (capital_members, fighter_members)
+}
+
 fn pressed_tactical_hud_control(
     cache: &mut BmpCache,
     canvas: TacticalCanvas,
@@ -3249,6 +3670,30 @@ fn pressed_tactical_hud_control(
     let (mouse_x, mouse_y) = mouse_position();
     let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
     tactical_hud_control_at(cache, x, y)
+}
+
+fn pressed_tactical_command_control(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    panel: TacticalCommandPanel,
+    has_selection: bool,
+    selected_fighter: bool,
+    player_is_alliance: bool,
+) -> Option<TacticalCommandControl> {
+    if !is_mouse_button_down(MouseButton::Left) {
+        return None;
+    }
+    let (mouse_x, mouse_y) = mouse_position();
+    let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
+    tactical_command_control_at(
+        cache,
+        panel,
+        has_selection,
+        selected_fighter,
+        player_is_alliance,
+        x,
+        y,
+    )
 }
 
 #[cfg(test)]
@@ -3349,6 +3794,205 @@ fn set_tactical_aperture_clip(aperture: Option<NativeRect>) {
     }
 }
 
+fn draw_tactical_assignment_button(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    control: TacticalCommandControl,
+    resource: u32,
+) {
+    let rect = tactical_command_spec(control, true).0;
+    draw_tactical_bitmap(cache, resource, canvas, rect.x, rect.y);
+}
+
+fn draw_tactical_assignment_panel(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    player_is_alliance: bool,
+    panel: TacticalCommandPanel,
+    selected_fighter: bool,
+    pressed: Option<TacticalCommandControl>,
+) {
+    use resources::tactical as art;
+    match panel {
+        TacticalCommandPanel::Display => {}
+        TacticalCommandPanel::Maneuvers {
+            pending_order,
+            pending_tactic,
+        } => {
+            draw_tactical_bitmap(cache, art::MANEUVERS_PANEL, canvas, 481.0, 27.0);
+            if let Some(graphic) = pending_order.maneuver_graphic() {
+                draw_tactical_bitmap(cache, graphic, canvas, 495.0, 41.0);
+            }
+            for (control, normal, selected) in [
+                (
+                    TacticalCommandControl::LeftHook,
+                    art::BTN_LEFT_HOOK_NORMAL,
+                    pending_order == TacticalOrder::LeftHook,
+                ),
+                (
+                    TacticalCommandControl::RightHook,
+                    art::BTN_RIGHT_HOOK_NORMAL,
+                    pending_order == TacticalOrder::RightHook,
+                ),
+                (
+                    TacticalCommandControl::Hammer,
+                    art::BTN_HAMMER_NORMAL,
+                    pending_order == TacticalOrder::Hammer,
+                ),
+                (
+                    TacticalCommandControl::Anvil,
+                    art::BTN_ANVIL_NORMAL,
+                    pending_order == TacticalOrder::Anvil,
+                ),
+                (
+                    TacticalCommandControl::HoldPosition,
+                    art::BTN_HOLD_POSITION_NORMAL,
+                    pending_order == TacticalOrder::HoldPosition,
+                ),
+            ] {
+                let active = selected || pressed == Some(control);
+                draw_tactical_assignment_button(
+                    cache,
+                    canvas,
+                    control,
+                    if active { normal + 1 } else { normal },
+                );
+            }
+            draw_tactical_assignment_button(
+                cache,
+                canvas,
+                TacticalCommandControl::ToggleTactic,
+                if pending_tactic == TacticalTactic::Surround {
+                    art::BTN_TACTIC_SURROUND
+                } else {
+                    art::BTN_TACTIC_STAND_OFF
+                },
+            );
+            for (control, normal, pressed_art) in [
+                (
+                    TacticalCommandControl::Confirm,
+                    art::BTN_ASSIGN_CONFIRM_NORMAL,
+                    art::BTN_ASSIGN_CONFIRM_PRESSED,
+                ),
+                (
+                    TacticalCommandControl::Cancel,
+                    art::BTN_ASSIGN_CANCEL_NORMAL,
+                    art::BTN_ASSIGN_CANCEL_PRESSED,
+                ),
+            ] {
+                draw_tactical_assignment_button(
+                    cache,
+                    canvas,
+                    control,
+                    if pressed == Some(control) {
+                        pressed_art
+                    } else {
+                        normal
+                    },
+                );
+            }
+        }
+        TacticalCommandPanel::Missions { pending_order } => {
+            draw_tactical_bitmap(cache, art::MISSIONS_PANEL, canvas, 481.0, 27.0);
+            draw_tactical_bitmap(
+                cache,
+                pending_order
+                    .mission_graphic(player_is_alliance)
+                    .unwrap_or(art::MISSIONS_HUD_EMPTY),
+                canvas,
+                495.0,
+                41.0,
+            );
+            for (control, normal, pressed_art, selected) in [
+                (
+                    TacticalCommandControl::AttackCapitalShips,
+                    if player_is_alliance {
+                        art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_NORMAL
+                    } else {
+                        art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_NORMAL
+                    },
+                    if player_is_alliance {
+                        art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_PRESSED
+                    } else {
+                        art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_PRESSED
+                    },
+                    pending_order == TacticalOrder::AttackCapitalShips,
+                ),
+                (
+                    TacticalCommandControl::AttackFighters,
+                    if player_is_alliance {
+                        art::BTN_ATTACK_FIGHTERS_ALLIANCE_NORMAL
+                    } else {
+                        art::BTN_ATTACK_FIGHTERS_EMPIRE_NORMAL
+                    },
+                    if player_is_alliance {
+                        art::BTN_ATTACK_FIGHTERS_ALLIANCE_PRESSED
+                    } else {
+                        art::BTN_ATTACK_FIGHTERS_EMPIRE_PRESSED
+                    },
+                    pending_order == TacticalOrder::AttackFighters,
+                ),
+                (
+                    TacticalCommandControl::Recover,
+                    if player_is_alliance {
+                        art::BTN_RECOVER_ALLIANCE_NORMAL
+                    } else {
+                        art::BTN_RECOVER_EMPIRE_NORMAL
+                    },
+                    if player_is_alliance {
+                        art::BTN_RECOVER_ALLIANCE_PRESSED
+                    } else {
+                        art::BTN_RECOVER_EMPIRE_PRESSED
+                    },
+                    pending_order == TacticalOrder::Recover,
+                ),
+            ] {
+                let resource = if control == TacticalCommandControl::Recover && !selected_fighter {
+                    if player_is_alliance {
+                        art::BTN_RECOVER_ALLIANCE_DISABLED
+                    } else {
+                        art::BTN_RECOVER_EMPIRE_DISABLED
+                    }
+                } else if selected || pressed == Some(control) {
+                    pressed_art
+                } else {
+                    normal
+                };
+                draw_tactical_assignment_button(cache, canvas, control, resource);
+            }
+            draw_tactical_assignment_button(
+                cache,
+                canvas,
+                TacticalCommandControl::AttackDeathStar,
+                art::BTN_ATTACK_DEATH_STAR_DISABLED,
+            );
+            for (control, normal, pressed_art) in [
+                (
+                    TacticalCommandControl::Confirm,
+                    art::BTN_ASSIGN_CONFIRM_NORMAL,
+                    art::BTN_ASSIGN_CONFIRM_PRESSED,
+                ),
+                (
+                    TacticalCommandControl::Cancel,
+                    art::BTN_ASSIGN_CANCEL_NORMAL,
+                    art::BTN_ASSIGN_CANCEL_PRESSED,
+                ),
+            ] {
+                draw_tactical_assignment_button(
+                    cache,
+                    canvas,
+                    control,
+                    if pressed == Some(control) {
+                        pressed_art
+                    } else {
+                        normal
+                    },
+                );
+            }
+        }
+    }
+}
+
 /// Paint only resource-backed battle chrome. Unmapped command groups remain
 /// visible but are not passed off as implemented interactions.
 #[expect(
@@ -3368,6 +4012,8 @@ fn draw_original_tactical_hud(
     highlight_alliance: bool,
     highlight_empire: bool,
     pressed_control: Option<TacticalHudControl>,
+    command_panel: TacticalCommandPanel,
+    pressed_command: Option<TacticalCommandControl>,
 ) {
     use resources::tactical as art;
 
@@ -3446,84 +4092,146 @@ fn draw_original_tactical_hud(
         );
     }
 
-    let panel_resource = if groups.selected_fighter_group.is_some() {
-        1307
-    } else if groups.selected_ship_name.is_some() {
-        TACTICAL_SELECTED_SHIP_PANEL
+    let has_selection =
+        groups.selected_fighter_group.is_some() || groups.selected_ship_name.is_some();
+    if command_panel != TacticalCommandPanel::Display {
+        draw_tactical_assignment_panel(
+            cache,
+            canvas,
+            player_is_alliance,
+            command_panel,
+            groups.selected_fighter_group.is_some(),
+            pressed_command,
+        );
     } else {
-        1301
-    };
-    draw_tactical_bitmap(cache, panel_resource, canvas, 481.0, 27.0);
-    if let (Some(name), Some(group)) = (groups.selected_ship_name, groups.selected_task_force) {
-        if let Some(resource) = groups.selected_ship_hud {
-            draw_tactical_bitmap(
+        let panel_resource = if groups.selected_fighter_group.is_some() {
+            1307
+        } else if groups.selected_ship_name.is_some() {
+            TACTICAL_SELECTED_SHIP_PANEL
+        } else {
+            1301
+        };
+        draw_tactical_bitmap(cache, panel_resource, canvas, 481.0, 27.0);
+    }
+    if command_panel == TacticalCommandPanel::Display {
+        if let (Some(name), Some(group)) = (groups.selected_ship_name, groups.selected_task_force) {
+            if let Some(resource) = groups.selected_ship_hud {
+                draw_tactical_bitmap(
+                    cache,
+                    resource,
+                    canvas,
+                    TACTICAL_SELECTED_SHIP_ART_X,
+                    TACTICAL_SELECTED_SHIP_ART_Y,
+                );
+            }
+            if let Some((shield, maximum)) = groups.selected_ship_shield {
+                draw_tactical_selected_meter(
+                    canvas,
+                    TACTICAL_SELECTED_SHIELD_METER,
+                    tactical_meter_fraction(shield, maximum),
+                    Color::new(0.0, 0.0, 1.0, 1.0),
+                );
+            }
+            if let Some((hull, maximum)) = groups.selected_ship_hull {
+                draw_tactical_selected_meter(
+                    canvas,
+                    TACTICAL_SELECTED_HULL_METER,
+                    tactical_meter_fraction(hull, maximum),
+                    if player_is_alliance {
+                        Color::new(0.0, 0.2, 1.0, 1.0)
+                    } else {
+                        Color::new(1.0, 0.0, 0.0, 1.0)
+                    },
+                );
+            }
+            if let Some(subsystems) = groups.selected_ship_subsystems {
+                for (index, resource_id) in subsystems.resource_ids().into_iter().enumerate() {
+                    draw_tactical_bitmap(
+                        cache,
+                        resource_id,
+                        canvas,
+                        TACTICAL_SUBSYSTEM_X[index],
+                        TACTICAL_SUBSYSTEM_Y,
+                    );
+                }
+            }
+            let (x, y) = canvas.point(497.0, 48.0);
+            draw_text(name, x, y, 11.0 * canvas.scale, WHITE);
+            let (x, y) = canvas.point(497.0, 69.0);
+            draw_text(
+                &format!("Task Force #{}", group + 1),
+                x,
+                y,
+                11.0 * canvas.scale,
+                WHITE,
+            );
+            let (x, y) = canvas.point(497.0, 218.0);
+            draw_text(
+                groups.selected_order.label(),
+                x,
+                y,
+                10.0 * canvas.scale,
+                WHITE,
+            );
+            let (x, y) = canvas.point(497.0, 230.0);
+            draw_text(
+                &format!("Tactics: {}", groups.selected_tactic.label()),
+                x,
+                y,
+                9.0 * canvas.scale,
+                WHITE,
+            );
+        } else if let (Some(name), Some(group), Some(hud_resource)) = (
+            groups.selected_fighter_name,
+            groups.selected_fighter_group,
+            groups.selected_fighter_hud,
+        ) {
+            draw_tactical_bitmap(cache, hud_resource, canvas, 505.0, 76.0);
+            let (x, y) = canvas.point(490.0, 45.0);
+            draw_text(name, x, y, 10.0 * canvas.scale, WHITE);
+            let labels = ["Red Group", "Blue Group", "Green Group", "Gold Group"];
+            let (x, y) = canvas.point(490.0, 58.0);
+            draw_text(
+                labels[usize::from(group.min(3))],
+                x,
+                y,
+                10.0 * canvas.scale,
+                WHITE,
+            );
+            let (x, y) = canvas.point(490.0, 69.0);
+            draw_text(
+                groups.selected_order.label(),
+                x,
+                y,
+                9.0 * canvas.scale,
+                WHITE,
+            );
+        }
+    }
+    if command_panel == TacticalCommandPanel::Display && has_selection {
+        for (control, normal, pressed_art) in [
+            (
+                TacticalCommandControl::OpenMissions,
+                art::BTN_MISSIONS_NORMAL,
+                art::BTN_MISSIONS_PRESSED,
+            ),
+            (
+                TacticalCommandControl::OpenManeuvers,
+                art::BTN_MANEUVERS_TACTICS_NORMAL,
+                art::BTN_MANEUVERS_TACTICS_PRESSED,
+            ),
+        ] {
+            draw_tactical_assignment_button(
                 cache,
-                resource,
                 canvas,
-                TACTICAL_SELECTED_SHIP_ART_X,
-                TACTICAL_SELECTED_SHIP_ART_Y,
-            );
-        }
-        if let Some((shield, maximum)) = groups.selected_ship_shield {
-            draw_tactical_selected_meter(
-                canvas,
-                TACTICAL_SELECTED_SHIELD_METER,
-                tactical_meter_fraction(shield, maximum),
-                Color::new(0.0, 0.0, 1.0, 1.0),
-            );
-        }
-        if let Some((hull, maximum)) = groups.selected_ship_hull {
-            draw_tactical_selected_meter(
-                canvas,
-                TACTICAL_SELECTED_HULL_METER,
-                tactical_meter_fraction(hull, maximum),
-                if player_is_alliance {
-                    Color::new(0.0, 0.2, 1.0, 1.0)
+                control,
+                if pressed_command == Some(control) {
+                    pressed_art
                 } else {
-                    Color::new(1.0, 0.0, 0.0, 1.0)
+                    normal
                 },
             );
         }
-        if let Some(subsystems) = groups.selected_ship_subsystems {
-            for (index, resource_id) in subsystems.resource_ids().into_iter().enumerate() {
-                draw_tactical_bitmap(
-                    cache,
-                    resource_id,
-                    canvas,
-                    TACTICAL_SUBSYSTEM_X[index],
-                    TACTICAL_SUBSYSTEM_Y,
-                );
-            }
-        }
-        let (x, y) = canvas.point(497.0, 48.0);
-        draw_text(name, x, y, 11.0 * canvas.scale, WHITE);
-        let (x, y) = canvas.point(497.0, 69.0);
-        draw_text(
-            &format!("Task Force #{}", group + 1),
-            x,
-            y,
-            11.0 * canvas.scale,
-            WHITE,
-        );
-        let (x, y) = canvas.point(497.0, 222.0);
-        draw_text("No Orders", x, y, 11.0 * canvas.scale, WHITE);
-    } else if let (Some(name), Some(group), Some(hud_resource)) = (
-        groups.selected_fighter_name,
-        groups.selected_fighter_group,
-        groups.selected_fighter_hud,
-    ) {
-        draw_tactical_bitmap(cache, hud_resource, canvas, 505.0, 76.0);
-        let (x, y) = canvas.point(490.0, 45.0);
-        draw_text(name, x, y, 10.0 * canvas.scale, WHITE);
-        let labels = ["Red Group", "Blue Group", "Green Group", "Gold Group"];
-        let (x, y) = canvas.point(490.0, 58.0);
-        draw_text(
-            labels[usize::from(group.min(3))],
-            x,
-            y,
-            10.0 * canvas.scale,
-            WHITE,
-        );
     }
 
     for (id, x) in [(1026, 485.0), (1027, 521.0), (1028, 560.0), (1029, 601.0)] {
@@ -3637,6 +4345,115 @@ fn draw_original_tactical_hud(
     }
 }
 
+fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommandControl) {
+    match control {
+        TacticalCommandControl::OpenManeuvers => {
+            if let Some(session) = state.session.as_ref() {
+                let (pending_order, pending_tactic) = selected_command_values(session);
+                state.command_panel = TacticalCommandPanel::Maneuvers {
+                    pending_order,
+                    pending_tactic,
+                };
+            }
+        }
+        TacticalCommandControl::OpenMissions => {
+            if let Some(session) = state.session.as_ref() {
+                let (pending_order, _) = selected_command_values(session);
+                state.command_panel = TacticalCommandPanel::Missions { pending_order };
+            }
+        }
+        TacticalCommandControl::LeftHook => {
+            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
+            {
+                *pending_order = TacticalOrder::LeftHook;
+            }
+        }
+        TacticalCommandControl::RightHook => {
+            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
+            {
+                *pending_order = TacticalOrder::RightHook;
+            }
+        }
+        TacticalCommandControl::Hammer => {
+            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
+            {
+                *pending_order = TacticalOrder::Hammer;
+            }
+        }
+        TacticalCommandControl::Anvil => {
+            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
+            {
+                *pending_order = TacticalOrder::Anvil;
+            }
+        }
+        TacticalCommandControl::HoldPosition => {
+            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
+            {
+                *pending_order = TacticalOrder::HoldPosition;
+            }
+        }
+        TacticalCommandControl::ToggleTactic => {
+            if let TacticalCommandPanel::Maneuvers { pending_tactic, .. } = &mut state.command_panel
+            {
+                *pending_tactic = if *pending_tactic == TacticalTactic::StandOff {
+                    TacticalTactic::Surround
+                } else {
+                    TacticalTactic::StandOff
+                };
+            }
+        }
+        TacticalCommandControl::AttackCapitalShips => {
+            if let TacticalCommandPanel::Missions { pending_order } = &mut state.command_panel {
+                *pending_order = TacticalOrder::AttackCapitalShips;
+            }
+        }
+        TacticalCommandControl::AttackFighters => {
+            if let TacticalCommandPanel::Missions { pending_order } = &mut state.command_panel {
+                *pending_order = TacticalOrder::AttackFighters;
+            }
+        }
+        TacticalCommandControl::Recover => {
+            if let TacticalCommandPanel::Missions { pending_order } = &mut state.command_panel {
+                *pending_order = TacticalOrder::Recover;
+            }
+        }
+        TacticalCommandControl::AttackDeathStar => {
+            // The source starts this control disabled. Its recovered enabling
+            // predicate belongs to the dedicated Death Star tranche.
+        }
+        TacticalCommandControl::Confirm => {
+            let panel = state.command_panel;
+            if let Some(session) = state.session.as_mut() {
+                let (kind, order, tactic) = match panel {
+                    TacticalCommandPanel::Maneuvers {
+                        pending_order,
+                        pending_tactic,
+                    } => ("maneuvers", pending_order, Some(pending_tactic)),
+                    TacticalCommandPanel::Missions { pending_order } => {
+                        ("missions", pending_order, None)
+                    }
+                    TacticalCommandPanel::Display => return,
+                };
+                let (capital_members, fighter_members) =
+                    assign_selected_command(session, order, tactic);
+                macroquad::logging::info!(
+                    "[tactical_orders] panel={} event=commit order={} tactic={} capital_members={} fighter_members={}",
+                    kind,
+                    order.source_code(),
+                    tactic.map_or(0, TacticalTactic::source_code),
+                    capital_members,
+                    fighter_members,
+                );
+            }
+            state.command_panel = TacticalCommandPanel::Display;
+        }
+        TacticalCommandControl::Cancel => {
+            macroquad::logging::info!("[tactical_orders] event=cancel");
+            state.command_panel = TacticalCommandPanel::Display;
+        }
+    }
+}
+
 fn handle_original_tactical_controls(
     state: &mut TacticalState,
     cache: &mut BmpCache,
@@ -3645,87 +4462,116 @@ fn handle_original_tactical_controls(
     let (mouse_x, mouse_y) = mouse_position();
     if is_mouse_button_pressed(MouseButton::Left) {
         let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
-        match tactical_hud_control_at(cache, x, y) {
-            Some(TacticalHudControl::TaskForce(group)) => {
-                if let Some(session) = state.session.as_mut() {
-                    let control =
-                        is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
-                    let changed = if control {
-                        assign_selected_to_task_force(session, group)
-                    } else {
-                        select_task_force(session, group)
-                    };
-                    if changed > 0 {
-                        macroquad::logging::info!(
-                            "[tactical_groups] task_force_{} slot={} members={}",
-                            if control { "assigned" } else { "selected" },
-                            group + 1,
-                            changed,
-                        );
-                    }
-                }
-            }
-            Some(TacticalHudControl::FighterGroup(group)) => {
-                if let Some(session) = state.session.as_mut() {
-                    if select_fighter_group(session, group) {
-                        let members = session
-                            .fighters
-                            .iter()
-                            .filter(|fighter| fighter.selected)
-                            .count();
-                        macroquad::logging::info!(
-                            "[tactical_groups] fighter_group_selected slot={} members={}",
-                            group + 1,
-                            members,
-                        );
-                    }
-                }
-            }
-            Some(TacticalHudControl::Pause) => return TacticalAction::TogglePause,
-            Some(TacticalHudControl::ZoomIn) => {
-                state.zoom = (state.zoom * 1.25).min(2.0);
-                state.asset_renderer.zoom_in();
-            }
-            Some(TacticalHudControl::ZoomOut) => {
-                state.zoom = (state.zoom / 1.25).max(0.5);
-                state.asset_renderer.zoom_out();
-            }
-            Some(TacticalHudControl::CameraTarget) => {
-                let selected = state.session.as_ref().and_then(|session| {
-                    session.selected_ship.and_then(|index| {
-                        session
-                            .ships
-                            .get(index)
-                            .map(|ship| (index, ship.x, ship.y, ship.source_position.rendered()))
-                    })
+        let (has_selection, selected_fighter, player_is_alliance) =
+            state
+                .session
+                .as_ref()
+                .map_or((false, false, true), |session| {
+                    (
+                        session.selected_fighter_group.is_some()
+                            || session.ships.iter().any(|ship| {
+                                ship.alive
+                                    && ship.selected
+                                    && ship.is_attacker == session.player_is_attacker
+                            }),
+                        session.selected_fighter_group.is_some(),
+                        session.player_is_attacker == session.attacker_is_alliance,
+                    )
                 });
-                if let Some((_index, x, y, _source_position)) = selected {
-                    (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
-                    state.asset_renderer.focus_target(
-                        u32::try_from(_index).unwrap_or(u32::MAX).saturating_add(1),
-                        _source_position,
-                    );
+        if let Some(control) = tactical_command_control_at(
+            cache,
+            state.command_panel,
+            has_selection,
+            selected_fighter,
+            player_is_alliance,
+            x,
+            y,
+        ) {
+            activate_tactical_command(state, control);
+        } else {
+            match tactical_hud_control_at(cache, x, y) {
+                Some(TacticalHudControl::TaskForce(group)) => {
+                    if let Some(session) = state.session.as_mut() {
+                        let control =
+                            is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
+                        let changed = if control {
+                            assign_selected_to_task_force(session, group)
+                        } else {
+                            select_task_force(session, group)
+                        };
+                        if changed > 0 {
+                            state.command_panel = TacticalCommandPanel::Display;
+                            macroquad::logging::info!(
+                                "[tactical_groups] task_force_{} slot={} members={}",
+                                if control { "assigned" } else { "selected" },
+                                group + 1,
+                                changed,
+                            );
+                        }
+                    }
                 }
+                Some(TacticalHudControl::FighterGroup(group)) => {
+                    if let Some(session) = state.session.as_mut() {
+                        if select_fighter_group(session, group) {
+                            state.command_panel = TacticalCommandPanel::Display;
+                            let members = session
+                                .fighters
+                                .iter()
+                                .filter(|fighter| fighter.selected)
+                                .count();
+                            macroquad::logging::info!(
+                                "[tactical_groups] fighter_group_selected slot={} members={}",
+                                group + 1,
+                                members,
+                            );
+                        }
+                    }
+                }
+                Some(TacticalHudControl::Pause) => return TacticalAction::TogglePause,
+                Some(TacticalHudControl::ZoomIn) => {
+                    state.zoom = (state.zoom * 1.25).min(2.0);
+                    state.asset_renderer.zoom_in();
+                }
+                Some(TacticalHudControl::ZoomOut) => {
+                    state.zoom = (state.zoom / 1.25).max(0.5);
+                    state.asset_renderer.zoom_out();
+                }
+                Some(TacticalHudControl::CameraTarget) => {
+                    let selected = state.session.as_ref().and_then(|session| {
+                        session.selected_ship.and_then(|index| {
+                            session.ships.get(index).map(|ship| {
+                                (index, ship.x, ship.y, ship.source_position.rendered())
+                            })
+                        })
+                    });
+                    if let Some((_index, x, y, _source_position)) = selected {
+                        (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
+                        state.asset_renderer.focus_target(
+                            u32::try_from(_index).unwrap_or(u32::MAX).saturating_add(1),
+                            _source_position,
+                        );
+                    }
+                }
+                Some(TacticalHudControl::CameraLeft) => {
+                    state.asset_renderer.turn_left();
+                }
+                Some(TacticalHudControl::CameraRight) => {
+                    state.asset_renderer.turn_right();
+                }
+                Some(TacticalHudControl::CameraUp) => {
+                    state.asset_renderer.pitch_up();
+                }
+                Some(TacticalHudControl::CameraDown) => {
+                    state.asset_renderer.pitch_down();
+                }
+                Some(TacticalHudControl::HighlightAlliance) => {
+                    state.highlight_alliance = !state.highlight_alliance;
+                }
+                Some(TacticalHudControl::HighlightEmpire) => {
+                    state.highlight_empire = !state.highlight_empire;
+                }
+                None => {}
             }
-            Some(TacticalHudControl::CameraLeft) => {
-                state.asset_renderer.turn_left();
-            }
-            Some(TacticalHudControl::CameraRight) => {
-                state.asset_renderer.turn_right();
-            }
-            Some(TacticalHudControl::CameraUp) => {
-                state.asset_renderer.pitch_up();
-            }
-            Some(TacticalHudControl::CameraDown) => {
-                state.asset_renderer.pitch_down();
-            }
-            Some(TacticalHudControl::HighlightAlliance) => {
-                state.highlight_alliance = !state.highlight_alliance;
-            }
-            Some(TacticalHudControl::HighlightEmpire) => {
-                state.highlight_empire = !state.highlight_empire;
-            }
-            None => {}
         }
     }
     let task_force_keys = [
@@ -3741,7 +4587,9 @@ fn handle_original_tactical_controls(
     for (index, key) in task_force_keys.iter().enumerate() {
         if is_key_pressed(*key) {
             if let Some(session) = state.session.as_mut() {
-                let _ = select_task_force(session, u8::try_from(index).unwrap_or(7));
+                if select_task_force(session, u8::try_from(index).unwrap_or(7)) > 0 {
+                    state.command_panel = TacticalCommandPanel::Display;
+                }
             }
         }
     }
@@ -3749,7 +4597,9 @@ fn handle_original_tactical_controls(
     for (index, key) in fighter_group_keys.iter().enumerate() {
         if is_key_pressed(*key) {
             if let Some(session) = state.session.as_mut() {
-                select_fighter_group(session, u8::try_from(index).unwrap_or(3));
+                if select_fighter_group(session, u8::try_from(index).unwrap_or(3)) {
+                    state.command_panel = TacticalCommandPanel::Display;
+                }
             }
         }
     }
@@ -4434,6 +5284,16 @@ pub fn draw_tactical_view(
             .as_ref()
             .is_some_and(|session| session.player_is_attacker == session.attacker_is_alliance);
         let groups = TacticalGroupHud::from_session(state.session.as_ref().unwrap());
+        let has_selection =
+            groups.selected_fighter_group.is_some() || groups.selected_ship_name.is_some();
+        let pressed_command = pressed_tactical_command_control(
+            bmp_cache,
+            canvas,
+            state.command_panel,
+            has_selection,
+            groups.selected_fighter_group.is_some(),
+            player_is_alliance,
+        );
         draw_original_tactical_hud(
             bmp_cache,
             canvas,
@@ -4443,6 +5303,8 @@ pub fn draw_tactical_view(
             state.highlight_alliance,
             state.highlight_empire,
             pressed_control,
+            state.command_panel,
+            pressed_command,
         );
         if paused {
             let (x, y) = canvas.point(25.0, 48.0);
@@ -5137,6 +5999,8 @@ mod tests {
             is_attacker: is_alliance,
             alive,
             selected: false,
+            order: TacticalOrder::None,
+            tactic: TacticalTactic::StandOff,
             task_force: u8::try_from(roster.min(7)).unwrap_or(7),
             fleet_ship_index: roster,
             sprite_id: None,
@@ -5169,6 +6033,8 @@ mod tests {
             alive: true,
             fighter_group: 0,
             selected: false,
+            order: TacticalOrder::None,
+            tactic: TacticalTactic::StandOff,
         }
     }
 
@@ -6156,6 +7022,138 @@ mod tests {
         assert_eq!(assign_selected_to_task_force(&mut session, 2), 2);
         assert_eq!(session.ships[0].task_force, 2);
         assert_eq!(session.ships[1].task_force, 2);
+    }
+
+    #[test]
+    fn tactical_order_and_tactic_codes_match_the_recovered_source_domain() {
+        let orders = [
+            (TacticalOrder::None, 0),
+            (TacticalOrder::Recover, 2),
+            (TacticalOrder::AttackFighters, 4),
+            (TacticalOrder::AttackCapitalShips, 5),
+            (TacticalOrder::AttackDeathStar, 6),
+            (TacticalOrder::LeftHook, 7),
+            (TacticalOrder::RightHook, 8),
+            (TacticalOrder::Hammer, 9),
+            (TacticalOrder::Anvil, 10),
+            (TacticalOrder::HoldPosition, 11),
+        ];
+        for (order, code) in orders {
+            assert_eq!(order.source_code(), code);
+        }
+        assert_eq!(TacticalTactic::Surround.source_code(), 1);
+        assert_eq!(TacticalTactic::StandOff.source_code(), 2);
+    }
+
+    #[test]
+    fn tactical_assignment_hit_regions_follow_the_source_panels() {
+        assert_eq!(
+            tactical_command_rect_control_at(
+                TacticalCommandPanel::Display,
+                true,
+                false,
+                500.0,
+                245.0,
+            ),
+            Some(TacticalCommandControl::OpenMissions)
+        );
+        assert_eq!(
+            tactical_command_rect_control_at(
+                TacticalCommandPanel::Display,
+                true,
+                false,
+                570.0,
+                245.0,
+            ),
+            Some(TacticalCommandControl::OpenManeuvers)
+        );
+        let maneuvers = TacticalCommandPanel::Maneuvers {
+            pending_order: TacticalOrder::None,
+            pending_tactic: TacticalTactic::StandOff,
+        };
+        assert_eq!(
+            tactical_command_rect_control_at(maneuvers, true, false, 500.0, 160.0),
+            Some(TacticalCommandControl::Hammer)
+        );
+        assert_eq!(
+            tactical_command_rect_control_at(maneuvers, true, false, 600.0, 170.0),
+            Some(TacticalCommandControl::ToggleTactic)
+        );
+        let missions = TacticalCommandPanel::Missions {
+            pending_order: TacticalOrder::None,
+        };
+        assert_eq!(
+            tactical_command_rect_control_at(missions, true, false, 575.0, 165.0),
+            None
+        );
+        assert_eq!(
+            tactical_command_rect_control_at(missions, true, true, 575.0, 165.0),
+            Some(TacticalCommandControl::Recover)
+        );
+        assert_eq!(
+            tactical_command_rect_control_at(missions, true, true, 575.0, 195.0),
+            None
+        );
+        assert_eq!(
+            tactical_command_rect_control_at(missions, false, true, 505.0, 165.0),
+            None
+        );
+    }
+
+    #[test]
+    fn maneuver_confirm_commits_and_cancel_preserves_selected_capital_orders() {
+        let mut ship = test_ship(64, 0, true, true);
+        ship.selected = true;
+        let mut session = test_session(vec![ship], Vec::new(), true);
+        session.selected_ship = Some(0);
+        let mut state = TacticalState {
+            session: Some(session),
+            ..TacticalState::default()
+        };
+
+        activate_tactical_command(&mut state, TacticalCommandControl::OpenManeuvers);
+        activate_tactical_command(&mut state, TacticalCommandControl::Hammer);
+        activate_tactical_command(&mut state, TacticalCommandControl::ToggleTactic);
+        activate_tactical_command(&mut state, TacticalCommandControl::Cancel);
+        let ship = &state.session.as_ref().unwrap().ships[0];
+        assert_eq!(ship.order, TacticalOrder::None);
+        assert_eq!(ship.tactic, TacticalTactic::StandOff);
+
+        activate_tactical_command(&mut state, TacticalCommandControl::OpenManeuvers);
+        activate_tactical_command(&mut state, TacticalCommandControl::Hammer);
+        activate_tactical_command(&mut state, TacticalCommandControl::ToggleTactic);
+        activate_tactical_command(&mut state, TacticalCommandControl::Confirm);
+        let ship = &state.session.as_ref().unwrap().ships[0];
+        assert_eq!(ship.order, TacticalOrder::Hammer);
+        assert_eq!(ship.tactic, TacticalTactic::Surround);
+        assert_eq!(state.command_panel, TacticalCommandPanel::Display);
+    }
+
+    #[test]
+    fn mission_confirm_assigns_recover_to_the_whole_selected_fighter_group() {
+        let mut fighters = vec![test_fighter(1, true), test_fighter(1, true)];
+        for (index, fighter) in fighters.iter_mut().enumerate() {
+            fighter.selected = true;
+            fighter.identity.fleet_roster_index = index;
+            fighter.fleet_fighter_index = index;
+        }
+        let mut session = test_session(Vec::new(), fighters, true);
+        session.selected_fighter_group = Some(0);
+        let mut state = TacticalState {
+            session: Some(session),
+            ..TacticalState::default()
+        };
+
+        activate_tactical_command(&mut state, TacticalCommandControl::OpenMissions);
+        activate_tactical_command(&mut state, TacticalCommandControl::Recover);
+        activate_tactical_command(&mut state, TacticalCommandControl::Confirm);
+        assert!(state
+            .session
+            .as_ref()
+            .unwrap()
+            .fighters
+            .iter()
+            .all(|fighter| fighter.order == TacticalOrder::Recover));
     }
 
     #[test]
