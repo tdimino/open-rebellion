@@ -237,6 +237,20 @@
       "acceptance": "A1 executable maneuver waypoint, desired-direction, Hold stop, carrier reservation, and fighter Returning-state proof. Exact capital turning, carrier ingress and docking, collision response, attack executors, Death Star execution, and native A0 comparison remain open."
     },
     {
+      "slug": "production-command-progression-presentation",
+      "description": "Recovered capital turning and waypoint arrival plus fighter carrier ingress, docking, and tactical-object removal",
+      "fixture_codes": {
+        "alliance": 65813,
+        "empire": 66069
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "command_progression_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable turn-rate, signed XZ rotation, normalization, snap, 2.0-unit recovery gate, docking callback, and strategic-count preservation proof. Exact original target-arrival callback, collision response, attack executors, Death Star execution, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

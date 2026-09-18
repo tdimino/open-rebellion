@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "family": "TAC-01",
+  "status": "pass",
+  "run_id": "2026-09-18T18-38-19-988Z-61233",
+  "executions": 84,
+  "passed": 84,
+  "failed": 0,
+  "screenshots_with_matching_goldens": 0,
+  "unbaselined": 84,
+  "unstable_screenshots": 0,
+  "four_request_startups": 84,
+  "muted_launches": 84,
+  "launch_timeouts": 0,
+  "recovered_launch_timeouts": 0,
+  "browser_processes_closed": 84,
+  "raw_artifacts": ".artifacts/interface-parity/2026-09-18T18-38-19-988Z-61233"
+}

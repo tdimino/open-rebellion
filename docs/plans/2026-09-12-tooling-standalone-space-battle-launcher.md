@@ -3,7 +3,7 @@ title: "Standalone Space-Battle Test Launcher"
 description: "Test-only entry into the production tactical battle path and its original-interface parity matrix"
 category: plan
 created: 2026-09-12
-updated: 2026-09-17
+updated: 2026-09-18
 tags: [interface, parity, tactical, browser, testing]
 status: in_progress
 ---
@@ -34,7 +34,7 @@ process and closes its browser and local server when complete.
 T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md)
 preserves surviving hull damage and exact fighter roster losses. Campaign and
 test-only browser entry share the validated production tactical-entry function.
-P52 through [P58F10](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md)
+P52 through [P58F11](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)
 restore the first authentic shell controls, complete tactical asset decode, one
 three-LOD family, source camera and layout, stable participants, authored
 coordinates, system palette, lighting, retained-mode render state, and exact
@@ -42,7 +42,7 @@ DAT resource joins. Live capital ships render from their joined families;
 fighter groups use the original detail resources; and capital interactions use
 projected mesh bounds. The original task-force and RGBY fighter-control strip,
 group selection, keyboard routes, and selected fighter portraits also work.
-The full muted harness passes 80 of 80 cases, and the four-request pack carries
+The full muted harness passes 84 of 84 cases, and the four-request pack carries
 all 87 meshes and 397 textures. Production battles now load the exact
 system-selected 256 by 256 planet and paired palette. Six target-impact
 families now preserve exact frames, sizes, priority, transparency, attachment,
@@ -64,13 +64,14 @@ order and tactic codes to selected capital ships and fighter groups, with
 source-shaped controls, original disabled states, and cancel semantics.
 Committed Left Hook, Right Hook, Hammer, and Anvil orders now construct their
 recovered 0.75-scale, pi-over-eight waypoints. Hold clears movement intent, and
-Recover reserves a compatible carrier and enters Returning state 2.
-Shared return/outcome routing, exact global RNG sequencing, interactive
-maneuver turning and completion, fighter ingress and docking, attack executors,
-collision and formation behavior, power allocation,
+Recover reserves a compatible carrier and enters Returning state 2. Capital
+ships then use the source-rate signed turn and clear reached waypoints. Fighters
+advance through Docking and Recovered while retaining their strategic counts.
+Shared return/outcome routing, exact global RNG sequencing, exact original
+arrival callbacks and recovery trajectories, attack executors, collision and formation behavior, power allocation,
 exact planet placement, special objects, original
 view acceptance, complete battle interactions, and all 106 visual cells remain
-open. The practical launcher estimate is about 84% implemented. This planning
+open. The practical launcher estimate is about 86% implemented. This planning
 estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
 
 ## Current contract and limits
@@ -80,7 +81,7 @@ estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F10 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, effects, fields, selected-capital damage and subsystem condition, exact field-source identity, live subsystem mutation, repair, mobility, maneuver-state production, velocity, physical integration, authentic command assignment, maneuver waypoint execution, Hold, and the first Recover carrier state. Automatic group distribution, exact planet placement, exact global RNG sequencing, turning and waypoint completion, full fighter recovery, attack executors, collision and formation behavior, power allocation, and original view acceptance remain open.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F11 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, effects, fields, selected-capital damage and subsystem condition, exact field-source identity, live subsystem mutation, repair, mobility, maneuver-state production, velocity, physical integration, authentic command assignment, maneuver waypoint execution, Hold, source-rate turning, waypoint completion, and full fighter recovery states. Automatic group distribution, exact planet placement, exact global RNG sequencing, exact original arrival callbacks and recovery trajectories, attack executors, collision and formation behavior, power allocation, and original view acceptance remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design
@@ -158,9 +159,10 @@ and physical integration. P58F9 restores the two bitmap command panels, exact
 order and tactic codes, source-shaped input, disabled states, and commit/cancel
 behavior. P58F10 connects the four maneuver orders to recovered waypoint
 construction, executes Hold, and starts Recover through carrier reservation and
-Returning state 2. Automatic group assignment, exact global RNG sequencing,
-turning and waypoint completion, carrier ingress and docking, attack executors,
-collision and formation behavior, power allocation, fighter launch and damage,
+Returning state 2. P58F11 adds source-rate turning, waypoint completion, and
+the Docking and Recovered fighter states while preserving strategic squadron
+counts. Automatic group assignment, exact global RNG sequencing, exact arrival
+callbacks and recovery trajectories, attack executors, collision and formation behavior, power allocation, fighter launch and damage,
 exact planet placement, results, and audio remain T3 work.
 No `TAC-*` acceptance cell is closed.
 

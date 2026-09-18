@@ -108,6 +108,12 @@ const ORIGINAL_ENGINE_MODE_MAX_BONUS: f32 = 9.0;
 const ORIGINAL_MANEUVER_WAYPOINT_SCALE: f32 = 0.75;
 /// `_DAT_0066d094` and `_DAT_0066d098` multiply pi by +/- one eighth.
 const ORIGINAL_MANEUVER_ANGLE: f32 = std::f32::consts::PI / 8.0;
+/// `_DAT_0066d088`, consumed by `FUN_005cf980` before recovery state 3.
+const ORIGINAL_FIGHTER_DOCKING_DISTANCE: f32 = 2.0;
+/// `FUN_005ba270` clamps the effective capital maneuverability at nine.
+const ORIGINAL_CAPITAL_MANEUVERABILITY_MAX: f32 = 9.0;
+/// The fallback turn rate installed by `FUN_005b9c60` is pi / 12 radians/s.
+const ORIGINAL_CAPITAL_TURN_RATE_FALLBACK: f32 = std::f32::consts::PI / 12.0;
 
 /// Spacing between auto-placed ships.
 const SHIP_SPACING: f32 = 60.0;
@@ -519,6 +525,8 @@ pub struct TacticalShip {
     pub subsystem_damage: TacticalSubsystemDamage,
     /// Normalized maximum sublight power stored at source offset `+0x3f8`.
     pub sublight_engine_power: f32,
+    /// Raw `CAPSHPSD.DAT` maneuverability consumed by `FUN_005ba270`.
+    pub maneuverability: u32,
     /// Maximum tractor power stored at source offset `+0x3b8`.
     pub tractor_beam_power: f32,
     /// Number of fighter squadrons this hull can recover.
@@ -826,6 +834,8 @@ pub struct TacticalFighter {
     pub tactical_resource: Option<TacticalFighterResource>,
     /// Original retained-mode position at battle initialization.
     pub source_position: TacticalWorldPosition,
+    /// Normalized maximum sublight power stored at source offset `+0x3f8`.
+    pub sublight_engine_power: f32,
     /// Index into the originating fleet's fighter roster. Classes may repeat.
     pub fleet_fighter_index: usize,
     pub name: String,
@@ -1344,6 +1354,56 @@ fn original_movement_alignment(ship: &TacticalShip) -> f32 {
         .clamp(0.0, 1.0)
 }
 
+/// `FUN_005b9c60` installs pi / 12 for the slowest hulls. Faster hulls use
+/// pi * 0.5 * clamp(raw + 1, 9) / 9 radians per second.
+fn original_capital_turn_rate(maneuverability: u32) -> f32 {
+    let effective = maneuverability.saturating_add(1) as f32;
+    if effective > 1.0 {
+        std::f32::consts::PI * 0.5 * effective.min(ORIGINAL_CAPITAL_MANEUVERABILITY_MAX)
+            / ORIGINAL_CAPITAL_MANEUVERABILITY_MAX
+    } else {
+        ORIGINAL_CAPITAL_TURN_RATE_FALLBACK
+    }
+}
+
+fn source_direction_angle(current: TacticalWorldVector, desired: TacticalWorldVector) -> f32 {
+    let current = current.normalized();
+    let desired = desired.normalized();
+    current.dot(desired).clamp(-1.0, 1.0).acos()
+}
+
+/// Apply `FUN_005cd460`'s signed XZ turn and snap branch.
+fn turn_original_tactical_ship(ship: &mut TacticalShip, delta_milliseconds: f32) {
+    if ship.source_desired_forward == TacticalWorldVector::ZERO {
+        return;
+    }
+    let angle = source_direction_angle(ship.source_forward, ship.source_desired_forward);
+    if angle <= f32::EPSILON {
+        return;
+    }
+    let turn_step = original_capital_turn_rate(ship.maneuverability) * delta_milliseconds * 0.001;
+    if turn_step >= angle {
+        ship.source_forward = ship.source_desired_forward.normalized();
+        return;
+    }
+
+    let current = ship.source_forward.normalized();
+    let desired = ship.source_desired_forward.normalized();
+    let signed_angle =
+        if -current.z * desired.x + desired.z * current.x + desired.y * current.y < 0.0 {
+            -turn_step
+        } else {
+            turn_step
+        };
+    let (sin, cos) = signed_angle.sin_cos();
+    ship.source_forward = TacticalWorldVector {
+        x: current.x * cos - sin * current.z,
+        y: current.y,
+        z: current.x * sin + cos * current.z,
+    }
+    .normalized();
+}
+
 fn original_tactical_mobility(
     ships: &[TacticalShip],
     field_effects: &[TacticalFieldEffect],
@@ -1702,31 +1762,37 @@ impl BattleSession {
         true
     }
 
-    /// Apply `FUN_005b2f30`'s recovered velocity contract and
-    /// `FUN_005cd640`'s millisecond-to-second position integrator. The original
-    /// turn and collision branches remain a separate command-path gate.
+    /// Apply `FUN_005cd460`'s current-to-desired turn, `FUN_005b2f30`'s
+    /// velocity contract, and `FUN_005cd640`'s millisecond position integrator.
     fn advance_original_tactical_movement(&mut self, delta_milliseconds: f32) {
         if !delta_milliseconds.is_finite() || delta_milliseconds <= 0.0 {
             return;
         }
-        let movement = self
+        let engine_power = self
             .ships
             .iter()
             .enumerate()
-            .map(|(index, ship)| {
-                let effective_engine_power =
-                    original_tactical_mobility(&self.ships, &self.field_effects, index)
-                        .map_or(0.0, |mobility| mobility.effective_engine_power);
-                let alignment = original_movement_alignment(ship);
-                (effective_engine_power, alignment)
+            .map(|(index, _)| {
+                original_tactical_mobility(&self.ships, &self.field_effects, index)
+                    .map_or(0.0, |mobility| mobility.effective_engine_power)
             })
             .collect::<Vec<_>>();
         let seconds = delta_milliseconds * 0.001;
-        for (ship, (effective_engine_power, alignment)) in self.ships.iter_mut().zip(movement) {
+        for (ship, effective_engine_power) in self.ships.iter_mut().zip(engine_power) {
             if !ship.alive || ship.retreating {
                 ship.source_velocity = TacticalWorldVector::ZERO;
                 continue;
             }
+            let waypoint_delta = ship
+                .source_waypoint
+                .map(|waypoint| source_delta(waypoint, ship.source_position));
+            let waypoint_distance =
+                waypoint_delta.map(|delta| delta.x.hypot(delta.y).hypot(delta.z));
+            if let Some(delta) = waypoint_delta {
+                ship.source_desired_forward = delta.normalized();
+            }
+            turn_original_tactical_ship(ship, delta_milliseconds);
+            let alignment = original_movement_alignment(ship);
             let forward = ship.source_forward.normalized();
             let speed = effective_engine_power * alignment;
             ship.source_velocity = TacticalWorldVector {
@@ -1734,9 +1800,74 @@ impl BattleSession {
                 y: forward.y * speed,
                 z: forward.z * speed,
             };
+            if let (Some(waypoint), Some(distance)) = (ship.source_waypoint, waypoint_distance) {
+                if distance <= speed * seconds {
+                    ship.source_position = waypoint;
+                    ship.source_velocity = TacticalWorldVector::ZERO;
+                    ship.source_waypoint = None;
+                    ship.source_desired_forward = TacticalWorldVector::ZERO;
+                    ship.order = TacticalOrder::None;
+                    continue;
+                }
+            }
             ship.source_position.x += ship.source_velocity.x * seconds;
             ship.source_position.y += ship.source_velocity.y * seconds;
             ship.source_position.z += ship.source_velocity.z * seconds;
+        }
+    }
+
+    /// Advance the recovered `FUN_005cf980` fighter states. State 2 moves the
+    /// group toward its reserved carrier, the exact 2.0-unit gate enters state
+    /// 3, and the following docking callback removes the tactical object in
+    /// state 4 without changing its strategic squadron count.
+    fn advance_original_fighter_recovery(&mut self, delta_milliseconds: f32) {
+        if !delta_milliseconds.is_finite() || delta_milliseconds <= 0.0 {
+            return;
+        }
+        let seconds = delta_milliseconds * 0.001;
+        for fighter in &mut self.fighters {
+            match fighter.recovery_state {
+                TacticalFighterRecoveryState::Returning => {
+                    let Some(carrier) = fighter
+                        .recovery_target
+                        .and_then(|index| self.ships.get(index))
+                        .filter(|ship| ship.alive && ship.is_attacker == fighter.is_attacker)
+                    else {
+                        fighter.recovery_state = TacticalFighterRecoveryState::AwaitingCarrier;
+                        fighter.recovery_target = None;
+                        continue;
+                    };
+                    let delta = source_delta(carrier.source_position, fighter.source_position);
+                    let distance = delta.x.hypot(delta.y).hypot(delta.z);
+                    if distance < ORIGINAL_FIGHTER_DOCKING_DISTANCE {
+                        fighter.recovery_state = TacticalFighterRecoveryState::Docking;
+                        continue;
+                    }
+                    let step = fighter.sublight_engine_power.max(0.0) * seconds;
+                    if step > 0.0 {
+                        let direction = delta.normalized();
+                        let travel = step.min(distance);
+                        fighter.source_position.x += direction.x * travel;
+                        fighter.source_position.y += direction.y * travel;
+                        fighter.source_position.z += direction.z * travel;
+                    }
+                    let remaining = source_delta(carrier.source_position, fighter.source_position);
+                    if remaining.x.hypot(remaining.y).hypot(remaining.z)
+                        < ORIGINAL_FIGHTER_DOCKING_DISTANCE
+                    {
+                        fighter.recovery_state = TacticalFighterRecoveryState::Docking;
+                    }
+                }
+                TacticalFighterRecoveryState::Docking => {
+                    fighter.recovery_state = TacticalFighterRecoveryState::Recovered;
+                    fighter.order = TacticalOrder::None;
+                    fighter.selected = false;
+                    fighter.alive = false;
+                }
+                TacticalFighterRecoveryState::AwaitingCarrier
+                | TacticalFighterRecoveryState::Reserved
+                | TacticalFighterRecoveryState::Recovered => {}
+            }
         }
     }
 
@@ -1814,6 +1945,7 @@ impl BattleSession {
                 subsystem_damage,
                 sublight_engine_power: class.sub_light_engine as f32
                     * ORIGINAL_SUBLIGHT_ENGINE_SCALE,
+                maneuverability: class.maneuverability,
                 tractor_beam_power: class.tractor_beam_power as f32,
                 fighter_capacity: class.fighter_capacity,
                 maneuver_state_value: None,
@@ -1852,6 +1984,8 @@ impl BattleSession {
                 },
                 tactical_resource: fighter_tactical_resource(class.dat_id),
                 source_position: TacticalWorldPosition::ORIGIN,
+                sublight_engine_power: class.sub_light_engine as f32
+                    * ORIGINAL_SUBLIGHT_ENGINE_SCALE,
                 fleet_fighter_index: fighter_idx,
                 name: class.name.clone(),
                 x: 0.0,
@@ -2102,6 +2236,7 @@ impl BattleSession {
             }
         }
         self.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+        self.advance_original_fighter_recovery(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
 
         // Collect alive (non-retreating) ship indices per side for combat.
         let atk_alive: Vec<usize> = self
@@ -2755,6 +2890,116 @@ impl TacticalState {
         session.selected_fighter_group = None;
         session.paused = true;
         self.command_panel = TacticalCommandPanel::Display;
+    }
+
+    /// Advance one turning capital, one arriving capital, and both final
+    /// fighter-recovery transitions through the production executors.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_command_progression_fixture(&mut self) {
+        let focus = {
+            let Some(session) = self.session.as_mut() else {
+                return;
+            };
+            let player_ships = session
+                .ships
+                .iter()
+                .enumerate()
+                .filter(|(_, ship)| {
+                    ship.alive
+                        && ship.is_attacker == session.player_is_attacker
+                        && ship.subsystem_capacity.engines
+                })
+                .map(|(index, _)| index)
+                .take(2)
+                .collect::<Vec<_>>();
+            let player_fighters = session
+                .fighters
+                .iter()
+                .enumerate()
+                .filter(|(_, fighter)| {
+                    fighter.alive && fighter.is_attacker == session.player_is_attacker
+                })
+                .map(|(index, _)| index)
+                .take(2)
+                .collect::<Vec<_>>();
+            if player_ships.len() < 2 || player_fighters.len() < 2 {
+                return;
+            }
+            let turning = player_ships[0];
+            let arriving = player_ships[1];
+            let forward_z = if session.ships[turning].identity.is_alliance {
+                1.0
+            } else {
+                -1.0
+            };
+            for ship in &mut session.ships {
+                ship.selected = false;
+                ship.source_velocity = TacticalWorldVector::ZERO;
+            }
+            for fighter in &mut session.fighters {
+                fighter.selected = false;
+            }
+
+            let turning_position = session.ships[turning].source_position;
+            session.ships[turning].selected = true;
+            session.ships[turning].maneuverability = 4;
+            session.ships[turning].sublight_engine_power = 20.0;
+            session.ships[turning].source_forward = TacticalWorldVector {
+                x: 0.0,
+                y: 0.0,
+                z: forward_z,
+            };
+            session.ships[turning].source_waypoint = Some(TacticalWorldPosition {
+                x: turning_position.x + 50.0,
+                y: turning_position.y,
+                z: turning_position.z + 50.0 * forward_z,
+            });
+            session.ships[turning].order = TacticalOrder::LeftHook;
+
+            let arriving_position = session.ships[arriving].source_position;
+            session.ships[arriving].sublight_engine_power = 100.0;
+            session.ships[arriving].source_forward = TacticalWorldVector {
+                x: 0.0,
+                y: 0.0,
+                z: forward_z,
+            };
+            session.ships[arriving].source_desired_forward = session.ships[arriving].source_forward;
+            session.ships[arriving].source_waypoint = Some(TacticalWorldPosition {
+                x: arriving_position.x,
+                y: arriving_position.y,
+                z: arriving_position.z + forward_z,
+            });
+            session.ships[arriving].order = TacticalOrder::Anvil;
+
+            session.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+
+            let carrier_position = session.ships[arriving].source_position;
+            let returning = player_fighters[0];
+            session.fighters[returning].source_position = TacticalWorldPosition {
+                x: carrier_position.x,
+                y: carrier_position.y,
+                z: carrier_position.z + 2.5 * forward_z,
+            };
+            session.fighters[returning].sublight_engine_power = 4.0;
+            session.fighters[returning].order = TacticalOrder::Recover;
+            session.fighters[returning].recovery_state = TacticalFighterRecoveryState::Returning;
+            session.fighters[returning].recovery_target = Some(arriving);
+
+            let docking = player_fighters[1];
+            session.fighters[docking].source_position = carrier_position;
+            session.fighters[docking].order = TacticalOrder::Recover;
+            session.fighters[docking].recovery_state = TacticalFighterRecoveryState::Docking;
+            session.fighters[docking].recovery_target = Some(arriving);
+            session.advance_original_fighter_recovery(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+
+            session.selected_ship = Some(turning);
+            session.selected_fighter_group = None;
+            session.paused = true;
+            self.command_panel = TacticalCommandPanel::Display;
+            let object_id = u32::try_from(turning).unwrap_or(u32::MAX).saturating_add(1);
+            (object_id, session.ships[turning].source_position.rendered())
+        };
+        self.asset_renderer.focus_target(focus.0, focus.1);
     }
 
     /// Display one stable frame from every source-selected impact family.
@@ -3892,6 +4137,25 @@ fn begin_original_fighter_recovery(session: &mut BattleSession, selected: &[usiz
         .filter(|(_, ship)| ship.alive && ship.fighter_capacity > 0)
         .map(|(index, ship)| (index, ship.is_attacker, ship.fighter_capacity))
         .collect::<Vec<_>>();
+    for (index, fighter) in session.fighters.iter().enumerate() {
+        if selected.contains(&index)
+            || !matches!(
+                fighter.recovery_state,
+                TacticalFighterRecoveryState::Reserved
+                    | TacticalFighterRecoveryState::Returning
+                    | TacticalFighterRecoveryState::Docking
+            )
+        {
+            continue;
+        }
+        if let Some((_, _, remaining)) = fighter.recovery_target.and_then(|target| {
+            carrier_slots
+                .iter_mut()
+                .find(|(carrier, _, _)| *carrier == target)
+        }) {
+            *remaining = remaining.saturating_sub(1);
+        }
+    }
     for &fighter_index in selected {
         let fighter = &mut session.fighters[fighter_index];
         // `FUN_005cf940` always resets the state before `FUN_005cf980`
@@ -6290,6 +6554,7 @@ mod tests {
             },
             subsystem_damage: TacticalSubsystemDamage::default(),
             sublight_engine_power: 100.0,
+            maneuverability: 0,
             tractor_beam_power: 25.0,
             fighter_capacity: 1,
             maneuver_state_value: None,
@@ -6322,6 +6587,7 @@ mod tests {
             },
             tactical_resource: fighter_tactical_resource(DatId::new(dat_id)),
             source_position: TacticalWorldPosition::ORIGIN,
+            sublight_engine_power: 10.0,
             fleet_fighter_index: 0,
             name: format!("fighter-{dat_id}"),
             x: 0.0,
@@ -6846,6 +7112,91 @@ mod tests {
         session.advance_original_tactical_movement(250.0);
         assert_eq!(session.ships[0].source_velocity.y, 78.75);
         assert_eq!(session.ships[0].source_position.y, 19.6875);
+    }
+
+    #[test]
+    fn current_to_desired_turn_uses_source_rates_and_normalization() {
+        let close = |left: f32, right: f32| assert!((left - right).abs() < 0.000_01);
+        close(original_capital_turn_rate(0), std::f32::consts::PI / 12.0);
+        close(
+            original_capital_turn_rate(4),
+            5.0 * std::f32::consts::PI / 18.0,
+        );
+        close(original_capital_turn_rate(20), std::f32::consts::PI / 2.0);
+
+        let mut ship = test_ship(64, 0, true, true);
+        ship.maneuverability = 4;
+        ship.source_desired_forward = TacticalWorldVector {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        turn_original_tactical_ship(&mut ship, 250.0);
+        let turn = 5.0 * std::f32::consts::PI / 72.0;
+        close(ship.source_forward.x, turn.sin());
+        close(ship.source_forward.y, 0.0);
+        close(ship.source_forward.z, turn.cos());
+        close(
+            ship.source_forward
+                .x
+                .hypot(ship.source_forward.y)
+                .hypot(ship.source_forward.z),
+            1.0,
+        );
+
+        turn_original_tactical_ship(&mut ship, 10_000.0);
+        assert_eq!(ship.source_forward, ship.source_desired_forward);
+    }
+
+    #[test]
+    fn waypoint_arrival_and_fighter_docking_complete_source_executors() {
+        let mut carrier = test_ship(64, 0, true, true);
+        carrier.subsystem_capacity.engines = true;
+        carrier.source_desired_forward = TacticalWorldVector::SOURCE_FORWARD;
+        carrier.source_waypoint = Some(TacticalWorldPosition {
+            x: 0.0,
+            y: 0.0,
+            z: 1.0,
+        });
+        carrier.order = TacticalOrder::Anvil;
+
+        let mut fighter = test_fighter(1, true);
+        fighter.source_position.z = 3.5;
+        fighter.sublight_engine_power = 4.0;
+        fighter.order = TacticalOrder::Recover;
+        fighter.recovery_state = TacticalFighterRecoveryState::Returning;
+        fighter.recovery_target = Some(0);
+
+        let mut session = test_session(vec![carrier], vec![fighter], true);
+        session.advance_original_tactical_movement(250.0);
+        assert_eq!(
+            session.ships[0].source_position,
+            TacticalWorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            }
+        );
+        assert_eq!(session.ships[0].source_waypoint, None);
+        assert_eq!(session.ships[0].source_velocity, TacticalWorldVector::ZERO);
+        assert_eq!(session.ships[0].order, TacticalOrder::None);
+
+        session.advance_original_fighter_recovery(250.0);
+        assert_eq!(session.fighters[0].source_position.z, 2.5);
+        assert_eq!(
+            session.fighters[0].recovery_state,
+            TacticalFighterRecoveryState::Docking
+        );
+        assert!(session.fighters[0].alive);
+
+        session.advance_original_fighter_recovery(250.0);
+        assert_eq!(
+            session.fighters[0].recovery_state,
+            TacticalFighterRecoveryState::Recovered
+        );
+        assert!(!session.fighters[0].alive);
+        assert_eq!(session.fighters[0].squad_count, 12);
+        assert_eq!(session.fighters[0].order, TacticalOrder::None);
     }
 
     #[test]

@@ -32,6 +32,7 @@ the source of truth for scope, acceptance, and current work.
 | P58F8 | [Maneuver and movement](2026-09-16-tactical-maneuver-movement.md) | [`p58f8-tactical-maneuver-movement/`](p58f8-tactical-maneuver-movement/) |
 | P58F9 | [Tactical command assignment](2026-09-17-tactical-command-assignment.md) | [`p58f9-tactical-command-assignment/`](p58f9-tactical-command-assignment/) |
 | P58F10 | [Tactical order execution](2026-09-17-tactical-order-execution.md) | [`p58f10-tactical-order-execution/`](p58f10-tactical-order-execution/) |
+| P58F11 | [Tactical command progression](2026-09-18-tactical-command-progression.md) | [`p58f11-tactical-command-progression/`](p58f11-tactical-command-progression/) |
 
 ## Current strategic correction
 

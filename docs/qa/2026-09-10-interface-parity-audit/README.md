@@ -145,6 +145,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F10 tactical order-execution evidence](evidence/2026-09-17-tactical-order-execution.md)
   for recovered maneuver waypoints, Hold stop behavior, Recover carrier
   reservation and Returning state, and the 80-case gate.
+- Review the [P58F11 tactical command-progression evidence](evidence/2026-09-18-tactical-command-progression.md)
+  for source-rate turning, waypoint completion, fighter docking and recovery,
+  preserved squadron counts, and the 84-case gate.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -182,8 +185,8 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 84%
-implemented after P58F10. Its formal acceptance remains 0 of 106 tactical cells
+Within that total, the standalone space-battle launcher is approximately 86%
+implemented after P58F11. Its formal acceptance remains 0 of 106 tactical cells
 because exact original-view evidence and the remaining battle states are open.
 
 The first recovered implementation tranche now packages and renders the four
@@ -272,10 +275,12 @@ P58F9 restores the bitmap-driven Maneuvers and Tactics and Missions panels,
 exact order and tactic codes, disabled states, and selected-unit commit and
 cancel behavior. P58F10 connects the four maneuver orders to recovered waypoint
 construction, executes Hold, and starts Recover through carrier reservation and
-Returning state 2. Automatic group distribution, exact planet placement, exact
-global RNG sequencing, turning and waypoint completion, carrier ingress and
-docking, attack executors, collision and formation behavior, power allocation,
-results, and A0 comparisons remain open.
+Returning state 2. P58F11 applies source-rate signed turns, completes reached
+waypoints, and advances fighters through Docking and Recovered while preserving
+their strategic counts. Automatic group distribution, exact planet placement,
+exact global RNG sequencing, the exact arrival callback and ingress trajectory,
+attack executors, collision and formation behavior, power allocation, results,
+and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

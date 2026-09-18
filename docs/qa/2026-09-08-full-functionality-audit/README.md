@@ -69,6 +69,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical maneuver and movement proof](../2026-09-10-interface-parity-audit/evidence/2026-09-16-tactical-maneuver-movement.md) | Source-derived maneuver bonus, effective-power velocity, 250-millisecond integration, muted 72-case browser gate, and remaining interactive-command/A0 boundary for P24/P58. |
 | [Tactical command-assignment proof](../2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md) | Original maneuver and mission panels, exact order and tactic codes, commit/cancel behavior, muted 76-case browser gate, and remaining execution/A0 boundary for P24/P58. |
 | [Tactical order-execution proof](../2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md) | Recovered maneuver waypoints, Hold stop behavior, initial Recover carrier state, muted 80-case browser gate, and remaining completion/A0 boundary for P24/P58. |
+| [Tactical command-progression proof](../2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md) | Source-rate turning, maneuver completion, fighter docking and recovery, muted 84-case browser gate, and remaining execution/A0 boundary for P24/P58. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

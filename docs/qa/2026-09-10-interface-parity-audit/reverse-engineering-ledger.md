@@ -152,7 +152,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering, selected-capital damage, live subsystem mutation, repair, maneuver state, velocity, physical integration, command assignment, maneuver waypoints, Hold, and initial Recover state source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, turning and waypoint completion, full fighter recovery, attack executors, collision and formation behavior, remaining controls, and A0 comparison |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering, selected-capital damage, live subsystem mutation, repair, maneuver state, velocity, physical integration, command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, and full fighter recovery states source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, exact arrival callbacks and recovery trajectories, attack executors, collision and formation behavior, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
@@ -245,9 +245,12 @@ both original command panels, exact shared order and tactic codes,
 source-shaped controls, disabled states, and commit/cancel delivery.
 [P58F10 evidence](evidence/2026-09-17-tactical-order-execution.md) restores the
 four maneuver waypoint constructors, Hold stop behavior, and the first Recover
-carrier state. Exact global RNG sequencing, turning and waypoint completion,
-full fighter recovery, attack executors, collision and formation behavior,
-power allocation, and original visual acceptance remain open.
+carrier state. [P58F11 evidence](evidence/2026-09-18-tactical-command-progression.md)
+restores source-rate signed turning, deterministic waypoint completion, and the
+Docking and Recovered fighter states while preserving strategic squadron
+counts. Exact global RNG sequencing, original arrival callbacks and recovery
+trajectories, attack executors, collision and formation behavior, power
+allocation, and original visual acceptance remain open.
 
 ## Immediate implementation order
 

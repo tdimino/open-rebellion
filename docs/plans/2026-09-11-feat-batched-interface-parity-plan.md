@@ -32,7 +32,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 84% |
+| Practical space-battle launcher implementation | approximately 86% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -187,12 +187,14 @@ production detail transitions, and original task-force and RGBY controls.
 P58F1 through P58F8 add the exact system-selected planet, impact effects,
 projectile and field effects, selected damage presentation, live subsystem
 damage and repair, mobility, and physical integration. P58F9 restores the
-original command panels and exact assignment codes. P58F10 now executes the
-four recovered maneuver waypoints, Hold, and the first Recover carrier state.
-The muted tactical matrix passes 80 of 80 cases across both factions and both
-viewports. Exact turning and waypoint completion, fighter ingress and docking,
-attack execution, collision, formation, A0 comparison, and all 106 strict
-tactical cells remain open. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
+original command panels and exact assignment codes. P58F10 executes the four
+recovered maneuver waypoints, Hold, and the first Recover carrier state.
+P58F11 adds source-rate turning, waypoint completion, and the Docking and
+Recovered fighter states while preserving strategic squadron counts. The muted
+tactical matrix passes 84 of 84 cases across both factions and both viewports.
+Exact original arrival callbacks and recovery trajectories, attack execution,
+collision, formation, A0 comparison, and all 106 strict tactical cells remain
+open. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
 [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
 [P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md),
 [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md),
@@ -201,7 +203,7 @@ tactical cells remain open. See the [P57A evidence](../qa/2026-09-10-interface-p
 [P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md),
 [P58B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md),
 [P58C evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md),
-and [P58F10 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md).
+and [P58F11 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md).
 
 ## Bundle acceptance record
 

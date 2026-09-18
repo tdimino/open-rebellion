@@ -1,0 +1,45 @@
+{
+  "verdict": "pass",
+  "confidence": "high for qualified A1 screenshot and recorded-state evidence",
+  "evidence_level": "qualified A1 implementation evidence; not A0 original-game parity",
+  "inspected_files": [
+    "contact-sheet.png",
+    "alliance/640x480/command-progression.png",
+    "alliance/640x480/result.json",
+    "alliance/1280x800-letterboxed/command-progression.png",
+    "alliance/1280x800-letterboxed/result.json",
+    "empire/640x480/command-progression.png",
+    "empire/640x480/result.json",
+    "empire/1280x800-letterboxed/command-progression.png",
+    "empire/1280x800-letterboxed/result.json",
+    "focused-summary.json",
+    "full-summary.json"
+  ],
+  "findings": {
+    "critical": [],
+    "major": [],
+    "minor": [],
+    "informational": [
+      "The harness records browser closure, but the retained summaries do not independently attest local server cleanup.",
+      "Planet placement remains provisional and is outside this command-progression gate."
+    ]
+  },
+  "confirmed_claims": [
+    "Both factions retain a legible tactical bitmap shell at 640x480 and centered proportional framing at 1280x800.",
+    "No blank or invented panels, clipped shell controls, obvious bitmap mapping failures, missing assets, browser errors, audio-policy violations, or unstable screenshots are present in the retained evidence.",
+    "All four records prove the executable-derived 5pi/72 turn step for raw maneuverability 4 and a normalized source forward vector.",
+    "All four records prove waypoint arrival clears the order, waypoint, desired direction, and velocity.",
+    "All four records prove active Docking state 3 and inactive Recovered state 4 while preserving the strategic fighter count.",
+    "Focused and complete matrices passed 4 of 4 and 84 of 84 with fresh muted launches, exactly four successful requests each, and closed browser processes."
+  ],
+  "limitations": [
+    "The review inspected retained paused fixture evidence rather than replaying every browser journey.",
+    "All visual comparisons remain unbaselined. Original-game A0 parity is not proven.",
+    "The deterministic waypoint crossing rule and fighter ingress scale still require comparison with the complete original callback and trajectory.",
+    "The complete matrix was assessed through its summary rather than every underlying frame."
+  ],
+  "required_followups": [
+    "Retain a lossless original-game comparison before any A0 parity claim.",
+    "Recover attack executors, collision and formation behavior, and the remaining tactical state matrix."
+  ]
+}

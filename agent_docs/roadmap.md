@@ -700,10 +700,16 @@ would tune around known simulation feedback defects.
   80-case muted browser gate. Keep exact turning, waypoint completion, carrier
   ingress and docking, attack executors, Death Star execution, collision,
   formation, A0, and every strict tactical cell open.
+- [x] Complete P58F11 tactical command progression: apply the recovered
+  maneuverability clamp and signed turn rate, snap completed waypoints, and
+  advance fighter recovery through Returning, Docking, and Recovered while
+  preserving strategic squadron counts. Pass the 84-case muted browser gate.
+  Keep exact original arrival callbacks and recovery trajectories, attack
+  executors, collision, formation, A0, and every strict tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F11 next recovers exact turning and waypoint completion, then
-  closes fighter ingress and docking, collision, and formation behavior.
+  states. P58F12 next recovers Attack Fighters and Attack Capital Ships
+  execution before collision and formation behavior.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit"
 description: "Authoritative screenshot corpus, surface ledger, findings, and acceptance gates for reproducing every visible Rebellion interface state"
 category: qa
 created: 2026-09-10
-updated: 2026-09-16
+updated: 2026-09-18
 tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 ---
 
@@ -20,7 +20,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 84% |
+| Practical space-battle launcher implementation | approximately 86% |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
@@ -107,6 +107,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58F8 maneuver and movement evidence](evidence/2026-09-16-tactical-maneuver-movement.md) | Recovered maneuver-state bonus, effective-power velocity, signed faction movement, 250-millisecond integration, 72-case muted browser gate, and explicit command/A0 limits. |
 | [P58F9 tactical command-assignment evidence](evidence/2026-09-17-tactical-command-assignment.md) | Original command panels, exact order and tactic codes, source-shaped controls, cancel/commit behavior, group delivery, 76-case muted browser gate, and explicit execution/A0 limits. |
 | [P58F10 tactical order-execution evidence](evidence/2026-09-17-tactical-order-execution.md) | Recovered maneuver waypoints, Hold stop behavior, Recover carrier reservation and Returning state, 80-case muted browser gate, and explicit completion/A0 limits. |
+| [P58F11 tactical command-progression evidence](evidence/2026-09-18-tactical-command-progression.md) | Source-rate turning, maneuver arrival, full fighter recovery states, preserved squadron count, 84-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -262,10 +263,12 @@ effective-power velocity, and millisecond position integration. P58F9 restores
 both bitmap-driven command panels, exact order and tactic codes, disabled
 states, and selected-unit commit and cancel behavior. P58F10 connects the four
 maneuver orders to their recovered waypoint constructors, executes Hold, and
-starts Recover through carrier reservation and Returning state 2. Automatic
-production grouping, exact planet placement, exact global RNG sequencing,
-turning and waypoint completion, carrier ingress and docking, attack executors,
-collision and formation behavior, power allocation, results, A0
+starts Recover through carrier reservation and Returning state 2. P58F11 adds
+source-rate signed turning, deterministic waypoint completion, and the Docking
+and Recovered fighter states while preserving strategic squadron counts.
+Automatic production grouping, exact planet placement, exact global RNG
+sequencing, exact arrival callbacks and recovery trajectories, attack
+executors, collision and formation behavior, power allocation, results, A0
 comparison, and every tactical cell remain open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,

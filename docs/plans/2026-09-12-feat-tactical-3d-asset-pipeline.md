@@ -176,11 +176,11 @@ capital ships from their exact joined families. P58C renders original fighter
 detail resources and aligns capital interactions with projected mesh bounds.
 P58D exercises the complete indicator/far/close fighter journey through the
 original zoom controls. P58E restores squadron and task-force presentation.
-P58F1 through P58F10 add the system-selected planet, effects and fields,
+P58F1 through P58F11 add the system-selected planet, effects and fields,
 selected damage, live subsystem damage and repair, movement integration,
-authentic command assignment, and the first source-recovered order executors.
-Exact turning and waypoint completion, fighter ingress and docking, attack
-execution, collision, formation, and the Death Star remain next.
+authentic command assignment, source-rate turning, waypoint completion, and
+fighter recovery. Exact original arrival callbacks and recovery trajectories,
+attack execution, collision, formation, and the Death Star remain next.
 
 P57A packages all three meshes and both source-bound textures, preserves the
 far mesh's material diffuse color, and implements the original high- and
@@ -213,7 +213,7 @@ resources and projection-aligned capital selection and targeting. P58D proves
 the complete production fighter-detail journey. P58E restores all eight
 task-force controls and four RGBY fighter controls with source-shaped input,
 keyboard routing, mutual exclusion, and selected fighter portraits. P58F1
-through P58F10 connect the joined visual corpus to the first live combat and
+through P58F11 connect the joined visual corpus to the first live combat and
 command-execution states. Original A0 captures, automatic group distribution,
 native GPU comparison, exact completion paths, and simulation-fingerprint
 proof remain open.
@@ -235,13 +235,13 @@ The full P57 gate remains open.
 
 ### P58. Fleet integration
 
-Status: in progress. P58A through P58F10 are complete. See the
+Status: in progress. P58A through P58F11 are complete. See the
 [P58A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md),
 the [P58B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md),
 the [P58C evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md),
 the [P58D evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighter-detail-journey.md),
 the [P58E evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-group-presentation.md),
-and the [P58F10 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md).
+and the [P58F11 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md).
 
 P58A finishes the DAT-to-tactical-ordinal join and validates full-corpus
 transport. P58B draws joined production capital-ship families, loads only
@@ -250,9 +250,9 @@ family is unavailable. P58C renders the exact fighter resource triplets and
 uses source-projected capital bounds for selection and targeting. P58D proves
 the production fighter transition sequence and retained family cache. P58E
 restores task-force and squadron controls and selected fighter presentation.
-P58F1 through P58F10 restore the first live combat, mobility, command, and
-order-execution states. P58F11 continues with exact maneuver completion and
-fighter recovery ingress before collision, formation, and Death Star work.
+P58F1 through P58F11 restore the first live combat, mobility, command, turn,
+arrival, and recovery states. P58F12 continues with the attack executors before
+collision, formation, and Death Star work.
 
 Gate: every mapped entity has provenance, no procedural replacement remains in
 accepted states, native/WASM and multiplayer simulation agree, and the relevant

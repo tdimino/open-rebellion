@@ -15,7 +15,7 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 84% |
+| Practical space-battle launcher implementation | approximately 86% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -94,7 +94,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital families, fighter detail resources, system-selected planets, effects, fields, selected-capital damage, subsystem condition, exact field-source state, live subsystem damage, repair, maneuver state, physical integration, authentic command assignment, maneuver waypoints, Hold, and the first Recover carrier state use recovered source contracts; other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58F10 evidence](evidence/README.md), and [P58F10 evidence](evidence/2026-09-17-tactical-order-execution.md) |
+| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital families, fighter detail resources, system-selected planets, effects, fields, selected-capital damage, subsystem condition, exact field-source state, live subsystem damage, repair, maneuver state, physical integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, and full fighter recovery states use recovered source contracts; other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58F11 evidence](evidence/README.md), and [P58F11 evidence](evidence/2026-09-18-tactical-command-progression.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -155,9 +155,11 @@ the stationary constructor state. P58F9 restores both original bitmap command
 panels, exact shared order and tactic codes, source-shaped controls, disabled
 states, and selected-unit commit and cancel behavior. P58F10 connects the four
 maneuver orders to recovered waypoint construction, executes Hold, and starts
-Recover through carrier reservation and Returning state 2. Turning and
-waypoint completion, full fighter recovery, attack executors, collision and
-formation behavior, power allocation, special objects, and A0
+Recover through carrier reservation and Returning state 2. P58F11 adds
+source-rate signed turning, deterministic waypoint completion, and the Docking
+and Recovered fighter states while preserving strategic squadron counts. Exact
+original arrival callbacks and recovery trajectories, attack executors,
+collision and formation behavior, power allocation, special objects, and A0
 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
@@ -193,7 +195,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode and transport, exact ship/fighter DAT joins, production capital/fighter/planet rendering, group controls, effects, fields, selected-capital damage, subsystem condition, exact field-source state, live subsystem damage, repair, maneuver state, physical integration, authentic command assignment, maneuver waypoints, Hold, and the first Recover carrier state pass implementation gates. Original view acceptance, automatic grouping, exact planet placement, exact global RNG sequencing, turning and waypoint completion, full fighter recovery, attack executors, collision and formation behavior, power allocation, and incomplete result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode and transport, exact ship/fighter DAT joins, production capital/fighter/planet rendering, group controls, effects, fields, selected-capital damage, subsystem condition, exact field-source state, live subsystem damage, repair, maneuver state, physical integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, and full fighter recovery states pass implementation gates. Original view acceptance, automatic grouping, exact planet placement, exact global RNG sequencing, exact arrival callbacks and recovery trajectories, attack executors, collision and formation behavior, power allocation, and incomplete result, special-state, and audio paths remain. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
@@ -403,10 +405,10 @@ production capital-family drawing; see its
 [evidence](evidence/2026-09-14-tactical-production-participants.md). P58C adds
 source fighter detail resources and projection-aligned capital interactions;
 see its [evidence](evidence/2026-09-14-tactical-fighters-selection.md). P58F1
-through P58F10 restore system-selected planets, effects, fields,
+through P58F11 restore system-selected planets, effects, fields,
 selected-capital damage and subsystem condition, exact field-source identity,
 live subsystem mutation, repair, mobility, maneuver-state production, velocity,
 position integration, authentic command assignment, maneuver waypoints, Hold,
-and the first Recover carrier state; see the
-[P58F10 evidence](evidence/2026-09-17-tactical-order-execution.md).
+source-rate turning, waypoint completion, and full fighter recovery states; see
+the [P58F11 evidence](evidence/2026-09-18-tactical-command-progression.md).
 Original A0 comparison and all strict tactical acceptance cells remain open.
