@@ -1,0 +1,41 @@
+{
+  "verdict": "pass",
+  "confidence": "high for qualified A1 screenshot and recorded-state evidence",
+  "evidence_level": "qualified A1 implementation evidence; not A0 original-game parity",
+  "inspected_files": [
+    "contact-sheet.png",
+    "alliance/640x480/attack-targeting.png",
+    "alliance/640x480/result.json",
+    "alliance/1280x800-letterboxed/attack-targeting.png",
+    "alliance/1280x800-letterboxed/result.json",
+    "empire/640x480/attack-targeting.png",
+    "empire/640x480/result.json",
+    "empire/1280x800-letterboxed/attack-targeting.png",
+    "empire/1280x800-letterboxed/result.json",
+    "focused-summary.json",
+    "full-summary.json"
+  ],
+  "findings": {
+    "critical": [],
+    "major": [],
+    "minor": [],
+    "informational": []
+  },
+  "confirmed_claims": [
+    "Both factions retain a legible tactical bitmap cockpit at 640x480 and centered proportional framing at 1280x800.",
+    "The selected capital panel visibly reports Attack Fighters in all four retained frames.",
+    "The orange target line ends on the bracketed fighter marker in all four retained frames.",
+    "No cockpit clipping, blank panels, scaling breakage, replacement interface, or P0 or P1 visual defects are visible.",
+    "The final wrong-class target correction retained byte-identical PNGs for all four Astra-inspected frames.",
+    "Focused and complete matrices passed 4 of 4 and 88 of 88 with fresh muted launches, exactly four successful requests each, and closed browser processes."
+  ],
+  "limitations": [
+    "Screenshots establish visual endpoint alignment but cannot independently prove hostile identity or typed targeting semantics.",
+    "The review inspected retained fixture evidence rather than independently rerunning the harness.",
+    "All visual comparisons remain unbaselined. Original-game A0 parity is not proven."
+  ],
+  "required_followups": [
+    "Retain a lossless original-game comparison before any A0 parity claim.",
+    "Recover exact weapon resolution, target-loss reacquisition, collision and formation behavior, and the remaining tactical state matrix."
+  ]
+}

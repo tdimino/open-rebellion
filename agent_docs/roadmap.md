@@ -706,10 +706,16 @@ would tune around known simulation feedback defects.
   preserving strategic squadron counts. Pass the 84-case muted browser gate.
   Keep exact original arrival callbacks and recovery trajectories, attack
   executors, collision, formation, A0, and every strict tactical cell open.
+- [x] Complete P58F12 tactical attack target acquisition: connect Attack
+  Fighters and Attack Capital Ships to typed first-eligible target selection
+  for both capital and fighter owners, preserve valid live engagements, and
+  pass the 88-case muted browser gate. Keep exact weapon resolution,
+  target-loss reacquisition, collision, formation, A0, and every strict
+  tactical cell open.
 - [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
   navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F12 next recovers Attack Fighters and Attack Capital Ships
-  execution before collision and formation behavior.
+  states. P58F13 next recovers exact attack weapon-resolution callbacks and
+  target-loss behavior before collision and formation work.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

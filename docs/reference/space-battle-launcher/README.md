@@ -135,14 +135,18 @@ and closes every process. Raw runs live under ignored
 - P58F11 applies the executable-derived signed turn rate, clears reached
   waypoints, and advances fighters through Docking and Recovered while
   preserving their strategic squadron counts.
-- The complete bundle passes 84 of 84 muted browser cases across both factions
+- P58F12 restores typed Attack Fighters and Attack Capital Ships target
+  acquisition for both capital and fighter owners while preserving valid
+  engagements.
+- The complete bundle passes 88 of 88 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
 distribution, native GPU and A0 comparison, exact global RNG sequencing,
-exact original arrival callbacks and recovery trajectories, attack executors,
-collision and formation behavior, exact planet placement, power allocation, Death Star
+exact original arrival callbacks and recovery trajectories, weapon-resolution
+callbacks, target-loss reacquisition, collision and formation behavior, exact
+planet placement, power allocation, Death Star
 paths, results, audio, and return routing remain
 open. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
@@ -151,6 +155,7 @@ open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F12 tactical attack-targeting evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
 - [P58F11 tactical command-progression evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)
 - [P58F10 tactical order-execution evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md)
 - [P58F9 tactical command-assignment evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md)

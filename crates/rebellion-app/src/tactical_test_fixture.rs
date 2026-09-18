@@ -3,7 +3,7 @@
 use rebellion_core::ids::{CapitalShipKey, FighterKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::{FighterEntry, Fleet, GameWorld, ShipInstance};
-use rebellion_render::tactical_view::WeaponKind;
+use rebellion_render::tactical_view::{TacticalAttackTarget, WeaponKind};
 #[cfg(feature = "interface-test-fixtures")]
 use rebellion_render::TacticalLodView;
 use rebellion_render::{CockpitFaction, CockpitState, MessageLog, TacticalState};
@@ -34,6 +34,7 @@ const MANEUVER_MOVEMENT_PRESENTATION_SCENARIO: u32 = 18;
 const COMMAND_ASSIGNMENT_PRESENTATION_SCENARIO: u32 = 19;
 const COMMAND_EXECUTION_PRESENTATION_SCENARIO: u32 = 20;
 const COMMAND_PROGRESSION_PRESENTATION_SCENARIO: u32 = 21;
+const ATTACK_TARGETING_PRESENTATION_SCENARIO: u32 = 22;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -94,6 +95,7 @@ pub(crate) struct TacticalFixtureRequest {
     pub command_assignment_presentation: bool,
     pub command_execution_presentation: bool,
     pub command_progression_presentation: bool,
+    pub attack_targeting_presentation: bool,
     lod_fixture: TacticalLodFixture,
 }
 
@@ -293,7 +295,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | MANEUVER_MOVEMENT_PRESENTATION_SCENARIO
         | COMMAND_ASSIGNMENT_PRESENTATION_SCENARIO
         | COMMAND_EXECUTION_PRESENTATION_SCENARIO
-        | COMMAND_PROGRESSION_PRESENTATION_SCENARIO => (
+        | COMMAND_PROGRESSION_PRESENTATION_SCENARIO
+        | ATTACK_TARGETING_PRESENTATION_SCENARIO => (
             false,
             true,
             false,
@@ -331,6 +334,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         command_assignment_presentation: scenario == COMMAND_ASSIGNMENT_PRESENTATION_SCENARIO,
         command_execution_presentation: scenario == COMMAND_EXECUTION_PRESENTATION_SCENARIO,
         command_progression_presentation: scenario == COMMAND_PROGRESSION_PRESENTATION_SCENARIO,
+        attack_targeting_presentation: scenario == ATTACK_TARGETING_PRESENTATION_SCENARIO,
         lod_fixture,
     })
 }
@@ -380,7 +384,8 @@ pub(crate) fn apply(
                 && !class.is_empire
                 && class.hull > 0
                 && (!(request.command_execution_presentation
-                    || request.command_progression_presentation)
+                    || request.command_progression_presentation
+                    || request.attack_targeting_presentation)
                     || class.fighter_capacity > 0)
         })
         .map(|(key, class)| (key, class.hull))
@@ -393,7 +398,8 @@ pub(crate) fn apply(
                 && !class.is_alliance
                 && class.hull > 0
                 && (!(request.command_execution_presentation
-                    || request.command_progression_presentation)
+                    || request.command_progression_presentation
+                    || request.attack_targeting_presentation)
                     || class.fighter_capacity > 0)
         })
         .map(|(key, class)| (key, class.hull))
@@ -421,6 +427,7 @@ pub(crate) fn apply(
             || request.maneuver_movement_presentation
             || request.command_execution_presentation
             || request.command_progression_presentation
+            || request.attack_targeting_presentation
             || ((request.group_presentation || request.effect_presentation)
                 && is_alliance == player_is_alliance);
         let ship_count = if request.projectile_field_presentation
@@ -430,6 +437,7 @@ pub(crate) fn apply(
             || request.maneuver_movement_presentation
             || request.command_execution_presentation
             || request.command_progression_presentation
+            || request.attack_targeting_presentation
         {
             3
         } else if request.effect_presentation && expanded {
@@ -439,13 +447,14 @@ pub(crate) fn apply(
         } else {
             1
         };
-        let fighter_count = if request.command_progression_presentation {
-            2
-        } else if request.group_presentation && expanded {
-            4
-        } else {
-            1
-        };
+        let fighter_count =
+            if request.command_progression_presentation || request.attack_targeting_presentation {
+                2
+            } else if request.group_presentation && expanded {
+                4
+            } else {
+                1
+            };
         Fleet {
             location: system,
             capital_ships: (0..ship_count)
@@ -544,6 +553,10 @@ pub(crate) fn apply(
         tactical.configure_command_progression_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
+    if request.attack_targeting_presentation {
+        tactical.configure_attack_targeting_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if !request.production_participants {
         tactical.disable_original_participant_rendering();
     }
@@ -593,6 +606,7 @@ struct FixtureRecord<'a> {
     command_assignment_presentation: bool,
     command_execution_presentation: bool,
     command_progression_presentation: bool,
+    attack_targeting_presentation: bool,
     tactical_lod: &'a str,
     system: &'a str,
     system_picture_id: u8,
@@ -722,6 +736,18 @@ struct FixtureParticipant<'a> {
     tactic_code: u8,
     recovery_state_code: Option<u8>,
     recovery_target: Option<usize>,
+    attack_target_kind: Option<&'static str>,
+    attack_target_index: Option<usize>,
+}
+
+fn fixture_attack_target(
+    target: Option<TacticalAttackTarget>,
+) -> (Option<&'static str>, Option<usize>) {
+    match target {
+        Some(TacticalAttackTarget::CapitalShip(index)) => (Some("capital-ship"), Some(index)),
+        Some(TacticalAttackTarget::FighterGroup(index)) => (Some("fighter-group"), Some(index)),
+        None => (None, None),
+    }
 }
 
 pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalState) {
@@ -732,6 +758,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
     let layout = session.source_layout;
     let mut participants = Vec::with_capacity(session.ships.len() + session.fighters.len());
     participants.extend(session.ships.iter().map(|ship| {
+        let (attack_target_kind, attack_target_index) = fixture_attack_target(ship.attack_target);
         let tactical_ordinal = ship
             .tactical_resource
             .map(|resource| resource.tactical_ordinal)
@@ -792,9 +819,13 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             tactic_code: ship.tactic.source_code(),
             recovery_state_code: None,
             recovery_target: None,
+            attack_target_kind,
+            attack_target_index,
         }
     }));
     participants.extend(session.fighters.iter().map(|fighter| {
+        let (attack_target_kind, attack_target_index) =
+            fixture_attack_target(fighter.attack_target);
         let player_side = fighter.is_attacker == session.player_is_attacker;
         FixtureParticipant {
             kind: "fighter-group",
@@ -848,6 +879,8 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             tactic_code: fighter.tactic.source_code(),
             recovery_state_code: Some(fighter.recovery_state.source_code()),
             recovery_target: fighter.recovery_target,
+            attack_target_kind,
+            attack_target_index,
         }
     }));
     let effects = session
@@ -970,7 +1003,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         })
     });
     emit(&FixtureRecord {
-        schema_version: 20,
+        schema_version: 21,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -994,6 +1027,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         command_assignment_presentation: request.command_assignment_presentation,
         command_execution_presentation: request.command_execution_presentation,
         command_progression_presentation: request.command_progression_presentation,
+        attack_targeting_presentation: request.attack_targeting_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
@@ -1027,7 +1061,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 20,
+        schema_version: 21,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1051,6 +1085,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         command_assignment_presentation: request.command_assignment_presentation,
         command_execution_presentation: request.command_execution_presentation,
         command_progression_presentation: request.command_progression_presentation,
+        attack_targeting_presentation: request.attack_targeting_presentation,
         tactical_lod: request.lod_fixture.label(),
         system: "",
         system_picture_id: 0,
@@ -1107,6 +1142,7 @@ mod tests {
         assert!(decode(0x10113).unwrap().command_assignment_presentation);
         assert!(decode(0x10114).unwrap().command_execution_presentation);
         assert!(decode(0x10115).unwrap().command_progression_presentation);
+        assert!(decode(0x10116).unwrap().attack_targeting_presentation);
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -1128,7 +1164,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10116).is_none());
+        assert!(decode(0x10117).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

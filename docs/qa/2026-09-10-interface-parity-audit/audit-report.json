@@ -62,11 +62,11 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_original_shell_first_controls_complete_tactical_corpus_transport_exact_dat_resource_joins_live_production_capital_source_fighter_detail_system_selected_planet_effects_fields_selected_capital_damage_subsystem_condition_exact_field_source_live_subsystem_damage_repair_mobility_maneuver_state_velocity_position_integration_authentic_command_assignment_source_rate_turn_waypoint_completion_and_full_fighter_recovery_states_pass_implementation_gates_automatic_grouping_exact_planet_placement_exact_global_rng_sequence_exact_arrival_callbacks_recovery_trajectories_attack_collision_formation_power_allocation_special_objects_original_view_and_all_106_cells_open",
+    "tactical_interface": "fail_original_shell_first_controls_complete_tactical_corpus_transport_exact_dat_resource_joins_live_production_capital_source_fighter_detail_system_selected_planet_effects_fields_selected_capital_damage_subsystem_condition_exact_field_source_live_subsystem_damage_repair_mobility_maneuver_state_velocity_position_integration_authentic_command_assignment_source_rate_turn_waypoint_completion_full_fighter_recovery_and_typed_attack_target_acquisition_pass_implementation_gates_automatic_grouping_exact_planet_placement_exact_global_rng_sequence_exact_arrival_callbacks_recovery_trajectories_weapon_resolution_target_loss_collision_formation_power_allocation_special_objects_original_view_and_all_106_cells_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
-    "space_battle_launcher_practical_progress": "approximately_86_percent_planning_estimate_0_of_106_strict_cells_accepted",
+    "space_battle_launcher_practical_progress": "approximately_87_percent_planning_estimate_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
   },
@@ -163,7 +163,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live capital, fighter, planet, group, effects, fields, selected-capital damage, subsystem condition, exact field-source presentation, live subsystem damage, repair, mobility, maneuver state, velocity, position integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, and full fighter recovery states pass implementation gates, but automatic grouping, exact planet placement, exact global RNG sequencing, exact arrival callbacks and recovery trajectories, attack executors, collision and formation behavior, power allocation, special objects, original view acceptance, replacement battle content, and incomplete result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live capital, fighter, planet, group, effects, fields, selected-capital damage, subsystem condition, exact field-source presentation, live subsystem damage, repair, mobility, maneuver state, velocity, position integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, full fighter recovery, and typed attack target acquisition pass implementation gates, but automatic grouping, exact planet placement, exact global RNG sequencing, exact arrival callbacks and recovery trajectories, weapon resolution, target-loss reacquisition, collision and formation behavior, power allocation, special objects, original view acceptance, replacement battle content, and incomplete result, special-state, and audio paths keep the tactical interface failing",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -196,7 +196,8 @@
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-16-tactical-maneuver-movement.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md",
-      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -315,5 +316,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Continue P58F12 by recovering Attack Fighters and Attack Capital Ships execution, then collision and formation behavior. Keep exact global RNG sequencing, exact planet placement, Death Star execution, original arrival and recovery comparison, and all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
+  "next_action": "Continue P58F13 by recovering exact attack weapon-resolution callbacks and target-loss behavior, then collision and formation behavior. Keep exact global RNG sequencing, exact planet placement, Death Star execution, original arrival and recovery comparison, and all 106 tactical acceptance cells open until their complete A0 evidence matrices pass."
 }

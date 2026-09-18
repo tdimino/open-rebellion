@@ -251,6 +251,20 @@
       "acceptance": "A1 executable turn-rate, signed XZ rotation, normalization, snap, 2.0-unit recovery gate, docking callback, and strategic-count preservation proof. Exact original target-arrival callback, collision response, attack executors, Death Star execution, and native A0 comparison remain open."
     },
     {
+      "slug": "production-attack-targeting-presentation",
+      "description": "Recovered Attack Capital Ships and Attack Fighters target acquisition for capital-ship and fighter-group owners",
+      "fixture_codes": {
+        "alliance": 65814,
+        "empire": 66070
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "attack_targeting_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable order-code, typed first-eligible target, live-engagement retention, and no-wrong-class fallback proof. Exact weapon-resolution callbacks, target-loss reacquisition, and native A0 comparison remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

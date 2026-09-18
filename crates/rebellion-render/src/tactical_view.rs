@@ -381,6 +381,15 @@ pub enum TacticalOrder {
     HoldPosition,
 }
 
+/// Target identity retained by the original tactical attack-order executors.
+/// Capital ships and fighter groups share one source object list, while the
+/// reconstruction keeps their typed Rust collections separate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TacticalAttackTarget {
+    CapitalShip(usize),
+    FighterGroup(usize),
+}
+
 impl TacticalOrder {
     /// Exact numeric value consumed by the original tactical runtime.
     #[must_use]
@@ -557,8 +566,8 @@ pub struct TacticalShip {
     pub ion_cannon_power: i32,
     /// Total laser cannon firepower (sum of all arcs).
     pub laser_cannon_power: i32,
-    /// Focus-fire target: index in `ships` that this ship prioritizes.
-    pub focus_target: Option<usize>,
+    /// Active target selected by a source attack-order executor or focus input.
+    pub attack_target: Option<TacticalAttackTarget>,
     /// True if this ship is retreating (moving off-screen).
     pub retreating: bool,
     /// Retreat progress: 0.0 = just started, 1.0 = off-screen (removed from combat).
@@ -852,6 +861,8 @@ pub struct TacticalFighter {
     pub order: TacticalOrder,
     /// Source Surround or Stand Off behavior assigned with a maneuver.
     pub tactic: TacticalTactic,
+    /// Active target selected by a source attack-order executor.
+    pub attack_target: Option<TacticalAttackTarget>,
     /// Current `FUN_005cf980` recovery executor state.
     pub recovery_state: TacticalFighterRecoveryState,
     /// Capital-ship index reserved as this squadron's recovery carrier.
@@ -1966,7 +1977,7 @@ impl BattleSession {
                 turbolaser_power: turbolaser_total,
                 ion_cannon_power: ion_cannon_total,
                 laser_cannon_power: laser_cannon_total,
-                focus_target: None,
+                attack_target: None,
                 retreating: false,
                 retreat_progress: 0.0,
                 retreated: false,
@@ -1998,6 +2009,7 @@ impl BattleSession {
                 selected: false,
                 order: TacticalOrder::None,
                 tactic: TacticalTactic::StandOff,
+                attack_target: None,
                 recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
                 recovery_target: None,
             });
@@ -2371,7 +2383,9 @@ impl BattleSession {
             }
 
             // Focus-fire: if this ship has a valid focus target, prefer it.
-            let target_idx = if let Some(ft) = ships[fire_idx].focus_target {
+            let target_idx = if let Some(TacticalAttackTarget::CapitalShip(ft)) =
+                ships[fire_idx].attack_target
+            {
                 if ft < ships.len() && ships[ft].alive && targets.contains(&ft) {
                     ft
                 } else {
@@ -2379,6 +2393,15 @@ impl BattleSession {
                     targets[((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7))
                         % targets.len()]
                 }
+            } else if matches!(
+                ships[fire_idx].attack_target,
+                Some(TacticalAttackTarget::FighterGroup(_))
+            ) {
+                // The recovered Attack Fighters executor acquires a typed
+                // fighter target. Its weapon-resolution callback remains a
+                // separate source-recovery gate, so do not redirect the shot
+                // to an unrelated capital ship.
+                continue;
             } else {
                 // No focus target — pseudo-random.
                 targets
@@ -2998,6 +3021,87 @@ impl TacticalState {
             self.command_panel = TacticalCommandPanel::Display;
             let object_id = u32::try_from(turning).unwrap_or(u32::MAX).saturating_add(1);
             (object_id, session.ships[turning].source_position.rendered())
+        };
+        self.asset_renderer.focus_target(focus.0, focus.1);
+    }
+
+    /// Exercise both recovered automatic attack-target executors with capital
+    /// and fighter owners. Production play reaches these states by committing
+    /// the authentic Missions-panel controls.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_attack_targeting_fixture(&mut self) {
+        let focus = {
+            let Some(session) = self.session.as_mut() else {
+                return;
+            };
+            let player_ships = session
+                .ships
+                .iter()
+                .enumerate()
+                .filter(|(_, ship)| ship.alive && ship.is_attacker == session.player_is_attacker)
+                .map(|(index, _)| index)
+                .take(2)
+                .collect::<Vec<_>>();
+            let player_fighters = session
+                .fighters
+                .iter()
+                .enumerate()
+                .filter(|(_, fighter)| {
+                    fighter.alive && fighter.is_attacker == session.player_is_attacker
+                })
+                .map(|(index, _)| index)
+                .take(2)
+                .collect::<Vec<_>>();
+            if player_ships.len() < 2 || player_fighters.len() < 2 {
+                return;
+            }
+            for ship in &mut session.ships {
+                ship.selected = false;
+                ship.attack_target = None;
+            }
+            for fighter in &mut session.fighters {
+                fighter.selected = false;
+                fighter.attack_target = None;
+            }
+            session.fighters[player_fighters[0]].fighter_group = 0;
+            session.fighters[player_fighters[1]].fighter_group = 1;
+
+            session.ships[player_ships[0]].selected = true;
+            session.selected_ship = Some(player_ships[0]);
+            session.selected_fighter_group = None;
+            assign_selected_command(session, TacticalOrder::AttackCapitalShips, None);
+
+            session.ships[player_ships[0]].selected = false;
+            session.ships[player_ships[1]].selected = true;
+            session.selected_ship = Some(player_ships[1]);
+            assign_selected_command(session, TacticalOrder::AttackFighters, None);
+
+            session.ships[player_ships[1]].selected = false;
+            session.fighters[player_fighters[0]].selected = true;
+            session.selected_ship = None;
+            session.selected_fighter_group = Some(0);
+            assign_selected_command(session, TacticalOrder::AttackCapitalShips, None);
+
+            session.fighters[player_fighters[0]].selected = false;
+            session.fighters[player_fighters[1]].selected = true;
+            session.selected_fighter_group = Some(1);
+            assign_selected_command(session, TacticalOrder::AttackFighters, None);
+
+            session.fighters[player_fighters[1]].selected = false;
+            session.ships[player_ships[1]].selected = true;
+            session.selected_ship = Some(player_ships[1]);
+            session.selected_fighter_group = None;
+            session.paused = true;
+            self.command_panel = TacticalCommandPanel::Display;
+
+            let selected = player_ships[1];
+            let object_id = u32::try_from(selected)
+                .unwrap_or(u32::MAX)
+                .saturating_add(1);
+            (
+                object_id,
+                session.ships[selected].source_position.rendered(),
+            )
         };
         self.asset_renderer.focus_target(focus.0, focus.1);
     }
@@ -4129,6 +4233,100 @@ fn begin_original_capital_order(
     }
 }
 
+fn tactical_attack_target_is_eligible(
+    session: &BattleSession,
+    source_is_attacker: bool,
+    target: TacticalAttackTarget,
+    order: TacticalOrder,
+) -> bool {
+    match (order, target) {
+        (TacticalOrder::AttackCapitalShips, TacticalAttackTarget::CapitalShip(index)) => {
+            session.ships.get(index).is_some_and(|ship| {
+                ship.alive && !ship.retreating && ship.is_attacker != source_is_attacker
+            })
+        }
+        (TacticalOrder::AttackFighters, TacticalAttackTarget::FighterGroup(index)) => {
+            session.fighters.get(index).is_some_and(|fighter| {
+                fighter.alive
+                    && fighter.squad_count > 0
+                    && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+                    && fighter.is_attacker != source_is_attacker
+            })
+        }
+        _ => false,
+    }
+}
+
+fn first_original_attack_target(
+    session: &BattleSession,
+    source_is_attacker: bool,
+    order: TacticalOrder,
+) -> Option<TacticalAttackTarget> {
+    match order {
+        TacticalOrder::AttackCapitalShips => session
+            .ships
+            .iter()
+            .enumerate()
+            .find(|(_, ship)| {
+                ship.alive && !ship.retreating && ship.is_attacker != source_is_attacker
+            })
+            .map(|(index, _)| TacticalAttackTarget::CapitalShip(index)),
+        TacticalOrder::AttackFighters => session
+            .fighters
+            .iter()
+            .enumerate()
+            .find(|(_, fighter)| {
+                fighter.alive
+                    && fighter.squad_count > 0
+                    && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+                    && fighter.is_attacker != source_is_attacker
+            })
+            .map(|(index, _)| TacticalAttackTarget::FighterGroup(index)),
+        _ => None,
+    }
+}
+
+/// Run the target-acquisition half of `FUN_005d0b10` and `FUN_005d0bb0`.
+/// Both source executors traverse one stable tactical-object list, filter it
+/// by the vtable type code (capital 0, fighter 1), accept the first eligible
+/// hostile object, mark the executor active, and dispatch event `0x36`.
+fn begin_original_attack_order(
+    session: &mut BattleSession,
+    selected_capitals: &[usize],
+    selected_fighters: &[usize],
+    order: TacticalOrder,
+) {
+    if !matches!(
+        order,
+        TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+    ) {
+        return;
+    }
+
+    for &index in selected_capitals {
+        let source_is_attacker = session.ships[index].is_attacker;
+        let current = session.ships[index].attack_target;
+        if current.is_some_and(|target| {
+            tactical_attack_target_is_eligible(session, source_is_attacker, target, order)
+        }) {
+            continue;
+        }
+        let target = first_original_attack_target(session, source_is_attacker, order);
+        session.ships[index].attack_target = target;
+    }
+    for &index in selected_fighters {
+        let source_is_attacker = session.fighters[index].is_attacker;
+        let current = session.fighters[index].attack_target;
+        if current.is_some_and(|target| {
+            tactical_attack_target_is_eligible(session, source_is_attacker, target, order)
+        }) {
+            continue;
+        }
+        let target = first_original_attack_target(session, source_is_attacker, order);
+        session.fighters[index].attack_target = target;
+    }
+}
+
 fn begin_original_fighter_recovery(session: &mut BattleSession, selected: &[usize]) {
     let mut carrier_slots = session
         .ships
@@ -4214,6 +4412,7 @@ fn assign_selected_command(
         }
     }
     begin_original_capital_order(session, &selected_capitals, order);
+    begin_original_attack_order(session, &selected_capitals, &selected_fighters, order);
     if order == TacticalOrder::Recover {
         begin_original_fighter_recovery(session, &selected_fighters);
     }
@@ -5581,7 +5780,7 @@ pub fn draw_tactical_view(
         );
 
         // Focus-fire reticle: draw targeting brackets if this ship is being targeted.
-        if ship.focus_target.is_some() && ship.is_attacker == player_is_attacker {
+        if ship.attack_target.is_some() && ship.is_attacker == player_is_attacker {
             // Small arrow/marker near ship indicating it has orders.
             draw_circle_lines(sx, sy, half + 4.0, 1.5, Color::new(1.0, 0.6, 0.0, 0.6));
         }
@@ -5725,59 +5924,127 @@ pub fn draw_tactical_view(
         }
     }
 
-    // 6b. Draw targeting lines from player ships to their focus targets.
+    // 6b. Draw targeting lines for both typed source attack targets.
     if phase == BattlePhase::Combat {
         for (ship_index, ship) in session.ships.iter().enumerate() {
-            if !ship.alive || !ship.selected {
+            if !ship.alive || !ship.selected || ship.is_attacker != player_is_attacker {
                 continue;
             }
-            if ship.is_attacker != player_is_attacker {
-                continue;
-            }
-            if let Some(ft_idx) = ship.focus_target {
-                if let Some(target) = session.ships.get(ft_idx) {
-                    if target.alive {
-                        let source = tactical_ship_screen_position(
-                            ship_index,
-                            ship,
-                            &ship_projections,
-                            scale,
-                            offset_x,
-                            offset_y,
-                        );
-                        let target = tactical_ship_screen_position(
-                            ft_idx,
-                            target,
-                            &ship_projections,
-                            scale,
-                            offset_x,
-                            offset_y,
-                        );
-                        // Dashed targeting line.
-                        draw_line(
-                            source.x,
-                            source.y,
-                            target.x,
-                            target.y,
-                            1.0,
-                            Color::new(1.0, 0.5, 0.0, 0.4),
-                        );
-                        // Target reticle on enemy.
-                        let r = ship_projections.get(&ft_idx).map_or(
-                            DEFAULT_SHIP_SIZE * scale * 0.4,
-                            |projection| {
-                                (projection.max - projection.min).max_element() * 0.6 + 3.0
-                            },
-                        );
-                        draw_circle_lines(
-                            target.x,
-                            target.y,
-                            r,
-                            1.5,
-                            Color::new(1.0, 0.3, 0.0, 0.7),
-                        );
+            let source = tactical_ship_screen_position(
+                ship_index,
+                ship,
+                &ship_projections,
+                scale,
+                offset_x,
+                offset_y,
+            );
+            match ship.attack_target {
+                Some(TacticalAttackTarget::CapitalShip(target_index)) => {
+                    let Some(target_ship) = session.ships.get(target_index) else {
+                        continue;
+                    };
+                    if !target_ship.alive {
+                        continue;
                     }
+                    let target = tactical_ship_screen_position(
+                        target_index,
+                        target_ship,
+                        &ship_projections,
+                        scale,
+                        offset_x,
+                        offset_y,
+                    );
+                    let radius = ship_projections
+                        .get(&target_index)
+                        .map_or(DEFAULT_SHIP_SIZE * scale * 0.4, |projection| {
+                            (projection.max - projection.min).max_element() * 0.6 + 3.0
+                        });
+                    draw_tactical_attack_target(source, target, radius);
                 }
+                Some(TacticalAttackTarget::FighterGroup(target_index)) => {
+                    let Some(target_fighter) = session.fighters.get(target_index) else {
+                        continue;
+                    };
+                    if !target_fighter.alive {
+                        continue;
+                    }
+                    let target = tactical_fighter_screen_position(
+                        target_index,
+                        target_fighter,
+                        &fighter_projections,
+                        scale,
+                        offset_x,
+                        offset_y,
+                    );
+                    let radius = fighter_projections
+                        .get(&target_index)
+                        .map_or(FIGHTER_SIZE * scale * 0.75, |projection| {
+                            (projection.max - projection.min).max_element() * 0.6 + 3.0
+                        });
+                    draw_tactical_attack_target(source, target, radius);
+                }
+                None => {}
+            }
+        }
+
+        for (fighter_index, fighter) in session.fighters.iter().enumerate() {
+            if !fighter.alive || !fighter.selected || fighter.is_attacker != player_is_attacker {
+                continue;
+            }
+            let source = tactical_fighter_screen_position(
+                fighter_index,
+                fighter,
+                &fighter_projections,
+                scale,
+                offset_x,
+                offset_y,
+            );
+            match fighter.attack_target {
+                Some(TacticalAttackTarget::CapitalShip(target_index)) => {
+                    let Some(target_ship) = session.ships.get(target_index) else {
+                        continue;
+                    };
+                    if !target_ship.alive {
+                        continue;
+                    }
+                    let target = tactical_ship_screen_position(
+                        target_index,
+                        target_ship,
+                        &ship_projections,
+                        scale,
+                        offset_x,
+                        offset_y,
+                    );
+                    let radius = ship_projections
+                        .get(&target_index)
+                        .map_or(DEFAULT_SHIP_SIZE * scale * 0.4, |projection| {
+                            (projection.max - projection.min).max_element() * 0.6 + 3.0
+                        });
+                    draw_tactical_attack_target(source, target, radius);
+                }
+                Some(TacticalAttackTarget::FighterGroup(target_index)) => {
+                    let Some(target_fighter) = session.fighters.get(target_index) else {
+                        continue;
+                    };
+                    if !target_fighter.alive {
+                        continue;
+                    }
+                    let target = tactical_fighter_screen_position(
+                        target_index,
+                        target_fighter,
+                        &fighter_projections,
+                        scale,
+                        offset_x,
+                        offset_y,
+                    );
+                    let radius = fighter_projections
+                        .get(&target_index)
+                        .map_or(FIGHTER_SIZE * scale * 0.75, |projection| {
+                            (projection.max - projection.min).max_element() * 0.6 + 3.0
+                        });
+                    draw_tactical_attack_target(source, target, radius);
+                }
+                None => {}
             }
         }
     }
@@ -6204,6 +6471,42 @@ fn tactical_ship_screen_position(
     )
 }
 
+fn tactical_fighter_screen_position(
+    fighter_index: usize,
+    fighter: &TacticalFighter,
+    projections: &HashMap<usize, TacticalScreenProjection>,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+) -> macroquad::math::Vec2 {
+    projections.get(&fighter_index).map_or_else(
+        || macroquad::math::Vec2::new(offset_x + fighter.x * scale, offset_y + fighter.y * scale),
+        |projection| projection.center,
+    )
+}
+
+fn draw_tactical_attack_target(
+    source: macroquad::math::Vec2,
+    target: macroquad::math::Vec2,
+    radius: f32,
+) {
+    draw_line(
+        source.x,
+        source.y,
+        target.x,
+        target.y,
+        1.0,
+        Color::new(1.0, 0.5, 0.0, 0.4),
+    );
+    draw_circle_lines(
+        target.x,
+        target.y,
+        radius,
+        1.5,
+        Color::new(1.0, 0.3, 0.0, 0.7),
+    );
+}
+
 fn draw_projected_selection_frame(projection: TacticalScreenProjection, canvas_scale: f32) {
     let padding = 3.0 * canvas_scale;
     let minimum_size = 10.0 * canvas_scale;
@@ -6331,11 +6634,13 @@ fn handle_combat_input(
             let mut assigned = Vec::new();
             for ship in &mut session.ships {
                 if ship.selected && ship.is_attacker == session.player_is_attacker && ship.alive {
-                    ship.focus_target = Some(target_idx);
+                    ship.attack_target = Some(TacticalAttackTarget::CapitalShip(target_idx));
                 }
             }
             for (index, ship) in session.ships.iter().enumerate() {
-                if ship.selected && ship.focus_target == Some(target_idx) {
+                if ship.selected
+                    && ship.attack_target == Some(TacticalAttackTarget::CapitalShip(target_idx))
+                {
                     assigned.push(index + 1);
                 }
             }
@@ -6356,7 +6661,7 @@ fn handle_combat_input(
             // Right-clicked empty space — clear focus targets for selected ships.
             for ship in &mut session.ships {
                 if ship.selected && ship.is_attacker == session.player_is_attacker {
-                    ship.focus_target = None;
+                    ship.attack_target = None;
                 }
             }
         }
@@ -6570,7 +6875,7 @@ mod tests {
             turbolaser_power: 0,
             ion_cannon_power: 0,
             laser_cannon_power: 0,
-            focus_target: None,
+            attack_target: None,
             retreating: false,
             retreat_progress: 0.0,
             retreated: false,
@@ -6599,6 +6904,7 @@ mod tests {
             selected: false,
             order: TacticalOrder::None,
             tactic: TacticalTactic::StandOff,
+            attack_target: None,
             recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
             recovery_target: None,
         }
@@ -7292,6 +7598,81 @@ mod tests {
             TacticalFighterRecoveryState::Returning
         );
         assert_eq!(session.fighters[0].recovery_target, Some(0));
+    }
+
+    #[test]
+    fn attack_orders_acquire_first_eligible_typed_target_for_both_unit_classes() {
+        let mut player_ship = test_ship(64, 0, true, true);
+        player_ship.selected = true;
+        let dead_enemy_ship = test_ship(128, 0, false, false);
+        let live_enemy_ship = test_ship(129, 1, false, true);
+
+        let mut player_fighter = test_fighter(1, true);
+        player_fighter.fighter_group = 0;
+        let mut recovered_enemy_fighter = test_fighter(5, false);
+        recovered_enemy_fighter.recovery_state = TacticalFighterRecoveryState::Recovered;
+        let live_enemy_fighter = test_fighter(6, false);
+        let mut session = test_session(
+            vec![player_ship, dead_enemy_ship, live_enemy_ship],
+            vec![player_fighter, recovered_enemy_fighter, live_enemy_fighter],
+            true,
+        );
+        session.selected_ship = Some(0);
+
+        assert_eq!(
+            assign_selected_command(&mut session, TacticalOrder::AttackCapitalShips, None,),
+            (1, 0)
+        );
+        assert_eq!(
+            session.ships[0].attack_target,
+            Some(TacticalAttackTarget::CapitalShip(2))
+        );
+
+        assert_eq!(
+            assign_selected_command(&mut session, TacticalOrder::AttackFighters, None),
+            (1, 0)
+        );
+        assert_eq!(
+            session.ships[0].attack_target,
+            Some(TacticalAttackTarget::FighterGroup(2))
+        );
+
+        session.ships[0].selected = false;
+        session.selected_ship = None;
+        session.fighters[0].selected = true;
+        session.selected_fighter_group = Some(0);
+        assert_eq!(
+            assign_selected_command(&mut session, TacticalOrder::AttackFighters, None),
+            (0, 1)
+        );
+        assert_eq!(
+            session.fighters[0].attack_target,
+            Some(TacticalAttackTarget::FighterGroup(2))
+        );
+    }
+
+    #[test]
+    fn attack_executor_preserves_live_engagement_and_replaces_invalid_target() {
+        let mut player = test_ship(64, 0, true, true);
+        player.selected = true;
+        player.attack_target = Some(TacticalAttackTarget::CapitalShip(2));
+        let first_enemy = test_ship(128, 0, false, true);
+        let second_enemy = test_ship(129, 1, false, true);
+        let mut session = test_session(vec![player, first_enemy, second_enemy], Vec::new(), true);
+        session.selected_ship = Some(0);
+
+        assign_selected_command(&mut session, TacticalOrder::AttackCapitalShips, None);
+        assert_eq!(
+            session.ships[0].attack_target,
+            Some(TacticalAttackTarget::CapitalShip(2))
+        );
+
+        session.ships[2].alive = false;
+        assign_selected_command(&mut session, TacticalOrder::AttackCapitalShips, None);
+        assert_eq!(
+            session.ships[0].attack_target,
+            Some(TacticalAttackTarget::CapitalShip(1))
+        );
     }
 
     #[test]
