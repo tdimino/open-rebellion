@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "feature": "P58F13",
+  "reviewer": "independent browser-use reviewer",
+  "scope": "browser evidence only",
+  "verdict": "A1 PASS",
+  "coverage": {
+    "factions": ["alliance", "empire"],
+    "viewports": ["640x480", "1280x800-letterboxed"],
+    "cases_passed": 4,
+    "cases_total": 4
+  },
+  "visual_findings": {
+    "bitmap_hud": "intact in all four frames",
+    "scenes": "nonblank planets, starfields, participants, and tactical indicators",
+    "selection": "Attack Fighters visible in all four frames",
+    "replacement_target_lines": "visible in all four frames and corroborated by result records"
+  },
+  "record_findings": {
+    "muted": "4 of 4",
+    "four_request_startups": "4 of 4",
+    "stable_two_frame_hashes": "4 of 4",
+    "console_or_page_errors": 0,
+    "browser_processes_closed": "4 of 4",
+    "same_class_replacements": true,
+    "alliance_indices": "capital 3 to 4; fighter 2 to 3",
+    "empire_indices": "capital 0 to 1; fighter 0 to 1"
+  },
+  "limitations": [
+    "All four comparisons are unbaselined.",
+    "No lossless original A0 reference is available.",
+    "No source code was reviewed by the browser-use reviewer."
+  ]
+}

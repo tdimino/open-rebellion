@@ -20,7 +20,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 87% |
+| Practical space-battle launcher implementation | approximately 88% |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
@@ -67,7 +67,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [Reference ledger](reference-ledger.json) | Source URLs, provenance, confidence, locale, local paths, and coverage. |
 | [Reverse-engineering ledger](reverse-engineering-ledger.md) | Ghidra and original-resource findings, proof boundaries, and the implementation evidence queue. |
 | [Reverse-engineering data](reverse-engineering-ledger.json) | Machine-readable artifacts, discoveries, resource omissions, and work-package status. |
-| [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md) | Durable canvas, aperture, shared-transform, test, artifact-hash, and Astra acceptance record. |
+| [P46A strategic shell evidence](evidence/2026-09-11-strategic-shell-canvas.md) | Durable canvas, aperture, shared-transform, test, artifact-hash, and browser acceptance record. |
 | [P46B strategic-control evidence](evidence/2026-09-11-strategic-command-controls.md) | Recovered six-control geometry, bitmap pairs, input masks, command mapping, tests, and browser acceptance. |
 | [PR #11 cockpit-routing correction](evidence/2026-09-14-cockpit-routing-correction.md) | Corrected `0x131` through `0x133` identities, F1/F7 routing, GID open/close behavior, and fail-closed original destinations. |
 | [UIP-B01 strategic-navigation evidence](evidence/2026-09-11-strategic-window-navigation.md) | First-pass sector and system shells, tab resources, modeless lifecycle, rail routing, and browser evidence. |
@@ -109,6 +109,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58F10 tactical order-execution evidence](evidence/2026-09-17-tactical-order-execution.md) | Recovered maneuver waypoints, Hold stop behavior, Recover carrier reservation and Returning state, 80-case muted browser gate, and explicit completion/A0 limits. |
 | [P58F11 tactical command-progression evidence](evidence/2026-09-18-tactical-command-progression.md) | Source-rate turning, maneuver arrival, full fighter recovery states, preserved squadron count, 84-case muted browser gate, and explicit A0 limits. |
 | [P58F12 tactical attack-targeting evidence](evidence/2026-09-18-tactical-attack-targeting.md) | Typed Attack Fighters and Attack Capital Ships acquisition for capital and fighter owners, visible target endpoints, 88-case muted browser gate, and explicit A0 limits. |
+| [P58F13 tactical attack-target lifecycle evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md) | Same-class target invalidation and replacement for capital and fighter owners, visible target endpoints, 92-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -269,9 +270,11 @@ source-rate signed turning, deterministic waypoint completion, and the Docking
 and Recovered fighter states while preserving strategic squadron counts.
 P58F12 restores typed Attack Fighters and Attack Capital Ships target
 acquisition across capital and fighter owners while preserving valid live
-engagements. Automatic production grouping, exact planet placement, exact
+engagements. P58F13 adds live target invalidation, stable same-class
+replacement, and exhausted-list clearing without random or cross-class
+fallback. Automatic production grouping, exact planet placement, exact
 global RNG sequencing, exact arrival callbacks and recovery trajectories,
-weapon-resolution callbacks, target-loss reacquisition, collision and formation
+the arc, range, weapon, projectile, and recharge callbacks, collision and formation
 behavior, power allocation, results, A0 comparison, and every tactical cell
 remain open.
 Runtime pack v3 now

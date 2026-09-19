@@ -174,10 +174,10 @@ Campaign results: VICTORY at tick 1188, 211 battles, eval score 0.59
 
 ### Remaining UI — HD Visual Polish (IN PROGRESS)
 
-- [x] Reconstruct the browser's original 640x480 shuttle-cockpit composition, exact pointer regions, visible settings, direct faction start, and single-loop menu music. Astra-medium R3 passed 11/11 after finding two R2 defects ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-cockpit.md)).
-- [x] Complete the cockpit endpoints and lifecycle: Credits, explicit M4 multiplayer status, gain/mute, return-to-menu, clean second-campaign reset, exact `MDATA.300` menu cue, and original `COMMON.DLL` button sounds. All 500 tests pass; Astra-medium completion evidence is recorded in [F-016C](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-completion.md). Native interactive visual acceptance and semantic canvas accessibility remain release-hardening work.
-- [x] Expose all 14 authentic controls through clipped browser semantics while preserving the bitmap-only presentation, exact Rust action/SFX paths, and four-request startup. All 502 tests pass; Astra-medium verified 84/84 focus transitions and all browser gates in [F-016D](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-semantics.md). The then-open native visual gate closes in F-016E below.
-- [x] Complete F-016E and P03: add a clearly documented, non-original 30×22 music-only cockpit control using Fable-reviewed Jiff Gorda/SWG Project Thorn cues; preserve SFX while muted; complete native visual acceptance; and pass Astra-medium 10/10 across four viewports, exact hit geometry, semantics, audio, navigation, and error gates. All 504 tests pass ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-music-toggle.md)).
+- [x] Reconstruct the browser's original 640x480 shuttle-cockpit composition, exact pointer regions, visible settings, direct faction start, and single-loop menu music. Browser review R3 passed 11/11 after finding two R2 defects ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-cockpit.md)).
+- [x] Complete the cockpit endpoints and lifecycle: Credits, explicit M4 multiplayer status, gain/mute, return-to-menu, clean second-campaign reset, exact `MDATA.300` menu cue, and original `COMMON.DLL` button sounds. All 500 tests pass; completion evidence is recorded in [F-016C](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-completion.md). Native interactive visual acceptance and semantic canvas accessibility remain release-hardening work.
+- [x] Expose all 14 authentic controls through clipped browser semantics while preserving the bitmap-only presentation, exact Rust action/SFX paths, and four-request startup. All 502 tests pass; independent review verified 84/84 focus transitions and all browser gates in [F-016D](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-semantics.md). The then-open native visual gate closes in F-016E below.
+- [x] Complete F-016E and P03: add a clearly documented, non-original 30×22 music-only cockpit control using Fable-reviewed Jiff Gorda/SWG Project Thorn cues; preserve SFX while muted; complete native visual acceptance; and pass 10/10 browser checks across four viewports, exact hit geometry, semantics, audio, navigation, and error gates. All 504 tests pass ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-music-toggle.md)).
 
 The April 2026 model shootout remains comparison evidence, but its universal
 UltraSharp conclusion is superseded by the
@@ -382,22 +382,22 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
 
 ### M0: Truth and Critical Integration — 1 week
 
-- [x] Wire Save, Load, Delete, and the main-menu save picker; Astra-medium r2 passed the 33/33 browser deletion/reload gate after exposing and fixing empty-slot Load activation ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-save-delete.md)).
+- [x] Wire Save, Load, Delete, and the main-menu save picker; browser review r2 passed the 33/33 deletion/reload gate after exposing and fixing empty-slot Load activation ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-save-delete.md)).
 - [ ] Surface browser corruption/quota errors and move production saves to asynchronous IndexedDB.
-- [x] Correct the native HD root, prefetch `TROOPSD.DAT`, and package all 52 game-data entries plus 2,231 BMPs in deterministic `runtime.orpk` (`F-014A`; [Astra evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-runtime-pack.md)).
-- [x] Map all 38 fighter/capital-ship records to authentic GOKRES fleet miniatures and pass Astra-medium bitmap/interaction proof (`4589d2e`; F-010B).
-- [x] Add the F-011A versioned canonical save-state fingerprint, v9 integrity verification, v8 compatibility, and lossless browser metadata; Astra-medium r3 passed all 34 save/reload/load and bitmap assertions ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-state-fingerprints.md)).
-- [x] Add the F-011B1 v10 continuation envelope for simulation RNG, second AI, repair, combat cooldowns, and active configuration; preserve real v9 artifacts and pass the Astra-medium 40/40 browser continuation gate ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-state-continuation.md)).
-- [x] Resolve the original cockpit command-to-animation table from Ghidra and screenshot evidence, implement it without inferred sequential mappings, and pass the Astra-medium browser bitmap/hotspot/audio tranche ([reference](main-menu-parity.md); [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-cockpit.md)).
-- [x] Persist the original cockpit's faction, difficulty, galaxy size, and game type through save v11. All 495 workspace tests passed and Astra-medium R2 passed 18/18 browser state, bitmap, storage, network, and error gates. The selection path is closed; the source review later reopened victory resolution semantics ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-game-setup-propagation.md)).
+- [x] Correct the native HD root, prefetch `TROOPSD.DAT`, and package all 52 game-data entries plus 2,231 BMPs in deterministic `runtime.orpk` (`F-014A`; [browser evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-runtime-pack.md)).
+- [x] Map all 38 fighter/capital-ship records to authentic GOKRES fleet miniatures and pass independent bitmap/interaction proof (`4589d2e`; F-010B).
+- [x] Add the F-011A versioned canonical save-state fingerprint, v9 integrity verification, v8 compatibility, and lossless browser metadata; browser review r3 passed all 34 save/reload/load and bitmap assertions ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-state-fingerprints.md)).
+- [x] Add the F-011B1 v10 continuation envelope for simulation RNG, second AI, repair, combat cooldowns, and active configuration; preserve real v9 artifacts and pass the 40/40 browser continuation gate ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-state-continuation.md)).
+- [x] Resolve the original cockpit command-to-animation table from Ghidra and screenshot evidence, implement it without inferred sequential mappings, and pass the browser bitmap/hotspot/audio tranche ([reference](main-menu-parity.md); [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-cockpit.md)).
+- [x] Persist the original cockpit's faction, difficulty, galaxy size, and game type through save v11. All 495 workspace tests passed and browser review R2 passed 18/18 state, bitmap, storage, network, and error gates. The selection path is closed; the source review later reopened victory resolution semantics ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-game-setup-propagation.md)).
 - [x] Close P04 and the remaining P03 functional gates: Credits and Multiplayer destinations, gain/mute, return-to-menu audio, original menu SFX, and clean second-campaign reset. Native build/startup passed; F-016D/E later closed the then-open semantic and native visual gates ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-completion.md)).
-- [x] Close F-016D browser semantics: one navigation landmark exposes all 14 original hotspots with selection state, cyclic keyboard traversal, bitmap focus, shared action/SFX routing, and no visible replacement controls. Astra-medium passed all nine acceptance gates ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-semantics.md)).
-- [x] Close P03 final presentation: native visual acceptance and Astra-medium 10/10 browser acceptance pass for the documented music-only extension without changing the original 14-control contract ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-music-toggle.md)).
+- [x] Close F-016D browser semantics: one navigation landmark exposes all 14 original hotspots with selection state, cyclic keyboard traversal, bitmap focus, shared action/SFX routing, and no visible replacement controls. Independent review passed all nine acceptance gates ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-semantics.md)).
+- [x] Close P03 final presentation: native visual acceptance and a 10/10 browser acceptance pass for the documented music-only extension without changing the original 14-control contract ([evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-main-menu-music-toggle.md)).
 - [ ] Make a clean packaged browser artifact boot in CI.
 - [x] Link README parity claims to current acceptance evidence.
 - [x] Add F-011B2 replay format v1: strict JSON, typed `{tick, sequence, actor}` commands, checkpoint positions, configuration identity, and canonical per-file/aggregate hashes for all 51 simulation DATs ([contract](deterministic-replay.md); [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-replay-contract.md)).
 - [x] Add the F-011B3 recorder/executor with fail-fast checkpoints, save-v11 continuation, stable state-affecting iteration, and a five-process native original-data golden ([contract](deterministic-replay.md); [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-replay-execution.md)).
-- [x] Execute one exact F-011B4 artifact in native and WASM. All nine checkpoints, initial/final fingerprints, and artifact text match; Astra medium passed success, fail-closed, and normal four-request startup gates ([contract](deterministic-replay.md); [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-replay-wasm-equivalence.md)).
+- [x] Execute one exact F-011B4 artifact in native and WASM. All nine checkpoints, initial/final fingerprints, and artifact text match; independent browser review passed success, fail-closed, and normal four-request startup gates ([contract](deterministic-replay.md); [evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-replay-wasm-equivalence.md)).
 
 ### M1: Simulation Correctness and Determinism — 2–3 weeks
 
@@ -408,7 +408,7 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
 - [x] Model fleet position explicitly, merge compatible arrivals, and prevent
   production from attaching to in-transit fleets ([F-007B evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-fleet-position-consolidation.md)).
 - [x] Wire ordinary player fleet dispatch through the validated authoritative
-  departure path and pass Astra-medium bitmap acceptance for both factions
+  departure path and pass independent bitmap acceptance for both factions
   ([F-007C evidence](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-player-fleet-dispatch.md)).
 - [x] Resolve every hostile task force at a system as one bounded engagement,
   persist fighter attrition, correct fighter launch and shield handling, and
@@ -506,19 +506,19 @@ would tune around known simulation feedback defects.
 - [x] Complete P47A / the first `UIP-B02` checkpoint: draw the original bright
   STRATEGY 902 galaxy at canvas origin beneath the strategic layers, preserve
   source-aligned faction crops, use the same original bytes in native and
-  packaged WASM, and pass muted Astra browser acceptance with no findings.
+  packaged WASM, and pass muted browser acceptance with no findings.
   P47B later proves this is the Display Off resource.
 - [x] Complete P47B / the default Popular Support checkpoint: select STRATEGY
   903 for active GID, restore the exact faction GID control, compact legend,
   native marker families and support thresholds, remove synthetic overlays
   from the default parity view, preserve system activation, and pass four
-  muted Astra faction/viewport campaigns with no product findings. The
+  muted faction/viewport browser campaigns with no product findings. The
   code-built menu, expanded legend, remaining modes and overlays, sector art,
   exact map input, and complete `CMD-02` matrix remain open.
 - [x] Adopt the interface-parity acceleration sidecar: bundle the complete GID
   family, build one permanent fresh-process muted browser harness, use
   deterministic test-only fixtures, generate repeated status prose from
-  canonical JSON, and reserve full workspace, WASM, and Astra verification for
+  canonical JSON, and reserve full workspace, WASM, and browser verification for
   the family gate. The first test-only 38-scenario harness and code-built GID
   command tree are implemented. All 152 muted browser probes pass, but no
   original-executable captures are accepted. The original floating legend,
@@ -712,10 +712,21 @@ would tune around known simulation feedback defects.
   pass the 88-case muted browser gate. Keep exact weapon resolution,
   target-loss reacquisition, collision, formation, A0, and every strict
   tactical cell open.
-- [ ] Continue UIP-B06 with source-mapped selected-unit, task-force, fighter,
-  navigation, camera, maneuver, tactic, mission, result, Death Star, and audio
-  states. P58F13 next recovers exact attack weapon-resolution callbacks and
-  target-loss behavior before collision and formation work.
+- [x] Complete P58F13 tactical attack-target lifecycle: retain valid typed
+  targets, replace invalid targets with the first eligible hostile target of
+  the requested class, clear exhausted lists, and pass the 92-case muted
+  browser gate plus independent A1 review. Keep exact weapon behavior, fighter
+  combat, collision, formation, A0, and every strict tactical cell open.
+- [ ] Complete the consolidated UIP-B06 space-battle bundle: exact weapon arcs,
+  ranges, availability, projectile events and recharge; fighter combat;
+  collision and formation; Death Star and outcome paths; campaign return; and
+  direct test launch of the same production scene. Then run the final 106-cell
+  muted browser matrix with an independent browser-use reviewer. Do not mark
+  missing lossless original baselines A0-pass from browser evidence alone.
+- [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
+  an optional X-Wing Alliance-style skirmish setup menu. It may select ship
+  distribution, planet, and space background, but it must reuse the production
+  battle scene and remain outside the original 106-cell parity denominator.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.
@@ -771,7 +782,7 @@ would tune around known simulation feedback defects.
 - [ ] Gate HTML, WASM, DAT, bitmap/HD packs, save endpoints, WebSockets, and multiplayer APIs—not only the landing page.
 - [ ] Add CSP and security headers plus immutable caching for hashed public assets; never publicly cache authenticated HTML or auth responses.
 - [ ] Maintain preview and production environments, commit-linked deploys, smoke checks, retained artifacts, and documented rollback.
-- [ ] Have `/codex-orchestrator` run Astra at medium effort against the deployed URL for authentication, single-player, multiplayer, input, performance, and bitmap screenshot acceptance in Chrome, Firefox, and Safari.
+- [ ] Have `/codex-orchestrator` run an independent browser-use reviewer against the deployed URL for authentication, single-player, multiplayer, input, performance, and bitmap screenshot acceptance in Chrome, Firefox, and Safari.
 
 v1.0 exits only when the protected Cloudflare deployment passes P39, the
 GitHub Pages documentation passes P40, and every supported earlier pass. This follows the local Pages `functions/_middleware`

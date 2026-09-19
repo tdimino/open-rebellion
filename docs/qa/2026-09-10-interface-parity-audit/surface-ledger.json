@@ -4253,6 +4253,7 @@
       "title": "Main space-battle viewport and faction HUD",
       "required": true,
       "status": "fail",
+      "latest_checkpoint": "P58F13 retains valid typed attack targets, replaces invalid targets with the first eligible hostile target of the same requested class, and clears exhausted target lists without random or cross-class fallback. The complete muted tactical harness passes 92 of 92 cases. Exact weapon behavior, fighter combat, collision, formation, outcomes, A0 comparison, and all TAC-01 cells remain open.",
       "required_states": [
         "Alliance",
         "Imperial",
@@ -4507,6 +4508,7 @@
       "title": "Tactical ship selection, status, damage, and targeting",
       "required": true,
       "status": "fail",
+      "latest_checkpoint": "P58F13 restores live target invalidation, stable same-class replacement, and exhausted-list clearing for both capital-ship and fighter-group owners. Exact weapon arcs, ranges, availability, projectile events, recharge, fighter combat, collision, formation, Death Star states, A0 comparison, and all TAC-03 cells remain open.",
       "required_states": [
         "healthy",
         "damaged",

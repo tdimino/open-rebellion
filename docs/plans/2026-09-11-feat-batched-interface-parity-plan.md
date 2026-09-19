@@ -3,8 +3,8 @@ title: "Batched Interface Parity Execution Plan"
 description: "Current plan for restoring the original bitmap interface in coherent, independently accepted browser bundles"
 category: plan
 created: 2026-09-11
-updated: 2026-09-17
-tags: [interface, parity, bitmap, browser, astra, qa]
+updated: 2026-09-19
+tags: [interface, parity, bitmap, browser, qa]
 status: active
 ---
 
@@ -13,12 +13,12 @@ status: active
 This is the current implementation plan for original interface parity. It
 turns the [interface audit](../qa/2026-09-10-interface-parity-audit/) into
 larger user-visible workflows so focused development can proceed without a
-full WASM build, Astra review, commit, and push after every small control.
+full WASM build, browser review, commit, and push after every small control.
 
 The active
 [acceleration sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
 defines the permanent muted browser harness, deterministic test-only fixtures,
-visual comparisons, evidence-first Astra review, generated status prose, and
+visual comparisons, evidence-first browser review, generated status prose, and
 one-commit family gates used to execute this plan more quickly.
 
 ## Progress snapshot
@@ -32,7 +32,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 87% |
+| Practical space-battle launcher implementation | approximately 88% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -56,7 +56,7 @@ one original-game workflow.
 4. Build packaged WASM once the bundle is internally complete.
 5. Run one end-to-end browser matrix across both factions and the required
    640x480 and letterboxed viewports.
-6. Ask Astra medium to inspect the complete browser journey, bitmap identity,
+6. Ask an independent reviewer to inspect the complete browser journey, bitmap identity,
    interactions, request log, console, and open parity boundaries.
 7. Run one consolidated read-only code and documentation review at the bundle
    boundary when the change warrants independent review.
@@ -108,7 +108,7 @@ P47B proves that 902 is Display Off and restores the default active Popular
 Support view with STRATEGY 903, the exact faction GID control, compact 10168
 legend, native marker families, and recovered size thresholds. Synthetic map
 labels and primitives are withheld from this view. Renderer, workspace,
-packaged WASM, parity-ledger, and muted four-campaign Astra gates pass with no
+packaged WASM, parity-ledger, and muted four-campaign browser gates pass with no
 product findings. See the
 [P47B evidence record](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md).
 
@@ -116,7 +116,7 @@ The next `UIP-B02` execution bundle completes the whole `CMD-02` GID family:
 the code-built menu, compact and expanded legends, every remaining filter and
 original overlay, all known and intelligence states, selection, pan, zoom,
 and both faction variants. The acceleration sidecar supplies deterministic
-fixtures and one browser and Astra bundle gate. No replacement marker, menu,
+fixtures and one browser-review bundle gate. No replacement marker, menu,
 or legend will be introduced.
 
 P48 now supplies a 38-scenario, 152-execution muted harness and the first
@@ -190,13 +190,14 @@ damage and repair, mobility, and physical integration. P58F9 restores the
 original command panels and exact assignment codes. P58F10 executes the four
 recovered maneuver waypoints, Hold, and the first Recover carrier state.
 P58F11 adds source-rate turning, waypoint completion, and the Docking and
-Recovered fighter states while preserving strategic squadron counts. The muted
-tactical matrix passes 88 of 88 cases across both factions and both viewports.
-P58F12 adds typed Attack Fighters and Attack Capital Ships acquisition for both
-capital and fighter owners. Exact original arrival callbacks and recovery
-trajectories, weapon resolution, target-loss reacquisition, collision,
-formation, A0 comparison, and all 106 strict tactical cells remain
-open. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
+Recovered fighter states while preserving strategic squadron counts. P58F12
+adds typed Attack Fighters and Attack Capital Ships acquisition for both
+capital and fighter owners. P58F13 adds stable same-class replacement when a
+capital or fighter target becomes invalid and clears exhausted target lists
+without random or cross-class fallback. The full muted tactical matrix passes
+92 of 92 cases. Exact weapon resolution, fighter combat, collision, formation,
+Death Star and outcome paths, campaign return, A0 comparison, and all 106
+strict tactical cells remain open. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-3d-lod-family.md),
 [P57B1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-live-lod-journey.md),
 [P57B2B3 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-participant-placement.md),
 [P57B2C1 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-13-tactical-transform-palette.md),
@@ -206,7 +207,13 @@ open. See the [P57A evidence](../qa/2026-09-10-interface-parity-audit/evidence/2
 [P58B evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-production-participants.md),
 [P58C evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-fighters-selection.md),
 [P58F11 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md),
-and [P58F12 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md).
+the [P58F12 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md),
+and [P58F13 evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md).
+
+The next `UIP-B06` implementation commit is a consolidated completion bundle.
+It closes the remaining production battle behavior before one final 106-cell
+muted browser run and independent evidence review. Browser review supplies A1
+acceptance, not missing A0 original-baseline proof.
 
 ## Bundle acceptance record
 
@@ -217,7 +224,7 @@ For each bundle, its evidence file must record:
 - native and packaged-WASM results;
 - artifact and runtime-pack hashes;
 - browser screenshots for both factions and viewport classes;
-- Astra findings and disposition;
+- browser-review findings and disposition;
 - independent code and documentation review;
 - remaining cells that were deliberately not claimed;
 - the commit and pushed branch containing the accepted checkpoint.

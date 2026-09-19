@@ -2249,6 +2249,7 @@ impl BattleSession {
         }
         self.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         self.advance_original_fighter_recovery(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+        refresh_original_attack_targets(self);
 
         // Collect alive (non-retreating) ship indices per side for combat.
         let atk_alive: Vec<usize> = self
@@ -2383,29 +2384,40 @@ impl BattleSession {
             }
 
             // Focus-fire: if this ship has a valid focus target, prefer it.
-            let target_idx = if let Some(TacticalAttackTarget::CapitalShip(ft)) =
-                ships[fire_idx].attack_target
-            {
-                if ft < ships.len() && ships[ft].alive && targets.contains(&ft) {
-                    ft
-                } else {
-                    // Focus target dead or invalid — fall back to pseudo-random.
+            let target_idx = match ships[fire_idx].attack_target {
+                Some(TacticalAttackTarget::CapitalShip(target))
+                    if target < ships.len()
+                        && ships[target].alive
+                        && !ships[target].retreating
+                        && targets.contains(&target) =>
+                {
+                    target
+                }
+                Some(TacticalAttackTarget::CapitalShip(_))
+                    if ships[fire_idx].order == TacticalOrder::AttackCapitalShips =>
+                {
+                    // The attack executor never redirects an invalid typed
+                    // target into an unrelated class or random capital. Its
+                    // target-list lifecycle reacquires before this phase.
+                    continue;
+                }
+                Some(TacticalAttackTarget::FighterGroup(_)) => {
+                    // The recovered Attack Fighters executor owns a fighter
+                    // target. Its arc-based weapon callback remains a separate
+                    // source-recovery gate, so do not redirect the shot to an
+                    // unrelated capital ship.
+                    continue;
+                }
+                None if ships[fire_idx].order == TacticalOrder::AttackCapitalShips => {
+                    // No eligible target of the requested class remains.
+                    continue;
+                }
+                _ => {
+                    // Unordered combat and manual focus fallback retain the
+                    // existing deterministic target selection.
                     targets[((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7))
                         % targets.len()]
                 }
-            } else if matches!(
-                ships[fire_idx].attack_target,
-                Some(TacticalAttackTarget::FighterGroup(_))
-            ) {
-                // The recovered Attack Fighters executor acquires a typed
-                // fighter target. Its weapon-resolution callback remains a
-                // separate source-recovery gate, so do not redirect the shot
-                // to an unrelated capital ship.
-                continue;
-            } else {
-                // No focus target — pseudo-random.
-                targets
-                    [((tick as usize).wrapping_mul(fire_idx + 1).wrapping_add(7)) % targets.len()]
             };
 
             // Calculate total weapon output and kind from actual weapon stats.
@@ -3104,6 +3116,35 @@ impl TacticalState {
             )
         };
         self.asset_renderer.focus_target(focus.0, focus.1);
+    }
+
+    /// Invalidate each first-acquired attack target and exercise the recovered
+    /// same-class replacement lifecycle. The retired objects remain in the
+    /// fixture record so the browser harness can prove why they were skipped.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_attack_target_lifecycle_fixture(&mut self) {
+        self.configure_attack_targeting_fixture();
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let first_enemy_ship = session
+            .ships
+            .iter()
+            .position(|ship| ship.alive && ship.is_attacker != session.player_is_attacker);
+        let first_enemy_fighter = session
+            .fighters
+            .iter()
+            .position(|fighter| fighter.alive && fighter.is_attacker != session.player_is_attacker);
+        let (Some(first_enemy_ship), Some(first_enemy_fighter)) =
+            (first_enemy_ship, first_enemy_fighter)
+        else {
+            return;
+        };
+
+        session.ships[first_enemy_ship].retreating = true;
+        session.fighters[first_enemy_fighter].recovery_state =
+            TacticalFighterRecoveryState::Recovered;
+        refresh_original_attack_targets(session);
     }
 
     /// Display one stable frame from every source-selected impact family.
@@ -4324,6 +4365,65 @@ fn begin_original_attack_order(
         }
         let target = first_original_attack_target(session, source_is_attacker, order);
         session.fighters[index].attack_target = target;
+    }
+}
+
+/// Maintain the typed target list created by the original attack executors.
+///
+/// `FUN_005a8fc0` links the first eligible typed target into the owner's group.
+/// The manager then exposes separate add, remove, replace, and change-target
+/// messages plus stable next/previous target selection. Open Rebellion models
+/// that lifecycle directly: an invalid entry is replaced by the first eligible
+/// hostile object of the same requested class, and an exhausted class clears
+/// the target instead of falling through to another class.
+fn refresh_original_attack_targets(session: &mut BattleSession) {
+    for index in 0..session.ships.len() {
+        let order = session.ships[index].order;
+        if !matches!(
+            order,
+            TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+        ) {
+            continue;
+        }
+        if !session.ships[index].alive || session.ships[index].retreating {
+            session.ships[index].attack_target = None;
+            continue;
+        }
+        let source_is_attacker = session.ships[index].is_attacker;
+        let current = session.ships[index].attack_target;
+        if current.is_some_and(|target| {
+            tactical_attack_target_is_eligible(session, source_is_attacker, target, order)
+        }) {
+            continue;
+        }
+        session.ships[index].attack_target =
+            first_original_attack_target(session, source_is_attacker, order);
+    }
+
+    for index in 0..session.fighters.len() {
+        let order = session.fighters[index].order;
+        if !matches!(
+            order,
+            TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+        ) {
+            continue;
+        }
+        if !session.fighters[index].alive
+            || session.fighters[index].squad_count == 0
+            || session.fighters[index].recovery_state == TacticalFighterRecoveryState::Recovered
+        {
+            session.fighters[index].attack_target = None;
+            continue;
+        }
+        let source_is_attacker = session.fighters[index].is_attacker;
+        let current = session.fighters[index].attack_target;
+        if current.is_some_and(|target| {
+            tactical_attack_target_is_eligible(session, source_is_attacker, target, order)
+        }) {
+            continue;
+        }
+        session.fighters[index].attack_target =
+            first_original_attack_target(session, source_is_attacker, order);
     }
 }
 
@@ -7673,6 +7773,80 @@ mod tests {
             session.ships[0].attack_target,
             Some(TacticalAttackTarget::CapitalShip(1))
         );
+    }
+
+    #[test]
+    fn attack_target_lifecycle_reacquires_same_class_and_clears_exhausted_lists() {
+        let mut player_ship = test_ship(64, 0, true, true);
+        player_ship.order = TacticalOrder::AttackCapitalShips;
+        player_ship.attack_target = Some(TacticalAttackTarget::CapitalShip(1));
+        let mut retreating_enemy = test_ship(128, 0, false, true);
+        retreating_enemy.retreating = true;
+        let live_enemy = test_ship(129, 1, false, true);
+
+        let mut player_fighter = test_fighter(1, true);
+        player_fighter.order = TacticalOrder::AttackFighters;
+        player_fighter.attack_target = Some(TacticalAttackTarget::FighterGroup(1));
+        let mut recovered_enemy_fighter = test_fighter(5, false);
+        recovered_enemy_fighter.recovery_state = TacticalFighterRecoveryState::Recovered;
+        let live_enemy_fighter = test_fighter(6, false);
+        let mut session = test_session(
+            vec![player_ship, retreating_enemy, live_enemy],
+            vec![player_fighter, recovered_enemy_fighter, live_enemy_fighter],
+            true,
+        );
+
+        refresh_original_attack_targets(&mut session);
+        assert_eq!(
+            session.ships[0].attack_target,
+            Some(TacticalAttackTarget::CapitalShip(2))
+        );
+        assert_eq!(
+            session.fighters[0].attack_target,
+            Some(TacticalAttackTarget::FighterGroup(2))
+        );
+
+        session.ships[2].alive = false;
+        session.fighters[2].squad_count = 0;
+        refresh_original_attack_targets(&mut session);
+        assert_eq!(session.ships[0].attack_target, None);
+        assert_eq!(session.fighters[0].attack_target, None);
+
+        session.ships[0].order = TacticalOrder::AttackFighters;
+        refresh_original_attack_targets(&mut session);
+        assert_eq!(
+            session.ships[0].attack_target, None,
+            "an exhausted fighter list must not fall through to a capital target"
+        );
+    }
+
+    #[test]
+    fn explicit_attack_order_never_redirects_an_invalid_target() {
+        let mut source = test_ship(64, 0, true, true);
+        source.order = TacticalOrder::AttackCapitalShips;
+        source.attack_target = Some(TacticalAttackTarget::CapitalShip(1));
+        source.laser_cannon_power = 100;
+        let dead_target = test_ship(128, 0, false, false);
+        let live_target = test_ship(129, 1, false, true);
+        let mut ships = vec![source, dead_target, live_target];
+        let original_hull = ships[2].hull_current;
+        let mut fields = Vec::new();
+        let mut projectiles = Vec::new();
+        let mut impacts = Vec::new();
+
+        BattleSession::fire_side(
+            &mut ships,
+            &mut fields,
+            &[0],
+            &[2],
+            &mut projectiles,
+            &mut impacts,
+            1,
+        );
+
+        assert_eq!(ships[2].hull_current, original_hull);
+        assert!(projectiles.is_empty());
+        assert!(impacts.is_empty());
     }
 
     #[test]

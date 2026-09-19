@@ -3,7 +3,7 @@ title: "Standalone Space-Battle Test Launcher"
 description: "Test-only entry into the production tactical battle path and its original-interface parity matrix"
 category: plan
 created: 2026-09-12
-updated: 2026-09-18
+updated: 2026-09-19
 tags: [interface, parity, tactical, browser, testing]
 status: in_progress
 ---
@@ -24,17 +24,16 @@ and evidence gate.
 
 It is not blocked on finishing the GID, system-window, or other strategic interface families. Start T0 and T1 after the current in-flight GID bundle is committed, then work on tactical asset proof and original HUD composition as a separate `UIP-B06` lane. The final 106-cell tactical acceptance gate still depends on original resources, screenshot baselines, and real browser interaction; a functioning launcher is not that gate.
 
-Every T1 through T5 browser harness gate uses `codex-orchestrator` with Astra
-only for live browser/computer-use acceptance: low effort for routine checks
-and medium for complex or release-significant journeys. Use Sol high or
-extra-high for code or evidence review only when the slice's risk warrants an
-independent pass. Each scenario starts in a fresh muted Chromium
+Every T1 through T5 browser harness gate uses `codex-orchestrator` for
+independent live browser/computer-use acceptance. Use Sol high or extra-high
+for code or evidence review only when the slice's risk warrants an independent
+pass. Each scenario starts in a fresh muted Chromium
 process and closes its browser and local server when complete.
 
 T0 and T1 are partially complete. The [tactical result-identity regression](../qa/2026-09-08-full-functionality-audit/evidence/2026-09-12-tactical-result-identity.md)
 preserves surviving hull damage and exact fighter roster losses. Campaign and
 test-only browser entry share the validated production tactical-entry function.
-P52 through [P58F12](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
+P52 through [P58F13](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 restore the first authentic shell controls, complete tactical asset decode, one
 three-LOD family, source camera and layout, stable participants, authored
 coordinates, system palette, lighting, retained-mode render state, and exact
@@ -42,7 +41,7 @@ DAT resource joins. Live capital ships render from their joined families;
 fighter groups use the original detail resources; and capital interactions use
 projected mesh bounds. The original task-force and RGBY fighter-control strip,
 group selection, keyboard routes, and selected fighter portraits also work.
-The full muted harness passes 88 of 88 cases, and the four-request pack carries
+The full muted harness passes 92 of 92 cases, and the four-request pack carries
 all 87 meshes and 397 textures. Production battles now load the exact
 system-selected 256 by 256 planet and paired palette. Six target-impact
 families now preserve exact frames, sizes, priority, transparency, attachment,
@@ -69,13 +68,15 @@ ships then use the source-rate signed turn and clear reached waypoints. Fighters
 advance through Docking and Recovered while retaining their strategic counts.
 Attack Fighters and Attack Capital Ships now acquire the first eligible typed
 target in stable tactical order for both capital and fighter owners, while
-preserving a valid live engagement.
+preserving a valid live engagement. Invalid targets now reacquire the first
+eligible hostile target of the same requested class, and exhausted target
+lists clear without random or cross-class fallback.
 Shared return/outcome routing, exact global RNG sequencing, exact original
-arrival callbacks and recovery trajectories, exact weapon resolution,
-target-loss reacquisition, collision and formation behavior, power allocation,
-exact planet placement, special objects, original
+arrival callbacks and recovery trajectories, exact weapon arcs, ranges,
+availability, projectile events and recharge, fighter combat, collision and
+formation behavior, power allocation, exact planet placement, special objects, original
 view acceptance, complete battle interactions, and all 106 visual cells remain
-open. The practical launcher estimate is about 87% implemented. This planning
+open. The practical launcher estimate is about 88% implemented. This planning
 estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
 
 ## Current contract and limits
@@ -85,7 +86,7 @@ estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
 - The interactive `BattleSession` simulation and `CombatSystem::resolve_space` auto-resolution are different paths. Interactive result application now preserves surviving hull damage and exact fighter roster identity, but the paths still need a shared production entry/return contract and broader outcome coverage.
 - The separate `interface-test-fixtures` WASM build already provides a deterministic, audio-muted GID fixture bridge and browser harness. Its production-exclusion check must remain a release gate.
 - The [surface ledger](../qa/2026-09-10-interface-parity-audit/surface-ledger.json) has 106 pending space-battle cells in `TAC-01` through `TAC-07`. `EVT-02` covers Battle Alert. `TAC-08` is the separate ground-assault report flow, not a live space-battle scene.
-- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F12 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, effects, fields, selected-capital damage and subsystem condition, exact field-source identity, live subsystem mutation, repair, mobility, maneuver-state production, velocity, physical integration, authentic command assignment, maneuver waypoint execution, Hold, source-rate turning, waypoint completion, full fighter recovery states, and typed attack target acquisition. Automatic group distribution, exact planet placement, exact global RNG sequencing, exact original arrival callbacks and recovery trajectories, exact weapon resolution, target-loss reacquisition, collision and formation behavior, power allocation, and original view acceptance remain open.
+- The [native tactical lookup](../reference/asset-library/tactical-lookup.json) proves all 29 ship, eight fighter, and Death Star DAT-to-ordinal resource joins. P54 through P58F13 prove staging, decoding, one source-bound three-LOD family, camera, placement, authored transform, system palette, lighting, filtering, culling, depth, material/device state, complete pack transport, exact identity joins, live production capital and fighter rendering, projected interaction, the complete fighter detail journey, source-backed task-force and fighter-group presentation, the exact system-selected planet pair, effects, fields, selected-capital damage and subsystem condition, exact field-source identity, live subsystem mutation, repair, mobility, maneuver-state production, velocity, physical integration, authentic command assignment, maneuver waypoint execution, Hold, source-rate turning, waypoint completion, full fighter recovery states, typed attack target acquisition, and same-class target replacement. Automatic group distribution, exact planet placement, exact global RNG sequencing, exact original arrival callbacks and recovery trajectories, exact weapon behavior, fighter combat, collision and formation behavior, power allocation, and original view acceptance remain open.
 - The [screenshot ledger](../qa/2026-09-10-interface-parity-audit/screenshot-ledger.md) has useful tactical HUD, selection, damage, and results references. Most are compressed, localized, or from an altered campaign. They support reconstruction and provisional comparison, not strict pixel acceptance. Lossless original-executable captures remain open.
 
 ## Design
@@ -136,7 +137,7 @@ Gate: repeatable seeded results, no missing required assets or browser errors, s
 
 Use `RE-TAC-01`, `RE-TAC-02`, `RE-BAT-01`, the manual pages 139–150, the [asset reference library](../reference/asset-library/README.md), extracted `TACTICAL.DLL` resources, and the screenshot ledger to replace the current 1200×800 synthetic egui tactical HUD and results screen panel by panel. Map original resource ID, placement, state predicate, hit rectangle, and action for each control before implementation. Production 3D camera binding and several tactical controls remain incomplete, so a rendered panel alone is insufficient. Keep the battle launcher fixed on the production renderer and expand its snapshot matrix as surfaces become authentic.
 
-Gate: source-mapped art and controls for the selected bundle, exact extracted-BMP pixels where unobscured, documented comparison limits for compressed screenshots, and task-proportional Astra browser acceptance of both factions. Do not infer missing hover, disabled, Death Star, or result art from a modern replacement.
+Gate: source-mapped art and controls for the selected bundle, exact extracted-BMP pixels where unobscured, documented comparison limits for compressed screenshots, and task-proportional browser acceptance of both factions. Do not infer missing hover, disabled, Death Star, or result art from a modern replacement.
 
 Status: the P52, P53, P57B2A, P57B2B1, P57B2B2, and P57B2B3 slices pass this scoped gate for shell `1000`, faction
 group headers, the selected-unit frame, pause, highlights, zoom, and visible
@@ -166,12 +167,27 @@ construction, executes Hold, and starts Recover through carrier reservation and
 Returning state 2. P58F11 adds source-rate turning, waypoint completion, and
 the Docking and Recovered fighter states while preserving strategic squadron
 counts. P58F12 adds typed Attack Fighters and Attack Capital Ships target
-acquisition for capital and fighter owners. Automatic group assignment, exact
+acquisition for capital and fighter owners. P58F13 adds stable same-class
+replacement and exhausted-list clearing. Automatic group assignment, exact
 global RNG sequencing, exact arrival callbacks and recovery trajectories,
-weapon-resolution callbacks, target-loss reacquisition, collision and
-formation behavior, power allocation, fighter launch and damage,
-exact planet placement, results, and audio remain T3 work.
+weapon arcs, ranges, availability, projectile events and recharge, fighter
+combat, collision and formation behavior, power allocation, exact planet
+placement, results, and audio remain T3 work.
 No `TAC-*` acceptance cell is closed.
+
+### Consolidated completion boundary
+
+The next implementation commit carries the remaining T3, T4, and production
+entry/return behavior as one coherent space-battle bundle. Focused tests may
+run during construction, but the complete workspace, packaged WASM, 106-cell
+muted browser harness, and independent review run once at the bundle gate. This
+makes space battles available through the campaign and direct test launcher
+without introducing a second renderer or an invented in-game menu.
+
+A later optional skirmish setup menu is a separate feature. It will use an
+X-Wing Alliance-style flow to configure ships, planet, and space background,
+then enter this same production battle scene. It remains outside original
+interface parity and awaits a dedicated Fable and `/ce:plan` design pass.
 
 ### T4. Battle outcome and rare-state closure
 
@@ -181,7 +197,7 @@ Gate: native unit/integration tests and browser journeys agree on state fingerpr
 
 ### T5. Strict acceptance
 
-For each `TAC-01` through `TAC-07` cell, run its source evidence, native, packaged-WASM, both-faction, viewport, interaction, audio, and diagnostic matrix from the [interface audit](../qa/2026-09-10-interface-parity-audit/README.md). Astra operates selected live browser journeys at low or medium effort after the harness performs deterministic probes. Use Sol high or extra-high review only for risk-significant bundles. Update the ledger and evidence in the same commit as each verified bundle, then push. Keep any cell lacking authoritative original captures pending.
+For each `TAC-01` through `TAC-07` cell, run its source evidence, native, packaged-WASM, both-faction, viewport, interaction, audio, and diagnostic matrix from the [interface audit](../qa/2026-09-10-interface-parity-audit/README.md). An independent reviewer operates selected live browser journeys after the harness performs deterministic probes. Use Sol high or extra-high review only for risk-significant bundles. Update the ledger and evidence in the same commit as each verified bundle, then push. Keep any cell lacking authoritative original captures pending.
 
 ## Evidence and release rules
 

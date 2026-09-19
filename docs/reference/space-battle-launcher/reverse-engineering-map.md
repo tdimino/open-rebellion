@@ -151,9 +151,14 @@ mixing, or genuine two-peer ordering.
   contracts. `FUN_005d0b10` and `FUN_005d0bb0` walk the stable tactical
   object list and dispatch event `0x36` for Attack Capital Ships and Attack
   Fighters. P58F12 implements typed first-eligible acquisition for capital and
-  fighter owners. Exact global RNG sequencing, original arrival callbacks and
-  recovery trajectories, weapon-resolution callbacks, target-loss
-  reacquisition, collision, and formation behavior remain open.
+  fighter owners. `FUN_005a8c50`, `FUN_005a8cc0`, `FUN_005a8d30`,
+  `FUN_005a8e30`, `FUN_005a8e80`, `FUN_005a8fc0`, `FUN_005d0b00`,
+  `FUN_005cf910`, and `FUN_005cf920` establish the bounded lifecycle used by
+  P58F13 to retain valid targets, replace invalid targets within the requested
+  class, and clear exhausted lists. Exact global RNG sequencing, original
+  arrival callbacks and recovery trajectories, weapon arcs, ranges,
+  availability, projectile events, recharge, fighter combat, collision, and
+  formation behavior remain open.
 
 ## A0-only boundary
 

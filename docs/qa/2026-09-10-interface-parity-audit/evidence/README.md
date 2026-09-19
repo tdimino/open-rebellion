@@ -34,6 +34,7 @@ the source of truth for scope, acceptance, and current work.
 | P58F10 | [Tactical order execution](2026-09-17-tactical-order-execution.md) | [`p58f10-tactical-order-execution/`](p58f10-tactical-order-execution/) |
 | P58F11 | [Tactical command progression](2026-09-18-tactical-command-progression.md) | [`p58f11-tactical-command-progression/`](p58f11-tactical-command-progression/) |
 | P58F12 | [Tactical attack target acquisition](2026-09-18-tactical-attack-targeting.md) | [`p58f12-tactical-attack-targeting/`](p58f12-tactical-attack-targeting/) |
+| P58F13 | [Tactical attack target lifecycle](2026-09-19-tactical-attack-target-lifecycle.md) | [`p58f13-tactical-attack-target-lifecycle/`](p58f13-tactical-attack-target-lifecycle/) |
 
 ## Current strategic correction
 

@@ -12,21 +12,26 @@ their joined families. P58C renders the original fighter detail resources and
 aligns capital interactions with projected mesh bounds. P58D proves the full
 fighter-detail journey. P58E restores all eight task-force and four RGBY
 fighter controls, selection, source-shaped input, keyboard routes, and selected
-fighter portraits. P58F1 through P58F12 restore system-selected planets,
+fighter portraits. P58F1 through P58F13 restore system-selected planets,
 target impacts, projectiles, fields, selected-capital damage and subsystem
 condition, exact field-source identity, and source-derived live subsystem
 damage with tractor cancellation, repair, mobility, maneuver-state production,
 velocity, physical integration, authentic tactical command assignment,
 recovered maneuver waypoints, Hold execution, source-rate turning, waypoint completion,
-full fighter recovery states, and typed attack target acquisition. Exact global
-RNG sequencing and original arrival and trajectory comparison,
-weapon-resolution callbacks, target-loss reacquisition, collision and formation
-behavior, outcomes, automatic group distribution, and A0 comparison are next.
+full fighter recovery states, typed attack target acquisition, and stable
+same-class target replacement when a target becomes invalid. The next
+space-battle commit is one consolidated completion bundle covering exact weapon
+resolution, fighter combat, collision and formation, Death Star and outcome
+paths, campaign return, and standalone production-scene launchability. Its
+final browser gate runs the complete 106-cell matrix with independent review.
+Missing lossless original baselines remain explicit A0 blockers and cannot be
+accepted by browser evidence alone.
 
 The active
 [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
 implements the first permanent muted browser harness, deterministic test-only fixtures,
-visual comparisons, generated status summaries, and one Astra gate per family.
+visual comparisons, generated status summaries, and one independent browser
+gate per family.
 
 The [Standalone Space-Battle Test Launcher](2026-09-12-tooling-standalone-space-battle-launcher.md)
 is the active `UIP-B06` companion. Tactical hull and fighter result identity now
@@ -48,16 +53,24 @@ retained-mode light rig, filtering, culling, depth, and material/device state.
 P58A owns the exact DAT resource join and complete browser pack. P58B completes
 the first production capital-family draw path. P58C through P58E add production
 fighter detail, the complete detail journey, and group presentation. P58F1
-through P58F12 add planets, effects, fields, selected-capital damage and
+through P58F13 add planets, effects, fields, selected-capital damage and
 subsystem condition, exact field-source identity, live subsystem damage,
 repair, mobility, maneuver-state production, velocity, physical integration,
 and tactical command assignment plus maneuver, Hold, turn, arrival, docking,
-recovered execution states, and typed attack target acquisition. Exact original
-arrival callbacks and recovery trajectories, weapon-resolution callbacks,
-target-loss reacquisition, collision and formation behavior, special objects,
-power allocation, remaining controls, and A0 acceptance remain open.
+recovered execution states, typed attack target acquisition, and stable
+same-class target replacement with exhausted-list clearing. Exact weapon arcs,
+ranges, availability, projectile events, recharge, fighter combat, collision
+and formation, special objects, power allocation, outcomes, and A0 acceptance
+remain open inside the consolidated completion bundle.
 Modern replacement models remain in a separate experimental profile.
 
 See the [plans index](INDEX.md) for active, planned, and completed work. The
 [interface parity audit](../qa/2026-09-10-interface-parity-audit/) remains the
 strict acceptance authority.
+
+After original space-battle parity is implemented, a separate planning pass
+will define an optional X-Wing Alliance-style skirmish setup surface for ship
+distribution, planet, and space-background selection. That feature must reuse
+the production battle scene and remain outside the 106-cell original-interface
+parity denominator. Its design plan is reserved for a Fable and `/ce:plan`
+workflow when those project tools are available.

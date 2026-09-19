@@ -156,11 +156,18 @@ restores the two original command panels, exact order and tactic codes,
 source-shaped controls, disabled states, and commit/cancel behavior.
 [P58F10](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md)
 restores the four maneuver waypoint constructors, Hold stop behavior, and the
-first Recover carrier state. Automatic group distribution, exact planet
-placement, exact global RNG sequencing, turning and waypoint completion, full
-fighter recovery, attack executors, collision and formation behavior, power allocation, special objects,
-and original-runtime confirmation remain required before every procedural
-battle object can be retired.
+first Recover carrier state.
+[P58F11](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)
+restores source-rate turning, waypoint completion, docking, and recovery.
+[P58F12](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
+restores typed capital and fighter target acquisition.
+[P58F13](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
+restores valid-target retention, stable same-class replacement, and exhausted
+target-list clearing. Automatic group distribution, exact planet placement,
+exact global RNG sequencing, exact weapon behavior, fighter combat, collision
+and formation behavior, power allocation, special objects, and original-runtime
+confirmation remain required before every procedural battle object can be
+retired.
 
 ## External editor leads
 

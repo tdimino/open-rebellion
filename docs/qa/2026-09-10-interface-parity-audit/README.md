@@ -11,7 +11,7 @@ geometry, and unverified asset mappings do not count as parity.
   100% interface parity.
 - Follow the current
   [batched execution plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md)
-  for bundle boundaries, verification cadence, Astra review, and commit gates.
+  for bundle boundaries, verification cadence, browser review, and commit gates.
 - Use its
   [acceleration sidecar](../../plans/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
   for the permanent muted harness, deterministic fixtures, visual comparisons,
@@ -151,6 +151,9 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F12 tactical attack-targeting evidence](evidence/2026-09-18-tactical-attack-targeting.md)
   for typed Attack Fighters and Attack Capital Ships acquisition across both
   owner classes, visible target endpoints, and the 88-case gate.
+- Review the [P58F13 tactical attack-target lifecycle evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md)
+  for same-class replacement after capital and fighter targets become
+  ineligible, exhausted-list clearing, and the 92-case gate.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -188,8 +191,8 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 87%
-implemented after P58F12. Its formal acceptance remains 0 of 106 tactical cells
+Within that total, the standalone space-battle launcher is approximately 88%
+implemented after P58F13. Its formal acceptance remains 0 of 106 tactical cells
 because exact original-view evidence and the remaining battle states are open.
 
 The first recovered implementation tranche now packages and renders the four
@@ -284,9 +287,11 @@ their strategic counts. P58F12 restores typed Attack Fighters and Attack
 Capital Ships target acquisition for capital and fighter owners while
 preserving valid engagements. Automatic group distribution, exact planet
 placement, exact global RNG sequencing, the exact arrival callback and ingress
-trajectory, weapon-resolution callbacks, target-loss reacquisition, collision
-and formation behavior, power allocation, results, and A0 comparisons remain
-open.
+trajectory, arc and range weapon resolution, recharge, fighter combat,
+collision and formation behavior, power allocation, results, and A0
+comparisons remain open. P58F13 now refreshes invalid attack targets through a
+stable same-class list and clears exhausted lists without a cross-class or
+random fallback.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

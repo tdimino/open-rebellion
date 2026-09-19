@@ -38,6 +38,11 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-live-subsystem-damage-presentation` | 65808 | 66064 | Live shield overflow, hull loss, subsystem damage, and tractor cancellation |
 | `production-subsystem-repair-mobility-presentation` | 65809 | 66065 | Source repair cadence and selection plus engine and tractor mobility |
 | `production-maneuver-movement-presentation` | 65810 | 66066 | Maneuver-state bonus, effective-power velocity, and physical integration |
+| `production-command-assignment-presentation` | 65811 | 66067 | Authentic selected-unit panels and committed orders |
+| `production-command-execution-presentation` | 65812 | 66068 | Maneuver waypoints, Hold, and initial fighter recovery |
+| `production-command-progression-presentation` | 65813 | 66069 | Capital turning, arrival, docking, and recovery completion |
+| `production-attack-targeting-presentation` | 65814 | 66070 | Typed capital and fighter target acquisition |
+| `production-attack-target-lifecycle-presentation` | 65815 | 66071 | Same-class replacement after target invalidation |
 
 ## Run it
 
@@ -138,14 +143,17 @@ and closes every process. Raw runs live under ignored
 - P58F12 restores typed Attack Fighters and Attack Capital Ships target
   acquisition for both capital and fighter owners while preserving valid
   engagements.
-- The complete bundle passes 88 of 88 muted browser cases across both factions
+- P58F13 retains valid typed targets, replaces invalid ones with the first
+  eligible hostile target of the same class, and clears exhausted target lists
+  without random or cross-class fallback.
+- The complete bundle passes 92 of 92 muted browser cases across both factions
   and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
 bridge, fighter focus, and filled group matrix are test-only. Automatic group
 distribution, native GPU and A0 comparison, exact global RNG sequencing,
 exact original arrival callbacks and recovery trajectories, weapon-resolution
-callbacks, target-loss reacquisition, collision and formation behavior, exact
+callbacks, fighter combat, collision and formation behavior, exact
 planet placement, power allocation, Death Star
 paths, results, audio, and return routing remain
 open. All
@@ -155,6 +163,7 @@ open. All
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58F13 tactical attack-target lifecycle evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 - [P58F12 tactical attack-targeting evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
 - [P58F11 tactical command-progression evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)
 - [P58F10 tactical order-execution evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md)

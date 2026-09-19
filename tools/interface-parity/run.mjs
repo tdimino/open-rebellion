@@ -2240,6 +2240,86 @@ function probeTacticalAttackTargetingPresentation(viewport, folder, stable, read
   }];
 }
 
+function probeTacticalAttackTargetLifecyclePresentation(viewport, folder, stable, ready) {
+  const playerCapitals = ready.participants.filter((participant) =>
+    participant.kind === "capital-ship" && participant.faction === ready.faction);
+  const playerFighters = ready.participants.filter((participant) =>
+    participant.kind === "fighter-group" && participant.faction === ready.faction);
+  const enemyCapitalIndices = ready.participants
+    .map((participant, index) => ({ participant, index }))
+    .filter(({ participant }) =>
+      participant.kind === "capital-ship" && participant.faction !== ready.faction);
+  const allFighters = ready.participants.filter((participant) =>
+    participant.kind === "fighter-group");
+  const enemyFighterIndices = allFighters
+    .map((participant, index) => ({ participant, index }))
+    .filter(({ participant }) => participant.faction !== ready.faction);
+  assert.ok(enemyCapitalIndices.length >= 2,
+    "target lifecycle fixture omitted its capital replacement");
+  assert.ok(enemyFighterIndices.length >= 2,
+    "target lifecycle fixture omitted its fighter replacement");
+
+  const retiredCapital = enemyCapitalIndices[0];
+  const replacementCapital = enemyCapitalIndices[1];
+  const retiredFighter = enemyFighterIndices[0];
+  const replacementFighter = enemyFighterIndices[1];
+  assert.equal(retiredCapital.participant.retreating, true);
+  assert.equal(replacementCapital.participant.retreating, false);
+  assert.equal(retiredFighter.participant.recovery_state_code, 4);
+  assert.notEqual(replacementFighter.participant.recovery_state_code, 4);
+
+  const capitalToCapital = playerCapitals.find((participant) =>
+    participant.fleet_roster_index === 0);
+  const capitalToFighter = playerCapitals.find((participant) =>
+    participant.fleet_roster_index === 1);
+  const fighterToCapital = playerFighters.find((participant) =>
+    participant.fleet_roster_index === 0);
+  const fighterToFighter = playerFighters.find((participant) =>
+    participant.fleet_roster_index === 1);
+  assert.deepEqual(
+    [capitalToCapital?.order_code, capitalToCapital?.attack_target_kind,
+      capitalToCapital?.attack_target_index],
+    [5, "capital-ship", replacementCapital.index],
+  );
+  assert.deepEqual(
+    [capitalToFighter?.order_code, capitalToFighter?.attack_target_kind,
+      capitalToFighter?.attack_target_index],
+    [4, "fighter-group", replacementFighter.index],
+  );
+  assert.deepEqual(
+    [fighterToCapital?.order_code, fighterToCapital?.attack_target_kind,
+      fighterToCapital?.attack_target_index],
+    [5, "capital-ship", replacementCapital.index],
+  );
+  assert.deepEqual(
+    [fighterToFighter?.order_code, fighterToFighter?.attack_target_kind,
+      fighterToFighter?.attack_target_index],
+    [4, "fighter-group", replacementFighter.index],
+  );
+
+  fs.writeFileSync(path.join(folder, "attack-target-lifecycle.png"), stable.bytes);
+  return [{
+    type: "source-traced-tactical-attack-target-lifecycle",
+    executable_functions: [
+      "FUN_005a8c50", "FUN_005a8cc0", "FUN_005a8d30", "FUN_005a8e30",
+      "FUN_005a8e80", "FUN_005a8fc0", "FUN_005d0b00", "FUN_005cf910",
+      "FUN_005cf920",
+    ],
+    invalidated: {
+      capital_index: retiredCapital.index,
+      fighter_index: retiredFighter.index,
+    },
+    replacements: [capitalToCapital, capitalToFighter, fighterToCapital, fighterToFighter]
+      .map((participant) => ({
+        owner_kind: participant.kind,
+        owner_roster: participant.fleet_roster_index,
+        order_code: participant.order_code,
+        target_kind: participant.attack_target_kind,
+        target_index: participant.attack_target_index,
+      })),
+  }];
+}
+
 function probeTacticalSubsystemFieldCommandPresentation(viewport, folder, stable, ready) {
   const probes = probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready);
   const selected = ready.selected_ship;
@@ -2529,6 +2609,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? probeTacticalCommandProgressionPresentation(viewport, folder, stable, ready)
         : scenario.attack_targeting_presentation
         ? probeTacticalAttackTargetingPresentation(viewport, folder, stable, ready)
+        : scenario.attack_target_lifecycle_presentation
+        ? probeTacticalAttackTargetLifecyclePresentation(viewport, folder, stable, ready)
         : scenario.selected_damage_presentation
         ? probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready)
         : scenario.production_participants
@@ -2540,7 +2622,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 21);
+      assert.equal(ready.schema_version, 22);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -2570,6 +2652,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         Boolean(scenario.command_progression_presentation));
       assert.equal(ready.attack_targeting_presentation,
         Boolean(scenario.attack_targeting_presentation));
+      assert.equal(ready.attack_target_lifecycle_presentation,
+        Boolean(scenario.attack_target_lifecycle_presentation));
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -2610,7 +2694,9 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         outer_negative_z: -56,
         inner_negative_z: -36,
         inner_positive_z: 36,
-      } : scenario.command_progression_presentation || scenario.attack_targeting_presentation ? {
+      } : scenario.command_progression_presentation
+        || scenario.attack_targeting_presentation
+        || scenario.attack_target_lifecycle_presentation ? {
         first_active_objects: 5,
         second_active_objects: 5,
         battle_extent: 115,
@@ -2637,7 +2723,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
             || scenario.maneuver_movement_presentation
             || scenario.command_execution_presentation ? 8
             : scenario.command_progression_presentation
-              || scenario.attack_targeting_presentation ? 10 : 4);
+              || scenario.attack_targeting_presentation
+              || scenario.attack_target_lifecycle_presentation ? 10 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -2722,7 +2809,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         || scenario.maneuver_movement_presentation
         || scenario.command_execution_presentation
         || scenario.command_progression_presentation
-        || scenario.attack_targeting_presentation) {
+        || scenario.attack_targeting_presentation
+        || scenario.attack_target_lifecycle_presentation) {
         const allianceShips = ready.participants.filter((participant) =>
           participant.kind === "capital-ship" && participant.faction === "alliance");
         const empireShips = ready.participants.filter((participant) =>
@@ -2736,10 +2824,13 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         assert.deepEqual(empireShips.map(({ fleet_roster_index }) => fleet_roster_index),
           [0, 1, 2]);
         const expectedFighters = scenario.command_progression_presentation
-          || scenario.attack_targeting_presentation ? 2 : 1;
+          || scenario.attack_targeting_presentation
+          || scenario.attack_target_lifecycle_presentation ? 2 : 1;
         assert.equal(allianceFighters.length, expectedFighters);
         assert.equal(empireFighters.length, expectedFighters);
-        if (scenario.command_progression_presentation || scenario.attack_targeting_presentation) {
+        if (scenario.command_progression_presentation
+          || scenario.attack_targeting_presentation
+          || scenario.attack_target_lifecycle_presentation) {
           assert.ok(allianceShips.every(({ fleet_roster_index }) =>
             [0, 1, 2].includes(fleet_roster_index)));
           assert.ok(empireShips.every(({ fleet_roster_index }) =>
@@ -3181,20 +3272,21 @@ async function main() {
         "production-command-execution-presentation",
         "production-command-progression-presentation",
         "production-attack-targeting-presentation",
+        "production-attack-target-lifecycle-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
       [true, false, true, true, true, true, true, false, false, false, false, false, false, false,
-        false, false, false, false, false, false, false, false]);
+        false, false, false, false, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
       [false, false, false, false, false, true, false, false, false, false, false, false, false,
-        false, false, false, false, false, false, false, false, false]);
+        false, false, false, false, false, false, false, false, false, false]);
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
       [false, false, false, false, false, false, true, false, false, false, false, false, false,
-        false, false, false, false, false, false, false, false, false]);
+        false, false, false, false, false, false, false, false, false, false]);
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });
