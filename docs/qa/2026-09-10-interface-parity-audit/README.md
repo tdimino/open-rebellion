@@ -175,6 +175,9 @@ native playback, and A0 gates pass.
 - Review the [P58-B07 tactical matrix-contract evidence](evidence/2026-09-22-tactical-106-matrix-contract.md)
   for the generated 106-cell denominator, exact family distribution, A0
   provenance schema, exclusion checks, and deliberately unclaimed coverage.
+- Review the [P58-B08 tactical A0-ingestion evidence](evidence/2026-09-22-tactical-a0-ingestion.md)
+  for the guest provenance extension, fail-closed host registration path, and
+  explicit 0/106 capture-host boundary.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

@@ -67,6 +67,7 @@
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
     "tactical_matrix_contract": "pass_P58_B07_ledger_derived_106_cells_distribution_13_13_20_14_23_9_14_current_0_mapped_0_A0_0_accepted_missing_duplicate_unknown_unsafe_and_tracked_A0_fail_closed",
+    "tactical_a0_ingestion": "pass_P58_B08_guest_executable_and_cell_provenance_host_exact_ledger_640x480_hash_source_and_destination_validation_capture_host_offline_current_0_of_106",
     "space_battle_launcher_practical_progress": "approximately_96_percent_planning_estimate_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
@@ -322,5 +323,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Close the qualified P58-B06 review findings for the authentic Game Options window, Alliance Death Star framing baseline, and persistent trench-run outcome; recover the native Death Star beam contract and original trench-run result producer; complete shared post-battle bombardment, landing, and navigation orchestration; and confirm native playback. Keep all 106 strict cells open until their lossless A0 evidence passes."
+  "next_action": "Bring the owned Windows capture host online and ingest authoritative A0 frames while continuing deterministic A1 mapping and the remaining production gaps: authentic Game Options, Alliance Death Star framing, persistent trench-run outcome, native beam and playback, and shared post-battle orchestration. Keep all 106 strict cells open until their complete evidence passes."
 }

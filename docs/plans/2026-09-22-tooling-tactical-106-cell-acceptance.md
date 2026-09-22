@@ -107,6 +107,12 @@ started.
 
 ### C2. Capture and ingest authoritative A0 evidence
 
+Status: ingestion infrastructure is complete at P58-B08. The guest capture
+script now emits executable identity and per-cell provenance, and the host
+ingester fails closed on dimensions, hashes, source identity, ledger drift,
+unsafe destinations, or replacement bytes. The owned capture host was offline
+on 2026-09-22, so capture coverage remains 0/106 and this phase is not complete.
+
 - Automate the owned original English installation in the existing Windows VM.
 - Use original saves, normal inputs, and, where necessary, editor-assisted save
   setup only to reach states. The displayed frame must always come from the

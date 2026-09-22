@@ -746,7 +746,12 @@ would tune around known simulation feedback defects.
   ledger-derived validator fixes the denominator at 106, enforces the
   13/13/20/14/23/9/14 family distribution, validates original-capture
   provenance, and fails closed on missing, duplicate, unknown, or tracked A0
-  evidence. C2 original-executable capture and ingestion is next.
+  evidence. P58-B08 completes the fail-closed C2 ingestion path: the guest
+  records the running executable hash and per-cell provenance, while the host
+  verifies and stores exact 640×480 PNGs only under the ignored A0 tree.
+  Authoritative capture remains 0/106 because the owned Windows capture host
+  was offline at this checkpoint; C2 is not complete until all 106 source
+  states are captured and ingested.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

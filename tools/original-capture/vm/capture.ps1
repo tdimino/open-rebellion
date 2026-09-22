@@ -24,7 +24,14 @@ param(
   [string]$LaunchArgs = "-w",
   [string]$WindowTitleMatch = "Rebellion",
   [int]$SettleMs = 500,
-  [int]$MaxAttempts = 8
+  [int]$MaxAttempts = 8,
+  [string]$CellId = "",
+  [string]$Requirement = "",
+  [ValidateSet("new-game", "original-save", "editor-assisted-save", "live-journey")]
+  [string]$StateSetupKind = "live-journey",
+  [string]$StateSetupIdentifier = "",
+  [string]$StateSetupNotes = "",
+  [string[]]$InputTrace = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,6 +73,12 @@ if ($Launch -ne "") {
   $proc = Get-GameWindow
 }
 if (-not $proc) { throw "No window matching '$WindowTitleMatch' (and no REBEXE process with a window)." }
+if ($CellId -ne "") {
+  if ($CellId -notmatch '^TAC-0[1-7]-C\d{3}$') { throw "Invalid tactical cell ID '$CellId'." }
+  if ($Requirement -eq "") { throw "-Requirement is required with -CellId." }
+  if ($StateSetupIdentifier -eq "") { throw "-StateSetupIdentifier is required with -CellId." }
+  if ($InputTrace.Count -eq 0) { throw "-InputTrace is required with -CellId." }
+}
 
 $hwnd = $proc.MainWindowHandle
 [void][Win32]::SetForegroundWindow($hwnd)
@@ -117,10 +130,21 @@ $meta = [ordered]@{
   client_origin   = @($origin.X, $origin.Y)
   screen          = @([Win32]::GetSystemMetrics(0), [Win32]::GetSystemMetrics(1))
   process         = $proc.ProcessName
+  executable_sha256 = (Get-FileHash -Algorithm SHA256 -Path $proc.Path).Hash.ToLowerInvariant()
   window_title    = $proc.MainWindowTitle
   windows_build   = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").BuildLabEx
   captured_at_utc = (Get-Date).ToUniversalTime().ToString("o")
   method          = "GDI CopyFromScreen of client rect; two consecutive hash-equal frames"
+}
+if ($CellId -ne "") {
+  $meta.cell_id = $CellId
+  $meta.requirement = $Requirement
+  $meta.state_setup = [ordered]@{
+    kind = $StateSetupKind
+    identifier = $StateSetupIdentifier
+    notes = $StateSetupNotes
+  }
+  $meta.input_trace = @($InputTrace)
 }
 $meta | ConvertTo-Json -Depth 3 | Set-Content -Path (Join-Path $Out "$Name.json") -Encoding UTF8
 Write-Output ("{0} {1}x{2} sha256={3}" -f $png, $w, $h, $meta.sha256)

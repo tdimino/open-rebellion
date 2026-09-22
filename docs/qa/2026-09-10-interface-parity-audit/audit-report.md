@@ -255,6 +255,13 @@ original media. Its current report is deliberately 0 mapped, 0 A0, and 0
 accepted. C2 and C5 populate those dimensions; the validator prevents either
 from being mistaken for acceptance.
 
+P58-B08 adds the original-capture ingestion path. The Windows guest records the
+running executable hash and per-cell provenance; the host independently checks
+the ledger requirement, source identity, decoded 640×480 PNG, hashes, setup and
+input trace, and confines accepted bytes to the ignored A0 store. The owned
+capture host was offline at this checkpoint, so A0 coverage and strict tactical
+acceptance both remain 0/106.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

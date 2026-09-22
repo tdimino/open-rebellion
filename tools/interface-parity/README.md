@@ -39,6 +39,25 @@ and [`tactical-a0-manifest.example.json`](tactical-a0-manifest.example.json).
 Actual manifests and captures live under ignored
 `.artifacts/interface-parity/a0/`; the exclusion check rejects any tracked
 artifact from that store.
+
+Initialize the ignored local manifest once, then ingest each guest capture with
+its JSON sidecar:
+
+```sh
+mkdir -p .artifacts/interface-parity/a0
+cp tools/interface-parity/tactical-a0-manifest.example.json \
+  .artifacts/interface-parity/a0/manifest.json
+node tools/interface-parity/ingest-tactical-a0.mjs \
+  --manifest=.artifacts/interface-parity/a0/manifest.json \
+  --png=/path/to/TAC-01-C001.png \
+  --metadata=/path/to/TAC-01-C001.json
+```
+
+Ingestion verifies the exact ledger requirement, audited executable hash,
+unmodified source manifest, 640×480 sidecar and decoded PNG dimensions, capture
+provenance, input trace, and SHA-256. It copies accepted bytes only to the
+cell's ignored A0 directory and refuses a different replacement for an already
+registered cell. It does not resize or otherwise transform original output.
 GID actions register a fresh expected command event before input, then wait
 through the following paint; the combined wait has a two-second deadline.
 This prevents a stale log or an early screenshot from satisfying a new action.
