@@ -751,7 +751,10 @@ would tune around known simulation feedback defects.
   verifies and stores exact 640×480 PNGs only under the ignored A0 tree.
   Authoritative capture remains 0/106 because the owned Windows capture host
   was offline at this checkpoint; C2 is not complete until all 106 source
-  states are captured and ingested.
+  states are captured and ingested. P58-B09 begins C5 by schema-validating the
+  tactical catalog and mapping 82/106 cells to current deterministic evidence:
+  64 journeys and 18 snapshots. The remaining 24 cells have a concrete
+  new-scenario queue; none is accepted without its A0 and comparison gates.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

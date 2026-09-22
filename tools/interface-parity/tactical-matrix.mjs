@@ -73,14 +73,23 @@ export function catalogCoverage(catalog, cells, { strict = false } = {}) {
   assert(Array.isArray(catalog?.scenarios), "tactical catalog has no scenarios");
   const known = new Set(cells.map(({ id }) => id));
   const mapped = new Map();
+  const executionKinds = new Map();
 
   for (const scenario of catalog.scenarios) {
     assert(
       typeof scenario.slug === "string" && scenario.slug.length > 0,
       "tactical catalog contains a scenario without a slug",
     );
+    assert(
+      ["journey", "snapshot", "negative-control"].includes(scenario.execution_kind),
+      `${scenario.slug} has an invalid execution_kind`,
+    );
     const auditCells = scenario.audit_cells ?? [];
     assert(Array.isArray(auditCells), `${scenario.slug} audit_cells must be an array`);
+    assert(
+      scenario.execution_kind !== "negative-control" || auditCells.length === 0,
+      `${scenario.slug} negative control may not map acceptance cells`,
+    );
     for (const cellId of auditCells) {
       assert(known.has(cellId), `${scenario.slug} maps unknown tactical cell ${cellId}`);
       assert(
@@ -88,6 +97,7 @@ export function catalogCoverage(catalog, cells, { strict = false } = {}) {
         `${cellId} is mapped by both ${mapped.get(cellId)} and ${scenario.slug}`,
       );
       mapped.set(cellId, scenario.slug);
+      executionKinds.set(cellId, scenario.execution_kind);
     }
   }
 
@@ -95,7 +105,7 @@ export function catalogCoverage(catalog, cells, { strict = false } = {}) {
   if (strict && missing.length > 0) {
     fail(`tactical catalog is missing ${missing.length} cells: ${missing.join(", ")}`);
   }
-  return { mapped, missing };
+  return { mapped, executionKinds, missing };
 }
 
 function validateArtifactPath(artifactPath, cellId) {
@@ -204,10 +214,13 @@ export function buildTacticalMatrix({
   const rows = cells.map((cell) => ({
     ...cell,
     scenario_slug: catalogResult.mapped.get(cell.id) ?? null,
+    execution_kind: catalogResult.executionKinds.get(cell.id) ?? null,
     a0_status: a0Result.captures.has(cell.id) ? "available" : "reference-needed",
     accepted: cell.ledger_status === "passed",
   }));
   const accepted = rows.filter((row) => row.accepted).length;
+  const journeyCells = rows.filter((row) => row.execution_kind === "journey").length;
+  const snapshotCells = rows.filter((row) => row.execution_kind === "snapshot").length;
   if (requireAccepted && accepted !== TACTICAL_CELL_TOTAL) {
     fail(`strict parity acceptance is ${accepted}/${TACTICAL_CELL_TOTAL}`);
   }
@@ -219,6 +232,8 @@ export function buildTacticalMatrix({
     summary: {
       denominator: TACTICAL_CELL_TOTAL,
       matrix_coverage: catalogResult.mapped.size,
+      journey_cells: journeyCells,
+      snapshot_cells: snapshotCells,
       a0_coverage: a0Result.captures.size,
       parity_acceptance: accepted,
       catalog_cells_missing: catalogResult.missing.length,

@@ -38,6 +38,7 @@ the source of truth for scope, acceptance, and current work.
 | P58-B06 | [Tactical completion checkpoint](2026-09-22-tactical-completion-bundle.md) | [`p58-b06-tactical-completion/`](p58-b06-tactical-completion/) |
 | P58-B07 | [Tactical 106-cell matrix contract](2026-09-22-tactical-106-matrix-contract.md) | [`p58-b07-tactical-matrix-contract/`](p58-b07-tactical-matrix-contract/) |
 | P58-B08 | [Tactical A0 ingestion](2026-09-22-tactical-a0-ingestion.md) | [`p58-b08-tactical-a0-ingestion/`](p58-b08-tactical-a0-ingestion/) |
+| P58-B09 | [Tactical A1 crosswalk](2026-09-22-tactical-a1-crosswalk.md) | [`p58-b09-tactical-a1-crosswalk/`](p58-b09-tactical-a1-crosswalk/) |
 
 ## Current strategic correction
 

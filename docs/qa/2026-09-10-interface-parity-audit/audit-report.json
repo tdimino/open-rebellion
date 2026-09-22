@@ -68,6 +68,7 @@
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
     "tactical_matrix_contract": "pass_P58_B07_ledger_derived_106_cells_distribution_13_13_20_14_23_9_14_current_0_mapped_0_A0_0_accepted_missing_duplicate_unknown_unsafe_and_tracked_A0_fail_closed",
     "tactical_a0_ingestion": "pass_P58_B08_guest_executable_and_cell_provenance_host_exact_ledger_640x480_hash_source_and_destination_validation_capture_host_offline_current_0_of_106",
+    "tactical_a1_crosswalk": "pass_P58_B09_30_scenarios_82_of_106_cells_64_journeys_18_snapshots_24_explicit_gaps_0_A0_0_accepted",
     "space_battle_launcher_practical_progress": "approximately_96_percent_planning_estimate_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
@@ -323,5 +324,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Bring the owned Windows capture host online and ingest authoritative A0 frames while continuing deterministic A1 mapping and the remaining production gaps: authentic Game Options, Alliance Death Star framing, persistent trench-run outcome, native beam and playback, and shared post-battle orchestration. Keep all 106 strict cells open until their complete evidence passes."
+  "next_action": "Implement and run the 24 unmapped tactical scenarios, prioritizing group and selected-object states, navigation, missing commands, Battle Alert and audio, original Game Options and withdrawal confirmation, trench-run production launch, and strategic persistence. In parallel, bring the owned Windows host online for A0 capture. Keep all 106 strict cells open until their complete evidence passes."
 }

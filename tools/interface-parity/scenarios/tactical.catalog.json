@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "family": "TAC-01",
+  "family": "TAC-01..TAC-07",
   "fixture_namespace": 1,
-  "status": "entry-fixture-only",
+  "status": "partial-a1-matrix",
   "factions": ["alliance", "empire"],
   "viewports": [
     { "id": "640x480", "width": 640, "height": 480, "device_scale_factor": 1 },
@@ -13,16 +13,18 @@
       "slug": "battle-entry",
       "description": "Deterministic opposing one-ship, one-squadron encounter through the production tactical entry function",
       "fixture_codes": { "alliance": 65793, "empire": 66049 },
+      "execution_kind": "snapshot",
       "tactical_proof": true,
       "expected_lod_resource": 2560,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-01-C001", "TAC-01-C002", "TAC-01-C003", "TAC-01-C009", "TAC-01-C011"],
       "acceptance": "Functional entry fixture only. No original tactical interface cell is accepted."
     },
     {
       "slug": "battle-entry-proof-off",
       "description": "Deterministic negative control for pixel-level tactical mesh submission evidence",
       "fixture_codes": { "alliance": 65794, "empire": 66050 },
+      "execution_kind": "negative-control",
       "tactical_proof": false,
       "expected_status": "battle-ready",
       "audit_cells": [],
@@ -32,6 +34,7 @@
       "slug": "lod-close",
       "description": "Source-derived close LOD fixture below the original 15-unit scaled-depth threshold",
       "fixture_codes": { "alliance": 65795, "empire": 66051 },
+      "execution_kind": "snapshot",
       "tactical_proof": true,
       "expected_lod_resource": 2560,
       "expected_status": "battle-ready",
@@ -42,6 +45,7 @@
       "slug": "lod-medium",
       "description": "Source-derived medium LOD fixture between the original 15-unit and 40-unit scaled-depth thresholds",
       "fixture_codes": { "alliance": 65796, "empire": 66052 },
+      "execution_kind": "snapshot",
       "tactical_proof": true,
       "expected_lod_resource": 2561,
       "expected_status": "battle-ready",
@@ -52,6 +56,7 @@
       "slug": "lod-far",
       "description": "Source-derived far LOD fixture above the original 40-unit scaled-depth threshold",
       "fixture_codes": { "alliance": 65797, "empire": 66053 },
+      "execution_kind": "snapshot",
       "tactical_proof": true,
       "expected_lod_resource": 2562,
       "expected_status": "battle-ready",
@@ -62,6 +67,7 @@
       "slug": "lod-journey",
       "description": "One-renderer close-medium-far-medium-close journey through the authentic tactical zoom controls",
       "fixture_codes": { "alliance": 65798, "empire": 66054 },
+      "execution_kind": "journey",
       "tactical_proof": true,
       "lod_journey": true,
       "expected_lod_resource": 2560,
@@ -74,27 +80,30 @@
       "slug": "camera-journey",
       "description": "Source-traced faction view, authored mesh transform, system-selected palette, field zoom, yaw orbit, pitch, and selected-object target journey through the original bitmap camera controls",
       "fixture_codes": { "alliance": 65799, "empire": 66055 },
+      "execution_kind": "journey",
       "tactical_proof": true,
       "camera_journey": true,
       "expected_lod_resource": 2560,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-04-C006", "TAC-04-C007", "TAC-04-C008", "TAC-04-C009", "TAC-04-C010", "TAC-04-C011"],
       "acceptance": "A1 executable camera-state, authored-transform, system-palette, and bitmap-control proof only. Native A0 view comparison remains open."
     },
     {
       "slug": "production-participants",
       "description": "Live BattleSession capital ships and fighter groups rendered from exact DAT-joined tactical resources with camera-projected selection and targeting",
       "fixture_codes": { "alliance": 65800, "empire": 66056 },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-01-C008", "TAC-03-C016", "TAC-03-C018", "TAC-04-C004", "TAC-04-C005"],
       "acceptance": "Provisional A1 production capital and fighter resource rendering plus projection-aligned interaction proof only. Object rotation, complete effects, and native A0 comparison remain open."
     },
     {
       "slug": "production-fighter-detail-journey",
       "description": "Live fighter groups cross the exact indicator, far, and close view-span thresholds through the original bitmap zoom controls without reloading either family",
       "fixture_codes": { "alliance": 65802, "empire": 66058 },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "fighter_detail_journey": true,
@@ -106,17 +115,19 @@
       "slug": "production-group-presentation",
       "description": "All eight task-force slots and all four fighter groups rendered and selected through original bitmap controls, source hotkeys, and DAT-joined RGBY fighter resources",
       "fixture_codes": { "alliance": 65803, "empire": 66059 },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "group_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-02-C001", "TAC-02-C002", "TAC-02-C003", "TAC-02-C004", "TAC-02-C005", "TAC-02-C006", "TAC-02-C008", "TAC-02-C010", "TAC-02-C011", "TAC-02-C013", "TAC-03-C019"],
       "acceptance": "A1 executable task-force and fighter-group presentation proof only. Native A0 comparison and the remaining tactical command surface stay open."
     },
     {
       "slug": "production-effect-presentation",
       "description": "All six executable-selected target effect families rendered as transparent, palette-bound type-303 frames on production capital positions",
       "fixture_codes": { "alliance": 65804, "empire": 66060 },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "effect_presentation": true,
@@ -131,6 +142,7 @@
         "alliance": 65805,
         "empire": 66061
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "projectile_field_presentation": true,
@@ -145,11 +157,12 @@
         "alliance": 65806,
         "empire": 66062
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "selected_damage_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-03-C002", "TAC-03-C005", "TAC-03-C006"],
       "acceptance": "A1 source-registry portrait join, original matte composition, and live damage-meter proof only. Power allocation, commands, destroyed selection, Death Star, and native A0 comparison remain open."
     },
     {
@@ -159,11 +172,12 @@
         "alliance": 65807,
         "empire": 66063
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "subsystem_field_command_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-03-C007", "TAC-03-C008", "TAC-03-C009", "TAC-03-C010", "TAC-03-C011"],
       "acceptance": "A1 executable resource, quantization, placement, source-identity, capacity, priority, and frame-reset proof only. Combat-driven subsystem damage, command input, and native A0 comparison remain open."
     },
     {
@@ -173,11 +187,12 @@
         "alliance": 65808,
         "empire": 66064
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "live_subsystem_damage_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-03-C003"],
       "acceptance": "A1 executable branch, threshold, component-capacity, live state, and resource proof only. Original RNG sequence, repair, command input, engine mode bonuses, active tractor speed penalties, and native A0 comparison remain open."
     },
     {
@@ -187,6 +202,7 @@
         "alliance": 65809,
         "empire": 66065
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "subsystem_repair_mobility_presentation": true,
@@ -201,6 +217,7 @@
         "alliance": 65810,
         "empire": 66066
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "maneuver_movement_presentation": true,
@@ -215,11 +232,12 @@
         "alliance": 65811,
         "empire": 66067
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "command_assignment_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-03-C013", "TAC-05-C002", "TAC-05-C005", "TAC-05-C007", "TAC-05-C010", "TAC-05-C012", "TAC-05-C013", "TAC-05-C014", "TAC-05-C015", "TAC-05-C016"],
       "acceptance": "A1 executable panel, bitmap, hit-mask, disabled-state, cancel, and exact order-code delivery proof. Order execution, Death Star enablement, turning, collision response, and native A0 comparison remain open."
     },
     {
@@ -229,11 +247,12 @@
         "alliance": 65812,
         "empire": 66068
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "command_execution_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-05-C001", "TAC-05-C004"],
       "acceptance": "A1 executable maneuver waypoint, desired-direction, Hold stop, carrier reservation, and fighter Returning-state proof. Exact capital turning, carrier ingress and docking, collision response, attack executors, Death Star execution, and native A0 comparison remain open."
     },
     {
@@ -243,6 +262,7 @@
         "alliance": 65813,
         "empire": 66069
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "command_progression_presentation": true,
@@ -257,11 +277,12 @@
         "alliance": 65814,
         "empire": 66070
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "attack_targeting_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-05-C008"],
       "acceptance": "A1 executable order-code, typed first-eligible target, live-engagement retention, and no-wrong-class fallback proof. Exact weapon-resolution callbacks, target-loss reacquisition, and native A0 comparison remain open."
     },
     {
@@ -271,11 +292,12 @@
         "alliance": 65815,
         "empire": 66071
       },
+      "execution_kind": "snapshot",
       "tactical_proof": false,
       "production_participants": true,
       "attack_target_lifecycle_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-03-C017"],
       "acceptance": "A1 executable target invalidation, stable same-class reacquisition, exhausted-list clearing, and no cross-class fallback proof. Exact arc, range, recharge, target-removal callback ordering, global RNG, and native A0 comparison remain open."
     },
     {
@@ -285,11 +307,12 @@
         "alliance": 65816,
         "empire": 66072
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "death_star_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-03-C020", "TAC-05-C009", "TAC-05-C021", "TAC-05-C022"],
       "acceptance": "A1 executable manager predicate, 5010 and 5020 resource identity, 300-second charge, separate renderer object, and hostile fighter-only Attack Death Star control proof. Exact damage receiver, superlaser window, authored 5030 sequence, trench run, and native A0 comparison remain open."
     },
     {
@@ -299,11 +322,12 @@
         "alliance": 65817,
         "empire": 66073
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "battle_results_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-01-C013", "TAC-07-C001", "TAC-07-C002", "TAC-07-C003", "TAC-07-C005", "TAC-07-C006", "TAC-07-C007", "TAC-07-C008", "TAC-07-C009", "TAC-07-C010", "TAC-07-C011", "TAC-07-C012", "TAC-07-C013"],
       "acceptance": "A1 source-window, summary-scene, faction rail, force-category, condition-column, and strategic return-routing proof. Lossless owned A0 comparison and exact icon/list pagination remain open."
     },
     {
@@ -313,11 +337,12 @@
         "alliance": 65818,
         "empire": 66074
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "battle_options_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-01-C005", "TAC-01-C006", "TAC-06-C001", "TAC-06-C004", "TAC-06-C005", "TAC-06-C006", "TAC-06-C008"],
       "acceptance": "A1 original panel and control-resource proof with production routing. The shared original Game Options window, exact withdrawal confirmation dialog, and lossless owned A0 comparison remain open."
     },
     {
@@ -327,12 +352,13 @@
         "alliance": 65819,
         "empire": 66075
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "battle_options_presentation": true,
       "battle_options_withdrawal": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-06-C002", "TAC-06-C009", "TAC-07-C004"],
       "acceptance": "A1 production withdrawal and disabled-state proof. The exact original confirmation dialog, neutral or friendly destination selection, tractor and gravity interception, and lossless owned A0 comparison remain open."
     },
     {
@@ -342,12 +368,13 @@
         "alliance": 65820,
         "empire": 66076
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "death_star_presentation": true,
       "death_star_laser_journey": true,
       "expected_status": "battle-ready",
-      "audit_cells": [],
+      "audit_cells": ["TAC-01-C004", "TAC-05-C017", "TAC-05-C018", "TAC-05-C019", "TAC-05-C020"],
       "acceptance": "A1 executable 5030 tactical star surface plus faction-gated 1021 through 1024 superlaser control, right-click target assignment, loading state, delayed beam, and target destruction proof. Exact native target cursor, beam timing and appearance, trench-run sequence, and lossless owned A0 comparison remain open."
     },
     {
@@ -357,6 +384,7 @@
         "alliance": 65821,
         "empire": 66077
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "death_star_presentation": true,
@@ -372,6 +400,7 @@
         "alliance": 65822,
         "empire": 66078
       },
+      "execution_kind": "journey",
       "tactical_proof": false,
       "production_participants": true,
       "death_star_presentation": true,
@@ -384,6 +413,7 @@
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },
+      "execution_kind": "negative-control",
       "tactical_proof": false,
       "suppress_capital_fallback": true,
       "expected_status": "battle-ready",

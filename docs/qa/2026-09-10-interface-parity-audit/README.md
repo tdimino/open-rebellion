@@ -178,6 +178,9 @@ native playback, and A0 gates pass.
 - Review the [P58-B08 tactical A0-ingestion evidence](evidence/2026-09-22-tactical-a0-ingestion.md)
   for the guest provenance extension, fail-closed host registration path, and
   explicit 0/106 capture-host boundary.
+- Review the [P58-B09 tactical A1 crosswalk](evidence/2026-09-22-tactical-a1-crosswalk.md)
+  for the 82 mapped cells, journey/snapshot distinction, and exact 24-cell
+  new-scenario queue.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

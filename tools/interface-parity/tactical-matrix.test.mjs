@@ -29,6 +29,7 @@ function completeCatalog(cells) {
   return {
     scenarios: cells.map((cell, index) => ({
       slug: `cell-${index + 1}`,
+      execution_kind: index % 2 === 0 ? "journey" : "snapshot",
       audit_cells: [cell.id],
     })),
   };
@@ -81,18 +82,20 @@ test("unknown and duplicate catalog mappings fail closed", () => {
 
   const duplicate = clone(catalog);
   duplicate.scenarios[0].audit_cells = [cells[0].id];
-  duplicate.scenarios[1].audit_cells = [cells[0].id];
+  duplicate.scenarios[2].audit_cells = [cells[0].id];
   assert.throws(() => catalogCoverage(duplicate, cells), /mapped by both/);
 });
 
-test("development matrix reports every missing mapping and original reference", () => {
+test("development matrix reports partial mapping separately from original evidence", () => {
   const result = buildTacticalMatrix({ surfaceLedger: ledger, catalog });
   assert.deepEqual(result.summary, {
     denominator: 106,
-    matrix_coverage: 0,
+    matrix_coverage: 82,
+    journey_cells: 64,
+    snapshot_cells: 18,
     a0_coverage: 0,
     parity_acceptance: 0,
-    catalog_cells_missing: 106,
+    catalog_cells_missing: 24,
     a0_cells_missing: 106,
     status: "incomplete",
   });
@@ -102,7 +105,7 @@ test("strict coverage requires all 106 catalog and A0 records", () => {
   const cells = collectTacticalCells(ledger);
   assert.throws(
     () => buildTacticalMatrix({ surfaceLedger: ledger, catalog, strict: true }),
-    /tactical catalog is missing 106 cells/,
+    /tactical catalog is missing 24 cells/,
   );
   const result = buildTacticalMatrix({
     surfaceLedger: ledger,
@@ -111,6 +114,8 @@ test("strict coverage requires all 106 catalog and A0 records", () => {
     strict: true,
   });
   assert.equal(result.summary.matrix_coverage, 106);
+  assert.equal(result.summary.journey_cells, 53);
+  assert.equal(result.summary.snapshot_cells, 53);
   assert.equal(result.summary.a0_coverage, 106);
   assert.equal(result.summary.status, "runnable-not-accepted");
 });
@@ -126,8 +131,20 @@ test("release acceptance always implies strict catalog and A0 coverage", () => {
       catalog,
       requireAccepted: true,
     }),
-    /tactical catalog is missing 106 cells/,
+    /tactical catalog is missing 24 cells/,
   );
+});
+
+test("scenario kinds are mandatory and negative controls cannot claim cells", () => {
+  const cells = collectTacticalCells(ledger);
+  const missingKind = clone(catalog);
+  delete missingKind.scenarios[0].execution_kind;
+  assert.throws(() => catalogCoverage(missingKind, cells), /invalid execution_kind/);
+
+  const negativeClaim = clone(catalog);
+  negativeClaim.scenarios.find(({ execution_kind: kind }) => kind === "negative-control")
+    .audit_cells = [cells[0].id];
+  assert.throws(() => catalogCoverage(negativeClaim, cells), /may not map acceptance cells/);
 });
 
 test("A0 manifest schema requires capture provenance", () => {

@@ -25,6 +25,7 @@
     "tactical_subsystem_field_command_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-15-tactical-subsystem-field-commands.md",
     "tactical_command_assignment_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-command-assignment.md",
     "tactical_order_execution_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md",
+    "tactical_a1_crosswalk_evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-a1-crosswalk.md",
     "official_victory_contract": "docs/reference/campaign-history/official-campaign-contract.md#standard-victory",
     "current_victory_implementation": "agent_docs/systems/victory.md",
     "archived_legacy_game_flow": "archive/legacy-docs/GAME-FLOW.md"

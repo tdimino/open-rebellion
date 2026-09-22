@@ -23,6 +23,11 @@ const catalog = readJson(resolveArgument(
   "--catalog",
   "tools/interface-parity/scenarios/tactical.catalog.json",
 ));
+const catalogSchema = readJson(path.join(here, "schemas/tactical-catalog.schema.json"));
+const validateCatalog = new Ajv2020({ allErrors: true }).compile(catalogSchema);
+if (!validateCatalog(catalog)) {
+  throw new Error(`invalid tactical catalog:\n${JSON.stringify(validateCatalog.errors, null, 2)}`);
+}
 let a0Manifest = null;
 if (argumentsByName.has("--a0-manifest")) {
   const manifestPath = resolveArgument("--a0-manifest", "");

@@ -262,6 +262,12 @@ input trace, and confines accepted bytes to the ignored A0 store. The owned
 capture host was offline at this checkpoint, so A0 coverage and strict tactical
 acceptance both remain 0/106.
 
+P58-B09 maps the 30 existing deterministic tactical scenarios to 82 canonical
+cells: 64 browser journeys and 18 snapshots. Scenario kinds are schema-checked,
+and negative controls cannot claim cells. Twenty-four cells now form the exact
+new-scenario queue. Matrix coverage is not parity acceptance; every mapped cell
+still requires authoritative A0 comparison before it can pass.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.
