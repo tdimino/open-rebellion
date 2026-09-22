@@ -3,7 +3,7 @@ title: "Standalone Space-Battle Test Launcher"
 description: "Test-only entry into the production tactical battle path and its original-interface parity matrix"
 category: plan
 created: 2026-09-12
-updated: 2026-09-19
+updated: 2026-09-22
 tags: [interface, parity, tactical, browser, testing]
 status: in_progress
 ---
@@ -11,6 +11,11 @@ status: in_progress
 # Standalone Space-Battle Test Launcher
 
 This is a test harness for `UIP-B06` in the [batched interface plan](2026-09-11-feat-batched-interface-parity-plan.md). A developer should be able to choose a deterministic battle, open the actual game directly in that battle, use its real controls, and inspect the result without playing a campaign first. The launcher is outside the game canvas and absent from production builds. It must not introduce another tactical renderer or an invented in-game menu.
+
+The [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md)
+is the final execution plan for authoritative original captures, exact catalog
+coverage, A0/A1 comparison, remaining production closure, and the completion
+push.
 
 Use the [space-battle launcher reference](../reference/space-battle-launcher/README.md)
 for current routes, fixture codes, commands, evidence, and verified limits.

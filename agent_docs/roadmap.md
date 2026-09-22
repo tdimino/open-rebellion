@@ -740,11 +740,25 @@ would tune around known simulation feedback defects.
   native playback comparison, persistent trench-run outcome, shared
   post-battle bombardment, landing, and navigation orchestration, the strict
   106-cell A0 evidence matrix, and release gates remain pending, so this parent
-  item is not checked off.
+  item is not checked off. Execute the remaining work as the local commit set
+  in the [Tactical 106-Cell Acceptance Train](../docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md),
+  then push only after its strict matrix passes.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production
   battle scene and remain outside the original 106-cell parity denominator.
+- [ ] After original 640×480 parity, add an optional enhanced-widescreen layout.
+  Preserve authentic bitmap panels and control sizes while extending only the
+  galaxy, system, and tactical viewports into the additional horizontal space.
+  Treat genuine 16:9 support as a separate modernization track outside the
+  original 106-cell parity denominator:
+  - anchor authentic cockpit panels to the screen edges;
+  - extend backgrounds without stretching their bitmaps;
+  - adjust tactical-camera projection and galaxy-map bounds;
+  - translate pointer coordinates through the widescreen layout;
+  - preserve original hit masks and control geometry;
+  - pillarbox videos and other fixed 4:3 surfaces; and
+  - maintain separate visual baselines for supported 16:9 resolutions.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

@@ -22,6 +22,10 @@ native playback, and A0 gates pass.
 - Follow the current
   [batched execution plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md)
   for bundle boundaries, verification cadence, browser review, and commit gates.
+- Use the
+  [Tactical 106-Cell Acceptance Train](../../plans/2026-09-22-tooling-tactical-106-cell-acceptance.md)
+  for the final A0 capture, deterministic A1 mapping, comparison, and strict
+  `TAC-01` through `TAC-07` completion push.
 - Use its
   [acceleration sidecar](../../plans/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
   for the permanent muted harness, deterministic fixtures, visual comparisons,
