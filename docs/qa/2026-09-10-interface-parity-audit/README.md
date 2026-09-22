@@ -172,6 +172,9 @@ native playback, and A0 gates pass.
   for capital and fighter combat, collision, retained formations, Death Star
   and trench-run routes, original result/options surfaces, the clean 120-case
   browser gate, qualified independent visual review, and remaining A0 boundary.
+- Review the [P58-B07 tactical matrix-contract evidence](evidence/2026-09-22-tactical-106-matrix-contract.md)
+  for the generated 106-cell denominator, exact family distribution, A0
+  provenance schema, exclusion checks, and deliberately unclaimed coverage.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

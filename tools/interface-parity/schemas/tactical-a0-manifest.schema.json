@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.example/schemas/tactical-a0-manifest-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "source", "captures"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": 1 },
+    "kind": { "const": "open-rebellion-tactical-a0-manifest" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable_sha256", "executable_identity", "installation_id", "language", "unmodified", "vm", "capture"],
+      "properties": {
+        "executable_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "executable_identity": { "const": "REBEXE.EXE" },
+        "installation_id": { "type": "string", "minLength": 1 },
+        "language": { "const": "en-US" },
+        "unmodified": { "const": true },
+        "vm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "os", "display_width", "display_height", "scale_percent", "color_depth_bits"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "os": { "type": "string", "minLength": 1 },
+            "display_width": { "type": "integer", "minimum": 640 },
+            "display_height": { "type": "integer", "minimum": 480 },
+            "scale_percent": { "const": 100 },
+            "color_depth_bits": { "enum": [16, 24, 32] }
+          }
+        },
+        "capture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["format", "width", "height", "device_scale_factor", "lossless", "client_area_only", "host_scaling"],
+          "properties": {
+            "format": { "const": "png" },
+            "width": { "const": 640 },
+            "height": { "const": 480 },
+            "device_scale_factor": { "const": 1 },
+            "lossless": { "const": true },
+            "client_area_only": { "const": true },
+            "host_scaling": { "const": false }
+          }
+        }
+      }
+    },
+    "captures": {
+      "type": "array",
+      "maxItems": 106,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cell_id", "requirement", "captured_at", "state_setup", "input_trace", "artifacts"],
+        "properties": {
+          "cell_id": { "type": "string", "pattern": "^TAC-0[1-7]-C\\d{3}$" },
+          "requirement": { "type": "string", "minLength": 1 },
+          "captured_at": { "type": "string", "format": "date-time" },
+          "state_setup": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "identifier", "notes"],
+            "properties": {
+              "kind": { "enum": ["new-game", "original-save", "editor-assisted-save", "live-journey"] },
+              "identifier": { "type": "string", "minLength": 1 },
+              "notes": { "type": "string" }
+            }
+          },
+          "input_trace": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "path", "sha256", "mime_type"],
+              "properties": {
+                "kind": { "enum": ["visual_png", "audio_capture", "video_capture", "interaction_trace"] },
+                "path": { "type": "string", "pattern": "^\\.artifacts/interface-parity/a0/TAC-0[1-7]-C\\d{3}/[^/]+$" },
+                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "mime_type": { "type": "string", "minLength": 1 },
+                "width": { "type": "integer", "minimum": 1 },
+                "height": { "type": "integer", "minimum": 1 }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": { "kind": { "const": "visual_png" } },
+                    "required": ["kind"]
+                  },
+                  "then": {
+                    "required": ["width", "height"],
+                    "properties": {
+                      "mime_type": { "const": "image/png" },
+                      "width": { "const": 640 },
+                      "height": { "const": 480 }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

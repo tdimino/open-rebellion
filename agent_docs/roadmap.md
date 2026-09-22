@@ -742,7 +742,11 @@ would tune around known simulation feedback defects.
   106-cell A0 evidence matrix, and release gates remain pending, so this parent
   item is not checked off. Execute the remaining work as the local commit set
   in the [Tactical 106-Cell Acceptance Train](../docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md),
-  then push only after its strict matrix passes.
+  then push only after its strict matrix passes. P58-B07 completes C1: the
+  ledger-derived validator fixes the denominator at 106, enforces the
+  13/13/20/14/23/9/14 family distribution, validates original-capture
+  provenance, and fails closed on missing, duplicate, unknown, or tracked A0
+  evidence. C2 original-executable capture and ingestion is next.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

@@ -16,6 +16,25 @@
     "viewport",
     "device_pixel_ratio"
   ],
+  "tactical_acceptance_matrix": {
+    "families": [
+      "TAC-01",
+      "TAC-02",
+      "TAC-03",
+      "TAC-04",
+      "TAC-05",
+      "TAC-06",
+      "TAC-07"
+    ],
+    "expected_distribution": [13, 13, 20, 14, 23, 9, 14],
+    "required_cells": 106,
+    "validator": "tools/interface-parity/validate-tactical-matrix.mjs",
+    "a0_schema": "tools/interface-parity/schemas/tactical-a0-manifest.schema.json",
+    "current_matrix_coverage": 0,
+    "current_a0_coverage": 0,
+    "current_parity_acceptance": 0,
+    "checkpoint": "P58-B07"
+  },
   "surfaces": [
     {
       "id": "PRE-01",

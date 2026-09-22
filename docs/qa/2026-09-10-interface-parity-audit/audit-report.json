@@ -66,6 +66,7 @@
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
+    "tactical_matrix_contract": "pass_P58_B07_ledger_derived_106_cells_distribution_13_13_20_14_23_9_14_current_0_mapped_0_A0_0_accepted_missing_duplicate_unknown_unsafe_and_tracked_A0_fail_closed",
     "space_battle_launcher_practical_progress": "approximately_96_percent_planning_estimate_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"

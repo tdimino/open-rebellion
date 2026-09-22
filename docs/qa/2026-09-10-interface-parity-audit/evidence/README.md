@@ -36,6 +36,7 @@ the source of truth for scope, acceptance, and current work.
 | P58F12 | [Tactical attack target acquisition](2026-09-18-tactical-attack-targeting.md) | [`p58f12-tactical-attack-targeting/`](p58f12-tactical-attack-targeting/) |
 | P58F13 | [Tactical attack target lifecycle](2026-09-19-tactical-attack-target-lifecycle.md) | [`p58f13-tactical-attack-target-lifecycle/`](p58f13-tactical-attack-target-lifecycle/) |
 | P58-B06 | [Tactical completion checkpoint](2026-09-22-tactical-completion-bundle.md) | [`p58-b06-tactical-completion/`](p58-b06-tactical-completion/) |
+| P58-B07 | [Tactical 106-cell matrix contract](2026-09-22-tactical-106-matrix-contract.md) | [`p58-b07-tactical-matrix-contract/`](p58-b07-tactical-matrix-contract/) |
 
 ## Current strategic correction
 

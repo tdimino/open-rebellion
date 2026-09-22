@@ -247,6 +247,14 @@ and attack states, trench-run routing, battle results, and strategic return.
 `TAC-08` is separately reserved for the original ground-assault summary and
 report flow, which had no live tactical minigame.
 
+P58-B07 makes that denominator executable as a generated contract. The matrix
+validator derives all 106 rows from `surface-ledger.json`, enforces the exact
+13/13/20/14/23/9/14 family distribution, rejects missing, duplicate, unknown,
+or non-counting mappings, and validates lossless A0 provenance without tracking
+original media. Its current report is deliberately 0 mapped, 0 A0, and 0
+accepted. C2 and C5 populate those dimensions; the validator prevents either
+from being mistaken for acceptance.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

@@ -91,6 +91,9 @@ reviewable and must leave all existing focused tests green.
 
 ### C1. Define and validate the 106-cell matrix
 
+Status: complete at P58-B07. The generator reports the current honest boundary
+as 0 mapped, 0 A0, and 0 accepted while preserving all 106 stable rows.
+
 - Generate the tactical matrix directly from `surface-ledger.json`.
 - Fail on missing, duplicate, unknown, or non-counting cell IDs.
 - Require exactly 106 unique rows distributed 13/13/20/14/23/9/14.

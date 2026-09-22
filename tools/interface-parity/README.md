@@ -18,6 +18,27 @@ node run.mjs --all --scenario=pan --no-build  # four focused faction/viewport ca
 
 Harness unit regressions can be run from the repository root with
 `make test-interface-harness`, or here with `npm run test:unit`.
+
+The tactical acceptance denominator is generated directly from the surface
+ledger rather than maintained as a second hand-written list:
+
+```sh
+node validate-tactical-matrix.mjs
+node validate-tactical-matrix.mjs --rows
+node validate-tactical-matrix.mjs \
+  --a0-manifest=.artifacts/interface-parity/a0/manifest.json --strict
+```
+
+The first command reports coverage totals, while `--rows` emits every stable
+cell from `TAC-01` through `TAC-07`. Strict mode requires exactly 106 unique
+catalog mappings and 106 provenance-complete A0 capture records. Add
+`--require-accepted` only at the final release gate; it fails until all 106
+canonical ledger cells are marked passed. The manifest schema and safe empty
+example are [`schemas/tactical-a0-manifest.schema.json`](schemas/tactical-a0-manifest.schema.json)
+and [`tactical-a0-manifest.example.json`](tactical-a0-manifest.example.json).
+Actual manifests and captures live under ignored
+`.artifacts/interface-parity/a0/`; the exclusion check rejects any tracked
+artifact from that store.
 GID actions register a fresh expected command event before input, then wait
 through the following paint; the combined wait has a two-second deadline.
 This prevents a stale log or an early screenshot from satisfying a new action.

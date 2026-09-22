@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B07",
+  "status": "pass_contract_incomplete_evidence",
+  "family": "TAC-01..TAC-07",
+  "expected_distribution": {
+    "TAC-01": 13,
+    "TAC-02": 13,
+    "TAC-03": 20,
+    "TAC-04": 14,
+    "TAC-05": 23,
+    "TAC-06": 9,
+    "TAC-07": 14
+  },
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 0,
+    "a0_coverage": 0,
+    "parity_acceptance": 0,
+    "catalog_cells_missing": 106,
+    "a0_cells_missing": 106
+  },
+  "verification": {
+    "harness_unit_tests": "21_passed_0_failed",
+    "ledger_validator": "pass_44_families_569_cells_106_tactical_cells",
+    "tracked_path_exclusion": "pass_all_tracked_paths_0_forbidden_A0_paths",
+    "production_fixture_exclusion": "pass_0_production_fixture_tokens",
+    "diff_check": "pass"
+  },
+  "proprietary_artifacts_committed": false
+}
