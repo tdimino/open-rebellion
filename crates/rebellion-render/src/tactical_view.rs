@@ -3572,7 +3572,11 @@ impl BattleSession {
                     // unrelated capital ship.
                     continue;
                 }
-                None if ships[fire_idx].order == TacticalOrder::AttackCapitalShips => {
+                None if matches!(
+                    ships[fire_idx].order,
+                    TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+                ) =>
+                {
                     // No eligible target of the requested class remains.
                     continue;
                 }
@@ -10557,6 +10561,60 @@ mod tests {
             session.ships[0].attack_target, None,
             "an exhausted fighter list must not fall through to a capital target"
         );
+    }
+
+    #[test]
+    fn attack_fighters_cleared_target_does_not_fire_at_capital() {
+        fn session_with_source_order(order: TacticalOrder) -> BattleSession {
+            let mut source = test_ship(64, 0, true, true);
+            source.order = order;
+            source.attack_target = (order == TacticalOrder::AttackFighters)
+                .then_some(TacticalAttackTarget::FighterGroup(0));
+            source.weapon_arcs[0] = TacticalWeaponArc::new(300, 0, 0);
+            source.weapon_ranges.laser_cannon = 100.0;
+
+            let mut capital = test_ship(128, 0, false, true);
+            capital.hull_current = 1_000;
+            capital.hull_max = 1_000;
+            capital.shield = 1_000;
+            capital.shield_max = 1_000;
+
+            let mut exhausted_fighter = test_fighter(5, false);
+            exhausted_fighter.alive = false;
+            exhausted_fighter.squad_count = 0;
+            exhausted_fighter.hull_current = 0.0;
+            exhausted_fighter.shield = 0.0;
+
+            let mut session = test_session(vec![source, capital], vec![exhausted_fighter], true);
+            session.paused = false;
+            session
+        }
+
+        let mut ordered = session_with_source_order(TacticalOrder::AttackFighters);
+        let ordered_capital_before = (ordered.ships[1].hull_current, ordered.ships[1].shield);
+
+        ordered.step();
+
+        assert_eq!(ordered.ships[0].attack_target, None);
+        assert_eq!(
+            (ordered.ships[1].hull_current, ordered.ships[1].shield),
+            ordered_capital_before
+        );
+        assert!(ordered.weapon_effects.is_empty());
+        assert!(ordered.impact_effects.is_empty());
+
+        let mut autonomous = session_with_source_order(TacticalOrder::None);
+        let autonomous_capital_before =
+            (autonomous.ships[1].hull_current, autonomous.ships[1].shield);
+
+        autonomous.step();
+
+        assert_ne!(
+            (autonomous.ships[1].hull_current, autonomous.ships[1].shield),
+            autonomous_capital_before
+        );
+        assert_eq!(autonomous.weapon_effects.len(), 1);
+        assert_eq!(autonomous.impact_effects.len(), 1);
     }
 
     #[test]
