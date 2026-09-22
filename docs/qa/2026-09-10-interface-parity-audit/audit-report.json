@@ -62,11 +62,11 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_original_shell_first_controls_complete_tactical_corpus_transport_exact_dat_resource_joins_live_production_capital_source_fighter_detail_system_selected_planet_effects_fields_selected_capital_damage_subsystem_condition_exact_field_source_live_subsystem_damage_repair_mobility_maneuver_state_velocity_position_integration_authentic_command_assignment_source_rate_turn_waypoint_completion_full_fighter_recovery_typed_attack_target_acquisition_and_same_class_replacement_pass_implementation_gates_automatic_grouping_exact_planet_placement_exact_global_rng_sequence_exact_arrival_callbacks_recovery_trajectories_weapon_arcs_ranges_recharge_fighter_combat_collision_formation_power_allocation_special_objects_original_view_and_all_106_cells_open",
+    "tactical_interface": "fail_p58_b06_passes_120_case_implementation_gate_and_qualified_A1_visual_review_with_no_P0_or_P1_for_capital_and_fighter_combat_collision_automatic_groups_retained_formations_original_results_options_resource_5030_stars_provisional_death_star_superlaser_exact_trench_run_routing_and_strategic_result_application_Game_Options_Alliance_Death_Star_framing_persistent_trench_outcome_native_beam_shared_post_battle_orchestration_native_playback_original_view_and_all_106_cells_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
-    "space_battle_launcher_practical_progress": "approximately_88_percent_planning_estimate_0_of_106_strict_cells_accepted",
+    "space_battle_launcher_practical_progress": "approximately_96_percent_planning_estimate_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
   },
@@ -163,7 +163,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The original tactical shell, first bitmap control-state checkpoints, complete asset decode and transport, exact ship/fighter DAT resource joins, live capital, fighter, planet, group, effects, fields, selected-capital damage, subsystem condition, exact field-source presentation, live subsystem damage, repair, mobility, maneuver state, velocity, position integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, full fighter recovery, typed attack target acquisition, and same-class target replacement pass implementation gates, but automatic grouping, exact planet placement, exact global RNG sequencing, exact arrival callbacks and recovery trajectories, weapon arcs, ranges, recharge, fighter combat, collision and formation behavior, power allocation, special objects, original view acceptance, replacement battle content, and incomplete result, special-state, and audio paths keep the tactical interface failing",
+      "title": "The tactical completion checkpoint adds original shell controls, complete asset transport, live capital and fighter combat, collision, automatic groups, capability-sorted task forces with forward-relative retained geometry, original result/options panels, resource 5030 stars, a provisional Death Star superlaser journey, exact result-to-film trench-run routing, exact strategic roster, capture, and Death Star-state application, a clean 120-case implementation gate, and a qualified A1 visual review with no P0 or P1 findings; authentic Game Options, Alliance Death Star framing, persistent trench-run outcome proof, native beam semantics, shared post-battle orchestration, native playback, A0 view acceptance, and all 106 strict cells remain open",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -198,7 +198,8 @@
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-17-tactical-order-execution.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md",
-      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md"
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md",
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -315,9 +316,10 @@
     "p58f11_tactical_command_progression": "evidence/2026-09-18-tactical-command-progression.md",
     "p58f12_tactical_attack_targeting": "evidence/2026-09-18-tactical-attack-targeting.md",
     "p58f13_tactical_attack_target_lifecycle": "evidence/2026-09-19-tactical-attack-target-lifecycle.md",
+    "p58_b06_tactical_completion": "evidence/2026-09-22-tactical-completion-bundle.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Execute the consolidated space-battle completion bundle: exact arc, range, weapon-availability, projectile-event, recharge, and fighter-combat behavior, then collision, formation, Death Star, results, main-game integration, and standalone launchability. Run the final 106-cell evidence matrix with independent browser review while keeping each strict cell open until its A0 evidence passes."
+  "next_action": "Close the qualified P58-B06 review findings for the authentic Game Options window, Alliance Death Star framing baseline, and persistent trench-run outcome; recover the native Death Star beam contract and original trench-run result producer; complete shared post-battle bombardment, landing, and navigation orchestration; and confirm native playback. Keep all 106 strict cells open until their lossless A0 evidence passes."
 }

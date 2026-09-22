@@ -2455,8 +2455,24 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
 
     // Remove dead ships and empty fleets.
     for &fleet_key in &[result.attacker_fleet, result.defender_fleet] {
+        let death_star_status = world.fleets.get(fleet_key).map(|fleet| {
+            fleet
+                .capital_ships
+                .iter()
+                .fold((false, false), |(present, alive), ship| {
+                    let is_death_star =
+                        world.capital_ship_classes[ship.class].dat_id.family() == 0x34;
+                    (
+                        present || is_death_star,
+                        alive || (is_death_star && ship.alive),
+                    )
+                })
+        });
         if let Some(fleet) = world.fleets.get_mut(fleet_key) {
             fleet.capital_ships.retain(|s| s.alive);
+            if let Some((true, death_star_alive)) = death_star_status {
+                fleet.has_death_star = death_star_alive;
+            }
         }
         let is_empty = world
             .fleets
@@ -2483,7 +2499,9 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
                         if let Some(c) = world.characters.get_mut(ck) {
                             c.is_captive = true;
                             c.captured_by = Some(captor);
+                            c.capture_tick = Some(result.tick);
                             c.current_system = Some(loc);
+                            c.current_fleet = None;
                         }
                     }
                 }
@@ -2502,10 +2520,10 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
 #[cfg(test)]
 mod combat_application_tests {
     use super::*;
-    use rebellion_core::combat::{FighterLossEvent, SpaceCombatResult};
-    use rebellion_core::dat::ExplorationStatus;
+    use rebellion_core::combat::{FighterLossEvent, ShipDamageEvent, SpaceCombatResult};
+    use rebellion_core::dat::{ExplorationStatus, Faction};
     use rebellion_core::ids::{FighterKey, SectorKey};
-    use rebellion_core::world::{CapitalShipClass, FighterEntry, Fleet, System};
+    use rebellion_core::world::{CapitalShipClass, Character, FighterEntry, Fleet, System};
 
     fn add_combat_system(world: &mut GameWorld) -> SystemKey {
         world.systems.insert(System {
@@ -2589,6 +2607,13 @@ mod combat_application_tests {
             is_alliance: false,
             has_death_star: false,
         });
+        let captive = world.characters.insert(Character {
+            name: "Defeated Officer".into(),
+            is_empire: true,
+            current_fleet: Some(defender),
+            ..Character::default()
+        });
+        world.fleets[defender].characters.push(captive);
         let result = SpaceCombatResult {
             attacker_fleet: attacker,
             defender_fleet: defender,
@@ -2616,6 +2641,67 @@ mod combat_application_tests {
 
         assert_eq!(world.fleets[attacker].fighters[0].count, 2);
         assert!(!world.fleets.contains_key(defender));
+        assert!(world.characters[captive].is_captive);
+        assert_eq!(
+            world.characters[captive].captured_by,
+            Some(Faction::Alliance)
+        );
+        assert_eq!(world.characters[captive].capture_tick, Some(1));
+        assert_eq!(world.characters[captive].current_fleet, None);
+    }
+
+    #[test]
+    fn destroyed_death_star_clears_fleet_flag_while_escort_survives() {
+        let mut world = GameWorld::default();
+        let system = add_combat_system(&mut world);
+        let attacker = add_ship_fleet(&mut world, system, true, 100, 10);
+        let death_star_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x3400_0001),
+            name: "Death Star".into(),
+            is_empire: true,
+            hull: 1_000,
+            ..CapitalShipClass::default()
+        });
+        let escort_class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x3000_0002),
+            name: "Escort".into(),
+            is_empire: true,
+            hull: 100,
+            ..CapitalShipClass::default()
+        });
+        let defender = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![
+                ShipInstance::new(death_star_class, 1_000, false),
+                ShipInstance::new(escort_class, 100, false),
+            ],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: true,
+        });
+        world.systems[system].fleets.push(defender);
+        let result = SpaceCombatResult {
+            attacker_fleet: attacker,
+            defender_fleet: defender,
+            system,
+            winner: CombatSide::Attacker,
+            ship_damage: vec![ShipDamageEvent {
+                fleet: defender,
+                ship_index: 0,
+                hull_before: 1_000,
+                hull_after: 0,
+            }],
+            fighter_losses: vec![],
+            tick: 2,
+        };
+
+        apply_space_combat_result_inner(&result, &mut world);
+
+        assert!(world.fleets.contains_key(defender));
+        assert!(!world.fleets[defender].has_death_star);
+        assert_eq!(world.fleets[defender].capital_ships.len(), 1);
+        assert_eq!(world.fleets[defender].capital_ships[0].class, escort_class);
     }
 
     #[test]

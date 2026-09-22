@@ -20,7 +20,7 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 88% |
+| Practical space-battle launcher implementation | approximately 96% |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
@@ -110,6 +110,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58F11 tactical command-progression evidence](evidence/2026-09-18-tactical-command-progression.md) | Source-rate turning, maneuver arrival, full fighter recovery states, preserved squadron count, 84-case muted browser gate, and explicit A0 limits. |
 | [P58F12 tactical attack-targeting evidence](evidence/2026-09-18-tactical-attack-targeting.md) | Typed Attack Fighters and Attack Capital Ships acquisition for capital and fighter owners, visible target endpoints, 88-case muted browser gate, and explicit A0 limits. |
 | [P58F13 tactical attack-target lifecycle evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md) | Same-class target invalidation and replacement for capital and fighter owners, visible target endpoints, 92-case muted browser gate, and explicit A0 limits. |
+| [P58-B06 tactical completion evidence](evidence/2026-09-22-tactical-completion-bundle.md) | Capital and fighter combat, collision, retained formations, Death Star and trench-run routes, original result/options surfaces, clean 120-case muted browser gate, and explicit A0 limits. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -272,10 +273,13 @@ P58F12 restores typed Attack Fighters and Attack Capital Ships target
 acquisition across capital and fighter owners while preserving valid live
 engagements. P58F13 adds live target invalidation, stable same-class
 replacement, and exhausted-list clearing without random or cross-class
-fallback. Automatic production grouping, exact planet placement, exact
-global RNG sequencing, exact arrival callbacks and recovery trajectories,
-the arc, range, weapon, projectile, and recharge callbacks, collision and formation
-behavior, power allocation, results, A0 comparison, and every tactical cell
+fallback. The P58-B06 checkpoint adds source-backed capital and fighter
+combat, collision, automatic grouping, forward-relative retained formations,
+the separate Death Star object, original result/options panels, and both
+trench-run routes. Exact planet placement, global RNG sequencing, original
+arrival callbacks, power allocation, native beam behavior, shared post-battle
+bombardment, landing, and navigation orchestration, native playback, A0
+comparison, and every tactical cell
 remain open.
 Runtime pack v3 now
 includes all 3,988 ALSPRITE and EMSPRITE type-302 frames, while briefing,

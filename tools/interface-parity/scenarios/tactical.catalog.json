@@ -279,6 +279,108 @@
       "acceptance": "A1 executable target invalidation, stable same-class reacquisition, exhausted-list clearing, and no cross-class fallback proof. Exact arc, range, recharge, target-removal callback ordering, global RNG, and native A0 comparison remain open."
     },
     {
+      "slug": "production-death-star-presentation",
+      "description": "Manager-owned Death Star sprite and faction-gated fighter mission control through the production tactical renderer",
+      "fixture_codes": {
+        "alliance": 65816,
+        "empire": 66072
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "death_star_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable manager predicate, 5010 and 5020 resource identity, 300-second charge, separate renderer object, and hostile fighter-only Attack Death Star control proof. Exact damage receiver, superlaser window, authored 5030 sequence, trench run, and native A0 comparison remain open."
+    },
+    {
+      "slug": "production-battle-results-presentation",
+      "description": "Original bitmap Battle Results summary, faction force tabs, operational/damaged/destroyed categories, and Go Directly To routing",
+      "fixture_codes": {
+        "alliance": 65817,
+        "empire": 66073
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "battle_results_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 source-window, summary-scene, faction rail, force-category, condition-column, and strategic return-routing proof. Lossless owned A0 comparison and exact icon/list pagination remain open."
+    },
+    {
+      "slug": "production-battle-options-presentation",
+      "description": "Original faction Battle Options panel, source-shaped controls, observe and take-command toggle, withdraw, simulation, Game Options route, close, and disabled withdrawal",
+      "fixture_codes": {
+        "alliance": 65818,
+        "empire": 66074
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "battle_options_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 original panel and control-resource proof with production routing. The shared original Game Options window, exact withdrawal confirmation dialog, and lossless owned A0 comparison remain open."
+    },
+    {
+      "slug": "production-battle-options-withdrawal",
+      "description": "Original Battle Options withdrawal command, transition into fleet retreat, and resulting disabled withdrawal state",
+      "fixture_codes": {
+        "alliance": 65819,
+        "empire": 66075
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "battle_options_presentation": true,
+      "battle_options_withdrawal": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 production withdrawal and disabled-state proof. The exact original confirmation dialog, neutral or friendly destination selection, tractor and gravity interception, and lossless owned A0 comparison remain open."
+    },
+    {
+      "slug": "production-death-star-laser-journey",
+      "description": "Original tactical star surface and owner-gated Death Star superlaser gauge, fire control, target assignment, delayed beam, and destruction journey",
+      "fixture_codes": {
+        "alliance": 65820,
+        "empire": 66076
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "death_star_presentation": true,
+      "death_star_laser_journey": true,
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable 5030 tactical star surface plus faction-gated 1021 through 1024 superlaser control, right-click target assignment, loading state, delayed beam, and target destruction proof. Exact native target cursor, beam timing and appearance, trench-run sequence, and lossless owned A0 comparison remain open."
+    },
+    {
+      "slug": "production-trench-run-success",
+      "description": "Source result state 6 routes the production tactical session through MDATA.201 and back to the paused battle",
+      "fixture_codes": {
+        "alliance": 65821,
+        "empire": 66077
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "death_star_presentation": true,
+      "trench_run_outcome": "success",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable result-code, movie-identity, one-shot routing, and tactical-return proof. Native playback comparison and lossless owned A0 acceptance remain open."
+    },
+    {
+      "slug": "production-trench-run-failure",
+      "description": "Source result state 7 routes the production tactical session through MDATA.202 and back to the paused battle",
+      "fixture_codes": {
+        "alliance": 65822,
+        "empire": 66078
+      },
+      "tactical_proof": false,
+      "production_participants": true,
+      "death_star_presentation": true,
+      "trench_run_outcome": "failure",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "A1 executable result-code, movie-identity, one-shot routing, and tactical-return proof. Native playback comparison and lossless owned A0 acceptance remain open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

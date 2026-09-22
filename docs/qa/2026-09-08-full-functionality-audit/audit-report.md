@@ -557,7 +557,7 @@ later work must not hide failures in an earlier invariant.
 | M3 — Browser excellence | Extend the verified deterministic `runtime.orpk` foundation with Brotli compression, bounded raw/decoded caches, HD entries, high DPI, one egui pass, cached geometry, IndexedDB, gesture-unlocked audio, owned advisor assets, and cross-browser input suites. | Cold start ≤3 s at 50 Mbps/30 ms, ≤4 requests before menu, combined heap/WASM ≤256 MB after 10 minutes, no visual/input failures in current Chrome/Firefox/Safari. |
 | M4 — Multiplayer | Introduce validated, tick-stamped commands; authoritative host simulation; faction-filtered fog-safe deltas and snapshots; secure WSS transport; prediction/reconciliation; reconnect; persistence and observability. | Two clients run 5,000 ticks with matching server checkpoints every 250 ticks; at 200 ms RTT there are no input stalls and ≤1 reconciliation per 100 commands; reconnect within 60 s; all illegal commands rejected; hidden state absent from client memory. |
 | M5 — Continuous proof | Enforce format/clippy/build/browser checks; short and long campaign gates; resource and screenshot ledgers; app integration tests; package boot and data/save hashes. | Every supported P00–P40 pass is green from release artifacts, with reproducible evidence retained by CI. |
-| v1.0 — Protected Cloudflare release | Deploy the self-contained browser build to Cloudflare Pages with Functions middleware, `SITE_PASSWORD` and `SESSION_SECRET` secrets, signed secure cookies, asset headers, preview/production environments, and rollback instructions. | Anonymous requests cannot retrieve HTML, WASM, DAT, bitmap, save, or multiplayer endpoints; valid login survives navigation; invalid/expired/tampered sessions fail closed; logout works; Astra medium verifies gameplay and bitmap evidence through the deployed URL in current Chrome, Firefox, and Safari. |
+| v1.0 — Protected Cloudflare release | Deploy the self-contained browser build to Cloudflare Pages with Functions middleware, `SITE_PASSWORD` and `SESSION_SECRET` secrets, signed secure cookies, asset headers, preview/production environments, and rollback instructions. | Anonymous requests cannot retrieve HTML, WASM, DAT, bitmap, save, or multiplayer endpoints; valid login survives navigation; invalid/expired/tampered sessions fail closed; logout works; independent browser acceptance verifies gameplay and bitmap evidence through the deployed URL in current Chrome, Firefox, and Safari. |
 
 ### Browser performance budgets
 
@@ -614,7 +614,7 @@ and underlying state mutation are both demonstrated.
 | P21 | Blockade and repair | Enter/exit, ownership/economy effects, breach outcomes, hull recovery, cost/cap, interruptions, and persistence. |
 | P22 | AI | Both factions; validator pass/reject boundaries; budgets; research; production; troop deployment; recon; defense; retreat; target deconfliction; Death Star escort/targeting. |
 | P23 | Core space combat | Seven phases, weapon classes, shields, ion effects, recharge, carriers, fighters, officers, Emperor, retreat, destruction, and result application. |
-| P24 | Tactical space combat | Placement, selection, formations, movement, focus fire, pause/speed, retreat, visual state, accepted formulas, and galaxy result application. [Per-hull/fighter result identity and shared entry](evidence/2026-09-12-tactical-result-identity.md) are verified partial tranches. P54 through P57B2C2B stage and decode the original 3D corpus and recover its camera, placement, transform, palette, light, and retained-mode state. [P58A](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md) joins every ship and fighter DAT identity to its original resources and transports all 87 meshes and 397 textures. P58B through P58E render live capital/fighter families, align projected interaction, prove fighter detail, and restore group controls. P58F1 through [P58F13](../2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md) restore system-selected planets, effects, fields, selected-capital damage and subsystem condition, exact field-source identity, live subsystem mutation, repair, maneuver-state production, velocity, physical integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, full fighter recovery states, typed attack target acquisition, and same-class replacement. Original view acceptance, automatic group distribution, exact global RNG sequencing, exact arrival callbacks and recovery trajectories, weapon arcs, ranges, recharge, fighter combat, collision and formation behavior, power allocation, return, broader interactions, and battle acceptance remain open. |
+| P24 | Tactical space combat | Placement, selection, formations, movement, focus fire, pause/speed, retreat, visual state, accepted formulas, and galaxy result application. [Per-hull/fighter result identity and shared entry](evidence/2026-09-12-tactical-result-identity.md) are verified partial tranches. P54 through P57B2C2B stage and decode the original 3D corpus and recover its camera, placement, transform, palette, light, and retained-mode state. [P58A](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md) joins every ship and fighter DAT identity to its original resources and transports all 87 meshes and 397 textures. P58B through P58F13 render live capital/fighter families and restore their interaction and command paths. The [P58-B06 checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md) adds capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. Its 120-case implementation matrix passes, and independent visual review is a qualified A1 pass with no P0 or P1 findings. Original view acceptance, exact global RNG sequencing, original arrival callbacks and recovery trajectories, power allocation, native beam behavior, native playback, persistent trench-run outcome proof, shared post-battle bombardment, landing, and navigation orchestration, and battle acceptance remain open. |
 | P25 | Ground combat | Troop attack/defense, facilities, officers/difficulty, selection, casualties, conquest, visuals, and parity between automatic and interactive paths. |
 | P26 | Bombardment | Eligibility, shields, losses, popularity, ownership, messages, persistence, and visual feedback. |
 | P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, contribution to the Imperial HQ objective, and nonterminal Alliance destruction behavior. |
@@ -629,7 +629,7 @@ and underlying state mutation are both demonstrated.
 | P36 | Bitmap and interface sweep | Complete every required cell in the [43-family interface ledger](../2026-09-10-interface-parity-audit/surface-ledger.json), with exact resources, composition, geometry, hotspots, native/browser screenshots, and zero invented or unknown visible elements. |
 | P37 | Campaign acceptance | Short smoke runs and long multi-seed campaigns for both factions/difficulties with bounded fleet/event growth, balance, diversity, victory, and full parity reports. |
 | P38 | Release artifacts | Fresh native install and deployed browser package, exact artifact contents, startup/storage/media/input tests, and documentation generated from results. |
-| P39 | Protected Cloudflare deployment | Preview and production Pages deployments, secret-backed password gate, signed session cookie, logout/expiry/tamper tests, cache/security headers, asset/API access denial before authentication, deployed single-player/multiplayer smoke tests, rollback, and retained Astra evidence. |
+| P39 | Protected Cloudflare deployment | Preview and production Pages deployments, secret-backed password gate, signed session cookie, logout/expiry/tamper tests, cache/security headers, asset/API access denial before authentication, deployed single-player/multiplayer smoke tests, rollback, and retained browser evidence. |
 | P40 | GitHub Pages documentation | Publish the maintained project documentation from `main`; verify Jekyll-safe Markdown, working internal links, current README/audit/roadmap content, successful deployment, and a public smoke test. |
 
 P40 passed on 2026-09-08. Pages run `34306480934` completed from `main` at
@@ -685,29 +685,17 @@ Every feature result must record:
 No feature passes merely because a panel opens, code compiles, or a placeholder
 or fallback appears.
 
-## Astra orchestration loop
+## Independent browser acceptance loop
 
-Use GPT-6-Astra at low effort for routine reproduction and medium effort for
-cross-system diagnosis. Reviewer and debugger runs remain read-only until a fix
-is explicitly authorized.
-
-```bash
-ASTRA=/Users/tomdimino/.claude/skills/codex-orchestrator/scripts/codex-astra.sh
-
-$ASTRA reviewer \
-  "Audit FEATURE_ID using its acceptance case. Do not modify files. Reproduce it on native and WASM and attach command, state, console, network, and screenshot evidence." \
-  --reasoning low --service-tier default --no-approve
-
-$ASTRA debugger \
-  "Diagnose failed FEATURE_ID from the attached reproduction. Identify the smallest coherent fix and adjacent regression tests. Do not modify files." \
-  --reasoning medium --service-tier default --no-approve
-```
+Use the browser-acceptance workflow selected in
+[`agent-tooling.md`](../../../agent_docs/agent-tooling.md). Reviewer and
+debugger runs remain read-only until a fix is explicitly authorized.
 
 After an authorized fix:
 
 1. Rerun the original reproduction.
 2. Run adjacent regression cases.
-3. Have an Astra reviewer confirm the evidence independently.
+3. Have an independent browser reviewer confirm the evidence.
 4. Update the JSON ledger.
 5. Close only that feature ID.
 

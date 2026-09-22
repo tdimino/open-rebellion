@@ -12,7 +12,7 @@ import pixelmatch from "pixelmatch";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { performCommand } from "./command-events.mjs";
-import { launchBrowser } from "./browser-launch.mjs";
+import { launchBrowser, summarizeBrowserAttempts } from "./browser-launch.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -610,6 +610,115 @@ function verifyTacticalBitmap(
       assert.deepEqual(
         Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
         `tactical control ${id} pixel (${x}, ${y}) differs from its original BMP`,
+      );
+      pixelsChecked++;
+    }
+  }
+  return { status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked };
+}
+
+function verifyTacticalBackdrop(viewport, screenshotBytes, paletteResourceId) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", bright_pixels_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const runtimeRoot = path.join(root, "data/base/ui/tactical-dll/TACTICAL3D/runtime");
+  const manifest = JSON.parse(fs.readFileSync(path.join(runtimeRoot, "manifest.json"), "utf8"));
+  const textureRecord = manifest.textures.find(({ identifier_kind: kind, id }) =>
+    kind === "id" && id === 5030);
+  const paletteRecord = manifest.textures.find(({ identifier_kind: kind, id }) =>
+    kind === "id" && id === paletteResourceId);
+  assert.ok(textureRecord && paletteRecord, "resource 5030 or its active palette is missing");
+  const texture = fs.readFileSync(path.join(runtimeRoot, textureRecord.object));
+  const palette = fs.readFileSync(path.join(runtimeRoot, paletteRecord.object));
+  assert.equal(texture.subarray(0, 8).toString("ascii"), "ORTINDEX");
+  assert.equal(palette.subarray(0, 8).toString("ascii"), "ORTPAL00");
+  assert.equal(texture.readUInt32LE(8), 1);
+  assert.equal(palette.readUInt32LE(8), 1);
+  assert.equal(palette.readUInt32LE(12), paletteResourceId);
+  const width = texture.readUInt32LE(12);
+  const height = texture.readUInt32LE(16);
+  const pixelCount = texture.readUInt32LE(28);
+  assert.deepEqual([width, height, pixelCount], [440, 438, 440 * 438]);
+  const indices = texture.subarray(36, 36 + pixelCount);
+  const rgb = palette.subarray(16, 16 + 256 * 3);
+  assert.equal(indices.length, pixelCount);
+  assert.equal(rgb.length, 256 * 3);
+  let brightPixels = 0;
+  let matchingBrightPixels = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = indices[y * width + x];
+      const color = Array.from(rgb.subarray(index * 3, index * 3 + 3));
+      if (Math.max(...color) < 16) continue;
+      brightPixels++;
+      const offset = ((29 + y) * screenshot.width + 18 + x) * 4;
+      const actual = Array.from(screenshot.data.subarray(offset, offset + 3));
+      if (actual.every((channel, index) => channel === color[index])) matchingBrightPixels++;
+    }
+  }
+  assert.ok(brightPixels > 100, "resource 5030 lacks a meaningful bright-star sample");
+  const matchRatio = matchingBrightPixels / brightPixels;
+  assert.ok(matchRatio > 0.6,
+    `resource 5030 bright-star match ratio was ${matchRatio.toFixed(3)}`);
+  return {
+    status: "source-bitmap-visible",
+    resource_id: 5030,
+    bright_pixels_checked: brightPixels,
+    matching_bright_pixels: matchingBrightPixels,
+    match_ratio: matchRatio,
+  };
+}
+
+function verifyTacticalGreenBeam(viewport, beforeBytes, beamBytes) {
+  const before = PNG.sync.read(beforeBytes);
+  const beam = PNG.sync.read(beamBytes);
+  assert.deepEqual([beam.width, beam.height], [before.width, before.height]);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const minX = Math.floor(offsetX + 16 * scale);
+  const maxX = Math.ceil(offsetX + 460 * scale);
+  const minY = Math.floor(offsetY + 28 * scale);
+  const maxY = Math.ceil(offsetY + 467 * scale);
+  let changedGreenPixels = 0;
+  for (let y = minY; y < maxY; y++) {
+    for (let x = minX; x < maxX; x++) {
+      const offset = (y * beam.width + x) * 4;
+      const red = beam.data[offset];
+      const green = beam.data[offset + 1];
+      const blue = beam.data[offset + 2];
+      const changed = red !== before.data[offset]
+        || green !== before.data[offset + 1]
+        || blue !== before.data[offset + 2];
+      if (changed && green > 96 && green > red * 1.5 && green > blue * 1.25) {
+        changedGreenPixels++;
+      }
+    }
+  }
+  assert.ok(changedGreenPixels > 0, "Death Star beam produced no visible green aperture pixels");
+  return { status: "visible", changed_green_pixels: changedGreenPixels };
+}
+
+function verifyStrategyBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRects = []) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", pixels_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const source = decodeIndexedBmp(fs.readFileSync(path.join(
+    root, `data/base/ui/strategy-dll/BMP/${id}.bmp`,
+  )));
+  let pixelsChecked = 0;
+  for (let y = 0; y < source.height; y++) {
+    for (let x = 0; x < source.width; x++) {
+      if (ignoredRects.some((rect) => x >= rect.x && y >= rect.y
+        && x < rect.x + rect.width && y < rect.y + rect.height)) continue;
+      const color = source.pixel(x, y);
+      if (color[0] < 32 && color[1] < 32 && color[2] > 192) continue;
+      const actualOffset = ((y0 + y) * screenshot.width + x0 + x) * 4;
+      assert.deepEqual(
+        Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
+        `strategy control ${id} pixel (${x}, ${y}) differs from its original BMP`,
       );
       pixelsChecked++;
     }
@@ -2320,6 +2429,504 @@ function probeTacticalAttackTargetLifecyclePresentation(viewport, folder, stable
   }];
 }
 
+async function probeTacticalDeathStarPresentation(
+  page, viewport, folder, stable, consoleLines, ready,
+) {
+  const deathStar = ready.death_star;
+  assert.ok(deathStar, "Death Star fixture omitted its manager-owned object");
+  assert.deepEqual({
+    faction: deathStar.faction,
+    is_attacker: deathStar.is_attacker,
+    tactical_ordinal: deathStar.tactical_ordinal,
+    resource_id: deathStar.resource_id,
+    opposing_resource_id: deathStar.opposing_resource_id,
+    operational: deathStar.operational,
+    hull: deathStar.hull,
+    laser_charge: deathStar.laser_charge,
+    destroyed: deathStar.destroyed,
+    action_committed: deathStar.action_committed,
+  }, {
+    faction: "empire",
+    is_attacker: false,
+    tactical_ordinal: 37,
+    resource_id: 5010,
+    opposing_resource_id: 5020,
+    operational: true,
+    hull: 100,
+    laser_charge: 0,
+    destroyed: false,
+    action_committed: false,
+  });
+  assert.deepEqual(deathStar.source_position,
+    [0, 0, ready.source_layout.outer_positive_z]);
+
+  const effectLoad = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] effect_loaded resource=5010"));
+  assert.ok(effectLoad, "Death Star resource 5010 was not decoded into the tactical renderer");
+  const effectScene = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] effect_scene") && text.includes("3001:5010:"));
+  assert.ok(effectScene, "Death Star resource 5010 was not submitted as object 3001");
+  fs.writeFileSync(path.join(folder, "death-star-overview.png"), stable.bytes);
+
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const click = async (x, y) => {
+    await page.mouse.click(offsetX + x * scale, offsetY + y * scale);
+    await page.waitForTimeout(80);
+  };
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
+
+  await click(342, 10);
+  await click(520, 248);
+  const missions = await capture("death-star-missions-open");
+  const enabled = ready.faction === "alliance";
+  const probes = [{
+    type: enabled ? "attack-death-star-enabled" : "attack-death-star-disabled",
+    ...verifyTacticalBitmap(viewport, missions, enabled ? 1176 : 1178, 567, 186),
+  }];
+
+  await click(590, 199);
+  const afterAttack = await capture(enabled
+    ? "death-star-mission-selected"
+    : "death-star-disabled-probe");
+  if (enabled) {
+    probes.push({
+      type: "attack-death-star-selected",
+      ...verifyTacticalBitmap(viewport, afterAttack, 1177, 567, 186),
+    });
+    probes.push({
+      type: "attack-death-star-graphic",
+      ...verifyTacticalTransparentOverlay(viewport, afterAttack, 2154, 495, 41),
+    });
+    await click(560, 241);
+  } else {
+    assert.equal(sha256(afterAttack), sha256(missions),
+      "friendly Death Star accepted the disabled attack control");
+  }
+
+  const orderLogs = consoleLines
+    .filter(({ text }) => text.includes("[tactical_orders]"))
+    .map(({ text }) => text);
+  if (enabled) {
+    assert.ok(orderLogs.some((line) =>
+      /panel=missions event=commit order=6 tactic=0 capital_members=0 fighter_members=1/.test(line)),
+    "Alliance fighter group did not commit Attack Death Star");
+  } else {
+    assert.ok(!orderLogs.some((line) => /order=6/.test(line)),
+      "Imperial fighter group committed an attack against its friendly Death Star");
+  }
+  probes.push({
+    type: "source-traced-tactical-death-star-manager",
+    executable_functions: [
+      "FUN_005ab0e0", "FUN_005ab650", "FUN_005ba420", "FUN_005ba7f0", "FUN_005df110",
+    ],
+    object_id: 3001,
+    manager: deathStar,
+    attack_enabled: enabled,
+    order_logs: orderLogs,
+  });
+  return probes;
+}
+
+async function probeTacticalDeathStarLaserJourney(
+  page, viewport, folder, stable, consoleLines, ready,
+) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const probes = [{
+    type: "source-tactical-star-surface",
+    ...verifyTacticalBackdrop(viewport, stable.bytes, ready.palette_resource_id),
+  }];
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_3d] backdrop_loaded resource=5030 dimensions=440x438")),
+  "resource 5030 was not decoded as the tactical star surface");
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_3d] backdrop_scene resource=5030 dimensions=440x438")),
+  "resource 5030 was not submitted behind the tactical scene");
+
+  const button = point(623, 12);
+  if (ready.faction === "alliance") {
+    await page.mouse.click(button.x, button.y);
+    await page.waitForTimeout(80);
+    const rejected = await stableInteractionFrame(page, folder, "enemy-death-star-control-absent");
+    assert.equal(sha256(rejected), sha256(stable.bytes),
+      "Alliance player activated the enemy Death Star control region");
+    assert.ok(!consoleLines.some(({ text }) => text.includes("superlaser_targeting status=armed")),
+      "Alliance player armed the enemy Death Star superlaser");
+    probes.push({
+      type: "enemy-death-star-control-absent",
+      faction_gate: "empire-owner-only",
+      unchanged_sha256: sha256(rejected),
+    });
+    return probes;
+  }
+
+  probes.push({
+    type: "death-star-laser-gauge-ready",
+    ...verifyTacticalBitmap(viewport, stable.bytes, 1024, 474, 0, [], [
+      { x: 0, y: 0, width: 166, height: 1 },
+      { x: 0, y: 0, width: 1, height: 25 },
+      { x: 163, y: 0, width: 3, height: 25 },
+      { x: 34, y: 9, width: 95, height: 6 },
+      { x: 139, y: 2, width: 21, height: 20 },
+    ]),
+  }, {
+    type: "death-star-laser-ready",
+    ...verifyTacticalBitmap(viewport, stable.bytes, 1021, 613, 2),
+  });
+
+  await page.mouse.move(button.x, button.y);
+  await page.mouse.down({ button: "left" });
+  await page.waitForTimeout(80);
+  const held = await stableInteractionFrame(page, folder, "death-star-laser-held");
+  probes.push({
+    type: "death-star-laser-held",
+    ...verifyTacticalBitmap(viewport, held, 1022, 613, 2),
+  });
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(80);
+  const armed = await stableInteractionFrame(page, folder, "death-star-laser-armed");
+  probes.push({
+    type: "death-star-laser-armed",
+    ...verifyTacticalBitmap(viewport, armed, 1022, 613, 2),
+  });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_death_star] superlaser_targeting status=armed input=right_click")),
+  "Death Star fire control did not arm right-click targeting");
+
+  const participantLine = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] participant_scene"));
+  const positions = parseTacticalScenePositions(participantLine, "Death Star target scene");
+  const enemyIndex = ready.participants.findIndex(({ kind, faction }) =>
+    kind === "capital-ship" && faction === "alliance");
+  assert.ok(enemyIndex >= 0, "Death Star journey lacks an Alliance capital target");
+  const targetObjectId = enemyIndex + 1;
+  const target = positions.get(targetObjectId);
+  assert.ok(target, `Death Star target object ${targetObjectId} lacks a projected position`);
+  await page.mouse.click(target.x, target.y, { button: "right" });
+  await page.waitForTimeout(80);
+  const committed = await stableInteractionFrame(page, folder, "death-star-laser-committed");
+  probes.push({
+    type: "death-star-laser-committed",
+    target_object_id: targetObjectId,
+    ...verifyTacticalBitmap(viewport, committed, 1022, 613, 2),
+  });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes(`[tactical_death_star] superlaser_committed target_object_id=${targetObjectId} charge=0`)),
+  "Death Star right-click target did not commit the superlaser shot");
+
+  const pause = point(574, 318);
+  await page.mouse.click(pause.x, pause.y);
+  await page.waitForTimeout(1100);
+  const beam = await dynamicInteractionFrame(page, folder, "death-star-superlaser-beam");
+  const beamVisibility = verifyTacticalGreenBeam(viewport, committed, beam);
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_3d] projectile_scene") && text.includes("3999:3:12.000")),
+  "Death Star beam was not submitted to the production tactical renderer");
+  await page.waitForTimeout(1100);
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes(`[tactical_death_star] superlaser_resolved target_object_id=${targetObjectId}`)),
+  "Death Star beam did not resolve against its assigned target");
+  await page.mouse.click(pause.x, pause.y);
+  await page.waitForTimeout(80);
+  const resolved = await stableInteractionFrame(page, folder, "death-star-superlaser-resolved");
+  probes.push({
+    type: "death-star-superlaser-resolution",
+    target_object_id: targetObjectId,
+    beam_frame_sha256: sha256(beam),
+    beam_visibility: beamVisibility,
+    resolved_frame_sha256: sha256(resolved),
+    control: verifyTacticalBitmap(viewport, resolved, 1023, 613, 2),
+    executable_functions: ["FUN_005ba5e0", "FUN_005ba7f0", "FUN_005c4ed0", "FUN_005d4d10"],
+  });
+  return probes;
+}
+
+function probeTacticalTrenchRunOutcome(folder, stable, consoleLines, ready, expected) {
+  const movie = expected === "success" ? "201.webm" : "202.webm";
+  assert.equal(ready.trench_run_outcome, expected);
+  const route = consoleLines.find(({ text }) =>
+    text.includes(`[cutscene] opened path=assets/references/ref-videos/${movie}`));
+  assert.ok(route, `trench-run ${expected} did not route through ${movie}`);
+  fs.writeFileSync(path.join(folder, `trench-run-${expected}-return.png`), stable.bytes);
+  return [{
+    type: `trench-run-${expected}-route`,
+    result_state: expected === "success" ? 6 : 7,
+    movie,
+    returned_to: "tactical-combat",
+    log: route.text,
+  }];
+}
+
+async function probeTacticalBattleResultsPresentation(
+  page, viewport, folder, stable, consoleLines, faction,
+) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const alliance = faction === "alliance";
+  const resources = alliance ? {
+    frame: 10335, close: 10370, tabs: [10729, 10731, 10733, 10792],
+    summary: 10759, detail: 10762, fleet: 10765,
+  } : {
+    frame: 10336, close: 10376, tabs: [10739, 10741, 10743, 10521],
+    summary: 10760, detail: 10762, fleet: 10766,
+  };
+  const tabX = alliance ? 523.5 : 533;
+  const tabY = alliance ? [182.5, 236.5, 290.5, 344.5] : [183.5, 242.5, 301.5, 360.5];
+  const frameIgnored = [
+    { x: 12, y: 13, width: 400, height: 310 },
+    { x: 412, y: 0, width: 58, height: 330 },
+  ];
+  const probes = [{
+    type: "battle-results-frame",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.frame, 85, 74, frameIgnored),
+  }, {
+    type: "battle-results-summary",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.summary, 97, 87, [
+      { x: 0, y: 4, width: 400, height: 43 },
+      { x: 0, y: 202, width: 400, height: 94 },
+    ]),
+  }, {
+    type: "battle-results-close-rest",
+    ...verifyStrategyBitmap(
+      viewport, stable.bytes, resources.close, alliance ? 508 : 511, alliance ? 99 : 91,
+    ),
+  }, {
+    type: "battle-results-summary-selected",
+    ...verifyStrategyBitmap(
+      viewport, stable.bytes, resources.tabs[0], alliance ? 503 : 511, alliance ? 162 : 163,
+    ),
+  }];
+
+  const clickTab = async (index, name) => {
+    const location = point(tabX, tabY[index]);
+    await page.mouse.click(location.x, location.y);
+    return stableInteractionFrame(page, folder, name);
+  };
+
+  let capture = await clickTab(1, "results-alliance-forces");
+  probes.push({
+    type: "battle-results-alliance-tab",
+    ...verifyStrategyBitmap(
+      viewport, capture, resources.tabs[1], alliance ? 503 : 511, alliance ? 216 : 222,
+    ),
+  }, {
+    type: "battle-results-alliance-detail",
+    ...verifyStrategyBitmap(viewport, capture, resources.detail, 97, 87, [
+      { x: 0, y: 0, width: 400, height: 100 },
+      { x: 0, y: 100, width: 340, height: 196 },
+    ]),
+  });
+
+  for (let category = 0; category < 4; category++) {
+    const location = point(85 + 62 + category * 96, 74 + 70);
+    await page.mouse.click(location.x, location.y);
+    capture = await stableInteractionFrame(page, folder, `results-category-${category + 1}`);
+    probes.push({
+      type: "battle-results-force-category",
+      category: ["capital-ships", "fighters", "troops", "personnel"][category],
+      screenshot_sha256: sha256(capture),
+    });
+  }
+
+  capture = await clickTab(2, "results-imperial-forces");
+  probes.push({
+    type: "battle-results-imperial-tab",
+    ...verifyStrategyBitmap(
+      viewport, capture, resources.tabs[2], alliance ? 503 : 511, alliance ? 270 : 281,
+    ),
+  });
+
+  capture = await clickTab(3, "results-go-directly-to");
+  probes.push({
+    type: "battle-results-destination-tab",
+    ...verifyStrategyBitmap(
+      viewport, capture, resources.tabs[3], alliance ? 503 : 511, alliance ? 324 : 340,
+    ),
+  }, {
+    type: "battle-results-destination-background",
+    ...verifyStrategyBitmap(viewport, capture, 10763, 97, 87, [
+      { x: 0, y: 20, width: 400, height: 45 },
+      { x: 0, y: 142, width: 400, height: 40 },
+      { x: 17, y: 169, width: 169, height: 96 },
+      { x: 217, y: 169, width: 169, height: 96 },
+    ]),
+  }, {
+    type: "battle-results-system-destination",
+    ...verifyStrategyBitmap(viewport, capture, 10764, 114, 256),
+  }, {
+    type: "battle-results-fleet-destination",
+    ...verifyStrategyBitmap(viewport, capture, resources.fleet, 314, 256),
+  });
+
+  const destination = alliance ? point(198.5, 304) : point(398.5, 304);
+  await page.mouse.click(destination.x, destination.y);
+  await page.waitForTimeout(200);
+  const routed = await stableInteractionFrame(
+    page, folder, alliance ? "results-route-system" : "results-route-fleet",
+  );
+  assert.notEqual(sha256(capture), sha256(routed), `${faction}: result destination did not route`);
+  const route = alliance ? "system" : "fleet";
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes(`[tactical-results] destination=${route}`)), `${faction}: missing route log`);
+  probes.push({ type: "battle-results-route", destination: route,
+    screenshot_sha256: sha256(routed) });
+
+  for (const category of ["Capital Ships", "Fighters", "Troops", "Personnel"]) {
+    assert.ok(consoleLines.some(({ text }) => text.includes(`category=${category}`)),
+      `${faction}: missing ${category} result category transition`);
+  }
+  return probes;
+}
+
+async function probeTacticalBattleOptionsPresentation(
+  page, viewport, folder, stable, consoleLines, faction, withdrawalJourney,
+) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const panelResource = faction === "alliance" ? 1303 : 1304;
+  const controls = [
+    { name: "withdraw", x: 497, y: 47, width: 48, height: 34, normal: 1149, pressed: 1150 },
+    { name: "simulate", x: 497, y: 114, width: 44, height: 25, normal: 1151, pressed: 1152 },
+    { name: "observe", x: 561, y: 114, width: 45, height: 25, normal: 1153, pressed: 1154 },
+    { name: "game-options", x: 494, y: 203, width: 52, height: 33, normal: 1155, pressed: 1156 },
+    { name: "close", x: 565, y: 203, width: 29, height: 33, normal: 1157, pressed: 1158 },
+  ];
+  const ignored = (included = controls) => included.map(({ x, y, width, height }) => ({
+    x: x - 481, y: y - 27, width, height,
+  }));
+  const captureHeld = async (control, name) => {
+    const location = point(control.x + control.width / 2, control.y + control.height / 2);
+    await page.mouse.move(location.x, location.y);
+    await page.mouse.down();
+    const capture = await stableInteractionFrame(page, folder, name);
+    await page.mouse.up();
+    return capture;
+  };
+  const openLocation = point(616, 318);
+  await page.mouse.move(openLocation.x, openLocation.y);
+  await page.mouse.down();
+  const openHeld = await stableInteractionFrame(page, folder, "battle-options-open-held");
+  const probes = [{
+    type: "battle-options-hud-pressed",
+    ...verifyTacticalBitmap(viewport, openHeld, 1039, 606, 308),
+  }];
+  await page.mouse.up();
+  let panel = await stableInteractionFrame(page, folder, "battle-options-open");
+  probes.push({
+    type: "battle-options-panel",
+    faction,
+    ...verifyTacticalBitmap(viewport, panel, panelResource, 481, 27, [], ignored()),
+  });
+  for (const control of controls) {
+    probes.push({
+      type: "battle-options-control",
+      control: control.name,
+      ...verifyTacticalBitmap(viewport, panel, control.normal, control.x, control.y),
+    });
+  }
+
+  if (withdrawalJourney) {
+    const withdraw = controls[0];
+    const held = await captureHeld(withdraw, "battle-options-withdraw-held");
+    probes.push({
+      type: "battle-options-withdraw-pressed",
+      ...verifyTacticalBitmap(viewport, held, withdraw.pressed, withdraw.x, withdraw.y),
+    });
+    await stableInteractionFrame(page, folder, "battle-options-withdraw-started");
+    await page.mouse.click(openLocation.x, openLocation.y);
+    panel = await stableInteractionFrame(page, folder, "battle-options-withdraw-disabled");
+    probes.push({
+      type: "battle-options-withdraw-disabled",
+      ...verifyTacticalBitmap(
+        viewport, panel, panelResource, 481, 27, [], ignored(controls.slice(1)),
+      ),
+    });
+    const disabledWithdraw = point(521, 64);
+    await page.mouse.click(disabledWithdraw.x, disabledWithdraw.y);
+    await stableInteractionFrame(page, folder, "battle-options-disabled-click-rejected");
+    const withdrawLogs = consoleLines.filter(({ text }) =>
+      text.includes("[tactical_options] command=withdraw"));
+    assert.equal(withdrawLogs.length, 1,
+      "disabled withdrawal accepted a second command");
+    assert.ok(withdrawLogs[0].text.includes("status=withdrawal_started"));
+    probes.push({ type: "battle-options-withdraw-route", logs: withdrawLogs.map(({ text }) => text) });
+    return probes;
+  }
+
+  const observe = controls[2];
+  let held = await captureHeld(observe, "battle-options-observe-held");
+  probes.push({
+    type: "battle-options-observe-pressed",
+    ...verifyTacticalBitmap(viewport, held, observe.pressed, observe.x, observe.y),
+  });
+  panel = await stableInteractionFrame(page, folder, "battle-options-observing");
+  probes.push({
+    type: "battle-options-observe-selected",
+    ...verifyTacticalBitmap(viewport, panel, observe.pressed, observe.x, observe.y),
+  });
+  await captureHeld(observe, "battle-options-take-command-held");
+  panel = await stableInteractionFrame(page, folder, "battle-options-take-command");
+  probes.push({
+    type: "battle-options-take-command",
+    ...verifyTacticalBitmap(viewport, panel, observe.normal, observe.x, observe.y),
+  });
+
+  const gameOptions = controls[3];
+  held = await captureHeld(gameOptions, "battle-options-game-options-held");
+  probes.push({
+    type: "battle-options-game-options-pressed",
+    ...verifyTacticalBitmap(viewport, held, gameOptions.pressed, gameOptions.x, gameOptions.y),
+  });
+  await stableInteractionFrame(page, folder, "battle-options-game-options-route");
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_options] command=game_options status=routed")),
+  "Battle Options did not route Game Options");
+
+  const close = controls[4];
+  held = await captureHeld(close, "battle-options-close-held");
+  probes.push({
+    type: "battle-options-close-pressed",
+    ...verifyTacticalBitmap(viewport, held, close.pressed, close.x, close.y),
+  });
+  const closed = await stableInteractionFrame(page, folder, "battle-options-closed");
+  assert.notEqual(sha256(panel), sha256(closed), "Battle Options close did not restore the display panel");
+
+  await page.mouse.click(openLocation.x, openLocation.y);
+  await stableInteractionFrame(page, folder, "battle-options-reopened");
+  const simulate = controls[1];
+  held = await captureHeld(simulate, "battle-options-simulate-held");
+  probes.push({
+    type: "battle-options-simulate-pressed",
+    ...verifyTacticalBitmap(viewport, held, simulate.pressed, simulate.x, simulate.y),
+  });
+  const results = await stableInteractionFrame(page, folder, "battle-options-simulated-results");
+  probes.push({
+    type: "battle-options-simulate-route",
+    ...verifyStrategyBitmap(viewport, results, faction === "alliance" ? 10335 : 10336, 85, 74, [
+      { x: 12, y: 13, width: 400, height: 310 },
+      { x: 412, y: 0, width: 58, height: 330 },
+    ]),
+  });
+  const optionLogs = consoleLines
+    .filter(({ text }) => text.includes("[tactical_options]"))
+    .map(({ text }) => text);
+  for (const expected of ["command=observe", "command=take_command", "command=game_options",
+    "command=close", "command=simulate_remainder"]) {
+    assert.ok(optionLogs.some((line) => line.includes(expected)),
+      `missing Battle Options transition ${expected}`);
+  }
+  probes.push({ type: "battle-options-routes", logs: optionLogs });
+  return probes;
+}
+
 function probeTacticalSubsystemFieldCommandPresentation(viewport, folder, stable, ready) {
   const probes = probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready);
   const selected = ready.selected_ship;
@@ -2509,7 +3116,7 @@ async function probeTacticalGroupPresentation(
   return probes;
 }
 
-async function runScenario(server, executable, scenario, faction, viewport) {
+async function runScenarioOnce(server, executable, scenario, faction, viewport) {
   const id = scenarioId(scenario, faction, viewport);
   const folder = path.resolve(runDir, id);
   assert.ok(folder.startsWith(`${runDir}${path.sep}`), `scenario path escaped run directory: ${id}`);
@@ -2611,6 +3218,27 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         ? probeTacticalAttackTargetingPresentation(viewport, folder, stable, ready)
         : scenario.attack_target_lifecycle_presentation
         ? probeTacticalAttackTargetLifecyclePresentation(viewport, folder, stable, ready)
+        : scenario.trench_run_outcome
+        ? probeTacticalTrenchRunOutcome(
+          folder, stable, consoleLines, ready, scenario.trench_run_outcome,
+        )
+        : scenario.death_star_laser_journey
+        ? await probeTacticalDeathStarLaserJourney(
+          page, viewport, folder, stable, consoleLines, ready,
+        )
+        : scenario.death_star_presentation
+        ? await probeTacticalDeathStarPresentation(
+          page, viewport, folder, stable, consoleLines, ready,
+        )
+        : scenario.battle_results_presentation
+        ? await probeTacticalBattleResultsPresentation(
+          page, viewport, folder, stable, consoleLines, faction,
+        )
+        : scenario.battle_options_presentation
+        ? await probeTacticalBattleOptionsPresentation(
+          page, viewport, folder, stable, consoleLines, faction,
+          Boolean(scenario.battle_options_withdrawal),
+        )
         : scenario.selected_damage_presentation
         ? probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready)
         : scenario.production_participants
@@ -2622,14 +3250,15 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 22);
+      assert.equal(ready.schema_version, 27);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
       assert.equal(ready.production_participants, Boolean(scenario.production_participants));
       assert.equal(ready.suppress_capital_fallback,
         Boolean(scenario.suppress_capital_fallback));
-      assert.equal(ready.focus_player_fighter, Boolean(scenario.fighter_detail_journey));
+      assert.equal(ready.focus_player_fighter,
+        Boolean(scenario.fighter_detail_journey || scenario.death_star_presentation));
       assert.equal(ready.group_presentation, Boolean(scenario.group_presentation));
       assert.equal(ready.effect_presentation, Boolean(scenario.effect_presentation));
       assert.equal(ready.projectile_field_presentation,
@@ -2654,6 +3283,18 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         Boolean(scenario.attack_targeting_presentation));
       assert.equal(ready.attack_target_lifecycle_presentation,
         Boolean(scenario.attack_target_lifecycle_presentation));
+      assert.equal(ready.death_star_presentation,
+        Boolean(scenario.death_star_presentation));
+      assert.equal(ready.battle_results_presentation,
+        Boolean(scenario.battle_results_presentation));
+      assert.equal(ready.battle_options_presentation,
+        Boolean(scenario.battle_options_presentation));
+      assert.equal(ready.battle_options_withdrawal,
+        Boolean(scenario.battle_options_withdrawal));
+      assert.equal(ready.death_star_laser_journey,
+        Boolean(scenario.death_star_laser_journey));
+      assert.equal(ready.trench_run_outcome, scenario.trench_run_outcome ?? null);
+      assert.equal(ready.death_star === null, !scenario.death_star_presentation);
       assert.ok(Number.isSafeInteger(ready.system_picture_id)
         && ready.system_picture_id >= 1 && ready.system_picture_id <= 27,
       "tactical fixture lacks its SYSTEMSD picture identity");
@@ -2696,7 +3337,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         inner_positive_z: 36,
       } : scenario.command_progression_presentation
         || scenario.attack_targeting_presentation
-        || scenario.attack_target_lifecycle_presentation ? {
+        || scenario.attack_target_lifecycle_presentation
+        || scenario.battle_results_presentation ? {
         first_active_objects: 5,
         second_active_objects: 5,
         battle_extent: 115,
@@ -2724,7 +3366,8 @@ async function runScenario(server, executable, scenario, faction, viewport) {
             || scenario.command_execution_presentation ? 8
             : scenario.command_progression_presentation
               || scenario.attack_targeting_presentation
-              || scenario.attack_target_lifecycle_presentation ? 10 : 4);
+              || scenario.attack_target_lifecycle_presentation
+              || scenario.battle_results_presentation ? 10 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -2837,13 +3480,60 @@ async function runScenario(server, executable, scenario, faction, viewport) {
             [0, 1, 2].includes(fleet_roster_index)));
         } else {
           const movedFaction = scenario.maneuver_movement_presentation ? faction : null;
-          assert.ok(allianceShips.every(({ fleet_roster_index: roster, source_position: position }) =>
-            position[2] === (movedFaction === "alliance" && roster === 0 ? -36.3125 : -56)));
-          assert.ok(empireShips.every(({ fleet_roster_index: roster, source_position: position }) =>
-            position[2] === (movedFaction === "empire" && roster === 0 ? 36.3125 : 56)));
+          assert.ok(allianceShips.every(({ source_position: position }) =>
+            position[2] === (movedFaction === "alliance" ? -36.3125 : -56)),
+          "Alliance retained formation did not follow its integrated leader");
+          assert.ok(empireShips.every(({ source_position: position }) =>
+            position[2] === (movedFaction === "empire" ? 36.3125 : 56)),
+          "Imperial retained formation did not follow its integrated leader");
           assert.equal(allianceFighters[0].source_position[2], -36);
           assert.equal(empireFighters[0].source_position[2], 36);
         }
+      } else if (scenario.death_star_presentation || scenario.battle_options_presentation) {
+        const allianceShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === "alliance");
+        const empireShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === "empire");
+        const allianceFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === "alliance");
+        const empireFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === "empire");
+        assert.equal(allianceShips.length, 1);
+        assert.equal(empireShips.length, 1);
+        assert.equal(allianceFighters.length, 1);
+        assert.equal(empireFighters.length, 1);
+        const allianceShipZ = scenario.death_star_laser_journey && faction === "empire"
+          ? ready.source_layout.outer_positive_z
+          : ready.source_layout.outer_negative_z;
+        assert.ok(allianceShips.every(({ source_position: position }) =>
+          position[2] === allianceShipZ));
+        assert.ok(empireShips.every(({ source_position: position }) =>
+          position[2] === ready.source_layout.outer_positive_z));
+        assert.ok(allianceFighters.every(({ source_position: position }) =>
+          position[2] === ready.source_layout.inner_negative_z));
+        assert.ok(empireFighters.every(({ source_position: position }) =>
+          position[2] === ready.source_layout.inner_positive_z));
+      } else if (scenario.battle_results_presentation) {
+        const allianceShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === "alliance");
+        const empireShips = ready.participants.filter((participant) =>
+          participant.kind === "capital-ship" && participant.faction === "empire");
+        const allianceFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === "alliance");
+        const empireFighters = ready.participants.filter((participant) =>
+          participant.kind === "fighter-group" && participant.faction === "empire");
+        assert.equal(allianceShips.length, 3);
+        assert.equal(empireShips.length, 3);
+        assert.equal(allianceFighters.length, 2);
+        assert.equal(empireFighters.length, 2);
+        assert.ok(allianceShips.every(({ source_position: position }) =>
+          position[2] === ready.source_layout.outer_negative_z));
+        assert.ok(empireShips.every(({ source_position: position }) =>
+          position[2] === ready.source_layout.outer_positive_z));
+        assert.ok(allianceFighters.every(({ source_position: position }) =>
+          position[2] === ready.source_layout.inner_negative_z));
+        assert.ok(empireFighters.every(({ source_position: position }) =>
+          position[2] === ready.source_layout.inner_positive_z));
       } else {
         for (const participant of ready.participants) {
           const key = `${participant.kind}:${participant.faction}`;
@@ -2901,7 +3591,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
         text.includes("[tactical_3d] planet_scene"));
       const expectsPlanet = Boolean(
         scenario.production_participants || scenario.suppress_capital_fallback,
-      );
+      ) && !scenario.battle_results_presentation;
       assert.equal(planetLoadLogs.length, expectsPlanet ? 1 : 0,
         "tactical scene loaded the wrong number of system-selected planets");
       assert.equal(planetSceneLogs.length, expectsPlanet ? 1 : 0,
@@ -3082,7 +3772,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
       } else {
         assert.equal(familyLogs.length, 0, "negative control loaded the tactical LOD family");
         assert.equal(lodLogs.length, 0, "negative control submitted a tactical LOD mesh");
-        if (scenario.production_participants) {
+        if (scenario.production_participants && !scenario.battle_results_presentation) {
           assert.equal(participantFamilyLogs.length, 2,
             "production participants did not load exactly two source families");
           assert.deepEqual(participantFamilyLogs.map(({ text }) => {
@@ -3251,6 +3941,35 @@ async function runScenario(server, executable, scenario, faction, viewport) {
   return result;
 }
 
+function isRetryableBrowserTimeout(result) {
+  return result.status === "fail"
+    && /(?:TimeoutError|Timeout \d+ms exceeded)/.test(result.error || "");
+}
+
+async function runScenario(server, executable, scenario, faction, viewport) {
+  const executionAttempts = [];
+  let result;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    result = await runScenarioOnce(server, executable, scenario, faction, viewport);
+    const retryableTimeout = isRetryableBrowserTimeout(result);
+    executionAttempts.push({
+      attempt,
+      status: result.status,
+      cleanup: result.cleanup,
+      retryable_timeout: retryableTimeout,
+      launch_attempts: result.launch_attempts,
+      ...(result.error ? { error: result.error } : {}),
+    });
+    if (result.status === "pass" || !retryableTimeout || attempt === 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  result.execution_attempts = executionAttempts;
+  const folder = path.resolve(runDir, result.id);
+  fs.writeFileSync(path.join(folder, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
+  return result;
+}
+
 async function main() {
   fs.mkdirSync(runDir, { recursive: true });
   if (battle) {
@@ -3273,20 +3992,25 @@ async function main() {
         "production-command-progression-presentation",
         "production-attack-targeting-presentation",
         "production-attack-target-lifecycle-presentation",
+        "production-death-star-presentation",
+        "production-battle-results-presentation",
+        "production-battle-options-presentation",
+        "production-battle-options-withdrawal",
+        "production-death-star-laser-journey",
+        "production-trench-run-success",
+        "production-trench-run-failure",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, false, false, false, false, false, false, false,
-        false, false, false, false, false, false, false, false, false]);
+      [true, false, true, true, true, true, true, ...Array(23).fill(false)]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      [false, false, false, false, false, true, false, false, false, false, false, false, false,
-        false, false, false, false, false, false, false, false, false, false]);
+      Array.from({ length: 30 }, (_, index) => index === 5));
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      [false, false, false, false, false, false, true, false, false, false, false, false, false,
-        false, false, false, false, false, false, false, false, false, false]);
+      Array.from({ length: 30 }, (_, index) => index === 6));
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });
@@ -3339,24 +4063,21 @@ async function main() {
   }
 
   writeContactSheet(results);
+  const browserAttempts = summarizeBrowserAttempts(results);
   const summary = {
     schema_version: schemaVersion,
     family: catalog.family,
     status: results.every(({ status }) => status === "pass") ? "pass" : "fail",
     run_id: runId,
-    executions: results.length,
+    cases: results.length,
+    executions: browserAttempts.browser_executions,
     passed: results.filter(({ status }) => status === "pass").length,
     failed: results.filter(({ status }) => status === "fail").length,
     screenshots_with_matching_goldens: results.filter(({ comparison }) => comparison?.status === "match").length,
     unbaselined: results.filter(({ comparison }) => comparison?.status === "unbaselined").length,
     unstable_screenshots: results.filter(({ two_frame_hashes }) => two_frame_hashes && !two_frame_hashes.equal).length,
     four_request_startups: results.filter(({ requests }) => requests?.length === 4).length,
-    muted_launches: results.reduce((total, result) => total + result.launch_attempts.length, 0),
-    launch_timeouts: results.reduce((total, result) => total
-      + result.launch_attempts.filter(({ error_name }) => error_name === "TimeoutError").length, 0),
-    recovered_launch_timeouts: results.filter((result) => result.launch_attempts.length > 1
-      && result.launch_attempts.at(-1).status === "pass").length,
-    browser_processes_closed: results.filter(({ cleanup }) => cleanup === "closed").length,
+    ...browserAttempts,
     raw_artifacts: path.relative(root, runDir),
   };
   fs.writeFileSync(path.join(runDir, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);

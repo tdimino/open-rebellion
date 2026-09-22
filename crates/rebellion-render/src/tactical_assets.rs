@@ -386,6 +386,8 @@ fn is_original_effect_resource(resource_id: u32) -> bool {
             | 3360..=3375
             | 3520..=3527
             | 3620..=3627
+            | 5010
+            | 5020
     )
 }
 
@@ -845,6 +847,7 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
 struct TacticalLodAsset {
     resource_id: u32,
     meshes: Vec<TacticalMeshChunk>,
+    collision_envelope: TacticalCollisionEnvelope,
 }
 
 impl TacticalLodAsset {
@@ -961,6 +964,15 @@ pub(crate) struct TacticalDrawReport {
     pub rendered_object_ids: Vec<u32>,
     pub screen_positions: Vec<(u32, Vec2)>,
     pub projections: Vec<TacticalScreenProjection>,
+    pub collision_envelopes: Vec<(u32, TacticalCollisionEnvelope)>,
+}
+
+/// The two radii installed by `FUN_005ab0e0` from a capital ship's authored
+/// mesh bounds and consumed by `FUN_005b2e60` during movement collision tests.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TacticalCollisionEnvelope {
+    pub vertical_radius: f32,
+    pub planar_diameter: f32,
 }
 
 /// Lazily allocated GPU state shared by production participants and fixture proofs.
@@ -978,6 +990,8 @@ pub(crate) struct TacticalAssetRenderer {
     unavailable_fighter_families: HashSet<u32>,
     effect_textures: HashMap<u32, TacticalEffectAsset>,
     unavailable_effect_textures: HashSet<u32>,
+    backdrop: Option<TacticalEffectAsset>,
+    backdrop_unavailable: bool,
     planet: Option<TacticalPlanetAsset>,
     unavailable_planet: Option<u32>,
     material: Option<Material>,
@@ -998,6 +1012,7 @@ pub(crate) struct TacticalAssetRenderer {
     logged_field_scene: Option<String>,
     logged_projectile_scene: Option<String>,
     logged_planet_scene: Option<u32>,
+    logged_backdrop_scene: bool,
 }
 
 impl Default for TacticalAssetRenderer {
@@ -1016,6 +1031,8 @@ impl Default for TacticalAssetRenderer {
             unavailable_fighter_families: HashSet::new(),
             effect_textures: HashMap::new(),
             unavailable_effect_textures: HashSet::new(),
+            backdrop: None,
+            backdrop_unavailable: false,
             planet: None,
             unavailable_planet: None,
             material: None,
@@ -1036,6 +1053,7 @@ impl Default for TacticalAssetRenderer {
             logged_field_scene: None,
             logged_projectile_scene: None,
             logged_planet_scene: None,
+            logged_backdrop_scene: false,
         }
     }
 }
@@ -1059,6 +1077,8 @@ impl TacticalAssetRenderer {
             self.unavailable_fighter_families.clear();
             self.effect_textures.clear();
             self.unavailable_effect_textures.clear();
+            self.backdrop = None;
+            self.backdrop_unavailable = false;
             self.planet = None;
             self.unavailable_planet = None;
             self.material = None;
@@ -1068,7 +1088,48 @@ impl TacticalAssetRenderer {
             self.logged_field_scene = None;
             self.logged_projectile_scene = None;
             self.logged_planet_scene = None;
+            self.logged_backdrop_scene = false;
         }
+    }
+
+    /// Draw the executable's authored 440x438 star surface inside the fixed
+    /// 444x439 tactical aperture. Resource 5030 is a dedicated viewport
+    /// surface, not a world-space impact effect.
+    pub(crate) fn draw_backdrop(&mut self, aperture: (f32, f32, f32, f32)) -> bool {
+        const RESOURCE_ID: u32 = 5030;
+        if self.backdrop.is_none() && !self.backdrop_unavailable {
+            if let Err(error) = self.load_backdrop(RESOURCE_ID) {
+                self.backdrop_unavailable = true;
+                macroquad::logging::warn!(
+                    "[tactical_3d] backdrop resource={} unavailable: {}",
+                    RESOURCE_ID,
+                    error
+                );
+            }
+        }
+        let Some(backdrop) = self.backdrop.as_ref() else {
+            return false;
+        };
+        let source_scale = aperture.2 / 444.0;
+        let size = vec2(440.0, 438.0) * source_scale;
+        draw_texture_ex(
+            &backdrop.texture,
+            aperture.0 + 2.0 * source_scale,
+            aperture.1 + source_scale,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(size),
+                ..Default::default()
+            },
+        );
+        if !self.logged_backdrop_scene {
+            macroquad::logging::info!(
+                "[tactical_3d] backdrop_scene resource={} dimensions=440x438 source_position=18,29 source=FUN_005d4d10",
+                RESOURCE_ID,
+            );
+            self.logged_backdrop_scene = true;
+        }
+        true
     }
 
     /// Draw the system-selected original tactical planet behind the retained
@@ -1452,6 +1513,14 @@ impl TacticalAssetRenderer {
             let Some(family) = self.participant_families.get(&object.resource_base) else {
                 continue;
             };
+            // FUN_005ab0e0 derives the collision envelope when the source
+            // tactical object is initialized. Keep it stable across visual
+            // LOD transitions by using the close/base resource family member.
+            if let Some(base_asset) = family.first() {
+                report
+                    .collision_envelopes
+                    .push((object.object_id, base_asset.collision_envelope));
+            }
             let prior_lod = self
                 .participant_lods
                 .get(&object.object_id)
@@ -2086,6 +2155,7 @@ impl TacticalAssetRenderer {
             ));
             assets.push(TacticalLodAsset {
                 resource_id,
+                collision_envelope: tactical_collision_envelope(decoded.source_bounds),
                 meshes: decoded
                     .chunks
                     .into_iter()
@@ -2207,6 +2277,7 @@ impl TacticalAssetRenderer {
             ));
             assets.push(TacticalLodAsset {
                 resource_id,
+                collision_envelope: tactical_collision_envelope(decoded.source_bounds),
                 meshes: decoded
                     .chunks
                     .into_iter()
@@ -2358,6 +2429,53 @@ impl TacticalAssetRenderer {
         Ok(())
     }
 
+    fn load_backdrop(&mut self, resource_id: u32) -> Result<(), String> {
+        if resource_id != 5030 {
+            return Err(format!("invalid tactical backdrop resource {resource_id}"));
+        }
+        let palette_resource_id = 5530 + u32::from(self.palette_selector);
+        let (texture_payload, palette_payload) = {
+            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+            let texture_key = format!("{resource_id}/1033");
+            let palette_key = format!("{palette_resource_id}/1033");
+            let texture = cache
+                .textures
+                .get(&texture_key)
+                .cloned()
+                .ok_or_else(|| format!("typed texture entry {texture_key} is missing"))?;
+            let palette = cache
+                .textures
+                .get(&palette_key)
+                .cloned()
+                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
+            (texture, palette)
+        };
+        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
+        let (texture, transparent_index) =
+            decode_indexed_effect_texture(&texture_payload, &palette)?;
+        if texture.width() != 440.0 || texture.height() != 438.0 {
+            return Err(format!(
+                "tactical backdrop has unexpected dimensions {}x{}",
+                texture.width(),
+                texture.height()
+            ));
+        }
+        macroquad::logging::info!(
+            "[tactical_3d] backdrop_loaded resource={} dimensions={}x{} palette_selector={} palette_resource_id={} texture_filter=nearest transparent_index={} source=FUN_005d4d10",
+            resource_id,
+            texture.width(),
+            texture.height(),
+            self.palette_selector,
+            palette_resource_id,
+            transparent_index,
+        );
+        self.backdrop = Some(TacticalEffectAsset {
+            texture,
+            transparent_index,
+        });
+        Ok(())
+    }
+
     fn load_planet(&mut self, resource_id: u32) -> Result<(), String> {
         if !(5501..=5527).contains(&resource_id) {
             return Err(format!("invalid tactical planet resource {resource_id}"));
@@ -2497,6 +2615,7 @@ struct DecodedMeshObject {
     materials: usize,
     source_vertices: usize,
     source_faces: usize,
+    source_bounds: [f32; 6],
 }
 
 struct DecodedMaterial {
@@ -2603,7 +2722,19 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
         materials,
         source_vertices,
         source_faces,
+        source_bounds: bounds,
     })
+}
+
+fn tactical_collision_envelope(bounds: [f32; 6]) -> TacticalCollisionEnvelope {
+    // FUN_005ab0e0 stores half the authored Y span as the vertical radius and
+    // the X/Z diagonal as the planar diameter. Both have an exact 0.5 floor.
+    TacticalCollisionEnvelope {
+        vertical_radius: ((bounds[4] - bounds[1]) * 0.5).max(0.5),
+        planar_diameter: (bounds[3] - bounds[0])
+            .hypot(bounds[5] - bounds[2])
+            .max(0.5),
+    }
 }
 
 fn authored_position(position: Vec3) -> Vec3 {
@@ -2998,6 +3129,17 @@ mod tests {
     }
 
     #[test]
+    fn collision_envelope_uses_source_y_radius_xz_diagonal_and_half_unit_floor() {
+        let envelope = tactical_collision_envelope([-3.0, -2.0, -4.0, 5.0, 6.0, 2.0]);
+        assert_near(envelope.vertical_radius, 4.0);
+        assert_near(envelope.planar_diameter, 10.0);
+
+        let floored = tactical_collision_envelope([0.0, 0.0, 0.0, 0.1, 0.2, 0.1]);
+        assert_near(floored.vertical_radius, 0.5);
+        assert_near(floored.planar_diameter, 0.5);
+    }
+
+    #[test]
     fn retained_projectile_mesh_preserves_source_vertices_faces_and_longitudinal_scale() {
         let object = TacticalProjectileRenderObject {
             object_id: 1,
@@ -3371,6 +3513,13 @@ mod tests {
         assert!(numeric.contains(&4044));
         assert!(numeric.contains(&5557));
         assert!(named.contains("MONCAL52.BMP"));
+    }
+
+    #[test]
+    fn death_star_manager_sprites_are_valid_original_effect_resources() {
+        assert!(is_original_effect_resource(5010));
+        assert!(is_original_effect_resource(5020));
+        assert!(!is_original_effect_resource(5030));
     }
 
     #[cfg(not(target_arch = "wasm32"))]

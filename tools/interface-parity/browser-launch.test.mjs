@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { launchBrowser } from "./browser-launch.mjs";
+import { launchBrowser, summarizeBrowserAttempts } from "./browser-launch.mjs";
 
 const timeoutError = () => Object.assign(new Error("browserType.launch: Timeout 30000ms exceeded."), {
   name: "TimeoutError",
@@ -41,4 +41,45 @@ test("non-timeout launch errors fail immediately", async () => {
     throw new Error("executable missing");
   } }, {}, attempts), /executable missing/);
   assert.equal(attempts.length, 1);
+});
+
+test("summary retains launches from a recovered whole-scenario retry", () => {
+  const results = [{
+    status: "pass",
+    cleanup: "closed",
+    launch_attempts: [
+      { attempt: 1, status: "fail", error_name: "TimeoutError" },
+      { attempt: 2, status: "pass" },
+    ],
+    execution_attempts: [
+      {
+        attempt: 1,
+        status: "fail",
+        cleanup: "closed",
+        retryable_timeout: true,
+        launch_attempts: [{ attempt: 1, status: "pass" }],
+      },
+      {
+        attempt: 2,
+        status: "pass",
+        cleanup: "closed",
+        retryable_timeout: false,
+        launch_attempts: [
+          { attempt: 1, status: "fail", error_name: "TimeoutError" },
+          { attempt: 2, status: "pass" },
+        ],
+      },
+    ],
+  }];
+
+  assert.deepEqual(summarizeBrowserAttempts(results), {
+    browser_executions: 2,
+    muted_launches: 3,
+    launch_timeouts: 1,
+    recovered_launch_timeouts: 1,
+    execution_timeouts: 1,
+    recovered_execution_timeouts: 1,
+    browser_processes_closed: 2,
+    browser_executions_closed: 2,
+  });
 });

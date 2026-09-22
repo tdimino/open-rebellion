@@ -152,10 +152,10 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus decoded/transported; exact DAT joins plus live capital/fighter/planet/effect/field rendering, selected-capital damage, live subsystem mutation, repair, maneuver state, velocity, physical integration, command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, full fighter recovery, typed attack target acquisition, and same-class replacement source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, exact arrival callbacks and recovery trajectories, weapon arcs, ranges, recharge, fighter combat, collision and formation behavior, remaining controls, and A0 comparison |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus and joins plus live rendering, damage, repair, movement, commands, capital/fighter combat, collision, groups, retained formations, Death Star, original result/options panels, trench-run routes, and strategic result application source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, original arrival callbacks, power allocation, native beam behavior, post-battle orchestration, native playback, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
-| RE-DS-02 | Tactical Death Star and trench-run routing | static-partial | Prove result-to-`MDATA.201/.202` selection and callbacks |
+| RE-DS-02 | Tactical Death Star and trench-run routing | static-partial; exact result-to-film dispatch proven and implemented | Recover the original state-6 versus state-7 producer, compare native playback and return timing, and close A0 |
 | RE-END-01 | Campaign endings, skip, return, restart, and failure | static-partial | Recover the complete terminal media matrix |
 | RE-NET-01 | Original multiplayer screens and controls | static-partial | Finish template 10100–10103 geometry and provider/host/join routing |
 | RE-NET-02 | Two-peer sync, chat, pause, saves, departure, and errors | runtime-needed | Run an original two-peer fixture and compare protocol traces |
@@ -252,10 +252,13 @@ counts. [P58F12 evidence](evidence/2026-09-18-tactical-attack-targeting.md)
 restores typed Attack Fighters and Attack Capital Ships acquisition for both
 capital and fighter owners. [P58F13 evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 restores live invalidation, stable same-class replacement, and exhausted-list
-clearing. Exact global RNG sequencing, original arrival callbacks and recovery
-trajectories, weapon arcs, ranges, recharge, fighter combat, collision and
-formation behavior, power allocation, and original visual acceptance remain
-open.
+clearing. The [P58-B06 checkpoint](evidence/2026-09-22-tactical-completion-bundle.md)
+adds capital and fighter combat, collision, automatic groups, retained
+formations, the separate Death Star, original result/options panels, and both
+trench-run routes. Exact global RNG sequencing, original arrival callbacks and
+recovery trajectories, power allocation, native beam behavior, shared
+post-battle bombardment, landing, and navigation orchestration, native
+playback, and original visual acceptance remain open.
 
 ## Immediate implementation order
 

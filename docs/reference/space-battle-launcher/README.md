@@ -43,6 +43,13 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-command-progression-presentation` | 65813 | 66069 | Capital turning, arrival, docking, and recovery completion |
 | `production-attack-targeting-presentation` | 65814 | 66070 | Typed capital and fighter target acquisition |
 | `production-attack-target-lifecycle-presentation` | 65815 | 66071 | Same-class replacement after target invalidation |
+| `production-death-star-presentation` | 65816 | 66072 | Separate manager sprite and hostile fighter mission control |
+| `production-battle-results-presentation` | 65817 | 66073 | Original bitmap result summary and force tabs |
+| `production-battle-options-presentation` | 65818 | 66074 | Original options panel and source control states |
+| `production-battle-options-withdrawal` | 65819 | 66075 | Withdrawal command and disabled post-command state |
+| `production-death-star-laser-journey` | 65820 | 66076 | Original star surface and owner-gated superlaser journey |
+| `production-trench-run-success` | 65821 | 66077 | Result state 6, MDATA.201, and tactical return |
+| `production-trench-run-failure` | 65822 | 66078 | Result state 7, MDATA.202, and tactical return |
 
 ## Run it
 
@@ -146,23 +153,36 @@ and closes every process. Raw runs live under ignored
 - P58F13 retains valid typed targets, replaces invalid ones with the first
   eligible hostile target of the same class, and clears exhausted target lists
   without random or cross-class fallback.
-- The complete bundle passes 92 of 92 muted browser cases across both factions
-  and the 640x480 and 1280x800 letterboxed viewports with no runtime errors.
+- The current completion checkpoint adds recovered capital weapon
+  resolution, fighter combat, collision envelopes, source group assignment,
+  a separate Death Star manager, original Battle Results and Battle Options
+  surfaces, forward-relative retained follower formation geometry, the Death Star laser
+  journey, and exact 201/202 trench-run media routing.
+- The focused superlaser gate passes 4 of 4 fresh muted browser cases across
+  both factions and the 640x480 and 1280x800 letterboxed viewports. It proves
+  resource 5030 as the sparse tactical star surface, exact 1021 through 1024
+  control art, ownership gating, projected target assignment, visible beam,
+  loading state, and delayed destruction. The full 120-case bundle gate passes
+  both factions and both viewports with four-request startup, stable frames,
+  clean diagnostics, and complete browser cleanup.
 
 This does not accept an original tactical surface. The fixture's zoom-to-depth
-bridge, fighter focus, and filled group matrix are test-only. Automatic group
-distribution, native GPU and A0 comparison, exact global RNG sequencing,
-exact original arrival callbacks and recovery trajectories, weapon-resolution
-callbacks, fighter combat, collision and formation behavior, exact
-planet placement, power allocation, Death Star
-paths, results, audio, and return routing remain
-open. All
+bridge, fighter focus, and filled group matrix are test-only. Native GPU and
+A0 comparison, exact global RNG sequencing,
+exact original arrival callbacks and recovery trajectories, exact planet
+placement, power allocation,
+beam dimensions and timing, native trench-run playback comparison,
+post-battle bombardment, landing, and navigation orchestration, audio, and
+remaining result semantics remain open. The source 3D
+window uses the standard arrow cursor, so no invented targeting cursor is
+required. All
 106 `TAC-01` through `TAC-07` cells remain pending in the
 [surface ledger](../../qa/2026-09-10-interface-parity-audit/surface-ledger.json).
 
 ## Evidence and asset maps
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
+- [P58-B06 tactical completion evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md)
 - [P58F13 tactical attack-target lifecycle evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 - [P58F12 tactical attack-targeting evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
 - [P58F11 tactical command-progression evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)

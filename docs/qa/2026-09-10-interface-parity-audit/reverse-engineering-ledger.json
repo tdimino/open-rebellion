@@ -464,8 +464,8 @@
           "executor_state": ["FUN_005d0b00", "FUN_005cf910", "FUN_005cf920"],
           "separate_weapon_loop": ["FUN_005b3a40", "FUN_005b3f10", "FUN_005b6530"]
         },
-        "latest_verified_tranche": "P58F13 restores live invalidation, stable same-class replacement, and exhausted-list clearing for typed Attack Fighters and Attack Capital Ships targets.",
-        "next_proof": "Complete the consolidated tactical bundle covering exact weapon arcs, ranges, availability, projectile events, recharge, fighter combat, collision, formation, Death Star, results, and standalone launchability before the final 106-cell evidence matrix."
+        "latest_verified_tranche": "P58-B06 restores source-backed capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, the superlaser journey, both trench-run routes, exact strategic roster, capture, and Death Star-state application, and a clean 120-case implementation matrix.",
+        "next_proof": "Recover native beam behavior and the original trench-run result producer, complete shared post-battle bombardment, landing, and navigation orchestration, compare native playback, and acquire the lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true
     },
@@ -501,8 +501,9 @@
       "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "TACTICAL.DLL", "MDATA.201", "MDATA.202"],
-        "method": "Trace tactical Death Star controls 1021-1024 and 1176-1178 through recharge, attack, mission resolution, media selection, completion, and return callbacks.",
-        "next_proof": "Prove success selects MDATA.201, failure selects MDATA.202, and map all intervening tactical states."
+        "anchors": ["FUN_005caf20", "FUN_005caf50", "FUN_005cfec0", "FUN_005c0fb0", "FUN_005c0ff0", "FUN_0059cc60", "FUN_0059cc80", "FUN_00421ba0"],
+        "method": "Result state 6 selects internal movie 0x71 and MDATA.201; result state 7 selects internal movie 0x70 and MDATA.202. Open Rebellion keeps both inside tactical combat and no longer reuses them for campaign victory.",
+        "next_proof": "Recover the original state-6 versus state-7 producer condition, compare native playback and return timing, and close the lossless A0 cells."
       },
       "runtime_capture_required": true
     },

@@ -5,6 +5,16 @@ This folder is the source of truth for restoring every visible surface from
 bitmap-driven interface. Replacement panels, invented controls, approximate
 geometry, and unverified asset mappings do not count as parity.
 
+The current P58-B06 space-battle checkpoint is approximately 96%
+implemented as a planning measure. Capital and fighter combat, collision,
+automatic groups, capability-sorted task forces with follower geometry,
+original results/options panels, resource 5030 stars, the provisional Death
+Star superlaser journey, and exact result-to-film trench-run routing now work.
+Independent visual review is a qualified A1 pass with no P0 or P1 findings.
+The strict result remains 0 of 106 accepted tactical cells until the native
+beam contract, persistent trench-run outcome, shared post-battle orchestration,
+native playback, and A0 gates pass.
+
 ## Start here
 
 - Read the [audit overview](index.md) for the current result and definition of
@@ -154,6 +164,10 @@ geometry, and unverified asset mappings do not count as parity.
 - Review the [P58F13 tactical attack-target lifecycle evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md)
   for same-class replacement after capital and fighter targets become
   ineligible, exhausted-list clearing, and the 92-case gate.
+- Review the [P58-B06 tactical completion evidence](evidence/2026-09-22-tactical-completion-bundle.md)
+  for capital and fighter combat, collision, retained formations, Death Star
+  and trench-run routes, original result/options surfaces, the clean 120-case
+  browser gate, qualified independent visual review, and remaining A0 boundary.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
@@ -191,9 +205,10 @@ The practical implementation estimate is approximately 20 to 25% tackled and
 complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
-Within that total, the standalone space-battle launcher is approximately 88%
-implemented after P58F13. Its formal acceptance remains 0 of 106 tactical cells
-because exact original-view evidence and the remaining battle states are open.
+Within that total, the standalone space-battle launcher is approximately 96%
+implemented at the P58-B06 checkpoint. Its formal acceptance remains 0 of 106
+tactical cells because exact original-view evidence and the remaining native
+beam, playback, and post-battle orchestration contracts are open.
 
 The first recovered implementation tranche now packages and renders the four
 original faction-advisor idle runs. See the
@@ -285,13 +300,16 @@ Returning state 2. P58F11 applies source-rate signed turns, completes reached
 waypoints, and advances fighters through Docking and Recovered while preserving
 their strategic counts. P58F12 restores typed Attack Fighters and Attack
 Capital Ships target acquisition for capital and fighter owners while
-preserving valid engagements. Automatic group distribution, exact planet
-placement, exact global RNG sequencing, the exact arrival callback and ingress
-trajectory, arc and range weapon resolution, recharge, fighter combat,
-collision and formation behavior, power allocation, results, and A0
-comparisons remain open. P58F13 now refreshes invalid attack targets through a
-stable same-class list and clears exhausted lists without a cross-class or
-random fallback.
+preserving valid engagements. P58F13 refreshes invalid attack targets through
+a stable same-class list and clears exhausted lists without a cross-class or
+random fallback. P58-B06 adds capital and fighter combat, collision, automatic
+group distribution, forward-relative retained formations, the separate Death
+Star, original result/options panels, both trench-run routes, and exact
+strategic roster, officer-capture, and Death Star-state application. Exact
+planet placement, global RNG sequencing, original arrival callbacks and
+recovery trajectories, power allocation, native beam behavior, shared
+post-battle bombardment, landing, and navigation orchestration, native
+playback, and A0 comparisons remain open.
 `CMD-01`, `CMD-03`, `CMD-04`, `CMD-10`, and `UIP-T01` remain open because the
 full control matrix, remaining GID modes and map art, nested object
 compositions and commands, exact rail thumbnails, original destination

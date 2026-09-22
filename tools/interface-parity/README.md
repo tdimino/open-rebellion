@@ -52,12 +52,13 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 92 entry, negative-control,
+`node run.mjs --battle --all --no-build` for all 120 entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, selected-damage, subsystem/field-command,
 live-subsystem-damage, subsystem-repair/mobility, maneuver/movement,
 command-assignment, command-execution, command-progression, attack-targeting,
-attack-target-lifecycle,
+attack-target-lifecycle, Death Star presentation and superlaser, trench-run
+success and failure routing, Battle Results, Battle Options and withdrawal,
 faction, and viewport cases. The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
@@ -66,7 +67,7 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 22 additionally asserts representative capital-ship and fighter
+Fixture schema 27 additionally asserts representative capital-ship and fighter
 DAT-to-tactical-resource joins, exact production rendering of two joined
 capital-ship families, exact fighter close/far/indicator resource triplets,
 the test-only fighter focus used by the detail journey, and a 3D-off control
@@ -75,7 +76,9 @@ framebuffer probes require changed pixels around every logged capital and
 fighter projection. Production journeys deselect, reselect, and target through
 the projected capital bounds. The fighter journey uses the original zoom
 buttons and asserts all nine independent detail transitions without another
-family load. The effect snapshot requires all six executable-selected hit,
+family load. The trench-run fixtures assert source result states 6 and 7 route
+to MDATA.201 and MDATA.202 respectively, then return to the paused production
+tactical session. The effect snapshot requires all six executable-selected hit,
 damage, and destruction frame families, exact target attachment, draw size,
 priority, transparency, and 0.1-second cadence. Every tactical run requires all 87 meshes and
 397 textures in the four-request runtime pack. The projectile/field snapshot
@@ -115,6 +118,18 @@ live engagements, and the absence of a wrong-class fallback.
 The attack-target-lifecycle snapshot invalidates the first hostile capital and
 fighter entries, then verifies stable same-class replacement for capital and
 fighter owners without cross-class or random fallback.
+The Death Star journeys verify the owner-gated 1021 through 1024 control,
+resource 5030 as the sparse 440 by 438 tactical star surface, right-click
+target assignment, a visible delayed beam, destruction, and the hostile-only
+Attack Death Star mission state. The source uses the standard arrow cursor,
+and exact result states 6 and 7 now route to trench-run films 201 and 202.
+Exact beam dimensions and timing, native playback comparison, and lossless A0
+comparison remain open.
+
+Each logical case uses a fresh muted browser process. A Playwright startup,
+ready-signal, or screenshot timeout may retry once in another fresh process;
+the result retains both attempts and both cleanup records. Pixel, state,
+request, console, and other product assertions never retry.
 Tactical controls and images still have no lossless original-game baselines. See the
 [standalone battle plan](../../docs/plans/2026-09-12-tooling-standalone-space-battle-launcher.md).
 

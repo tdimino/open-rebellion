@@ -515,6 +515,14 @@ pub struct FighterClass {
     pub ion_cannon_fore: u32,
     #[serde(default)]
     pub laser_cannon_fore: u32,
+    /// Per-family tactical engagement ranges. DAT offsets: `turbolaser_range`,
+    /// `ion_cannon_range`, and `laser_cannon_range`.
+    #[serde(default)]
+    pub turbolaser_range: u32,
+    #[serde(default)]
+    pub ion_cannon_range: u32,
+    #[serde(default)]
+    pub laser_cannon_range: u32,
     /// Per-weapon-type attack strength scalars. DAT offsets: `turbolaser_attack_strength`,
     /// `ion_cannon_attack_strength`, `laser_cannon_attack_strength`.
     #[serde(default)]
@@ -549,6 +557,9 @@ impl Default for FighterClass {
             turbolaser_fore: 0,
             ion_cannon_fore: 0,
             laser_cannon_fore: 0,
+            turbolaser_range: 0,
+            ion_cannon_range: 0,
+            laser_cannon_range: 0,
             turbolaser_attack_strength: 0,
             ion_cannon_attack_strength: 0,
             laser_cannon_attack_strength: 0,
@@ -837,10 +848,13 @@ impl Fleet {
         counts
     }
 
-    /// True if this fleet has no alive capital ships and no fighter squadrons.
+    /// True if this fleet has no alive capital ships, fighter squadrons, or
+    /// separate Death Star tactical object.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        !self.capital_ships.iter().any(|s| s.alive) && self.fighters.iter().all(|e| e.count == 0)
+        !self.has_death_star
+            && !self.capital_ships.iter().any(|s| s.alive)
+            && self.fighters.iter().all(|e| e.count == 0)
     }
 }
 
@@ -1443,5 +1457,18 @@ mod tests {
         c.mark_killed();
         assert_eq!(c.name, "Luke");
         assert_eq!(c.dat_id.raw(), 0x42);
+    }
+
+    #[test]
+    fn death_star_only_fleet_is_not_empty() {
+        let fleet = Fleet {
+            location: SystemKey::default(),
+            capital_ships: Vec::new(),
+            fighters: Vec::new(),
+            characters: Vec::new(),
+            is_alliance: false,
+            has_death_star: true,
+        };
+        assert!(!fleet.is_empty());
     }
 }

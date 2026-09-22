@@ -172,6 +172,28 @@ impl SystemWindowState {
         true
     }
 
+    /// Open the original system window at a fleet's location, select the
+    /// Fleets tab, and focus that fleet. Battle Results uses this route for
+    /// its original "Go Directly To" fleet destination.
+    pub fn open_fleet(
+        &mut self,
+        world: &GameWorld,
+        fleet: FleetKey,
+        logical_position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+    ) -> bool {
+        let Some(system) = world.fleets.get(fleet).map(|value| value.location) else {
+            return false;
+        };
+        if !self.open(world, system, logical_position, faction, layout) {
+            return false;
+        }
+        self.select_tab(system, SystemWindowTab::Fleets);
+        self.select_item(system, SystemWindowItem::Fleet(fleet));
+        true
+    }
+
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
         self.windows.iter().any(|window| {
@@ -1266,7 +1288,7 @@ mod tests {
     use crate::cockpit::CockpitViewport;
     use rebellion_core::dat::SectorGroup;
     use rebellion_core::ids::DatId;
-    use rebellion_core::world::{Sector, System};
+    use rebellion_core::world::{Fleet, Sector, System};
 
     fn layout(faction: CockpitFaction, scale: f32) -> CockpitLayout {
         let (x, width, height) = match faction {
@@ -1350,6 +1372,31 @@ mod tests {
         assert_eq!(state.windows[0].logical_position, (309, 86));
         assert!(state.open(&world, systems[0], (0, 0), CockpitFaction::Alliance, layout));
         assert_eq!(state.window_count(), 1);
+    }
+
+    #[test]
+    fn battle_result_fleet_route_opens_the_original_fleet_tab() {
+        let (mut world, systems) = fixture_world(1);
+        let fleet = world.fleets.insert(Fleet {
+            location: systems[0],
+            capital_ships: Vec::new(),
+            fighters: Vec::new(),
+            characters: Vec::new(),
+            is_alliance: true,
+            has_death_star: false,
+        });
+        world.systems[systems[0]].fleets.push(fleet);
+        let mut state = SystemWindowState::default();
+        let layout = layout(CockpitFaction::Alliance, 1.0);
+
+        assert!(state.open_fleet(&world, fleet, (85, 55), CockpitFaction::Alliance, layout,));
+        assert_eq!(state.window_count(), 1);
+        assert_eq!(state.windows[0].system, systems[0]);
+        assert_eq!(state.windows[0].tab, SystemWindowTab::Fleets);
+        assert_eq!(
+            state.windows[0].selected_item,
+            Some(SystemWindowItem::Fleet(fleet))
+        );
     }
 
     #[test]

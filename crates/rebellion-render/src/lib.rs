@@ -102,6 +102,7 @@ pub use tactical_resources::{
 };
 pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
+    TacticalTrenchRunOutcome,
 };
 pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
 pub use video_player::{VideoError, VideoPlayer};

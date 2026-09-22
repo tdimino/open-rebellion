@@ -6,7 +6,9 @@ use rebellion_core::world::{FighterEntry, Fleet, GameWorld, ShipInstance};
 use rebellion_render::tactical_view::{TacticalAttackTarget, WeaponKind};
 #[cfg(feature = "interface-test-fixtures")]
 use rebellion_render::TacticalLodView;
-use rebellion_render::{CockpitFaction, CockpitState, MessageLog, TacticalState};
+use rebellion_render::{
+    CockpitFaction, CockpitState, MessageLog, TacticalState, TacticalTrenchRunOutcome,
+};
 use serde::Serialize;
 
 use crate::tactical_flow::{self, BattleEntry};
@@ -36,6 +38,13 @@ const COMMAND_EXECUTION_PRESENTATION_SCENARIO: u32 = 20;
 const COMMAND_PROGRESSION_PRESENTATION_SCENARIO: u32 = 21;
 const ATTACK_TARGETING_PRESENTATION_SCENARIO: u32 = 22;
 const ATTACK_TARGET_LIFECYCLE_PRESENTATION_SCENARIO: u32 = 23;
+const DEATH_STAR_PRESENTATION_SCENARIO: u32 = 24;
+const BATTLE_RESULTS_PRESENTATION_SCENARIO: u32 = 25;
+const BATTLE_OPTIONS_PRESENTATION_SCENARIO: u32 = 26;
+const BATTLE_OPTIONS_WITHDRAWAL_SCENARIO: u32 = 27;
+const DEATH_STAR_LASER_JOURNEY_SCENARIO: u32 = 28;
+const TRENCH_RUN_SUCCESS_SCENARIO: u32 = 29;
+const TRENCH_RUN_FAILURE_SCENARIO: u32 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -98,6 +107,12 @@ pub(crate) struct TacticalFixtureRequest {
     pub command_progression_presentation: bool,
     pub attack_targeting_presentation: bool,
     pub attack_target_lifecycle_presentation: bool,
+    pub death_star_presentation: bool,
+    pub battle_results_presentation: bool,
+    pub battle_options_presentation: bool,
+    pub battle_options_withdrawal: bool,
+    pub death_star_laser_journey: bool,
+    pub trench_run_outcome: Option<TacticalTrenchRunOutcome>,
     lod_fixture: TacticalLodFixture,
 }
 
@@ -299,7 +314,14 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | COMMAND_EXECUTION_PRESENTATION_SCENARIO
         | COMMAND_PROGRESSION_PRESENTATION_SCENARIO
         | ATTACK_TARGETING_PRESENTATION_SCENARIO
-        | ATTACK_TARGET_LIFECYCLE_PRESENTATION_SCENARIO => (
+        | ATTACK_TARGET_LIFECYCLE_PRESENTATION_SCENARIO
+        | DEATH_STAR_PRESENTATION_SCENARIO
+        | BATTLE_RESULTS_PRESENTATION_SCENARIO
+        | BATTLE_OPTIONS_PRESENTATION_SCENARIO
+        | BATTLE_OPTIONS_WITHDRAWAL_SCENARIO
+        | DEATH_STAR_LASER_JOURNEY_SCENARIO
+        | TRENCH_RUN_SUCCESS_SCENARIO
+        | TRENCH_RUN_FAILURE_SCENARIO => (
             false,
             true,
             false,
@@ -323,7 +345,14 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         proof_enabled,
         production_participants,
         suppress_capital_fallback,
-        focus_player_fighter,
+        focus_player_fighter: focus_player_fighter
+            || matches!(
+                scenario,
+                DEATH_STAR_PRESENTATION_SCENARIO
+                    | DEATH_STAR_LASER_JOURNEY_SCENARIO
+                    | TRENCH_RUN_SUCCESS_SCENARIO
+                    | TRENCH_RUN_FAILURE_SCENARIO
+            ),
         group_presentation,
         effect_presentation,
         projectile_field_presentation,
@@ -340,6 +369,25 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         attack_targeting_presentation: scenario == ATTACK_TARGETING_PRESENTATION_SCENARIO,
         attack_target_lifecycle_presentation: scenario
             == ATTACK_TARGET_LIFECYCLE_PRESENTATION_SCENARIO,
+        death_star_presentation: matches!(
+            scenario,
+            DEATH_STAR_PRESENTATION_SCENARIO
+                | DEATH_STAR_LASER_JOURNEY_SCENARIO
+                | TRENCH_RUN_SUCCESS_SCENARIO
+                | TRENCH_RUN_FAILURE_SCENARIO
+        ),
+        battle_results_presentation: scenario == BATTLE_RESULTS_PRESENTATION_SCENARIO,
+        battle_options_presentation: matches!(
+            scenario,
+            BATTLE_OPTIONS_PRESENTATION_SCENARIO | BATTLE_OPTIONS_WITHDRAWAL_SCENARIO
+        ),
+        battle_options_withdrawal: scenario == BATTLE_OPTIONS_WITHDRAWAL_SCENARIO,
+        death_star_laser_journey: scenario == DEATH_STAR_LASER_JOURNEY_SCENARIO,
+        trench_run_outcome: match scenario {
+            TRENCH_RUN_SUCCESS_SCENARIO => Some(TacticalTrenchRunOutcome::Success),
+            TRENCH_RUN_FAILURE_SCENARIO => Some(TacticalTrenchRunOutcome::Failure),
+            _ => None,
+        },
         lod_fixture,
     })
 }
@@ -388,6 +436,7 @@ pub(crate) fn apply(
             class.is_alliance
                 && !class.is_empire
                 && class.hull > 0
+                && (!request.battle_options_presentation || class.hyperdrive > 0)
                 && (!(request.command_execution_presentation
                     || request.command_progression_presentation
                     || request.attack_targeting_presentation
@@ -403,6 +452,7 @@ pub(crate) fn apply(
             class.is_empire
                 && !class.is_alliance
                 && class.hull > 0
+                && (!request.battle_options_presentation || class.hyperdrive > 0)
                 && (!(request.command_execution_presentation
                     || request.command_progression_presentation
                     || request.attack_targeting_presentation
@@ -436,6 +486,7 @@ pub(crate) fn apply(
             || request.command_progression_presentation
             || request.attack_targeting_presentation
             || request.attack_target_lifecycle_presentation
+            || request.battle_results_presentation
             || ((request.group_presentation || request.effect_presentation)
                 && is_alliance == player_is_alliance);
         let ship_count = if request.projectile_field_presentation
@@ -447,6 +498,7 @@ pub(crate) fn apply(
             || request.command_progression_presentation
             || request.attack_targeting_presentation
             || request.attack_target_lifecycle_presentation
+            || request.battle_results_presentation
         {
             3
         } else if request.effect_presentation && expanded {
@@ -459,6 +511,7 @@ pub(crate) fn apply(
         let fighter_count = if request.command_progression_presentation
             || request.attack_targeting_presentation
             || request.attack_target_lifecycle_presentation
+            || request.battle_results_presentation
         {
             2
         } else if request.group_presentation && expanded {
@@ -476,13 +529,16 @@ pub(crate) fn apply(
             fighters: fighter
                 .map(|class| {
                     (0..fighter_count)
-                        .map(|_| FighterEntry { class, count: 12 })
+                        // `FighterEntry::count` is the number of strategic
+                        // squadrons. `FIGHTSD.squadron_size` supplies the
+                        // twelve craft inside each tactical object.
+                        .map(|_| FighterEntry { class, count: 1 })
                         .collect()
                 })
                 .unwrap_or_default(),
             characters: vec![],
             is_alliance,
-            has_death_star: false,
+            has_death_star: request.death_star_presentation && !is_alliance,
         }
     };
     let attacker = world.fleets.insert(make_fleet(
@@ -572,6 +628,22 @@ pub(crate) fn apply(
         tactical.configure_attack_target_lifecycle_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
+    if request.death_star_presentation {
+        tactical.configure_death_star_presentation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.death_star_laser_journey {
+        tactical.configure_death_star_laser_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if let Some(outcome) = request.trench_run_outcome {
+        tactical.configure_trench_run_outcome_fixture(outcome);
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.battle_results_presentation {
+        tactical.configure_battle_results_presentation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if !request.production_participants {
         tactical.disable_original_participant_rendering();
     }
@@ -623,6 +695,12 @@ struct FixtureRecord<'a> {
     command_progression_presentation: bool,
     attack_targeting_presentation: bool,
     attack_target_lifecycle_presentation: bool,
+    death_star_presentation: bool,
+    battle_results_presentation: bool,
+    battle_options_presentation: bool,
+    battle_options_withdrawal: bool,
+    death_star_laser_journey: bool,
+    trench_run_outcome: Option<&'a str>,
     tactical_lod: &'a str,
     system: &'a str,
     system_picture_id: u8,
@@ -638,7 +716,23 @@ struct FixtureRecord<'a> {
     fields: Vec<FixtureField>,
     subsystem_repairs: Vec<FixtureSubsystemRepair>,
     selected_ship: Option<FixtureSelectedShip<'a>>,
+    death_star: Option<FixtureDeathStar>,
     error: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct FixtureDeathStar {
+    faction: &'static str,
+    is_attacker: bool,
+    tactical_ordinal: u8,
+    resource_id: u32,
+    opposing_resource_id: u32,
+    operational: bool,
+    hull: f32,
+    laser_charge: f32,
+    destroyed: bool,
+    action_committed: bool,
+    source_position: [f32; 3],
 }
 
 #[derive(Serialize)]
@@ -1021,8 +1115,29 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             damage_control: ship.damage_control,
         })
     });
+    let death_star = session.death_star.map(|death_star| FixtureDeathStar {
+        faction: if death_star.is_alliance {
+            "alliance"
+        } else {
+            "empire"
+        },
+        is_attacker: death_star.is_attacker,
+        tactical_ordinal: death_star.resource.tactical_ordinal,
+        resource_id: death_star.resource_id(),
+        opposing_resource_id: death_star.resource.resource_base_with_flag,
+        operational: death_star.operational(),
+        hull: death_star.hull,
+        laser_charge: death_star.laser_charge,
+        destroyed: death_star.destroyed,
+        action_committed: death_star.action_committed,
+        source_position: [
+            death_star.source_position.x,
+            death_star.source_position.y,
+            death_star.source_position.z,
+        ],
+    });
     emit(&FixtureRecord {
-        schema_version: 22,
+        schema_version: 27,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1048,6 +1163,15 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         command_progression_presentation: request.command_progression_presentation,
         attack_targeting_presentation: request.attack_targeting_presentation,
         attack_target_lifecycle_presentation: request.attack_target_lifecycle_presentation,
+        death_star_presentation: request.death_star_presentation,
+        battle_results_presentation: request.battle_results_presentation,
+        battle_options_presentation: request.battle_options_presentation,
+        battle_options_withdrawal: request.battle_options_withdrawal,
+        death_star_laser_journey: request.death_star_laser_journey,
+        trench_run_outcome: session.trench_run_outcome.map(|outcome| match outcome {
+            TacticalTrenchRunOutcome::Success => "success",
+            TacticalTrenchRunOutcome::Failure => "failure",
+        }),
         tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
@@ -1075,13 +1199,14 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         fields,
         subsystem_repairs,
         selected_ship,
+        death_star,
         error: None,
     });
 }
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 22,
+        schema_version: 27,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1107,6 +1232,12 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         command_progression_presentation: request.command_progression_presentation,
         attack_targeting_presentation: request.attack_targeting_presentation,
         attack_target_lifecycle_presentation: request.attack_target_lifecycle_presentation,
+        death_star_presentation: request.death_star_presentation,
+        battle_results_presentation: request.battle_results_presentation,
+        battle_options_presentation: request.battle_options_presentation,
+        battle_options_withdrawal: request.battle_options_withdrawal,
+        death_star_laser_journey: request.death_star_laser_journey,
+        trench_run_outcome: None,
         tactical_lod: request.lod_fixture.label(),
         system: "",
         system_picture_id: 0,
@@ -1122,6 +1253,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         fields: Vec::new(),
         subsystem_repairs: Vec::new(),
         selected_ship: None,
+        death_star: None,
         error: Some(error),
     });
 }
@@ -1169,6 +1301,23 @@ mod tests {
                 .unwrap()
                 .attack_target_lifecycle_presentation
         );
+        assert!(decode(0x10118).unwrap().death_star_presentation);
+        assert!(decode(0x10118).unwrap().focus_player_fighter);
+        assert!(decode(0x10119).unwrap().battle_results_presentation);
+        assert!(decode(0x1011a).unwrap().battle_options_presentation);
+        assert!(!decode(0x1011a).unwrap().battle_options_withdrawal);
+        assert!(decode(0x1011b).unwrap().battle_options_presentation);
+        assert!(decode(0x1011b).unwrap().battle_options_withdrawal);
+        assert!(decode(0x1011c).unwrap().death_star_presentation);
+        assert!(decode(0x1011c).unwrap().death_star_laser_journey);
+        assert_eq!(
+            decode(0x1011d).unwrap().trench_run_outcome,
+            Some(TacticalTrenchRunOutcome::Success)
+        );
+        assert_eq!(
+            decode(0x1011e).unwrap().trench_run_outcome,
+            Some(TacticalTrenchRunOutcome::Failure)
+        );
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -1190,7 +1339,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10118).is_none());
+        assert!(decode(0x1011f).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

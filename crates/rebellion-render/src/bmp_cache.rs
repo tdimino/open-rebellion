@@ -644,6 +644,67 @@ pub mod resources {
         /// Event screen: battle at planet, Empire fleet victorious.
         pub const EVENT_BATTLE_EMPIRE_VICTORY: u32 = 10760;
 
+        /// Alliance Battle Alert / Battle Results window frame.
+        pub const BATTLE_WINDOW_ALLIANCE: u32 = 10335;
+        /// Imperial Battle Alert / Battle Results window frame.
+        pub const BATTLE_WINDOW_EMPIRE: u32 = 10336;
+        /// Alliance right-hand rail for the battle window.
+        pub const BATTLE_RAIL_ALLIANCE: u32 = 10820;
+        /// Imperial right-hand rail for the battle window.
+        pub const BATTLE_RAIL_EMPIRE: u32 = 10821;
+        /// Two-column force-detail mask used by the battle window.
+        pub const BATTLE_FORCE_DETAIL_TWO_COLUMN: u32 = 10761;
+        /// Three-column operational/damaged/destroyed force-detail mask.
+        pub const BATTLE_FORCE_DETAIL_THREE_COLUMN: u32 = 10762;
+        /// Go Directly To starfield used by the battle window.
+        pub const BATTLE_DESTINATION_BACKGROUND: u32 = 10763;
+        /// Go Directly To system tile.
+        pub const BATTLE_DESTINATION_SYSTEM: u32 = 10764;
+        /// Go Directly To Alliance fleet tile.
+        pub const BATTLE_DESTINATION_ALLIANCE_FLEET: u32 = 10765;
+        /// Go Directly To Imperial fleet tile.
+        pub const BATTLE_DESTINATION_EMPIRE_FLEET: u32 = 10766;
+        /// Alliance selection frame for a Go Directly To tile.
+        pub const BATTLE_DESTINATION_ALLIANCE_SELECTED: u32 = 10767;
+        /// Imperial selection frame for a Go Directly To tile.
+        pub const BATTLE_DESTINATION_EMPIRE_SELECTED: u32 = 10768;
+
+        /// Alliance battle-window close button, normal and pressed.
+        pub const BATTLE_CLOSE_ALLIANCE_NORMAL: u32 = 10370;
+        pub const BATTLE_CLOSE_ALLIANCE_PRESSED: u32 = 10371;
+        /// Imperial battle-window close button, normal and pressed.
+        pub const BATTLE_CLOSE_EMPIRE_NORMAL: u32 = 10376;
+        pub const BATTLE_CLOSE_EMPIRE_PRESSED: u32 = 10377;
+
+        /// Alliance battle-window summary tab, normal and pressed.
+        pub const BATTLE_SUMMARY_ALLIANCE_NORMAL: u32 = 10728;
+        pub const BATTLE_SUMMARY_ALLIANCE_PRESSED: u32 = 10729;
+        /// Alliance battle-window Alliance-forces tab, normal and pressed.
+        pub const BATTLE_ALLIANCE_FORCES_ALLIANCE_NORMAL: u32 = 10730;
+        pub const BATTLE_ALLIANCE_FORCES_ALLIANCE_PRESSED: u32 = 10731;
+        /// Alliance battle-window Imperial-forces tab, normal and pressed.
+        pub const BATTLE_EMPIRE_FORCES_ALLIANCE_NORMAL: u32 = 10732;
+        pub const BATTLE_EMPIRE_FORCES_ALLIANCE_PRESSED: u32 = 10733;
+        /// Alliance battle-window destination tab, normal and pressed.
+        pub const BATTLE_DESTINATION_ALLIANCE_NORMAL: u32 = 10791;
+        pub const BATTLE_DESTINATION_ALLIANCE_PRESSED: u32 = 10792;
+
+        /// Imperial battle-window summary tab, normal and pressed.
+        pub const BATTLE_SUMMARY_EMPIRE_NORMAL: u32 = 10738;
+        pub const BATTLE_SUMMARY_EMPIRE_PRESSED: u32 = 10739;
+        /// Imperial battle-window Alliance-forces tab, normal and pressed.
+        pub const BATTLE_ALLIANCE_FORCES_EMPIRE_NORMAL: u32 = 10740;
+        pub const BATTLE_ALLIANCE_FORCES_EMPIRE_PRESSED: u32 = 10741;
+        /// Imperial battle-window Imperial-forces tab, normal and pressed.
+        pub const BATTLE_EMPIRE_FORCES_EMPIRE_NORMAL: u32 = 10742;
+        pub const BATTLE_EMPIRE_FORCES_EMPIRE_PRESSED: u32 = 10743;
+        /// Imperial battle-window destination tab, normal and pressed.
+        pub const BATTLE_DESTINATION_EMPIRE_NORMAL: u32 = 10520;
+        pub const BATTLE_DESTINATION_EMPIRE_PRESSED: u32 = 10521;
+
+        /// Mutual-destruction / no-winner battle result scene.
+        pub const EVENT_BATTLE_MUTUAL_DESTRUCTION: u32 = 11619;
+
         /// Event screen: assault on planet (Alliance).
         pub const EVENT_ASSAULT_ON_PLANET_ALLIANCE: u32 = 11160;
         /// Event screen: assault on planet (Empire).
@@ -715,6 +776,11 @@ pub mod resources {
         pub const HIGHLIGHT_EMPIRE_SHIPS: u32 = 1037;
         /// Dim Empire ships (gray Imperial glyph).
         pub const DIM_EMPIRE_SHIPS: u32 = 1036;
+
+        /// Battle Options HUD control, normal state.
+        pub const BTN_BATTLE_OPTIONS_NORMAL: u32 = 1038;
+        /// Battle Options HUD control, pressed state.
+        pub const BTN_BATTLE_OPTIONS_PRESSED: u32 = 1039;
 
         /// Tactical combat is running; clicking pauses it.
         pub const BTN_PAUSE_RUNNING: u32 = 1060;
@@ -797,6 +863,22 @@ pub mod resources {
         pub const BTN_WITHDRAW_FROM_BATTLE_NORMAL: u32 = 1149;
         /// Tactical command button: withdraw from battle, pressed state.
         pub const BTN_WITHDRAW_FROM_BATTLE_PRESSED: u32 = 1150;
+        /// Tactical command button: simulate the remainder, normal state.
+        pub const BTN_SIMULATE_REMAINDER_NORMAL: u32 = 1151;
+        /// Tactical command button: simulate the remainder, pressed state.
+        pub const BTN_SIMULATE_REMAINDER_PRESSED: u32 = 1152;
+        /// Tactical command button: observe or take command, normal state.
+        pub const BTN_OBSERVE_TOGGLE_NORMAL: u32 = 1153;
+        /// Tactical command button: observe or take command, pressed state.
+        pub const BTN_OBSERVE_TOGGLE_PRESSED: u32 = 1154;
+        /// Tactical command button: open Game Options, normal state.
+        pub const BTN_GAME_OPTIONS_NORMAL: u32 = 1155;
+        /// Tactical command button: open Game Options, pressed state.
+        pub const BTN_GAME_OPTIONS_PRESSED: u32 = 1156;
+        /// Tactical command button: close Battle Options, normal state.
+        pub const BTN_BATTLE_OPTIONS_CLOSE_NORMAL: u32 = 1157;
+        /// Tactical command button: close Battle Options, pressed state.
+        pub const BTN_BATTLE_OPTIONS_CLOSE_PRESSED: u32 = 1158;
 
         /// Tactical command button: recover, Empire normal state.
         pub const BTN_RECOVER_EMPIRE_NORMAL: u32 = 1170;
@@ -849,6 +931,10 @@ pub mod resources {
 
         /// Right-side hull integrity and shield strength panel.
         pub const RIGHT_PANEL_HULL_AND_SHIELD: u32 = 1302;
+        /// Alliance Battle Options panel.
+        pub const BATTLE_OPTIONS_ALLIANCE_PANEL: u32 = 1303;
+        /// Empire Battle Options panel.
+        pub const BATTLE_OPTIONS_EMPIRE_PANEL: u32 = 1304;
         /// Tactical missions assignment panel.
         pub const MISSIONS_PANEL: u32 = 1308;
         /// Tactical maneuvers and tactics assignment panel.

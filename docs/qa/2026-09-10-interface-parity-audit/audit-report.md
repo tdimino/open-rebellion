@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit Report"
 description: "Evidence-backed diagnosis and execution plan for complete bitmap-driven UI parity"
 category: qa
 created: 2026-09-10
-updated: 2026-09-16
+updated: 2026-09-22
 tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 ---
 
@@ -15,7 +15,7 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 |---|---:|
 | Practical interface scope materially tackled | approximately 20 to 25% |
 | Practical interface scope remaining | approximately 75 to 80% |
-| Practical space-battle launcher implementation | approximately 88% |
+| Practical space-battle launcher implementation | approximately 96% |
 | Required surface families | 43 |
 | Family status | 0 complete, 9 partial, 34 fail |
 | Strictly accepted required cells | 0 of 564 |
@@ -94,7 +94,7 @@ The local source inspection establishes the implementation causes:
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py:29` | Original ALSPRITE, EMSPRITE, ALBRIEF, EMBRIEF, REBDLOG, and EDATA families |
 | Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
-| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital families, fighter detail resources, system-selected planets, effects, fields, selected-capital damage, subsystem condition, exact field-source state, live subsystem damage, repair, maneuver state, physical integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, full fighter recovery, typed attack target acquisition, and same-class target replacement use recovered source contracts; other battle contents remain replacements | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58F13 evidence](evidence/README.md), and [P58F13 evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md) |
+| First original tactical shell and control states; all original 3D assets decoded and transported; exact DAT resource joins; live capital and fighter behavior; commands; combat; collision; automatic groups; capability-sorted task forces with forward-relative retained geometry; original results/options panels; resource 5030 stars; the provisional Death Star superlaser journey; exact result-to-film trench-run routing; and exact strategic roster, capture, and Death Star-state application use recovered source contracts. Native beam semantics, shared post-battle orchestration, native playback, and A0 acceptance remain open | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `tools/stage-ui-assets` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58F13 evidence](evidence/README.md), and the [P58-B06 tactical completion checkpoint](evidence/2026-09-22-tactical-completion-bundle.md) |
 
 The original identity baseline comes from the locally preserved
 [official manual](../../reference/campaign-history/archive/star-wars-rebellion-manual.pdf),
@@ -162,9 +162,12 @@ original arrival callbacks and recovery trajectories remain open. P58F12 adds
 typed Attack Fighters and Attack Capital Ships target acquisition for capital
 and fighter owners. P58F13 adds live invalidation, stable same-class target
 replacement, and exhausted-list clearing without cross-class or random
-fallback. Exact arc, range, weapon-availability, projectile, recharge, fighter
-combat, collision and formation behavior, power allocation, special objects,
-and A0 acceptance remain open.
+fallback. P58-B06 adds capital and fighter weapon behavior, collision,
+automatic groups, retained formations, the separate Death Star, original
+result/options panels, the superlaser journey, both trench-run routes, and
+exact strategic roster, capture, and Death Star-state application. Power
+allocation, native beam behavior, shared post-battle orchestration, native
+playback, and A0 acceptance remain open.
 P46A corroborates the shell and aperture portion at runtime, including one
 shared transform for overlays, hit tests, and advisors. P46B implements the six
 primary faction controls from their exact resources, geometry, state, input,
@@ -199,7 +202,7 @@ acceptance.
 | UIP-F-006 | P1 | WASM encyclopedia image loading always returns no texture. | fail |
 | UIP-F-007 | P1 | Finders, production, missions, messages, options, and object status use replacement layouts or are absent. | fail |
 | UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
-| UIP-F-009 | P1 | The original 640×480 tactical shell, first bitmap controls, full asset decode and transport, exact ship/fighter DAT joins, production capital/fighter/planet rendering, group controls, effects, fields, selected-capital damage, subsystem condition, exact field-source state, live subsystem damage, repair, maneuver state, physical integration, authentic command assignment, maneuver waypoints, Hold, source-rate turning, waypoint completion, full fighter recovery, typed attack target acquisition, and stable same-class replacement pass implementation gates. Original view acceptance, automatic grouping, exact planet placement, exact global RNG sequencing, exact arrival callbacks and recovery trajectories, exact weapon behavior, fighter combat, collision and formation behavior, power allocation, and incomplete result, special-state, and audio paths remain. | fail |
+| UIP-F-009 | P1 | The original 640×480 tactical shell, complete asset transport, exact participant joins, production rendering, controls, effects, subsystem behavior, commands, capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application pass implementation gates. Original view acceptance, exact planet placement, global RNG sequencing, original arrival callbacks, power allocation, native beam behavior, native playback, shared post-battle orchestration, and remaining special-state and audio paths stay open. | fail |
 | UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
 | UIP-F-011 | P1 | Modeless focus, close, minimize, restore, and 12-slot rail routing work; exact active/inactive rail thumbnails and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
@@ -414,6 +417,11 @@ selected-capital damage and subsystem condition, exact field-source identity,
 live subsystem mutation, repair, mobility, maneuver-state production, velocity,
 position integration, authentic command assignment, maneuver waypoints, Hold,
 source-rate turning, waypoint completion, full fighter recovery states, and
-typed attack target acquisition and replacement; see the
-[P58F13 evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md).
-Original A0 comparison and all strict tactical acceptance cells remain open.
+typed attack target acquisition and replacement. P58-B06 adds the remaining
+implemented combat, collision, formation, Death Star, result/options, and
+trench-run paths and passes the complete 120-case implementation matrix; see
+the [checkpoint evidence](evidence/2026-09-22-tactical-completion-bundle.md).
+Independent visual review is a qualified A1 pass with no P0 or P1 findings.
+The authentic Game Options window, Alliance Death Star framing baseline, and
+persistent trench-run outcome proof remain bounded follow-ups. Original A0
+comparison and all strict tactical acceptance cells remain open.

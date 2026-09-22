@@ -8,7 +8,7 @@ created: 2026-09-14
 updated: 2026-09-14
 date: 2026-09-14
 parent: 2026-09-11-feat-batched-interface-parity-plan.md
-tags: [interface, parity, gid, message-index, a0, windows-vm, codex, astra, sol, harness]
+tags: [interface, parity, gid, message-index, a0, windows-vm, codex, sol, harness]
 ---
 
 # P59 Parallel Strategic Lane
@@ -350,7 +350,7 @@ Follow the sidecar ladder exactly:
    are never retried.
 4. Native 640x480 captures of the same states (see "Not claimed" for the
    native fixture gap).
-5. Astra `medium` reviews the generated evidence packet (contact sheets,
+5. An independent browser reviewer checks the generated evidence packet (contact sheets,
    lossless PNGs, request, console, hash, and cleanup summaries) plus one full
    GID traversal and one Message Index traversal per faction, and returns a
    severity-ranked verdict with `ready_to_commit`. Final artifact hashes are
@@ -380,9 +380,9 @@ repository stays read-only to agents.
 | P59C, P59D | Claude | `codex-exec.sh reviewer "<diff + claim table>" --reasoning xhigh --no-approve` | GID matrix |
 | E2 | Claude | `codex-exec.sh reviewer "<diff>" --reasoning high --no-approve` | focused tests |
 | E3 | `codex-exec.sh builder "<spec>" --reasoning high` in `/tmp` clone | `codex-exec.sh reviewer "<diff>" --reasoning high --no-approve` | Message Index matrix |
-| Gate | Claude | Sol `xhigh` on RE geometry and ledgers | `codex-astra.sh reviewer "<evidence packet + site URL>" --reasoning medium` |
+| Gate | Claude | Sol `xhigh` on RE geometry and ledgers | Independent browser acceptance against the evidence packet and site URL |
 
-Astra receives no source, reverse-engineering, or documentation review. The
+The browser reviewer receives no source, reverse-engineering, or documentation review. The
 `--no-approve` flag forces the read-only sandbox for every reviewer and
 adjudicator run.
 
@@ -452,7 +452,7 @@ adjudicator run.
 - [ ] Message Index: nine distinct commands dispatched once each, held and resting
       pixels exact at 640x480, fail-closed window captured as a negative control,
       production exclusion passes with the new tokens.
-- [ ] Astra `medium` returns `ready_to_commit: true` for the evidence packet; Sol
+- [ ] The independent browser reviewer returns `ready_to_commit: true` for the evidence packet; Sol
       `xhigh` findings are resolved, not deferred.
 - [ ] Ledger validator `--check` clean; every evidence bundle has its `README.md`
       and is linked from `evidence/README.md`, `index.md`, the audit README, the

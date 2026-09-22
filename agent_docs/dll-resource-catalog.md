@@ -82,7 +82,7 @@ Entity status sprites. Every ship, character, troop, facility as it appears in i
 
 These are record-order mappings, not offsets from the compound `DatId`. Commit
 `4589d2e` maps all 38 classes and restricts palette-blue transparency to the
-known GOKRES miniature blocks. Astra-medium R9 browser evidence is retained in
+known GOKRES miniature blocks. Independent R9 browser evidence is retained in
 `docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-fleet-miniatures.md`.
 
 ## COMMON.DLL (2.8MB) — 321 BMPs + 1 BIN
@@ -125,6 +125,8 @@ Tactical combat view — HUD, ship/fighter sprites, squadron controls, weapon sy
 - 1221-1225: Selected-capital hyperdrive condition, five source bands
 - 1302: Hull integrity + shield strength panel
 - 2001-2130: ~130 tactical ship sprites (the 3D renders used in combat view)
+- type-303 5030: 440×438 indexed tactical star surface, decoded with the
+  active `5530 + SYSTEMSD.picture_id` battle palette
 
 Custom type 301 contains 87 binary DirectX `.x` meshes. Custom type 303
 contains 397 texture payloads, including named tactical textures and numeric

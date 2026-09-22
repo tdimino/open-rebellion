@@ -156,7 +156,7 @@ Native saves live at `<saves_dir>/<slot>.reb`. The UI exposes ten slots.
 7. Add current round-trip, corruption, exact-continuation, and real-artifact
    migration tests.
 8. Run workspace tests, the seeded fingerprint probe, WASM/package checks, and
-   an Astra browser save/reload/load/continue pass with bitmap and error gates.
+   an independent browser save/reload/load/continue pass with bitmap and error gates.
 
 Current verification evidence:
 [F-011A fingerprints](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-08-state-fingerprints.md)

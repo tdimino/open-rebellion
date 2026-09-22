@@ -83,7 +83,8 @@ use rebellion_render::{
     ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog, MessageLogState,
     MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
     PanelAction, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
-    SystemWindowState, TacticalAction, TacticalState, VideoError, VideoPlayer, VoiceLine,
+    SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError,
+    VideoPlayer, VoiceLine,
 };
 
 /// Top-level game mode state machine.
@@ -111,10 +112,6 @@ enum GameMode {
     /// Ground combat phase after space combat.
     GroundCombat,
     /// Victory/defeat modal overlay on the frozen galaxy map.
-    #[expect(
-        dead_code,
-        reason = "Victory modal rendering exists, but its transition is not wired yet."
-    )]
     VictoryModal { alliance_won: bool },
 }
 
@@ -123,17 +120,15 @@ enum GameMode {
 enum CutsceneKind {
     /// Game intro (000.webm) → `MainMenu`.
     Intro,
-    /// Victory sequence (201.webm) → `MainMenu`.
-    Victory,
-    /// Defeat sequence (202.webm) → `MainMenu`.
-    Defeat,
+    /// Death Star trench-run result (201/202.webm) → resume tactical view.
+    TrenchRun(TacticalTrenchRunOutcome),
     /// In-game story cutscene (101–108.webm) → resume Galaxy.
     Story(u32),
 }
 
 const INTRO_CUTSCENE: &str = "assets/references/ref-videos/000.webm";
-const VICTORY_CUTSCENE: &str = "assets/references/ref-videos/201.webm";
-const DEFEAT_CUTSCENE: &str = "assets/references/ref-videos/202.webm";
+const TRENCH_RUN_SUCCESS_CUTSCENE: &str = "assets/references/ref-videos/201.webm";
+const TRENCH_RUN_FAILURE_CUTSCENE: &str = "assets/references/ref-videos/202.webm";
 
 /// Map a story event ID to its cutscene file number (101–108), if any.
 /// Returns `None` for events that don't trigger a cutscene.
@@ -2289,28 +2284,8 @@ async fn main() {
                 };
                 msg_log.push(GameMessage::new(current_tick, msg, MessageCategory::Event));
 
-                let player_won = player_won_victory(&outcome, player_faction);
-                let cutscene_path = if player_won {
-                    Path::new(VICTORY_CUTSCENE)
-                } else {
-                    Path::new(DEFEAT_CUTSCENE)
-                };
-                let kind = if player_won {
-                    CutsceneKind::Victory
-                } else {
-                    CutsceneKind::Defeat
-                };
-                cutscene_player = open_cutscene(
-                    cutscene_path,
-                    &mut msg_log,
-                    current_tick,
-                    #[cfg(not(target_arch = "wasm32"))]
-                    &mut audio_engine,
-                );
-                game_mode = if cutscene_player.is_some() {
-                    GameMode::Cutscene { kind }
-                } else {
-                    GameMode::MainMenu
+                game_mode = GameMode::VictoryModal {
+                    alliance_won: victory_winner_is_alliance(&outcome),
                 };
             }
         }
@@ -2324,9 +2299,8 @@ async fn main() {
                 clear_background(BLACK);
 
                 let next_mode = match kind {
-                    CutsceneKind::Intro | CutsceneKind::Victory | CutsceneKind::Defeat => {
-                        GameMode::MainMenu
-                    }
+                    CutsceneKind::Intro => GameMode::MainMenu,
+                    CutsceneKind::TrenchRun(_) => GameMode::TacticalCombat,
                     CutsceneKind::Story(_) => GameMode::Galaxy,
                 };
 
@@ -3158,7 +3132,20 @@ async fn main() {
             }
 
             GameMode::TacticalCombat => {
-                let tac_action = draw_tactical_view(&mut tactical_state, &mut bmp_cache, &world);
+                let tac_action = draw_tactical_view(
+                    &mut tactical_state,
+                    &mut bmp_cache,
+                    &world,
+                    &troop_transport_state,
+                );
+                let requested_result_system = match &tac_action {
+                    TacticalAction::OpenBattleSystem(system) => Some(*system),
+                    _ => None,
+                };
+                let requested_result_fleet = match &tac_action {
+                    TacticalAction::OpenBattleFleet(fleet) => Some(*fleet),
+                    _ => None,
+                };
 
                 match tac_action {
                     TacticalAction::BeginCombat => {
@@ -3168,8 +3155,10 @@ async fn main() {
                         }
                     }
                     TacticalAction::AutoResolve => {
-                        // Player chose auto-resolve — run CombatSystem and return to galaxy.
-                        if let Some(session) = tactical_state.end_battle() {
+                        // Auto-resolve the battle, then show the same original
+                        // Battle Results window used by a played engagement.
+                        let mut result_presented = false;
+                        if let Some(session) = tactical_state.session.clone() {
                             let combat_rolls: Vec<f64> =
                                 (0..256).map(|_| sim_rng.gen::<f64>()).collect();
                             let space_result = CombatSystem::resolve_space(
@@ -3183,6 +3172,11 @@ async fn main() {
                                 death_star_state.shield_generator_active,
                             );
                             apply_space_combat_result(&space_result, &mut world);
+                            tactical_flow::reconcile_death_star_result(
+                                &world,
+                                &mut death_star_state,
+                                &mut victory_state,
+                            );
                             troop_transport_state.destroy_untransportable_cargo(&mut world);
 
                             let ground_attacker = match space_result.winner {
@@ -3217,8 +3211,14 @@ async fn main() {
                             }
 
                             let winner_str = match space_result.winner {
-                                CombatSide::Attacker => "Alliance victory",
-                                CombatSide::Defender => "Empire victory",
+                                CombatSide::Attacker if session.attacker_is_alliance => {
+                                    "Alliance victory"
+                                }
+                                CombatSide::Attacker => "Empire victory",
+                                CombatSide::Defender if session.attacker_is_alliance => {
+                                    "Empire victory"
+                                }
+                                CombatSide::Defender => "Alliance victory",
                                 CombatSide::Draw => "Draw",
                             };
                             msg_log.push(GameMessage::at_system(
@@ -3242,64 +3242,67 @@ async fn main() {
                                 &session.system_name,
                                 player_won,
                             );
+                            result_presented =
+                                tactical_state.present_auto_resolve_result(&space_result);
                         }
-                        game_mode = GameMode::Galaxy;
+                        if !result_presented {
+                            game_mode = GameMode::Galaxy;
+                        }
                     }
-                    TacticalAction::ReturnToGalaxy => {
+                    TacticalAction::ReturnToGalaxy
+                    | TacticalAction::OpenBattleSystem(_)
+                    | TacticalAction::OpenBattleFleet(_) => {
+                        let strategic_results_applied = tactical_state.strategic_results_applied();
                         // Apply combat results from tactical session to GameWorld.
                         if let Some(session) = tactical_state.end_battle() {
-                            apply_tactical_results(
-                                &session,
-                                &mut world,
-                                &mut troop_transport_state,
-                            );
-                            let winner_str = match session.winner {
-                                Some(rebellion_render::CombatWinner::Attacker) => {
-                                    "Attacker victory"
-                                }
-                                Some(rebellion_render::CombatWinner::Defender) => {
-                                    "Defender victory"
-                                }
-                                Some(rebellion_render::CombatWinner::Draw) | None => "Draw",
+                            let battle_return = if strategic_results_applied {
+                                tactical_flow::summarize_results(&session)
+                            } else {
+                                tactical_flow::apply_results(
+                                    &session,
+                                    &mut world,
+                                    &mut troop_transport_state,
+                                )
                             };
-                            msg_log.push(GameMessage::at_system(
-                                session.start_tick,
-                                format!(
-                                    "Space battle at {} — {} (tactical)",
-                                    session.system_name, winner_str
-                                ),
-                                MessageCategory::Combat,
-                                session.system,
-                            ));
+                            if !strategic_results_applied {
+                                tactical_flow::reconcile_death_star_result(
+                                    &world,
+                                    &mut death_star_state,
+                                    &mut victory_state,
+                                );
+                            }
+                            if !strategic_results_applied {
+                                let winner_str = match battle_return.winner {
+                                    Some(rebellion_render::CombatWinner::Attacker) => {
+                                        "Attacker victory"
+                                    }
+                                    Some(rebellion_render::CombatWinner::Defender) => {
+                                        "Defender victory"
+                                    }
+                                    Some(rebellion_render::CombatWinner::Draw) | None => "Draw",
+                                };
+                                msg_log.push(GameMessage::at_system(
+                                    session.start_tick,
+                                    format!(
+                                        "Space battle at {} — {} (tactical)",
+                                        session.system_name, winner_str
+                                    ),
+                                    MessageCategory::Combat,
+                                    session.system,
+                                ));
 
-                            // Advisor: combat result
-                            let player_won = match session.winner {
-                                Some(rebellion_render::CombatWinner::Attacker) => {
-                                    session.player_is_attacker
-                                }
-                                Some(rebellion_render::CombatWinner::Defender) => {
-                                    !session.player_is_attacker
-                                }
-                                _ => false,
-                            };
-                            advisor_combat_result(
-                                &mut advisor_state,
-                                &session.system_name,
-                                player_won,
-                            );
+                                advisor_combat_result(
+                                    &mut advisor_state,
+                                    &session.system_name,
+                                    battle_return.player_won,
+                                );
+                            }
 
-                            // A decisive winner may land surviving transports,
-                            // regardless of which faction initiated the move.
-                            let ground_attacker = match session.winner {
-                                Some(rebellion_render::CombatWinner::Attacker) => {
-                                    Some(session.attacker_fleet)
-                                }
-                                Some(rebellion_render::CombatWinner::Defender) => {
-                                    Some(session.defender_fleet)
-                                }
-                                _ => None,
-                            };
-                            if let Some(winner_fleet) = ground_attacker {
+                            // Auto-resolve already completed bombardment and
+                            // ground resolution before presenting its result.
+                            if strategic_results_applied {
+                                game_mode = GameMode::Galaxy;
+                            } else if let Some(winner_fleet) = battle_return.winner_fleet {
                                 let attacker_is_alliance = world
                                     .fleets
                                     .get(winner_fleet)
@@ -3399,6 +3402,33 @@ async fn main() {
                         } else {
                             game_mode = GameMode::Galaxy;
                         }
+
+                        if game_mode == GameMode::Galaxy {
+                            if let Some(system) = requested_result_system {
+                                map_state.selected_system = Some(system);
+                                let layout = cockpit_state.layout();
+                                let _ = system_window_state.open(
+                                    &world,
+                                    system,
+                                    (85, 55),
+                                    cockpit_state.faction,
+                                    layout,
+                                );
+                            }
+                            if let Some(fleet) = requested_result_fleet {
+                                if let Some(value) = world.fleets.get(fleet) {
+                                    map_state.selected_system = Some(value.location);
+                                    let layout = cockpit_state.layout();
+                                    let _ = system_window_state.open_fleet(
+                                        &world,
+                                        fleet,
+                                        (85, 55),
+                                        cockpit_state.faction,
+                                        layout,
+                                    );
+                                }
+                            }
+                        }
                     }
                     TacticalAction::TogglePause => {
                         if let Some(ref mut session) = tactical_state.session {
@@ -3422,7 +3452,51 @@ async fn main() {
                             session.selected_ship = None;
                         }
                     }
+                    TacticalAction::WithdrawFromBattle => {
+                        if let Some(ref mut session) = tactical_state.session {
+                            let player_side = session.player_is_attacker;
+                            for ship in &mut session.ships {
+                                if ship.alive
+                                    && !ship.retreating
+                                    && ship.is_attacker == player_side
+                                    && ship.subsystem_capacity.hyperdrive > 0
+                                    && ship.subsystem_condition.hyperdrive > 0
+                                {
+                                    ship.retreating = true;
+                                    ship.selected = false;
+                                }
+                            }
+                            session.selected_ship = None;
+                            session.selected_fighter_group = None;
+                        }
+                    }
+                    TacticalAction::OpenGameOptions => {
+                        // The tactical bitmap routes to the shared Game Options
+                        // window. Keep this fail-closed until that original
+                        // unified surface is restored rather than substituting
+                        // another menu.
+                        macroquad::logging::info!(
+                            "[interface] command=0x133 destination=game_options status=pending_original_window"
+                        );
+                    }
                     TacticalAction::None => {}
+                }
+
+                if game_mode == GameMode::TacticalCombat {
+                    if let Some(outcome) = tactical_state.take_pending_trench_run_cinematic() {
+                        cutscene_player = open_cutscene(
+                            Path::new(trench_run_cutscene_path(outcome)),
+                            &mut msg_log,
+                            clock.tick,
+                            #[cfg(not(target_arch = "wasm32"))]
+                            &mut audio_engine,
+                        );
+                        if cutscene_player.is_some() {
+                            game_mode = GameMode::Cutscene {
+                                kind: CutsceneKind::TrenchRun(outcome),
+                            };
+                        }
+                    }
                 }
             }
 
@@ -5144,71 +5218,6 @@ fn resolve_ground_campaign(
     }
 }
 
-/// Apply tactical combat session results to `GameWorld`.
-///
-/// Compares each ship's final `hull_current` to `hull_max`.
-/// Ships with `hull_current` == 0 are destroyed (count decremented).
-/// Fighter squadron losses are applied similarly.
-fn apply_tactical_results(
-    session: &rebellion_render::BattleSession,
-    world: &mut GameWorld,
-    troop_transport: &mut TroopTransportState,
-) {
-    // Apply each surviving hull's damage and each destroyed hull's loss.
-    for (fleet_key, is_attacker) in [
-        (session.attacker_fleet, true),
-        (session.defender_fleet, false),
-    ] {
-        if let Some(fleet) = world.fleets.get_mut(fleet_key) {
-            // fleet_ship_index maps 1:1 to hulls alive at session start.
-            let mut alive_idx = 0;
-            for ship_inst in &mut fleet.capital_ships {
-                if !ship_inst.alive {
-                    continue;
-                }
-                if let Some(result) = session.ships.iter().find(|ship| {
-                    ship.is_attacker == is_attacker && ship.fleet_ship_index == alive_idx
-                }) {
-                    ship_inst.hull_current = result.hull_current.clamp(0, result.hull_max);
-                    ship_inst.alive = result.alive && ship_inst.hull_current > 0;
-                    if !ship_inst.alive {
-                        ship_inst.hull_current = 0;
-                    }
-                }
-                alive_idx += 1;
-            }
-            fleet.capital_ships.retain(|s| s.alive);
-
-            // Match roster slots, not class. A fleet may contain the same class twice.
-            for fighter in session
-                .fighters
-                .iter()
-                .filter(|f| f.is_attacker == is_attacker)
-            {
-                if let Some(entry) = fleet.fighters.get_mut(fighter.fleet_fighter_index) {
-                    entry.count = fighter.squad_count;
-                }
-            }
-        }
-
-        // Remove empty fleets.
-        let is_empty = world
-            .fleets
-            .get(fleet_key)
-            .is_none_or(rebellion_core::world::Fleet::is_empty);
-        if is_empty {
-            if let Some(fleet) = world.fleets.get(fleet_key) {
-                let loc = fleet.location;
-                if let Some(sys) = world.systems.get_mut(loc) {
-                    sys.fleets.retain(|&k| k != fleet_key);
-                }
-            }
-            world.fleets.remove(fleet_key);
-        }
-    }
-    troop_transport.destroy_untransportable_cargo(world);
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "Keep explicit state and UI inputs at this existing integration boundary."
@@ -5387,28 +5396,20 @@ fn draw_fullscreen_texture(texture: &Texture2D) {
     );
 }
 
-fn player_won_victory(
-    outcome: &rebellion_core::victory::VictoryOutcome,
-    player_faction: MissionFaction,
-) -> bool {
+fn victory_winner_is_alliance(outcome: &rebellion_core::victory::VictoryOutcome) -> bool {
     match outcome {
-        rebellion_core::victory::VictoryOutcome::HqCaptured { winner, .. } => {
-            matches!(
-                (winner, player_faction),
-                (Faction::Alliance, MissionFaction::Alliance)
-                    | (Faction::Empire, MissionFaction::Empire)
-            )
+        rebellion_core::victory::VictoryOutcome::HqCaptured { winner, .. }
+        | rebellion_core::victory::VictoryOutcome::HqDestroyed { winner, .. } => {
+            *winner == Faction::Alliance
         }
-        rebellion_core::victory::VictoryOutcome::HqDestroyed { winner, .. } => {
-            matches!(
-                (winner, player_faction),
-                (Faction::Alliance, MissionFaction::Alliance)
-                    | (Faction::Empire, MissionFaction::Empire)
-            )
-        }
-        rebellion_core::victory::VictoryOutcome::DeathStarVictory { .. } => {
-            player_faction == MissionFaction::Empire
-        }
+        rebellion_core::victory::VictoryOutcome::DeathStarVictory { .. } => false,
+    }
+}
+
+const fn trench_run_cutscene_path(outcome: TacticalTrenchRunOutcome) -> &'static str {
+    match outcome {
+        TacticalTrenchRunOutcome::Success => TRENCH_RUN_SUCCESS_CUTSCENE,
+        TacticalTrenchRunOutcome::Failure => TRENCH_RUN_FAILURE_CUTSCENE,
     }
 }
 
@@ -5422,7 +5423,10 @@ fn open_cutscene(
     audio_engine.stop_music();
 
     match VideoPlayer::open(path) {
-        Ok(player) => Some(player),
+        Ok(player) => {
+            macroquad::logging::info!("[cutscene] opened path={}", path.display());
+            Some(player)
+        }
         Err(VideoError::NotDecoded { .. }) => {
             let message =
                 "cutscene skipped — run scripts/decode-cutscenes.sh to enable".to_string();
@@ -5445,6 +5449,35 @@ mod tactical_ground_tests {
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
     use rebellion_core::ids::{CapitalShipKey, DatId, FighterKey};
     use rebellion_core::world::{FighterEntry, Fleet, Sector, ShipInstance, System, TroopUnit};
+
+    #[test]
+    fn trench_run_outcomes_route_to_their_source_movies() {
+        assert_eq!(
+            trench_run_cutscene_path(TacticalTrenchRunOutcome::Success),
+            "assets/references/ref-videos/201.webm"
+        );
+        assert_eq!(
+            trench_run_cutscene_path(TacticalTrenchRunOutcome::Failure),
+            "assets/references/ref-videos/202.webm"
+        );
+    }
+
+    #[test]
+    fn campaign_victory_faction_does_not_depend_on_the_local_player() {
+        let system = rebellion_core::ids::SystemKey::default();
+        assert!(victory_winner_is_alliance(
+            &rebellion_core::victory::VictoryOutcome::HqCaptured {
+                winner: Faction::Alliance,
+                loser: Faction::Empire,
+                hq_system: system,
+            }
+        ));
+        assert!(!victory_winner_is_alliance(
+            &rebellion_core::victory::VictoryOutcome::DeathStarVictory {
+                target_system: system,
+            }
+        ));
+    }
 
     #[test]
     fn tactical_ground_results_persist_survivor_damage_and_remove_losses() {
@@ -5504,7 +5537,7 @@ mod tactical_ground_tests {
         clippy::too_many_lines,
         reason = "The tactical result regression keeps its opposing fleets and exact roster assertions together."
     )]
-    fn tactical_space_results_preserve_hull_damage_and_duplicate_fighter_roster_slots() {
+    fn tactical_space_results_preserve_exact_capital_and_fighter_roster_slots() {
         let mut world = GameWorld::default();
         let sector = world.sectors.insert(Sector {
             dat_id: DatId::new(1),
@@ -5539,9 +5572,13 @@ mod tactical_ground_tests {
         });
         let ship_class = CapitalShipKey::default();
         let fighter_class = FighterKey::default();
+        let mut preexisting_dead_ship = ShipInstance::new(ship_class, 100, true);
+        preexisting_dead_ship.hull_current = 0;
+        preexisting_dead_ship.alive = false;
         let attacker = world.fleets.insert(Fleet {
             location: system,
             capital_ships: vec![
+                preexisting_dead_ship,
                 ShipInstance::new(ship_class, 100, true),
                 ShipInstance::new(ship_class, 100, true),
             ],
@@ -5557,7 +5594,7 @@ mod tactical_ground_tests {
             ],
             characters: vec![],
             is_alliance: true,
-            has_death_star: false,
+            has_death_star: true,
         });
         let defender = world.fleets.insert(Fleet {
             location: system,
@@ -5578,8 +5615,8 @@ mod tactical_ground_tests {
             player_is_attacker: true,
             phase: rebellion_render::BattlePhase::Results,
             ships: vec![
-                test_tactical_ship(ship_class, true, 0, 43, true),
-                test_tactical_ship(ship_class, true, 1, 0, false),
+                test_tactical_ship(ship_class, true, 1, 43, true),
+                test_tactical_ship(ship_class, true, 2, 0, false),
                 test_tactical_ship(ship_class, false, 0, 91, true),
             ],
             fighters: vec![
@@ -5598,10 +5635,21 @@ mod tactical_ground_tests {
                     },
                     sublight_engine_power: 0.0,
                     fleet_fighter_index: 0,
+                    fleet_squadron_index: 0,
                     name: "Fighter".into(),
                     x: 0.0,
                     y: 0.0,
-                    squad_count: 4,
+                    squad_count: 12,
+                    hull_current: 96.0,
+                    hull_max: 96.0,
+                    shield: 0.0,
+                    shield_max: 0.0,
+                    weapon_arc: rebellion_render::tactical_view::TacticalWeaponArc::default(),
+                    weapon_ranges:
+                        rebellion_render::tactical_view::TacticalWeaponRanges::default(),
+                    torpedo_strength: 0,
+                    torpedo_range: 0.0,
+                    maneuverability: 0,
                     is_attacker: true,
                     alive: true,
                     fighter_group: 0,
@@ -5627,10 +5675,21 @@ mod tactical_ground_tests {
                     },
                     sublight_engine_power: 0.0,
                     fleet_fighter_index: 1,
+                    fleet_squadron_index: 0,
                     name: "Fighter".into(),
                     x: 0.0,
                     y: 0.0,
-                    squad_count: 9,
+                    squad_count: 0,
+                    hull_current: 0.0,
+                    hull_max: 96.0,
+                    shield: 0.0,
+                    shield_max: 0.0,
+                    weapon_arc: rebellion_render::tactical_view::TacticalWeaponArc::default(),
+                    weapon_ranges:
+                        rebellion_render::tactical_view::TacticalWeaponRanges::default(),
+                    torpedo_strength: 0,
+                    torpedo_range: 0.0,
+                    maneuverability: 0,
                     is_attacker: true,
                     alive: true,
                     fighter_group: 1,
@@ -5642,6 +5701,23 @@ mod tactical_ground_tests {
                     recovery_target: None,
                 },
             ],
+            death_star: Some(rebellion_render::tactical_view::TacticalDeathStar {
+                resource: rebellion_render::DEATH_STAR_TACTICAL_RESOURCE,
+                is_attacker: true,
+                is_alliance: true,
+                source_position: rebellion_render::tactical_view::TacticalWorldPosition {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                hull: 0.0,
+                laser_charge: 0.0,
+                destroyed: true,
+                action_committed: false,
+            }),
+            death_star_beam: None,
+            trench_run_outcome: None,
+            trench_run_cinematic_pending: false,
             source_layout: rebellion_render::tactical_view::OriginalTacticalLayout::default(),
             selected_ship: None,
             selected_fighter_group: None,
@@ -5658,13 +5734,21 @@ mod tactical_ground_tests {
             winner: Some(rebellion_render::CombatWinner::Attacker),
         };
 
-        apply_tactical_results(&session, &mut world, &mut TroopTransportState::default());
+        let battle_return =
+            tactical_flow::apply_results(&session, &mut world, &mut TroopTransportState::default());
 
         assert_eq!(world.fleets[attacker].capital_ships.len(), 1);
         assert_eq!(world.fleets[attacker].capital_ships[0].hull_current, 43);
-        assert_eq!(world.fleets[attacker].fighters[0].count, 4);
-        assert_eq!(world.fleets[attacker].fighters[1].count, 9);
+        assert_eq!(world.fleets[attacker].fighters[0].count, 1);
+        assert_eq!(world.fleets[attacker].fighters[1].count, 0);
+        assert!(!world.fleets[attacker].has_death_star);
         assert_eq!(world.fleets[defender].capital_ships[0].hull_current, 91);
+        assert_eq!(
+            battle_return.winner,
+            Some(rebellion_render::CombatWinner::Attacker)
+        );
+        assert_eq!(battle_return.winner_fleet, Some(attacker));
+        assert!(battle_return.player_won);
     }
 
     fn test_tactical_ship(
@@ -5704,6 +5788,7 @@ mod tactical_ground_tests {
                 z: 0.0,
             },
             source_waypoint: None,
+            source_collision_envelope: None,
             name: "Ship".into(),
             x: 0.0,
             y: 0.0,
@@ -5740,9 +5825,12 @@ mod tactical_ground_tests {
             task_force: u8::try_from(fleet_ship_index.min(7)).unwrap_or(7),
             fleet_ship_index,
             sprite_id: None,
-            turbolaser_power: 0,
-            ion_cannon_power: 0,
-            laser_cannon_power: 0,
+            weapon_arcs: [rebellion_render::tactical_view::TacticalWeaponArc::default(); 4],
+            weapon_ranges: rebellion_render::tactical_view::TacticalWeaponRanges::default(),
+            weapon_recharge_rate: 0.0,
+            shield_recharge_rate: 0.0,
+            shield_recharge_carry: 0.0,
+            weapon_recharge_queue: Vec::new(),
             attack_target: None,
             retreating: false,
             retreat_progress: 0.0,

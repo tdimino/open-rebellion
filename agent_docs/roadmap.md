@@ -720,9 +720,27 @@ would tune around known simulation feedback defects.
 - [ ] Complete the consolidated UIP-B06 space-battle bundle: exact weapon arcs,
   ranges, availability, projectile events and recharge; fighter combat;
   collision and formation; Death Star and outcome paths; campaign return; and
-  direct test launch of the same production scene. Then run the final 106-cell
-  muted browser matrix with an independent browser-use reviewer. Do not mark
-  missing lossless original baselines A0-pass from browser evidence alone.
+  direct test launch of the same production scene. Run the complete 120-case
+  implementation matrix and independent browser-use review. Keep the separate
+  106-cell original-game matrix open until its lossless baselines pass.
+  P58F14 through P58F17C are implemented at the current checkpoint. They add
+  recovered capital and fighter combat, collision, automatic colored groups,
+  capability-sorted task forces, forward-relative retained follower geometry,
+  the separate Death Star object, original Battle Results and Battle Options
+  surfaces, resource 5030 stars, the superlaser control journey, and exact
+  result-state routing to MDATA.201 and MDATA.202. Campaign victory no longer
+  reuses the trench-run films. The complete 120-case muted browser matrix
+  passes both factions and both viewports with four-request startup, stable
+  frames, clean diagnostics, and complete browser cleanup. Independent visual
+  review is a qualified A1 pass with no P0 or P1 findings. The authentic Game
+  Options window, Alliance Death Star framing baseline, and persistent
+  trench-run outcome proof remain bounded follow-ups. See the
+  [P58-B06 checkpoint](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md).
+  Exact beam dimensions and timing, the original trench-run result producer,
+  native playback comparison, persistent trench-run outcome, shared
+  post-battle bombardment, landing, and navigation orchestration, the strict
+  106-cell A0 evidence matrix, and release gates remain pending, so this parent
+  item is not checked off.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

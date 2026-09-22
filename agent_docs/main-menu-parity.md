@@ -190,9 +190,9 @@ they remain ignored by Git.
 | `8002` | `menu_quit.wav` | Quit | 1.036 s | `4482e8415f306480e2a5ddbf73cef943202ff2aa2b99c7096511559a55338ffa` |
 | `8004` | `menu_select.wav` | difficulty, faction, game type, Credits, Save/load | 0.357 s | `791165a1ad0cc579357e2248e5d71e463fd77e75634db70deb3bbec09653063f` |
 
-## Astra acceptance matrix
+## Browser acceptance matrix
 
-Run through `codex-orchestrator` with GPT-6 Astra at medium effort. Retain
+Run through the configured independent browser-acceptance workflow. Retain
 screenshots and a JSON result for every run.
 
 | Gate | Required proof |

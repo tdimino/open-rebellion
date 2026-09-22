@@ -19,7 +19,7 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | [roadmap.md](roadmap.md) | Phase breakdown with status, addon plans, AI parity gaps |
 | [simulation.md](simulation.md) | 15 simulation systems, advance() contract, integration order |
 | [deterministic-replay.md](deterministic-replay.md) | Replay format, exact native/WASM artifact gate, DAT/config identity, checkpoints, and open engine-convergence work |
-| [agent-tooling.md](agent-tooling.md) | Claude Code Minoan and Codex skill routing, including Astra, Fable, and Ghidra |
+| [agent-tooling.md](agent-tooling.md) | Claude Code Minoan and Codex skill routing, including browser acceptance, Fable, and Ghidra |
 
 ## Game Knowledge
 
@@ -28,7 +28,7 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | [game-domain.md](game-domain.md) | Galaxy, factions, units, missions, combat — game mechanics overview |
 | [dat-formats.md](dat-formats.md) | DAT binary format reference, 3 structural patterns, 51 files |
 | [ghidra-re.md](ghidra-re.md) | Ghidra RE summary: 5,127 functions, combat formulas, GNPRTB params |
-| [main-menu-parity.md](main-menu-parity.md) | Original shuttle-cockpit geometry, resources, settings, actions, and Astra acceptance matrix |
+| [main-menu-parity.md](main-menu-parity.md) | Original shuttle-cockpit geometry, resources, settings, actions, and browser acceptance matrix |
 
 ## Subsystems
 

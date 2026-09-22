@@ -121,8 +121,8 @@ is not permitted for text, controls, alpha boundaries, or strict UI art.
 ## Milestones
 
 1. P45A is complete: explicit profiles, source-bound manifests, verified-byte
-   decoding, deterministic indexed scaling, fallback probes, and Astra browser
-   regression review pass. See the [evidence](../../qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-faithful-hd-foundation.md).
+   decoding, deterministic indexed scaling, fallback probes, and independent
+   browser regression review pass. See the [evidence](../../qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-faithful-hd-foundation.md).
 2. P45B: add authoritative family classifications and run the complete-family
    SwinIR/HAT/Real-ESRGAN/UltraSharp comparison.
 3. P45C: add protected masks, residual bounds, alpha composites, logical reconstruction, component,
