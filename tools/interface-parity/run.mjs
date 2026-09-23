@@ -472,13 +472,13 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     const commandControls = faction === "alliance"
       ? [
           { slug: "game-options", rect: { x: 3, y: 355, width: 27, height: 41 },
-            expected: "command=0x133 destination=game_options status=pending_original_window" },
+            expected: "command=0x133 destination=game_options status=opened_original" },
           { slug: "encyclopedia", rect: { x: 394, y: 405, width: 27, height: 16 },
             expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
         ]
       : [
           { slug: "game-options", rect: { x: 79, y: 192, width: 35, height: 57 },
-            expected: "command=0x133 destination=game_options status=pending_original_window" },
+            expected: "command=0x133 destination=game_options status=opened_original" },
           { slug: "encyclopedia", rect: { x: 465, y: 434, width: 35, height: 24 },
             expected: "command=0x131 destination=encyclopedia status=pending_original_window" },
         ];
@@ -501,19 +501,49 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
       });
       assert.notEqual(sha256(pressed), sha256(hover),
         `${faction}: ${command.slug} did not show its original pressed resource`);
-      assert.equal(sha256(released), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
-        `${faction}: ${command.slug} exposed a replacement destination`);
+      if (command.slug === "game-options") {
+        assert.notEqual(sha256(released), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: Game Options did not open its original surface`);
+        probes.push({
+          type: "game-options-command-surface",
+          ...verifyCommonBitmap(viewport, released, 20002, 0, 0, [
+            { x: 0, y: 0, width: 640, height: 2 },
+            { x: 0, y: 478, width: 640, height: 2 },
+            { x: 0, y: 2, width: 2, height: 476 },
+            { x: 638, y: 2, width: 2, height: 476 },
+            { x: 22, y: 26, width: 596, height: 440 },
+          ]),
+        });
+        await page.keyboard.press("Escape");
+        const returned = await stableInteractionFrame(page, folder,
+          `${command.slug}-returned-to-command-center`);
+        assert.equal(sha256(returned), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: Game Options did not return to the authentic command center`);
+      } else {
+        assert.equal(sha256(released), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: ${command.slug} exposed a replacement destination`);
+      }
       probes.push({ type: "physical-command", command: command.slug, expected: command.expected,
         observed, hover_sha256: sha256(hover), pressed_sha256: sha256(pressed),
         released_sha256: sha256(released) });
     }
 
     for (const [key, expected] of [
-      ["F1", "command=0x133 destination=game_options status=pending_original_window"],
+      ["F1", "command=0x133 destination=game_options status=opened_original"],
       ["F7", "command=0x131 destination=encyclopedia status=pending_original_window"],
     ]) {
       const observed = await performCommand(page, expected, () => page.keyboard.press(key));
       probes.push({ type: "keyboard-command", key, expected, observed });
+      if (key === "F1") {
+        const options = await stableInteractionFrame(page, folder, "keyboard-game-options-open");
+        assert.notEqual(sha256(options), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: F1 did not open the original Game Options surface`);
+        await page.keyboard.press("Escape");
+        const returned = await stableInteractionFrame(page, folder,
+          "keyboard-game-options-returned");
+        assert.equal(sha256(returned), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
+          `${faction}: F1 Game Options did not return to the command center`);
+      }
     }
 
     await page.keyboard.press("E");
@@ -719,6 +749,31 @@ function verifyStrategyBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRect
       assert.deepEqual(
         Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
         `strategy control ${id} pixel (${x}, ${y}) differs from its original BMP`,
+      );
+      pixelsChecked++;
+    }
+  }
+  return { status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked };
+}
+
+function verifyCommonBitmap(viewport, screenshotBytes, id, x0, y0, ignoredRects = []) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", pixels_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const source = decodeIndexedBmp(fs.readFileSync(path.join(
+    root, `data/base/ui/common-dll/BMP/${id}.bmp`,
+  )));
+  let pixelsChecked = 0;
+  for (let y = 0; y < source.height; y++) {
+    for (let x = 0; x < source.width; x++) {
+      if (ignoredRects.some((rect) => x >= rect.x && y >= rect.y
+        && x < rect.x + rect.width && y < rect.y + rect.height)) continue;
+      const color = source.pixel(x, y);
+      const actualOffset = ((y0 + y) * screenshot.width + x0 + x) * 4;
+      assert.deepEqual(
+        Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
+        `common control ${id} pixel (${x}, ${y}) differs from its original BMP`,
       );
       pixelsChecked++;
     }
@@ -3003,6 +3058,32 @@ async function probeTacticalBattleOptionsPresentation(
   assert.ok(consoleLines.some(({ text }) =>
     text.includes("[tactical_options] command=game_options status=routed")),
   "Battle Options did not route Game Options");
+  const gameOptionsScreen = await stableInteractionFrame(page, folder, "game-options-open");
+  probes.push({
+    type: "game-options-background",
+    ...verifyCommonBitmap(viewport, gameOptionsScreen, 20002, 0, 0, [
+      // The full-screen quad's outer two pixels blend with the cleared WebGL
+      // framebuffer. Compare the stable source-exact frame around the dynamic
+      // labels and controls instead of treating raster coverage as asset drift.
+      { x: 0, y: 0, width: 640, height: 2 },
+      { x: 0, y: 478, width: 640, height: 2 },
+      { x: 0, y: 2, width: 2, height: 476 },
+      { x: 638, y: 2, width: 2, height: 476 },
+      { x: 22, y: 26, width: 596, height: 440 },
+    ]),
+  }, {
+    type: "game-options-tactical-toggle-disabled",
+    ...verifyCommonBitmap(viewport, gameOptionsScreen, 10045, 359, 310),
+  });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("destination=game_options status=opened_original")),
+  "Battle Options did not open the original unified Game Options screen");
+  const returnToBattle = point(185, 404);
+  await page.mouse.click(returnToBattle.x, returnToBattle.y);
+  panel = await stableInteractionFrame(page, folder, "game-options-return-to-battle");
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[game_options] command=return origin=TacticalBattle")),
+  "Game Options did not return to the tactical battle");
 
   const close = controls[4];
   held = await captureHeld(close, "battle-options-close-held");
@@ -3608,6 +3689,14 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         )
         : scenario.selected_damage_presentation
         ? probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready)
+        : scenario.empty_space_presentation
+        ? [{
+            type: "empty-space-tactical-viewport",
+            backdrop: verifyTacticalBackdrop(viewport, stable.bytes, ready.palette_resource_id),
+            planet_loaded: false,
+            planet_submitted: false,
+            screenshot_sha256: sha256(stable.bytes),
+          }]
         : scenario.production_participants
         ? await probeTacticalProductionParticipants(
           page, viewport, folder, stable, consoleLines, faction, ready,
@@ -3617,7 +3706,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 29);
+      assert.equal(ready.schema_version, 30);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -3636,6 +3725,8 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         Boolean(scenario.selected_navigation_presentation));
       assert.equal(ready.navigation_camera_presentation,
         Boolean(scenario.navigation_camera_presentation));
+      assert.equal(ready.empty_space_presentation,
+        Boolean(scenario.empty_space_presentation));
       assert.equal(ready.subsystem_field_command_presentation,
         Boolean(scenario.subsystem_field_command_presentation));
       assert.equal(ready.live_subsystem_damage_presentation,
@@ -3975,7 +4066,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         text.includes("[tactical_3d] planet_scene"));
       const expectsPlanet = Boolean(
         scenario.production_participants || scenario.suppress_capital_fallback,
-      ) && !scenario.battle_results_presentation;
+      ) && !scenario.battle_results_presentation && !scenario.empty_space_presentation;
       assert.equal(planetLoadLogs.length, expectsPlanet ? 1 : 0,
         "tactical scene loaded the wrong number of system-selected planets");
       assert.equal(planetSceneLogs.length, expectsPlanet ? 1 : 0,
@@ -4390,18 +4481,19 @@ async function main() {
         "production-trench-run-failure",
         "production-selected-navigation-presentation",
         "production-navigation-camera-presentation",
+        "production-empty-space-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, ...Array(25).fill(false)]);
+      [true, false, true, true, true, true, true, ...Array(26).fill(false)]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      Array.from({ length: 32 }, (_, index) => index === 5));
+      Array.from({ length: 33 }, (_, index) => index === 5));
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      Array.from({ length: 32 }, (_, index) => index === 6));
+      Array.from({ length: 33 }, (_, index) => index === 6));
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

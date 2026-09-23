@@ -9,6 +9,7 @@ pub mod encyclopedia;
 pub mod event_screen;
 pub mod fleet_movement;
 pub mod fog;
+pub mod game_options;
 pub mod ground_combat;
 pub mod main_menu;
 pub mod main_menu_destinations;
@@ -64,6 +65,7 @@ pub use event_screen::{
 };
 pub use fleet_movement::{draw_fleet_overlays, hovered_fleet};
 pub use fog::draw_fog_overlay;
+pub use game_options::{draw_game_options, GameOptionsAction, GameOptionsOrigin, GameOptionsState};
 pub use ground_combat::{draw_ground_combat, GroundAction, GroundCombatState, GroundWinner};
 pub use main_menu::{draw_main_menu, MainMenuAction, MainMenuControl, MainMenuState};
 pub use main_menu_destinations::{

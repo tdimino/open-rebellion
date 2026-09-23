@@ -322,6 +322,18 @@ cross-runtime proof remain open
   `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-trench-persistence.md`.
   Qualitative behavior is adjudicated against the historical reference.
 
+### P58-B12: Tactical Game Options and empty space
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: the original COMMON Game Options surface now serves the shuttle,
+  command center, and tactical Battle Options routes. Tactical display controls
+  are disabled during a battle, and the empty-space fixture retains its
+  starfield while omitting the planet.
+- Matrix: 100 of 106 cells have deterministic A1 scenarios through 81 browser
+  journeys and 19 snapshots. Six scenarios and all 106 lossless A0 captures
+  remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md`.
+
 ### F-008: Browser media and mods are incomplete
 
 - Severity: P1 if browser parity is claimed

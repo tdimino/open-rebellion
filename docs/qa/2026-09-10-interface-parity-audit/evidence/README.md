@@ -41,6 +41,7 @@ the source of truth for scope, acceptance, and current work.
 | P58-B09 | [Tactical A1 crosswalk](2026-09-22-tactical-a1-crosswalk.md) | [`p58-b09-tactical-a1-crosswalk/`](p58-b09-tactical-a1-crosswalk/) |
 | P58-B10 | [Tactical navigation and camera](2026-09-23-tactical-navigation-camera.md) | [`p58-b10-tactical-navigation-camera/`](p58-b10-tactical-navigation-camera/) |
 | P58-B11 | [Tactical trench-run launch and persistence](2026-09-23-tactical-trench-persistence.md) | [`p58-b11-tactical-trench-persistence/`](p58-b11-tactical-trench-persistence/) |
+| P58-B12 | [Tactical Game Options and empty space](2026-09-23-tactical-game-options-empty-space.md) | [`p58-b12-tactical-game-options-empty-space/`](p58-b12-tactical-game-options-empty-space/) |
 
 ## Current strategic correction
 

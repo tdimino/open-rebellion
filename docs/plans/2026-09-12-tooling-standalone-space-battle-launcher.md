@@ -86,11 +86,11 @@ Exact global RNG sequencing, exact original arrival callbacks and recovery
 trajectories, power allocation, exact planet placement, the native Death Star
 beam contract, native trench-run playback, shared post-battle bombardment,
 landing, and navigation orchestration, original view acceptance, and all 106
-visual cells remain open. The practical launcher
-estimate is about 96%
-implemented. The complete 120-case implementation matrix passes both factions
-and both viewports with clean muted-browser isolation. This planning
-estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
+visual cells remain open. The deterministic A1 matrix now covers 100 of 106
+canonical tactical cells through 81 browser journeys and 19 snapshots. The
+complete 120-case implementation matrix passes both factions and both
+viewports with clean muted-browser isolation. This implementation coverage
+does not replace the strict 0 of 106 tactical-cell acceptance result.
 
 ## Current contract and limits
 

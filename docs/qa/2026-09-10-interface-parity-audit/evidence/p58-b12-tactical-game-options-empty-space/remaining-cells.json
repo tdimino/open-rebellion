@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B12",
+  "count": 6,
+  "cells": [
+    { "id": "TAC-01-C010", "requirement": "battle entry from Battle Alert" },
+    { "id": "TAC-01-C012", "requirement": "tactical music and voice" },
+    { "id": "TAC-03-C004", "requirement": "destroyed" },
+    { "id": "TAC-03-C012", "requirement": "contents" },
+    { "id": "TAC-05-C011", "requirement": "escort" },
+    { "id": "TAC-06-C003", "requirement": "withdraw confirmation" }
+  ]
+}

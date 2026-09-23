@@ -5,15 +5,13 @@ This folder is the source of truth for restoring every visible surface from
 bitmap-driven interface. Replacement panels, invented controls, approximate
 geometry, and unverified asset mappings do not count as parity.
 
-The current P58-B06 space-battle checkpoint is approximately 96%
-implemented as a planning measure. Capital and fighter combat, collision,
-automatic groups, capability-sorted task forces with follower geometry,
-original results/options panels, resource 5030 stars, the provisional Death
-Star superlaser journey, and exact result-to-film trench-run routing now work.
-Independent visual review is a qualified A1 pass with no P0 or P1 findings.
-The strict result remains 0 of 106 accepted tactical cells until the native
-beam contract, persistent trench-run outcome, shared post-battle orchestration,
-native playback, and A0 gates pass.
+The current P58-B12 space-battle checkpoint maps 100 of 106 canonical cells to
+deterministic A1 evidence. Capital and fighter combat, tactical commands,
+original results and options panels, resource 5030 stars, empty-space
+presentation, production trench-run launch, and exact strategic loss
+persistence now work within their recorded bounds. The strict result remains
+0 of 106 accepted tactical cells until every row has authoritative A0 evidence
+and passes the complete comparison contract.
 
 ## Start here
 
@@ -187,6 +185,9 @@ native playback, and A0 gates pass.
 - Review the [P58-B11 tactical trench-run launch and persistence evidence](evidence/2026-09-23-tactical-trench-persistence.md)
   for production order-6 launch, exact strategic capital/fighter loss
   persistence, two bounded visual follow-ups, and the reduced eight-cell queue.
+- Review the [P58-B12 tactical Game Options and empty-space evidence](evidence/2026-09-23-tactical-game-options-empty-space.md)
+  for original COMMON `20002` routing, disabled mid-battle display controls,
+  empty-space starfield presentation, and the reduced six-cell queue.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

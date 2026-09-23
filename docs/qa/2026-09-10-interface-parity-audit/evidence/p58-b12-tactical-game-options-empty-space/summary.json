@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B12",
+  "status": "pass_partial_a1_crosswalk",
+  "catalog_scenarios": 33,
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 100,
+    "journey_cells": 81,
+    "snapshot_cells": 19,
+    "catalog_cells_missing": 6,
+    "a0_coverage": 0,
+    "parity_acceptance": 0
+  },
+  "browser_runs": [
+    {
+      "run_id": "2026-09-23T14-54-03-840Z-37535",
+      "scenario": "production-battle-options-presentation",
+      "passed": 2,
+      "failed": 0,
+      "muted_launches": 2,
+      "four_request_startups": 2,
+      "browser_processes_closed": 2
+    },
+    {
+      "run_id": "2026-09-23T14-54-23-360Z-37617",
+      "scenario": "production-empty-space-presentation",
+      "passed": 2,
+      "failed": 0,
+      "muted_launches": 2,
+      "four_request_startups": 2,
+      "browser_processes_closed": 2
+    },
+    {
+      "run_id": "2026-09-23T17-27-32-267Z-58875",
+      "scenario": "popular-support-command-center-regression",
+      "passed": 2,
+      "failed": 0,
+      "muted_launches": 2,
+      "four_request_startups": 2,
+      "browser_processes_closed": 2
+    }
+  ],
+  "verification": {
+    "rebellion_render_tests": "251_passed_1_ignored",
+    "rebellion_app_tests": "16_passed",
+    "harness_unit_tests": "26_passed_0_failed",
+    "harness_check": "pass",
+    "independent_browser_review": "bounded_A1_pass_no_P0_P1_or_P2",
+    "production_fixture_exclusion": "pass_zero_tokens",
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "game_options_640x480": "6011151dac304322631fd0fee64b6ca64136a07332e49bce2f53e528bf9a43ff",
+    "alliance_empty_space_640x480": "df1b377146bdcc24c8f05d6c43248c75e1a569f91102373700d2235b8940e2fe",
+    "empire_empty_space_640x480": "b59c802b5197aef906a335f227b32feef376ae44d5bb28f05cdd0af60d1f706f"
+  },
+  "fixture_wasm_sha256": "fba1ba849efd22d7a4600ae1a2d8cdc4c25397c97750c316d07f6ee17e6890ed",
+  "runtime_pack_sha256": "7f0289265d9f85bfc971b8160edcab0da2425f1ed7246c35e570b6a07fdde631",
+  "proprietary_artifacts_committed": false
+}

@@ -1013,6 +1013,7 @@ pub(crate) struct TacticalAssetRenderer {
     logged_projectile_scene: Option<String>,
     logged_planet_scene: Option<u32>,
     logged_backdrop_scene: bool,
+    high_detail_models: bool,
 }
 
 impl Default for TacticalAssetRenderer {
@@ -1054,11 +1055,25 @@ impl Default for TacticalAssetRenderer {
             logged_projectile_scene: None,
             logged_planet_scene: None,
             logged_backdrop_scene: false,
+            high_detail_models: true,
         }
     }
 }
 
 impl TacticalAssetRenderer {
+    pub(crate) fn set_high_detail(&mut self, enabled: bool) {
+        if self.high_detail_models != enabled {
+            self.high_detail_models = enabled;
+            self.participant_lods.clear();
+            self.fighter_details.clear();
+            #[cfg(feature = "interface-test-fixtures")]
+            {
+                self.view.high_detail = enabled;
+                self.logged_lod = None;
+            }
+        }
+    }
+
     pub(crate) fn set_palette_selector(&mut self, selector: u8) {
         let selector = selector.clamp(1, 27);
         if self.palette_selector != selector {
@@ -1567,7 +1582,7 @@ impl TacticalAssetRenderer {
                 TacticalLodView {
                     view_depth: pose.position.distance(object.position),
                     projection_scale: 1.0,
-                    high_detail: true,
+                    high_detail: self.high_detail_models,
                 },
             );
             let asset = &family[lod as usize];
@@ -1721,7 +1736,7 @@ impl TacticalAssetRenderer {
                 .get(&object.object_id)
                 .copied()
                 .unwrap_or(OriginalFighterDetail::Far);
-            let detail = select_original_fighter_detail(prior, view_span, true);
+            let detail = select_original_fighter_detail(prior, view_span, self.high_detail_models);
             let Some(family) = self.fighter_families.get(&object.close_resource_id) else {
                 continue;
             };

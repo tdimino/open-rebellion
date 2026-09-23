@@ -765,6 +765,11 @@ would tune around known simulation feedback defects.
   routing. The fleet destination presentation and Alliance Death Star framing
   remain bounded follow-ups. The remaining eight cells and all A0 comparisons
   stay open.
+  P58-B12 expands the crosswalk to 100/106 cells: 81 journeys and 19 snapshots.
+  The original COMMON Game Options surface now serves shuttle, command-center,
+  and tactical routes; its in-battle display controls are disabled as in the
+  manual. Empty-space battles retain resource 5030 stars and omit the planet.
+  The remaining six cells and all A0 comparisons stay open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

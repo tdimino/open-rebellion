@@ -342,8 +342,8 @@
       "production_participants": true,
       "battle_options_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": ["TAC-01-C005", "TAC-01-C006", "TAC-06-C001", "TAC-06-C004", "TAC-06-C005", "TAC-06-C006", "TAC-06-C008"],
-      "acceptance": "A1 original panel and control-resource proof with production routing. The shared original Game Options window, exact withdrawal confirmation dialog, and lossless owned A0 comparison remain open."
+      "audit_cells": ["TAC-01-C005", "TAC-01-C006", "TAC-06-C001", "TAC-06-C004", "TAC-06-C005", "TAC-06-C006", "TAC-06-C007", "TAC-06-C008"],
+      "acceptance": "A1 original panel and control-resource proof with production routing into COMMON 20002, disabled in-battle tactical toggles, and return to combat. The exact withdrawal confirmation dialog, complete save/load semantics, restart and exit confirmations, and lossless owned A0 comparison remain open."
     },
     {
       "slug": "production-battle-options-withdrawal",
@@ -438,6 +438,21 @@
       "expected_status": "battle-ready",
       "audit_cells": ["TAC-04-C001", "TAC-04-C002", "TAC-04-C003", "TAC-04-C012", "TAC-04-C013", "TAC-04-C014"],
       "acceptance": "A1 manual-defined visibility, route, target-list, camera memory, and chase behavior with exact 1026 through 1043 control resources. Navigation point coordinates remain provisional until executable and A0 comparison; no strict cell is accepted."
+    },
+    {
+      "slug": "production-empty-space-presentation",
+      "description": "Source-backed resource 5030 star surface without the system planet, reached through the original Show Planet tactical-display setting",
+      "fixture_codes": {
+        "alliance": 65825,
+        "empire": 66081
+      },
+      "execution_kind": "snapshot",
+      "tactical_proof": false,
+      "production_participants": true,
+      "empty_space_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": ["TAC-01-C007"],
+      "acceptance": "A1 manual-defined Show Planet option plus the production resource 5030 backdrop with zero planet load or scene submission. Lossless owned A0 comparison remains open."
     },
     {
       "slug": "production-participants-3d-off",

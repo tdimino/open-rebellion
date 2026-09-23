@@ -73,18 +73,18 @@ use rebellion_render::{
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits,
     draw_encyclopedia, draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map,
-    draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing, draw_missions,
-    draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
+    draw_game_options, draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing,
+    draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
     draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
     show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
     AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
-    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction,
-    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
-    ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog, MessageLogState,
-    MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
-    PanelAction, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
-    SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError,
-    VideoPlayer, VoiceLine,
+    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage,
+    GameOptionsAction, GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState,
+    GroundAction, GroundCombatState, MainMenuAction, MainMenuState, ManufacturingPanelState,
+    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MissionsPanelState,
+    MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState, PanelAction,
+    SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction, SystemWindowState,
+    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer, VoiceLine,
 };
 
 /// Top-level game mode state machine.
@@ -107,6 +107,8 @@ enum GameMode {
     GameSetup,
     /// The main strategy game: galaxy map + War Room panels.
     Galaxy,
+    /// Original unified save, audio, and tactical-display options screen.
+    GameOptions { origin: GameOptionsOrigin },
     /// 2D tactical combat view for player-involved battles.
     TacticalCombat,
     /// Ground combat phase after space combat.
@@ -917,6 +919,7 @@ async fn main() {
 
     // ── Audio state ─────────────────────────────────────────────────────────
     let mut audio_vol = AudioVolumeState::default();
+    let mut game_options_state = GameOptionsState::default();
     let sounds_dir = PathBuf::from("data/sounds");
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1069,7 +1072,13 @@ async fn main() {
                 }
             }
         } else if is_key_pressed(KeyCode::Escape) && !event_screen_state.is_active() {
-            if game_mode == GameMode::LoadGame {
+            if let GameMode::GameOptions { origin } = game_mode.clone() {
+                game_mode = match origin {
+                    GameOptionsOrigin::ShuttleCockpit => GameMode::MainMenu,
+                    GameOptionsOrigin::CommandCenter => GameMode::Galaxy,
+                    GameOptionsOrigin::TacticalBattle => GameMode::TacticalCombat,
+                };
+            } else if game_mode == GameMode::LoadGame {
                 save_load_panel_state.close();
                 game_mode = GameMode::MainMenu;
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
@@ -1470,6 +1479,7 @@ async fn main() {
                         eprintln!("Skipping invalid tactical battle at {sys_name}: {error:?}");
                         continue;
                     }
+                    tactical_state.set_display_options(game_options_state.tactical_flags());
                     #[cfg(not(target_arch = "wasm32"))]
                     audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
                     break; // Handle one player battle at a time.
@@ -2435,8 +2445,13 @@ async fn main() {
                         }
                         MainMenuAction::LoadGame => {
                             save_slots = read_save_slots(&saves_dir);
-                            save_load_panel_state.open_load();
-                            game_mode = GameMode::LoadGame;
+                            game_options_state.set_origin(GameOptionsOrigin::ShuttleCockpit);
+                            game_mode = GameMode::GameOptions {
+                                origin: GameOptionsOrigin::ShuttleCockpit,
+                            };
+                            macroquad::logging::info!(
+                                "[interface] command=load_options destination=game_options status=opened_original"
+                            );
                         }
                         MainMenuAction::Credits => {
                             credits_state.reset();
@@ -2529,6 +2544,48 @@ async fn main() {
                     }
                 });
                 egui_macroquad::draw();
+            }
+
+            GameMode::GameOptions { origin } => {
+                let action = draw_game_options(
+                    &mut game_options_state,
+                    &mut bmp_cache,
+                    &save_slots,
+                    &mut audio_vol,
+                );
+                match action {
+                    GameOptionsAction::None => {}
+                    GameOptionsAction::Return => {
+                        game_mode = match origin {
+                            GameOptionsOrigin::ShuttleCockpit => GameMode::MainMenu,
+                            GameOptionsOrigin::CommandCenter => GameMode::Galaxy,
+                            GameOptionsOrigin::TacticalBattle => GameMode::TacticalCombat,
+                        };
+                        macroquad::logging::info!(
+                            "[game_options] command=return origin={:?}",
+                            origin
+                        );
+                    }
+                    GameOptionsAction::Restart => {
+                        game_mode = GameMode::MainMenu;
+                        macroquad::logging::info!("[game_options] command=restart");
+                    }
+                    GameOptionsAction::Exit => {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        audio_engine.stop_music();
+                        #[cfg(target_arch = "wasm32")]
+                        if let Some(engine) = browser_menu_audio.as_mut() {
+                            engine.stop_music();
+                        }
+                        break;
+                    }
+                    GameOptionsAction::Save { slot, name } => {
+                        panel_actions.push(PanelAction::SaveGame { slot, name });
+                    }
+                    GameOptionsAction::Load { slot } => {
+                        panel_actions.push(PanelAction::LoadGame { slot });
+                    }
+                }
             }
 
             GameMode::GameSetup => {
@@ -3121,11 +3178,24 @@ async fn main() {
                                 return;
                             }
                         };
-                        macroquad::logging::info!(
-                            "[interface] command=0x{:x} destination={} status=pending_original_window",
-                            command,
-                            destination
-                        );
+                        if btn == CockpitButton::GameOptions {
+                            save_slots = read_save_slots(&saves_dir);
+                            game_options_state.set_origin(GameOptionsOrigin::CommandCenter);
+                            game_mode = GameMode::GameOptions {
+                                origin: GameOptionsOrigin::CommandCenter,
+                            };
+                            macroquad::logging::info!(
+                                "[interface] command=0x{:x} destination={} status=opened_original",
+                                command,
+                                destination
+                            );
+                        } else {
+                            macroquad::logging::info!(
+                                "[interface] command=0x{:x} destination={} status=pending_original_window",
+                                command,
+                                destination
+                            );
+                        }
                     }
                 });
                 egui_macroquad::draw();
@@ -3493,12 +3563,13 @@ async fn main() {
                         }
                     }
                     TacticalAction::OpenGameOptions => {
-                        // The tactical bitmap routes to the shared Game Options
-                        // window. Keep this fail-closed until that original
-                        // unified surface is restored rather than substituting
-                        // another menu.
+                        save_slots = read_save_slots(&saves_dir);
+                        game_options_state.set_origin(GameOptionsOrigin::TacticalBattle);
+                        game_mode = GameMode::GameOptions {
+                            origin: GameOptionsOrigin::TacticalBattle,
+                        };
                         macroquad::logging::info!(
-                            "[interface] command=0x133 destination=game_options status=pending_original_window"
+                            "[interface] command=0x133 destination=game_options status=opened_original"
                         );
                     }
                     TacticalAction::None => {}

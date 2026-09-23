@@ -4229,7 +4229,10 @@ pub struct TacticalState {
     command_panel: TacticalCommandPanel,
     warmed_font_sizes: HashSet<u16>,
     render_original_participants: bool,
+    render_original_starfield: bool,
     render_original_planet: bool,
+    render_pyrotechnics: bool,
+    display_holocube: bool,
     asset_renderer: TacticalAssetRenderer,
     #[cfg(feature = "interface-test-fixtures")]
     suppress_mapped_capital_fallback: bool,
@@ -4268,7 +4271,10 @@ impl Default for TacticalState {
             command_panel: TacticalCommandPanel::Display,
             warmed_font_sizes: HashSet::new(),
             render_original_participants: true,
+            render_original_starfield: true,
             render_original_planet: true,
+            render_pyrotechnics: true,
+            display_holocube: true,
             asset_renderer: TacticalAssetRenderer::default(),
             #[cfg(feature = "interface-test-fixtures")]
             suppress_mapped_capital_fallback: false,
@@ -4336,7 +4342,10 @@ impl TacticalState {
         self.death_star_targeting = false;
         self.command_panel = TacticalCommandPanel::Display;
         self.render_original_participants = true;
+        self.render_original_starfield = true;
         self.render_original_planet = true;
+        self.render_pyrotechnics = true;
+        self.display_holocube = true;
         #[cfg(feature = "interface-test-fixtures")]
         {
             self.suppress_mapped_capital_fallback = false;
@@ -4344,6 +4353,24 @@ impl TacticalState {
             self.proof_resource_2560 = false;
             self.proof_lod_follows_zoom = false;
         }
+    }
+
+    /// Apply the five original Tactical Display options. The original Game
+    /// Options screen disables these controls while a battle is in progress,
+    /// so production callers update them only from outside tactical combat.
+    pub fn set_display_options(&mut self, flags: [bool; 5]) {
+        self.render_original_starfield = flags[0];
+        self.render_original_planet = flags[1];
+        self.render_pyrotechnics = flags[2];
+        self.asset_renderer.set_high_detail(flags[3]);
+        self.display_holocube = flags[4];
+    }
+
+    /// Test-only direct state for the source-backed empty-space presentation.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_empty_space_fixture(&mut self) {
+        self.render_original_starfield = true;
+        self.render_original_planet = false;
     }
 
     /// Enable the source-bound tactical LOD proof in isolated fixture builds.
@@ -8977,7 +9004,9 @@ pub fn draw_tactical_view(
     let aperture = canvas.aperture();
     let aperture_tuple = (aperture.x, aperture.y, aperture.width, aperture.height);
     update_tactical_camera_follow(state);
-    state.asset_renderer.draw_backdrop(aperture_tuple);
+    if state.render_original_starfield {
+        state.asset_renderer.draw_backdrop(aperture_tuple);
+    }
     if state.render_original_planet {
         state.asset_renderer.draw_planet(aperture_tuple);
     }
@@ -8987,6 +9016,7 @@ pub fn draw_tactical_view(
     // bounded 2D fallback below.
     let (scale, offset_x, offset_y) =
         canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
+    let render_pyrotechnics = state.render_pyrotechnics;
     let (
         production_objects,
         production_fighters,
@@ -9034,23 +9064,28 @@ pub fn draw_tactical_view(
                         })
                     })
                     .collect::<Vec<_>>();
-                let mut effects = session
-                    .impact_effects
-                    .iter()
-                    .filter_map(|effect| {
-                        let ship = session.ships.get(effect.target)?;
-                        let (source_width, source_height) = effect.sequence.source_size();
-                        Some(TacticalEffectRenderObject {
-                            object_id: u32::try_from(effect.target)
-                                .unwrap_or(u32::MAX)
-                                .saturating_add(1),
-                            resource_id: effect.sequence.resource_base() + u32::from(effect.frame),
-                            source_width,
-                            source_height,
-                            position: ship.source_position.rendered(),
+                let mut effects = if render_pyrotechnics {
+                    session
+                        .impact_effects
+                        .iter()
+                        .filter_map(|effect| {
+                            let ship = session.ships.get(effect.target)?;
+                            let (source_width, source_height) = effect.sequence.source_size();
+                            Some(TacticalEffectRenderObject {
+                                object_id: u32::try_from(effect.target)
+                                    .unwrap_or(u32::MAX)
+                                    .saturating_add(1),
+                                resource_id: effect.sequence.resource_base()
+                                    + u32::from(effect.frame),
+                                source_width,
+                                source_height,
+                                position: ship.source_position.rendered(),
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>();
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
                 if let Some(death_star) = session.death_star {
                     effects.push(TacticalEffectRenderObject {
                         object_id: 3001,

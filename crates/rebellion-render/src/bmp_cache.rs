@@ -374,6 +374,37 @@ pub mod resources {
     pub mod common {
         /// Main title-screen background.
         pub const MAIN_MENU_BG: u32 = 20001;
+        /// Unified in-game Game Options screen.
+        pub const GAME_OPTIONS_BG: u32 = 20002;
+
+        /// Game Options music toggle: normal, pressed, and disabled.
+        pub const OPTIONS_MUSIC_NORMAL: u32 = 10040;
+        pub const OPTIONS_MUSIC_PRESSED: u32 = 10041;
+        pub const OPTIONS_MUSIC_DISABLED: u32 = 10042;
+        /// Game Options tactical toggle: on, pressed, and off or disabled.
+        pub const OPTIONS_TOGGLE_ON: u32 = 10043;
+        pub const OPTIONS_TOGGLE_PRESSED: u32 = 10044;
+        pub const OPTIONS_TOGGLE_OFF: u32 = 10045;
+        /// Per-slot save control: normal, pressed, and disabled.
+        pub const OPTIONS_SAVE_NORMAL: u32 = 10046;
+        pub const OPTIONS_SAVE_PRESSED: u32 = 10047;
+        pub const OPTIONS_SAVE_DISABLED: u32 = 10048;
+        /// Per-slot load control: normal, pressed, and disabled.
+        pub const OPTIONS_LOAD_NORMAL: u32 = 10049;
+        pub const OPTIONS_LOAD_PRESSED: u32 = 10050;
+        pub const OPTIONS_LOAD_DISABLED: u32 = 10051;
+        /// Music and sound slider rails plus their shared handle.
+        pub const OPTIONS_VOLUME_RAIL: u32 = 10052;
+        pub const OPTIONS_VOLUME_RAIL_ALT: u32 = 10053;
+        pub const OPTIONS_VOLUME_HANDLE: u32 = 10054;
+        /// Saved-game faction emblems.
+        pub const OPTIONS_EMPIRE_MARKER: u32 = 10055;
+        pub const OPTIONS_ALLIANCE_MARKER: u32 = 10056;
+
+        /// Return to the current command center: normal, pressed, and disabled.
+        pub const BTN_RETURN_COMMAND_CENTER_NORMAL: u32 = 10020;
+        pub const BTN_RETURN_COMMAND_CENTER_PRESSED: u32 = 10021;
+        pub const BTN_RETURN_COMMAND_CENTER_DISABLED: u32 = 10022;
 
         /// First animated shuttle-cockpit control frame.
         pub const MAIN_MENU_ANIMATION_FIRST: u32 = 11001;
@@ -386,6 +417,9 @@ pub mod resources {
         pub const BTN_RESTART_GAME_PRESSED: u32 = 10036;
         /// Main-menu button: restart the game (disabled).
         pub const BTN_RESTART_GAME_DISABLED: u32 = 10037;
+        /// Exit the game: normal and pressed.
+        pub const BTN_EXIT_GAME_NORMAL: u32 = 10038;
+        pub const BTN_EXIT_GAME_PRESSED: u32 = 10039;
     }
 
     /// Resource IDs for `STRATEGY.DLL` BMPs.

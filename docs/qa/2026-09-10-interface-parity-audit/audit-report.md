@@ -280,6 +280,12 @@ strategic fleets before destination routing. Eight scenarios remain. The
 fleet-destination presentation and Alliance Death Star framing remain bounded
 P2 follow-ups, and strict acceptance remains 0/106.
 
+P58-B12 maps 100 canonical cells: 81 browser journeys and 19 snapshots. It
+routes the shuttle, command center, and Battle Options panel to the original
+COMMON `20002` Game Options surface, disables tactical-display controls during
+combat, and proves empty-space starfield presentation without a planet. Six
+scenarios remain, and strict acceptance remains 0/106.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.
