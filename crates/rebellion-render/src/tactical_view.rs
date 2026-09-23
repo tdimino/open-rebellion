@@ -7653,6 +7653,17 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                 };
                 let (capital_members, fighter_members) =
                     assign_selected_command(session, order, tactic);
+                if order == TacticalOrder::AttackDeathStar {
+                    macroquad::logging::info!(
+                        "[tactical_death_star] trench_run_launch status={} fighter_members={}",
+                        if session.has_active_trench_run() {
+                            "launched"
+                        } else {
+                            "rejected"
+                        },
+                        fighter_members,
+                    );
+                }
                 macroquad::logging::info!(
                     "[tactical_orders] panel={} event=commit order={} tactic={} capital_members={} fighter_members={}",
                     kind,

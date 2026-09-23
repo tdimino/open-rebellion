@@ -3,7 +3,7 @@ title: "Tactical 106-Cell Acceptance Train"
 description: "Final local commit train for a runnable and honestly accepted TAC-01 through TAC-07 parity matrix"
 category: plan
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 tags: [interface, parity, tactical, browser, evidence, testing]
 status: in_progress
 ---
@@ -159,8 +159,8 @@ Death Star outcomes, and return destinations preserve exact strategic state.
 
 ### C5. Map deterministic A1 journeys to all 106 cells
 
-Status: partial at P58-B10. The 32 existing scenarios now map 96 cells: 78 to
-browser journeys and 18 to deterministic snapshots. Ten cells have an explicit
+Status: partial at P58-B11. The 32 existing scenarios now map 98 cells: 80 to
+browser journeys and 18 to deterministic snapshots. Eight cells have an explicit
 new-scenario queue. A mapped cell is runnable, not accepted; A0 and comparison
 gates remain separate.
 

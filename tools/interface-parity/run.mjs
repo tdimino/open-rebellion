@@ -2611,6 +2611,9 @@ async function probeTacticalDeathStarPresentation(
     assert.ok(orderLogs.some((line) =>
       /panel=missions event=commit order=6 tactic=0 capital_members=0 fighter_members=1/.test(line)),
     "Alliance fighter group did not commit Attack Death Star");
+    assert.ok(consoleLines.some(({ text }) =>
+      text.includes("[tactical_death_star] trench_run_launch status=launched fighter_members=1")),
+    "Alliance fighter group did not enter the production trench-run lifecycle");
   } else {
     assert.ok(!orderLogs.some((line) => /order=6/.test(line)),
       "Imperial fighter group committed an attack against its friendly Death Star");
@@ -2873,8 +2876,20 @@ async function probeTacticalBattleResultsPresentation(
   const route = alliance ? "system" : "fleet";
   assert.ok(consoleLines.some(({ text }) =>
     text.includes(`[tactical-results] destination=${route}`)), `${faction}: missing route log`);
+  const persistence = consoleLines.find(({ text }) =>
+    text.includes("[tactical_results] strategic_persistence applied=true"));
+  assert.ok(persistence, `${faction}: strategic result was not persisted before routing`);
+  assert.match(persistence.text, /attacker_capitals=3->2/,
+    `${faction}: destroyed attacker capital was not removed from strategic state`);
+  assert.match(persistence.text, /defender_capitals=3->2/,
+    `${faction}: destroyed defender capital was not removed from strategic state`);
+  assert.match(persistence.text, /attacker_fighters=3->2/,
+    `${faction}: destroyed attacker fighter was not removed from strategic state`);
+  assert.match(persistence.text, /defender_fighters=3->2/,
+    `${faction}: destroyed defender fighter was not removed from strategic state`);
   probes.push({ type: "battle-results-route", destination: route,
     screenshot_sha256: sha256(routed) });
+  probes.push({ type: "strategic-result-persistence", log: persistence.text });
 
   for (const category of ["Capital Ships", "Fighters", "Troops", "Personnel"]) {
     assert.ok(consoleLines.some(({ text }) => text.includes(`category=${category}`)),
@@ -3695,8 +3710,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         inner_positive_z: 36,
       } : scenario.command_progression_presentation
         || scenario.attack_targeting_presentation
-        || scenario.attack_target_lifecycle_presentation
-        || scenario.battle_results_presentation ? {
+        || scenario.attack_target_lifecycle_presentation ? {
         first_active_objects: 5,
         second_active_objects: 5,
         battle_extent: 115,
@@ -3704,6 +3718,14 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         outer_negative_z: -57.5,
         inner_negative_z: -37.5,
         inner_positive_z: 37.5,
+      } : scenario.battle_results_presentation ? {
+        first_active_objects: 6,
+        second_active_objects: 6,
+        battle_extent: 118,
+        outer_positive_z: 59,
+        outer_negative_z: -59,
+        inner_negative_z: -39,
+        inner_positive_z: 39,
       } : {
         first_active_objects: 2,
         second_active_objects: 2,
@@ -3726,8 +3748,8 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
             || scenario.navigation_camera_presentation ? 8
             : scenario.command_progression_presentation
               || scenario.attack_targeting_presentation
-              || scenario.attack_target_lifecycle_presentation
-              || scenario.battle_results_presentation ? 10 : 4);
+              || scenario.attack_target_lifecycle_presentation ? 10
+              : scenario.battle_results_presentation ? 12 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -3886,8 +3908,8 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           participant.kind === "fighter-group" && participant.faction === "empire");
         assert.equal(allianceShips.length, 3);
         assert.equal(empireShips.length, 3);
-        assert.equal(allianceFighters.length, 2);
-        assert.equal(empireFighters.length, 2);
+        assert.equal(allianceFighters.length, 3);
+        assert.equal(empireFighters.length, 3);
         assert.ok(allianceShips.every(({ source_position: position }) =>
           position[2] === ready.source_layout.outer_negative_z));
         assert.ok(empireShips.every(({ source_position: position }) =>

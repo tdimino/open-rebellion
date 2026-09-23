@@ -312,8 +312,8 @@
       "production_participants": true,
       "death_star_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": ["TAC-03-C020", "TAC-05-C009", "TAC-05-C021", "TAC-05-C022"],
-      "acceptance": "A1 executable manager predicate, 5010 and 5020 resource identity, 300-second charge, separate renderer object, and hostile fighter-only Attack Death Star control proof. Exact damage receiver, superlaser window, authored 5030 sequence, trench run, and native A0 comparison remain open."
+      "audit_cells": ["TAC-03-C020", "TAC-05-C009", "TAC-05-C021", "TAC-05-C022", "TAC-05-C023"],
+      "acceptance": "A1 executable manager predicate, 5010 and 5020 resource identity, 300-second charge, separate renderer object, hostile fighter-only Attack Death Star control, committed order 6, and active production trench-run launch proof. Exact native trench-run producer and playback plus native A0 comparison remain open."
     },
     {
       "slug": "production-battle-results-presentation",
@@ -327,8 +327,8 @@
       "production_participants": true,
       "battle_results_presentation": true,
       "expected_status": "battle-ready",
-      "audit_cells": ["TAC-01-C013", "TAC-07-C001", "TAC-07-C002", "TAC-07-C003", "TAC-07-C005", "TAC-07-C006", "TAC-07-C007", "TAC-07-C008", "TAC-07-C009", "TAC-07-C010", "TAC-07-C011", "TAC-07-C012", "TAC-07-C013"],
-      "acceptance": "A1 source-window, summary-scene, faction rail, force-category, condition-column, and strategic return-routing proof. Lossless owned A0 comparison and exact icon/list pagination remain open."
+      "audit_cells": ["TAC-01-C013", "TAC-07-C001", "TAC-07-C002", "TAC-07-C003", "TAC-07-C005", "TAC-07-C006", "TAC-07-C007", "TAC-07-C008", "TAC-07-C009", "TAC-07-C010", "TAC-07-C011", "TAC-07-C012", "TAC-07-C013", "TAC-07-C014"],
+      "acceptance": "A1 source-window, summary-scene, faction rail, force-category, condition-column, strategic return-routing, and exact capital/fighter loss persistence proof. Lossless owned A0 comparison and exact icon/list pagination remain open."
     },
     {
       "slug": "production-battle-options-presentation",

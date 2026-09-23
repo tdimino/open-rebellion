@@ -40,6 +40,53 @@ pub(crate) struct BattleReturn {
     pub player_won: bool,
 }
 
+/// Compact strategic-world projection used to prove that a played tactical
+/// result survives the transition back to the campaign. The fields are all
+/// derived from the two source fleets named by the battle session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BattlePersistenceSnapshot {
+    pub attacker_present: bool,
+    pub defender_present: bool,
+    pub attacker_capital_ships: usize,
+    pub defender_capital_ships: usize,
+    pub attacker_fighter_squadrons: u32,
+    pub defender_fighter_squadrons: u32,
+    pub attacker_has_death_star: bool,
+    pub defender_has_death_star: bool,
+}
+
+/// Read the strategic state owned by a tactical session without mutating it.
+pub(crate) fn persistence_snapshot(
+    session: &BattleSession,
+    world: &GameWorld,
+) -> BattlePersistenceSnapshot {
+    let fleet = |key| {
+        world.fleets.get(key).map(|fleet| {
+            (
+                fleet.capital_ships.len(),
+                fleet
+                    .fighters
+                    .iter()
+                    .map(|fighter| fighter.count)
+                    .sum::<u32>(),
+                fleet.has_death_star,
+            )
+        })
+    };
+    let attacker = fleet(session.attacker_fleet);
+    let defender = fleet(session.defender_fleet);
+    BattlePersistenceSnapshot {
+        attacker_present: attacker.is_some(),
+        defender_present: defender.is_some(),
+        attacker_capital_ships: attacker.map_or(0, |value| value.0),
+        defender_capital_ships: defender.map_or(0, |value| value.0),
+        attacker_fighter_squadrons: attacker.map_or(0, |value| value.1),
+        defender_fighter_squadrons: defender.map_or(0, |value| value.1),
+        attacker_has_death_star: attacker.is_some_and(|value| value.2),
+        defender_has_death_star: defender.is_some_and(|value| value.2),
+    }
+}
+
 /// Summarize a completed tactical session without mutating strategic state.
 /// Auto-resolve uses this after its result has already been integrated.
 pub(crate) fn summarize_results(session: &BattleSession) -> BattleReturn {
@@ -400,7 +447,17 @@ mod tests {
         let mut session = BattleSession::new(&world, system, attacker, defender, true, 23);
         session.winner = Some(CombatWinner::Attacker);
 
+        let before = persistence_snapshot(&session, &world);
+        assert!(before.attacker_present);
+        assert!(before.defender_present);
+        assert!(before.attacker_has_death_star);
+
         apply_results(&session, &mut world, &mut TroopTransportState::default());
+
+        let after = persistence_snapshot(&session, &world);
+        assert!(after.attacker_present);
+        assert!(!after.defender_present);
+        assert!(after.attacker_has_death_star);
 
         assert!(world.fleets.contains_key(attacker));
         assert!(!world.fleets.contains_key(defender));

@@ -520,10 +520,11 @@ pub(crate) fn apply(
         } else {
             1
         };
-        let fighter_count = if request.command_progression_presentation
+        let fighter_count = if request.battle_results_presentation {
+            3
+        } else if request.command_progression_presentation
             || request.attack_targeting_presentation
             || request.attack_target_lifecycle_presentation
-            || request.battle_results_presentation
         {
             2
         } else if request.group_presentation && expanded {

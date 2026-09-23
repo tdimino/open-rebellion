@@ -308,6 +308,18 @@ cross-runtime proof remain open
   capture/evasion, the wider campaign loop, and five-seed cross-runtime proof
   do not yet pass. The source-backed victory rules pass dedicated fixtures;
   P30 remains open for end-to-end result-screen and campaign acceptance.
+
+### P58-B11: Tactical trench-run launch and strategic persistence
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: the production Attack Death Star control now proves that committed
+  source order `6` enters the live trench-run lifecycle. Battle Results proves
+  exact three-to-two capital and fighter persistence for both strategic fleets
+  before destination routing.
+- Matrix: 98 of 106 cells have deterministic A1 scenarios through 80 browser
+  journeys and 18 snapshots. Eight scenarios and all 106 lossless A0 captures
+  remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-trench-persistence.md`.
   Qualitative behavior is adjudicated against the historical reference.
 
 ### F-008: Browser media and mods are incomplete

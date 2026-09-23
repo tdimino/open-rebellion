@@ -759,6 +759,12 @@ would tune around known simulation feedback defects.
   Four navigation sets, ordered routes and targets, camera memory/chase, Anvil,
   and Stand Off now have deterministic production journeys. The remaining ten
   cells and all A0 comparisons stay open.
+  P58-B11 expands the crosswalk to 98/106 cells: 80 journeys and 18 snapshots.
+  Production order 6 now proves an active trench-run launch, and Battle Results
+  proves exact 3-to-2 strategic capital and fighter losses before system/fleet
+  routing. The fleet destination presentation and Alliance Death Star framing
+  remain bounded follow-ups. The remaining eight cells and all A0 comparisons
+  stay open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

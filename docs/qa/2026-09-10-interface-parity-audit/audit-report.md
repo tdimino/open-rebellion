@@ -273,6 +273,13 @@ browser journeys and 18 snapshots. It adds all four navigation sets, ordered
 routes and targets, camera memory and chase, Anvil, and Stand Off. Ten cells
 remain without a deterministic scenario. Strict acceptance remains 0/106.
 
+P58-B11 maps 98 canonical cells: 80 browser journeys and 18 snapshots. It
+proves that source order `6` enters the production trench-run lifecycle and
+that Battle Results applies exact 3-to-2 capital and fighter losses to both
+strategic fleets before destination routing. Eight scenarios remain. The
+fleet-destination presentation and Alliance Death Star framing remain bounded
+P2 follow-ups, and strict acceptance remains 0/106.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

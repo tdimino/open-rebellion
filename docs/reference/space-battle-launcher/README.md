@@ -157,6 +157,10 @@ and closes every process. Raw runs live under ignored
   multi-target queues, camera memorize/recall and chase, plus explicit Anvil
   and Stand Off journeys. The deterministic A1 crosswalk is 96/106; strict A0
   acceptance remains 0/106.
+- P58-B11 proves that committed Attack Death Star order 6 enters the production
+  trench-run lifecycle and that Battle Results persists exact capital and
+  fighter losses before destination routing. The deterministic A1 crosswalk is
+  98/106; strict A0 acceptance remains 0/106.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options

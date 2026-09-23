@@ -184,6 +184,9 @@ native playback, and A0 gates pass.
 - Review the [P58-B10 tactical navigation and camera evidence](evidence/2026-09-23-tactical-navigation-camera.md)
   for four navigation sets, ordered routes and targets, camera memory/chase,
   Anvil and Stand Off, and the reduced ten-cell scenario queue.
+- Review the [P58-B11 tactical trench-run launch and persistence evidence](evidence/2026-09-23-tactical-trench-persistence.md)
+  for production order-6 launch, exact strategic capital/fighter loss
+  persistence, two bounded visual follow-ups, and the reduced eight-cell queue.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

@@ -3258,11 +3258,33 @@ async fn main() {
                             let battle_return = if strategic_results_applied {
                                 tactical_flow::summarize_results(&session)
                             } else {
-                                tactical_flow::apply_results(
+                                let before = tactical_flow::persistence_snapshot(&session, &world);
+                                let result = tactical_flow::apply_results(
                                     &session,
                                     &mut world,
                                     &mut troop_transport_state,
-                                )
+                                );
+                                let after = tactical_flow::persistence_snapshot(&session, &world);
+                                macroquad::logging::info!(
+                                    "[tactical_results] strategic_persistence applied=true attacker_present={}->{} defender_present={}->{} attacker_capitals={}->{} defender_capitals={}->{} attacker_fighters={}->{} defender_fighters={}->{} attacker_death_star={}->{} defender_death_star={}->{}",
+                                    before.attacker_present,
+                                    after.attacker_present,
+                                    before.defender_present,
+                                    after.defender_present,
+                                    before.attacker_capital_ships,
+                                    after.attacker_capital_ships,
+                                    before.defender_capital_ships,
+                                    after.defender_capital_ships,
+                                    before.attacker_fighter_squadrons,
+                                    after.attacker_fighter_squadrons,
+                                    before.defender_fighter_squadrons,
+                                    after.defender_fighter_squadrons,
+                                    before.attacker_has_death_star,
+                                    after.attacker_has_death_star,
+                                    before.defender_has_death_star,
+                                    after.defender_has_death_star,
+                                );
+                                result
                             };
                             if !strategic_results_applied {
                                 tactical_flow::reconcile_death_star_result(

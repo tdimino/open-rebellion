@@ -4868,7 +4868,7 @@
         147,
         148
       ],
-      "current_implementation": "P58F9 through P58F13 restore original command panels, shared order and tactic codes, disabled states, maneuver execution, Hold, Recover, typed attack orders, and stable target replacement. P58-B06 adds capital and fighter fire, Attack Death Star gating, exact 1021 through 1024 laser controls, charge, target assignment, delayed destruction, and exact result-state routing to the two trench-run films. P58-B10 adds explicit Anvil and Stand Off browser journeys. Escort, production trench-run launch, native beam dimensions and timing, native playback, the complete state matrix, and A0 comparison remain open.",
+      "current_implementation": "P58F9 through P58F13 restore original command panels, shared order and tactic codes, disabled states, maneuver execution, Hold, Recover, typed attack orders, and stable target replacement. P58-B06 adds capital and fighter fire, Attack Death Star gating, exact 1021 through 1024 laser controls, charge, target assignment, delayed destruction, and exact result-state routing to the two trench-run films. P58-B10 adds explicit Anvil and Stand Off browser journeys. P58-B11 proves that committed order 6 enters the production trench-run lifecycle while the friendly Death Star path remains disabled. Escort, native beam dimensions and timing, native playback, the complete state matrix, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-009",
         "UIP-F-012"
@@ -5143,7 +5143,7 @@
         149,
         150
       ],
-      "current_implementation": "P58-B06 restores the original Battle Results surface, both force tabs, overview categories, survivor and loss rows, Go to Fleet and Go to System controls, and shared strategic result transport for exact hull and fighter roster slots, officer capture, Death Star state, cargo, and empty fleets. Bombardment, landing, report presentation, final navigation orchestration, the full native outcome matrix, and A0 comparison remain open.",
+      "current_implementation": "P58-B06 restores the original Battle Results surface, both force tabs, overview categories, survivor and loss rows, Go to Fleet and Go to System controls, and shared strategic result transport for exact hull and fighter roster slots, officer capture, Death Star state, cargo, and empty fleets. P58-B11 browser-proves exact 3-to-2 capital and fighter loss persistence for both strategic fleets before system or fleet destination routing. The fleet destination still lacks unmistakable roster confirmation. Bombardment, landing, report presentation, final navigation orchestration, the full native outcome matrix, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-008"
       ],

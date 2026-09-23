@@ -74,6 +74,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical A0-ingestion proof](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-a0-ingestion.md) | Guest capture provenance, exact original executable and 640×480 validation, ignored evidence storage, and the current 0/106 offline-host boundary for P24/P58. |
 | [Tactical A1-crosswalk proof](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-a1-crosswalk.md) | Existing deterministic evidence mapped to 82/106 cells, with 64 journeys, 18 snapshots, and a 24-cell implementation queue. |
 | [Tactical navigation/camera proof](../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-navigation-camera.md) | Four navigation sets, ordered routes and targets, camera memory/chase, Anvil and Stand Off, bringing deterministic A1 coverage to 96/106 while strict acceptance remains 0/106. |
+| [Tactical trench-run/persistence proof](../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-trench-persistence.md) | Production order-6 trench-run launch and exact strategic capital/fighter loss persistence, bringing deterministic A1 coverage to 98/106 while strict acceptance remains 0/106. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 
