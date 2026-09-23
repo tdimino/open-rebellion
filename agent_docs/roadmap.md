@@ -755,6 +755,10 @@ would tune around known simulation feedback defects.
   tactical catalog and mapping 82/106 cells to current deterministic evidence:
   64 journeys and 18 snapshots. The remaining 24 cells have a concrete
   new-scenario queue; none is accepted without its A0 and comparison gates.
+  P58-B10 expands that crosswalk to 96/106 cells: 78 journeys and 18 snapshots.
+  Four navigation sets, ordered routes and targets, camera memory/chase, Anvil,
+  and Stand Off now have deterministic production journeys. The remaining ten
+  cells and all A0 comparisons stay open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

@@ -4731,7 +4731,7 @@
         145,
         146
       ],
-      "current_implementation": "P57B2A through P58E restore faction camera entry, zoom, rotate, tilt, clip planes, D-pad controls, centered targeting, source lanes and positions, authored transforms, render state, production participants, fighter-detail zoom, and task-force/RGBY selection. P58-B06 adds automatic group assignment and forward-relative retained task-force movement. Navigation sets, multiple routes, memorize/recall, chase camera, the complete interaction matrix, and A0 comparison remain open, so every TAC-04 cell stays pending.",
+      "current_implementation": "P57B2A through P58E restore faction camera entry, zoom, rotate, tilt, clip planes, D-pad controls, centered targeting, source lanes and positions, authored transforms, render state, production participants, fighter-detail zoom, and task-force/RGBY selection. P58-B06 adds automatic group assignment and forward-relative retained task-force movement. P58-B10 adds all four navigation-set controls, ordered route and multiple-target editing, camera memorize/recall, and task-force/fighter-group chase. Navigation-point coordinates, the complete interaction matrix, and A0 comparison remain open, so every TAC-04 cell stays pending.",
       "finding_ids": [
         "UIP-F-009"
       ],
@@ -4868,7 +4868,7 @@
         147,
         148
       ],
-      "current_implementation": "P58F9 through P58F13 restore original command panels, shared order and tactic codes, disabled states, maneuver execution, Hold, Recover, typed attack orders, and stable target replacement. P58-B06 adds capital and fighter fire, Attack Death Star gating, exact 1021 through 1024 laser controls, charge, target assignment, delayed destruction, and exact result-state routing to the two trench-run films. Native beam dimensions and timing, the original trench-run result producer, native playback, the complete state matrix, and A0 comparison remain open.",
+      "current_implementation": "P58F9 through P58F13 restore original command panels, shared order and tactic codes, disabled states, maneuver execution, Hold, Recover, typed attack orders, and stable target replacement. P58-B06 adds capital and fighter fire, Attack Death Star gating, exact 1021 through 1024 laser controls, charge, target assignment, delayed destruction, and exact result-state routing to the two trench-run films. P58-B10 adds explicit Anvil and Stand Off browser journeys. Escort, production trench-run launch, native beam dimensions and timing, native playback, the complete state matrix, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-009",
         "UIP-F-012"

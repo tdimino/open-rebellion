@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B10",
+  "status": "pass_partial_a1_crosswalk",
+  "catalog_scenarios": 32,
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 96,
+    "journey_cells": 78,
+    "snapshot_cells": 18,
+    "catalog_cells_missing": 10,
+    "a0_coverage": 0,
+    "parity_acceptance": 0
+  },
+  "browser_runs": [
+    {
+      "run_id": "2026-09-23T07-31-55-970Z-92221",
+      "scenario": "production-navigation-camera-presentation",
+      "passed": 4,
+      "failed": 0,
+      "muted_launches": 4,
+      "four_request_startups": 4,
+      "browser_processes_closed": 4
+    },
+    {
+      "run_id": "2026-09-23T07-37-17-315Z-1418",
+      "scenario": "production-command-assignment-presentation",
+      "passed": 4,
+      "failed": 0,
+      "muted_launches": 4,
+      "four_request_startups": 4,
+      "browser_processes_closed": 4
+    }
+  ],
+  "verification": {
+    "rebellion_render_tests": "248_passed_1_ignored",
+    "rebellion_app_tests": "16_passed",
+    "harness_unit_tests": "26_passed_0_failed",
+    "harness_check": "pass",
+    "production_fixture_exclusion": "pass_zero_tokens",
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_multiple_targets_640x480": "34b6d3e8cb2010b496f145cc655ba32e49cc208081c994c8031ed9e6ab1aa1a9",
+    "empire_camera_recall_640x480": "75585fe26c568dc0b1841b47b65a4abe20516e28e42556d414311bc8729ab5c6",
+    "alliance_anvil_stand_off_640x480": "4ab48effee6d8e6049ded55940e2b183e79081ff4f7dd60a30b39896c1870025",
+    "empire_anvil_stand_off_640x480": "a6d48c685cf1541ee7c85934be5f866f54efab8f12ffd09b8f1199cc60cd0de3"
+  },
+  "proprietary_artifacts_committed": false
+}

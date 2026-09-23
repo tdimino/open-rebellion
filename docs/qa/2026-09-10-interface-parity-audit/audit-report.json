@@ -68,7 +68,7 @@
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
     "tactical_matrix_contract": "pass_P58_B07_ledger_derived_106_cells_distribution_13_13_20_14_23_9_14_current_0_mapped_0_A0_0_accepted_missing_duplicate_unknown_unsafe_and_tracked_A0_fail_closed",
     "tactical_a0_ingestion": "pass_P58_B08_guest_executable_and_cell_provenance_host_exact_ledger_640x480_hash_source_and_destination_validation_capture_host_offline_current_0_of_106",
-    "tactical_a1_crosswalk": "pass_P58_B09_30_scenarios_82_of_106_cells_64_journeys_18_snapshots_24_explicit_gaps_0_A0_0_accepted",
+    "tactical_a1_crosswalk": "pass_P58_B10_32_scenarios_96_of_106_cells_78_journeys_18_snapshots_10_explicit_gaps_0_A0_0_accepted",
     "space_battle_launcher_practical_progress": "approximately_96_percent_planning_estimate_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
@@ -202,7 +202,8 @@
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md",
-      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md"
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md",
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-navigation-camera.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -324,5 +325,5 @@
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Implement and run the 24 unmapped tactical scenarios, prioritizing group and selected-object states, navigation, missing commands, Battle Alert and audio, original Game Options and withdrawal confirmation, trench-run production launch, and strategic persistence. In parallel, bring the owned Windows host online for A0 capture. Keep all 106 strict cells open until their complete evidence passes."
+  "next_action": "Implement and run the ten unmapped tactical scenarios: empty space, Battle Alert entry, tactical audio, destroyed and contents states, Escort, production trench-run launch, original withdrawal confirmation and Game Options, and strategic persistence. In parallel, bring the owned Windows host online for A0 capture. Keep all 106 strict cells open until their complete evidence passes."
 }

@@ -1359,8 +1359,83 @@ function parseTacticalScenePositions(line, label) {
 }
 
 async function probeTacticalProductionParticipants(
-  page, folder, stable, consoleLines, faction,
+  page, viewport, folder, stable, consoleLines, faction, ready,
 ) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const probes = probeTacticalSelectedDamagePresentation(
+    viewport,
+    folder,
+    stable,
+    ready,
+    { hull: ready.selected_ship?.hull_max, shield: ready.selected_ship?.shield_max },
+    { filename: "selected-healthy.png", type: "source-mapped-selected-capital-healthy" },
+  );
+
+  const assignedTaskForces = new Set(ready.participants
+    .filter(({ kind, faction: owner, active, task_force }) =>
+      kind === "capital-ship" && owner === faction && active && Number.isInteger(task_force))
+    .map(({ task_force }) => task_force));
+  const assignedFighterGroups = new Set(ready.participants
+    .filter(({ kind, faction: owner, active, fighter_group }) =>
+      kind === "fighter-group" && owner === faction && active && Number.isInteger(fighter_group))
+    .map(({ fighter_group }) => fighter_group));
+  const unassignedTaskForces = [];
+  for (let index = 0; index < 8; index++) {
+    if (assignedTaskForces.has(index)) continue;
+    unassignedTaskForces.push({
+      slot: index + 1,
+      ...verifyTacticalBitmap(viewport, stable.bytes, 1007, 60 + index * 26, 2),
+    });
+  }
+  const unassignedFighterGroups = [];
+  for (let index = 0; index < 4; index++) {
+    if (assignedFighterGroups.has(index)) continue;
+    unassignedFighterGroups.push({
+      slot: index + 1,
+      ...verifyTacticalBitmap(viewport, stable.bytes, 1020, 330 + index * 26, 2),
+    });
+  }
+  assert.ok(unassignedTaskForces.length > 0 && unassignedFighterGroups.length > 0,
+    "production participant fixture omitted unassigned group states");
+  const unassignedTaskIndex = unassignedTaskForces[0].slot - 1;
+  const unassignedTask = point(72 + unassignedTaskIndex * 26, 10);
+  await page.mouse.move(unassignedTask.x, unassignedTask.y);
+  await page.waitForTimeout(80);
+  const hovered = await stableInteractionFrame(page, folder, "task-force-unassigned-hover");
+  assert.equal(sha256(hovered), sha256(stable.bytes),
+    "unassigned task-force hover altered the original disabled bitmap state");
+  const transitionLogCount = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_groups]")).length;
+  await page.mouse.down({ button: "left" });
+  await page.waitForTimeout(80);
+  const held = await stableInteractionFrame(page, folder, "task-force-unassigned-held");
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(80);
+  const released = await stableInteractionFrame(page, folder, "task-force-unassigned-released");
+  assert.equal(sha256(held), sha256(stable.bytes),
+    "unassigned task-force press escaped the disabled bitmap state");
+  assert.equal(sha256(released), sha256(stable.bytes),
+    "unassigned task-force release changed tactical selection");
+  assert.equal(consoleLines.filter(({ text }) => text.includes("[tactical_groups]")).length,
+    transitionLogCount, "unassigned task-force input emitted a selection transition");
+  probes.push({
+    type: "task-force-unassigned-hover-disabled",
+    task_force_resource: 1007,
+    fighter_group_resource: 1020,
+    assigned_task_forces: [...assignedTaskForces].sort(),
+    assigned_fighter_groups: [...assignedFighterGroups].sort(),
+    task_forces: unassignedTaskForces,
+    fighter_groups: unassignedFighterGroups,
+    hover_sha256: sha256(hovered),
+    held_sha256: sha256(held),
+    released_sha256: sha256(released),
+    state_unchanged: true,
+    transition_log_count: transitionLogCount,
+  });
+
   const participantLine = consoleLines.find(({ text }) =>
     text.includes("[tactical_3d] participant_scene"));
   const positions = parseTacticalScenePositions(participantLine, "capital participant scene");
@@ -1395,14 +1470,15 @@ async function probeTacticalProductionParticipants(
     "selection did not use the source projection");
   assert.match(focusLog?.text || "", /source_projection=true/,
     "focus targeting did not use the source projection");
-  return [{
+  probes.push({
     type: "source-projected-tactical-interaction",
     player_object_id: playerObjectId,
     target_object_id: targetObjectId,
     deselected_sha256: sha256(deselected),
     selected_sha256: sha256(selected),
     targeted_sha256: sha256(targeted),
-  }];
+  });
+  return probes;
 }
 
 function parseFighterSceneResources(line) {
@@ -1714,6 +1790,7 @@ function nativeRectPixelCount(viewport, screenshot, rect, matches) {
 
 function probeTacticalSelectedDamagePresentation(
   viewport, folder, stable, ready, expectedDamage = null,
+  evidence = { filename: "selected-damage.png", type: "source-mapped-selected-capital-damage" },
 ) {
   const selected = ready.selected_ship;
   assert.ok(selected, "selected-damage fixture omitted its selected ship");
@@ -1755,7 +1832,10 @@ function probeTacticalSelectedDamagePresentation(
   let panelProof = { status: "non-native-scale", pixels_checked: 0 };
   let portraitProof = { status: "non-native-scale", opaque_pixels_checked: 0 };
   if (viewport.width === 640 && viewport.height === 480 && viewport.device_scale_factor === 1) {
-    panelProof = verifyTacticalBitmap(viewport, stable.bytes, 1302, 481, 27, [], [
+    panelProof = verifyTacticalBitmap(viewport, stable.bytes, 1302, 481, 27, [
+      { id: 1101, x: 488, y: 37 },
+      { id: 1103, x: 613, y: 37 },
+    ], [
       { x: 10, y: 8, width: 130, height: 42 },
       { x: 33, y: 80, width: 40, height: 8 },
       { x: 104, y: 80, width: 39, height: 8 },
@@ -1797,9 +1877,9 @@ function probeTacticalSelectedDamagePresentation(
       lime_matte_reveals_panel: true,
     };
   }
-  fs.writeFileSync(path.join(folder, "selected-damage.png"), stable.bytes);
+  fs.writeFileSync(path.join(folder, evidence.filename), stable.bytes);
   return [{
-    type: "source-mapped-selected-capital-damage",
+    type: evidence.type,
     source_registry_function: "FUN_00597610",
     panel_resource: 1302,
     portrait_resource: selected.hud_resource,
@@ -2054,6 +2134,22 @@ async function probeTacticalCommandAssignmentPresentation(
     viewport, maneuverCommitted, 1105, 561, 237,
   ) });
 
+  await click(590, 248);
+  await click(538, 170);
+  await click(604, 185);
+  const anvilStandOff = await capture("maneuvers-anvil-stand-off");
+  probes.push({ type: "anvil-selected", ...verifyTacticalBitmap(
+    viewport, anvilStandOff, 1140, 524, 156,
+  ) });
+  probes.push({ type: "stand-off-selected", ...verifyTacticalBitmap(
+    viewport, anvilStandOff, 1117, 592, 159,
+  ) });
+  probes.push({ type: "anvil-graphic", ...verifyTacticalTransparentOverlay(
+    viewport, anvilStandOff, 2104, 495, 41,
+  ) });
+  await click(560, 241);
+  await capture("maneuvers-anvil-stand-off-committed");
+
   await click(520, 248);
   const missionsOpen = await capture("missions-open-capital");
   probes.push({ type: "missions-panel", ...verifyTacticalBitmap(
@@ -2110,6 +2206,9 @@ async function probeTacticalCommandAssignmentPresentation(
   assert.ok(orderLogs.some((line) =>
     /panel=maneuvers event=commit order=9 tactic=1 capital_members=1 fighter_members=0/.test(line)),
   "maneuver assignment did not commit Hammer and Surround to the selected capital");
+  assert.ok(orderLogs.some((line) =>
+    /panel=maneuvers event=commit order=10 tactic=2 capital_members=1 fighter_members=0/.test(line)),
+  "maneuver assignment did not commit Anvil and Stand Off to the selected capital");
   assert.ok(orderLogs.some((line) =>
     /panel=missions event=commit order=5 tactic=0 capital_members=1 fighter_members=0/.test(line)),
   "capital mission did not commit Attack Capital Ships");
@@ -3116,6 +3215,251 @@ async function probeTacticalGroupPresentation(
   return probes;
 }
 
+async function probeTacticalSelectedNavigationPresentation(
+  page, viewport, folder, stable, consoleLines, ready, faction,
+) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
+  const playerCapitals = ready.participants.filter(({ kind, faction: owner, active, task_force }) =>
+    kind === "capital-ship" && owner === faction && active && task_force === 0);
+  assert.equal(playerCapitals.length, 3,
+    "selected-navigation fixture must expose three live capitals in task force 1");
+
+  const probes = [
+    {
+      type: "previous-capital-rest",
+      ...verifyTacticalBitmap(viewport, stable.bytes, 1101, 488, 37),
+    },
+    {
+      type: "next-capital-rest",
+      ...verifyTacticalBitmap(viewport, stable.bytes, 1103, 613, 37),
+    },
+  ];
+  const press = async (name, location, pressedResource, pressedX) => {
+    await page.mouse.move(location.x, location.y);
+    await page.mouse.down({ button: "left" });
+    await page.waitForTimeout(80);
+    const held = await capture(`${name}-held`);
+    probes.push({
+      type: `${name}-held`,
+      ...verifyTacticalBitmap(viewport, held, pressedResource, pressedX, 37),
+    });
+    await page.mouse.up({ button: "left" });
+    await page.waitForTimeout(80);
+    const released = await capture(`${name}-released`);
+    probes.push({
+      type: `${name}-released`,
+      framebuffer_sha256: sha256(released),
+    });
+  };
+
+  await press("next-capital", point(618, 60), 1104, 613);
+  await press("previous-capital", point(493, 60), 1102, 488);
+  await press("previous-capital-wrap", point(493, 60), 1102, 488);
+  const transitions = consoleLines
+    .filter(({ text }) => text.includes("[tactical_selection]"))
+    .map(({ text }) => text);
+  assert.equal(transitions.length, 3,
+    "selected-capital navigation did not emit all three transitions");
+  assert.match(transitions[0], /direction=next task_force=1 from=(\d+) to=(\d+)/);
+  assert.match(transitions[1], /direction=previous task_force=1 from=(\d+) to=(\d+)/);
+  assert.match(transitions[2], /direction=previous task_force=1 from=(\d+) to=(\d+)/);
+  const parse = (line) => line.match(/from=(\d+) to=(\d+)/).slice(1).map(Number);
+  const [nextFrom, nextTo] = parse(transitions[0]);
+  const [returnFrom, returnTo] = parse(transitions[1]);
+  const [wrapFrom, wrapTo] = parse(transitions[2]);
+  assert.deepEqual([returnFrom, returnTo], [nextTo, nextFrom],
+    "previous control did not reverse the next-capital transition");
+  assert.equal(wrapFrom, nextFrom);
+  assert.notEqual(wrapTo, wrapFrom, "previous control did not wrap to another task-force member");
+  probes.push({
+    type: "source-task-force-selected-capital-navigation",
+    constructor_functions: ["FUN_005e4110", "FUN_005e7030"],
+    task_force: 1,
+    members: playerCapitals.map(({ fleet_roster_index, class_dat_id }) => ({
+      fleet_roster_index,
+      class_dat_id,
+    })),
+    controls: {
+      previous: { rect: [488, 37, 11, 53], resources: [1101, 1102] },
+      next: { rect: [613, 37, 11, 53], resources: [1103, 1104] },
+    },
+    transitions,
+    wraps_within_task_force: true,
+  });
+  return probes;
+}
+
+function parseTacticalNavigationScene(consoleLines) {
+  const line = [...consoleLines].reverse().find(({ text }) =>
+    text.includes("[tactical_navigation] event=scene")
+      && /screen_positions=\S+/.test(text));
+  const match = line?.text.match(/screen_positions=([^ ]+)/);
+  assert.ok(match, "navigation scene omitted projected point positions");
+  return match[1].split(";").map((entry) => {
+    const fields = entry.match(/^(\d+):(\d+):(-?[\d.]+),(-?[\d.]+)$/);
+    assert.ok(fields, `invalid navigation point projection ${entry}`);
+    return {
+      set: Number(fields[1]),
+      point: Number(fields[2]),
+      x: Number(fields[3]),
+      y: Number(fields[4]),
+    };
+  });
+}
+
+async function probeTacticalNavigationCameraPresentation(
+  page, viewport, folder, stable, consoleLines, ready,
+) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const capture = async (name) => stableInteractionFrame(page, folder, name);
+  const press = async (name, location, resource, resourceX, resourceY) => {
+    await page.mouse.move(location.x, location.y);
+    await page.mouse.down({ button: "left" });
+    await page.waitForTimeout(80);
+    const held = await capture(`${name}-held`);
+    const bitmap = verifyTacticalBitmap(viewport, held, resource, resourceX, resourceY);
+    await page.mouse.up({ button: "left" });
+    await page.waitForTimeout(80);
+    return { bitmap, released: await capture(`${name}-released`) };
+  };
+  const probes = [];
+
+  const navControls = [
+    { set: 1, normal: 1026, selected: 1030, x: 485 },
+    { set: 2, normal: 1027, selected: 1031, x: 521 },
+    { set: 3, normal: 1028, selected: 1032, x: 560 },
+    { set: 4, normal: 1029, selected: 1033, x: 601 },
+  ];
+  for (const control of navControls) {
+    probes.push({
+      type: `navigation-set-${control.set}-rest`,
+      ...verifyTacticalBitmap(viewport, stable.bytes, control.normal, control.x, 272),
+    });
+    await page.mouse.click(point(control.x + 13, 285).x, point(control.x + 13, 285).y);
+    await page.waitForTimeout(80);
+    const selected = await capture(`navigation-set-${control.set}-selected`);
+    probes.push({
+      type: `navigation-set-${control.set}-selected`,
+      ...verifyTacticalBitmap(viewport, selected, control.selected, control.x, 272),
+    });
+  }
+
+  const navigationPoints = parseTacticalNavigationScene(consoleLines)
+    .filter(({ x, y }) => x >= offsetX + 16 * scale && x < offsetX + 460 * scale
+      && y >= offsetY + 28 * scale && y < offsetY + 467 * scale);
+  assert.ok(navigationPoints.length >= 2,
+    "navigation journey did not project two addressable points inside the aperture");
+  await page.mouse.click(navigationPoints[0].x, navigationPoints[0].y, { button: "right" });
+  await page.waitForTimeout(80);
+  await page.keyboard.down("ControlLeft");
+  await page.waitForTimeout(80);
+  await page.mouse.click(navigationPoints[1].x, navigationPoints[1].y, { button: "right" });
+  await page.waitForTimeout(80);
+  await page.keyboard.up("ControlLeft");
+  await page.waitForTimeout(80);
+  const routeFrame = await capture("navigation-route-two-points");
+  const routeLogs = consoleLines
+    .filter(({ text }) => text.includes("[tactical_navigation] event=route_assign"))
+    .map(({ text }) => text);
+  assert.ok(routeLogs.some((line) => /append=false .*route_len=1/.test(line)),
+    "navigation journey did not replace the route with its first point");
+  assert.ok(routeLogs.some((line) => /append=true .*route_len=2/.test(line)),
+    "navigation journey did not append its second point");
+  assert.notEqual(sha256(routeFrame), sha256(stable.bytes),
+    "ordered navigation route produced no framebuffer evidence");
+
+  const participantLine = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] participant_scene"));
+  const participantPositions = parseTacticalScenePositions(
+    participantLine, "navigation participant scene",
+  );
+  const hostileObjectIds = ready.participants
+    .map((participant, index) => ({ participant, objectId: index + 1 }))
+    .filter(({ participant }) => participant.kind === "capital-ship"
+      && participant.faction !== ready.faction)
+    .map(({ objectId }) => objectId);
+  const enemyObjectIds = hostileObjectIds.length >= 2
+    ? [hostileObjectIds[0], hostileObjectIds[hostileObjectIds.length - 1]]
+    : hostileObjectIds;
+  assert.equal(enemyObjectIds.length, 2,
+    "navigation fixture omitted two hostile capital targets");
+  const enemyTargets = enemyObjectIds.map((objectId) => participantPositions.get(objectId));
+  assert.ok(enemyTargets.every(Boolean), "hostile target projections are incomplete");
+  await page.mouse.click(enemyTargets[0].x, enemyTargets[0].y, { button: "right" });
+  await page.waitForTimeout(80);
+  await page.keyboard.down("ControlLeft");
+  await page.waitForTimeout(80);
+  await page.mouse.click(enemyTargets[1].x, enemyTargets[1].y, { button: "right" });
+  await page.waitForTimeout(80);
+  await page.keyboard.up("ControlLeft");
+  await page.waitForTimeout(80);
+  const multipleTargets = await capture("multiple-targets");
+  const targetLogs = consoleLines
+    .filter(({ text }) => text.includes("[tactical_navigation] event=target_assign"))
+    .map(({ text }) => text);
+  assert.ok(targetLogs.some((line) => /append=true .*target_count=2/.test(line)),
+    "navigation journey did not retain two ordered hostile targets");
+  assert.notEqual(sha256(multipleTargets), sha256(routeFrame),
+    "multiple targets produced no additional framebuffer evidence");
+
+  await page.mouse.click(point(498, 355).x, point(498, 355).y);
+  await page.waitForTimeout(80);
+  const memorizedView = await capture("camera-view-to-memorize");
+  const memorized = await press("camera-memorize", point(606, 442), 1043, 585, 430);
+  await page.mouse.click(point(615, 355).x, point(615, 355).y);
+  await page.mouse.click(point(520, 397).x, point(520, 397).y);
+  await page.waitForTimeout(80);
+  const changedView = await capture("camera-view-changed");
+  assert.notEqual(tacticalApertureHash(viewport, changedView),
+    tacticalApertureHash(viewport, memorizedView),
+    "camera changes did not alter the tactical aperture");
+  const recalled = await press("camera-recall", point(505, 442), 1041, 484, 430);
+  assert.equal(tacticalApertureHash(viewport, recalled.released),
+    tacticalApertureHash(viewport, memorized.released),
+    "camera recall did not restore the memorized retained-mode view");
+
+  await page.keyboard.press("F1");
+  await page.waitForTimeout(100);
+  const chase = await capture("camera-chase-task-force-1");
+  await page.mouse.click(point(520, 397).x, point(520, 397).y);
+  await page.waitForTimeout(80);
+  const chaseExited = await capture("camera-chase-exited");
+  assert.notEqual(tacticalApertureHash(viewport, chase),
+    tacticalApertureHash(viewport, recalled.released),
+    "task-force chase did not change the retained-mode target");
+  assert.notEqual(tacticalApertureHash(viewport, chaseExited),
+    tacticalApertureHash(viewport, chase),
+    "manual camera control did not exit the chase view");
+
+  const cameraLogs = consoleLines
+    .filter(({ text }) => text.includes("[tactical_camera]"))
+    .map(({ text }) => text);
+  assert.ok(cameraLogs.some((line) => /command=memorize stored=true/.test(line)));
+  assert.ok(cameraLogs.some((line) => /command=recall source=memorized/.test(line)));
+  assert.ok(cameraLogs.some((line) => /command=follow kind=task_force group=1/.test(line)));
+  assert.ok(cameraLogs.some((line) => /command=follow_exit reason=manual/.test(line)));
+  probes.push({
+    type: "tactical-navigation-camera-journey",
+    navigation_resources: navControls.flatMap(({ normal, selected }) => [normal, selected]),
+    camera_resources: [1040, 1041, 1042, 1043],
+    visible_sets: [1, 2, 3, 4],
+    route_points: navigationPoints.slice(0, 2),
+    route_logs: routeLogs,
+    target_object_ids: enemyObjectIds,
+    target_logs: targetLogs,
+    camera_logs: cameraLogs,
+    provisional_point_coordinates: true,
+  });
+  return probes;
+}
+
 async function runScenarioOnce(server, executable, scenario, faction, viewport) {
   const id = scenarioId(scenario, faction, viewport);
   const folder = path.resolve(runDir, id);
@@ -3192,6 +3536,14 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         ? await probeTacticalGroupPresentation(
           page, viewport, folder, stable, consoleLines, ready, faction,
         )
+        : scenario.selected_navigation_presentation
+        ? await probeTacticalSelectedNavigationPresentation(
+          page, viewport, folder, stable, consoleLines, ready, faction,
+        )
+        : scenario.navigation_camera_presentation
+        ? await probeTacticalNavigationCameraPresentation(
+          page, viewport, folder, stable, consoleLines, ready,
+        )
         : scenario.effect_presentation
         ? await probeTacticalEffectPresentation(folder, stable, consoleLines, ready)
         : scenario.projectile_field_presentation
@@ -3243,14 +3595,14 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         ? probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready)
         : scenario.production_participants
         ? await probeTacticalProductionParticipants(
-          page, folder, stable, consoleLines, faction,
+          page, viewport, folder, stable, consoleLines, faction, ready,
         )
         : scenario.tactical_proof
         ? [{ type: "tactical-lod-fixture", requested: ready.tactical_lod }]
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 27);
+      assert.equal(ready.schema_version, 29);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -3265,6 +3617,10 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         Boolean(scenario.projectile_field_presentation));
       assert.equal(ready.selected_damage_presentation,
         Boolean(scenario.selected_damage_presentation));
+      assert.equal(ready.selected_navigation_presentation,
+        Boolean(scenario.selected_navigation_presentation));
+      assert.equal(ready.navigation_camera_presentation,
+        Boolean(scenario.navigation_camera_presentation));
       assert.equal(ready.subsystem_field_command_presentation,
         Boolean(scenario.subsystem_field_command_presentation));
       assert.equal(ready.live_subsystem_damage_presentation,
@@ -3328,7 +3684,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         || scenario.live_subsystem_damage_presentation
         || scenario.subsystem_repair_mobility_presentation
         || scenario.maneuver_movement_presentation
-        || scenario.command_execution_presentation ? {
+        || scenario.command_execution_presentation
+        || scenario.selected_navigation_presentation
+        || scenario.navigation_camera_presentation ? {
         ...projectileFieldLayout,
         battle_extent: 112,
         outer_positive_z: 56,
@@ -3363,7 +3721,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
             || scenario.live_subsystem_damage_presentation
             || scenario.subsystem_repair_mobility_presentation
             || scenario.maneuver_movement_presentation
-            || scenario.command_execution_presentation ? 8
+            || scenario.command_execution_presentation
+            || scenario.selected_navigation_presentation
+            || scenario.navigation_camera_presentation ? 8
             : scenario.command_progression_presentation
               || scenario.attack_targeting_presentation
               || scenario.attack_target_lifecycle_presentation
@@ -3451,6 +3811,8 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         || scenario.subsystem_repair_mobility_presentation
         || scenario.maneuver_movement_presentation
         || scenario.command_execution_presentation
+        || scenario.selected_navigation_presentation
+        || scenario.navigation_camera_presentation
         || scenario.command_progression_presentation
         || scenario.attack_targeting_presentation
         || scenario.attack_target_lifecycle_presentation) {
@@ -3817,8 +4179,13 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           const initialFighterResources = parseFighterSceneResources(fighterSceneLogs[0]);
           assert.deepEqual(initialFighterResources.map(({ resource_id }) => resource_id),
             fighterParticipants.map(({ active_indicator_resource }) => active_indicator_resource));
-          assert.equal(cameraLogs.length, scenario.fighter_detail_journey ? 40 : 1,
-            "production participants did not use the source tactical camera");
+          if (scenario.navigation_camera_presentation) {
+            assert.ok(cameraLogs.length >= 6,
+              "navigation journey did not exercise the source tactical camera");
+          } else {
+            assert.equal(cameraLogs.length, scenario.fighter_detail_journey ? 40 : 1,
+              "production participants did not use the source tactical camera");
+          }
           assert.equal(layoutLogs.length, 1,
             "production participants did not use the source tactical layout");
           probes.push({
@@ -3973,7 +4340,7 @@ async function runScenario(server, executable, scenario, faction, viewport) {
 async function main() {
   fs.mkdirSync(runDir, { recursive: true });
   if (battle) {
-    assert.equal(catalog.family, "TAC-01");
+    assert.equal(catalog.family, "TAC-01..TAC-07");
     assert.equal(catalog.fixture_namespace, 1);
     assert.deepEqual(catalog.scenarios.map(({ slug }) => slug),
       ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",
@@ -3999,18 +4366,20 @@ async function main() {
         "production-death-star-laser-journey",
         "production-trench-run-success",
         "production-trench-run-failure",
+        "production-selected-navigation-presentation",
+        "production-navigation-camera-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, ...Array(23).fill(false)]);
+      [true, false, true, true, true, true, true, ...Array(25).fill(false)]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      Array.from({ length: 30 }, (_, index) => index === 5));
+      Array.from({ length: 32 }, (_, index) => index === 5));
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      Array.from({ length: 30 }, (_, index) => index === 6));
+      Array.from({ length: 32 }, (_, index) => index === 6));
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

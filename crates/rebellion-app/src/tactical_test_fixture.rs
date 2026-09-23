@@ -45,6 +45,8 @@ const BATTLE_OPTIONS_WITHDRAWAL_SCENARIO: u32 = 27;
 const DEATH_STAR_LASER_JOURNEY_SCENARIO: u32 = 28;
 const TRENCH_RUN_SUCCESS_SCENARIO: u32 = 29;
 const TRENCH_RUN_FAILURE_SCENARIO: u32 = 30;
+const SELECTED_NAVIGATION_PRESENTATION_SCENARIO: u32 = 31;
+const NAVIGATION_CAMERA_PRESENTATION_SCENARIO: u32 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -98,6 +100,8 @@ pub(crate) struct TacticalFixtureRequest {
     pub effect_presentation: bool,
     pub projectile_field_presentation: bool,
     pub selected_damage_presentation: bool,
+    pub selected_navigation_presentation: bool,
+    pub navigation_camera_presentation: bool,
     pub subsystem_field_command_presentation: bool,
     pub live_subsystem_damage_presentation: bool,
     pub subsystem_repair_mobility_presentation: bool,
@@ -321,7 +325,9 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | BATTLE_OPTIONS_WITHDRAWAL_SCENARIO
         | DEATH_STAR_LASER_JOURNEY_SCENARIO
         | TRENCH_RUN_SUCCESS_SCENARIO
-        | TRENCH_RUN_FAILURE_SCENARIO => (
+        | TRENCH_RUN_FAILURE_SCENARIO
+        | SELECTED_NAVIGATION_PRESENTATION_SCENARIO
+        | NAVIGATION_CAMERA_PRESENTATION_SCENARIO => (
             false,
             true,
             false,
@@ -357,6 +363,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         effect_presentation,
         projectile_field_presentation,
         selected_damage_presentation,
+        selected_navigation_presentation: scenario == SELECTED_NAVIGATION_PRESENTATION_SCENARIO,
+        navigation_camera_presentation: scenario == NAVIGATION_CAMERA_PRESENTATION_SCENARIO,
         subsystem_field_command_presentation: scenario
             == SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO,
         live_subsystem_damage_presentation: scenario == LIVE_SUBSYSTEM_DAMAGE_PRESENTATION_SCENARIO,
@@ -487,6 +495,8 @@ pub(crate) fn apply(
             || request.attack_targeting_presentation
             || request.attack_target_lifecycle_presentation
             || request.battle_results_presentation
+            || request.selected_navigation_presentation
+            || request.navigation_camera_presentation
             || ((request.group_presentation || request.effect_presentation)
                 && is_alliance == player_is_alliance);
         let ship_count = if request.projectile_field_presentation
@@ -499,6 +509,8 @@ pub(crate) fn apply(
             || request.attack_targeting_presentation
             || request.attack_target_lifecycle_presentation
             || request.battle_results_presentation
+            || request.selected_navigation_presentation
+            || request.navigation_camera_presentation
         {
             3
         } else if request.effect_presentation && expanded {
@@ -590,6 +602,14 @@ pub(crate) fn apply(
     #[cfg(feature = "interface-test-fixtures")]
     if request.selected_damage_presentation {
         tactical.configure_selected_damage_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.selected_navigation_presentation {
+        tactical.configure_selected_navigation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.navigation_camera_presentation {
+        tactical.configure_selected_navigation_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
     if request.subsystem_field_command_presentation {
@@ -686,6 +706,8 @@ struct FixtureRecord<'a> {
     effect_presentation: bool,
     projectile_field_presentation: bool,
     selected_damage_presentation: bool,
+    selected_navigation_presentation: bool,
+    navigation_camera_presentation: bool,
     subsystem_field_command_presentation: bool,
     live_subsystem_damage_presentation: bool,
     subsystem_repair_mobility_presentation: bool,
@@ -1137,7 +1159,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 27,
+        schema_version: 29,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1154,6 +1176,8 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         effect_presentation: request.effect_presentation,
         projectile_field_presentation: request.projectile_field_presentation,
         selected_damage_presentation: request.selected_damage_presentation,
+        selected_navigation_presentation: request.selected_navigation_presentation,
+        navigation_camera_presentation: request.navigation_camera_presentation,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1206,7 +1230,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 27,
+        schema_version: 29,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1223,6 +1247,8 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         effect_presentation: request.effect_presentation,
         projectile_field_presentation: request.projectile_field_presentation,
         selected_damage_presentation: request.selected_damage_presentation,
+        selected_navigation_presentation: request.selected_navigation_presentation,
+        navigation_camera_presentation: request.navigation_camera_presentation,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1318,6 +1344,8 @@ mod tests {
             decode(0x1011e).unwrap().trench_run_outcome,
             Some(TacticalTrenchRunOutcome::Failure)
         );
+        assert!(decode(0x1011f).unwrap().selected_navigation_presentation);
+        assert!(decode(0x10120).unwrap().navigation_camera_presentation);
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -1339,7 +1367,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x1011f).is_none());
+        assert!(decode(0x10121).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

@@ -782,6 +782,20 @@ pub mod resources {
         /// Battle Options HUD control, pressed state.
         pub const BTN_BATTLE_OPTIONS_PRESSED: u32 = 1039;
 
+        /// Navigation-point set 1 through 4, normal states.
+        pub const BTN_NAVIGATION_SET_NORMAL: [u32; 4] = [1026, 1027, 1028, 1029];
+        /// Navigation-point set 1 through 4, selected/pressed states.
+        pub const BTN_NAVIGATION_SET_SELECTED: [u32; 4] = [1030, 1031, 1032, 1033];
+
+        /// Return to the memorized camera position, normal state.
+        pub const BTN_CAMERA_RECALL_NORMAL: u32 = 1040;
+        /// Return to the memorized camera position, pressed state.
+        pub const BTN_CAMERA_RECALL_PRESSED: u32 = 1041;
+        /// Memorize the current camera position, normal state.
+        pub const BTN_CAMERA_MEMORIZE_NORMAL: u32 = 1042;
+        /// Memorize the current camera position, pressed state.
+        pub const BTN_CAMERA_MEMORIZE_PRESSED: u32 = 1043;
+
         /// Tactical combat is running; clicking pauses it.
         pub const BTN_PAUSE_RUNNING: u32 = 1060;
         /// Tactical combat is paused; clicking resumes it.
@@ -816,6 +830,14 @@ pub mod resources {
         /// Camera target control, pressed state.
         pub const BTN_CAMERA_TARGET_PRESSED: u32 = 1059;
 
+        /// Selected-capital navigator: previous ship in task force, normal state.
+        pub const BTN_PREVIOUS_CAPITAL_NORMAL: u32 = 1101;
+        /// Selected-capital navigator: previous ship in task force, pressed state.
+        pub const BTN_PREVIOUS_CAPITAL_PRESSED: u32 = 1102;
+        /// Selected-capital navigator: next ship in task force, normal state.
+        pub const BTN_NEXT_CAPITAL_NORMAL: u32 = 1103;
+        /// Selected-capital navigator: next ship in task force, pressed state.
+        pub const BTN_NEXT_CAPITAL_PRESSED: u32 = 1104;
         /// Tactical command button: Maneuvers/Tactics, normal state.
         pub const BTN_MANEUVERS_TACTICS_NORMAL: u32 = 1105;
         /// Tactical command button: Maneuvers/Tactics, pressed state.

@@ -114,6 +114,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58-B07 tactical matrix-contract evidence](evidence/2026-09-22-tactical-106-matrix-contract.md) | Ledger-derived 106-cell denominator, exact family distribution, lossless A0 manifest contract, proprietary-artifact exclusion, and explicit 0/106 starting boundary. |
 | [P58-B08 tactical A0-ingestion evidence](evidence/2026-09-22-tactical-a0-ingestion.md) | Exact original-executable provenance, 640×480/hash/ledger validation, ignored per-cell storage, replacement rejection, and explicit 0/106 offline-host boundary. |
 | [P58-B09 tactical A1-crosswalk evidence](evidence/2026-09-22-tactical-a1-crosswalk.md) | Schema-validated journey/snapshot/negative-control classes, 82 mapped cells, 24 explicit scenario gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B10 tactical navigation/camera evidence](evidence/2026-09-23-tactical-navigation-camera.md) | Four navigation sets, ordered routes and targets, camera memory/chase, Anvil and Stand Off, 96 mapped cells, ten explicit gaps, and unchanged 0/106 strict acceptance. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |

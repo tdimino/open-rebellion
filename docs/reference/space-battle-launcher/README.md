@@ -153,6 +153,10 @@ and closes every process. Raw runs live under ignored
 - P58F13 retains valid typed targets, replaces invalid ones with the first
   eligible hostile target of the same class, and clears exhausted target lists
   without random or cross-class fallback.
+- P58-B10 adds all four navigation sets, ordered multi-point routes and
+  multi-target queues, camera memorize/recall and chase, plus explicit Anvil
+  and Stand Off journeys. The deterministic A1 crosswalk is 96/106; strict A0
+  acceptance remains 0/106.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options

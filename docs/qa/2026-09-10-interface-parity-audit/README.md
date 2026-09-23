@@ -181,6 +181,9 @@ native playback, and A0 gates pass.
 - Review the [P58-B09 tactical A1 crosswalk](evidence/2026-09-22-tactical-a1-crosswalk.md)
   for the 82 mapped cells, journey/snapshot distinction, and exact 24-cell
   new-scenario queue.
+- Review the [P58-B10 tactical navigation and camera evidence](evidence/2026-09-23-tactical-navigation-camera.md)
+  for four navigation sets, ordered routes and targets, camera memory/chase,
+  Anvil and Stand Off, and the reduced ten-cell scenario queue.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

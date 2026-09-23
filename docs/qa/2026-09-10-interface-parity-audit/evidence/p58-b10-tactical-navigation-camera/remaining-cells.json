@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B10",
+  "count": 10,
+  "cells": [
+    { "id": "TAC-01-C007", "requirement": "empty space" },
+    { "id": "TAC-01-C010", "requirement": "battle entry from Battle Alert" },
+    { "id": "TAC-01-C012", "requirement": "tactical music and voice" },
+    { "id": "TAC-03-C004", "requirement": "destroyed" },
+    { "id": "TAC-03-C012", "requirement": "contents" },
+    { "id": "TAC-05-C011", "requirement": "escort" },
+    { "id": "TAC-05-C023", "requirement": "trench-run launch" },
+    { "id": "TAC-06-C003", "requirement": "withdraw confirmation" },
+    { "id": "TAC-06-C007", "requirement": "game options" },
+    { "id": "TAC-07-C014", "requirement": "strategic state persistence" }
+  ]
+}

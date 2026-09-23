@@ -268,6 +268,11 @@ and negative controls cannot claim cells. Twenty-four cells now form the exact
 new-scenario queue. Matrix coverage is not parity acceptance; every mapped cell
 still requires authoritative A0 comparison before it can pass.
 
+P58-B10 expands the catalog to 32 scenarios and maps 96 canonical cells: 78
+browser journeys and 18 snapshots. It adds all four navigation sets, ordered
+routes and targets, camera memory and chase, Anvil, and Stand Off. Ten cells
+remain without a deterministic scenario. Strict acceptance remains 0/106.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

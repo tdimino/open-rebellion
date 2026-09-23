@@ -1267,6 +1267,42 @@ impl TacticalAssetRenderer {
         }
     }
 
+    /// Capture the complete source camera state for the original memorize and
+    /// recall controls. `OriginalTacticalCamera` is `Copy`, so restoring this
+    /// value also restores the exact field, orbit step, and followed target.
+    pub(crate) fn camera_state(&self) -> Option<OriginalTacticalCamera> {
+        self.source_camera
+    }
+
+    /// Restore a source camera state captured by [`Self::camera_state`].
+    pub(crate) fn restore_camera_state(&mut self, camera: OriginalTacticalCamera) {
+        self.source_camera = Some(camera);
+        self.logged_camera = None;
+    }
+
+    /// Project one authored source position through the same retained-mode
+    /// camera used for ships, fighters, fields, and effects.
+    pub(crate) fn project_source_position(
+        &self,
+        aperture: (f32, f32, f32, f32),
+        position: Vec3,
+    ) -> Option<Vec2> {
+        let source_camera = self.source_camera?;
+        let pose = source_camera.pose();
+        let (_, _, width, height) = aperture;
+        let camera = Camera3D {
+            position: pose.position,
+            target: pose.target,
+            up: pose.up,
+            fovy: pose.fovy_radians,
+            aspect: Some(width / height),
+            z_near: pose.near,
+            z_far: pose.far,
+            ..Default::default()
+        };
+        project_world_position(camera.matrix(), position, aperture)
+    }
+
     #[cfg(feature = "interface-test-fixtures")]
     pub(crate) fn draw_proof(&mut self, aperture: (f32, f32, f32, f32)) {
         if !self.attempted {
