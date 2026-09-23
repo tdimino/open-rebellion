@@ -334,6 +334,17 @@ cross-runtime proof remain open
   remain open. See
   `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md`.
 
+### P58-B13: Tactical withdrawal confirmation
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: the original TACTICAL 1310 panel, TEXTTACT title and prompt, and
+  controls 1113 through 1116 now mediate withdrawal. Cancel closes without
+  retreat; confirm starts withdrawal; the disabled repeat remains inert.
+- Matrix: 101 of 106 cells have deterministic A1 scenarios through 82 browser
+  journeys and 19 snapshots. Five scenarios and all 106 lossless A0 captures
+  remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md`.
+
 ### F-008: Browser media and mods are incomplete
 
 - Severity: P1 if browser parity is claimed

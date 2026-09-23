@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B13",
+  "scope": "bounded_visual_review_of_withdrawal_confirmation_montage",
+  "result": "pass",
+  "findings": {
+    "P0": [],
+    "P1": [],
+    "P2": [],
+    "P3": []
+  },
+  "limits": [
+    "static_visual_review_only",
+    "interaction_semantics_proven_by_automated_browser_journey",
+    "not_authoritative_A0_comparison"
+  ]
+}

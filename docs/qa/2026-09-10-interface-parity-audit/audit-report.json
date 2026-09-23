@@ -62,14 +62,14 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_p58_b12_maps_100_of_106_cells_with_81_browser_journeys_and_19_snapshots_and_restores_original_Game_Options_plus_empty_space_Battle_Alert_entry_tactical_audio_destroyed_contents_Escort_withdraw_confirmation_A0_comparison_and_strict_acceptance_open",
+    "tactical_interface": "fail_p58_b13_maps_101_of_106_cells_with_82_browser_journeys_and_19_snapshots_and_restores_native_withdraw_confirmation_Battle_Alert_entry_tactical_audio_destroyed_contents_Escort_A0_comparison_and_strict_acceptance_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
     "tactical_matrix_contract": "pass_P58_B07_ledger_derived_106_cells_distribution_13_13_20_14_23_9_14_current_0_mapped_0_A0_0_accepted_missing_duplicate_unknown_unsafe_and_tracked_A0_fail_closed",
     "tactical_a0_ingestion": "pass_P58_B08_guest_executable_and_cell_provenance_host_exact_ledger_640x480_hash_source_and_destination_validation_capture_host_offline_current_0_of_106",
-    "tactical_a1_crosswalk": "pass_P58_B12_33_scenarios_100_of_106_cells_81_journeys_19_snapshots_6_explicit_gaps_0_A0_0_accepted",
-    "space_battle_launcher_practical_progress": "100_of_106_deterministic_A1_cells_0_of_106_strict_cells_accepted",
+    "tactical_a1_crosswalk": "pass_P58_B13_33_scenarios_101_of_106_cells_82_journeys_19_snapshots_5_explicit_gaps_0_A0_0_accepted",
+    "space_battle_launcher_practical_progress": "101_of_106_deterministic_A1_cells_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
   },
@@ -166,7 +166,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The tactical completion work now maps 100 of 106 canonical cells through 81 browser journeys and 19 source-backed snapshots, including original Game Options routing and empty-space presentation; Battle Alert entry, tactical audio, destroyed and contents states, Escort, withdraw confirmation, A0 comparison, and all 106 strict cells remain open",
+      "title": "The tactical completion work now maps 101 of 106 canonical cells through 82 browser journeys and 19 source-backed snapshots, including native withdrawal confirmation; Battle Alert entry, tactical audio, destroyed and contents states, Escort, A0 comparison, and all 106 strict cells remain open",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -205,7 +205,8 @@
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-navigation-camera.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-trench-persistence.md",
-      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md"
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md",
+      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -326,9 +327,10 @@
     "p58_b10_tactical_navigation_camera": "evidence/2026-09-23-tactical-navigation-camera.md",
     "p58_b11_tactical_trench_persistence": "evidence/2026-09-23-tactical-trench-persistence.md",
     "p58_b12_tactical_game_options_empty_space": "evidence/2026-09-23-tactical-game-options-empty-space.md",
+    "p58_b13_tactical_withdraw_confirmation": "evidence/2026-09-23-tactical-withdraw-confirmation.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Implement and run the six unmapped tactical scenarios: Battle Alert entry, tactical audio, destroyed and contents states, Escort, and original withdrawal confirmation. In parallel, bring the owned Windows host online for A0 capture. Keep all 106 strict cells open until their complete evidence passes."
+  "next_action": "Implement and run the five unmapped tactical scenarios: Battle Alert entry, tactical audio, destroyed and contents states, and Escort. In parallel, bring the owned Windows host online for A0 capture. Keep all 106 strict cells open until their complete evidence passes."
 }

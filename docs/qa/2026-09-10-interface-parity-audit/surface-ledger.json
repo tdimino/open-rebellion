@@ -5043,7 +5043,7 @@
       "manual_pages": [
         148
       ],
-      "current_implementation": "P58-B06 restores the original Battle Options panel and source-mapped withdraw, simulate, observe/take-command, game-options, close, pressed, selected, and disabled states. P58-B12 routes Game Options to the original COMMON 20002 surface, verifies disabled mid-battle tactical-display controls, and returns to the live battle. Deterministic browser journeys cover both factions and viewports, including one-shot withdrawal and disabled repeat rejection. Native withdrawal confirmation and strategic-return semantics, complete Game Options confirmations and save/load behavior, and A0 comparison remain open.",
+      "current_implementation": "P58-B06 restores the original Battle Options panel and source-mapped withdraw, simulate, observe/take-command, game-options, close, pressed, selected, and disabled states. P58-B12 routes Game Options to the original COMMON 20002 surface, verifies disabled mid-battle tactical-display controls, and returns to the live battle. P58-B13 restores the executable-derived TACTICAL 1310 withdrawal confirmation, TEXTTACT title and prompt, controls 1113 through 1116, cancel and confirm routing, and disabled repeat rejection. Strategic-return semantics, complete Game Options confirmations and save/load behavior, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-009"
       ],

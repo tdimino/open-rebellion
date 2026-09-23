@@ -347,7 +347,7 @@
     },
     {
       "slug": "production-battle-options-withdrawal",
-      "description": "Original Battle Options withdrawal command, transition into fleet retreat, and resulting disabled withdrawal state",
+      "description": "Original withdrawal confirmation with cancel and confirm paths, transition into fleet retreat, and resulting disabled withdrawal state",
       "fixture_codes": {
         "alliance": 65819,
         "empire": 66075
@@ -358,8 +358,8 @@
       "battle_options_presentation": true,
       "battle_options_withdrawal": true,
       "expected_status": "battle-ready",
-      "audit_cells": ["TAC-06-C002", "TAC-06-C009", "TAC-07-C004"],
-      "acceptance": "A1 production withdrawal and disabled-state proof. The exact original confirmation dialog, neutral or friendly destination selection, tractor and gravity interception, and lossless owned A0 comparison remain open."
+      "audit_cells": ["TAC-06-C002", "TAC-06-C003", "TAC-06-C009", "TAC-07-C004"],
+      "acceptance": "A1 production withdrawal proof covers the source TACTICAL 1310 panel, exact TEXTTACT title and prompt, controls 1113 through 1116, cancel, confirm, fleet retreat, and disabled repeat rejection. Neutral or friendly destination selection, tractor and gravity interception, and lossless owned A0 comparison remain open."
     },
     {
       "slug": "production-death-star-laser-journey",

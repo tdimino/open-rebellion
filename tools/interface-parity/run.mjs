@@ -3009,6 +3009,51 @@ async function probeTacticalBattleOptionsPresentation(
       type: "battle-options-withdraw-pressed",
       ...verifyTacticalBitmap(viewport, held, withdraw.pressed, withdraw.x, withdraw.y),
     });
+    let confirmation = await stableInteractionFrame(
+      page, folder, "battle-options-withdraw-confirmation",
+    );
+    const confirmationIgnored = [
+      { x: 20, y: 28, width: 125, height: 14 },
+      { x: 14, y: 92, width: 132, height: 28 },
+      { x: 66, y: 202, width: 27, height: 25 },
+      { x: 106, y: 202, width: 27, height: 25 },
+    ];
+    probes.push({
+      type: "withdraw-confirmation-panel",
+      ...verifyTacticalBitmap(
+        viewport, confirmation, 1310, 481, 27, [], confirmationIgnored,
+      ),
+    });
+    for (const control of [
+      { name: "confirm", x: 547, y: 229, width: 27, height: 25, normal: 1113, pressed: 1114 },
+      { name: "cancel", x: 587, y: 229, width: 27, height: 25, normal: 1115, pressed: 1116 },
+    ]) {
+      probes.push({
+        type: "withdraw-confirmation-control",
+        control: control.name,
+        ...verifyTacticalBitmap(viewport, confirmation, control.normal, control.x, control.y),
+      });
+    }
+    const cancel = { x: 587, y: 229, width: 27, height: 25, pressed: 1116 };
+    const cancelHeld = await captureHeld(cancel, "battle-options-withdraw-cancel-held");
+    probes.push({
+      type: "withdraw-confirmation-cancel-pressed",
+      ...verifyTacticalBitmap(viewport, cancelHeld, cancel.pressed, cancel.x, cancel.y),
+    });
+    await stableInteractionFrame(page, folder, "battle-options-withdraw-cancelled");
+
+    await page.mouse.click(openLocation.x, openLocation.y);
+    await stableInteractionFrame(page, folder, "battle-options-withdraw-reopened");
+    await page.mouse.click(point(521, 64).x, point(521, 64).y);
+    confirmation = await stableInteractionFrame(
+      page, folder, "battle-options-withdraw-confirmation-reopened",
+    );
+    const confirm = { x: 547, y: 229, width: 27, height: 25, pressed: 1114 };
+    const confirmHeld = await captureHeld(confirm, "battle-options-withdraw-confirm-held");
+    probes.push({
+      type: "withdraw-confirmation-confirm-pressed",
+      ...verifyTacticalBitmap(viewport, confirmHeld, confirm.pressed, confirm.x, confirm.y),
+    });
     await stableInteractionFrame(page, folder, "battle-options-withdraw-started");
     await page.mouse.click(openLocation.x, openLocation.y);
     panel = await stableInteractionFrame(page, folder, "battle-options-withdraw-disabled");
@@ -3023,9 +3068,14 @@ async function probeTacticalBattleOptionsPresentation(
     await stableInteractionFrame(page, folder, "battle-options-disabled-click-rejected");
     const withdrawLogs = consoleLines.filter(({ text }) =>
       text.includes("[tactical_options] command=withdraw"));
-    assert.equal(withdrawLogs.length, 1,
-      "disabled withdrawal accepted a second command");
-    assert.ok(withdrawLogs[0].text.includes("status=withdrawal_started"));
+    assert.equal(withdrawLogs.filter(({ text }) => text.includes("status=confirmation_open")).length,
+      2, "withdrawal confirmation did not open exactly twice");
+    assert.equal(withdrawLogs.filter(({ text }) =>
+      text.includes("status=confirmation_cancelled")).length, 1,
+    "withdrawal confirmation cancel did not route exactly once");
+    assert.equal(withdrawLogs.filter(({ text }) =>
+      text.includes("status=withdrawal_started")).length, 1,
+    "disabled withdrawal accepted another command or confirmation did not dispatch");
     probes.push({ type: "battle-options-withdraw-route", logs: withdrawLogs.map(({ text }) => text) });
     return probes;
   }

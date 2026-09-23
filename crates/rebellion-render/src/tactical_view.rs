@@ -4220,6 +4220,10 @@ pub struct TacticalState {
     battle_options_open: bool,
     /// Captured Battle Options control. Dispatch occurs only on a matching release.
     battle_options_pressed: Option<TacticalBattleOptionsControl>,
+    /// The native withdrawal confirmation replaces the right-hand options panel.
+    withdraw_confirmation_open: bool,
+    /// Captured confirmation control. Dispatch occurs only on a matching release.
+    withdraw_confirmation_pressed: Option<TacticalWithdrawConfirmationControl>,
     /// The player handed command of their force to the tactical simulation.
     player_observing: bool,
     /// Captured press on the source Death Star superlaser control.
@@ -4265,6 +4269,8 @@ impl Default for TacticalState {
             strategic_results_applied: false,
             battle_options_open: false,
             battle_options_pressed: None,
+            withdraw_confirmation_open: false,
+            withdraw_confirmation_pressed: None,
             player_observing: false,
             death_star_laser_pressed: false,
             death_star_targeting: false,
@@ -4337,6 +4343,8 @@ impl TacticalState {
         self.strategic_results_applied = false;
         self.battle_options_open = false;
         self.battle_options_pressed = None;
+        self.withdraw_confirmation_open = false;
+        self.withdraw_confirmation_pressed = None;
         self.player_observing = false;
         self.death_star_laser_pressed = false;
         self.death_star_targeting = false;
@@ -5518,6 +5526,12 @@ enum TacticalBattleOptionsControl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TacticalWithdrawConfirmationControl {
+    Confirm,
+    Cancel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalCommandControl {
     PreviousCapital,
     NextCapital,
@@ -5672,6 +5686,31 @@ const TACTICAL_BATTLE_OPTIONS_CONTROLS: [TacticalBattleOptionsSpec; 5] = [
         rect: NativeRect::new(565.0, 203.0, 29.0, 33.0),
         normal_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_NORMAL,
         pressed_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_PRESSED,
+    },
+];
+
+#[derive(Debug, Clone, Copy)]
+struct TacticalWithdrawConfirmationSpec {
+    control: TacticalWithdrawConfirmationControl,
+    rect: NativeRect,
+    normal_resource: u32,
+    pressed_resource: u32,
+}
+
+// REBEXE FUN_005f0f40 constructs these controls at panel-local (66, 202)
+// and (106, 202), each 27x25, with TACTICAL resources 1113 through 1116.
+const TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS: [TacticalWithdrawConfirmationSpec; 2] = [
+    TacticalWithdrawConfirmationSpec {
+        control: TacticalWithdrawConfirmationControl::Confirm,
+        rect: NativeRect::new(547.0, 229.0, 27.0, 25.0),
+        normal_resource: resources::tactical::BTN_ASSIGN_CONFIRM_NORMAL,
+        pressed_resource: resources::tactical::BTN_ASSIGN_CONFIRM_PRESSED,
+    },
+    TacticalWithdrawConfirmationSpec {
+        control: TacticalWithdrawConfirmationControl::Cancel,
+        rect: NativeRect::new(587.0, 229.0, 27.0, 25.0),
+        normal_resource: resources::tactical::BTN_ASSIGN_CANCEL_NORMAL,
+        pressed_resource: resources::tactical::BTN_ASSIGN_CANCEL_PRESSED,
     },
 ];
 
@@ -5979,6 +6018,28 @@ fn tactical_battle_options_control_at(
             )
             .then_some(spec.control)
     })
+}
+
+fn tactical_withdraw_confirmation_control_at(
+    cache: &mut BmpCache,
+    x: f32,
+    y: f32,
+) -> Option<TacticalWithdrawConfirmationControl> {
+    TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS
+        .iter()
+        .find_map(|spec| {
+            if !spec.rect.contains(x, y) {
+                return None;
+            }
+            cache
+                .is_resource_hit(
+                    DllSource::Tactical,
+                    spec.normal_resource,
+                    (x - spec.rect.x).floor() as usize,
+                    (y - spec.rect.y).floor() as usize,
+                )
+                .then_some(spec.control)
+        })
 }
 
 fn player_death_star(session: &BattleSession) -> Option<TacticalDeathStar> {
@@ -6715,6 +6776,18 @@ fn pressed_tactical_battle_options_control(
     tactical_battle_options_control_at(cache, withdraw_enabled, x, y)
 }
 
+fn pressed_tactical_withdraw_confirmation_control(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+) -> Option<TacticalWithdrawConfirmationControl> {
+    if !is_mouse_button_down(MouseButton::Left) {
+        return None;
+    }
+    let (mouse_x, mouse_y) = mouse_position();
+    let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
+    tactical_withdraw_confirmation_control_at(cache, x, y)
+}
+
 fn pressed_tactical_command_control(
     cache: &mut BmpCache,
     canvas: TacticalCanvas,
@@ -6823,6 +6896,7 @@ fn prewarm_tactical_font_atlas(
         "Red Group Blue Group Green Group Gold Group",
         "Battle at Alliance Imperial Forces Capital Ships Fighters Troops Personnel",
         "Operational Damaged Destroyed Go Directly To System Fleet victorious withdrawn",
+        "Withdraw Confirmation Are you sure you wish to order a fleet withdraw?",
     ] {
         characters.extend(text.chars());
     }
@@ -7072,6 +7146,43 @@ fn draw_tactical_assignment_panel(
     }
 }
 
+fn draw_tactical_withdraw_confirmation(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    pressed: Option<TacticalWithdrawConfirmationControl>,
+) {
+    use resources::tactical as art;
+
+    draw_tactical_bitmap(cache, art::WITHDRAW_CONFIRMATION_PANEL, canvas, 481.0, 27.0);
+    for spec in TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS {
+        draw_tactical_bitmap(
+            cache,
+            if pressed == Some(spec.control) {
+                spec.pressed_resource
+            } else {
+                spec.normal_resource
+            },
+            canvas,
+            spec.rect.x,
+            spec.rect.y,
+        );
+    }
+
+    // FUN_005f1050 places TEXTTACT 56772 at (20, 28) and TEXTTACT 56771
+    // at (14, 92) in the 149x236 panel. Macroquad takes a text baseline, so
+    // add the recovered ten-pixel font height while preserving those origins.
+    let font_size = 10.0 * canvas.scale;
+    let text_color = Color::new(0.84, 0.92, 0.84, 1.0);
+    for (text, x, top) in [
+        ("Withdraw Confirmation", 501.0, 55.0),
+        ("Are you sure you wish to", 495.0, 119.0),
+        ("order a fleet withdraw?", 495.0, 131.0),
+    ] {
+        let (screen_x, screen_y) = canvas.point(x, top + 10.0);
+        draw_text(text, screen_x, screen_y, font_size, text_color);
+    }
+}
+
 /// Paint only resource-backed battle chrome. Unmapped command groups remain
 /// visible but are not passed off as implemented interactions.
 #[expect(
@@ -7096,9 +7207,11 @@ fn draw_original_tactical_hud(
     command_panel: TacticalCommandPanel,
     pressed_command: Option<TacticalCommandControl>,
     battle_options_open: bool,
+    withdraw_confirmation_open: bool,
     player_observing: bool,
     withdraw_enabled: bool,
     pressed_options: Option<TacticalBattleOptionsControl>,
+    pressed_withdraw_confirmation: Option<TacticalWithdrawConfirmationControl>,
     death_star: Option<TacticalDeathStar>,
     death_star_laser_pressed: bool,
     death_star_targeting: bool,
@@ -7221,7 +7334,9 @@ fn draw_original_tactical_hud(
 
     let has_selection =
         groups.selected_fighter_group.is_some() || groups.selected_ship_name.is_some();
-    if battle_options_open {
+    if withdraw_confirmation_open {
+        draw_tactical_withdraw_confirmation(cache, canvas, pressed_withdraw_confirmation);
+    } else if battle_options_open {
         draw_tactical_bitmap(
             cache,
             if player_is_alliance {
@@ -7267,7 +7382,10 @@ fn draw_original_tactical_hud(
         };
         draw_tactical_bitmap(cache, panel_resource, canvas, 481.0, 27.0);
     }
-    if !battle_options_open && command_panel == TacticalCommandPanel::Display {
+    if !withdraw_confirmation_open
+        && !battle_options_open
+        && command_panel == TacticalCommandPanel::Display
+    {
         if let (Some(name), Some(group)) = (groups.selected_ship_name, groups.selected_task_force) {
             if let Some(resource) = groups.selected_ship_hud {
                 draw_tactical_bitmap(
@@ -7362,7 +7480,11 @@ fn draw_original_tactical_hud(
             );
         }
     }
-    if !battle_options_open && command_panel == TacticalCommandPanel::Display && has_selection {
+    if !withdraw_confirmation_open
+        && !battle_options_open
+        && command_panel == TacticalCommandPanel::Display
+        && has_selection
+    {
         if groups.selected_ship_name.is_some() {
             for (control, normal, pressed_art) in [
                 (
@@ -7716,10 +7838,13 @@ fn activate_tactical_battle_options(
     match control {
         TacticalBattleOptionsControl::Withdraw => {
             state.battle_options_open = false;
+            state.battle_options_pressed = None;
+            state.withdraw_confirmation_open = true;
+            state.withdraw_confirmation_pressed = None;
             macroquad::logging::info!(
-                "[tactical_options] command=withdraw status=withdrawal_started"
+                "[tactical_options] command=withdraw status=confirmation_open panel=1310 controls=1113:1114:1115:1116 title=56772 body=56771"
             );
-            TacticalAction::WithdrawFromBattle
+            TacticalAction::None
         }
         TacticalBattleOptionsControl::SimulateRemainder => {
             macroquad::logging::info!("[tactical_options] command=simulate_remainder");
@@ -7745,6 +7870,28 @@ fn activate_tactical_battle_options(
         TacticalBattleOptionsControl::Close => {
             state.battle_options_open = false;
             macroquad::logging::info!("[tactical_options] command=close");
+            TacticalAction::None
+        }
+    }
+}
+
+fn activate_tactical_withdraw_confirmation(
+    state: &mut TacticalState,
+    control: TacticalWithdrawConfirmationControl,
+) -> TacticalAction {
+    state.withdraw_confirmation_open = false;
+    state.withdraw_confirmation_pressed = None;
+    match control {
+        TacticalWithdrawConfirmationControl::Confirm => {
+            macroquad::logging::info!(
+                "[tactical_options] command=withdraw status=withdrawal_started confirmation=accepted"
+            );
+            TacticalAction::WithdrawFromBattle
+        }
+        TacticalWithdrawConfirmationControl::Cancel => {
+            macroquad::logging::info!(
+                "[tactical_options] command=withdraw status=confirmation_cancelled"
+            );
             TacticalAction::None
         }
     }
@@ -7848,6 +7995,21 @@ fn handle_original_tactical_controls(
 ) -> TacticalAction {
     let (mouse_x, mouse_y) = mouse_position();
     let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
+    if state.withdraw_confirmation_open {
+        let hovered = tactical_withdraw_confirmation_control_at(cache, x, y);
+        if is_mouse_button_pressed(MouseButton::Left) {
+            state.withdraw_confirmation_pressed = hovered;
+        }
+        if is_mouse_button_released(MouseButton::Left) {
+            let captured = state.withdraw_confirmation_pressed.take();
+            if let Some(captured) = captured.filter(|captured| Some(*captured) == hovered) {
+                return activate_tactical_withdraw_confirmation(state, captured);
+            }
+        } else if !is_mouse_button_down(MouseButton::Left) {
+            state.withdraw_confirmation_pressed = None;
+        }
+        return TacticalAction::None;
+    }
     let death_star_ready = state
         .session
         .as_ref()
@@ -8071,6 +8233,8 @@ fn handle_original_tactical_controls(
                 }
                 Some(TacticalHudControl::BattleOptions) => {
                     state.battle_options_open = true;
+                    state.withdraw_confirmation_open = false;
+                    state.withdraw_confirmation_pressed = None;
                     state.command_panel = TacticalCommandPanel::Display;
                     macroquad::logging::info!("[tactical_options] command=open");
                 }
@@ -9758,17 +9922,23 @@ pub fn draw_tactical_view(
             .then(|| pressed_tactical_battle_options_control(bmp_cache, canvas, withdraw_enabled))
             .flatten()
             .filter(|control| state.battle_options_pressed == Some(*control));
-        let pressed_command = (!state.battle_options_open && !state.player_observing).then(|| {
-            pressed_tactical_command_control(
-                bmp_cache,
-                canvas,
-                state.command_panel,
-                has_selection,
-                groups.selected_fighter_group.is_some(),
-                attack_death_star_enabled,
-                player_is_alliance,
-            )
-        });
+        let pressed_withdraw_confirmation = state
+            .withdraw_confirmation_open
+            .then(|| pressed_tactical_withdraw_confirmation_control(bmp_cache, canvas));
+        let pressed_command = (!state.battle_options_open
+            && !state.withdraw_confirmation_open
+            && !state.player_observing)
+            .then(|| {
+                pressed_tactical_command_control(
+                    bmp_cache,
+                    canvas,
+                    state.command_panel,
+                    has_selection,
+                    groups.selected_fighter_group.is_some(),
+                    attack_death_star_enabled,
+                    player_is_alliance,
+                )
+            });
         draw_original_tactical_hud(
             bmp_cache,
             canvas,
@@ -9783,9 +9953,13 @@ pub fn draw_tactical_view(
             state.command_panel,
             pressed_command.flatten(),
             state.battle_options_open,
+            state.withdraw_confirmation_open,
             state.player_observing,
             withdraw_enabled,
             pressed_options,
+            pressed_withdraw_confirmation
+                .flatten()
+                .filter(|control| state.withdraw_confirmation_pressed == Some(*control)),
             death_star,
             state.death_star_laser_pressed,
             state.death_star_targeting,
@@ -12395,6 +12569,22 @@ mod tests {
             tactical_battle_options_control_at(&mut cache, true, 579.0, 219.0),
             Some(TacticalBattleOptionsControl::Close)
         );
+        assert_eq!(
+            tactical_withdraw_confirmation_control_at(&mut cache, 560.0, 242.0),
+            Some(TacticalWithdrawConfirmationControl::Confirm)
+        );
+        assert_eq!(
+            tactical_withdraw_confirmation_control_at(&mut cache, 600.0, 242.0),
+            Some(TacticalWithdrawConfirmationControl::Cancel)
+        );
+        assert_eq!(
+            tactical_withdraw_confirmation_control_at(&mut cache, 547.0, 229.0),
+            None
+        );
+        assert_eq!(
+            tactical_withdraw_confirmation_control_at(&mut cache, 614.0, 242.0),
+            None
+        );
 
         assert_eq!(
             tactical_hud_control_at(&mut cache, 72.1, 10.1),
@@ -12413,6 +12603,42 @@ mod tests {
             tactical_hud_control_at(&mut cache, 420.1, 10.1),
             Some(TacticalHudControl::FighterGroup(3))
         );
+    }
+
+    #[test]
+    fn withdrawal_requires_native_confirmation_before_dispatch() {
+        let mut state = TacticalState::default();
+        state.battle_options_open = true;
+
+        assert_eq!(
+            activate_tactical_battle_options(&mut state, TacticalBattleOptionsControl::Withdraw,),
+            TacticalAction::None
+        );
+        assert!(!state.battle_options_open);
+        assert!(state.withdraw_confirmation_open);
+
+        assert_eq!(
+            activate_tactical_withdraw_confirmation(
+                &mut state,
+                TacticalWithdrawConfirmationControl::Cancel,
+            ),
+            TacticalAction::None
+        );
+        assert!(!state.withdraw_confirmation_open);
+
+        state.battle_options_open = true;
+        assert_eq!(
+            activate_tactical_battle_options(&mut state, TacticalBattleOptionsControl::Withdraw,),
+            TacticalAction::None
+        );
+        assert_eq!(
+            activate_tactical_withdraw_confirmation(
+                &mut state,
+                TacticalWithdrawConfirmationControl::Confirm,
+            ),
+            TacticalAction::WithdrawFromBattle
+        );
+        assert!(!state.withdraw_confirmation_open);
     }
 
     #[test]

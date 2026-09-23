@@ -770,6 +770,11 @@ would tune around known simulation feedback defects.
   and tactical routes; its in-battle display controls are disabled as in the
   manual. Empty-space battles retain resource 5030 stars and omit the planet.
   The remaining six cells and all A0 comparisons stay open.
+  P58-B13 expands the crosswalk to 101/106 cells: 82 journeys and 19 snapshots.
+  The tactical withdrawal command now opens the source TACTICAL 1310 panel,
+  uses TEXTTACT 56772/56771, and routes controls 1113 through 1116 through
+  cancel and confirm before withdrawal. The remaining five cells and all A0
+  comparisons stay open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

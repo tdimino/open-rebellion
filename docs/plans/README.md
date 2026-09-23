@@ -25,7 +25,7 @@ recovered maneuver waypoints, Hold execution, source-rate turning, waypoint comp
 full fighter recovery states, typed attack target acquisition, and stable
 same-class target replacement when a target becomes invalid. The next
 space-battle checkpoint now passes its 120-case implementation gate, and the
-acceptance crosswalk maps 100 of 106 cells. The final acceptance train maps,
+acceptance crosswalk maps 101 of 106 cells. The final acceptance train maps,
 executes, and compares all 106 strict cells. Missing
 lossless original baselines remain explicit A0 blockers and cannot be accepted
 by browser evidence alone.

@@ -286,6 +286,12 @@ COMMON `20002` Game Options surface, disables tactical-display controls during
 combat, and proves empty-space starfield presentation without a planet. Six
 scenarios remain, and strict acceptance remains 0/106.
 
+P58-B13 maps 101 canonical cells: 82 browser journeys and 19 snapshots. It
+restores the executable-derived TACTICAL 1310 withdrawal confirmation,
+TEXTTACT 56772/56771, controls 1113 through 1116, cancel and confirm routing,
+and disabled repeat rejection. Five scenarios remain, and strict acceptance
+remains 0/106.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

@@ -995,6 +995,8 @@ pub mod resources {
         pub const MISSIONS_PANEL: u32 = 1308;
         /// Tactical maneuvers and tactics assignment panel.
         pub const MANEUVERS_PANEL: u32 = 1309;
+        /// Tactical withdrawal confirmation panel.
+        pub const WITHDRAW_CONFIRMATION_PANEL: u32 = 1310;
 
         /// Maneuver confirmation graphic: left hook.
         pub const MANEUVER_HUD_LEFT_HOOK: u32 = 2101;

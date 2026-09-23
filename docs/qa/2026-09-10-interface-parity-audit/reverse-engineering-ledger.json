@@ -464,7 +464,13 @@
           "executor_state": ["FUN_005d0b00", "FUN_005cf910", "FUN_005cf920"],
           "separate_weapon_loop": ["FUN_005b3a40", "FUN_005b3f10", "FUN_005b6530"]
         },
-        "latest_verified_tranche": "P58-B06 restores source-backed capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, the superlaser journey, both trench-run routes, exact strategic roster, capture, and Death Star-state application, and a clean 120-case implementation matrix.",
+        "p58_b13_withdrawal_confirmation": {
+          "constructor": "FUN_005f0c20",
+          "panel_and_controls": ["FUN_005f0f40", "TACTICAL:1310", "TACTICAL:1113", "TACTICAL:1114", "TACTICAL:1115", "TACTICAL:1116"],
+          "text_layout": ["FUN_005f1050", "TEXTTACT:56772", "TEXTTACT:56771"],
+          "command_handler": "FUN_005f1170"
+        },
+        "latest_verified_tranche": "P58-B13 restores the executable-derived TACTICAL 1310 withdrawal confirmation, exact TEXTTACT title and prompt placement, controls 1113 through 1116, cancel and confirm routing, and disabled repeat rejection. The deterministic crosswalk maps 101 of 106 cells.",
         "next_proof": "Recover native beam behavior and the original trench-run result producer, complete shared post-battle bombardment, landing, and navigation orchestration, compare native playback, and acquire the lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true

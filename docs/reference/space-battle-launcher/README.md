@@ -46,7 +46,7 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-death-star-presentation` | 65816 | 66072 | Separate manager sprite and hostile fighter mission control |
 | `production-battle-results-presentation` | 65817 | 66073 | Original bitmap result summary and force tabs |
 | `production-battle-options-presentation` | 65818 | 66074 | Original options panel and source control states |
-| `production-battle-options-withdrawal` | 65819 | 66075 | Withdrawal command and disabled post-command state |
+| `production-battle-options-withdrawal` | 65819 | 66075 | Native withdrawal confirmation, cancel/confirm routing, and disabled post-command state |
 | `production-death-star-laser-journey` | 65820 | 66076 | Original star surface and owner-gated superlaser journey |
 | `production-trench-run-success` | 65821 | 66077 | Result state 6, MDATA.201, and tactical return |
 | `production-trench-run-failure` | 65822 | 66078 | Result state 7, MDATA.202, and tactical return |
@@ -161,6 +161,11 @@ and closes every process. Raw runs live under ignored
   trench-run lifecycle and that Battle Results persists exact capital and
   fighter losses before destination routing. The deterministic A1 crosswalk is
   98/106; strict A0 acceptance remains 0/106.
+- P58-B12 restores shared Game Options routing and empty-space presentation.
+  P58-B13 restores the source TACTICAL 1310 withdrawal confirmation, exact
+  text/control identities, cancel and confirm routing, and disabled repeat
+  rejection. The deterministic A1 crosswalk is 101/106; strict A0 acceptance
+  remains 0/106.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options
@@ -191,6 +196,7 @@ required. All
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
 - [P58-B06 tactical completion evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md)
+- [P58-B13 tactical withdrawal-confirmation evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md)
 - [P58F13 tactical attack-target lifecycle evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 - [P58F12 tactical attack-targeting evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
 - [P58F11 tactical command-progression evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)
