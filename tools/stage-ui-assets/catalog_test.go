@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/binary"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"unicode/utf16"
 )
@@ -72,5 +75,40 @@ func TestBitmapResourceIDMapsKnownTacticalNamesToCatalogIDs(t *testing.T) {
 				t.Errorf("ID = %d, want %d", id, test.id)
 			}
 		})
+	}
+}
+
+// This opt-in check exercises the shipped DLL without committing proprietary bytes.
+func TestStageOwnedOptionsConfirmationResources(t *testing.T) {
+	source := os.Getenv("OPEN_REBELLION_TEST_SOURCE")
+	if source == "" {
+		t.Skip("set OPEN_REBELLION_TEST_SOURCE to a contributor-owned game installation")
+	}
+	var targets []dllTarget
+	for _, target := range uiDLLTargets {
+		if target.Filename == "REBDLOG.DLL" {
+			targets = append(targets, target)
+		}
+	}
+	if len(targets) != 1 {
+		t.Fatal("confirmation DLL is not in the staging catalog")
+	}
+	output := t.TempDir()
+	if _, err := stageTargets(source, output, targets, namedBitmapIDs, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		name          string
+		width, height uint32
+	}{
+		{"10623.bmp", 412, 176}, {"10624.bmp", 57, 28}, {"10625.bmp", 57, 28}, {"10626.bmp", 57, 28}, {"10627.bmp", 57, 28},
+	} {
+		data, err := os.ReadFile(filepath.Join(output, "rebdlog-dll", "BMP", item.name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) < 26 || string(data[:2]) != "BM" || binary.LittleEndian.Uint32(data[18:22]) != item.width || binary.LittleEndian.Uint32(data[22:26]) != item.height {
+			t.Fatalf("invalid original confirmation bitmap %s", item.name)
+		}
 	}
 }

@@ -39,7 +39,7 @@ and `run-eval.sh`.
 
 ## Where work left off
 
-PR #11 [corrects the cockpit command routing](../2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md): `0x131` and F7 identify Encyclopedia, `0x132` opens and closes GID, and the side-globe `0x133` plus F1 identify Game Options for both factions. Game Options and Encyclopedia deliberately fail closed until their original bitmap-driven windows replace the reconstructed panels.
+PR #11 [corrects the cockpit command routing](../2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md): `0x131` and F7 identify Encyclopedia, `0x132` opens and closes GID, and the side-globe `0x133` plus F1 identify Game Options for both factions. Encyclopedia deliberately fails closed. The [2026-09-24 Game Options checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-24-game-options.md) replaces the options placeholder with the shared bitmap surface; strict original-evidence acceptance remains open.
 
 The current continuation has verified the authentic bitmap main menu,
 save/load/delete, deterministic browser packaging, save continuation, exact

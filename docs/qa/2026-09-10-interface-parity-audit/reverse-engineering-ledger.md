@@ -136,7 +136,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 |---|---|---|---|
 | RE-FE-01 | Boot, introduction, and credits routing | static-partial | Map media selection and every completion, failure, skip, and return callback |
 | RE-MENU-01 | Shuttle controls and destinations | static-proven | Capture remaining original interaction and edge-probe states |
-| RE-OPT-01 | Unified options, save, load, and delete | untriaged | Recover its constructor, controls, resources, persistence, and confirmations |
+| RE-OPT-01 | Unified options, save, load, and delete | static-partial | Constructor, controls and confirmation resources mapped in [Game Options checkpoint](evidence/2026-09-24-game-options.md); exact slider/context/persistence and A0 evidence remain pending |
 | RE-STR-01 | Shell, apertures, and reference rail | static-proven; shell and first rail lifecycle runtime-corroborated | Replace provisional rail thumbnails, exercise the full multiwindow matrix, then compare against A0 captures |
 | RE-STR-02 | Cockpit controls, states, input, and command routing | static-partial; primary controls implemented | Capture the six primary controls in A0, implement original destinations, then recover speed and facility-indicator predicates |
 | RE-GID-01 | Filters, legends, marker rules, pan, zoom, and selection | static-partial; default GID and source frame runtime-corroborated | Recover menu interior and geometry, expanded legend, remaining filter predicates and overlays, and exact map input |

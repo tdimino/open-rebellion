@@ -266,7 +266,7 @@
         74,
         75
       ],
-      "current_implementation": "Separate custom save/load panel and audio controls replace the original unified window.",
+      "current_implementation": "Implementation checkpoint: shared COMMON 20002 options surface with original controls and REBDLOG confirmations; campaign/main-menu/tactical entry, six visible rows and six-slot save management shortcuts. Holocube, exact text/slider parity, context-specific return art, persistence and original-executable/Astra acceptance remain pending. See evidence/2026-09-24-game-options.md.",
       "finding_ids": [
         "UIP-F-005",
         "UIP-F-007"

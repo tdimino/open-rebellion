@@ -4104,6 +4104,8 @@ enum TacticalCommandPanel {
 
 /// Persistent state for the tactical combat view across frames.
 pub struct TacticalState {
+    /// Display-only options selected before entering battle.
+    pub display_options: crate::game_options::TacticalDisplayOptions,
     /// The current battle session (None when not in combat).
     pub session: Option<BattleSession>,
     /// Ship being dragged during placement (index in session.ships).
@@ -4153,6 +4155,7 @@ pub struct TacticalState {
 impl Default for TacticalState {
     fn default() -> Self {
         Self {
+            display_options: crate::game_options::TacticalDisplayOptions::default(),
             session: None,
             dragging_ship: None,
             drag_offset: (0.0, 0.0),
@@ -8446,8 +8449,11 @@ pub fn draw_tactical_view(
     set_tactical_aperture_clip(Some(canvas.aperture()));
     let aperture = canvas.aperture();
     let aperture_tuple = (aperture.x, aperture.y, aperture.width, aperture.height);
-    state.asset_renderer.draw_backdrop(aperture_tuple);
-    if state.render_original_planet {
+    state.asset_renderer.high_detail = state.display_options.high_detail;
+    if state.display_options.starfield {
+        state.asset_renderer.draw_backdrop(aperture_tuple);
+    }
+    if state.render_original_planet && state.display_options.planet {
         state.asset_renderer.draw_planet(aperture_tuple);
     }
 
@@ -8459,9 +8465,9 @@ pub fn draw_tactical_view(
     let (
         production_objects,
         production_fighters,
-        production_fields,
-        production_projectiles,
-        production_effects,
+        mut production_fields,
+        mut production_projectiles,
+        mut production_effects,
     ) = if state.render_original_participants {
         state
             .session
@@ -8583,6 +8589,11 @@ pub fn draw_tactical_view(
     } else {
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
     };
+    if !state.display_options.pyrotechnics {
+        production_fields.clear();
+        production_projectiles.clear();
+        production_effects.clear();
+    }
     let ship_report = state
         .asset_renderer
         .draw_participants(aperture_tuple, &production_objects);
@@ -8921,6 +8932,9 @@ pub fn draw_tactical_view(
     // meshes. Keep this bounded 2D fallback only when the source camera cannot
     // render a projectile.
     for (effect_index, effect) in session.weapon_effects.iter().enumerate() {
+        if !state.display_options.pyrotechnics {
+            break;
+        }
         let source = macroquad::math::Vec2::new(
             offset_x + effect.fallback_source[0] * scale,
             offset_y + effect.fallback_source[1] * scale,
