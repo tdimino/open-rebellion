@@ -73,9 +73,10 @@ to what it says, or to confirm that it is SFX, before wiring it into an audio pa
 
 ASR is evidence, not authority. A transcript alone never closes a parity cell.
 
-Baseline, 2026-09-24: 63 of TACTICAL.DLL's 66 `WAVE` resources (13000–13065)
-classify as SFX under both engines. The three candidate voice cues are 13034,
-13046, and 13052, all `needs_listen`. All 285 VOICEFXA/VOICEFXE resources are
+Baseline, 2026-09-24: 61 of TACTICAL.DLL's 66 `WAVE` resources (13000–13065)
+are `sfx_likely` under both engines. Five are `needs_listen`: 13034, 13046, and
+13052, plus 13019 and 13059, where Qwen3 hears a single plausible word ("Yeah.",
+"Okay.") and Parakeet hears nothing. All 285 VOICEFXA/VOICEFXE resources are
 speech: 270 agreed and 15 need a listen.
 
 ## Guardrails
