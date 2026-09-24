@@ -3,8 +3,8 @@ title: "Agent Tooling"
 description: "Project-specific routing for the Claude Code Minoan and Codex skill toolbelt"
 category: "agent-docs"
 created: 2026-09-08
-updated: 2026-09-13
-tags: [agents, skills, codex, fable, ghidra, qa, research, gemini]
+updated: 2026-09-24
+tags: [agents, skills, codex, fable, ghidra, qa, research, gemini, audio]
 ---
 
 # Agent Tooling for Open Rebellion
@@ -52,6 +52,31 @@ Open Rebellion's Ghidra workflow is project-native rather than a general skill:
 | [`nano-banana-pro`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/design-media/nano-banana-pro) | Generating or editing Gemini 3 Pro images, including reference-guided and batch workflows. |
 | [`gemini-claude-resonance`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/design-media/gemini-claude-resonance) | Iterating through shared-memory Claude–Gemini visual dialogue, analysis, and faithful transformation. |
 | [`image-forge`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/design-media/image-forge) / [`sprite-forge`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/design-media/sprite-forge) | Preparing owned replacement art or sprite assets; never repackage copyrighted source data. |
+| `parakeet` (local, `~/.claude/skills/parakeet`) | Identifying original WAVE resources by content (see below); two MLX engines, no NeMo. |
+
+## Voice Resource Identification
+
+Use this to map an original `WAVE` resource ID (TACTICAL, VOICEFXA/E, COMMON DLLs)
+to what it says, or to confirm that it is SFX, before wiring it into an audio path:
+
+1. Extract the DLL's `WAVE` resources to a directory outside the repository. Most
+   are 8-bit unsigned PCM at 11,025 Hz, and ffmpeg decodes them directly.
+2. Run `~/.claude/skills/parakeet/scripts/batch_transcribe.py <dir> --engine both
+   --out .artifacts/voice-id/<dll>.jsonl` without hotwords first.
+3. Read `status`. `agreed` is corroborated speech and `sfx_likely` is non-speech.
+   `needs_listen` means a person must listen before the evidence cites it. You
+   may re-run only those clips with `--context-file` and a small proper-noun
+   primer as a third opinion. Dumping every TEXTSTRA string made Qwen3 recite
+   the list. Never commit a derived vocabulary file.
+4. Evidence cites the resource ID, the WAVE `sha256`, the engine models and
+   revisions, and the verified line. Commit IDs and hashes, never the audio.
+
+ASR is evidence, not authority. A transcript alone never closes a parity cell.
+
+Baseline, 2026-09-24: 63 of TACTICAL.DLL's 66 `WAVE` resources (13000–13065)
+classify as SFX under both engines. The three candidate voice cues are 13034,
+13046, and 13052, all `needs_listen`. All 285 VOICEFXA/VOICEFXE resources are
+speech: 270 agreed and 15 need a listen.
 
 ## Guardrails
 
