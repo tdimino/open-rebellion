@@ -781,6 +781,10 @@ would tune around known simulation feedback defects.
   right-click Escort uses source order code 1 with the protected-target marker
   and target lifecycle. Battle Alert entry, tactical audio, and every A0
   comparison remain open.
+  P58-B15 completes deterministic A1 mapping at 106/106 cells: 87 journeys and
+  19 snapshots. It restores the source-built faction Battle Alert, Take
+  Command entry, MDATA 307 battle score, and TACTICAL WAVE 13054 event routing.
+  A0 evidence and strict acceptance remain 0/106; the strict gate was not run.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

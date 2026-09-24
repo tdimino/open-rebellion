@@ -686,6 +686,37 @@ pub mod resources {
         pub const BATTLE_RAIL_ALLIANCE: u32 = 10820;
         /// Imperial right-hand rail for the battle window.
         pub const BATTLE_RAIL_EMPIRE: u32 = 10821;
+        /// Alliance and Imperial Battle Alert frames. These are distinct from
+        /// the post-battle result frames above and use a blue keyed aperture.
+        pub const BATTLE_ALERT_WINDOW_ALLIANCE: u32 = 10710;
+        pub const BATTLE_ALERT_WINDOW_EMPIRE: u32 = 10711;
+        /// Faction-authored Battle Alert summary scenes.
+        pub const BATTLE_ALERT_SCENE_ALLIANCE: u32 = 10712;
+        pub const BATTLE_ALERT_SCENE_EMPIRE: u32 = 10713;
+        /// Disabled Battle Alert summary scenes.
+        pub const BATTLE_ALERT_SCENE_ALLIANCE_DISABLED: u32 = 10714;
+        pub const BATTLE_ALERT_SCENE_EMPIRE_DISABLED: u32 = 10715;
+        /// Simulate Battle controls: normal, pressed, and disabled.
+        pub const BATTLE_ALERT_SIMULATE_ALLIANCE_NORMAL: u32 = 10716;
+        pub const BATTLE_ALERT_SIMULATE_ALLIANCE_PRESSED: u32 = 10717;
+        pub const BATTLE_ALERT_SIMULATE_ALLIANCE_DISABLED: u32 = 10718;
+        pub const BATTLE_ALERT_SIMULATE_EMPIRE_NORMAL: u32 = 10722;
+        pub const BATTLE_ALERT_SIMULATE_EMPIRE_PRESSED: u32 = 10723;
+        pub const BATTLE_ALERT_SIMULATE_EMPIRE_DISABLED: u32 = 10724;
+        /// Take Command controls: normal, pressed, and disabled.
+        pub const BATTLE_ALERT_COMMAND_ALLIANCE_NORMAL: u32 = 10719;
+        pub const BATTLE_ALERT_COMMAND_ALLIANCE_PRESSED: u32 = 10720;
+        pub const BATTLE_ALERT_COMMAND_ALLIANCE_DISABLED: u32 = 10721;
+        pub const BATTLE_ALERT_COMMAND_EMPIRE_NORMAL: u32 = 10725;
+        pub const BATTLE_ALERT_COMMAND_EMPIRE_PRESSED: u32 = 10726;
+        pub const BATTLE_ALERT_COMMAND_EMPIRE_DISABLED: u32 = 10727;
+        /// Retreat controls: normal, pressed, and disabled.
+        pub const BATTLE_ALERT_RETREAT_ALLIANCE_NORMAL: u32 = 10971;
+        pub const BATTLE_ALERT_RETREAT_ALLIANCE_PRESSED: u32 = 10972;
+        pub const BATTLE_ALERT_RETREAT_ALLIANCE_DISABLED: u32 = 10973;
+        pub const BATTLE_ALERT_RETREAT_EMPIRE_NORMAL: u32 = 10974;
+        pub const BATTLE_ALERT_RETREAT_EMPIRE_PRESSED: u32 = 10975;
+        pub const BATTLE_ALERT_RETREAT_EMPIRE_DISABLED: u32 = 10976;
         /// Two-column force-detail mask used by the battle window.
         pub const BATTLE_FORCE_DETAIL_TWO_COLUMN: u32 = 10761;
         /// Three-column operational/damaged/destroyed force-detail mask.
@@ -719,6 +750,9 @@ pub mod resources {
         /// Alliance battle-window Imperial-forces tab, normal and pressed.
         pub const BATTLE_EMPIRE_FORCES_ALLIANCE_NORMAL: u32 = 10732;
         pub const BATTLE_EMPIRE_FORCES_ALLIANCE_PRESSED: u32 = 10733;
+        /// Alliance Battle Alert system-summary tab, normal and pressed.
+        pub const BATTLE_SYSTEM_ALLIANCE_NORMAL: u32 = 10734;
+        pub const BATTLE_SYSTEM_ALLIANCE_PRESSED: u32 = 10735;
         /// Alliance battle-window destination tab, normal and pressed.
         pub const BATTLE_DESTINATION_ALLIANCE_NORMAL: u32 = 10791;
         pub const BATTLE_DESTINATION_ALLIANCE_PRESSED: u32 = 10792;
@@ -732,6 +766,9 @@ pub mod resources {
         /// Imperial battle-window Imperial-forces tab, normal and pressed.
         pub const BATTLE_EMPIRE_FORCES_EMPIRE_NORMAL: u32 = 10742;
         pub const BATTLE_EMPIRE_FORCES_EMPIRE_PRESSED: u32 = 10743;
+        /// Imperial Battle Alert system-summary tab, normal and pressed.
+        pub const BATTLE_SYSTEM_EMPIRE_NORMAL: u32 = 10744;
+        pub const BATTLE_SYSTEM_EMPIRE_PRESSED: u32 = 10745;
         /// Imperial battle-window destination tab, normal and pressed.
         pub const BATTLE_DESTINATION_EMPIRE_NORMAL: u32 = 10520;
         pub const BATTLE_DESTINATION_EMPIRE_PRESSED: u32 = 10521;

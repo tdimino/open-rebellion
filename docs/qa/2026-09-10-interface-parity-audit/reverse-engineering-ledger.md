@@ -267,6 +267,13 @@ recovery trajectories, power allocation, native beam behavior, shared
 post-battle bombardment, landing, and navigation orchestration, native
 playback, and original visual acceptance remain open.
 
+[P58-B15 evidence](evidence/2026-09-24-tactical-battle-alert-audio.md) traces
+`FUN_0044f860` into the faction Battle Alert resources and recovers MDATA 307
+plus event `0x14` to TACTICAL WAVE 13054 through `FUN_005bae60`,
+`FUN_005ba980`, `FUN_005bad50`, and `FUN_005ba520`. The deterministic A1
+crosswalk now maps all 106 cells; A0 coverage and strict acceptance remain
+0/106.
+
 ## Immediate implementation order
 
 1. Trace SPT to BIN to frame and WAV selection for both factions on top of the
@@ -280,9 +287,10 @@ playback, and original visual acceptance remain open.
 5. Continue the full GID mapping without replacement art: recover the code-built
    menu, expanded legend, remaining filter predicates and overlays, and exact
    map input.
-6. Recover and implement the complete `TAC-01` through `TAC-07` space-battle
+6. Continue the `TAC-01` through `TAC-07` space-battle
    path using the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md),
-   including type-301/303 resources, tactical audio, results, and Death Star controls.
+   including remaining tactical audio variants, results, and native Death Star
+   behavior, then acquire A0 evidence for the complete mapped matrix.
 7. Use original-runtime capture only for the remaining dynamic proof boundary.
 
 No static discovery marks a surface complete. It closes only the corresponding

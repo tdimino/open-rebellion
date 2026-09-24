@@ -159,10 +159,10 @@ Death Star outcomes, and return destinations preserve exact strategic state.
 
 ### C5. Map deterministic A1 journeys to all 106 cells
 
-Status: partial at P58-B14. The 34 existing scenarios now map 104 cells: 85 to
-browser journeys and 19 to deterministic snapshots. Two cells have an explicit
-new-scenario queue. A mapped cell is runnable, not accepted; A0 and comparison
-gates remain separate.
+Status: deterministic A1 mapping complete at P58-B15. The 36 scenarios map all
+106 cells: 87 to browser journeys and 19 to deterministic snapshots. A mapped
+cell is runnable, not accepted; A0 coverage, comparison, and strict acceptance
+remain 0/106, and the strict gate has not been run.
 
 - Give every catalog scenario one or more exact `audit_cells` values.
 - Distinguish journeys from snapshots in the schema and report.

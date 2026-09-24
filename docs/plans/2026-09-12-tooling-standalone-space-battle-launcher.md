@@ -86,8 +86,8 @@ Exact global RNG sequencing, exact original arrival callbacks and recovery
 trajectories, power allocation, exact planet placement, the native Death Star
 beam contract, native trench-run playback, shared post-battle bombardment,
 landing, and navigation orchestration, original view acceptance, and all 106
-visual cells remain open. The deterministic A1 matrix now covers 104 of 106
-canonical tactical cells through 85 browser journeys and 19 snapshots. The
+visual cells remain open. The deterministic A1 matrix now maps all 106
+canonical tactical cells through 87 browser journeys and 19 snapshots. The
 complete 120-case implementation matrix passes both factions and both
 viewports with clean muted-browser isolation. This implementation coverage
 does not replace the strict 0 of 106 tactical-cell acceptance result.
@@ -194,9 +194,14 @@ P58-B14 restores compact GOKRES contents in the selected-capital 1302 panel,
 a complete TACTICAL 3368 destroyed presentation, and source order-code 1
 Escort through direct friendly right-click, protected-target marking, follow,
 opportunity fire, and invalid-target cleanup.
+P58-B15 restores the source-built faction Battle Alert, its tab and command
+resources, the paused Take Command transition, MDATA 307 battle music, and the
+first source-identified tactical event cue at WAVE 13054. This completes the
+deterministic A1 crosswalk without running or satisfying the strict A0 gate.
 Power allocation, exact planet placement, native Death Star beam behavior,
-shared post-battle bombardment, landing, and navigation orchestration, audio,
-native playback, and A0 view acceptance remain T3 and T4 work.
+shared post-battle bombardment, landing, and navigation orchestration,
+remaining tactical event and voice variants, mixing, native playback, and A0
+view acceptance remain T3 and T4 work.
 No `TAC-*` acceptance cell is closed.
 
 ### Consolidated completion boundary

@@ -932,6 +932,10 @@ async fn main() {
         if common_dll.exists() {
             engine.load_original_menu_sfx(&common_dll);
         }
+        let tactical_dll = original_game_dir().join("TACTICAL.DLL");
+        if tactical_dll.exists() {
+            engine.load_original_tactical_sfx(&tactical_dll);
+        }
         audio_vol.backend_available = engine.is_available();
         engine
     };
@@ -939,12 +943,18 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let browser_main_theme = browser_audio_files.remove("music/main_theme.wav");
     #[cfg(target_arch = "wasm32")]
+    let browser_battle_theme = browser_audio_files.remove("music/battle.wav");
+    #[cfg(target_arch = "wasm32")]
     let browser_menu_sfx: Vec<_> = audio::MENU_SFX_ASSETS
         .iter()
+        .chain(audio::TACTICAL_SFX_ASSETS.iter())
         .filter_map(|&(kind, path, _)| browser_audio_files.remove(path).map(|bytes| (kind, bytes)))
         .collect();
     #[cfg(target_arch = "wasm32")]
-    let mut browser_menu_audio = if browser_main_theme.is_some() || !browser_menu_sfx.is_empty() {
+    let mut browser_menu_audio = if browser_main_theme.is_some()
+        || browser_battle_theme.is_some()
+        || !browser_menu_sfx.is_empty()
+    {
         // Initialise WebAudio and begin decoding before the first interaction.
         // Its resume handlers are then ready for the first user gesture.
         let mut engine = audio::AudioEngine::new();
@@ -964,6 +974,8 @@ async fn main() {
     {
         audio_vol.backend_available = browser_menu_audio.is_some();
     }
+    let mut tactical_music_active = false;
+    let mut tactical_destroyed_seen = 0_usize;
 
     let mut cutscene_player = open_cutscene(
         Path::new(INTRO_CUTSCENE),
@@ -1045,6 +1057,16 @@ async fn main() {
 
     loop {
         let dt = get_frame_time();
+
+        #[cfg(target_arch = "wasm32")]
+        if !browser_menu_audio_requested
+            && (is_mouse_button_pressed(macroquad::input::MouseButton::Left)
+                || is_key_pressed(KeyCode::Enter)
+                || is_key_pressed(KeyCode::Space)
+                || is_key_pressed(KeyCode::Tab))
+        {
+            browser_menu_audio_requested = true;
+        }
 
         // Apply theme on first frame (egui context exists after first next_frame)
         if !theme_applied {
@@ -3562,6 +3584,24 @@ async fn main() {
                             session.selected_fighter_group = None;
                         }
                     }
+                    TacticalAction::RetreatBeforeBattle => {
+                        if let Some(ref mut session) = tactical_state.session {
+                            let player_side = session.player_is_attacker;
+                            for ship in &mut session.ships {
+                                if ship.alive
+                                    && ship.is_attacker == player_side
+                                    && ship.subsystem_capacity.hyperdrive > 0
+                                    && ship.subsystem_condition.hyperdrive > 0
+                                {
+                                    ship.retreating = true;
+                                    ship.selected = false;
+                                }
+                            }
+                            session.selected_ship = None;
+                            session.selected_fighter_group = None;
+                            session.paused = false;
+                        }
+                    }
                     TacticalAction::OpenGameOptions => {
                         save_slots = read_save_slots(&saves_dir);
                         game_options_state.set_origin(GameOptionsOrigin::TacticalBattle);
@@ -3950,7 +3990,92 @@ async fn main() {
             }
         }
 
-        // 6. Apply audio volume changes on both native and WebAudio backends.
+        // 6. Route the recovered tactical score and event cue. Battle Alert
+        // remains in the strategic sound context until Take Command.
+        let tactical_audio_context =
+            game_mode == GameMode::TacticalCombat && !tactical_state.battle_alert_open();
+        if tactical_audio_context && !tactical_music_active {
+            #[cfg(not(target_arch = "wasm32"))]
+            audio_engine.play_music_for_context(
+                rebellion_render::MusicContext::Combat,
+                &sounds_dir,
+                &audio_vol,
+            );
+            #[cfg(target_arch = "wasm32")]
+            if let (Some(engine), Some(bytes)) =
+                (browser_menu_audio.as_mut(), browser_battle_theme.as_deref())
+            {
+                engine.load_music_bytes(rebellion_render::MusicTrack::Battle, bytes);
+            }
+            macroquad::logging::info!(
+                "[audio] context=combat track=Battle mdata=307 loaded={} muted={}",
+                {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        original_game_dir().join("MDATA/MDATA.307").exists()
+                            || sounds_dir.join("music/battle.wav").exists()
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        browser_battle_theme.is_some()
+                    }
+                },
+                audio_vol.muted || audio_vol.music_muted
+            );
+            tactical_music_active = true;
+        } else if !tactical_audio_context && tactical_music_active {
+            #[cfg(not(target_arch = "wasm32"))]
+            if matches!(game_mode, GameMode::MainMenu | GameMode::Galaxy) {
+                audio_engine.play_music_for_context(
+                    if game_mode == GameMode::MainMenu {
+                        rebellion_render::MusicContext::MainMenu
+                    } else {
+                        rebellion_render::MusicContext::GalaxyMap
+                    },
+                    &sounds_dir,
+                    &audio_vol,
+                );
+            }
+            #[cfg(target_arch = "wasm32")]
+            if let (Some(engine), Some(bytes)) =
+                (browser_menu_audio.as_mut(), browser_main_theme.as_deref())
+            {
+                engine.load_music_bytes(rebellion_render::MusicTrack::MainTheme, bytes);
+            }
+            tactical_music_active = false;
+            tactical_destroyed_seen = 0;
+        }
+
+        if tactical_audio_context {
+            let destroyed = tactical_state.session.as_ref().map_or(0, |session| {
+                session.ships.iter().filter(|ship| !ship.alive).count()
+            });
+            if destroyed < tactical_destroyed_seen {
+                tactical_destroyed_seen = destroyed;
+            }
+            if destroyed > tactical_destroyed_seen {
+                #[cfg(not(target_arch = "wasm32"))]
+                audio_engine.play_sfx(rebellion_render::SfxKind::TacticalShipDestroyed, &audio_vol);
+                #[cfg(target_arch = "wasm32")]
+                if let Some(engine) = browser_menu_audio.as_mut() {
+                    engine.play_sfx(rebellion_render::SfxKind::TacticalShipDestroyed, &audio_vol);
+                }
+                macroquad::logging::info!(
+                    "[audio] context=combat event=ship_destroyed wave=13054 routed=true muted={}",
+                    audio_vol.muted
+                );
+                tactical_destroyed_seen = destroyed;
+            }
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        if browser_menu_audio_requested {
+            if let Some(engine) = browser_menu_audio.as_mut() {
+                engine.try_play_loaded_music(&audio_vol);
+            }
+        }
+
+        // Apply audio volume changes on both native and WebAudio backends.
         if audio_vol.dirty {
             #[cfg(not(target_arch = "wasm32"))]
             audio_engine.apply_volume(&audio_vol);

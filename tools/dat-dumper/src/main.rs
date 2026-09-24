@@ -36,6 +36,11 @@ struct Cli {
     /// named WAV files beneath --output, which is required for this mode.
     #[arg(long)]
     extract_menu_sfx: bool,
+
+    /// Extract recovered tactical event sounds from TACTICAL.DLL. Outputs
+    /// named WAV files beneath --output, which is required for this mode.
+    #[arg(long)]
+    extract_tactical_sfx: bool,
 }
 
 #[expect(
@@ -101,6 +106,37 @@ fn main() -> anyhow::Result<()> {
             std::fs::write(&out_path, bytes)?;
             eprintln!(
                 "OK   COMMON.DLL WAVE {} -> {} ({} bytes)",
+                resource_id,
+                out_path.display(),
+                bytes.len()
+            );
+        }
+        return Ok(());
+    }
+
+    // ── TACTICAL.DLL event SFX extraction (separate path) ───────────────────
+    if cli.extract_tactical_sfx {
+        let dll_path = cli.gdata.join("TACTICAL.DLL");
+        if !dll_path.exists() {
+            anyhow::bail!("TACTICAL.DLL not found in {}", cli.gdata.display());
+        }
+        let out_dir = cli
+            .output
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--output is required with --extract-tactical-sfx"))?;
+        std::fs::create_dir_all(out_dir)?;
+
+        let mapping = [(13_054, "tactical_ship_destroyed.wav")];
+        let resource_ids: Vec<u32> = mapping.iter().map(|(id, _)| *id).collect();
+        let waves = types::wave_resources::load_waves(&dll_path, &resource_ids)?;
+        for (resource_id, filename) in mapping {
+            let bytes = waves
+                .get(&resource_id)
+                .ok_or_else(|| anyhow::anyhow!("missing extracted resource {resource_id}"))?;
+            let out_path = out_dir.join(filename);
+            std::fs::write(&out_path, bytes)?;
+            eprintln!(
+                "OK   TACTICAL.DLL WAVE {} -> {} ({} bytes)",
                 resource_id,
                 out_path.display(),
                 bytes.len()

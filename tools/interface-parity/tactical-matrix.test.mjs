@@ -86,16 +86,16 @@ test("unknown and duplicate catalog mappings fail closed", () => {
   assert.throws(() => catalogCoverage(duplicate, cells), /mapped by both/);
 });
 
-test("development matrix reports partial mapping separately from original evidence", () => {
+test("development matrix reports complete mapping separately from original evidence", () => {
   const result = buildTacticalMatrix({ surfaceLedger: ledger, catalog });
   assert.deepEqual(result.summary, {
     denominator: 106,
-    matrix_coverage: 104,
-    journey_cells: 85,
+    matrix_coverage: 106,
+    journey_cells: 87,
     snapshot_cells: 19,
     a0_coverage: 0,
     parity_acceptance: 0,
-    catalog_cells_missing: 2,
+    catalog_cells_missing: 0,
     a0_cells_missing: 106,
     status: "incomplete",
   });
@@ -105,7 +105,7 @@ test("strict coverage requires all 106 catalog and A0 records", () => {
   const cells = collectTacticalCells(ledger);
   assert.throws(
     () => buildTacticalMatrix({ surfaceLedger: ledger, catalog, strict: true }),
-    /tactical catalog is missing 2 cells/,
+    /strict tactical validation requires an A0 manifest/,
   );
   const result = buildTacticalMatrix({
     surfaceLedger: ledger,
@@ -131,7 +131,7 @@ test("release acceptance always implies strict catalog and A0 coverage", () => {
       catalog,
       requireAccepted: true,
     }),
-    /tactical catalog is missing 2 cells/,
+    /strict tactical validation requires an A0 manifest/,
   );
 });
 

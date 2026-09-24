@@ -3070,6 +3070,142 @@ async function probeTacticalBattleResultsPresentation(
   return probes;
 }
 
+async function probeTacticalBattleAlertEntry(
+  page, viewport, folder, stable, consoleLines, ready, faction,
+) {
+  assert.equal(ready.battle_alert_open, true, `${faction}: Battle Alert was bypassed`);
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const alliance = faction === "alliance";
+  const resources = alliance ? {
+    frame: 10710,
+    scene: 10712,
+    rail: 10820,
+    tabs: [10729, 10731, 10733, 10735],
+    retreat: [10971, 10972],
+    simulate: [10716, 10717],
+    command: [10719, 10720],
+  } : {
+    frame: 10711,
+    scene: 10713,
+    rail: 10821,
+    tabs: [10739, 10741, 10743, 10745],
+    retreat: [10974, 10975],
+    simulate: [10722, 10723],
+    command: [10725, 10726],
+  };
+  const probes = [{
+    type: "battle-alert-frame",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.frame, 65, 54, [
+      { x: 12, y: 13, width: 400, height: 310 },
+      { x: 412, y: 0, width: 58, height: 331 },
+    ]),
+  }, {
+    type: "battle-alert-scene",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.scene, 77, 67, [
+      { x: 0, y: 0, width: 400, height: 48 },
+      { x: 20, y: 145, width: 360, height: 100 },
+      { x: 0, y: 280, width: 400, height: 30 },
+    ]),
+  }, {
+    type: "battle-alert-rail",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.rail, 477, 54,
+      (alliance ? [21, 81, 143, 205] : [17, 80, 143, 206]).map((y) => ({
+        x: alliance ? 6 : 14,
+        y,
+        width: alliance ? 41 : 44,
+        height: 41,
+      })).concat([{ x: 0, y: 296, width: 2, height: 27 }])),
+  }, {
+    type: "battle-alert-summary-selected",
+    ...verifyStrategyBitmap(
+      viewport,
+      stable.bytes,
+      resources.tabs[0],
+      alliance ? 483 : 491,
+      alliance ? 75 : 71,
+    ),
+  }, {
+    type: "battle-alert-retreat-rest",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.retreat[0], 77, 350),
+  }, {
+    type: "battle-alert-simulate-rest",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.simulate[0], 211, 350),
+  }, {
+    type: "battle-alert-command-rest",
+    ...verifyStrategyBitmap(viewport, stable.bytes, resources.command[0], 345, 350),
+  }];
+
+  const tabX = alliance ? 503.5 : 513;
+  const tabY = alliance ? [95.5, 155.5, 217.5, 279.5] : [91.5, 154.5, 217.5, 280.5];
+  for (let index = 1; index < 4; index++) {
+    const tab = point(tabX, tabY[index]);
+    await page.mouse.click(tab.x, tab.y);
+    const capture = await stableInteractionFrame(page, folder, `battle-alert-tab-${index}`);
+    probes.push({
+      type: "battle-alert-tab",
+      tab: ["alliance-forces", "imperial-forces", "system-summary"][index - 1],
+      ...verifyStrategyBitmap(
+        viewport,
+        capture,
+        resources.tabs[index],
+        alliance ? 483 : 491,
+        alliance ? [75, 135, 197, 259][index] : [71, 134, 197, 260][index],
+      ),
+    });
+  }
+
+  const command = point(412, 363.5);
+  await page.mouse.move(command.x, command.y);
+  await page.mouse.down({ button: "left" });
+  const held = await dynamicInteractionFrame(page, folder, "battle-alert-command-held");
+  probes.push({
+    type: "battle-alert-command-held",
+    ...verifyStrategyBitmap(viewport, held, resources.command[1], 345, 350),
+  });
+  await page.mouse.up({ button: "left" });
+  await page.waitForTimeout(100);
+  const tactical = await stableInteractionFrame(page, folder, "battle-alert-take-command");
+  probes.push({
+    type: "battle-alert-take-command",
+    ...verifyTacticalShell(viewport, tactical),
+    screenshot_sha256: sha256(tactical),
+  });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[battle_alert] command=take_command")
+      && text.includes("status=paused_tactical")),
+  `${faction}: Take Command did not enter paused tactical combat`);
+  return probes;
+}
+
+function probeTacticalAudioRouting(folder, stable, consoleLines, ready) {
+  assert.equal(ready.tactical_music_mdata_id, 307);
+  assert.equal(ready.tactical_cue_wave_id, 13054);
+  assert.equal(ready.battle_alert_open, false);
+  const music = consoleLines.find(({ text }) =>
+    text.includes("[audio] context=combat track=Battle mdata=307"));
+  const cue = consoleLines.find(({ text }) =>
+    text.includes("[audio] context=combat event=ship_destroyed wave=13054"));
+  assert.ok(music, "tactical music context was not routed");
+  assert.match(music.text, /loaded=true/);
+  assert.match(music.text, /muted=true/);
+  assert.ok(cue, "source-mapped tactical event cue was not routed");
+  assert.match(cue.text, /routed=true/);
+  assert.match(cue.text, /muted=true/);
+  fs.writeFileSync(path.join(folder, "tactical-audio-muted.png"), stable.bytes);
+  return [{
+    type: "tactical-audio-routing",
+    music_mdata_id: 307,
+    tactical_wave_id: 13054,
+    music_log: music.text,
+    cue_log: cue.text,
+    browser_muted: true,
+    screenshot_sha256: sha256(stable.bytes),
+  }];
+}
+
 async function probeTacticalBattleOptionsPresentation(
   page, viewport, folder, stable, consoleLines, faction, withdrawalJourney,
 ) {
@@ -3807,6 +3943,12 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         ? await probeTacticalNavigationCameraPresentation(
           page, viewport, folder, stable, consoleLines, ready,
         )
+        : scenario.battle_alert_presentation
+        ? await probeTacticalBattleAlertEntry(
+          page, viewport, folder, stable, consoleLines, ready, faction,
+        )
+        : scenario.tactical_audio_presentation
+        ? probeTacticalAudioRouting(folder, stable, consoleLines, ready)
         : scenario.detail_escort_presentation
         ? await probeTacticalDetailEscortPresentation(
           page, viewport, folder, stable, consoleLines, ready,
@@ -3877,7 +4019,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 31);
+      assert.equal(ready.schema_version, 32);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -3900,6 +4042,10 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         Boolean(scenario.empty_space_presentation));
       assert.equal(ready.detail_escort_presentation,
         Boolean(scenario.detail_escort_presentation));
+      assert.equal(ready.battle_alert_presentation,
+        Boolean(scenario.battle_alert_presentation));
+      assert.equal(ready.tactical_audio_presentation,
+        Boolean(scenario.tactical_audio_presentation));
       assert.equal(ready.subsystem_field_command_presentation,
         Boolean(scenario.subsystem_field_command_presentation));
       assert.equal(ready.live_subsystem_damage_presentation,
@@ -4423,7 +4569,8 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
       } else {
         assert.equal(familyLogs.length, 0, "negative control loaded the tactical LOD family");
         assert.equal(lodLogs.length, 0, "negative control submitted a tactical LOD mesh");
-        if (scenario.production_participants && !scenario.battle_results_presentation) {
+        if (scenario.production_participants) {
+          if (!scenario.battle_results_presentation && !scenario.tactical_audio_presentation) {
           assert.equal(participantFamilyLogs.length, 2,
             "production participants did not load exactly two source families");
           assert.deepEqual(participantFamilyLogs.map(({ text }) => {
@@ -4497,6 +4644,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
             source_thresholds: [5, 10],
             source_positions: true,
           });
+          }
         } else {
           assert.equal(participantFamilyLogs.length, 0,
             "negative control loaded a production participant family");
@@ -4662,19 +4810,21 @@ async function main() {
         "production-navigation-camera-presentation",
         "production-empty-space-presentation",
         "production-detail-escort-presentation",
+        "production-battle-alert-entry",
+        "production-tactical-audio-routing",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, ...Array(27).fill(false)]);
+      [true, false, true, true, true, true, true, ...Array(29).fill(false)]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        undefined]);
+        undefined, undefined, undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      Array.from({ length: 34 }, (_, index) => index === 5));
+      Array.from({ length: 36 }, (_, index) => index === 5));
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      Array.from({ length: 34 }, (_, index) => index === 6));
+      Array.from({ length: 36 }, (_, index) => index === 6));
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

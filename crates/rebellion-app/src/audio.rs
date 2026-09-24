@@ -137,6 +137,7 @@ fn sfx_file(kind: SfxKind) -> &'static str {
         SfxKind::FleetDeparture => "fleet_departure.wav",
         SfxKind::FleetArrival => "fleet_arrival.wav",
         SfxKind::CombatStart => "combat_start.wav",
+        SfxKind::TacticalShipDestroyed => "tactical_ship_destroyed.wav",
         SfxKind::UiClick => "ui_click.wav",
         SfxKind::UiClose => "ui_close.wav",
         SfxKind::MenuGalaxySize => "menu_galaxy_size.wav",
@@ -153,6 +154,14 @@ pub const MENU_SFX_ASSETS: &[(SfxKind, &str, u32)] = &[
     (SfxKind::MenuQuit, "sfx/menu_quit.wav", 8002),
     (SfxKind::MenuSelect, "sfx/menu_select.wav", 8004),
 ];
+
+/// Browser-pack filename and source identity for the first recovered tactical
+/// event cue. REBEXE event 0x14 selects TACTICAL.DLL WAVE 13054.
+pub const TACTICAL_SFX_ASSETS: &[(SfxKind, &str, u32)] = &[(
+    SfxKind::TacticalShipDestroyed,
+    "sfx/tactical_ship_destroyed.wav",
+    13_054,
+)];
 
 fn music_file(track: MusicTrack) -> &'static str {
     match track {
@@ -265,6 +274,7 @@ impl AudioEngine {
             SfxKind::FleetDeparture,
             SfxKind::FleetArrival,
             SfxKind::CombatStart,
+            SfxKind::TacticalShipDestroyed,
             SfxKind::UiClick,
             SfxKind::UiClose,
             SfxKind::MenuGalaxySize,
@@ -353,6 +363,33 @@ impl AudioEngine {
             Err(error) => eprintln!(
                 "[audio] original cockpit SFX unavailable path={} error={error}",
                 common_dll.display()
+            ),
+        }
+    }
+
+    /// Load recovered tactical event cues from an owned TACTICAL.DLL.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_original_tactical_sfx(&mut self, tactical_dll: &Path) {
+        let resource_ids: Vec<u32> = TACTICAL_SFX_ASSETS
+            .iter()
+            .map(|(_, _, resource_id)| *resource_id)
+            .collect();
+        match rebellion_data::load_wave_resources(tactical_dll, &resource_ids) {
+            Ok(waves) => {
+                for &(kind, _, resource_id) in TACTICAL_SFX_ASSETS {
+                    if let Some(bytes) = waves.get(&resource_id) {
+                        self.load_sfx_bytes(kind, bytes);
+                    }
+                }
+                eprintln!(
+                    "[audio] loaded {} original tactical SFX from {}",
+                    waves.len(),
+                    tactical_dll.display()
+                );
+            }
+            Err(error) => eprintln!(
+                "[audio] original tactical SFX unavailable path={} error={error}",
+                tactical_dll.display()
             ),
         }
     }

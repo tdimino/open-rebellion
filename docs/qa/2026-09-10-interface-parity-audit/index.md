@@ -119,6 +119,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58-B12 tactical Game Options/empty-space evidence](evidence/2026-09-23-tactical-game-options-empty-space.md) | Original COMMON Game Options routing, disabled in-battle display controls, empty-space starfield presentation, 100 mapped cells, six explicit gaps, and unchanged 0/106 strict acceptance. |
 | [P58-B13 tactical withdrawal-confirmation evidence](evidence/2026-09-23-tactical-withdraw-confirmation.md) | Executable-derived panel/text/control contract, cancel and confirm routing, 101 mapped cells, five explicit gaps, and unchanged 0/106 strict acceptance. |
 | [P58-B14 tactical detail and Escort evidence](evidence/2026-09-23-tactical-detail-escort.md) | Complete destroyed presentation, compact selected-capital contents, direct source order-code 1 Escort, 104 mapped cells, two explicit gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B15 tactical Battle Alert and audio evidence](evidence/2026-09-24-tactical-battle-alert-audio.md) | Source-built faction alerts, Take Command entry, MDATA 307, WAVE 13054, complete 106-cell deterministic A1 mapping, and unchanged 0/106 strict acceptance. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -134,6 +135,8 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | Required baseline cells pending or open | 564 |
 | Required families with retrieval packages | 43 of 43 |
 | Space-battle baseline cells | 106 across TAC-01 through TAC-07 |
+| Deterministic tactical A1 mappings | 106 of 106; 87 journeys and 19 snapshots |
+| Lossless tactical A0 captures | 0 of 106 |
 | Reference images retained | 370 |
 | Required surface families not at complete parity | 43 |
 | Scoped shuttle implementation | **Pass** |

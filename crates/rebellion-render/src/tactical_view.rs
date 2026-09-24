@@ -67,6 +67,8 @@ const BATTLE_RESULTS_WINDOW_Y: f32 = 74.0;
 const BATTLE_RESULTS_SCENE_X: f32 = 12.0;
 const BATTLE_RESULTS_SCENE_Y: f32 = 13.0;
 const BATTLE_RESULTS_RAIL_X: f32 = 412.0;
+const BATTLE_ALERT_WINDOW_X: f32 = 65.0;
+const BATTLE_ALERT_WINDOW_Y: f32 = 54.0;
 
 /// Deployment zone width (fraction of arena width per side).
 const DEPLOY_ZONE_FRACTION: f32 = 0.3;
@@ -468,6 +470,41 @@ pub enum BattleResultCategory {
     Fighters,
     Troops,
     Personnel,
+}
+
+/// Original right-rail page inside the pre-battle Battle Alert window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum BattleAlertTab {
+    #[default]
+    Summary,
+    AllianceForces,
+    ImperialForces,
+    System,
+}
+
+impl BattleAlertTab {
+    const ALL: [Self; 4] = [
+        Self::Summary,
+        Self::AllianceForces,
+        Self::ImperialForces,
+        Self::System,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Summary => "summary",
+            Self::AllianceForces => "alliance-forces",
+            Self::ImperialForces => "imperial-forces",
+            Self::System => "system-summary",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BattleAlertControl {
+    Retreat,
+    Simulate,
+    TakeCommand,
 }
 
 /// One command from the original unified tactical order field at source offset `+0x68`.
@@ -4268,6 +4305,11 @@ pub struct TacticalState {
     pub battle_result_tab: BattleResultTab,
     /// Active force family in the Alliance or Imperial result tab.
     pub battle_result_category: BattleResultCategory,
+    /// The original strategic Battle Alert owns entry until the player takes
+    /// command, simulates, or attempts to retreat.
+    battle_alert_open: bool,
+    battle_alert_tab: BattleAlertTab,
+    battle_alert_pressed: Option<BattleAlertControl>,
     /// The strategic world already consumed the auto-resolve result. Closing
     /// the result window must not apply the same losses a second time.
     strategic_results_applied: bool,
@@ -4321,6 +4363,9 @@ impl Default for TacticalState {
             highlight_empire: true,
             battle_result_tab: BattleResultTab::Summary,
             battle_result_category: BattleResultCategory::CapitalShips,
+            battle_alert_open: false,
+            battle_alert_tab: BattleAlertTab::Summary,
+            battle_alert_pressed: None,
             strategic_results_applied: false,
             battle_options_open: false,
             battle_options_pressed: None,
@@ -4395,6 +4440,9 @@ impl TacticalState {
         self.highlight_empire = true;
         self.battle_result_tab = BattleResultTab::Summary;
         self.battle_result_category = BattleResultCategory::CapitalShips;
+        self.battle_alert_open = true;
+        self.battle_alert_tab = BattleAlertTab::Summary;
+        self.battle_alert_pressed = None;
         self.strategic_results_applied = false;
         self.battle_options_open = false;
         self.battle_options_pressed = None;
@@ -5168,6 +5216,25 @@ impl TacticalState {
         self.command_panel = TacticalCommandPanel::Display;
     }
 
+    /// Start the audio journey after one source-backed destruction event so
+    /// the application routes TACTICAL.DLL WAVE 13054 while remaining muted.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_tactical_audio_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let player_is_attacker = session.player_is_attacker;
+        if let Some(ship) = session
+            .ships
+            .iter_mut()
+            .find(|ship| ship.is_attacker != player_is_attacker)
+        {
+            ship.alive = false;
+            ship.hull_current = 0;
+            ship.shield = 0;
+        }
+    }
+
     /// Freeze all three projectile shapes plus both shared field families on
     /// live production participants for deterministic browser inspection.
     #[cfg(feature = "interface-test-fixtures")]
@@ -5583,6 +5650,20 @@ impl TacticalState {
     pub fn is_active(&self) -> bool {
         self.session.is_some()
     }
+
+    /// Whether the pre-battle source surface still owns tactical entry.
+    #[must_use]
+    pub const fn battle_alert_open(&self) -> bool {
+        self.battle_alert_open
+    }
+
+    /// Existing fixture scenarios predate Battle Alert and intentionally
+    /// enter the same production session after its Take Command transition.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn dismiss_battle_alert_for_fixture(&mut self) {
+        self.battle_alert_open = false;
+        self.battle_alert_pressed = None;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5612,6 +5693,8 @@ pub enum TacticalAction {
     RetreatSelected,
     /// Withdraw every eligible player hull after the Battle Options command.
     WithdrawFromBattle,
+    /// Attempt an immediate retreat from the pre-battle Battle Alert.
+    RetreatBeforeBattle,
     /// Route to the original unified Game Options surface.
     OpenGameOptions,
 }
@@ -8629,6 +8712,115 @@ struct BattleResultSkin {
     tab_rects: [NativeRect; 4],
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BattleAlertSkin {
+    frame: u32,
+    scene: u32,
+    rail: u32,
+    tabs: [[u32; 2]; 4],
+    tab_rects: [NativeRect; 4],
+    buttons: [[u32; 3]; 3],
+}
+
+fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
+    use resources::strategy as art;
+    if player_is_alliance {
+        BattleAlertSkin {
+            frame: art::BATTLE_ALERT_WINDOW_ALLIANCE,
+            scene: art::BATTLE_ALERT_SCENE_ALLIANCE,
+            rail: art::BATTLE_RAIL_ALLIANCE,
+            tabs: [
+                [
+                    art::BATTLE_SUMMARY_ALLIANCE_NORMAL,
+                    art::BATTLE_SUMMARY_ALLIANCE_PRESSED,
+                ],
+                [
+                    art::BATTLE_ALLIANCE_FORCES_ALLIANCE_NORMAL,
+                    art::BATTLE_ALLIANCE_FORCES_ALLIANCE_PRESSED,
+                ],
+                [
+                    art::BATTLE_EMPIRE_FORCES_ALLIANCE_NORMAL,
+                    art::BATTLE_EMPIRE_FORCES_ALLIANCE_PRESSED,
+                ],
+                [
+                    art::BATTLE_SYSTEM_ALLIANCE_NORMAL,
+                    art::BATTLE_SYSTEM_ALLIANCE_PRESSED,
+                ],
+            ],
+            tab_rects: [
+                NativeRect::new(418.0, 21.0, 41.0, 41.0),
+                NativeRect::new(418.0, 81.0, 41.0, 41.0),
+                NativeRect::new(418.0, 143.0, 41.0, 41.0),
+                NativeRect::new(418.0, 205.0, 41.0, 41.0),
+            ],
+            buttons: [
+                [
+                    art::BATTLE_ALERT_RETREAT_ALLIANCE_NORMAL,
+                    art::BATTLE_ALERT_RETREAT_ALLIANCE_PRESSED,
+                    art::BATTLE_ALERT_RETREAT_ALLIANCE_DISABLED,
+                ],
+                [
+                    art::BATTLE_ALERT_SIMULATE_ALLIANCE_NORMAL,
+                    art::BATTLE_ALERT_SIMULATE_ALLIANCE_PRESSED,
+                    art::BATTLE_ALERT_SIMULATE_ALLIANCE_DISABLED,
+                ],
+                [
+                    art::BATTLE_ALERT_COMMAND_ALLIANCE_NORMAL,
+                    art::BATTLE_ALERT_COMMAND_ALLIANCE_PRESSED,
+                    art::BATTLE_ALERT_COMMAND_ALLIANCE_DISABLED,
+                ],
+            ],
+        }
+    } else {
+        BattleAlertSkin {
+            frame: art::BATTLE_ALERT_WINDOW_EMPIRE,
+            scene: art::BATTLE_ALERT_SCENE_EMPIRE,
+            rail: art::BATTLE_RAIL_EMPIRE,
+            tabs: [
+                [
+                    art::BATTLE_SUMMARY_EMPIRE_NORMAL,
+                    art::BATTLE_SUMMARY_EMPIRE_PRESSED,
+                ],
+                [
+                    art::BATTLE_ALLIANCE_FORCES_EMPIRE_NORMAL,
+                    art::BATTLE_ALLIANCE_FORCES_EMPIRE_PRESSED,
+                ],
+                [
+                    art::BATTLE_EMPIRE_FORCES_EMPIRE_NORMAL,
+                    art::BATTLE_EMPIRE_FORCES_EMPIRE_PRESSED,
+                ],
+                [
+                    art::BATTLE_SYSTEM_EMPIRE_NORMAL,
+                    art::BATTLE_SYSTEM_EMPIRE_PRESSED,
+                ],
+            ],
+            tab_rects: [
+                NativeRect::new(426.0, 17.0, 44.0, 41.0),
+                NativeRect::new(426.0, 80.0, 44.0, 41.0),
+                NativeRect::new(426.0, 143.0, 44.0, 41.0),
+                NativeRect::new(426.0, 206.0, 44.0, 41.0),
+            ],
+            buttons: [
+                [
+                    art::BATTLE_ALERT_RETREAT_EMPIRE_NORMAL,
+                    art::BATTLE_ALERT_RETREAT_EMPIRE_PRESSED,
+                    art::BATTLE_ALERT_RETREAT_EMPIRE_DISABLED,
+                ],
+                [
+                    art::BATTLE_ALERT_SIMULATE_EMPIRE_NORMAL,
+                    art::BATTLE_ALERT_SIMULATE_EMPIRE_PRESSED,
+                    art::BATTLE_ALERT_SIMULATE_EMPIRE_DISABLED,
+                ],
+                [
+                    art::BATTLE_ALERT_COMMAND_EMPIRE_NORMAL,
+                    art::BATTLE_ALERT_COMMAND_EMPIRE_PRESSED,
+                    art::BATTLE_ALERT_COMMAND_EMPIRE_DISABLED,
+                ],
+            ],
+        }
+    }
+}
+
 fn battle_result_skin(player_is_alliance: bool) -> BattleResultSkin {
     use resources::strategy as art;
     if player_is_alliance {
@@ -9221,6 +9413,248 @@ fn draw_battle_result_destinations(
     TacticalAction::None
 }
 
+fn battle_alert_retreat_enabled(session: &BattleSession) -> bool {
+    session.ships.iter().any(|ship| {
+        ship.alive
+            && ship.is_attacker == session.player_is_attacker
+            && ship.subsystem_capacity.hyperdrive > 0
+            && ship.subsystem_condition.hyperdrive > 0
+    })
+}
+
+fn draw_battle_alert_text(state: &TacticalState, canvas: TacticalCanvas, text_color: Color) {
+    let session = state.session.as_ref().expect("active Battle Alert session");
+    draw_result_text_centered(
+        canvas,
+        &format!("Battle at {}", session.system_name),
+        BATTLE_ALERT_WINDOW_X + 212.0,
+        BATTLE_ALERT_WINDOW_Y + 40.0,
+        18.0,
+        text_color,
+    );
+    let player_alliance = player_is_alliance(session);
+    let lines = match state.battle_alert_tab {
+        BattleAlertTab::Summary => vec![
+            format!(
+                "The {} fleet has entered the {} system.",
+                if player_alliance {
+                    "Imperial"
+                } else {
+                    "Alliance"
+                },
+                session.system_name
+            ),
+            format!(
+                "{} forces have been detected on an intercept course.",
+                if player_alliance {
+                    "Alliance"
+                } else {
+                    "Imperial"
+                }
+            ),
+        ],
+        BattleAlertTab::AllianceForces => vec![
+            "Alliance forces".to_owned(),
+            format!(
+                "Capital ships: {}   Fighter groups: {}",
+                session
+                    .ships
+                    .iter()
+                    .filter(|ship| ship.identity.is_alliance && ship.alive)
+                    .count(),
+                session
+                    .fighters
+                    .iter()
+                    .filter(|fighter| fighter.identity.is_alliance && fighter.alive)
+                    .count()
+            ),
+        ],
+        BattleAlertTab::ImperialForces => vec![
+            "Imperial forces".to_owned(),
+            format!(
+                "Capital ships: {}   Fighter groups: {}",
+                session
+                    .ships
+                    .iter()
+                    .filter(|ship| !ship.identity.is_alliance && ship.alive)
+                    .count(),
+                session
+                    .fighters
+                    .iter()
+                    .filter(|fighter| !fighter.identity.is_alliance && fighter.alive)
+                    .count()
+            ),
+        ],
+        BattleAlertTab::System => vec![
+            format!("System summary: {}", session.system_name),
+            "Opposing fleets are present. A space battle is imminent.".to_owned(),
+        ],
+    };
+    draw_result_wrapped_lines(
+        canvas,
+        &lines,
+        BATTLE_ALERT_WINDOW_X + 38.0,
+        BATTLE_ALERT_WINDOW_Y + 225.0,
+        340.0,
+        14.0,
+        text_color,
+    );
+}
+
+fn draw_original_battle_alert(state: &mut TacticalState, cache: &mut BmpCache) -> TacticalAction {
+    let canvas = TacticalCanvas::new(screen_width(), screen_height());
+    let session = state.session.as_ref().expect("active Battle Alert session");
+    prewarm_tactical_font_atlas(session, canvas, &mut state.warmed_font_sizes);
+    let player_alliance = player_is_alliance(session);
+    let skin = battle_alert_skin(player_alliance);
+    let text_color = if player_alliance {
+        Color::from_rgba(255, 45, 40, 255)
+    } else {
+        Color::from_rgba(40, 255, 65, 255)
+    };
+
+    clear_background(BLACK);
+    draw_original_bitmap(
+        cache,
+        DllSource::Strategy,
+        if player_alliance {
+            resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL
+        } else {
+            resources::strategy::EMPIRE_COMMAND_CENTER_SHELL
+        },
+        canvas,
+        0.0,
+        0.0,
+        Some(Rect::new(0.0, 0.0, 640.0, 480.0)),
+    );
+    draw_strategy_bitmap(
+        cache,
+        skin.frame,
+        canvas,
+        BATTLE_ALERT_WINDOW_X,
+        BATTLE_ALERT_WINDOW_Y,
+    );
+    draw_strategy_bitmap(
+        cache,
+        skin.scene,
+        canvas,
+        BATTLE_ALERT_WINDOW_X + 12.0,
+        BATTLE_ALERT_WINDOW_Y + 13.0,
+    );
+    draw_battle_alert_text(state, canvas, text_color);
+    draw_strategy_bitmap(
+        cache,
+        skin.rail,
+        canvas,
+        BATTLE_ALERT_WINDOW_X + BATTLE_RESULTS_RAIL_X,
+        BATTLE_ALERT_WINDOW_Y,
+    );
+
+    let (screen_mouse_x, screen_mouse_y) = mouse_position();
+    let mouse = canvas.logical_pointer(screen_mouse_x, screen_mouse_y);
+    let local_mouse = (
+        mouse.0 - BATTLE_ALERT_WINDOW_X,
+        mouse.1 - BATTLE_ALERT_WINDOW_Y,
+    );
+    let mouse_down = is_mouse_button_down(MouseButton::Left);
+    let mouse_pressed = is_mouse_button_pressed(MouseButton::Left);
+    let mouse_released = is_mouse_button_released(MouseButton::Left);
+
+    for (index, tab) in BattleAlertTab::ALL.into_iter().enumerate() {
+        let rect = skin.tab_rects[index];
+        let active = state.battle_alert_tab == tab
+            || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
+        draw_strategy_bitmap(
+            cache,
+            skin.tabs[index][usize::from(active)],
+            canvas,
+            BATTLE_ALERT_WINDOW_X + rect.x,
+            BATTLE_ALERT_WINDOW_Y + rect.y,
+        );
+        if mouse_released && rect.contains(local_mouse.0, local_mouse.1) {
+            state.battle_alert_tab = tab;
+            macroquad::logging::info!("[battle_alert] tab={}", tab.label());
+        }
+    }
+
+    let button_controls = [
+        BattleAlertControl::Retreat,
+        BattleAlertControl::Simulate,
+        BattleAlertControl::TakeCommand,
+    ];
+    let button_rects = [
+        NativeRect::new(12.0, 296.0, 134.0, 27.0),
+        NativeRect::new(146.0, 296.0, 134.0, 27.0),
+        NativeRect::new(280.0, 296.0, 134.0, 27.0),
+    ];
+    let retreat_enabled = battle_alert_retreat_enabled(session);
+    let hovered = button_rects
+        .iter()
+        .enumerate()
+        .find(|(index, rect)| {
+            (*index != 0 || retreat_enabled) && rect.contains(local_mouse.0, local_mouse.1)
+        })
+        .map(|(index, _)| button_controls[index]);
+    if mouse_pressed {
+        state.battle_alert_pressed = hovered;
+    }
+
+    for (index, rect) in button_rects.into_iter().enumerate() {
+        let control = button_controls[index];
+        let enabled = control != BattleAlertControl::Retreat || retreat_enabled;
+        let resource_state = if !enabled {
+            2
+        } else if mouse_down
+            && state.battle_alert_pressed == Some(control)
+            && hovered == Some(control)
+        {
+            1
+        } else {
+            0
+        };
+        draw_strategy_bitmap(
+            cache,
+            skin.buttons[index][resource_state],
+            canvas,
+            BATTLE_ALERT_WINDOW_X + rect.x,
+            BATTLE_ALERT_WINDOW_Y + rect.y,
+        );
+    }
+
+    if mouse_released {
+        let captured = state.battle_alert_pressed.take();
+        if let Some(control) = captured.filter(|control| Some(*control) == hovered) {
+            state.battle_alert_open = false;
+            return match control {
+                BattleAlertControl::Retreat => {
+                    macroquad::logging::info!(
+                        "[battle_alert] command=retreat resource={} status=started",
+                        skin.buttons[0][0]
+                    );
+                    TacticalAction::RetreatBeforeBattle
+                }
+                BattleAlertControl::Simulate => {
+                    macroquad::logging::info!(
+                        "[battle_alert] command=simulate resource={} status=routed",
+                        skin.buttons[1][0]
+                    );
+                    TacticalAction::AutoResolve
+                }
+                BattleAlertControl::TakeCommand => {
+                    macroquad::logging::info!(
+                        "[battle_alert] command=take_command resource={} status=paused_tactical",
+                        skin.buttons[2][0]
+                    );
+                    TacticalAction::BeginCombat
+                }
+            };
+        }
+    } else if !mouse_down {
+        state.battle_alert_pressed = None;
+    }
+    TacticalAction::None
+}
+
 fn draw_original_battle_results(
     state: &mut TacticalState,
     cache: &mut BmpCache,
@@ -9409,6 +9843,10 @@ pub fn draw_tactical_view(
 ) -> TacticalAction {
     if state.session.is_none() {
         return TacticalAction::ReturnToGalaxy;
+    }
+
+    if state.battle_alert_open {
+        return draw_original_battle_alert(state, bmp_cache);
     }
 
     let mut action = TacticalAction::None;
@@ -12990,6 +13428,45 @@ mod tests {
             TacticalAction::WithdrawFromBattle
         );
         assert!(!state.withdraw_confirmation_open);
+    }
+
+    #[test]
+    fn battle_alert_skins_match_recovered_faction_resources_and_geometry() {
+        let alliance = battle_alert_skin(true);
+        assert_eq!(alliance.frame, 10_710);
+        assert_eq!(alliance.scene, 10_712);
+        assert_eq!(alliance.rail, 10_820);
+        assert_eq!(alliance.tabs[0], [10_728, 10_729]);
+        assert_eq!(alliance.tabs[3], [10_734, 10_735]);
+        assert_eq!(alliance.buttons[0], [10_971, 10_972, 10_973]);
+        assert_eq!(alliance.buttons[2], [10_719, 10_720, 10_721]);
+        assert_eq!(
+            alliance.tab_rects,
+            [
+                NativeRect::new(418.0, 21.0, 41.0, 41.0),
+                NativeRect::new(418.0, 81.0, 41.0, 41.0),
+                NativeRect::new(418.0, 143.0, 41.0, 41.0),
+                NativeRect::new(418.0, 205.0, 41.0, 41.0),
+            ]
+        );
+
+        let empire = battle_alert_skin(false);
+        assert_eq!(empire.frame, 10_711);
+        assert_eq!(empire.scene, 10_713);
+        assert_eq!(empire.rail, 10_821);
+        assert_eq!(empire.tabs[0], [10_738, 10_739]);
+        assert_eq!(empire.tabs[3], [10_744, 10_745]);
+        assert_eq!(empire.buttons[0], [10_974, 10_975, 10_976]);
+        assert_eq!(empire.buttons[2], [10_725, 10_726, 10_727]);
+        assert_eq!(
+            empire.tab_rects,
+            [
+                NativeRect::new(426.0, 17.0, 44.0, 41.0),
+                NativeRect::new(426.0, 80.0, 44.0, 41.0),
+                NativeRect::new(426.0, 143.0, 44.0, 41.0),
+                NativeRect::new(426.0, 206.0, 44.0, 41.0),
+            ]
+        );
     }
 
     #[test]

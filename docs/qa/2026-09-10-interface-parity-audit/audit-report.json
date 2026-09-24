@@ -166,7 +166,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The tactical completion work now maps 104 of 106 canonical cells through 85 browser journeys and 19 source-backed snapshots, including destroyed presentation, selected-capital contents, and direct Escort; Battle Alert entry, tactical audio, A0 comparison, and all 106 strict cells remain open",
+      "title": "The tactical completion work now maps all 106 canonical cells through 87 browser journeys and 19 source-backed snapshots, including Battle Alert entry and source-identified tactical audio routing; A0 coverage, comparison, and all 106 strict cells remain open",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -207,7 +207,8 @@
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-trench-persistence.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md",
-      "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -329,9 +330,11 @@
     "p58_b11_tactical_trench_persistence": "evidence/2026-09-23-tactical-trench-persistence.md",
     "p58_b12_tactical_game_options_empty_space": "evidence/2026-09-23-tactical-game-options-empty-space.md",
     "p58_b13_tactical_withdraw_confirmation": "evidence/2026-09-23-tactical-withdraw-confirmation.md",
+    "p58_b14_tactical_detail_escort": "evidence/2026-09-23-tactical-detail-escort.md",
+    "p58_b15_tactical_battle_alert_audio": "evidence/2026-09-24-tactical-battle-alert-audio.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"
   },
-  "next_action": "Implement and run the five unmapped tactical scenarios: Battle Alert entry, tactical audio, destroyed and contents states, and Escort. In parallel, bring the owned Windows host online for A0 capture. Keep all 106 strict cells open until their complete evidence passes."
+  "next_action": "Preserve the complete 106-cell deterministic A1 crosswalk while finishing remaining tactical production semantics, audio variants, and shared post-battle orchestration. Bring the owned Windows host online for A0 capture and comparison. Keep all 106 strict cells open until their complete evidence passes."
 }

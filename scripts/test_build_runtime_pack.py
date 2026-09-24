@@ -56,10 +56,22 @@ class RuntimePackBuilderTests(unittest.TestCase):
             (base / "SYSTEMSD.DAT").write_bytes(b"systems")
             (bmp / "20001.bmp").write_bytes(b"bitmap")
             (audio / "main_theme.wav").write_bytes(b"wave")
+            (audio / "battle.wav").write_bytes(b"battle")
+            sfx = root / "audio" / "sfx"
+            sfx.mkdir()
+            (sfx / "tactical_ship_destroyed.wav").write_bytes(b"cue")
 
             entries = PACKER.collect_entries(base, root / "ui", root / "audio")
             self.assertIn(
                 (PACKER.KIND_AUDIO, "music/main_theme.wav"),
+                [(entry.kind, entry.key) for entry in entries],
+            )
+            self.assertIn(
+                (PACKER.KIND_AUDIO, "music/battle.wav"),
+                [(entry.kind, entry.key) for entry in entries],
+            )
+            self.assertIn(
+                (PACKER.KIND_AUDIO, "sfx/tactical_ship_destroyed.wav"),
                 [(entry.kind, entry.key) for entry in entries],
             )
 

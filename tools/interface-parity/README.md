@@ -41,9 +41,10 @@ Actual manifests and captures live under ignored
 artifact from that store.
 
 Catalog scenarios declare `execution_kind` as `journey`, `snapshot`, or
-`negative-control`. The current crosswalk maps 104/106 cells: 85 journeys and
-19 snapshots. Negative controls may not map cells. The validator reports the two
-remaining cells without treating mapped A1 evidence as original acceptance.
+`negative-control`. The current crosswalk maps 106/106 cells: 87 journeys and
+19 snapshots. Negative controls may not map cells. Complete deterministic A1
+mapping does not convert any cell into original acceptance; A0 coverage and
+strict parity acceptance remain 0/106.
 
 Initialize the ignored local manifest once, then ingest each guest capture with
 its JSON sidecar:

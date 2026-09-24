@@ -51,6 +51,8 @@ const SELECTED_NAVIGATION_PRESENTATION_SCENARIO: u32 = 31;
 const NAVIGATION_CAMERA_PRESENTATION_SCENARIO: u32 = 32;
 const EMPTY_SPACE_PRESENTATION_SCENARIO: u32 = 33;
 const DETAIL_ESCORT_PRESENTATION_SCENARIO: u32 = 34;
+const BATTLE_ALERT_PRESENTATION_SCENARIO: u32 = 35;
+const TACTICAL_AUDIO_PRESENTATION_SCENARIO: u32 = 36;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -108,6 +110,8 @@ pub(crate) struct TacticalFixtureRequest {
     pub navigation_camera_presentation: bool,
     pub empty_space_presentation: bool,
     pub detail_escort_presentation: bool,
+    pub battle_alert_presentation: bool,
+    pub tactical_audio_presentation: bool,
     pub subsystem_field_command_presentation: bool,
     pub live_subsystem_damage_presentation: bool,
     pub subsystem_repair_mobility_presentation: bool,
@@ -335,7 +339,9 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | SELECTED_NAVIGATION_PRESENTATION_SCENARIO
         | NAVIGATION_CAMERA_PRESENTATION_SCENARIO
         | EMPTY_SPACE_PRESENTATION_SCENARIO
-        | DETAIL_ESCORT_PRESENTATION_SCENARIO => (
+        | DETAIL_ESCORT_PRESENTATION_SCENARIO
+        | BATTLE_ALERT_PRESENTATION_SCENARIO
+        | TACTICAL_AUDIO_PRESENTATION_SCENARIO => (
             false,
             true,
             false,
@@ -375,6 +381,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         navigation_camera_presentation: scenario == NAVIGATION_CAMERA_PRESENTATION_SCENARIO,
         empty_space_presentation: scenario == EMPTY_SPACE_PRESENTATION_SCENARIO,
         detail_escort_presentation: scenario == DETAIL_ESCORT_PRESENTATION_SCENARIO,
+        battle_alert_presentation: scenario == BATTLE_ALERT_PRESENTATION_SCENARIO,
+        tactical_audio_presentation: scenario == TACTICAL_AUDIO_PRESENTATION_SCENARIO,
         subsystem_field_command_presentation: scenario
             == SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO,
         live_subsystem_damage_presentation: scenario == LIVE_SUBSYSTEM_DAMAGE_PRESENTATION_SCENARIO,
@@ -624,6 +632,10 @@ pub(crate) fn apply(
     )
     .map_err(|error| format!("fixture battle entry failed: {error:?}"))?;
     #[cfg(feature = "interface-test-fixtures")]
+    if !request.battle_alert_presentation {
+        tactical.dismiss_battle_alert_for_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if request.focus_player_fighter {
         tactical.focus_player_fighter_for_fixture();
     }
@@ -712,6 +724,10 @@ pub(crate) fn apply(
         tactical.configure_detail_escort_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
+    if request.tactical_audio_presentation {
+        tactical.configure_tactical_audio_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if !request.production_participants {
         tactical.disable_original_participant_rendering();
     }
@@ -758,6 +774,11 @@ struct FixtureRecord<'a> {
     navigation_camera_presentation: bool,
     empty_space_presentation: bool,
     detail_escort_presentation: bool,
+    battle_alert_presentation: bool,
+    tactical_audio_presentation: bool,
+    battle_alert_open: bool,
+    tactical_music_mdata_id: u32,
+    tactical_cue_wave_id: u32,
     subsystem_field_command_presentation: bool,
     live_subsystem_damage_presentation: bool,
     subsystem_repair_mobility_presentation: bool,
@@ -1224,7 +1245,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 31,
+        schema_version: 32,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1245,6 +1266,11 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         navigation_camera_presentation: request.navigation_camera_presentation,
         empty_space_presentation: request.empty_space_presentation,
         detail_escort_presentation: request.detail_escort_presentation,
+        battle_alert_presentation: request.battle_alert_presentation,
+        tactical_audio_presentation: request.tactical_audio_presentation,
+        battle_alert_open: tactical.battle_alert_open(),
+        tactical_music_mdata_id: 307,
+        tactical_cue_wave_id: 13_054,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1297,7 +1323,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 31,
+        schema_version: 32,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1318,6 +1344,11 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         navigation_camera_presentation: request.navigation_camera_presentation,
         empty_space_presentation: request.empty_space_presentation,
         detail_escort_presentation: request.detail_escort_presentation,
+        battle_alert_presentation: request.battle_alert_presentation,
+        tactical_audio_presentation: request.tactical_audio_presentation,
+        battle_alert_open: false,
+        tactical_music_mdata_id: 307,
+        tactical_cue_wave_id: 13_054,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1417,6 +1448,8 @@ mod tests {
         assert!(decode(0x10120).unwrap().navigation_camera_presentation);
         assert!(decode(0x10121).unwrap().empty_space_presentation);
         assert!(decode(0x10122).unwrap().detail_escort_presentation);
+        assert!(decode(0x10123).unwrap().battle_alert_presentation);
+        assert!(decode(0x10124).unwrap().tactical_audio_presentation);
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -1438,7 +1471,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10123).is_none());
+        assert!(decode(0x10125).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

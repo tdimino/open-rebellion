@@ -299,6 +299,13 @@ direct friendly right-click, retained target, white target marker, follow,
 opportunity fire, and target cleanup. Battle Alert entry and tactical audio
 remain unmapped, and strict acceptance remains 0/106.
 
+P58-B15 maps all 106 canonical cells: 87 browser journeys and 19 snapshots. It
+restores the source-built faction Battle Alert, exercises its tabs and Take
+Command transition, stages MDATA 307 as the battle score, and routes recovered
+TACTICAL WAVE 13054 for destruction events. This completes deterministic A1
+scenario mapping only. A0 coverage and strict acceptance remain 0/106, and the
+strict gate was not run.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

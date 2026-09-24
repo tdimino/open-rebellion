@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B15",
+  "scope": "browser_only_review_of_battle_alert_entry_and_muted_tactical_audio_routing",
+  "result": "pass_with_reference_needed_note",
+  "runs": [
+    "2026-09-24T07-32-09-945Z-63160",
+    "2026-09-24T07-33-06-960Z-64951"
+  ],
+  "findings": {
+    "P0": [],
+    "P1": [],
+    "P2": [],
+    "P3": [
+      "Colored alert text crosses bright authored ship art; preserve the source composition until a lossless A0 capture proves whether a contrast treatment belongs."
+    ]
+  },
+  "verified": [
+    "both_factions",
+    "both_viewports",
+    "tabs_and_controls_inside_frame",
+    "take_command_to_paused_tactical_shell",
+    "coherent_letterboxing",
+    "browser_and_in_game_audio_muted",
+    "mdata_307_loaded",
+    "wave_13054_routed",
+    "four_request_startup",
+    "browser_cleanup"
+  ],
+  "limits": [
+    "implementation_screenshots_unbaselined",
+    "strict_A0_gate_not_run",
+    "audible_native_comparison_not_run"
+  ]
+}
