@@ -8,6 +8,7 @@ type dllTarget struct {
 }
 
 var uiDLLTargets = []dllTarget{
+	{Filename: "REBDLOG.DLL", Directory: "rebdlog-dll", Expected: 24},
 	{Filename: "COMMON.DLL", Directory: "common-dll", Expected: 321},
 	{Filename: "GOKRES.DLL", Directory: "gokres-dll", Expected: 580},
 	{Filename: "STRATEGY.DLL", Directory: "strategy-dll", Expected: 1042},
@@ -17,6 +18,8 @@ var uiDLLTargets = []dllTarget{
 }
 
 var namedBitmapIDs = map[string]uint32{
+	// Staging-only alias for a string-named resource; not a native numeric ID.
+	"DLG_CORNER_GRAB_FRAME":               4294967295,
 	"COCKPIT_BUTTON_GAMESCALE_HUGE_UP":    15856,
 	"COCKPIT_BUTTON_GAMESCALE_LARGE_UP":   15922,
 	"COCKPIT_BUTTON_GAMESCALE_STD_UP":     15990,

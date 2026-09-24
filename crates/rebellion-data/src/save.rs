@@ -1077,6 +1077,13 @@ mod native {
         Ok((meta, state))
     }
 
+    /// Detect occupancy independently of save decoding, so corrupt saves still
+    /// require overwrite confirmation. An inaccessible path fails closed.
+    #[must_use]
+    pub fn slot_occupied(saves_dir: &Path, slot: usize) -> bool {
+        slot_path(saves_dir, slot).try_exists().unwrap_or(true)
+    }
+
     /// Return metadata for all occupied save slots in `saves_dir`.
     ///
     /// Slots without a file are silently skipped. Corrupt files are reported
@@ -1111,7 +1118,8 @@ mod native {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{
-    default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods, slot_path,
+    default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods,
+    slot_occupied, slot_path,
 };
 
 // ---------------------------------------------------------------------------
@@ -1482,6 +1490,25 @@ pub mod wasm_impl {
         Ok((meta, state))
     }
 
+    /// Metadata and payload keys both count as occupied, including legacy and
+    /// partially written saves. Storage access errors fail closed.
+    pub fn slot_occupied(_saves_dir: &Path, slot: usize) -> bool {
+        [
+            slot_key(slot),
+            meta_key(slot),
+            v12_slot_key(slot),
+            v12_meta_key(slot),
+            v11_slot_key(slot),
+            v11_meta_key(slot),
+            v10_slot_key(slot),
+            v10_meta_key(slot),
+            v9_slot_key(slot),
+            v9_meta_key(slot),
+        ]
+        .iter()
+        .any(|key| !matches!(storage_get(key), Ok(None)))
+    }
+
     pub fn list_saves(_saves_dir: &Path) -> Vec<anyhow::Result<SaveMeta>> {
         (0..MAX_SAVE_SLOTS)
             .filter_map(|slot| {
@@ -1542,6 +1569,7 @@ pub mod wasm_impl {
 #[cfg(target_arch = "wasm32")]
 pub use wasm_impl::{
     default_saves_dir, delete_slot, list_saves, load_slot, save_slot, save_slot_no_mods,
+    slot_occupied,
 };
 
 // ---------------------------------------------------------------------------

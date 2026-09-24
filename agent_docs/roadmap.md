@@ -18,7 +18,7 @@ The delivery notes before “Audit-Driven Parity” are historical implementatio
 records. They do not establish current parity or release acceptance; the active
 audit-driven milestones are the source of truth.
 
-PR #11 checkpoint (2026-09-14): [cockpit routing is corrected](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md) for commands `0x131` through `0x133`, both factions, and F1/F7. GID uses its authentic bottom control and can open and close its original menu. Game Options and Encyclopedia remain fail-closed until their original bitmap windows are restored.
+PR #11 checkpoint (2026-09-14): [cockpit routing is corrected](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md) for commands `0x131` through `0x133`, both factions, and F1/F7. GID uses its authentic bottom control and can open and close its original menu. Encyclopedia remains fail-closed. The [2026-09-24 Game Options checkpoint](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-game-options.md) restores the shared bitmap surface and save/audio/display wiring; PRE-03 strict acceptance remains open.
 
 ## Galaxy Viewer: historical implementation tranche delivered
 *Interactive galaxy data viewer -- native + WASM*

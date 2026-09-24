@@ -1,5 +1,6 @@
 //! Galaxy map rendering and egui UI panels.
 
+pub mod game_options;
 pub mod advisor;
 pub mod audio;
 pub mod bmp_cache;

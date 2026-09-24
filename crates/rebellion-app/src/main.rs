@@ -97,8 +97,8 @@ enum GameMode {
     Cutscene { kind: CutsceneKind },
     /// Title screen: New Game / Load Game / Quit.
     MainMenu,
-    /// Save-slot picker entered from the main menu.
-    LoadGame,
+    /// Shared options surface, retaining its main-menu, campaign, or battle caller.
+    GameOptions,
     /// Scrolling original-game and Open Rebellion credits.
     Credits,
     /// Historical head-to-head setup destination.
@@ -197,7 +197,7 @@ fn configured_asset_render_profile() -> AssetRenderProfile {
 }
 
 fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
-    rebellion_data::save::list_saves(saves_dir)
+    let mut slots: Vec<_> = rebellion_data::save::list_saves(saves_dir)
         .into_iter()
         .filter_map(std::result::Result::ok)
         .map(|meta| rebellion_render::SaveSlotInfo {
@@ -212,7 +212,21 @@ fn read_save_slots(saves_dir: &Path) -> Vec<rebellion_render::SaveSlotInfo> {
             },
             game_tick: meta.game_tick,
         })
-        .collect()
+        .collect();
+    for slot in 0..rebellion_data::save::MAX_SAVE_SLOTS {
+        if !slots.iter().any(|save| save.slot == slot)
+            && rebellion_data::save::slot_occupied(saves_dir, slot)
+        {
+            slots.push(rebellion_render::SaveSlotInfo {
+                slot,
+                name: "Unreadable save".into(),
+                timestamp: "Load to inspect error".into(),
+                game_tick: 0,
+            });
+        }
+    }
+    slots.sort_by_key(|save| save.slot);
+    slots
 }
 
 struct LiveCampaign<'a> {
@@ -632,6 +646,30 @@ mod panel_toggle_tests {
     use super::toggle_exclusive_panel;
 
     #[test]
+    fn corrupt_save_remains_occupied_and_requires_overwrite_confirmation() {
+        let directory =
+            std::env::temp_dir().join(format!("options-corrupt-save-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = rebellion_data::save::slot_path(&directory, 0);
+        std::fs::write(&path, b"corrupt save fixture").unwrap();
+        let slots = super::read_save_slots(&directory);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&directory).unwrap();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].slot, 0);
+        use rebellion_render::game_options::{GameOptionsState, OptionsAction, OptionsContext};
+        let mut state = GameOptionsState::new(OptionsContext::Campaign);
+        state.refresh_saves(&slots);
+        let save = OptionsAction::Save {
+            slot: 0,
+            name: "Replacement".into(),
+        };
+        assert_eq!(state.request(save.clone()), None);
+        assert_eq!(state.pending, Some(save));
+        assert_eq!(state.confirm(false), None);
+    }
+
+    #[test]
     fn opens_closes_and_switches_exclusive_panels() {
         let mut panels = [false; 9];
         let press = |panels: &mut [bool; 9], selected| {
@@ -860,6 +898,12 @@ async fn main() {
     let mut show_bombardment = false;
     let mut show_death_star = false;
     let mut show_loyalty = false;
+    let mut game_options = rebellion_render::game_options::GameOptionsState::new(
+        rebellion_render::game_options::OptionsContext::MainMenu,
+    );
+    let mut options_return_mode = GameMode::MainMenu;
+    let mut tactical_display = rebellion_render::game_options::TacticalDisplayOptions::default();
+    let mut options_exit_requested = false;
     let mut show_save_load = false;
     let mut save_load_panel_state = rebellion_render::SaveLoadPanelState::default();
     let saves_dir = rebellion_data::save::default_saves_dir();
@@ -1069,9 +1113,13 @@ async fn main() {
                 }
             }
         } else if is_key_pressed(KeyCode::Escape) && !event_screen_state.is_active() {
-            if game_mode == GameMode::LoadGame {
-                save_load_panel_state.close();
-                game_mode = GameMode::MainMenu;
+            if game_mode == GameMode::GameOptions {
+                if game_options.suspended {
+                    save_load_panel_state.close();
+                    game_options.suspended = false;
+                } else if game_options.escape().is_some() {
+                    game_mode = options_return_mode.clone();
+                }
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
                 game_mode = GameMode::MainMenu;
             } else if game_mode == GameMode::Galaxy {
@@ -2435,8 +2483,12 @@ async fn main() {
                         }
                         MainMenuAction::LoadGame => {
                             save_slots = read_save_slots(&saves_dir);
-                            save_load_panel_state.open_load();
-                            game_mode = GameMode::LoadGame;
+                            game_options = rebellion_render::game_options::GameOptionsState::new(
+                                rebellion_render::game_options::OptionsContext::MainMenu,
+                            );
+                            game_options.refresh_saves(&save_slots);
+                            options_return_mode = GameMode::MainMenu;
+                            game_mode = GameMode::GameOptions;
                         }
                         MainMenuAction::Credits => {
                             credits_state.reset();
@@ -2510,25 +2562,64 @@ async fn main() {
                 }
             }
 
-            GameMode::LoadGame => {
-                clear_background(Color::new(0.02, 0.02, 0.06, 1.0));
+            GameMode::GameOptions => {
+                use rebellion_render::game_options::{draw_game_options, OptionsAction};
+                clear_background(BLACK);
+                let mut action = None;
+                // Function-key alternatives avoid browser-owned Ctrl+L/Ctrl+S.
+                let control =
+                    is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
+                let legacy_load =
+                    is_key_pressed(KeyCode::F8) || (control && is_key_pressed(KeyCode::L));
+                let legacy_save =
+                    is_key_pressed(KeyCode::F9) || (control && is_key_pressed(KeyCode::S));
+                if game_options.pending.is_none()
+                    && game_options.context
+                        != rebellion_render::game_options::OptionsContext::Tactical
+                    && (legacy_load
+                        || (legacy_save
+                            && game_options.context
+                                == rebellion_render::game_options::OptionsContext::Campaign))
+                {
+                    if legacy_save {
+                        save_load_panel_state.open_save();
+                    } else {
+                        save_load_panel_state.open_load();
+                    }
+                    game_options.suspended = true;
+                }
                 egui_macroquad::ui(|ctx| {
-                    egui_macroquad::egui::TopBottomPanel::bottom("main_menu_audio_options").show(
+                    action = draw_game_options(
                         ctx,
-                        |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Audio");
-                                draw_audio_controls(ui, &mut audio_vol);
-                            });
-                        },
+                        &mut bmp_cache,
+                        &mut game_options,
+                        &mut audio_vol,
+                        &mut tactical_display,
                     );
-                    if let Some(action) =
-                        draw_save_load(ctx, &save_slots, &mut save_load_panel_state)
-                    {
-                        panel_actions.push(action);
+                    if game_options.suspended {
+                        if let Some(action) =
+                            draw_save_load(ctx, &save_slots, &mut save_load_panel_state)
+                        {
+                            panel_actions.push(action);
+                        }
                     }
                 });
                 egui_macroquad::draw();
+                match action {
+                    Some(OptionsAction::Save { slot, name }) => {
+                        panel_actions.push(PanelAction::SaveGame { slot, name })
+                    }
+                    Some(OptionsAction::Load { slot }) => {
+                        panel_actions.push(PanelAction::LoadGame { slot })
+                    }
+                    Some(OptionsAction::Delete { slot }) => {
+                        panel_actions.push(PanelAction::DeleteSave { slot })
+                    }
+                    Some(OptionsAction::Return) => game_mode = options_return_mode.clone(),
+                    Some(OptionsAction::Restart) => game_mode = GameMode::MainMenu,
+                    Some(OptionsAction::Exit) => options_exit_requested = true,
+                    None => {}
+                }
             }
 
             GameMode::GameSetup => {
@@ -3103,7 +3194,18 @@ async fn main() {
                             CockpitButton::FleetFinder => (0x12e, "fleet_finder"),
                             CockpitButton::PersonnelFinder => (0x12f, "personnel_finder"),
                             CockpitButton::TroopFinder => (0x130, "troop_finder"),
-                            CockpitButton::GameOptions => (0x133, "game_options"),
+                            CockpitButton::GameOptions => {
+                                save_slots = read_save_slots(&saves_dir);
+                                game_options =
+                                    rebellion_render::game_options::GameOptionsState::new(
+                                        rebellion_render::game_options::OptionsContext::Campaign,
+                                    );
+                                game_options.refresh_saves(&save_slots);
+                                options_return_mode = GameMode::Galaxy;
+                                game_mode = GameMode::GameOptions;
+                                macroquad::logging::info!("[interface] command=0x133 destination=game_options status=opened_original");
+                                return;
+                            }
                             CockpitButton::Encyclopedia => (0x131, "encyclopedia"),
                             CockpitButton::GalacticInformationDisplay => {
                                 cockpit_state.gid_ui.menu_open = !cockpit_state.gid_ui.menu_open;
@@ -3132,6 +3234,7 @@ async fn main() {
             }
 
             GameMode::TacticalCombat => {
+                tactical_state.display_options = tactical_display;
                 let tac_action = draw_tactical_view(
                     &mut tactical_state,
                     &mut bmp_cache,
@@ -3471,13 +3574,14 @@ async fn main() {
                         }
                     }
                     TacticalAction::OpenGameOptions => {
-                        // The tactical bitmap routes to the shared Game Options
-                        // window. Keep this fail-closed until that original
-                        // unified surface is restored rather than substituting
-                        // another menu.
-                        macroquad::logging::info!(
-                            "[interface] command=0x133 destination=game_options status=pending_original_window"
+                        save_slots = read_save_slots(&saves_dir);
+                        game_options = rebellion_render::game_options::GameOptionsState::new(
+                            rebellion_render::game_options::OptionsContext::Tactical,
                         );
+                        game_options.refresh_saves(&save_slots);
+                        options_return_mode = GameMode::TacticalCombat;
+                        game_mode = GameMode::GameOptions;
+                        macroquad::logging::info!("[interface] command=0x133 destination=game_options status=opened_original");
                     }
                     TacticalAction::None => {}
                 }
@@ -3621,6 +3725,26 @@ async fn main() {
 
         // 5. Apply panel actions
         for action in panel_actions {
+            // The save-management panel shares the original confirmation
+            // guard when opened from the options surface.
+            if game_mode == GameMode::GameOptions && game_options.suspended {
+                use rebellion_render::game_options::OptionsAction;
+                let intent = match &action {
+                    PanelAction::SaveGame { slot, name } => Some(OptionsAction::Save {
+                        slot: *slot,
+                        name: name.clone(),
+                    }),
+                    PanelAction::LoadGame { slot } => Some(OptionsAction::Load { slot: *slot }),
+                    PanelAction::DeleteSave { slot } => Some(OptionsAction::Delete { slot: *slot }),
+                    _ => None,
+                };
+                if let Some(intent) = intent {
+                    game_options.suspended = false;
+                    if game_options.request(intent).is_none() {
+                        continue;
+                    }
+                }
+            }
             match action {
                 PanelAction::SaveGame { slot, name } => {
                     let state = LiveCampaign {
@@ -3668,6 +3792,8 @@ async fn main() {
                             );
                             save_load_panel_state.error_message = None;
                             save_slots = read_save_slots(&saves_dir);
+                            game_options.refresh_saves(&save_slots);
+                            game_options.error = None;
                             msg_log.push(GameMessage::new(
                                 clock.tick,
                                 format!("Saved game to slot {}", slot + 1),
@@ -3676,6 +3802,7 @@ async fn main() {
                         }
                         Err(error) => {
                             save_load_panel_state.error_message = Some(error.to_string());
+                            game_options.error = Some(error.to_string());
                         }
                     }
                 }
@@ -3774,6 +3901,7 @@ async fn main() {
                         }
                         Err(error) => {
                             save_load_panel_state.error_message = Some(error.to_string());
+                            game_options.error = Some(error.to_string());
                         }
                     }
                 }
@@ -3783,6 +3911,8 @@ async fn main() {
                             save_load_panel_state.selected_slot = None;
                             save_load_panel_state.error_message = None;
                             save_slots = read_save_slots(&saves_dir);
+                            game_options.refresh_saves(&save_slots);
+                            game_options.error = None;
                             msg_log.push(GameMessage::new(
                                 clock.tick,
                                 format!("Deleted save in slot {}", slot + 1),
@@ -3791,14 +3921,15 @@ async fn main() {
                         }
                         Err(error) => {
                             save_load_panel_state.error_message = Some(error.to_string());
+                            game_options.error = Some(error.to_string());
                         }
                     }
                 }
                 PanelAction::CloseSaveLoadPanel => {
                     save_load_panel_state.close();
                     show_save_load = false;
-                    if game_mode == GameMode::LoadGame {
-                        game_mode = GameMode::MainMenu;
+                    if game_mode == GameMode::GameOptions {
+                        game_options.suspended = false;
                     }
                 }
                 action => {
@@ -3855,6 +3986,10 @@ async fn main() {
                     );
                 }
             }
+        }
+
+        if options_exit_requested {
+            break;
         }
 
         // 6. Apply audio volume changes on both native and WebAudio backends.

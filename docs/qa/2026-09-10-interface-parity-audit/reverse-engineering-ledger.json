@@ -156,11 +156,11 @@
       "id": "RE-OPT-01",
       "surface_ids": ["PRE-03"],
       "title": "Unified options, save, load, and delete window",
-      "status": "untriaged",
+      "status": "static-partial",
       "retrieval": {
         "sources": ["REBEXE.EXE", "COMMON.DLL", "REBDLOG.DLL"],
-        "method": "Start from menu command 0x67 and settings strings, then follow window constructors, control IDs, registry reads, save-slot mutations, confirmations, and close routing.",
-        "next_proof": "Identify the constructor and produce a control/resource/state table for the unified window."
+        "method": "Menu command 0x68 (0x67 is multiplayer) reaches FUN_00406950; creation invokes FUN_004070e0, FUN_004084b0 and FUN_00407180. See ghidra/notes/game-options.md for recovered geometry and command/resource table.",
+        "next_proof": "Verify slider transfer, context-specific return images, settings persistence, native delete gesture and A0 captures; constructor/resources are statically mapped in ghidra/notes/game-options.md."
       },
       "runtime_capture_required": true
     },

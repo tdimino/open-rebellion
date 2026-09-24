@@ -1,4 +1,4 @@
-//! Save / load panel — egui modal with up to 10 named save slots.
+//! Save / load panel — egui modal with six named save slots.
 //!
 //! # Usage
 //!
@@ -158,7 +158,7 @@ pub fn draw_save_load(
             ui.add_space(4.0);
 
             ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
-                for slot in 0..10usize {
+                for slot in 0..6usize {
                     let existing = saves.iter().find(|s| s.slot == slot);
                     let is_selected = state.selected_slot == Some(slot);
 
