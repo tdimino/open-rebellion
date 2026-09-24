@@ -51,7 +51,7 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-trench-run-success` | 65821 | 66077 | Result state 6, MDATA.201, and tactical return |
 | `production-trench-run-failure` | 65822 | 66078 | Result state 7, MDATA.202, and tactical return |
 | `production-battle-alert-entry` | 65827 | 66083 | Source-built faction alert, four tabs, held Take Command, and paused tactical entry |
-| `production-tactical-audio-routing` | 65828 | 66084 | MDATA.307 battle score and source events `0x0d–0x14` across all 22 TACTICAL WAVE 13033–13054 variants while muted |
+| `production-tactical-audio-routing` | 65828 | 66084 | MDATA.307 battle score, all 22 TACTICAL weapon WAVs, and 90 source-mapped VOICEFXA/VOICEFXE command acknowledgements while muted |
 
 ## Run it
 
@@ -180,6 +180,12 @@ and closes every process. Raw runs live under ignored
   fire/impact events across the complete 22-variant WAVE 13033–13054 bank.
   Exact shared-RNG sequencing, audible native comparison, and strict A0
   acceptance remain open.
+- P58-B17 restores 90 exact faction command recordings: battle ready plus
+  task-force and RGBY maneuver, attack, formation, and mission
+  acknowledgements. The focused four-case browser gate loads and routes all 22
+  weapon and 90 command-voice resources while muted. Result, withdrawal, and
+  Death Star voice families, mixing, audible native comparison, and strict A0
+  acceptance remain open.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options
@@ -200,7 +206,8 @@ exact original arrival callbacks and recovery trajectories, exact planet
 placement, power allocation,
 beam dimensions and timing, native trench-run playback comparison,
 post-battle bombardment, landing, and navigation orchestration, remaining
-non-weapon and voice events, exact shared-RNG sequencing, audio mixing and native comparison, and
+non-weapon result, withdrawal, and Death Star voice events, exact shared-RNG
+sequencing, audio mixing and native comparison, and
 remaining result semantics remain open. The source 3D
 window uses the standard arrow cursor, so no invented targeting cursor is
 required. All

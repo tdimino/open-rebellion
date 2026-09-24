@@ -46,6 +46,7 @@ the source of truth for scope, acceptance, and current work.
 | P58-B14 | [Tactical detail and Escort](2026-09-23-tactical-detail-escort.md) | [`p58-b14-tactical-detail-escort/`](p58-b14-tactical-detail-escort/) |
 | P58-B15 | [Tactical Battle Alert and audio](2026-09-24-tactical-battle-alert-audio.md) | [`p58-b15-tactical-alert-audio/`](p58-b15-tactical-alert-audio/) |
 | P58-B16 | [Tactical weapon audio bank](2026-09-24-tactical-weapon-audio.md) | [`p58-b16-tactical-weapon-audio/`](p58-b16-tactical-weapon-audio/) |
+| P58-B17 | [Tactical command voice bank](2026-09-24-tactical-command-voice.md) | [`p58-b17-tactical-command-voice/`](p58-b17-tactical-command-voice/) |
 
 ## Current strategic correction
 

@@ -98,36 +98,6 @@ pub enum MusicContext {
 }
 
 // ---------------------------------------------------------------------------
-// VoiceLine — faction voice line identifiers
-// ---------------------------------------------------------------------------
-
-/// Voice line event identifiers.
-///
-/// The audio engine maps these to WAV files in
-/// `data/sounds/voice/{alliance,empire}/{id}.wav`.
-/// Resource IDs correspond to VOICEFXA.DLL (14001–15163) and
-/// VOICEFXE.DLL (15001–15132) extraction outputs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VoiceLine {
-    /// Generic mission success acknowledgement.
-    AllianceMissionSuccess,
-    /// Generic mission failure.
-    AllianceMissionFail,
-    /// Fleet departure order confirmed.
-    AllianceFleetDeparts,
-    /// Construction complete at a system.
-    AllianceBuildComplete,
-    /// Empire mission success acknowledgement.
-    EmpireMissionSuccess,
-    /// Empire mission failure.
-    EmpireMissionFail,
-    /// Empire fleet departure.
-    EmpireFleetDeparts,
-    /// Empire construction complete.
-    EmpireBuildComplete,
-}
-
-// ---------------------------------------------------------------------------
 // AudioVolumeState — pure UI state, no kira types
 // ---------------------------------------------------------------------------
 

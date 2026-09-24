@@ -498,8 +498,20 @@
           "variant_count": 22,
           "corrected_event": "event_0x14_is_SHIP_TAKE_TORPEDO_HIT_not_ship_destruction"
         },
-        "latest_verified_tranche": "P58-B16 corrects event 0x14 to torpedo impact and restores all eight weapon fire/impact events across all 22 TACTICAL WAVE 13033–13054 variants. Production capital and fighter combat dispatch typed cues, and the focused muted browser journey passes both factions and both viewports. The deterministic A1 crosswalk remains 106 cells through 87 journeys and 19 snapshots; A0 and strict acceptance remain 0 of 106.",
-        "next_proof": "Recover remaining non-weapon and voice events, exact shared-RNG sequencing, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare audible native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
+        "p58_b17_command_voice": {
+          "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50"],
+          "alliance_event_base": 32,
+          "alliance_wave_base": 14001,
+          "empire_event_base": 154,
+          "empire_wave_base": 15001,
+          "command_callers": ["FUN_005a3020", "FUN_005a3f00", "FUN_005a4e50", "FUN_005a3aa0", "FUN_005a3740", "FUN_005a3850", "FUN_005a3630", "FUN_005a48d0"],
+          "families": ["battle_ready", "capital_maneuver", "fighter_maneuver", "capital_attack", "fighter_attack", "capital_formation", "capital_mission", "fighter_mission"],
+          "alliance_variant_count": 45,
+          "empire_variant_count": 45,
+          "total_variant_count": 90
+        },
+        "latest_verified_tranche": "P58-B17 preserves deterministic A1 mapping for all 106 tactical cells and restores 90 exact faction command recordings from VOICEFXA/VOICEFXE. Battle ready and task-force/RGBY maneuver, attack, formation, and mission events dispatch from production commands; the focused muted browser journey loads and routes all 22 weapon and 90 voice resources for both factions and viewports. A0 and strict acceptance remain 0 of 106.",
+        "next_proof": "Recover remaining result, withdrawal, and Death Star voice events, exact shared-RNG sequencing, mixing, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare audible native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true
     },

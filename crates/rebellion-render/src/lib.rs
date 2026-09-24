@@ -44,9 +44,7 @@ pub use advisor::{
     advisor_mission_result, advisor_uprising, draw_advisor, AdvisorFaction, AdvisorMessage,
     AdvisorPriority, AdvisorState,
 };
-pub use audio::{
-    draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine,
-};
+pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};

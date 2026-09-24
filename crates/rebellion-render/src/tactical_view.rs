@@ -1365,6 +1365,9 @@ pub struct BattleSession {
     /// resource identity is fixed when the combat event is emitted so frame
     /// scheduling cannot change variant selection.
     pub pending_audio_cues: Vec<TacticalAudioCue>,
+    /// Source-identified VOICEFXA/VOICEFXE command acknowledgements waiting
+    /// for the application audio backend.
+    pub pending_voice_cues: Vec<TacticalVoiceCue>,
     /// Target-attached tractor/gravity field selected through one shared slot.
     pub field_effects: Vec<TacticalFieldEffect>,
     /// Source-selected subsystem repairs emitted by the latest combat step.
@@ -1626,6 +1629,148 @@ impl TacticalAudioEvent {
 pub struct TacticalAudioCue {
     pub event: TacticalAudioEvent,
     pub resource_id: u32,
+}
+
+/// Faction-specific voice bank selected by the tactical sound manager.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TacticalVoiceFaction {
+    Alliance,
+    Empire,
+}
+
+impl TacticalVoiceFaction {
+    #[must_use]
+    pub const fn source_event_base(self) -> u16 {
+        match self {
+            Self::Alliance => 0x20,
+            Self::Empire => 0x9a,
+        }
+    }
+
+    #[must_use]
+    pub const fn resource_base(self) -> u32 {
+        match self {
+            Self::Alliance => 14_001,
+            Self::Empire => 15_001,
+        }
+    }
+}
+
+/// Source command family that selected a faction voice acknowledgement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TacticalVoiceEvent {
+    BattleReady,
+    CapitalManeuver,
+    FighterManeuver,
+    CapitalAttack,
+    FighterAttack,
+    CapitalFormation,
+    CapitalMission,
+    FighterMission,
+}
+
+/// One exact tactical voice event and its original WAVE resource.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TacticalVoiceCue {
+    pub event: TacticalVoiceEvent,
+    pub faction: TacticalVoiceFaction,
+    pub source_event: u16,
+    pub resource_id: u32,
+}
+
+impl TacticalVoiceCue {
+    const fn from_offset(
+        faction: TacticalVoiceFaction,
+        event: TacticalVoiceEvent,
+        offset: u16,
+    ) -> Self {
+        Self {
+            event,
+            faction,
+            source_event: faction.source_event_base() + offset,
+            resource_id: faction.resource_base() + offset as u32,
+        }
+    }
+
+    #[must_use]
+    pub const fn battle_ready(faction: TacticalVoiceFaction) -> Self {
+        Self::from_offset(faction, TacticalVoiceEvent::BattleReady, 0)
+    }
+
+    #[must_use]
+    pub fn capital_maneuver(faction: TacticalVoiceFaction, group: u8) -> Self {
+        Self::from_offset(
+            faction,
+            TacticalVoiceEvent::CapitalManeuver,
+            2 + group.min(7) as u16,
+        )
+    }
+
+    #[must_use]
+    pub fn fighter_maneuver(faction: TacticalVoiceFaction, group: u8) -> Self {
+        Self::from_offset(
+            faction,
+            TacticalVoiceEvent::FighterManeuver,
+            10 + group.min(3) as u16,
+        )
+    }
+
+    #[must_use]
+    pub fn capital_attack(faction: TacticalVoiceFaction, group: u8) -> Self {
+        Self::from_offset(
+            faction,
+            TacticalVoiceEvent::CapitalAttack,
+            28 + group.min(7) as u16,
+        )
+    }
+
+    #[must_use]
+    pub fn fighter_attack(faction: TacticalVoiceFaction, group: u8) -> Self {
+        Self::from_offset(
+            faction,
+            TacticalVoiceEvent::FighterAttack,
+            36 + group.min(3) as u16,
+        )
+    }
+
+    #[must_use]
+    pub fn capital_formation(faction: TacticalVoiceFaction, group: u8) -> Self {
+        let base = match faction {
+            TacticalVoiceFaction::Alliance => 79,
+            TacticalVoiceFaction::Empire => 83,
+        };
+        Self::from_offset(
+            faction,
+            TacticalVoiceEvent::CapitalFormation,
+            base + group.min(7) as u16,
+        )
+    }
+
+    #[must_use]
+    pub fn capital_mission(faction: TacticalVoiceFaction, group: u8) -> Self {
+        let base = match faction {
+            TacticalVoiceFaction::Alliance => 88,
+            TacticalVoiceFaction::Empire => 92,
+        };
+        Self::from_offset(
+            faction,
+            TacticalVoiceEvent::CapitalMission,
+            base + group.min(7) as u16,
+        )
+    }
+
+    #[must_use]
+    pub fn fighter_mission(faction: TacticalVoiceFaction, group: u8) -> Self {
+        let base = match faction {
+            TacticalVoiceFaction::Alliance => 96,
+            TacticalVoiceFaction::Empire => 100,
+        };
+        Self::from_offset(
+            faction,
+            TacticalVoiceEvent::FighterMission,
+            base + group.min(3) as u16,
+        )
+    }
 }
 
 impl TacticalAudioCue {
@@ -2707,6 +2852,7 @@ impl BattleSession {
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
             pending_audio_cues: Vec::new(),
+            pending_voice_cues: Vec::new(),
             field_effects: Vec::new(),
             subsystem_repairs: Vec::new(),
             paused: true,
@@ -4411,6 +4557,22 @@ impl BattleSession {
     fn take_pending_audio_cues(&mut self) -> Vec<TacticalAudioCue> {
         std::mem::take(&mut self.pending_audio_cues)
     }
+
+    fn take_pending_voice_cues(&mut self) -> Vec<TacticalVoiceCue> {
+        std::mem::take(&mut self.pending_voice_cues)
+    }
+
+    /// Queue the original faction-specific readiness call when command passes
+    /// from Battle Alert into the active tactical manager.
+    pub fn queue_battle_ready_voice(&mut self) {
+        let faction = if self.player_is_attacker == self.attacker_is_alliance {
+            TacticalVoiceFaction::Alliance
+        } else {
+            TacticalVoiceFaction::Empire
+        };
+        self.pending_voice_cues
+            .push(TacticalVoiceCue::battle_ready(faction));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5407,6 +5569,47 @@ impl TacticalState {
                     .push(TacticalAudioCue::from_variant(event, variant));
             }
         }
+        session.pending_voice_cues.clear();
+        for faction in [TacticalVoiceFaction::Alliance, TacticalVoiceFaction::Empire] {
+            session
+                .pending_voice_cues
+                .push(TacticalVoiceCue::battle_ready(faction));
+            for group in 0..8 {
+                session
+                    .pending_voice_cues
+                    .push(TacticalVoiceCue::capital_maneuver(faction, group));
+            }
+            for group in 0..4 {
+                session
+                    .pending_voice_cues
+                    .push(TacticalVoiceCue::fighter_maneuver(faction, group));
+            }
+            for group in 0..8 {
+                session
+                    .pending_voice_cues
+                    .push(TacticalVoiceCue::capital_attack(faction, group));
+            }
+            for group in 0..4 {
+                session
+                    .pending_voice_cues
+                    .push(TacticalVoiceCue::fighter_attack(faction, group));
+            }
+            for group in 0..8 {
+                session
+                    .pending_voice_cues
+                    .push(TacticalVoiceCue::capital_formation(faction, group));
+            }
+            for group in 0..8 {
+                session
+                    .pending_voice_cues
+                    .push(TacticalVoiceCue::capital_mission(faction, group));
+            }
+            for group in 0..4 {
+                session
+                    .pending_voice_cues
+                    .push(TacticalVoiceCue::fighter_mission(faction, group));
+            }
+        }
     }
 
     /// Freeze all three projectile shapes plus both shared field families on
@@ -5755,6 +5958,14 @@ impl TacticalState {
         self.session
             .as_mut()
             .map_or_else(Vec::new, BattleSession::take_pending_audio_cues)
+    }
+
+    /// Drain exact VOICEFXA/VOICEFXE tactical acknowledgements for the
+    /// application audio backend.
+    pub fn take_pending_voice_cues(&mut self) -> Vec<TacticalVoiceCue> {
+        self.session
+            .as_mut()
+            .map_or_else(Vec::new, BattleSession::take_pending_voice_cues)
     }
 
     /// Project a deterministic strategic auto-resolve outcome onto the live
@@ -7289,6 +7500,63 @@ fn assign_selected_command(
     (capital_members, fighter_members)
 }
 
+fn queue_selected_command_voice(
+    session: &mut BattleSession,
+    panel: TacticalCommandPanel,
+    order: TacticalOrder,
+    formation_changed: bool,
+) {
+    let faction = if player_is_alliance(session) {
+        TacticalVoiceFaction::Alliance
+    } else {
+        TacticalVoiceFaction::Empire
+    };
+    let cue = if let Some(group) = session.selected_fighter_group {
+        match panel {
+            TacticalCommandPanel::Maneuvers { .. } => {
+                TacticalVoiceCue::fighter_maneuver(faction, group)
+            }
+            TacticalCommandPanel::Missions { .. }
+                if matches!(
+                    order,
+                    TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+                ) =>
+            {
+                TacticalVoiceCue::fighter_attack(faction, group)
+            }
+            TacticalCommandPanel::Missions { .. } => {
+                TacticalVoiceCue::fighter_mission(faction, group)
+            }
+            TacticalCommandPanel::Display => return,
+        }
+    } else {
+        let Some(group) = selected_player_task_force(session) else {
+            return;
+        };
+        match panel {
+            TacticalCommandPanel::Maneuvers { .. } if formation_changed => {
+                TacticalVoiceCue::capital_formation(faction, group)
+            }
+            TacticalCommandPanel::Maneuvers { .. } => {
+                TacticalVoiceCue::capital_maneuver(faction, group)
+            }
+            TacticalCommandPanel::Missions { .. }
+                if matches!(
+                    order,
+                    TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+                ) =>
+            {
+                TacticalVoiceCue::capital_attack(faction, group)
+            }
+            TacticalCommandPanel::Missions { .. } => {
+                TacticalVoiceCue::capital_mission(faction, group)
+            }
+            TacticalCommandPanel::Display => return,
+        }
+    };
+    session.pending_voice_cues.push(cue);
+}
+
 fn pressed_tactical_hud_control(
     cache: &mut BmpCache,
     canvas: TacticalCanvas,
@@ -8342,6 +8610,7 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
         TacticalCommandControl::Confirm => {
             let panel = state.command_panel;
             if let Some(session) = state.session.as_mut() {
+                let (_, previous_tactic) = selected_command_values(session);
                 let (kind, order, tactic) = match panel {
                     TacticalCommandPanel::Maneuvers {
                         pending_order,
@@ -8354,6 +8623,14 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                 };
                 let (capital_members, fighter_members) =
                     assign_selected_command(session, order, tactic);
+                if capital_members + fighter_members > 0 {
+                    queue_selected_command_voice(
+                        session,
+                        panel,
+                        order,
+                        tactic.is_some_and(|value| value != previous_tactic),
+                    );
+                }
                 if order == TacticalOrder::AttackDeathStar {
                     macroquad::logging::info!(
                         "[tactical_death_star] trench_run_launch status={} fighter_members={}",
@@ -11606,6 +11883,7 @@ mod tests {
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
             pending_audio_cues: Vec::new(),
+            pending_voice_cues: Vec::new(),
             field_effects: Vec::new(),
             subsystem_repairs: Vec::new(),
             paused: true,
@@ -13016,6 +13294,43 @@ mod tests {
     }
 
     #[test]
+    fn tactical_voice_cues_preserve_source_event_and_resource_families() {
+        assert_eq!(
+            TacticalVoiceCue::battle_ready(TacticalVoiceFaction::Alliance),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::BattleReady,
+                faction: TacticalVoiceFaction::Alliance,
+                source_event: 0x20,
+                resource_id: 14_001,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::fighter_attack(TacticalVoiceFaction::Alliance, 3).resource_id,
+            14_040
+        );
+        assert_eq!(
+            TacticalVoiceCue::capital_formation(TacticalVoiceFaction::Empire, 7),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::CapitalFormation,
+                faction: TacticalVoiceFaction::Empire,
+                source_event: 0xf4,
+                resource_id: 15_091,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::fighter_mission(TacticalVoiceFaction::Empire, 3).resource_id,
+            15_104
+        );
+
+        let mut empire = test_session(Vec::new(), Vec::new(), false);
+        empire.queue_battle_ready_voice();
+        assert_eq!(
+            empire.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::battle_ready(TacticalVoiceFaction::Empire)]
+        );
+    }
+
+    #[test]
     fn original_slot_sequence_matches_executable_branch_order() {
         let actual: Vec<_> = OriginalTacticalSlots::default().take(9).collect();
         assert_eq!(actual[0].to_bits(), (-0.0f32).to_bits());
@@ -14241,6 +14556,12 @@ mod tests {
         let ship = &state.session.as_ref().unwrap().ships[0];
         assert_eq!(ship.order, TacticalOrder::None);
         assert_eq!(ship.tactic, TacticalTactic::StandOff);
+        assert!(state
+            .session
+            .as_ref()
+            .unwrap()
+            .pending_voice_cues
+            .is_empty());
 
         activate_tactical_command(&mut state, TacticalCommandControl::OpenManeuvers);
         activate_tactical_command(&mut state, TacticalCommandControl::Hammer);
@@ -14250,6 +14571,13 @@ mod tests {
         assert_eq!(ship.order, TacticalOrder::Hammer);
         assert_eq!(ship.tactic, TacticalTactic::Surround);
         assert_eq!(state.command_panel, TacticalCommandPanel::Display);
+        assert_eq!(
+            state.session.as_ref().unwrap().pending_voice_cues,
+            vec![TacticalVoiceCue::capital_formation(
+                TacticalVoiceFaction::Alliance,
+                0
+            )]
+        );
     }
 
     #[test]
@@ -14277,6 +14605,13 @@ mod tests {
             .fighters
             .iter()
             .all(|fighter| fighter.order == TacticalOrder::Recover));
+        assert_eq!(
+            state.session.as_ref().unwrap().pending_voice_cues,
+            vec![TacticalVoiceCue::fighter_mission(
+                TacticalVoiceFaction::Alliance,
+                0
+            )]
+        );
     }
 
     #[test]

@@ -145,6 +145,15 @@ else
     echo "WARNING: TACTICAL.DLL not found in $ORIGINAL_GAME_DIR; tactical event cues will remain silent."
 fi
 
+mkdir -p "$WEB_AUDIO/voice/alliance" "$WEB_AUDIO/voice/empire"
+rm -f "$WEB_AUDIO/voice/alliance"/*.wav "$WEB_AUDIO/voice/empire"/*.wav
+if [ -f "$ORIGINAL_GAME_DIR/VOICEFXA.DLL" ] && [ -f "$ORIGINAL_GAME_DIR/VOICEFXE.DLL" ]; then
+    "$DAT_DUMPER" --gdata "$ORIGINAL_GAME_DIR" --extract-tactical-voice \
+        --output "$WEB_AUDIO/voice"
+else
+    echo "WARNING: VOICEFXA.DLL or VOICEFXE.DLL not found in $ORIGINAL_GAME_DIR; tactical command voices will remain silent."
+fi
+
 # ── Stage UI resources into web/data/ui/ ────────────────────────────────────
 UI_SRC="$ROOT/data/base/ui"
 WEB_UI="$ROOT/web/data/ui"

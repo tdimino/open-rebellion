@@ -50,7 +50,7 @@ mixing, or genuine two-peer ordering.
 - [`FUN_005c2e60`](../../../ghidra/notes/FUN_005c2e60.c) selects and realizes a
   type-303 palette. `TACTICAL.DLL` contains 66 WAVE resources (`13000`–
   `13065`); P58-B16 maps and stages all 22 weapon-event variants at
-  `13033–13054`, while non-weapon events and voice mappings remain open.
+  `13033–13054`.
 - [`FUN_0044f860`](../../../ghidra/notes/FUN_0044f860.c) constructs the faction
   Battle Alert from frames 10710/10711, scenes 10712/10713, rails 10820/10821,
   four tab families, and Retreat, Simulate, and Take Command controls.
@@ -59,6 +59,12 @@ mixing, or genuine two-peer ordering.
   `FUN_005ba520` establish their tactical audio-manager resource families and
   variant selection. WAVE `13033–13054` supplies 22 weapon variants;
   MDATA.307 supplies the battle score.
+- `FUN_005bae60` also establishes the faction event bases at `0x20` and `0x9a`.
+  P58-B17 follows the command callers at `FUN_005a3020`, `FUN_005a3f00`,
+  `FUN_005a4e50`, `FUN_005a3aa0`, `FUN_005a3740`, `FUN_005a3850`,
+  `FUN_005a3630`, and `FUN_005a48d0` to restore 90 exact battle-ready,
+  maneuver, attack, formation, and mission recordings from VOICEFXA/VOICEFXE.
+  Result, withdrawal, and Death Star voice families remain open.
 - The current fixture selects exact system DAT identities for its two faction
   cases and emits stable system, participant, layout, palette, tactical
   ordinal, and resource-base identities. P58A browser-proves four

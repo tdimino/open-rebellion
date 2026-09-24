@@ -84,7 +84,7 @@ use rebellion_render::{
     MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MissionsPanelState,
     MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState, PanelAction,
     SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction, SystemWindowState,
-    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer, VoiceLine,
+    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer,
 };
 
 /// Top-level game mode state machine.
@@ -936,6 +936,10 @@ async fn main() {
         if tactical_dll.exists() {
             engine.load_original_tactical_sfx(&tactical_dll);
         }
+        engine.load_original_tactical_voice(
+            &original_game_dir().join("VOICEFXA.DLL"),
+            &original_game_dir().join("VOICEFXE.DLL"),
+        );
         audio_vol.backend_available = engine.is_available();
         engine
     };
@@ -959,10 +963,20 @@ async fn main() {
         })
         .collect();
     #[cfg(target_arch = "wasm32")]
+    let browser_tactical_voice: Vec<_> = audio::tactical_voice_assets()
+        .into_iter()
+        .filter_map(|(faction, path, resource_id)| {
+            browser_audio_files
+                .remove(&path)
+                .map(|bytes| (faction, resource_id, bytes))
+        })
+        .collect();
+    #[cfg(target_arch = "wasm32")]
     let mut browser_menu_audio = if browser_main_theme.is_some()
         || browser_battle_theme.is_some()
         || !browser_menu_sfx.is_empty()
         || !browser_tactical_sfx.is_empty()
+        || !browser_tactical_voice.is_empty()
     {
         // Initialise WebAudio and begin decoding before the first interaction.
         // Its resume handlers are then ready for the first user gesture.
@@ -975,6 +989,9 @@ async fn main() {
         }
         for (resource_id, bytes) in &browser_tactical_sfx {
             engine.load_tactical_sfx_bytes(*resource_id, bytes);
+        }
+        for (faction, resource_id, bytes) in &browser_tactical_voice {
+            engine.load_tactical_voice_bytes(*faction, *resource_id, bytes);
         }
         Some(engine)
     } else {
@@ -2842,13 +2859,6 @@ async fn main() {
                                         &sounds_dir,
                                         &audio_vol,
                                     );
-                                    // Play the appropriate faction voice line for game start.
-                                    let greeting = if faction == MissionFaction::Alliance {
-                                        VoiceLine::AllianceMissionSuccess
-                                    } else {
-                                        VoiceLine::EmpireMissionSuccess
-                                    };
-                                    audio_engine.play_voice(greeting, &audio_vol);
                                 }
 
                                 // Sync advisor faction and send greeting
@@ -3255,6 +3265,7 @@ async fn main() {
                         // Advance from placement to combat phase.
                         if let Some(ref mut session) = tactical_state.session {
                             session.phase = rebellion_render::BattlePhase::Combat;
+                            session.queue_battle_ready_voice();
                         }
                     }
                     TacticalAction::AutoResolve => {
@@ -4072,6 +4083,24 @@ async fn main() {
                     audio_vol.muted
                 );
             }
+            for cue in tactical_state.take_pending_voice_cues() {
+                #[cfg(not(target_arch = "wasm32"))]
+                let loaded =
+                    audio_engine.play_tactical_voice(cue.faction, cue.resource_id, &audio_vol);
+                #[cfg(target_arch = "wasm32")]
+                let loaded = browser_menu_audio.as_mut().is_some_and(|engine| {
+                    engine.play_tactical_voice(cue.faction, cue.resource_id, &audio_vol)
+                });
+                macroquad::logging::info!(
+                    "[audio] context=combat voice_event={:?} source_event=0x{:x} wave={} faction={:?} routed=true loaded={} muted={}",
+                    cue.event,
+                    cue.source_event,
+                    cue.resource_id,
+                    cue.faction,
+                    loaded,
+                    audio_vol.muted
+                );
+            }
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -4352,12 +4381,6 @@ fn apply_panel_action(
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
-                        let voice = if departure.is_alliance {
-                            VoiceLine::AllianceFleetDeparts
-                        } else {
-                            VoiceLine::EmpireFleetDeparts
-                        };
-                        audio_engine.play_voice(voice, audio_vol);
                     }
                 }
                 Err(error) => {
@@ -4941,18 +4964,8 @@ fn apply_mission_result(
     #[cfg(not(target_arch = "wasm32"))]
     if result.outcome == rebellion_core::missions::MissionOutcome::Success {
         audio_engine.play_sfx(SfxKind::MissionSuccess, audio_vol);
-        let voice = match result.faction {
-            MissionFaction::Alliance => VoiceLine::AllianceMissionSuccess,
-            MissionFaction::Empire => VoiceLine::EmpireMissionSuccess,
-        };
-        audio_engine.play_voice(voice, audio_vol);
     } else {
         audio_engine.play_sfx(SfxKind::MissionFail, audio_vol);
-        let voice = match result.faction {
-            MissionFaction::Alliance => VoiceLine::AllianceMissionFail,
-            MissionFaction::Empire => VoiceLine::EmpireMissionFail,
-        };
-        audio_engine.play_voice(voice, audio_vol);
     }
 
     for effect in &result.effects {
@@ -5531,12 +5544,6 @@ fn apply_ai_actions(
                         #[cfg(not(target_arch = "wasm32"))]
                         {
                             audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
-                            let voice = if is_alliance {
-                                VoiceLine::AllianceFleetDeparts
-                            } else {
-                                VoiceLine::EmpireFleetDeparts
-                            };
-                            audio_engine.play_voice(voice, audio_vol);
                         }
                         let reason_str = match reason {
                             FleetMoveReason::Attack => "attack",
@@ -5954,6 +5961,7 @@ mod tactical_ground_tests {
             weapon_effects: vec![],
             impact_effects: vec![],
             pending_audio_cues: vec![],
+            pending_voice_cues: vec![],
             field_effects: vec![],
             subsystem_repairs: vec![],
             paused: false,

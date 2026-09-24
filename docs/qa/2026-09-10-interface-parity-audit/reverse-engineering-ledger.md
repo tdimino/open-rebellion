@@ -105,7 +105,9 @@ when a required export is empty.
 ## Original resource truth
 
 Runtime pack v2 contains 52 game-data entries, 2,303 standard BMPs, all 3,988
-ALSPRITE and EMSPRITE type-302 frames, and five audio files. The owned
+ALSPRITE and EMSPRITE type-302 frames, and 118 audio files: two music cues,
+four menu effects, 22 tactical weapon effects, and 90 tactical command voices.
+The owned
 installation contains important additional families that are not yet staged or
 packed:
 
@@ -115,7 +117,8 @@ packed:
 | EMSPRITE | 753 BIN controls and 216 WAVs; its 34 BMPs and 2,348 type-302 frames are staged |
 | ALBRIEF | 366 BIN controls, 2,684 type-302 frames, 17 WAVs |
 | EMBRIEF | 471 BIN controls, 2,738 type-302 frames, 22 WAVs |
-| TACTICAL | 87 type-301 DirectX meshes, 397 type-303 textures, 66 WAVs |
+| TACTICAL | 87 type-301 DirectX meshes, 397 type-303 textures, and 44 WAVs beyond the 22 staged weapon variants |
+| VOICEFXA and VOICEFXE | 195 WAVs beyond the 90 staged battle-ready and group-command recordings |
 | STRATEGY | 96 RCDATA resources and 66 WAVs beyond its staged BMPs |
 | REBDLOG and TEXTCOMM | Original dialog chrome, text, templates, and accelerators |
 | EData and ENCYTEXT | 187 400×200 entity images and 348 descriptions |
@@ -282,6 +285,15 @@ tables and `FUN_005b3f10`, it maps events `0x0d–0x14` to all 22 WAVE
 combat. Exact shared-RNG sequencing and remaining non-weapon/voice events stay
 open.
 
+[P58-B17 evidence](evidence/2026-09-24-tactical-command-voice.md) follows the
+faction event bases in `FUN_005bae60` and the production command callers to 90
+exact VOICEFXA/VOICEFXE recordings. Battle ready and task-force/RGBY maneuver,
+attack, formation, and mission acknowledgements now dispatch through native
+and browser audio backends. The focused muted browser gate loads and routes
+all 22 weapon and 90 command-voice resources for both factions and viewports.
+Result, withdrawal, and Death Star voice families, mixing, interruption,
+audible native comparison, and strict A0 acceptance remain open.
+
 ## Immediate implementation order
 
 1. Trace SPT to BIN to frame and WAV selection for both factions on top of the
@@ -297,9 +309,9 @@ open.
    map input.
 6. Continue the `TAC-01` through `TAC-07` space-battle
    path using the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md),
-   including remaining non-weapon/voice audio events, results, and native
-   Death Star behavior, then acquire A0 evidence for the complete mapped
-   matrix.
+   including remaining result, withdrawal, and Death Star voice events,
+   results, and native Death Star behavior, then acquire A0 evidence for the
+   complete mapped matrix.
 7. Use original-runtime capture only for the remaining dynamic proof boundary.
 
 No static discovery marks a surface complete. It closes only the corresponding

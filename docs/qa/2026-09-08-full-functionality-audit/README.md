@@ -80,6 +80,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical detail and Escort proof](../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md) | Destroyed presentation, compact selected-capital contents, and direct source order-code 1 Escort bring deterministic A1 coverage to 104/106 while strict acceptance remains 0/106. |
 | [Tactical Battle Alert and audio proof](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md) | Authentic faction alerts, Take Command entry, MDATA 307, and WAVE 13054 complete deterministic A1 mapping at 106/106 while strict acceptance remains 0/106. |
 | [Tactical weapon-audio proof](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md) | Correct event semantics and the complete WAVE 13033–13054 fire/impact bank pass focused muted browser routing; exact RNG and strict A0 acceptance remain open. |
+| [Tactical command-voice proof](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-command-voice.md) | Exact faction battle-ready and group command mappings route 90 VOICEFXA/VOICEFXE resources through native and browser backends; remaining voice families and strict A0 acceptance remain open. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

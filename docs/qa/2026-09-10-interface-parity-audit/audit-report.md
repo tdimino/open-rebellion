@@ -313,6 +313,15 @@ through `0x14`, extracts all 22 weapon fire/impact variants at TACTICAL WAVE
 focused four-case muted browser journey passes. Exact shared-RNG sequencing,
 audible native comparison, A0 coverage, and strict acceptance remain open.
 
+P58-B17 follows the faction voice table from `FUN_005bae60`, the queue and
+selection path in `FUN_005ba980`/`FUN_005bad50`, and the command-manager
+callers. It restores 90 exact battle-ready, task-force, and RGBY maneuver,
+attack, formation, and mission acknowledgements across VOICEFXA/VOICEFXE.
+Production command confirmation emits the matching faction and group ordinal;
+the focused four-case muted browser gate proves every resource is present and
+routed. Remaining result, withdrawal, and Death Star voice families, mixing,
+native audible comparison, and strict A0 acceptance stay open.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

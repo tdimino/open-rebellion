@@ -41,6 +41,11 @@ struct Cli {
     /// named WAV files beneath --output, which is required for this mode.
     #[arg(long)]
     extract_tactical_sfx: bool,
+
+    /// Extract source-proven tactical command voices from VOICEFXA.DLL and
+    /// VOICEFXE.DLL. Outputs faction directories beneath --output.
+    #[arg(long)]
+    extract_tactical_voice: bool,
 }
 
 #[expect(
@@ -163,6 +168,66 @@ fn main() -> anyhow::Result<()> {
                 resource_id,
                 out_path.display(),
                 bytes.len()
+            );
+        }
+        return Ok(());
+    }
+
+    // ── VOICEFX tactical command extraction (separate path) ────────────────
+    if cli.extract_tactical_voice {
+        let out_dir = cli
+            .output
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--output is required with --extract-tactical-voice"))?;
+        let banks = [
+            (
+                "VOICEFXA.DLL",
+                "alliance",
+                "voicefxa",
+                [
+                    (14_001, 14_001),
+                    (14_003, 14_014),
+                    (14_029, 14_040),
+                    (14_080, 14_087),
+                    (14_089, 14_100),
+                ],
+            ),
+            (
+                "VOICEFXE.DLL",
+                "empire",
+                "voicefxe",
+                [
+                    (15_001, 15_001),
+                    (15_003, 15_014),
+                    (15_029, 15_040),
+                    (15_084, 15_091),
+                    (15_093, 15_104),
+                ],
+            ),
+        ];
+        for (dll_name, faction_dir, suffix, ranges) in banks {
+            let dll_path = cli.gdata.join(dll_name);
+            if !dll_path.exists() {
+                anyhow::bail!("{dll_name} not found in {}", cli.gdata.display());
+            }
+            let resource_ids = ranges
+                .into_iter()
+                .flat_map(|(first, last)| first..=last)
+                .collect::<Vec<_>>();
+            let waves = types::wave_resources::load_waves(&dll_path, &resource_ids)?;
+            let destination = out_dir.join(faction_dir);
+            std::fs::create_dir_all(&destination)?;
+            for resource_id in resource_ids {
+                let bytes = waves
+                    .get(&resource_id)
+                    .ok_or_else(|| anyhow::anyhow!("missing extracted resource {resource_id}"))?;
+                let out_path = destination.join(format!("{resource_id}-{suffix}.wav"));
+                std::fs::write(&out_path, bytes)?;
+            }
+            eprintln!(
+                "OK   {dll_name} tactical command bank -> {} ({} WAVs)",
+                destination.display(),
+                waves.len()
             );
         }
         return Ok(());

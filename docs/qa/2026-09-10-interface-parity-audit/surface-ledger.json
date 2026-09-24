@@ -33,7 +33,7 @@
     "current_matrix_coverage": 0,
     "current_a0_coverage": 0,
     "current_parity_acceptance": 0,
-    "checkpoint": "P58-B07"
+    "checkpoint": "P58-B17"
   },
   "surfaces": [
     {
@@ -4272,7 +4272,7 @@
       "title": "Main space-battle viewport and faction HUD",
       "required": true,
       "status": "fail",
-      "latest_checkpoint": "P58-B16 preserves deterministic A1 mapping for all 106 tactical cells and restores the complete weapon-audio bank. Events 0x0d through 0x14 route all 22 TACTICAL WAVE 13033–13054 variants from production capital and fighter combat. Focused muted browser verification passes both factions and both viewports. A0 coverage and strict acceptance remain 0 of 106; the strict gate was not run and every TAC-01 cell remains pending.",
+      "latest_checkpoint": "P58-B17 preserves deterministic A1 mapping for all 106 tactical cells and restores 90 exact faction command recordings after the complete 22-variant weapon-audio bank. Battle ready and task-force/RGBY maneuver, attack, formation, and mission events route from production command paths. Focused muted browser verification loads and routes all 112 tactical weapon and command-voice resources for both factions and both viewports. A0 coverage and strict acceptance remain 0 of 106; the strict gate was not run and every TAC-01 cell remains pending.",
       "required_states": [
         "Alliance",
         "Imperial",
@@ -4307,7 +4307,7 @@
         149,
         150
       ],
-      "current_implementation": "P54 through P58F13 restore the original shell, complete tactical asset transport, camera and render state, exact participant identities, fighter detail, group controls, planets, effects, fields, selected damage, subsystem behavior, movement, commands, recovery, and typed target lifecycle. P58-B06 adds source-backed capital and fighter combat, collision, automatic colored groups, capability-sorted task forces with forward-relative retained formations, the separate Death Star object, original Battle Results and Battle Options surfaces, resource 5030 stars, the superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. P58-B12 adds deterministic empty-space presentation. P58-B15 restores the source-built faction Battle Alert, paused Take Command entry, and MDATA 307 battle music. P58-B16 corrects event 0x14 to torpedo impact and restores all eight weapon fire/impact events across the 22 TACTICAL WAVE 13033–13054 variants. All 106 cells have deterministic A1 scenarios through 87 journeys and 19 snapshots. Exact global RNG sequencing, original arrival callbacks, exact planet placement, power allocation, native beam behavior, shared post-battle bombardment, landing, navigation orchestration, remaining non-weapon and voice events, native playback, rare states, and lossless A0 comparison keep every TAC-01 cell pending.",
+      "current_implementation": "P54 through P58F13 restore the original shell, complete tactical asset transport, camera and render state, exact participant identities, fighter detail, group controls, planets, effects, fields, selected damage, subsystem behavior, movement, commands, recovery, and typed target lifecycle. P58-B06 adds source-backed capital and fighter combat, collision, automatic colored groups, capability-sorted task forces with forward-relative retained formations, the separate Death Star object, original Battle Results and Battle Options surfaces, resource 5030 stars, the superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. P58-B12 adds deterministic empty-space presentation. P58-B15 restores the source-built faction Battle Alert, paused Take Command entry, and MDATA 307 battle music. P58-B16 restores all 22 TACTICAL weapon-audio variants. P58-B17 restores 90 exact VOICEFXA/VOICEFXE battle-ready and task-force/RGBY maneuver, attack, formation, and mission acknowledgements. All 106 cells have deterministic A1 scenarios through 87 journeys and 19 snapshots. Exact global RNG sequencing, original arrival callbacks, exact planet placement, power allocation, native beam behavior, shared post-battle bombardment, landing, navigation orchestration, remaining result/withdrawal/Death Star voice events, native playback, rare states, and lossless A0 comparison keep every TAC-01 cell pending.",
       "finding_ids": [
         "UIP-F-009"
       ],

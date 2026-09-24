@@ -790,6 +790,13 @@ would tune around known simulation feedback defects.
   events across TACTICAL WAVE 13033–13054. Production capital and fighter
   paths now emit the typed cues; exact shared-RNG sequencing, audible native
   comparison, A0 evidence, and strict acceptance remain open.
+  P58-B17 restores 90 exact faction command recordings from VOICEFXA and
+  VOICEFXE: battle ready plus task-force and RGBY maneuver, attack, formation,
+  and mission acknowledgements. Production commands now queue the source event
+  and group ordinal; the focused four-case muted browser gate loads and routes
+  all 22 weapon and 90 command-voice resources. Result, withdrawal, and Death
+  Star voice families, mixing, audible native comparison, A0 evidence, and
+  strict acceptance remain open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production
