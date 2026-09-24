@@ -152,7 +152,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus and joins plus live rendering, damage, repair, movement, commands, capital/fighter combat, collision, groups, retained formations, Death Star, original result/options panels, withdrawal confirmation, trench-run routes, and strategic result application source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, original arrival callbacks, power allocation, native beam behavior, post-battle orchestration, native playback, remaining controls, and A0 comparison |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus and joins plus live rendering, damage, repair, movement, commands, capital/fighter combat, collision, groups, retained formations, Death Star, original result/options panels, withdrawal confirmation, destroyed presentation, selected-ship contents, Escort, trench-run routes, and strategic result application source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, original arrival callbacks, power allocation, native beam behavior, post-battle orchestration, native playback, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial; exact result-to-film dispatch proven and implemented | Recover the original state-6 versus state-7 producer, compare native playback and return timing, and close A0 |
@@ -255,7 +255,14 @@ restores live invalidation, stable same-class replacement, and exhausted-list
 clearing. The [P58-B06 checkpoint](evidence/2026-09-22-tactical-completion-bundle.md)
 adds capital and fighter combat, collision, automatic groups, retained
 formations, the separate Death Star, original result/options panels, and both
-trench-run routes. Exact global RNG sequencing, original arrival callbacks and
+trench-run routes. [P58-B13 evidence](evidence/2026-09-23-tactical-withdraw-confirmation.md)
+restores the executable-derived withdrawal confirmation and exact panel,
+text, control, cancel, and confirm contract. The
+[P58-B14 evidence](evidence/2026-09-23-tactical-detail-escort.md) adds complete
+destroyed presentation, compact GOKRES assignments in panel 1302, and direct
+right-click Escort from `FUN_005ca6d0` with order code 1, retained target,
+marker, follow, opportunity fire, and target cleanup. Exact global RNG
+sequencing, original arrival callbacks and
 recovery trajectories, power allocation, native beam behavior, shared
 post-battle bombardment, landing, and navigation orchestration, native
 playback, and original visual acceptance remain open.

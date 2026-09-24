@@ -5,11 +5,12 @@ This folder is the source of truth for restoring every visible surface from
 bitmap-driven interface. Replacement panels, invented controls, approximate
 geometry, and unverified asset mappings do not count as parity.
 
-The current P58-B13 space-battle checkpoint maps 101 of 106 canonical cells to
+The current P58-B14 space-battle checkpoint maps 104 of 106 canonical cells to
 deterministic A1 evidence. Capital and fighter combat, tactical commands,
 original results and options panels, resource 5030 stars, empty-space
-presentation, native withdrawal confirmation, production trench-run launch,
-and exact strategic loss persistence now work within their recorded bounds. The strict result remains
+presentation, native withdrawal confirmation, destroyed-state presentation,
+selected-ship contents, direct Escort, production trench-run launch, and exact
+strategic loss persistence now work within their recorded bounds. The strict result remains
 0 of 106 accepted tactical cells until every row has authoritative A0 evidence
 and passes the complete comparison contract.
 
@@ -177,7 +178,7 @@ and passes the complete comparison contract.
   for the guest provenance extension, fail-closed host registration path, and
   explicit 0/106 capture-host boundary.
 - Review the [P58-B09 tactical A1 crosswalk](evidence/2026-09-22-tactical-a1-crosswalk.md)
-  for the 82 mapped cells, journey/snapshot distinction, and exact 24-cell
+  for the 104 mapped cells, journey/snapshot distinction, and exact two-cell
   new-scenario queue.
 - Review the [P58-B10 tactical navigation and camera evidence](evidence/2026-09-23-tactical-navigation-camera.md)
   for four navigation sets, ordered routes and targets, camera memory/chase,
@@ -191,6 +192,9 @@ and passes the complete comparison contract.
 - Review the [P58-B13 tactical withdrawal-confirmation evidence](evidence/2026-09-23-tactical-withdraw-confirmation.md)
   for executable-derived panel geometry, exact text/resource identities,
   cancel/confirm routing, and the reduced five-cell queue.
+- Review the [P58-B14 tactical detail and Escort evidence](evidence/2026-09-23-tactical-detail-escort.md)
+  for destroyed presentation, compact selected-capital contents, source order
+  code 1 Escort, direct right-click routing, and the reduced two-cell queue.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

@@ -166,6 +166,10 @@ and closes every process. Raw runs live under ignored
   text/control identities, cancel and confirm routing, and disabled repeat
   rejection. The deterministic A1 crosswalk is 101/106; strict A0 acceptance
   remains 0/106.
+- P58-B14 restores complete destroyed presentation, compact GOKRES contents in
+  selected-capital panel 1302, and direct source order-code 1 Escort with its
+  protected-target marker and lifecycle. The deterministic A1 crosswalk is
+  104/106; strict A0 acceptance remains 0/106.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options
@@ -197,6 +201,7 @@ required. All
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
 - [P58-B06 tactical completion evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md)
 - [P58-B13 tactical withdrawal-confirmation evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md)
+- [P58-B14 tactical detail and Escort evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md)
 - [P58F13 tactical attack-target lifecycle evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 - [P58F12 tactical attack-targeting evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
 - [P58F11 tactical command-progression evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)

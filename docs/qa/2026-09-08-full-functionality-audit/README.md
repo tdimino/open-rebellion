@@ -77,6 +77,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical trench-run/persistence proof](../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-trench-persistence.md) | Production order-6 trench-run launch and exact strategic capital/fighter loss persistence, bringing deterministic A1 coverage to 98/106 while strict acceptance remains 0/106. |
 | [Tactical Game Options/empty-space proof](../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md) | Original Game Options routing and empty-space presentation bring deterministic A1 coverage to 100/106 while strict acceptance remains 0/106. |
 | [Tactical withdrawal-confirmation proof](../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md) | Executable-derived panel, text, controls, cancel/confirm routing, and disabled repeat rejection bring deterministic A1 coverage to 101/106 while strict acceptance remains 0/106. |
+| [Tactical detail and Escort proof](../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md) | Destroyed presentation, compact selected-capital contents, and direct source order-code 1 Escort bring deterministic A1 coverage to 104/106 while strict acceptance remains 0/106. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

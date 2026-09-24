@@ -455,6 +455,21 @@
       "acceptance": "A1 manual-defined Show Planet option plus the production resource 5030 backdrop with zero planet load or scene submission. Lossless owned A0 comparison remains open."
     },
     {
+      "slug": "production-detail-escort-presentation",
+      "description": "Destroyed-hull effect, selected capital contents, and the original direct Escort order through the production tactical scene",
+      "fixture_codes": {
+        "alliance": 65826,
+        "empire": 66082
+      },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "detail_escort_presentation": true,
+      "expected_status": "battle-ready",
+      "audit_cells": ["TAC-03-C004", "TAC-03-C012", "TAC-05-C011"],
+      "acceptance": "A1 source-backed destroyed presentation, selected-hull contents in TACTICAL 1302, and executable order-code-1 Escort assignment to a projected friendly hull with the manual-defined white target box. Lossless owned A0 comparison remains open."
+    },
+    {
       "slug": "production-participants-3d-off",
       "description": "Framebuffer negative control with source participant submission and mapped capital/fighter fallbacks suppressed",
       "fixture_codes": { "alliance": 65801, "empire": 66057 },

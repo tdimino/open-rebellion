@@ -470,7 +470,16 @@
           "text_layout": ["FUN_005f1050", "TEXTTACT:56772", "TEXTTACT:56771"],
           "command_handler": "FUN_005f1170"
         },
-        "latest_verified_tranche": "P58-B13 restores the executable-derived TACTICAL 1310 withdrawal confirmation, exact TEXTTACT title and prompt placement, controls 1113 through 1116, cancel and confirm routing, and disabled repeat rejection. The deterministic crosswalk maps 101 of 106 cells.",
+        "p58_b14_detail_escort": {
+          "selected_detail_panel": "TACTICAL:1302",
+          "destroyed_effect": "TACTICAL:3368",
+          "escort_dispatch": "FUN_005ca6d0_order_1",
+          "escort_target_lifecycle": ["FUN_005d0af0", "FUN_005cf910", "FUN_005cf920"],
+          "escort_serialization": ["FUN_005ceda0", "FUN_005cee20"],
+          "compact_gokres_major_offset": 17920,
+          "compact_gokres_minor_offset": 18176
+        },
+        "latest_verified_tranche": "P58-B14 restores complete destroyed presentation, compact selected-capital contents, and direct right-click Escort with source order code 1, protected-target marker, follow, opportunity fire, and target cleanup. The deterministic crosswalk maps 104 of 106 cells.",
         "next_proof": "Recover native beam behavior and the original trench-run result producer, complete shared post-battle bombardment, landing, and navigation orchestration, compare native playback, and acquire the lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true

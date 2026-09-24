@@ -292,6 +292,13 @@ TEXTTACT 56772/56771, controls 1113 through 1116, cancel and confirm routing,
 and disabled repeat rejection. Five scenarios remain, and strict acceptance
 remains 0/106.
 
+P58-B14 maps 104 canonical cells: 85 browser journeys and 19 snapshots. It
+adds a complete TACTICAL 3368 destroyed presentation, compact GOKRES contents
+inside selected-capital panel 1302, and source order-code 1 Escort through a
+direct friendly right-click, retained target, white target marker, follow,
+opportunity fire, and target cleanup. Battle Alert entry and tactical audio
+remain unmapped, and strict acceptance remains 0/106.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

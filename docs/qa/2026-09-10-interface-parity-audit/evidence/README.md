@@ -43,6 +43,7 @@ the source of truth for scope, acceptance, and current work.
 | P58-B11 | [Tactical trench-run launch and persistence](2026-09-23-tactical-trench-persistence.md) | [`p58-b11-tactical-trench-persistence/`](p58-b11-tactical-trench-persistence/) |
 | P58-B12 | [Tactical Game Options and empty space](2026-09-23-tactical-game-options-empty-space.md) | [`p58-b12-tactical-game-options-empty-space/`](p58-b12-tactical-game-options-empty-space/) |
 | P58-B13 | [Tactical withdrawal confirmation](2026-09-23-tactical-withdraw-confirmation.md) | [`p58-b13-tactical-withdraw-confirmation/`](p58-b13-tactical-withdraw-confirmation/) |
+| P58-B14 | [Tactical detail and Escort](2026-09-23-tactical-detail-escort.md) | [`p58-b14-tactical-detail-escort/`](p58-b14-tactical-detail-escort/) |
 
 ## Current strategic correction
 

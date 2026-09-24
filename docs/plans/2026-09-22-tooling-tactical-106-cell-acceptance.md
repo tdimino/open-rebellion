@@ -159,8 +159,8 @@ Death Star outcomes, and return destinations preserve exact strategic state.
 
 ### C5. Map deterministic A1 journeys to all 106 cells
 
-Status: partial at P58-B13. The 33 existing scenarios now map 101 cells: 82 to
-browser journeys and 19 to deterministic snapshots. Five cells have an explicit
+Status: partial at P58-B14. The 34 existing scenarios now map 104 cells: 85 to
+browser journeys and 19 to deterministic snapshots. Two cells have an explicit
 new-scenario queue. A mapped cell is runnable, not accepted; A0 and comparison
 gates remain separate.
 

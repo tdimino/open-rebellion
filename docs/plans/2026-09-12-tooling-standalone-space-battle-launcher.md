@@ -86,8 +86,8 @@ Exact global RNG sequencing, exact original arrival callbacks and recovery
 trajectories, power allocation, exact planet placement, the native Death Star
 beam contract, native trench-run playback, shared post-battle bombardment,
 landing, and navigation orchestration, original view acceptance, and all 106
-visual cells remain open. The deterministic A1 matrix now covers 101 of 106
-canonical tactical cells through 82 browser journeys and 19 snapshots. The
+visual cells remain open. The deterministic A1 matrix now covers 104 of 106
+canonical tactical cells through 85 browser journeys and 19 snapshots. The
 complete 120-case implementation matrix passes both factions and both
 viewports with clean muted-browser isolation. This implementation coverage
 does not replace the strict 0 of 106 tactical-cell acceptance result.
@@ -190,6 +190,10 @@ journey, exact 201/202 trench-run routing, and strategic result application.
 P58-B13 restores the executable-derived TACTICAL 1310 withdrawal confirmation,
 its TEXTTACT title and prompt, exact confirm/cancel resources, and both modal
 outcomes before fleet retreat.
+P58-B14 restores compact GOKRES contents in the selected-capital 1302 panel,
+a complete TACTICAL 3368 destroyed presentation, and source order-code 1
+Escort through direct friendly right-click, protected-target marking, follow,
+opportunity fire, and invalid-target cleanup.
 Power allocation, exact planet placement, native Death Star beam behavior,
 shared post-battle bombardment, landing, and navigation orchestration, audio,
 native playback, and A0 view acceptance remain T3 and T4 work.

@@ -775,6 +775,12 @@ would tune around known simulation feedback defects.
   uses TEXTTACT 56772/56771, and routes controls 1113 through 1116 through
   cancel and confirm before withdrawal. The remaining five cells and all A0
   comparisons stay open.
+  P58-B14 expands the crosswalk to 104/106 cells: 85 journeys and 19 snapshots.
+  The selected-capital 1302 contents apertures now use compact GOKRES
+  assignments, destroyed presentation retains TACTICAL 3368, and direct
+  right-click Escort uses source order code 1 with the protected-target marker
+  and target lifecycle. Battle Alert entry, tactical audio, and every A0
+  comparison remain open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

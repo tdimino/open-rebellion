@@ -3,7 +3,9 @@
 use rebellion_core::ids::{CapitalShipKey, FighterKey, SystemKey};
 use rebellion_core::missions::MissionFaction;
 use rebellion_core::world::{FighterEntry, Fleet, GameWorld, ShipInstance};
-use rebellion_render::tactical_view::{TacticalAttackTarget, WeaponKind};
+use rebellion_render::tactical_view::{
+    tactical_character_content_resource, TacticalAttackTarget, WeaponKind,
+};
 #[cfg(feature = "interface-test-fixtures")]
 use rebellion_render::TacticalLodView;
 use rebellion_render::{
@@ -48,6 +50,7 @@ const TRENCH_RUN_FAILURE_SCENARIO: u32 = 30;
 const SELECTED_NAVIGATION_PRESENTATION_SCENARIO: u32 = 31;
 const NAVIGATION_CAMERA_PRESENTATION_SCENARIO: u32 = 32;
 const EMPTY_SPACE_PRESENTATION_SCENARIO: u32 = 33;
+const DETAIL_ESCORT_PRESENTATION_SCENARIO: u32 = 34;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -104,6 +107,7 @@ pub(crate) struct TacticalFixtureRequest {
     pub selected_navigation_presentation: bool,
     pub navigation_camera_presentation: bool,
     pub empty_space_presentation: bool,
+    pub detail_escort_presentation: bool,
     pub subsystem_field_command_presentation: bool,
     pub live_subsystem_damage_presentation: bool,
     pub subsystem_repair_mobility_presentation: bool,
@@ -330,7 +334,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | TRENCH_RUN_FAILURE_SCENARIO
         | SELECTED_NAVIGATION_PRESENTATION_SCENARIO
         | NAVIGATION_CAMERA_PRESENTATION_SCENARIO
-        | EMPTY_SPACE_PRESENTATION_SCENARIO => (
+        | EMPTY_SPACE_PRESENTATION_SCENARIO
+        | DETAIL_ESCORT_PRESENTATION_SCENARIO => (
             false,
             true,
             false,
@@ -369,6 +374,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         selected_navigation_presentation: scenario == SELECTED_NAVIGATION_PRESENTATION_SCENARIO,
         navigation_camera_presentation: scenario == NAVIGATION_CAMERA_PRESENTATION_SCENARIO,
         empty_space_presentation: scenario == EMPTY_SPACE_PRESENTATION_SCENARIO,
+        detail_escort_presentation: scenario == DETAIL_ESCORT_PRESENTATION_SCENARIO,
         subsystem_field_command_presentation: scenario
             == SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO,
         live_subsystem_damage_presentation: scenario == LIVE_SUBSYSTEM_DAMAGE_PRESENTATION_SCENARIO,
@@ -490,6 +496,7 @@ pub(crate) fn apply(
                       hull: u32,
                       fighter: Option<FighterKey>| {
         let expanded = request.projectile_field_presentation
+            || request.detail_escort_presentation
             || request.subsystem_field_command_presentation
             || request.live_subsystem_damage_presentation
             || request.subsystem_repair_mobility_presentation
@@ -504,6 +511,7 @@ pub(crate) fn apply(
             || ((request.group_presentation || request.effect_presentation)
                 && is_alliance == player_is_alliance);
         let ship_count = if request.projectile_field_presentation
+            || request.detail_escort_presentation
             || request.subsystem_field_command_presentation
             || request.live_subsystem_damage_presentation
             || request.subsystem_repair_mobility_presentation
@@ -570,6 +578,33 @@ pub(crate) fn apply(
         empire_ship.1,
         empire_fighter,
     ));
+    if request.detail_escort_presentation {
+        let player_fleet = if player_is_alliance {
+            attacker
+        } else {
+            defender
+        };
+        let character = world
+            .characters
+            .iter()
+            .find(|(_, character)| {
+                !character.is_killed
+                    && character.is_major
+                    && character.current_fleet.is_none()
+                    && tactical_character_content_resource(character.dat_id, character.is_major)
+                        .is_some()
+                    && if player_is_alliance {
+                        character.is_alliance
+                    } else {
+                        character.is_empire
+                    }
+            })
+            .map(|(key, _)| key)
+            .ok_or("no unassigned faction character for tactical contents fixture")?;
+        world.fleets[player_fleet].characters.push(character);
+        world.characters[character].current_fleet = Some(player_fleet);
+        world.characters[character].current_system = None;
+    }
     world.systems[system].fleets.extend([attacker, defender]);
 
     let player_is_attacker = request.faction == CockpitFaction::Alliance;
@@ -673,6 +708,10 @@ pub(crate) fn apply(
         tactical.configure_empty_space_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
+    if request.detail_escort_presentation {
+        tactical.configure_detail_escort_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
     if !request.production_participants {
         tactical.disable_original_participant_rendering();
     }
@@ -718,6 +757,7 @@ struct FixtureRecord<'a> {
     selected_navigation_presentation: bool,
     navigation_camera_presentation: bool,
     empty_space_presentation: bool,
+    detail_escort_presentation: bool,
     subsystem_field_command_presentation: bool,
     live_subsystem_damage_presentation: bool,
     subsystem_repair_mobility_presentation: bool,
@@ -796,6 +836,13 @@ struct FixtureSelectedShip<'a> {
     order_code: u8,
     tactic_code: u8,
     damage_control: u8,
+    contents: Vec<FixtureShipContent<'a>>,
+}
+
+#[derive(Serialize)]
+struct FixtureShipContent<'a> {
+    label: &'a str,
+    resource_id: u32,
 }
 
 #[derive(Serialize)]
@@ -1145,6 +1192,14 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             order_code: ship.order.source_code(),
             tactic_code: ship.tactic.source_code(),
             damage_control: ship.damage_control,
+            contents: ship
+                .contents
+                .iter()
+                .map(|content| FixtureShipContent {
+                    label: content.label.as_str(),
+                    resource_id: content.resource_id,
+                })
+                .collect(),
         })
     });
     let death_star = session.death_star.map(|death_star| FixtureDeathStar {
@@ -1169,7 +1224,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 30,
+        schema_version: 31,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1189,6 +1244,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         selected_navigation_presentation: request.selected_navigation_presentation,
         navigation_camera_presentation: request.navigation_camera_presentation,
         empty_space_presentation: request.empty_space_presentation,
+        detail_escort_presentation: request.detail_escort_presentation,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1241,7 +1297,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 30,
+        schema_version: 31,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1261,6 +1317,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         selected_navigation_presentation: request.selected_navigation_presentation,
         navigation_camera_presentation: request.navigation_camera_presentation,
         empty_space_presentation: request.empty_space_presentation,
+        detail_escort_presentation: request.detail_escort_presentation,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1359,6 +1416,7 @@ mod tests {
         assert!(decode(0x1011f).unwrap().selected_navigation_presentation);
         assert!(decode(0x10120).unwrap().navigation_camera_presentation);
         assert!(decode(0x10121).unwrap().empty_space_presentation);
+        assert!(decode(0x10122).unwrap().detail_escort_presentation);
         assert_eq!(
             decode(0x10103).unwrap().lod_fixture,
             TacticalLodFixture::Close
@@ -1380,7 +1438,7 @@ mod tests {
             TacticalLodFixture::CameraJourney
         );
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10122).is_none());
+        assert!(decode(0x10123).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }

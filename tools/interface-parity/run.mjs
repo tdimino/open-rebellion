@@ -647,6 +647,31 @@ function verifyTacticalBitmap(
   return { status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked };
 }
 
+function verifyGokresBitmap(viewport, screenshotBytes, id, x0, y0) {
+  if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
+    return { status: "non-native-scale", pixels_checked: 0 };
+  }
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const source = decodeIndexedBmp(fs.readFileSync(path.join(
+    root, `data/base/ui/gokres-dll/BMP/${id}.bmp`,
+  )));
+  let pixelsChecked = 0;
+  for (let y = 0; y < source.height; y++) {
+    for (let x = 0; x < source.width; x++) {
+      const color = source.pixel(x, y);
+      if (color[0] < 32 && color[1] < 32 && color[2] > 192) continue;
+      const actualOffset = ((y0 + y) * screenshot.width + x0 + x) * 4;
+      assert.deepEqual(
+        Array.from(screenshot.data.subarray(actualOffset, actualOffset + 3)), color,
+        `GOKRES content ${id} pixel (${x}, ${y}) differs from its original BMP`,
+      );
+      pixelsChecked++;
+    }
+  }
+  assert.ok(pixelsChecked > 0, `GOKRES content ${id} contained no opaque proof pixels`);
+  return { status: "source-bitmap-exact", resource_id: id, pixels_checked: pixelsChecked };
+}
+
 function verifyTacticalBackdrop(viewport, screenshotBytes, paletteResourceId) {
   if (viewport.width !== 640 || viewport.height !== 480 || viewport.device_scale_factor !== 1) {
     return { status: "non-native-scale", bright_pixels_checked: 0 };
@@ -1688,6 +1713,98 @@ async function probeTacticalEffectPresentation(folder, stable, consoleLines, rea
     frame_seconds: 0.1,
     transparency: "type-303-border-index",
     effects: expected,
+  }];
+}
+
+async function probeTacticalDetailEscortPresentation(
+  page, viewport, folder, stable, consoleLines, ready,
+) {
+  const selected = ready.selected_ship;
+  assert.ok(selected, "detail fixture omitted its selected command hull");
+  assert.ok(selected.contents.length > 0,
+    "selected command hull omitted its assigned personnel contents");
+  const content = selected.contents[0];
+  const contentProof = verifyGokresBitmap(
+    viewport, stable.bytes, content.resource_id, 491, 155,
+  );
+
+  const destroyed = ready.effects.find(({ resource_base: resourceBase }) => resourceBase === 3360);
+  assert.ok(destroyed, "detail fixture omitted the source destroyed sequence");
+  assert.deepEqual(destroyed, {
+    target: destroyed.target,
+    resource_base: 3360,
+    resource_id: 3368,
+    frame: 8,
+    frame_count: 16,
+    source_size: [64, 64],
+  });
+  assert.equal(ready.participants[destroyed.target]?.active, false,
+    "destroyed sequence remained attached to an active hull");
+  const effectLine = consoleLines.find(({ text }) => text.includes("[tactical_3d] effect_scene"));
+  assert.match(effectLine?.text || "",
+    new RegExp(`requested=1 rendered=1 .*${destroyed.target + 1}:3368:`),
+    "destroyed source frame was not submitted at its retired hull position");
+
+  const participantLine = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] participant_scene"));
+  const positions = parseTacticalScenePositions(participantLine, "escort participant scene");
+  const friendlyObjectIds = ready.participants
+    .map((participant, index) => ({ participant, objectId: index + 1 }))
+    .filter(({ participant }) => participant.kind === "capital-ship"
+      && participant.faction === ready.faction && participant.active)
+    .map(({ objectId }) => objectId);
+  assert.ok(friendlyObjectIds.length >= 2, "escort fixture omitted its friendly target hull");
+  const escortTargetId = friendlyObjectIds[1];
+  const escortTarget = positions.get(escortTargetId);
+  assert.ok(escortTarget, "escort target omitted its source-projected screen position");
+  await page.mouse.click(escortTarget.x, escortTarget.y, { button: "right" });
+  await page.waitForTimeout(80);
+  const assigned = await stableInteractionFrame(page, folder, "escort-assigned");
+  const escortLine = consoleLines.find(({ text }) =>
+    text.includes("[tactical_escort] event=assigned order=1")
+      && text.includes(`target_object_id=${escortTargetId}`));
+  assert.match(escortLine?.text || "", /capital_members=1 .*source_projection=true/,
+    "direct friendly right-click did not enter source order code 1");
+  assert.notEqual(sha256(assigned), sha256(stable.bytes),
+    "Escort assignment produced no stable framebuffer transition");
+
+  const before = PNG.sync.read(stable.bytes);
+  const after = PNG.sync.read(assigned);
+  const radius = 72 * Math.min(viewport.width / 640, viewport.height / 480);
+  let newWhitePixels = 0;
+  for (let y = Math.max(0, Math.floor(escortTarget.y - radius));
+    y <= Math.min(after.height - 1, Math.ceil(escortTarget.y + radius)); y++) {
+    for (let x = Math.max(0, Math.floor(escortTarget.x - radius));
+      x <= Math.min(after.width - 1, Math.ceil(escortTarget.x + radius)); x++) {
+      const offset = (y * after.width + x) * 4;
+      const afterColor = after.data.subarray(offset, offset + 3);
+      const beforeColor = before.data.subarray(offset, offset + 3);
+      const isWhite = afterColor[0] >= 248 && afterColor[1] >= 248 && afterColor[2] >= 248;
+      const wasWhite = beforeColor[0] >= 248 && beforeColor[1] >= 248 && beforeColor[2] >= 248;
+      if (isWhite && !wasWhite) newWhitePixels++;
+    }
+  }
+  assert.ok(newWhitePixels >= 8,
+    "Escort target did not receive the manual-defined white selection box");
+
+  fs.writeFileSync(path.join(folder, "destroyed-and-contents.png"), stable.bytes);
+  return [{
+    type: "source-traced-destroyed-capital",
+    executable_functions: ["FUN_005d3e90", "FUN_005d41a0"],
+    effect: destroyed,
+    screenshot_sha256: sha256(stable.bytes),
+  }, {
+    type: "source-bitmap-selected-hull-contents",
+    panel_resource: 1302,
+    label: content.label,
+    bitmap: contentProof,
+  }, {
+    type: "source-order-escort",
+    executable_functions: ["FUN_005ca6d0", "FUN_005d0af0", "FUN_005cf910"],
+    order_code: 1,
+    target_object_id: escortTargetId,
+    white_box_new_pixels: newWhitePixels,
+    screenshot_sha256: sha256(assigned),
   }];
 }
 
@@ -3690,6 +3807,10 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         ? await probeTacticalNavigationCameraPresentation(
           page, viewport, folder, stable, consoleLines, ready,
         )
+        : scenario.detail_escort_presentation
+        ? await probeTacticalDetailEscortPresentation(
+          page, viewport, folder, stable, consoleLines, ready,
+        )
         : scenario.effect_presentation
         ? await probeTacticalEffectPresentation(folder, stable, consoleLines, ready)
         : scenario.projectile_field_presentation
@@ -3756,7 +3877,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 30);
+      assert.equal(ready.schema_version, 31);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);
@@ -3777,6 +3898,8 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         Boolean(scenario.navigation_camera_presentation));
       assert.equal(ready.empty_space_presentation,
         Boolean(scenario.empty_space_presentation));
+      assert.equal(ready.detail_escort_presentation,
+        Boolean(scenario.detail_escort_presentation));
       assert.equal(ready.subsystem_field_command_presentation,
         Boolean(scenario.subsystem_field_command_presentation));
       assert.equal(ready.live_subsystem_damage_presentation,
@@ -3836,6 +3959,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         inner_negative_z: -40.5,
         inner_positive_z: 40.5,
       } : scenario.projectile_field_presentation
+        || scenario.detail_escort_presentation
         || scenario.subsystem_field_command_presentation
         || scenario.live_subsystem_damage_presentation
         || scenario.subsystem_repair_mobility_presentation
@@ -3880,6 +4004,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         scenario.group_presentation ? 14
           : scenario.effect_presentation ? 9
           : scenario.projectile_field_presentation
+            || scenario.detail_escort_presentation
             || scenario.subsystem_field_command_presentation
             || scenario.live_subsystem_damage_presentation
             || scenario.subsystem_repair_mobility_presentation
@@ -3969,6 +4094,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         assert.ok(playerFighters.every(({ source_position: position }) =>
           position[2] === playerFighterZ));
       } else if (scenario.projectile_field_presentation
+        || scenario.detail_escort_presentation
         || scenario.subsystem_field_command_presentation
         || scenario.live_subsystem_damage_presentation
         || scenario.subsystem_repair_mobility_presentation
@@ -4005,10 +4131,10 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
             [0, 1, 2].includes(fleet_roster_index)));
         } else {
           const movedFaction = scenario.maneuver_movement_presentation ? faction : null;
-          assert.ok(allianceShips.every(({ source_position: position }) =>
+          assert.ok(allianceShips.filter(({ active }) => active).every(({ source_position: position }) =>
             position[2] === (movedFaction === "alliance" ? -36.3125 : -56)),
           "Alliance retained formation did not follow its integrated leader");
-          assert.ok(empireShips.every(({ source_position: position }) =>
+          assert.ok(empireShips.filter(({ active }) => active).every(({ source_position: position }) =>
             position[2] === (movedFaction === "empire" ? 36.3125 : 56)),
           "Imperial retained formation did not follow its integrated leader");
           assert.equal(allianceFighters[0].source_position[2], -36);
@@ -4307,7 +4433,10 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           }).sort((a, b) => a - b), [2010, 2510]);
           assert.equal(participantSceneLogs.length, 1,
             "production participants did not emit one scene submission");
-          const expectedShipCount = ready.attacker_ships + ready.defender_ships;
+          const expectedShipCount = scenario.detail_escort_presentation
+            ? ready.participants.filter(({ kind, active }) =>
+              kind === "capital-ship" && active).length
+            : ready.attacker_ships + ready.defender_ships;
           assert.match(participantSceneLogs[0].text,
             new RegExp(`requested=${expectedShipCount} rendered=${expectedShipCount} `
               + "families=2010,2510 .*source_positions=true"),
@@ -4532,18 +4661,20 @@ async function main() {
         "production-selected-navigation-presentation",
         "production-navigation-camera-presentation",
         "production-empty-space-presentation",
+        "production-detail-escort-presentation",
         "production-participants-3d-off"]);
     assert.deepEqual(catalog.scenarios.map(({ tactical_proof }) => tactical_proof),
-      [true, false, true, true, true, true, true, ...Array(26).fill(false)]);
+      [true, false, true, true, true, true, true, ...Array(27).fill(false)]);
     assert.deepEqual(catalog.scenarios.map(({ expected_lod_resource }) => expected_lod_resource),
       [2560, undefined, 2560, 2561, 2562, 2560, 2560, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
         undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined]);
     assert.deepEqual(catalog.scenarios.map(({ lod_journey }) => Boolean(lod_journey)),
-      Array.from({ length: 33 }, (_, index) => index === 5));
+      Array.from({ length: 34 }, (_, index) => index === 5));
     assert.deepEqual(catalog.scenarios.map(({ camera_journey }) => Boolean(camera_journey)),
-      Array.from({ length: 33 }, (_, index) => index === 6));
+      Array.from({ length: 34 }, (_, index) => index === 6));
     assert.deepEqual(catalog.factions, ["alliance", "empire"]);
   } else {
     execFileSync(process.execPath, [path.join(here, "validate-catalog.mjs")], { stdio: "inherit" });

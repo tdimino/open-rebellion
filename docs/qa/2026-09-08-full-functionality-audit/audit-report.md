@@ -345,6 +345,18 @@ cross-runtime proof remain open
   remain open. See
   `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md`.
 
+### P58-B14: Tactical detail and Escort
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: TACTICAL 3368 supplies a complete destroyed presentation, panel
+  1302 displays compact GOKRES assignments, and direct friendly right-click
+  assigns source order-code 1 Escort with retained target, marker, follow,
+  opportunity fire, and invalid-target cleanup.
+- Matrix: 104 of 106 cells have deterministic A1 scenarios through 85 browser
+  journeys and 19 snapshots. Battle Alert entry, tactical audio, and all 106
+  lossless A0 captures remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md`.
+
 ### F-008: Browser media and mods are incomplete
 
 - Severity: P1 if browser parity is claimed

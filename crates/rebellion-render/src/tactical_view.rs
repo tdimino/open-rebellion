@@ -475,6 +475,9 @@ pub enum BattleResultCategory {
 pub enum TacticalOrder {
     #[default]
     None,
+    /// Direct right-click protection order. The selected units follow one
+    /// friendly capital ship and keep autonomous opportunity fire enabled.
+    Escort,
     Recover,
     AttackFighters,
     AttackCapitalShips,
@@ -501,6 +504,7 @@ impl TacticalOrder {
     pub const fn source_code(self) -> u8 {
         match self {
             Self::None => 0,
+            Self::Escort => 1,
             Self::Recover => 2,
             Self::AttackFighters => 4,
             Self::AttackCapitalShips => 5,
@@ -517,6 +521,7 @@ impl TacticalOrder {
     const fn label(self) -> &'static str {
         match self {
             Self::None => "No Orders",
+            Self::Escort => "Escort",
             Self::Recover => "Recover",
             Self::AttackFighters => "Attack Fighters",
             Self::AttackCapitalShips => "Attack Capital Ships",
@@ -692,6 +697,12 @@ pub struct TacticalShip {
     /// Player-authored target list. The original completes navigation points
     /// before attacking these targets in selection order.
     pub manual_targets: Vec<TacticalAttackTarget>,
+    /// Friendly capital-ship index assigned by the original direct Escort
+    /// command (order code 1), or no active escort target.
+    pub escort_target: Option<usize>,
+    /// Personnel and troops assigned to this physical hull for the selected-
+    /// ship contents monitor.
+    pub contents: Vec<TacticalShipContent>,
     /// True if this ship is retreating (moving off-screen).
     pub retreating: bool,
     /// Retreat progress: 0.0 = just started, 1.0 = off-screen (removed from combat).
@@ -705,6 +716,21 @@ pub struct TacticalShip {
 pub struct OriginalTacticalCollisionEnvelope {
     pub vertical_radius: f32,
     pub planar_diameter: f32,
+}
+
+/// One compact GOKRES-backed entry in the selected ship's contents monitor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TacticalShipContent {
+    pub label: String,
+    pub resource_id: u32,
+}
+
+/// Resolve the compact 61x25 GOKRES assignment image used by original system
+/// and tactical contents windows. These are separate from the 80x80 officer
+/// portraits and preserve the executable's major/minor resource bands.
+#[must_use]
+pub fn tactical_character_content_resource(dat_id: DatId, is_major: bool) -> Option<u32> {
+    crate::system_window::character_mini_resource_id(dat_id, is_major)
 }
 
 /// One of the four 0x74-byte capital-ship battery records initialized by
@@ -1127,6 +1153,8 @@ pub struct TacticalFighter {
     pub tactic: TacticalTactic,
     /// Active target selected by a source attack-order executor.
     pub attack_target: Option<TacticalAttackTarget>,
+    /// Friendly capital-ship index assigned by the direct Escort command.
+    pub escort_target: Option<usize>,
     /// Current `FUN_005cf980` recovery executor state.
     pub recovery_state: TacticalFighterRecoveryState,
     /// Capital-ship index reserved as this squadron's recovery carrier.
@@ -2681,7 +2709,7 @@ impl BattleSession {
                             .map_or(TacticalWorldVector::ZERO, |next| {
                                 source_delta(next, ship.source_position).normalized()
                             });
-                        if ship.source_waypoint.is_none() {
+                        if ship.source_waypoint.is_none() && ship.order != TacticalOrder::Escort {
                             ship.order = TacticalOrder::None;
                         }
                     } else {
@@ -2779,6 +2807,7 @@ impl BattleSession {
         fighters: &mut Vec<TacticalFighter>,
     ) {
         let fleet = &world.fleets[fleet_key];
+        let first_fleet_ship = ships.len();
         for (ship_idx, ship) in fleet
             .capital_ships
             .iter()
@@ -2899,10 +2928,33 @@ impl BattleSession {
                 weapon_recharge_queue: Vec::new(),
                 attack_target: None,
                 manual_targets: Vec::new(),
+                escort_target: None,
+                contents: Vec::new(),
                 retreating: false,
                 retreat_progress: 0.0,
                 retreated: false,
             });
+        }
+
+        // The strategic model currently retains personnel at fleet granularity.
+        // Bind those entries to the fleet's first surviving capital hull, the
+        // deterministic command-ship slot, so the original 1302 contents
+        // monitor never invents a separate replacement panel.
+        if let Some(command_ship) = ships.get_mut(first_fleet_ship) {
+            command_ship
+                .contents
+                .extend(fleet.characters.iter().filter_map(|key| {
+                    let character = world.characters.get(*key)?;
+                    if character.is_killed {
+                        return None;
+                    }
+                    let resource_id =
+                        tactical_character_content_resource(character.dat_id, character.is_major)?;
+                    Some(TacticalShipContent {
+                        label: character.name.clone(),
+                        resource_id,
+                    })
+                }));
         }
 
         for (fighter_idx, entry) in fleet.fighters.iter().enumerate() {
@@ -2952,6 +3004,7 @@ impl BattleSession {
                     order: TacticalOrder::None,
                     tactic: TacticalTactic::StandOff,
                     attack_target: None,
+                    escort_target: None,
                     recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
                     recovery_target: None,
                 });
@@ -3468,6 +3521,8 @@ impl BattleSession {
                 }
             }
         }
+        refresh_original_escort_targets(self);
+        advance_original_escort_movement(self, ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         self.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         self.advance_original_fighter_recovery(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         refresh_original_attack_targets(self);
@@ -5048,6 +5103,71 @@ impl TacticalState {
         }
     }
 
+    /// Present the remaining source-backed tactical detail states together:
+    /// one destroyed hostile hull, the selected command hull's personnel
+    /// contents, and a second friendly hull that can receive direct Escort.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_detail_escort_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let player_ships = session
+            .ships
+            .iter()
+            .enumerate()
+            .filter(|(_, ship)| ship.alive && ship.is_attacker == session.player_is_attacker)
+            .map(|(index, _)| index)
+            .take(2)
+            .collect::<Vec<_>>();
+        let destroyed = session
+            .ships
+            .iter()
+            .enumerate()
+            .find(|(_, ship)| ship.alive && ship.is_attacker != session.player_is_attacker)
+            .map(|(index, _)| index);
+        let ([selected, _escort_target], Some(destroyed)) = (player_ships.as_slice(), destroyed)
+        else {
+            return;
+        };
+
+        for ship in &mut session.ships {
+            ship.selected = false;
+        }
+        for fighter in &mut session.fighters {
+            fighter.selected = false;
+        }
+        session.ships[*selected].selected = true;
+        session.selected_ship = Some(*selected);
+        session.selected_fighter_group = None;
+
+        // Center the retired hull solely for a fully inspectable source frame
+        // in both faction cameras. Production destruction keeps the live
+        // object's final position.
+        session.ships[destroyed].source_position.x = 0.0;
+        session.ships[destroyed].source_position.y = 0.0;
+        session.ships[destroyed].source_position.z = 0.0;
+        session.ships[destroyed].hull_current = 0;
+        session.ships[destroyed].shield = 0;
+        session.ships[destroyed].alive = false;
+        session.ships[destroyed].selected = false;
+        session.impact_effects.clear();
+        queue_original_tactical_impact(
+            &mut session.impact_effects,
+            destroyed,
+            WeaponKind::LaserCannon,
+            OriginalTacticalImpactStage::Destroyed,
+        );
+        if let Some(effect) = session
+            .impact_effects
+            .iter_mut()
+            .find(|effect| effect.target == destroyed)
+        {
+            effect.frame = 8;
+        }
+        session.paused = true;
+        self.command_panel = TacticalCommandPanel::Display;
+    }
+
     /// Freeze all three projectile shapes plus both shared field families on
     /// live production participants for deterministic browser inspection.
     #[cfg(feature = "interface-test-fixtures")]
@@ -6092,6 +6212,7 @@ struct TacticalGroupHud<'a> {
     selected_ship_hull: Option<(i32, i32)>,
     selected_ship_shield: Option<(i32, i32)>,
     selected_ship_subsystems: Option<TacticalSubsystemCondition>,
+    selected_ship_contents: &'a [TacticalShipContent],
     selected_fighter_name: Option<&'a str>,
     selected_fighter_hud: Option<u32>,
     selected_order: TacticalOrder,
@@ -6147,6 +6268,7 @@ impl<'a> TacticalGroupHud<'a> {
             selected_ship_hull: selected_ship.map(|ship| (ship.hull_current, ship.hull_max)),
             selected_ship_shield: selected_ship.map(|ship| (ship.shield, ship.shield_max)),
             selected_ship_subsystems: selected_ship.map(|ship| ship.subsystem_condition),
+            selected_ship_contents: selected_ship.map_or(&[], |ship| ship.contents.as_slice()),
             selected_fighter_name: selected_fighter.map(|fighter| fighter.name.as_str()),
             selected_fighter_hud: selected_fighter
                 .and_then(|fighter| fighter.tactical_resource)
@@ -6471,6 +6593,155 @@ fn begin_original_capital_order(
     }
 }
 
+/// Apply the original direct Escort order (source order code 1). The manual
+/// assigns it by right-clicking a friendly capital ship, outside either
+/// assignment panel. The recovered order-1 executor retains that object in its
+/// target slot.
+fn assign_selected_escort(session: &mut BattleSession, target: usize) -> (usize, usize) {
+    let Some(target_ship) = session
+        .ships
+        .get(target)
+        .filter(|ship| ship.alive && !ship.retreating)
+    else {
+        return (0, 0);
+    };
+    let target_side = target_ship.is_attacker;
+    if target_side != session.player_is_attacker {
+        return (0, 0);
+    }
+
+    let mut capitals = 0;
+    for (index, ship) in session.ships.iter_mut().enumerate() {
+        if index != target
+            && ship.alive
+            && !ship.retreating
+            && ship.selected
+            && ship.is_attacker == target_side
+        {
+            ship.order = TacticalOrder::Escort;
+            ship.escort_target = Some(target);
+            ship.attack_target = None;
+            ship.manual_targets.clear();
+            ship.navigation_route.clear();
+            capitals += 1;
+        }
+    }
+
+    let mut fighters = 0;
+    for fighter in &mut session.fighters {
+        if fighter.alive
+            && fighter.squad_count > 0
+            && fighter.selected
+            && fighter.is_attacker == target_side
+        {
+            fighter.order = TacticalOrder::Escort;
+            fighter.escort_target = Some(target);
+            fighter.attack_target = None;
+            fighter.recovery_state = TacticalFighterRecoveryState::AwaitingCarrier;
+            fighter.recovery_target = None;
+            fighters += 1;
+        }
+    }
+    (capitals, fighters)
+}
+
+fn escort_target_is_eligible(session: &BattleSession, source_side: bool, target: usize) -> bool {
+    session
+        .ships
+        .get(target)
+        .is_some_and(|ship| ship.alive && !ship.retreating && ship.is_attacker == source_side)
+}
+
+/// Clear order-1 target slots when the protected hull is destroyed or leaves
+/// combat. This mirrors the executor's object-lifetime boundary and prevents a
+/// stale white escort box.
+fn refresh_original_escort_targets(session: &mut BattleSession) {
+    for index in 0..session.ships.len() {
+        if session.ships[index].order != TacticalOrder::Escort {
+            session.ships[index].escort_target = None;
+            continue;
+        }
+        let valid = session.ships[index].escort_target.is_some_and(|target| {
+            target != index
+                && escort_target_is_eligible(session, session.ships[index].is_attacker, target)
+        });
+        if !valid {
+            let ship = &mut session.ships[index];
+            ship.order = TacticalOrder::None;
+            ship.escort_target = None;
+            ship.source_waypoint = None;
+            ship.source_desired_forward = TacticalWorldVector::ZERO;
+        }
+    }
+    for index in 0..session.fighters.len() {
+        if session.fighters[index].order != TacticalOrder::Escort {
+            session.fighters[index].escort_target = None;
+            continue;
+        }
+        let valid = session.fighters[index].escort_target.is_some_and(|target| {
+            escort_target_is_eligible(session, session.fighters[index].is_attacker, target)
+        });
+        if !valid {
+            session.fighters[index].order = TacticalOrder::None;
+            session.fighters[index].escort_target = None;
+        }
+    }
+}
+
+/// Keep order-1 units around their protected ship while autonomous weapons
+/// continue to select nearby opportunity targets. Capital ships use the normal
+/// retained movement integrator; fighter groups use their source engine rate.
+fn advance_original_escort_movement(session: &mut BattleSession, delta_milliseconds: f32) {
+    if !delta_milliseconds.is_finite() || delta_milliseconds <= 0.0 {
+        return;
+    }
+    let target_positions = session
+        .ships
+        .iter()
+        .map(|ship| ship.source_position)
+        .collect::<Vec<_>>();
+    for (index, ship) in session.ships.iter_mut().enumerate() {
+        let Some(target) = ship
+            .escort_target
+            .filter(|_| ship.order == TacticalOrder::Escort)
+        else {
+            continue;
+        };
+        let Some(mut waypoint) = target_positions.get(target).copied() else {
+            continue;
+        };
+        let side = if index % 2 == 0 { 1.0 } else { -1.0 };
+        waypoint.x += side * 8.0;
+        waypoint.z -= 6.0 + (index % 3) as f32 * 3.0;
+        ship.navigation_route.clear();
+        ship.navigation_route.push(waypoint);
+        ship.source_waypoint = Some(waypoint);
+        ship.source_desired_forward = source_delta(waypoint, ship.source_position).normalized();
+    }
+
+    let seconds = delta_milliseconds * 0.001;
+    for fighter in &mut session.fighters {
+        let Some(target) = fighter
+            .escort_target
+            .filter(|_| fighter.order == TacticalOrder::Escort)
+        else {
+            continue;
+        };
+        let Some(target_position) = target_positions.get(target).copied() else {
+            continue;
+        };
+        let delta = source_delta(target_position, fighter.source_position);
+        let distance = delta.x.hypot(delta.y).hypot(delta.z);
+        if distance > 10.0 {
+            let travel = (fighter.sublight_engine_power.max(0.0) * seconds).min(distance - 10.0);
+            let direction = delta.normalized();
+            fighter.source_position.x += direction.x * travel;
+            fighter.source_position.y += direction.y * travel;
+            fighter.source_position.z += direction.z * travel;
+        }
+    }
+}
+
 fn tactical_attack_target_is_eligible(
     session: &BattleSession,
     source_is_attacker: bool,
@@ -6720,6 +6991,7 @@ fn assign_selected_command(
                 && fighter.is_attacker == session.player_is_attacker
             {
                 fighter.order = order;
+                fighter.escort_target = None;
                 if let Some(tactic) = tactic {
                     fighter.tactic = tactic;
                 }
@@ -6735,6 +7007,7 @@ fn assign_selected_command(
         for (index, ship) in session.ships.iter_mut().enumerate() {
             if ship.alive && ship.selected && ship.is_attacker == session.player_is_attacker {
                 ship.order = order;
+                ship.escort_target = None;
                 if let Some(tactic) = tactic {
                     ship.tactic = tactic;
                 }
@@ -7426,6 +7699,20 @@ fn draw_original_tactical_hud(
                         TACTICAL_SUBSYSTEM_Y,
                     );
                 }
+            }
+            // TACTICAL 1302 reserves the two blue apertures below the hull
+            // portrait for the selected capital ship's personnel and troops.
+            // GOKRES supplies the original compact 61x25 assignment images.
+            for (index, content) in groups.selected_ship_contents.iter().take(2).enumerate() {
+                draw_original_bitmap(
+                    cache,
+                    DllSource::Gokres,
+                    content.resource_id,
+                    canvas,
+                    491.0 + index as f32 * 63.0,
+                    155.0,
+                    None,
+                );
             }
             let (x, y) = canvas.point(497.0, 48.0);
             draw_text(name, x, y, 11.0 * canvas.scale, WHITE);
@@ -9601,6 +9888,28 @@ pub fn draw_tactical_view(
         }
     }
 
+    // The original identifies every protected Escort target with a white box.
+    // Use the same retained projections as hit testing so the marker remains
+    // attached to the source object at every camera angle and LOD.
+    let escort_targets = session
+        .ships
+        .iter()
+        .filter(|ship| ship.alive && ship.order == TacticalOrder::Escort)
+        .filter_map(|ship| ship.escort_target)
+        .chain(
+            session
+                .fighters
+                .iter()
+                .filter(|fighter| fighter.alive && fighter.order == TacticalOrder::Escort)
+                .filter_map(|fighter| fighter.escort_target),
+        )
+        .collect::<HashSet<_>>();
+    for target in escort_targets {
+        if let Some(projection) = ship_projections.get(&target) {
+            draw_projected_frame(*projection, canvas.scale, WHITE);
+        }
+    }
+
     // The retained 3D submission and the interaction layer share these exact
     // projected bounds. This replaces the obsolete arena-coordinate frame.
     for (ship_index, projection) in &ship_projections {
@@ -10107,6 +10416,10 @@ fn draw_tactical_attack_target(
 }
 
 fn draw_projected_selection_frame(projection: TacticalScreenProjection, canvas_scale: f32) {
+    draw_projected_frame(projection, canvas_scale, Color::new(1.0, 0.82, 0.12, 0.95));
+}
+
+fn draw_projected_frame(projection: TacticalScreenProjection, canvas_scale: f32, color: Color) {
     let padding = 3.0 * canvas_scale;
     let minimum_size = 10.0 * canvas_scale;
     let minimum_half = macroquad::math::Vec2::splat(minimum_size * 0.5);
@@ -10116,7 +10429,6 @@ fn draw_projected_selection_frame(projection: TacticalScreenProjection, canvas_s
         .max(projection.center + minimum_half);
     let size = max - origin;
     let corner = (size.min_element() * 0.28).clamp(3.0 * canvas_scale, 8.0 * canvas_scale);
-    let color = Color::new(1.0, 0.82, 0.12, 0.95);
     let thickness = canvas_scale.max(1.0);
     for (x, x_direction) in [(origin.x, 1.0), (origin.x + size.x, -1.0)] {
         for (y, y_direction) in [(origin.y, 1.0), (origin.y + size.y, -1.0)] {
@@ -10129,6 +10441,7 @@ fn draw_projected_selection_frame(projection: TacticalScreenProjection, canvas_s
 /// Handle mouse input during the combat phase.
 ///
 /// - Left-click: select a player ship.
+/// - Right-click on friendly: issue the original order-1 Escort command.
 /// - Right-click on enemy: issue focus-fire order to all selected player ships.
 /// - R key: retreat selected ships.
 fn handle_combat_input(
@@ -10249,6 +10562,8 @@ fn handle_combat_input(
                 if !ship.selected || !ship.alive || ship.is_attacker != session.player_is_attacker {
                     continue;
                 }
+                ship.order = TacticalOrder::None;
+                ship.escort_target = None;
                 if control {
                     if !ship.navigation_route.contains(&navigation.position) {
                         ship.navigation_route.push(navigation.position);
@@ -10307,11 +10622,40 @@ fn handle_combat_input(
             return;
         }
 
+        let friendly_hit = session.ships.iter().enumerate().find_map(|(index, ship)| {
+            if !ship.alive || ship.retreating || ship.is_attacker != session.player_is_attacker {
+                return None;
+            }
+            let projected_hit = projections.get(&index).is_some_and(|projection| {
+                projection.contains(screen_pointer, projected_hit_radius)
+            });
+            let dx = arena_pointer_x - ship.x;
+            let dy = arena_pointer_y - ship.y;
+            (projected_hit
+                || (!projections.contains_key(&index)
+                    && dx * dx + dy * dy < hit_radius * hit_radius))
+                .then_some(index)
+        });
+        if let Some(target_idx) = friendly_hit {
+            let (capital_members, fighter_members) = assign_selected_escort(session, target_idx);
+            if capital_members + fighter_members > 0 {
+                macroquad::logging::info!(
+                    "[tactical_escort] event=assigned order=1 target_object_id={} capital_members={} fighter_members={} source_projection={}",
+                    target_idx + 1,
+                    capital_members,
+                    fighter_members,
+                    projections.contains_key(&target_idx),
+                );
+            }
+            return;
+        }
+
         if let Some(target_idx) = target_hit {
             // Assign one or several ordered focus targets to selected ships.
             let mut assigned = Vec::new();
             for ship in &mut session.ships {
                 if ship.selected && ship.is_attacker == session.player_is_attacker && ship.alive {
+                    ship.escort_target = None;
                     let target = TacticalAttackTarget::CapitalShip(target_idx);
                     if control {
                         if let Some(position) = ship
@@ -10370,6 +10714,10 @@ fn handle_combat_input(
                 if ship.selected && ship.is_attacker == session.player_is_attacker {
                     ship.attack_target = None;
                     ship.manual_targets.clear();
+                    ship.escort_target = None;
+                    if ship.order == TacticalOrder::Escort {
+                        ship.order = TacticalOrder::None;
+                    }
                 }
             }
         }
@@ -10557,6 +10905,8 @@ mod tests {
             weapon_recharge_queue: Vec::new(),
             attack_target: None,
             manual_targets: Vec::new(),
+            escort_target: None,
+            contents: Vec::new(),
             retreating: false,
             retreat_progress: 0.0,
             retreated: false,
@@ -10600,6 +10950,7 @@ mod tests {
             order: TacticalOrder::None,
             tactic: TacticalTactic::StandOff,
             attack_target: None,
+            escort_target: None,
             recovery_state: TacticalFighterRecoveryState::AwaitingCarrier,
             recovery_target: None,
         }
@@ -12800,6 +13151,7 @@ mod tests {
     fn tactical_order_and_tactic_codes_match_the_recovered_source_domain() {
         let orders = [
             (TacticalOrder::None, 0),
+            (TacticalOrder::Escort, 1),
             (TacticalOrder::Recover, 2),
             (TacticalOrder::AttackFighters, 4),
             (TacticalOrder::AttackCapitalShips, 5),
@@ -12815,6 +13167,28 @@ mod tests {
         }
         assert_eq!(TacticalTactic::Surround.source_code(), 1);
         assert_eq!(TacticalTactic::StandOff.source_code(), 2);
+    }
+
+    #[test]
+    fn direct_escort_retains_friendly_target_and_clears_when_it_is_destroyed() {
+        let mut escort = test_ship(64, 0, true, true);
+        escort.selected = true;
+        let target = test_ship(65, 1, true, true);
+        let enemy = test_ship(128, 0, false, true);
+        let mut session = test_session(vec![escort, target, enemy], Vec::new(), true);
+        session.selected_ship = Some(0);
+
+        assert_eq!(assign_selected_escort(&mut session, 1), (1, 0));
+        assert_eq!(session.ships[0].order, TacticalOrder::Escort);
+        assert_eq!(session.ships[0].escort_target, Some(1));
+        advance_original_escort_movement(&mut session, ORIGINAL_TACTICAL_STEP_MILLISECONDS);
+        assert!(session.ships[0].source_waypoint.is_some());
+
+        session.ships[1].alive = false;
+        refresh_original_escort_targets(&mut session);
+        assert_eq!(session.ships[0].order, TacticalOrder::None);
+        assert_eq!(session.ships[0].escort_target, None);
+        assert_eq!(session.ships[0].source_waypoint, None);
     }
 
     #[test]
