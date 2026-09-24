@@ -3,6 +3,10 @@
 This bundle records the source-backed pre-battle alert, tactical score, event
 cue, and complete deterministic A1 crosswalk checkpoint.
 
+The later [P58-B16 correction](../2026-09-24-tactical-weapon-audio.md)
+identifies event `0x14` as torpedo impact rather than ship destruction and
+restores the full WAVE `13033–13054` weapon bank.
+
 ## Inventory
 
 - [`summary.json`](summary.json) records the matrix result, source contract,

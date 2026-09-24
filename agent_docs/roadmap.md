@@ -785,6 +785,11 @@ would tune around known simulation feedback defects.
   19 snapshots. It restores the source-built faction Battle Alert, Take
   Command entry, MDATA 307 battle score, and TACTICAL WAVE 13054 event routing.
   A0 evidence and strict acceptance remain 0/106; the strict gate was not run.
+  P58-B16 corrects event 0x14 from the provisional destruction label to its
+  registered torpedo-impact meaning and restores all eight weapon fire/impact
+  events across TACTICAL WAVE 13033–13054. Production capital and fighter
+  paths now emit the typed cues; exact shared-RNG sequencing, audible native
+  comparison, A0 evidence, and strict acceptance remain open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

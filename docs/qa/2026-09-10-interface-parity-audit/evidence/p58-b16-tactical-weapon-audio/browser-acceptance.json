@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B16",
+  "scope": "focused_muted_browser_routing_of_complete_tactical_weapon_audio_bank",
+  "result": "pass",
+  "run_id": "2026-09-24T19-52-42-277Z-71200",
+  "cases": 4,
+  "verified": [
+    "both_factions",
+    "640x480_and_1280x800_letterboxed",
+    "event_0x0d_through_0x14",
+    "wave_13033_through_13054",
+    "22_unique_source_variants",
+    "22_audio_cache_hits",
+    "browser_and_in_game_audio_muted",
+    "four_request_startup",
+    "zero_launch_or_execution_timeouts",
+    "browser_cleanup"
+  ],
+  "limits": [
+    "implementation_screenshots_unbaselined",
+    "exact_global_rng_sequence_open",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ]
+}

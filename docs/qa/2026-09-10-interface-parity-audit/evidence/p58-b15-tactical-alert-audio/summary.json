@@ -25,7 +25,8 @@
     "tactical_event_code": 20,
     "tactical_event_wave_id": 13054,
     "tactical_dll_sha256": "db12cdcfb6c85cec572a425307d2ad617bbc850027657424c3cc1f61c6ec275a",
-    "audio_functions": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"]
+    "audio_functions": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
+    "semantic_correction": "P58-B16 identifies event 0x14 as SHIP_TAKE_TORPEDO_HIT rather than ship destruction"
   },
   "browser_runs": [
     {

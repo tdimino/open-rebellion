@@ -486,10 +486,20 @@
           "faction_rails": [10820, 10821],
           "battle_music_mdata_id": 307,
           "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
-          "first_recovered_event": "event_0x14_to_TACTICAL_WAVE_13054"
+          "first_routed_event": "event_0x14_to_TACTICAL_WAVE_13054",
+          "semantic_correction": "P58-B16_identifies_event_0x14_as_SHIP_TAKE_TORPEDO_HIT"
         },
-        "latest_verified_tranche": "P58-B15 restores the source-built faction Battle Alert, paused Take Command entry, MDATA 307 battle music, and source-identified TACTICAL WAVE 13054 routing. The deterministic A1 crosswalk maps all 106 cells through 87 journeys and 19 snapshots; A0 and strict acceptance remain 0 of 106.",
-        "next_proof": "Recover the remaining tactical event and voice variants, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
+        "p58_b16_weapon_audio": {
+          "event_registration": "FUN_005a7500",
+          "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
+          "capital_weapon_dispatch": "FUN_005b3f10",
+          "event_range": "0x0d–0x14",
+          "wave_range": "13033–13054",
+          "variant_count": 22,
+          "corrected_event": "event_0x14_is_SHIP_TAKE_TORPEDO_HIT_not_ship_destruction"
+        },
+        "latest_verified_tranche": "P58-B16 corrects event 0x14 to torpedo impact and restores all eight weapon fire/impact events across all 22 TACTICAL WAVE 13033–13054 variants. Production capital and fighter combat dispatch typed cues, and the focused muted browser journey passes both factions and both viewports. The deterministic A1 crosswalk remains 106 cells through 87 journeys and 19 snapshots; A0 and strict acceptance remain 0 of 106.",
+        "next_proof": "Recover remaining non-weapon and voice events, exact shared-RNG sequencing, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare audible native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true
     },

@@ -17,6 +17,12 @@ audio engine. It does not claim strict original-game acceptance.
 | `FUN_005bae60`, `FUN_005ba980`, `FUN_005bad50`, `FUN_005ba520` | Tactical audio-manager construction, four-variant event selection, and event `0x14` routing to TACTICAL WAVE `13054` |
 | `TACTICAL.DLL` | Owned source for WAVE `13054`; DLL SHA-256 `db12cdcfb6c85cec572a425307d2ad617bbc850027657424c3cc1f61c6ec275a` |
 
+Correction: this checkpoint proved extraction and routing for WAVE `13054`,
+but its runtime trigger labeled event `0x14` as ship destruction. Subsequent
+source recovery identifies `0x14` as `SHIP_TAKE_TORPEDO_HIT`; ship destruction
+is a separate event. [P58-B16](2026-09-24-tactical-weapon-audio.md) removes the
+inferred destruction trigger and restores the complete weapon-event bank.
+
 Take Command closes Battle Alert and enters the same paused production battle
 scene used by campaign combat. Simulate routes to production auto-resolution.
 Retreat marks eligible player hyperdrive ships for withdrawal. Battle audio
@@ -37,7 +43,7 @@ does not begin until the alert closes.
 The focused browser journeys cover both factions at 640×480 and letterboxed
 1280×800. Native-size probes prove the unobscured source bitmaps exactly; the
 journey also exercises every tab, the held Take Command bitmap, paused tactical
-entry, MDATA `307`, WAVE `13054`, four-request startup, muted audio, and clean
+entry, MDATA `307`, WAVE `13054` transport, four-request startup, muted audio, and clean
 browser shutdown.
 
 ## Verification

@@ -5,13 +5,13 @@ This folder is the source of truth for restoring every visible surface from
 bitmap-driven interface. Replacement panels, invented controls, approximate
 geometry, and unverified asset mappings do not count as parity.
 
-The current P58-B15 space-battle checkpoint maps all 106 canonical cells to
+The current P58-B16 space-battle checkpoint maps all 106 canonical cells to
 deterministic A1 evidence through 87 journeys and 19 snapshots. Capital and
 fighter combat, tactical commands,
 original results and options panels, resource 5030 stars, empty-space
 presentation, native withdrawal confirmation, destroyed-state presentation,
 selected-ship contents, direct Escort, Battle Alert entry, tactical score and
-event-cue routing, production trench-run launch, and exact strategic loss
+the complete 22-variant weapon-audio bank, production trench-run launch, and exact strategic loss
 persistence now work within their recorded bounds. The strict result remains
 0 of 106 accepted tactical cells until every row has authoritative A0 evidence
 and passes the complete comparison contract.
@@ -200,6 +200,9 @@ and passes the complete comparison contract.
 - Review the [P58-B15 tactical Battle Alert and audio evidence](evidence/2026-09-24-tactical-battle-alert-audio.md)
   for the source-built pre-battle surface, paused Take Command transition,
   MDATA 307 score, WAVE 13054 event cue, and complete 106-cell A1 crosswalk.
+- Review the [P58-B16 tactical weapon-audio evidence](evidence/2026-09-24-tactical-weapon-audio.md)
+  for corrected event semantics, all eight fire/impact families, all 22 WAVE
+  variants, production dispatch, and focused muted browser routing.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

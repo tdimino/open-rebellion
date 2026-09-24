@@ -947,13 +947,22 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let browser_menu_sfx: Vec<_> = audio::MENU_SFX_ASSETS
         .iter()
-        .chain(audio::TACTICAL_SFX_ASSETS.iter())
         .filter_map(|&(kind, path, _)| browser_audio_files.remove(path).map(|bytes| (kind, bytes)))
+        .collect();
+    #[cfg(target_arch = "wasm32")]
+    let browser_tactical_sfx: Vec<_> = audio::TACTICAL_SFX_ASSETS
+        .iter()
+        .filter_map(|&(_, _, path, resource_id)| {
+            browser_audio_files
+                .remove(path)
+                .map(|bytes| (resource_id, bytes))
+        })
         .collect();
     #[cfg(target_arch = "wasm32")]
     let mut browser_menu_audio = if browser_main_theme.is_some()
         || browser_battle_theme.is_some()
         || !browser_menu_sfx.is_empty()
+        || !browser_tactical_sfx.is_empty()
     {
         // Initialise WebAudio and begin decoding before the first interaction.
         // Its resume handlers are then ready for the first user gesture.
@@ -963,6 +972,9 @@ async fn main() {
         }
         for (kind, bytes) in &browser_menu_sfx {
             engine.load_sfx_bytes(*kind, bytes);
+        }
+        for (resource_id, bytes) in &browser_tactical_sfx {
+            engine.load_tactical_sfx_bytes(*resource_id, bytes);
         }
         Some(engine)
     } else {
@@ -975,7 +987,6 @@ async fn main() {
         audio_vol.backend_available = browser_menu_audio.is_some();
     }
     let mut tactical_music_active = false;
-    let mut tactical_destroyed_seen = 0_usize;
 
     let mut cutscene_player = open_cutscene(
         Path::new(INTRO_CUTSCENE),
@@ -4043,28 +4054,23 @@ async fn main() {
                 engine.load_music_bytes(rebellion_render::MusicTrack::MainTheme, bytes);
             }
             tactical_music_active = false;
-            tactical_destroyed_seen = 0;
         }
 
         if tactical_audio_context {
-            let destroyed = tactical_state.session.as_ref().map_or(0, |session| {
-                session.ships.iter().filter(|ship| !ship.alive).count()
-            });
-            if destroyed < tactical_destroyed_seen {
-                tactical_destroyed_seen = destroyed;
-            }
-            if destroyed > tactical_destroyed_seen {
+            for cue in tactical_state.take_pending_audio_cues() {
                 #[cfg(not(target_arch = "wasm32"))]
-                audio_engine.play_sfx(rebellion_render::SfxKind::TacticalShipDestroyed, &audio_vol);
+                let loaded = audio_engine.play_tactical_sfx(cue.resource_id, &audio_vol);
                 #[cfg(target_arch = "wasm32")]
-                if let Some(engine) = browser_menu_audio.as_mut() {
-                    engine.play_sfx(rebellion_render::SfxKind::TacticalShipDestroyed, &audio_vol);
-                }
+                let loaded = browser_menu_audio
+                    .as_mut()
+                    .is_some_and(|engine| engine.play_tactical_sfx(cue.resource_id, &audio_vol));
                 macroquad::logging::info!(
-                    "[audio] context=combat event=ship_destroyed wave=13054 routed=true muted={}",
+                    "[audio] context=combat event=0x{:02x} wave={} routed=true loaded={} muted={}",
+                    cue.event.event_id(),
+                    cue.resource_id,
+                    loaded,
                     audio_vol.muted
                 );
-                tactical_destroyed_seen = destroyed;
             }
         }
 
@@ -5947,6 +5953,7 @@ mod tactical_ground_tests {
             combat_tick: 1,
             weapon_effects: vec![],
             impact_effects: vec![],
+            pending_audio_cues: vec![],
             field_effects: vec![],
             subsystem_repairs: vec![],
             paused: false,

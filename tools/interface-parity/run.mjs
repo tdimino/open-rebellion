@@ -3182,25 +3182,37 @@ async function probeTacticalBattleAlertEntry(
 
 function probeTacticalAudioRouting(folder, stable, consoleLines, ready) {
   assert.equal(ready.tactical_music_mdata_id, 307);
-  assert.equal(ready.tactical_cue_wave_id, 13054);
+  assert.equal(ready.tactical_weapon_audio_wave_first, 13033);
+  assert.equal(ready.tactical_weapon_audio_wave_last, 13054);
+  assert.equal(ready.tactical_weapon_audio_variant_count, 22);
   assert.equal(ready.battle_alert_open, false);
   const music = consoleLines.find(({ text }) =>
     text.includes("[audio] context=combat track=Battle mdata=307"));
-  const cue = consoleLines.find(({ text }) =>
-    text.includes("[audio] context=combat event=ship_destroyed wave=13054"));
+  const cueLogs = consoleLines.filter(({ text }) =>
+    text.includes("[audio] context=combat event=0x") && text.includes("routed=true"));
   assert.ok(music, "tactical music context was not routed");
   assert.match(music.text, /loaded=true/);
   assert.match(music.text, /muted=true/);
-  assert.ok(cue, "source-mapped tactical event cue was not routed");
-  assert.match(cue.text, /routed=true/);
-  assert.match(cue.text, /muted=true/);
+  const routed = cueLogs.map(({ text }) => {
+    const match = text.match(/event=0x([0-9a-f]{2}) wave=(\d+)/);
+    assert.ok(match, `malformed tactical cue log: ${text}`);
+    assert.match(text, /loaded=true/);
+    assert.match(text, /muted=true/);
+    return { event: Number.parseInt(match[1], 16), wave: Number(match[2]) };
+  });
+  assert.deepEqual(routed.map(({ wave }) => wave),
+    Array.from({ length: 22 }, (_, index) => 13033 + index));
+  assert.deepEqual([...new Set(routed.map(({ event }) => event))],
+    [0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14]);
   fs.writeFileSync(path.join(folder, "tactical-audio-muted.png"), stable.bytes);
   return [{
     type: "tactical-audio-routing",
     music_mdata_id: 307,
-    tactical_wave_id: 13054,
+    tactical_wave_first: 13033,
+    tactical_wave_last: 13054,
+    tactical_wave_variants: 22,
     music_log: music.text,
-    cue_log: cue.text,
+    cue_logs: cueLogs.map(({ text }) => text),
     browser_muted: true,
     screenshot_sha256: sha256(stable.bytes),
   }];
@@ -4019,7 +4031,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 32);
+      assert.equal(ready.schema_version, 33);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);

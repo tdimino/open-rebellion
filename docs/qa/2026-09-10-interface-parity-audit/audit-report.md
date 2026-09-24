@@ -302,9 +302,16 @@ remain unmapped, and strict acceptance remains 0/106.
 P58-B15 maps all 106 canonical cells: 87 browser journeys and 19 snapshots. It
 restores the source-built faction Battle Alert, exercises its tabs and Take
 Command transition, stages MDATA 307 as the battle score, and routes recovered
-TACTICAL WAVE 13054 for destruction events. This completes deterministic A1
+TACTICAL WAVE 13054. This completes deterministic A1
 scenario mapping only. A0 coverage and strict acceptance remain 0/106, and the
 strict gate was not run.
+
+P58-B16 corrects the provisional event label: source event `0x14` is
+`SHIP_TAKE_TORPEDO_HIT`, not ship destruction. It recovers events `0x0d`
+through `0x14`, extracts all 22 weapon fire/impact variants at TACTICAL WAVE
+`13033–13054`, and emits them from production capital and fighter combat. The
+focused four-case muted browser journey passes. Exact shared-RNG sequencing,
+audible native comparison, A0 coverage, and strict acceptance remain open.
 
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every

@@ -274,6 +274,14 @@ plus event `0x14` to TACTICAL WAVE 13054 through `FUN_005bae60`,
 crosswalk now maps all 106 cells; A0 coverage and strict acceptance remain
 0/106.
 
+[P58-B16 evidence](evidence/2026-09-24-tactical-weapon-audio.md) corrects the
+provisional event label: `FUN_005a7500` registers event `0x14` as
+`SHIP_TAKE_TORPEDO_HIT`, not ship destruction. Together with the audio-manager
+tables and `FUN_005b3f10`, it maps events `0x0d–0x14` to all 22 WAVE
+`13033–13054` variants and dispatches them from production capital and fighter
+combat. Exact shared-RNG sequencing and remaining non-weapon/voice events stay
+open.
+
 ## Immediate implementation order
 
 1. Trace SPT to BIN to frame and WAV selection for both factions on top of the
@@ -289,8 +297,9 @@ crosswalk now maps all 106 cells; A0 coverage and strict acceptance remain
    map input.
 6. Continue the `TAC-01` through `TAC-07` space-battle
    path using the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md),
-   including remaining tactical audio variants, results, and native Death Star
-   behavior, then acquire A0 evidence for the complete mapped matrix.
+   including remaining non-weapon/voice audio events, results, and native
+   Death Star behavior, then acquire A0 evidence for the complete mapped
+   matrix.
 7. Use original-runtime capture only for the remaining dynamic proof boundary.
 
 No static discovery marks a surface complete. It closes only the corresponding

@@ -164,6 +164,12 @@ Status: deterministic A1 mapping complete at P58-B15. The 36 scenarios map all
 cell is runnable, not accepted; A0 coverage, comparison, and strict acceptance
 remain 0/106, and the strict gate has not been run.
 
+P58-B16 deepens the mapped audio journey without changing the denominator: it
+corrects event `0x14` to torpedo impact, routes all eight recovered weapon
+events and all 22 WAVE variants, and passes the focused four-case muted browser
+gate. Exact original RNG sequencing and audible native comparison remain C6
+evidence work.
+
 - Give every catalog scenario one or more exact `audit_cells` values.
 - Distinguish journeys from snapshots in the schema and report.
 - Drive real pointer and keyboard input for every interactive row, including

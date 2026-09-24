@@ -137,7 +137,6 @@ fn sfx_file(kind: SfxKind) -> &'static str {
         SfxKind::FleetDeparture => "fleet_departure.wav",
         SfxKind::FleetArrival => "fleet_arrival.wav",
         SfxKind::CombatStart => "combat_start.wav",
-        SfxKind::TacticalShipDestroyed => "tactical_ship_destroyed.wav",
         SfxKind::UiClick => "ui_click.wav",
         SfxKind::UiClose => "ui_close.wav",
         SfxKind::MenuGalaxySize => "menu_galaxy_size.wav",
@@ -155,13 +154,32 @@ pub const MENU_SFX_ASSETS: &[(SfxKind, &str, u32)] = &[
     (SfxKind::MenuSelect, "sfx/menu_select.wav", 8004),
 ];
 
-/// Browser-pack filename and source identity for the first recovered tactical
-/// event cue. REBEXE event 0x14 selects TACTICAL.DLL WAVE 13054.
-pub const TACTICAL_SFX_ASSETS: &[(SfxKind, &str, u32)] = &[(
-    SfxKind::TacticalShipDestroyed,
-    "sfx/tactical_ship_destroyed.wav",
-    13_054,
-)];
+/// Exact weapon-event variant table built by `FUN_005bae60`. Each row is
+/// `(event_id, variant, runtime_path, TACTICAL.DLL WAVE resource)`.
+pub const TACTICAL_SFX_ASSETS: &[(u8, u8, &str, u32)] = &[
+    (0x0d, 0, "sfx/tactical_event_0d_0.wav", 13_033),
+    (0x0d, 1, "sfx/tactical_event_0d_1.wav", 13_034),
+    (0x0d, 2, "sfx/tactical_event_0d_2.wav", 13_035),
+    (0x0e, 0, "sfx/tactical_event_0e_0.wav", 13_036),
+    (0x0e, 1, "sfx/tactical_event_0e_1.wav", 13_037),
+    (0x0e, 2, "sfx/tactical_event_0e_2.wav", 13_038),
+    (0x0f, 0, "sfx/tactical_event_0f_0.wav", 13_039),
+    (0x0f, 1, "sfx/tactical_event_0f_1.wav", 13_040),
+    (0x0f, 2, "sfx/tactical_event_0f_2.wav", 13_041),
+    (0x10, 0, "sfx/tactical_event_10_0.wav", 13_042),
+    (0x10, 1, "sfx/tactical_event_10_1.wav", 13_043),
+    (0x10, 2, "sfx/tactical_event_10_2.wav", 13_044),
+    (0x11, 0, "sfx/tactical_event_11_0.wav", 13_045),
+    (0x11, 1, "sfx/tactical_event_11_1.wav", 13_046),
+    (0x11, 2, "sfx/tactical_event_11_2.wav", 13_047),
+    (0x12, 0, "sfx/tactical_event_12_0.wav", 13_048),
+    (0x12, 1, "sfx/tactical_event_12_1.wav", 13_049),
+    (0x12, 2, "sfx/tactical_event_12_2.wav", 13_050),
+    (0x13, 0, "sfx/tactical_event_13_0.wav", 13_051),
+    (0x13, 1, "sfx/tactical_event_13_1.wav", 13_052),
+    (0x13, 2, "sfx/tactical_event_13_2.wav", 13_053),
+    (0x14, 0, "sfx/tactical_event_14_0.wav", 13_054),
+];
 
 fn music_file(track: MusicTrack) -> &'static str {
     match track {
@@ -234,6 +252,9 @@ pub struct AudioEngine {
     /// Pre-loaded one-shot SFX.
     sfx: HashMap<SfxKind, Sound>,
 
+    /// Original tactical weapon-event variants keyed by WAVE resource ID.
+    tactical_sfx: HashMap<u32, Sound>,
+
     /// Pre-loaded voice lines.
     voice: HashMap<VoiceLine, Sound>,
 
@@ -253,6 +274,7 @@ impl AudioEngine {
         AudioEngine {
             ctx: AudioContext::new(),
             sfx: HashMap::new(),
+            tactical_sfx: HashMap::new(),
             voice: HashMap::new(),
             music: None,
             music_playing: false,
@@ -274,7 +296,6 @@ impl AudioEngine {
             SfxKind::FleetDeparture,
             SfxKind::FleetArrival,
             SfxKind::CombatStart,
-            SfxKind::TacticalShipDestroyed,
             SfxKind::UiClick,
             SfxKind::UiClose,
             SfxKind::MenuGalaxySize,
@@ -293,6 +314,22 @@ impl AudioEngine {
                     self.sfx.insert(kind, sound);
                 }
                 Err(e) => eprintln!("[audio] Failed to read SFX {}: {e}", path.display()),
+            }
+        }
+        let audio_root = audio_base_path(sounds_dir);
+        for &(_, _, relative_path, resource_id) in TACTICAL_SFX_ASSETS {
+            let path = audio_root.join(relative_path);
+            if !path.exists() {
+                continue;
+            }
+            match std::fs::read(&path) {
+                Ok(bytes) => self.load_tactical_sfx_bytes(resource_id, &bytes),
+                Err(error) => {
+                    eprintln!(
+                        "[audio] Failed to read tactical SFX {}: {error}",
+                        path.display()
+                    );
+                }
             }
         }
     }
@@ -372,13 +409,13 @@ impl AudioEngine {
     pub fn load_original_tactical_sfx(&mut self, tactical_dll: &Path) {
         let resource_ids: Vec<u32> = TACTICAL_SFX_ASSETS
             .iter()
-            .map(|(_, _, resource_id)| *resource_id)
+            .map(|(_, _, _, resource_id)| *resource_id)
             .collect();
         match rebellion_data::load_wave_resources(tactical_dll, &resource_ids) {
             Ok(waves) => {
-                for &(kind, _, resource_id) in TACTICAL_SFX_ASSETS {
+                for &(_, _, _, resource_id) in TACTICAL_SFX_ASSETS {
                     if let Some(bytes) = waves.get(&resource_id) {
-                        self.load_sfx_bytes(kind, bytes);
+                        self.load_tactical_sfx_bytes(resource_id, bytes);
                     }
                 }
                 eprintln!(
@@ -403,6 +440,12 @@ impl AudioEngine {
     pub fn load_sfx_bytes(&mut self, kind: SfxKind, bytes: &[u8]) {
         let sound = Sound::load(&self.ctx, bytes);
         self.sfx.insert(kind, sound);
+    }
+
+    /// Load one source-mapped TACTICAL.DLL WAVE resource.
+    pub fn load_tactical_sfx_bytes(&mut self, resource_id: u32, bytes: &[u8]) {
+        let sound = Sound::load(&self.ctx, bytes);
+        self.tactical_sfx.insert(resource_id, sound);
     }
 
     /// Load a single voice line from raw bytes.
@@ -474,6 +517,29 @@ impl AudioEngine {
                     volume: vol,
                 },
             );
+        }
+    }
+
+    /// Play one concrete original tactical event variant.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
+    pub fn play_tactical_sfx(&mut self, resource_id: u32, vol_state: &AudioVolumeState) -> bool {
+        let vol = vol_state.effective_sfx_volume() as f32;
+        if let Some(sound) = self.tactical_sfx.get(&resource_id) {
+            if vol > 0.0 {
+                sound.play(
+                    &self.ctx,
+                    quad_snd::PlaySoundParams {
+                        looped: false,
+                        volume: vol,
+                    },
+                );
+            }
+            true
+        } else {
+            false
         }
     }
 

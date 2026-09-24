@@ -486,7 +486,7 @@
     },
     {
       "slug": "production-tactical-audio-routing",
-      "description": "Recovered MDATA.307 tactical score and TACTICAL.DLL WAVE 13054 destruction event routed through the production audio engine while the harness remains muted",
+      "description": "Recovered MDATA.307 tactical score and all 22 TACTICAL.DLL weapon fire/impact variants at WAVE 13033–13054 routed through the production audio engine while the harness remains muted",
       "fixture_codes": {
         "alliance": 65828,
         "empire": 66084
@@ -497,7 +497,7 @@
       "tactical_audio_presentation": true,
       "expected_status": "battle-ready",
       "audit_cells": ["TAC-01-C012"],
-      "acceptance": "A1 source-identity, runtime-pack, context-switch, event-dispatch, and muted browser routing proof for MDATA.307 and TACTICAL.DLL WAVE 13054. Audible native comparison and lossless owned A0 acceptance remain open."
+      "acceptance": "A1 source-identity, runtime-pack, context-switch, event-dispatch, and muted browser routing proof for MDATA.307 and all 22 TACTICAL.DLL WAVE 13033–13054 weapon variants. Exact global RNG sequence, audible native comparison, and lossless owned A0 acceptance remain open."
     },
     {
       "slug": "production-participants-3d-off",

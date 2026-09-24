@@ -40,8 +40,6 @@ pub enum SfxKind {
     FleetArrival,
     /// Space battle begins at a system.
     CombatStart,
-    /// Original TACTICAL.DLL WAVE 13054, selected by source event 0x14.
-    TacticalShipDestroyed,
     /// Clicked a button or opened a panel.
     UiClick,
     /// Closed a panel or dismissed a dialog.

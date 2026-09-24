@@ -166,7 +166,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The tactical completion work now maps all 106 canonical cells through 87 browser journeys and 19 source-backed snapshots, including Battle Alert entry and source-identified tactical audio routing; A0 coverage, comparison, and all 106 strict cells remain open",
+      "title": "The tactical completion work maps all 106 canonical cells through 87 browser journeys and 19 source-backed snapshots; Battle Alert, score, and the complete 22-variant weapon-audio bank are routed, while A0 coverage, comparison, and all 106 strict cells remain open",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -208,7 +208,8 @@
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md",
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },

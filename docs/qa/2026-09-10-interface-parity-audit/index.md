@@ -120,6 +120,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58-B13 tactical withdrawal-confirmation evidence](evidence/2026-09-23-tactical-withdraw-confirmation.md) | Executable-derived panel/text/control contract, cancel and confirm routing, 101 mapped cells, five explicit gaps, and unchanged 0/106 strict acceptance. |
 | [P58-B14 tactical detail and Escort evidence](evidence/2026-09-23-tactical-detail-escort.md) | Complete destroyed presentation, compact selected-capital contents, direct source order-code 1 Escort, 104 mapped cells, two explicit gaps, and unchanged 0/106 strict acceptance. |
 | [P58-B15 tactical Battle Alert and audio evidence](evidence/2026-09-24-tactical-battle-alert-audio.md) | Source-built faction alerts, Take Command entry, MDATA 307, WAVE 13054, complete 106-cell deterministic A1 mapping, and unchanged 0/106 strict acceptance. |
+| [P58-B16 tactical weapon-audio evidence](evidence/2026-09-24-tactical-weapon-audio.md) | Corrected event semantics, complete eight-event WAVE 13033–13054 bank, production fire/impact dispatch, and focused muted browser routing. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |

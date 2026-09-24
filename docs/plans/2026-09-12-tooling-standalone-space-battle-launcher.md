@@ -196,11 +196,14 @@ Escort through direct friendly right-click, protected-target marking, follow,
 opportunity fire, and invalid-target cleanup.
 P58-B15 restores the source-built faction Battle Alert, its tab and command
 resources, the paused Take Command transition, MDATA 307 battle music, and the
-first source-identified tactical event cue at WAVE 13054. This completes the
+first source-identified tactical WAVE transport at 13054. P58-B16 corrects
+event 0x14 to torpedo impact and restores all eight weapon fire/impact events
+across the 22 WAVE variants at 13033–13054. This completes the
 deterministic A1 crosswalk without running or satisfying the strict A0 gate.
 Power allocation, exact planet placement, native Death Star beam behavior,
 shared post-battle bombardment, landing, and navigation orchestration,
-remaining tactical event and voice variants, mixing, native playback, and A0
+remaining non-weapon and voice events, exact shared-RNG sequencing, mixing,
+native playback, and A0
 view acceptance remain T3 and T4 work.
 No `TAC-*` acceptance cell is closed.
 

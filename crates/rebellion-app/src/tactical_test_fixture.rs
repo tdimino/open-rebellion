@@ -778,7 +778,9 @@ struct FixtureRecord<'a> {
     tactical_audio_presentation: bool,
     battle_alert_open: bool,
     tactical_music_mdata_id: u32,
-    tactical_cue_wave_id: u32,
+    tactical_weapon_audio_wave_first: u32,
+    tactical_weapon_audio_wave_last: u32,
+    tactical_weapon_audio_variant_count: u32,
     subsystem_field_command_presentation: bool,
     live_subsystem_damage_presentation: bool,
     subsystem_repair_mobility_presentation: bool,
@@ -1245,7 +1247,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 32,
+        schema_version: 33,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1270,7 +1272,9 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         tactical_audio_presentation: request.tactical_audio_presentation,
         battle_alert_open: tactical.battle_alert_open(),
         tactical_music_mdata_id: 307,
-        tactical_cue_wave_id: 13_054,
+        tactical_weapon_audio_wave_first: 13_033,
+        tactical_weapon_audio_wave_last: 13_054,
+        tactical_weapon_audio_variant_count: 22,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1323,7 +1327,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 32,
+        schema_version: 33,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1348,7 +1352,9 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         tactical_audio_presentation: request.tactical_audio_presentation,
         battle_alert_open: false,
         tactical_music_mdata_id: 307,
-        tactical_cue_wave_id: 13_054,
+        tactical_weapon_audio_wave_first: 13_033,
+        tactical_weapon_audio_wave_last: 13_054,
+        tactical_weapon_audio_variant_count: 22,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,

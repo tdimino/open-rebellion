@@ -1361,6 +1361,10 @@ pub struct BattleSession {
     pub weapon_effects: Vec<WeaponEffect>,
     /// Target-attached original type-303 hit, damage, and destruction sequences.
     pub impact_effects: Vec<TacticalImpactEffect>,
+    /// Source audio events waiting for the application audio backend. The
+    /// resource identity is fixed when the combat event is emitted so frame
+    /// scheduling cannot change variant selection.
+    pub pending_audio_cues: Vec<TacticalAudioCue>,
     /// Target-attached tractor/gravity field selected through one shared slot.
     pub field_effects: Vec<TacticalFieldEffect>,
     /// Source-selected subsystem repairs emitted by the latest combat step.
@@ -1544,6 +1548,100 @@ pub enum WeaponKind {
     IonCannon,
     LaserCannon,
     FighterAttack,
+}
+
+/// The eight weapon audio events dispatched by `FUN_005a7500` through the
+/// original tactical sound manager. `FUN_005bae60` assigns each event a
+/// contiguous TACTICAL.DLL WAVE family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TacticalAudioEvent {
+    LaserFire,
+    TurbolaserFire,
+    IonFire,
+    TorpedoFire,
+    LaserImpact,
+    IonImpact,
+    TurbolaserImpact,
+    TorpedoImpact,
+}
+
+impl TacticalAudioEvent {
+    #[must_use]
+    pub const fn event_id(self) -> u8 {
+        match self {
+            Self::LaserFire => 0x0d,
+            Self::TurbolaserFire => 0x0e,
+            Self::IonFire => 0x0f,
+            Self::TorpedoFire => 0x10,
+            Self::LaserImpact => 0x11,
+            Self::IonImpact => 0x12,
+            Self::TurbolaserImpact => 0x13,
+            Self::TorpedoImpact => 0x14,
+        }
+    }
+
+    #[must_use]
+    pub const fn resource_base(self) -> u32 {
+        match self {
+            Self::LaserFire => 13_033,
+            Self::TurbolaserFire => 13_036,
+            Self::IonFire => 13_039,
+            Self::TorpedoFire => 13_042,
+            Self::LaserImpact => 13_045,
+            Self::IonImpact => 13_048,
+            Self::TurbolaserImpact => 13_051,
+            Self::TorpedoImpact => 13_054,
+        }
+    }
+
+    #[must_use]
+    pub const fn variant_count(self) -> u8 {
+        match self {
+            Self::TorpedoImpact => 1,
+            _ => 3,
+        }
+    }
+
+    const fn fire_for(kind: WeaponKind) -> Self {
+        match kind {
+            WeaponKind::LaserCannon => Self::LaserFire,
+            WeaponKind::Turbolaser => Self::TurbolaserFire,
+            WeaponKind::IonCannon => Self::IonFire,
+            WeaponKind::FighterAttack => Self::TorpedoFire,
+        }
+    }
+
+    const fn impact_for(kind: WeaponKind) -> Self {
+        match kind {
+            WeaponKind::LaserCannon => Self::LaserImpact,
+            WeaponKind::Turbolaser => Self::TurbolaserImpact,
+            WeaponKind::IonCannon => Self::IonImpact,
+            WeaponKind::FighterAttack => Self::TorpedoImpact,
+        }
+    }
+}
+
+/// One concrete source event and selected original WAVE resource.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TacticalAudioCue {
+    pub event: TacticalAudioEvent,
+    pub resource_id: u32,
+}
+
+impl TacticalAudioCue {
+    #[must_use]
+    pub const fn from_variant(event: TacticalAudioEvent, variant: u8) -> Self {
+        let bounded = variant % event.variant_count();
+        Self {
+            event,
+            resource_id: event.resource_base() + bounded as u32,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_seed(event: TacticalAudioEvent, seed: u32) -> Self {
+        Self::from_variant(event, (seed % event.variant_count() as u32) as u8)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2608,6 +2706,7 @@ impl BattleSession {
             combat_tick: 0,
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
+            pending_audio_cues: Vec::new(),
             field_effects: Vec::new(),
             subsystem_repairs: Vec::new(),
             paused: true,
@@ -3598,6 +3697,7 @@ impl BattleSession {
             &def_alive,
             &mut new_effects,
             &mut self.impact_effects,
+            &mut self.pending_audio_cues,
             self.combat_tick,
         );
         Self::fire_side(
@@ -3607,6 +3707,7 @@ impl BattleSession {
             &atk_alive,
             &mut new_effects,
             &mut self.impact_effects,
+            &mut self.pending_audio_cues,
             self.combat_tick,
         );
         self.fire_capitals_at_fighters(&mut new_effects);
@@ -3695,6 +3796,7 @@ impl BattleSession {
         targets: &[usize],
         effects: &mut Vec<WeaponEffect>,
         impact_effects: &mut Vec<TacticalImpactEffect>,
+        audio_cues: &mut Vec<TacticalAudioCue>,
         tick: u32,
     ) {
         if targets.is_empty() {
@@ -3798,6 +3900,14 @@ impl BattleSession {
                         kind,
                         candidate.strength,
                     );
+                    audio_cues.push(TacticalAudioCue::from_seed(
+                        TacticalAudioEvent::fire_for(kind),
+                        seed,
+                    ));
+                    audio_cues.push(TacticalAudioCue::from_seed(
+                        TacticalAudioEvent::impact_for(kind),
+                        seed.rotate_left(7),
+                    ));
                     energy_spent += original_weapon_count(arc, kind) as f32;
                 }
 
@@ -3874,6 +3984,20 @@ impl BattleSession {
                     kind,
                     strength,
                 );
+                let seed = self
+                    .combat_tick
+                    .wrapping_mul(47)
+                    .wrapping_add(source as u32 * 31)
+                    .wrapping_add(target as u32 * 19)
+                    .wrapping_add(u32::from(TacticalAudioEvent::fire_for(kind).event_id()));
+                self.pending_audio_cues.push(TacticalAudioCue::from_seed(
+                    TacticalAudioEvent::fire_for(kind),
+                    seed,
+                ));
+                self.pending_audio_cues.push(TacticalAudioCue::from_seed(
+                    TacticalAudioEvent::impact_for(kind),
+                    seed.rotate_left(7),
+                ));
                 fired = true;
             }
             if fired {
@@ -4069,6 +4193,17 @@ impl BattleSession {
                 if strength <= 0.0 {
                     continue;
                 }
+                let target_seed = match target {
+                    OriginalFighterTarget::Capital(index)
+                    | OriginalFighterTarget::Fighter(index) => index as u32,
+                    OriginalFighterTarget::DeathStar => u32::MAX,
+                };
+                let audio_seed = self
+                    .combat_tick
+                    .wrapping_mul(61)
+                    .wrapping_add(source as u32 * 31)
+                    .wrapping_add(target_seed.wrapping_mul(17))
+                    .wrapping_add(u32::from(TacticalAudioEvent::fire_for(kind).event_id()));
                 match target {
                     OriginalFighterTarget::Capital(index) => {
                         let stage = apply_original_capital_damage(
@@ -4137,6 +4272,14 @@ impl BattleSession {
                         );
                     }
                 }
+                self.pending_audio_cues.push(TacticalAudioCue::from_seed(
+                    TacticalAudioEvent::fire_for(kind),
+                    audio_seed,
+                ));
+                self.pending_audio_cues.push(TacticalAudioCue::from_seed(
+                    TacticalAudioEvent::impact_for(kind),
+                    audio_seed.rotate_left(7),
+                ));
                 fired = true;
             }
 
@@ -4149,6 +4292,18 @@ impl BattleSession {
             {
                 let strength =
                     source_snapshot.torpedo_strength as f32 * ORIGINAL_FIGHTER_TORPEDO_STRENGTH;
+                let target_seed = match target {
+                    OriginalFighterTarget::Capital(index) => index as u32,
+                    OriginalFighterTarget::DeathStar => u32::MAX,
+                    OriginalFighterTarget::Fighter(_) => {
+                        unreachable!("torpedo branch excludes fighter targets")
+                    }
+                };
+                let audio_seed = self
+                    .combat_tick
+                    .wrapping_mul(67)
+                    .wrapping_add(source as u32 * 37)
+                    .wrapping_add(target_seed.wrapping_mul(23));
                 if let OriginalFighterTarget::Capital(index) = target {
                     let stage = apply_original_capital_damage(
                         &mut self.ships,
@@ -4198,6 +4353,14 @@ impl BattleSession {
                     );
                     fired = true;
                 }
+                self.pending_audio_cues.push(TacticalAudioCue::from_seed(
+                    TacticalAudioEvent::TorpedoFire,
+                    audio_seed,
+                ));
+                self.pending_audio_cues.push(TacticalAudioCue::from_seed(
+                    TacticalAudioEvent::TorpedoImpact,
+                    audio_seed.rotate_left(7),
+                ));
             }
             if fired {
                 self.fighters[source].consume_weapon_arc();
@@ -4243,6 +4406,10 @@ impl BattleSession {
         }
         self.trench_run_cinematic_pending = false;
         self.trench_run_outcome
+    }
+
+    fn take_pending_audio_cues(&mut self) -> Vec<TacticalAudioCue> {
+        std::mem::take(&mut self.pending_audio_cues)
     }
 }
 
@@ -5216,22 +5383,29 @@ impl TacticalState {
         self.command_panel = TacticalCommandPanel::Display;
     }
 
-    /// Start the audio journey after one source-backed destruction event so
-    /// the application routes TACTICAL.DLL WAVE 13054 while remaining muted.
+    /// Queue every recovered weapon-event variant so the muted browser journey
+    /// can prove the complete TACTICAL.DLL 13033-13054 runtime bank.
     #[cfg(feature = "interface-test-fixtures")]
     pub fn configure_tactical_audio_fixture(&mut self) {
         let Some(session) = self.session.as_mut() else {
             return;
         };
-        let player_is_attacker = session.player_is_attacker;
-        if let Some(ship) = session
-            .ships
-            .iter_mut()
-            .find(|ship| ship.is_attacker != player_is_attacker)
-        {
-            ship.alive = false;
-            ship.hull_current = 0;
-            ship.shield = 0;
+        session.pending_audio_cues.clear();
+        for event in [
+            TacticalAudioEvent::LaserFire,
+            TacticalAudioEvent::TurbolaserFire,
+            TacticalAudioEvent::IonFire,
+            TacticalAudioEvent::TorpedoFire,
+            TacticalAudioEvent::LaserImpact,
+            TacticalAudioEvent::IonImpact,
+            TacticalAudioEvent::TurbolaserImpact,
+            TacticalAudioEvent::TorpedoImpact,
+        ] {
+            for variant in 0..event.variant_count() {
+                session
+                    .pending_audio_cues
+                    .push(TacticalAudioCue::from_variant(event, variant));
+            }
         }
     }
 
@@ -5573,6 +5747,14 @@ impl TacticalState {
         self.session
             .as_mut()
             .and_then(BattleSession::take_pending_trench_run_cinematic)
+    }
+
+    /// Drain source-mapped tactical WAVE cues for the application audio
+    /// backend. Muted test runs still retain the event/resource diagnostics.
+    pub fn take_pending_audio_cues(&mut self) -> Vec<TacticalAudioCue> {
+        self.session
+            .as_mut()
+            .map_or_else(Vec::new, BattleSession::take_pending_audio_cues)
     }
 
     /// Project a deterministic strategic auto-resolve outcome onto the live
@@ -11423,6 +11605,7 @@ mod tests {
             combat_tick: 0,
             weapon_effects: Vec::new(),
             impact_effects: Vec::new(),
+            pending_audio_cues: Vec::new(),
             field_effects: Vec::new(),
             subsystem_repairs: Vec::new(),
             paused: true,
@@ -12316,6 +12499,7 @@ mod tests {
         let mut fields = Vec::new();
         let mut projectiles = Vec::new();
         let mut impacts = Vec::new();
+        let mut audio_cues = Vec::new();
 
         BattleSession::fire_side(
             &mut ships,
@@ -12324,12 +12508,14 @@ mod tests {
             &[2],
             &mut projectiles,
             &mut impacts,
+            &mut audio_cues,
             1,
         );
 
         assert_eq!(ships[2].hull_current, original_hull);
         assert!(projectiles.is_empty());
         assert!(impacts.is_empty());
+        assert!(audio_cues.is_empty());
     }
 
     #[test]
@@ -12568,6 +12754,7 @@ mod tests {
         let mut fields = Vec::new();
         let mut projectiles = Vec::new();
         let mut impacts = Vec::new();
+        let mut audio_cues = Vec::new();
 
         BattleSession::fire_side(
             &mut ships,
@@ -12576,6 +12763,7 @@ mod tests {
             &[1],
             &mut projectiles,
             &mut impacts,
+            &mut audio_cues,
             1,
         );
 
@@ -12594,6 +12782,21 @@ mod tests {
         assert!(!ships[0].weapon_arcs[0].ready);
         assert_eq!(ships[0].weapon_arcs[0].energy, 0.0);
         assert_eq!(ships[1].shield, 965);
+        assert_eq!(
+            audio_cues.iter().map(|cue| cue.event).collect::<Vec<_>>(),
+            vec![
+                TacticalAudioEvent::IonFire,
+                TacticalAudioEvent::IonImpact,
+                TacticalAudioEvent::LaserFire,
+                TacticalAudioEvent::LaserImpact,
+                TacticalAudioEvent::TurbolaserFire,
+                TacticalAudioEvent::TurbolaserImpact,
+            ]
+        );
+        assert!(audio_cues.iter().all(|cue| {
+            let base = cue.event.resource_base();
+            cue.resource_id >= base && cue.resource_id < base + u32::from(cue.event.variant_count())
+        }));
     }
 
     #[test]
@@ -12619,6 +12822,7 @@ mod tests {
         };
         let mut ships = vec![source, fore, starboard];
         let mut projectiles = Vec::new();
+        let mut audio_cues = Vec::new();
 
         BattleSession::fire_side(
             &mut ships,
@@ -12627,6 +12831,7 @@ mod tests {
             &[1, 2],
             &mut projectiles,
             &mut Vec::new(),
+            &mut audio_cues,
             1,
         );
 
@@ -12638,6 +12843,7 @@ mod tests {
             vec![1, 2]
         );
         assert_eq!(ships[0].weapon_recharge_queue, vec![0, 1]);
+        assert_eq!(audio_cues.len(), 4);
     }
 
     #[test]
@@ -12753,6 +12959,7 @@ mod tests {
         let mut fields = Vec::new();
         let mut projectiles = Vec::new();
         let mut impacts = Vec::new();
+        let mut audio_cues = Vec::new();
 
         BattleSession::fire_side(
             &mut ships,
@@ -12761,6 +12968,7 @@ mod tests {
             &[1],
             &mut projectiles,
             &mut impacts,
+            &mut audio_cues,
             1,
         );
 
@@ -12769,6 +12977,42 @@ mod tests {
         assert!(ships[1].subsystem_condition.shields < 100);
         assert_eq!(projectiles.len(), 1);
         assert_eq!(impacts.len(), 1);
+        assert_eq!(audio_cues.len(), 2);
+    }
+
+    #[test]
+    fn tactical_audio_event_bank_covers_every_recovered_wave_once() {
+        let events = [
+            TacticalAudioEvent::LaserFire,
+            TacticalAudioEvent::TurbolaserFire,
+            TacticalAudioEvent::IonFire,
+            TacticalAudioEvent::TorpedoFire,
+            TacticalAudioEvent::LaserImpact,
+            TacticalAudioEvent::IonImpact,
+            TacticalAudioEvent::TurbolaserImpact,
+            TacticalAudioEvent::TorpedoImpact,
+        ];
+        let cues: Vec<_> = events
+            .into_iter()
+            .flat_map(|event| {
+                (0..event.variant_count())
+                    .map(move |variant| TacticalAudioCue::from_variant(event, variant))
+            })
+            .collect();
+
+        assert_eq!(
+            cues.iter()
+                .map(|cue| cue.event.event_id())
+                .collect::<Vec<_>>(),
+            vec![
+                0x0d, 0x0d, 0x0d, 0x0e, 0x0e, 0x0e, 0x0f, 0x0f, 0x0f, 0x10, 0x10, 0x10, 0x11, 0x11,
+                0x11, 0x12, 0x12, 0x12, 0x13, 0x13, 0x13, 0x14,
+            ]
+        );
+        assert_eq!(
+            cues.iter().map(|cue| cue.resource_id).collect::<Vec<_>>(),
+            (13_033..=13_054).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -13153,6 +13397,21 @@ mod tests {
             session.weapon_effects[0].target_position,
             session.ships[0].source_position
         );
+        assert_eq!(
+            session
+                .pending_audio_cues
+                .iter()
+                .map(|cue| cue.event)
+                .collect::<Vec<_>>(),
+            vec![
+                TacticalAudioEvent::IonFire,
+                TacticalAudioEvent::IonImpact,
+                TacticalAudioEvent::LaserFire,
+                TacticalAudioEvent::LaserImpact,
+                TacticalAudioEvent::TorpedoFire,
+                TacticalAudioEvent::TorpedoImpact,
+            ]
+        );
     }
 
     #[test]
@@ -13206,6 +13465,17 @@ mod tests {
         assert_eq!(effects.len(), 1);
         assert_eq!(effects[0].kind, WeaponKind::LaserCannon);
         assert!(!session.ships[0].weapon_arcs[0].ready);
+        assert_eq!(
+            session
+                .pending_audio_cues
+                .iter()
+                .map(|cue| cue.event)
+                .collect::<Vec<_>>(),
+            vec![
+                TacticalAudioEvent::LaserFire,
+                TacticalAudioEvent::LaserImpact
+            ]
+        );
     }
 
     #[test]

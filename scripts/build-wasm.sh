@@ -116,9 +116,32 @@ else
     echo "WARNING: COMMON.DLL not found in $ORIGINAL_GAME_DIR; cockpit SFX will remain silent."
 fi
 if [ -f "$ORIGINAL_GAME_DIR/TACTICAL.DLL" ]; then
+    rm -f "$WEB_AUDIO/sfx/tactical_ship_destroyed.wav"
     "$DAT_DUMPER" --gdata "$ORIGINAL_GAME_DIR" --extract-tactical-sfx --output "$WEB_AUDIO/sfx"
 else
-    rm -f "$WEB_AUDIO/sfx/tactical_ship_destroyed.wav"
+    rm -f "$WEB_AUDIO/sfx/tactical_ship_destroyed.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0d_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0d_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0d_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0e_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0e_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0e_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0f_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0f_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0f_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_10_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_10_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_10_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_11_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_11_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_11_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_12_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_12_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_12_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_13_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_13_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_13_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_14_0.wav"
     echo "WARNING: TACTICAL.DLL not found in $ORIGINAL_GAME_DIR; tactical event cues will remain silent."
 fi
 

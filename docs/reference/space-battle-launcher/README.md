@@ -51,7 +51,7 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-trench-run-success` | 65821 | 66077 | Result state 6, MDATA.201, and tactical return |
 | `production-trench-run-failure` | 65822 | 66078 | Result state 7, MDATA.202, and tactical return |
 | `production-battle-alert-entry` | 65827 | 66083 | Source-built faction alert, four tabs, held Take Command, and paused tactical entry |
-| `production-tactical-audio-routing` | 65828 | 66084 | MDATA.307 battle score and source event `0x14` to TACTICAL WAVE 13054 while muted |
+| `production-tactical-audio-routing` | 65828 | 66084 | MDATA.307 battle score and source events `0x0d–0x14` across all 22 TACTICAL WAVE 13033–13054 variants while muted |
 
 ## Run it
 
@@ -176,6 +176,10 @@ and closes every process. Raw runs live under ignored
   transition, MDATA 307 battle score, and TACTICAL WAVE 13054 event routing.
   The deterministic A1 crosswalk is 106/106 through 87 journeys and 19
   snapshots; A0 coverage and strict acceptance remain 0/106.
+- P58-B16 corrects event 0x14 to torpedo impact and restores all eight weapon
+  fire/impact events across the complete 22-variant WAVE 13033–13054 bank.
+  Exact shared-RNG sequencing, audible native comparison, and strict A0
+  acceptance remain open.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options
@@ -196,7 +200,7 @@ exact original arrival callbacks and recovery trajectories, exact planet
 placement, power allocation,
 beam dimensions and timing, native trench-run playback comparison,
 post-battle bombardment, landing, and navigation orchestration, remaining
-tactical event and voice variants, audio mixing and native comparison, and
+non-weapon and voice events, exact shared-RNG sequencing, audio mixing and native comparison, and
 remaining result semantics remain open. The source 3D
 window uses the standard arrow cursor, so no invented targeting cursor is
 required. All
@@ -210,6 +214,7 @@ required. All
 - [P58-B13 tactical withdrawal-confirmation evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md)
 - [P58-B14 tactical detail and Escort evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md)
 - [P58-B15 tactical Battle Alert and audio evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md)
+- [P58-B16 tactical weapon-audio evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md)
 - [P58F13 tactical attack-target lifecycle evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 - [P58F12 tactical attack-targeting evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
 - [P58F11 tactical command-progression evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)
