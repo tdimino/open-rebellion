@@ -1618,11 +1618,28 @@ fn apply_mission_effects_inner(
                         sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
                     }
                 }
-                uprising_state.clear_uprising(*system);
             }
+            MissionEffect::DeathStarSabotaged { .. } => {}
+        }
+    }
+    apply_mission_state_effects(effects, uprising_state, death_star_state);
+}
+
+/// Apply the mission effects that live outside `GameWorld`: a subdued
+/// uprising ends and Death Star sabotage delays construction. The native and
+/// browser app shares this with the headless integrator.
+pub fn apply_mission_state_effects(
+    effects: &[MissionEffect],
+    uprising_state: &mut UprisingState,
+    death_star_state: &mut DeathStarState,
+) {
+    for effect in effects {
+        match effect {
+            MissionEffect::UprisingSubdued { system } => uprising_state.clear_uprising(*system),
             MissionEffect::DeathStarSabotaged { ticks_delayed } => {
                 death_star_state.add_sabotage_delay(*ticks_delayed);
             }
+            _ => {}
         }
     }
 }
@@ -2062,6 +2079,42 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Controlled(Faction::Empire),
         })
+    }
+
+    #[test]
+    fn a_subdue_success_ends_the_uprising_and_sabotage_delays_the_death_star() {
+        let mut systems: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = systems.insert(());
+        let mut uprisings = UprisingState::new();
+        uprisings.active_uprisings.insert(
+            system,
+            rebellion_core::uprising::ActiveUprising {
+                started_tick: 0,
+                loyalty_at_start: 0,
+            },
+        );
+        let mut death_star = DeathStarState::default();
+        rebellion_core::death_star::DeathStarSystem::start_construction(&mut death_star, system);
+        let before = death_star
+            .under_construction
+            .as_ref()
+            .unwrap()
+            .ticks_remaining;
+
+        apply_mission_state_effects(
+            &[
+                MissionEffect::UprisingSubdued { system },
+                MissionEffect::DeathStarSabotaged { ticks_delayed: 50 },
+            ],
+            &mut uprisings,
+            &mut death_star,
+        );
+
+        assert!(!uprisings.is_uprising(system));
+        assert_eq!(
+            death_star.under_construction.unwrap().ticks_remaining,
+            before + 50
+        );
     }
 
     #[test]

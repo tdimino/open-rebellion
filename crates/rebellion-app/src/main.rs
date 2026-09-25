@@ -1724,6 +1724,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                     #[cfg(not(target_arch = "wasm32"))]
                     &audio_vol,
                 );
+                rebellion_data::integrator::apply_mission_state_effects(
+                    &result.effects,
+                    &mut uprising_state,
+                    &mut death_star_state,
+                );
                 ai_state.mark_available(result.character);
 
                 // Advisor trigger for player faction missions.
@@ -4547,6 +4552,15 @@ fn apply_panel_action(
                 )
                 .is_none()
             {
+                let char_name = world
+                    .characters
+                    .get(character)
+                    .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("{char_name} is already on a mission"),
+                    MessageCategory::Mission,
+                ));
                 return;
             }
             let char_name = world
@@ -5283,10 +5297,10 @@ fn apply_mission_result(
                         sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
                     }
                 }
-                // Clear uprising — uprising_state not accessible here, handled in simulation layer
+                // The caller ends the uprising via apply_mission_state_effects.
             }
             MissionEffect::DeathStarSabotaged { ticks_delayed } => {
-                // Death Star delay applied in simulation layer (death_star_state.add_sabotage_delay)
+                // The caller applies the delay via apply_mission_state_effects.
                 // Notification 0x23, Death Star Sabotaged.
                 log.push(filed(
                     GameMessage::new(

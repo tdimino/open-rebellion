@@ -489,6 +489,11 @@ impl MissionState {
         duration_roll: f64,
         world: &mut GameWorld,
     ) -> Option<u64> {
+        // Saves written before dispatch set the flag can hold an active
+        // mission for a character whose `on_mission` is still false.
+        if self.missions.iter().any(|m| m.character == character) {
+            return None;
+        }
         if let Some(c) = world.characters.get_mut(character) {
             if c.on_mission || c.on_mandatory_mission {
                 return None;
@@ -1927,6 +1932,41 @@ mod tests {
             "mandatory mission character should be blocked"
         );
         assert!(state.is_empty());
+    }
+
+    #[test]
+    fn a_character_with_an_active_mission_is_refused_even_without_the_flag() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let character = world.characters.insert(Character {
+            name: "Agent".into(),
+            is_alliance: true,
+            ..Default::default()
+        });
+        // An older save: the mission is in flight but on_mission was never set.
+        let mut state = MissionState::new();
+        state.dispatch(
+            MissionKind::Diplomacy,
+            MissionFaction::Alliance,
+            character,
+            system,
+            None,
+            0.5,
+        );
+
+        let second = state.dispatch_guarded(
+            MissionKind::Espionage,
+            MissionFaction::Alliance,
+            character,
+            system,
+            None,
+            0.5,
+            &mut world,
+        );
+
+        assert!(second.is_none());
+        assert_eq!(state.len(), 1);
     }
 
     #[test]

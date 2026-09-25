@@ -228,6 +228,8 @@ fn draw_dispatch_tab(
         .iter()
         .filter(|(_, c)| {
             c.can_be_commander
+                && !c.on_mission
+                && !c.on_mandatory_mission
                 && match player_faction {
                     MissionFaction::Alliance => c.is_alliance,
                     MissionFaction::Empire => c.is_empire,

@@ -1656,11 +1656,12 @@
       "title": "Subdue, guarded dispatch, and initial Force awakening are never called",
       "evidence": [
         "crates/rebellion-core/src/uprising.rs: try_subdue() has no production caller",
-        "crates/rebellion-core/src/missions.rs: dispatch_guarded() and check_decoy() have no production caller",
+        "Before the fix: crates/rebellion-core/src/missions.rs dispatch_guarded() and check_decoy() had no production caller",
         "crates/rebellion-core/src/jedi.rs: apply_initial_awakening() has no production caller",
         "2026-09-25 fix: player, AI, and integrator dispatch go through dispatch_guarded, which refuses a character already on a mission or a mandatory mission and marks the dispatched character on a mission (RoleOnMissionNotif FUN_00536b00, RoleOnMandatoryMissionNotif FUN_00536b80); cancelling releases the character; the seed-42 golden changes for this named cause",
         "Correction: initial Force awareness already happens at seeding (roll_character_stats rolls jedi_probability); the duplicate apply_initial_awakening was removed and the seeding roll gained a test",
-        "Correction: a successful Subdue Uprising mission already ends the revolt through the SUBDMSTB mission roll and the integrator's clear_uprising",
+        "Correction: a successful Subdue Uprising mission ended the revolt only in the headless integrator; the app's mission handler dropped the uprising clear and the Death Star sabotage delay until both paths shared apply_mission_state_effects",
+        "Review follow-up: dispatch_guarded also refuses a character with an active mission (covering saves written before the flag was set), and the commander list omits busy characters with a message if a dispatch is still refused",
         "Open: try_subdue's UPRIS2TB roll has no recovered consumer (the periodic loyalty evaluator is not decompiled), and check_decoy (FDECOYTB) is still uncalled; both need recovered rules before wiring"
       ],
       "acceptance": "Each path runs in the simulation with recovered rules and a test that fails without the call."

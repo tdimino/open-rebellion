@@ -674,9 +674,10 @@ cross-runtime proof remain open
 
 - Severity: P1
 - Status: partially remediated; UPRIS2TB and decoy rules remain
-- Evidence: `UprisingSystem::try_subdue` (`uprising.rs`), `MissionSystem::
-  dispatch_guarded` and `check_decoy` (`missions.rs`), and
-  `JediSystem::apply_initial_awakening` (`jedi.rs`) have no production callers.
+- Evidence (before the 2026-09-25 fix): `UprisingSystem::try_subdue`
+  (`uprising.rs`), `MissionSystem::dispatch_guarded` and `check_decoy`
+  (`missions.rs`), and `JediSystem::apply_initial_awakening` (`jedi.rs`) had
+  no production callers.
   Subdue Uprising missions never end a revolt, dispatch does not refuse busy or
   mandatory-mission characters through the guarded path, and no character
   starts Force-aware from `jedi_probability`.
@@ -690,8 +691,14 @@ cross-runtime proof remain open
   character. The seed-42 golden changes for this cause.
 - Corrections: seeding already rolls `jedi_probability` for initial Force
   awareness, so the duplicate `apply_initial_awakening` was removed and the
-  seeding roll gained a test. A successful Subdue Uprising mission already
-  ends the revolt through its SUBDMSTB roll.
+  seeding roll gained a test. A successful Subdue Uprising mission ended the
+  revolt only in the headless integrator; the app's own mission handler
+  dropped both the uprising clear and Death Star sabotage delay. Both paths
+  now share `apply_mission_state_effects`.
+- Review follow-up: the guard also refuses a character who already has an
+  active mission, which covers saves written before dispatch set the flag,
+  and the player's commander list omits busy characters, with a message if a
+  dispatch is still refused.
 - Open: no recovered code consumes UPRIS2TB (the periodic loyalty evaluator is
   not decompiled), so `try_subdue` stays uncalled, and `check_decoy`
   (FDECOYTB) still needs its recovered trigger.
