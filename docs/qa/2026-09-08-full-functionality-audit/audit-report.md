@@ -635,6 +635,76 @@ cross-runtime proof remain open
   The original 14-control contract remains intact; the optional music-only
   control is documented as an extension. P03 and P04 are complete.
 
+### F-017: The Death Star can never fire
+
+- Severity: P1
+- Status: confirmed
+- Evidence: `DeathStarSystem::fire` (`crates/rebellion-core/src/death_star.rs`)
+  refuses while `shield_generator_active` is true, and the only other writer
+  (`crates/rebellion-app/src/tactical_flow.rs`) sets it to true;
+  `DeathStarState::destroy_shield` has no caller. Nothing calls
+  `start_construction`, so no Death Star fleet is ever built. The shield gate
+  may itself be a wrong model: in the original the shield protects the
+  Death Star rather than preventing it from firing. Found by the 2026-09-25
+  test-pruning pass.
+- Acceptance: construction, completion, planet destruction, and the shield's
+  real role follow recovered Ghidra evidence, with tests that fail without
+  each rule and a browser pass of the fire command.
+
+### F-018: Research never limits which ships can be built
+
+- Severity: P1
+- Status: confirmed
+- Evidence: `ResearchSystem::ship_class_is_available` and
+  `fighter_class_is_available` (`crates/rebellion-core/src/research.rs`) have
+  no callers, so manufacturing offers every class regardless of research level.
+- Acceptance: build lists and manufacturing orders respect the recovered
+  research-order gate for both factions.
+
+### F-019: Subdue, guarded dispatch, and initial Force awakening are never called
+
+- Severity: P1
+- Status: confirmed
+- Evidence: `UprisingSystem::try_subdue` (`uprising.rs`), `MissionSystem::
+  dispatch_guarded` and `check_decoy` (`missions.rs`), and
+  `JediSystem::apply_initial_awakening` (`jedi.rs`) have no production callers.
+  Subdue Uprising missions never end a revolt, dispatch does not refuse busy or
+  mandatory-mission characters through the guarded path, and no character
+  starts Force-aware from `jedi_probability`.
+- Acceptance: each path runs in the simulation with recovered rules and a test
+  that fails without the call.
+
+### F-020: A mod with a missing dependency fails silently
+
+- Severity: P2
+- Status: confirmed
+- Evidence: `ModRuntime::enabled_sorted` (`crates/rebellion-data/src/mods.rs`)
+  prints load-order errors to stderr and returns an empty list;
+  `ModError::MissingDependency` is never constructed, so `ModRuntime::errors`
+  and the Mod Manager show nothing.
+- Acceptance: missing-dependency and version-mismatch failures reach
+  `ModRuntime::errors` and the Mod Manager names the mod and dependency.
+
+### F-021: The blockade troop-destruction event is never raised
+
+- Severity: P1
+- Status: confirmed
+- Evidence: `BlockadeEvent::TroopDestroyed` (event `0x340`,
+  `FUN_00504a00`) is matched by the integrator and the app but never built by
+  `BlockadeSystem::advance`, so regiments moving through a blockade are never
+  destroyed.
+- Acceptance: troops in transit through a blockaded system are destroyed per
+  `FUN_00504a00`, and stationed defenders survive.
+
+### F-022: Two tactical tests needed untracked bitmaps
+
+- Severity: P3
+- Status: remediated in `9901c34`
+- Evidence: two `tactical_view` hit-mask tests read the gitignored
+  `data/base/ui` and failed in a clean checkout. They are now `#[ignore]`d with
+  a reason, and `make test-assets` runs them when extracted bitmaps exist.
+- Acceptance: met.
+
 ## Fable 5.1 audit synthesis
 
 The Fable review confirmed the original blockers and sharpened several

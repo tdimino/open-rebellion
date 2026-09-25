@@ -1622,6 +1622,74 @@
         }
       ],
       "acceptance": "Native and browser acceptance reproduces the assembled cockpit, every mapped hover/click/keyboard/screen-reader behavior and selection, direct faction start, MDATA.300 menu music, original button effects, 4:3 scaling, destinations, audio lifecycle, and clean campaign reset with no blank aperture, visible replacement control, or missing resource. The original 14-control contract remains intact and the optional music-only control is documented as an Open Rebellion extension."
+    },
+    {
+      "id": "F-017",
+      "severity": "P1",
+      "status": "confirmed",
+      "title": "The Death Star can never fire",
+      "evidence": [
+        "crates/rebellion-core/src/death_star.rs: fire() requires shield_generator_active == false; destroy_shield() has no caller",
+        "crates/rebellion-app/src/tactical_flow.rs: the only other writer sets shield_generator_active = true",
+        "start_construction() has no caller, so no Death Star fleet is built",
+        "Found by the 2026-09-25 test-pruning pass"
+      ],
+      "acceptance": "Construction, completion, planet destruction, and the shield's recovered role follow Ghidra evidence, with failing-without tests and a browser fire-command pass."
+    },
+    {
+      "id": "F-018",
+      "severity": "P1",
+      "status": "confirmed",
+      "title": "Research never limits which ships can be built",
+      "evidence": [
+        "crates/rebellion-core/src/research.rs: ship_class_is_available() and fighter_class_is_available() have no callers"
+      ],
+      "acceptance": "Build lists and manufacturing orders respect the recovered research-order gate for both factions."
+    },
+    {
+      "id": "F-019",
+      "severity": "P1",
+      "status": "confirmed",
+      "title": "Subdue, guarded dispatch, and initial Force awakening are never called",
+      "evidence": [
+        "crates/rebellion-core/src/uprising.rs: try_subdue() has no production caller",
+        "crates/rebellion-core/src/missions.rs: dispatch_guarded() and check_decoy() have no production caller",
+        "crates/rebellion-core/src/jedi.rs: apply_initial_awakening() has no production caller"
+      ],
+      "acceptance": "Each path runs in the simulation with recovered rules and a test that fails without the call."
+    },
+    {
+      "id": "F-020",
+      "severity": "P2",
+      "status": "confirmed",
+      "title": "A mod with a missing dependency fails silently",
+      "evidence": [
+        "crates/rebellion-data/src/mods.rs: enabled_sorted() prints load-order errors and returns an empty list",
+        "ModError::MissingDependency is never constructed; ModRuntime::errors stays empty"
+      ],
+      "acceptance": "Missing-dependency and version-mismatch failures reach ModRuntime::errors and the Mod Manager names the mod and dependency."
+    },
+    {
+      "id": "F-021",
+      "severity": "P1",
+      "status": "confirmed",
+      "title": "The blockade troop-destruction event is never raised",
+      "evidence": [
+        "crates/rebellion-core/src/blockade.rs: BlockadeEvent::TroopDestroyed (event 0x340, FUN_00504a00) is never built by BlockadeSystem::advance",
+        "The integrator and app already handle the event"
+      ],
+      "acceptance": "Troops in transit through a blockaded system are destroyed per FUN_00504a00, and stationed defenders survive."
+    },
+    {
+      "id": "F-022",
+      "severity": "P3",
+      "status": "remediated",
+      "title": "Two tactical tests needed untracked bitmaps",
+      "evidence": [
+        "9901c34 marks original_tactical_controls_use_source_bitmap_hit_masks and target_control_owns_its_topmost_mask_and_centers_the_selected_position #[ignore] with a reason",
+        "make test-assets runs them when data/base/ui exists"
+      ],
+      "acceptance": "Met."
     }
   ],
   "fable_review": {

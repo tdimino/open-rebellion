@@ -160,7 +160,7 @@
       "severity": "P1",
       "status": "fail",
       "title": "Original battle alert and report flow is absent or bypassed",
-      "evidence": ["crates/rebellion-render/src/combat_view.rs:227", "crates/rebellion-app/src/main.rs:1282"],
+      "evidence": ["crates/rebellion-app/src/main.rs:1282", "Battle results reach only the message log (MessageCategory::Combat); the unwired replacement summary modal crates/rebellion-render/src/combat_view.rs was removed in e27533c"],
       "affected_surfaces": ["EVT-02", "EVT-03", "TAC-07"]
     },
     {

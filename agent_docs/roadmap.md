@@ -450,6 +450,11 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
   follow-up, uprisings, bombardment, HQ relocation, and principal missions.
   Do not require symmetric attack counts from an asymmetric game.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
+  The Death Star currently can never fire (F-017).
+- [ ] Wire the recovered rules the 2026-09-25 test-pruning pass found uncalled:
+  research gating of buildable ships (F-018), Subdue Uprising, guarded
+  dispatch, and initial Force awakening (F-019), mod dependency errors (F-020),
+  and blockade troop destruction (F-021).
 - [ ] Pass five reproducibly configured 5,000-tick seeds: transit ≤10%, orders
   ≤1.5× arrivals, and fleet arena ≤3× initial. Record 50–400 engagements, eight
   systems, busiest-system ≤40%, and 10% minority-faction attack share as
