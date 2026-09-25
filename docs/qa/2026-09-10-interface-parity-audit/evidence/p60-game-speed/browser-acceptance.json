@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P60",
+  "scope": "muted_browser_game_speed_menu_stop_day_pause_alert_and_accelerators",
+  "result": "pass",
+  "run_date": "2026-09-25",
+  "operator": "claude_agent_browser",
+  "cases": 4,
+  "sessions": ["alliance-640x480", "empire-640x480", "alliance-1280x800", "empire-1280x800"],
+  "observed_seconds_per_day": {
+    "medium": "1.2_to_1.3",
+    "fast": "about_0.43",
+    "slow": "about_6.0"
+  },
+  "verified": [
+    "day_readout_right_click_opens_five_item_menu_both_factions",
+    "pause_finishes_current_day_then_holds",
+    "alert_centered_at_114_152_both_viewports",
+    "second_alt_p_and_alt_numpad_plus_ignored_while_paused",
+    "menu_speed_choice_while_paused_keeps_pause",
+    "checkmark_resumes_at_kept_speed_without_map_click_through",
+    "enter_resumes",
+    "escape_closes_only_the_speed_menu",
+    "alt_numpad_steps_change_one_speed",
+    "zero_page_errors",
+    "four_requests_per_session_none_failed",
+    "wasm_replay_check_seed42_v1_passed"
+  ],
+  "replay_check": {
+    "status": "passed",
+    "final_tick": 25,
+    "initial_fingerprint": "v1:43fa552373e66515",
+    "final_fingerprint": "v1:787d8b233aa8ff2d"
+  },
+  "limits": [
+    "implementation_screenshots_unbaselined",
+    "wall_clock_rate_unit_inferred",
+    "menu_font_and_background_provisional",
+    "resume_tooltip_not_shown",
+    "strict_A0_gate_not_run"
+  ]
+}

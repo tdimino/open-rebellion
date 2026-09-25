@@ -529,6 +529,14 @@ would tune around known simulation feedback defects.
   pixel-for-pixel in the muted 640x480 browser harness. `CMD-08` remains open
   for illuminated/unread states, pointer routing, the original index window,
   categories, navigation, and its full acceptance matrix.
+- [x] Restore the P60 original Game Speed control: the day readout and its
+  right-click STRATEGY menu with Pause, Very Slow, Slow, Medium, and Fast (the
+  original has no faster speed); the stop-day pause with the REBDLOG "Resume
+  Game Play?" alert; and the Alt+P and Alt+NumPad accelerators. Save v14
+  persists the speed and pause stop. Statically recover the Message Index
+  window, categories, rail resting path, and Advice slowdown. `CMD-05` stays
+  open for A0 comparison, the wall-clock rate unit, and font and tooltip
+  details; `CMD-08` for rail illumination and the window itself.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both

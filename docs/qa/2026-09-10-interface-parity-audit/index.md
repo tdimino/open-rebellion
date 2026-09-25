@@ -76,6 +76,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md) | Active STRATEGY 903 predicate, faction GID control, compact legend, native marker families, support thresholds, tests, and browser acceptance. |
 | [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md) | Code-built GID command tree, test-only fixture isolation, muted browser matrix, and unaccepted visual states. |
 | [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md) | Original faction rail positions and BMPs, exact resting-pixel checks, and open category/index behavior. |
+| [P60 Game Speed evidence](evidence/p60-game-speed/README.md) | Day-readout speed menu, stop-day pause, REBDLOG alert, accelerators, save v14, four-session muted browser run, and the static Message Index recovery. |
 | [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md) | Eight source frame tiles, instant menu display, source-pixel border checks, and remaining menu gaps. |
 | [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) | Unsupported hover-wash removal and source-pixel checks on visible frame edges beneath a system window. |
 | [P52 tactical shell and controls evidence](evidence/2026-09-12-tactical-shell-controls.md) | Original 640×480 shell, first working bitmap controls, exact source-pixel probes, and explicit tactical gaps. |

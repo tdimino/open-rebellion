@@ -82,7 +82,8 @@
       "evidence": [
         "crates/rebellion-render/src/cockpit.rs",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-shell-canvas.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-command-controls.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-command-controls.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-game-speed-recovery.md"
       ],
       "affected_surfaces": ["CMD-01", "CMD-04", "CMD-05", "CMD-10"]
     },

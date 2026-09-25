@@ -63,6 +63,11 @@ use rebellion_core::world::{
     VictoryConditions,
 };
 
+use rebellion_render::game_speed::{
+    choose_game_speed, draw_day_readout, draw_game_speed_menu, draw_pause_alert,
+    open_game_speed_menu_on_right_click, pause_alert_contains_screen_point, stepped_game_speed,
+    GameSpeedUiState,
+};
 use rebellion_render::panels::bombardment::{draw_bombardment, BombardmentPanelState};
 use rebellion_render::panels::death_star::draw_death_star;
 use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
@@ -876,6 +881,7 @@ async fn main() {
 
     // ── Cockpit chrome ───────────────────────────────────────────────────────
     let mut cockpit_state = CockpitState::new(CockpitFaction::Alliance);
+    let mut game_speed_ui = GameSpeedUiState::default();
     let mut sector_window_state = SectorWindowState::default();
     let mut system_window_state = SystemWindowState::default();
     let mut bmp_cache = BmpCache::new();
@@ -1134,7 +1140,10 @@ async fn main() {
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
                 game_mode = GameMode::MainMenu;
             } else if game_mode == GameMode::Galaxy {
-                if cockpit_state.gid_ui.menu_open {
+                if game_speed_ui.menu_anchor.is_some() {
+                    // Escape closes only the open Game Speed menu.
+                    game_speed_ui.menu_anchor = None;
+                } else if cockpit_state.gid_ui.menu_open {
                     cockpit_state.gid_ui.menu_open = false;
                     cockpit_state.gid_ui.category = None;
                 } else {
@@ -1166,22 +1175,20 @@ async fn main() {
             if is_key_pressed(KeyCode::R) {
                 map_state = GalaxyMapState::default();
             }
-            // Speed controls
-            if is_key_pressed(KeyCode::Space) {
-                if clock.speed == GameSpeed::Paused {
-                    clock.set_speed(GameSpeed::Normal);
+            // Game Speed keys from the manual's keyboard reference.
+            if is_key_down(KeyCode::LeftAlt) || is_key_down(KeyCode::RightAlt) {
+                let requested = if is_key_pressed(KeyCode::P) {
+                    Some(GameSpeed::Paused)
+                } else if is_key_pressed(KeyCode::KpAdd) {
+                    stepped_game_speed(&clock, true)
+                } else if is_key_pressed(KeyCode::KpSubtract) {
+                    stepped_game_speed(&clock, false)
                 } else {
-                    clock.set_speed(GameSpeed::Paused);
+                    None
+                };
+                if let Some(requested) = requested {
+                    choose_game_speed(&mut clock, requested);
                 }
-            }
-            if is_key_pressed(KeyCode::Key1) {
-                clock.set_speed(GameSpeed::Normal);
-            }
-            if is_key_pressed(KeyCode::Key2) {
-                clock.set_speed(GameSpeed::Fast);
-            }
-            if is_key_pressed(KeyCode::Key3) {
-                clock.set_speed(GameSpeed::Faster);
             }
             // Panel toggles (mutually exclusive left panels).
             macro_rules! toggle_panel {
@@ -2695,6 +2702,7 @@ async fn main() {
                                         rng_seed.wrapping_add(u64::from(campaign_generation)),
                                     );
                                     clock = GameClock::new();
+                                    game_speed_ui = GameSpeedUiState::default();
                                     mfg_state = ManufacturingState::new();
                                     mission_state = MissionState::new();
                                     event_state = EventState::new();
@@ -2907,6 +2915,8 @@ async fn main() {
                     .contains_screen_point(cockpit_layout, pointer)
                     || system_window_state.contains_screen_point(cockpit_layout, pointer)
                     || cockpit_state.gid_ui.menu_open
+                    || game_speed_ui.menu_anchor.is_some()
+                    || pause_alert_contains_screen_point(&clock, cockpit_layout, pointer)
                     || event_screen_state.is_active();
 
                 // Keep every macroquad map layer inside the shell's transparent
@@ -2964,6 +2974,32 @@ async fn main() {
                         if let Some(request) = interface_fixture_request {
                             interface_test_fixture::emit_selected(request, cockpit_state.gid_mode);
                         }
+                    }
+
+                    // The day readout is the Game Speed control; a right
+                    // click on it opens the original speed menu.
+                    draw_day_readout(ctx, cockpit_layout, cockpit_state.faction, clock.tick);
+                    let speed_input = !event_screen_state.is_active();
+                    if speed_input {
+                        open_game_speed_menu_on_right_click(
+                            ctx,
+                            &mut game_speed_ui,
+                            cockpit_layout,
+                            cockpit_state.faction,
+                        );
+                    }
+                    if let Some(speed) = draw_game_speed_menu(
+                        ctx,
+                        &mut game_speed_ui,
+                        &mut bmp_cache,
+                        cockpit_layout,
+                        cockpit_state.faction,
+                        speed_input,
+                    ) {
+                        choose_game_speed(&mut clock, speed);
+                    }
+                    if draw_pause_alert(ctx, &clock, &mut bmp_cache, cockpit_layout, speed_input) {
+                        clock.resume();
                     }
 
                     // War Room panels (mutually exclusive left panels)
@@ -3872,6 +3908,7 @@ async fn main() {
                                 campaign_config: &mut campaign_config,
                             }
                             .restore(state);
+                            game_speed_ui = GameSpeedUiState::default();
                             macroquad::logging::info!(
                                 "[campaign] loaded configuration={}",
                                 campaign_config.summary()
@@ -3949,6 +3986,7 @@ async fn main() {
                         }
                     }
                 }
+                PanelAction::SetGameSpeed(speed) => choose_game_speed(&mut clock, speed),
                 PanelAction::CloseSaveLoadPanel => {
                     save_load_panel_state.close();
                     show_save_load = false;
@@ -4644,15 +4682,8 @@ fn apply_panel_action(
             // emits the pending TickEvents. For instant effect, set speed to Faster.
             clock.tick += n;
         }
-        PanelAction::SetGameSpeed(speed) => {
-            let game_speed = match speed {
-                0 => GameSpeed::Paused,
-                1 => GameSpeed::Normal,
-                2 => GameSpeed::Fast,
-                _ => GameSpeed::Faster,
-            };
-            clock.set_speed(game_speed);
-        }
+        // The caller routes speed through the clock's pause stop.
+        PanelAction::SetGameSpeed(_) => {}
         PanelAction::ToggleDualAI => {
             *dual_ai_mode = !*dual_ai_mode;
             if *dual_ai_mode {

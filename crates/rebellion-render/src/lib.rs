@@ -10,6 +10,7 @@ pub mod event_screen;
 pub mod fleet_movement;
 pub mod fog;
 pub mod game_options;
+pub mod game_speed;
 pub mod ground_combat;
 pub mod main_menu;
 pub mod main_menu_destinations;
@@ -34,7 +35,6 @@ use rebellion_core::ids::{FleetKey, SystemKey};
 use rebellion_core::manufacturing::ManufacturingState;
 use rebellion_core::missions::{MissionFaction, MissionState};
 use rebellion_core::movement::MovementState;
-use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::{ControlKind, GameWorld, System};
 
 #[cfg(target_arch = "wasm32")]
@@ -1738,63 +1738,6 @@ pub fn draw_fleet_context_menu(
     }
 
     action
-}
-
-/// Draw the bottom status bar with speed controls, day counter, world stats,
-/// and audio volume controls.
-///
-/// Call inside `egui_macroquad::ui(|ctx| { ... })`.
-pub fn draw_status_bar(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    clock: &mut GameClock,
-    audio_vol: &mut AudioVolumeState,
-) {
-    egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            // ── Speed controls ───────────────────────────────────────────
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Paused, "⏸ Pause")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Paused);
-            }
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Normal, "▶ 1×")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Normal);
-            }
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Fast, "▶▶ 2×")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Fast);
-            }
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Faster, "▶▶▶ 4×")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Faster);
-            }
-
-            ui.separator();
-            ui.label(format!("Day {}", clock.tick));
-            ui.separator();
-
-            ui.label(format!(
-                "Systems: {} | Sectors: {} | Ships: {} | Fighters: {} | Characters: {}",
-                world.systems.len(),
-                world.sectors.len(),
-                world.capital_ship_classes.len(),
-                world.fighter_classes.len(),
-                world.characters.len(),
-            ));
-
-            // ── Audio controls ───────────────────────────────────────────
-            audio::draw_audio_controls(ui, audio_vol);
-        });
-    });
 }
 
 #[cfg(test)]

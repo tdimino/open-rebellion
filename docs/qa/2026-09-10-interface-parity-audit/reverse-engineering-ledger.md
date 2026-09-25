@@ -79,6 +79,17 @@ faction rails match their original 8-bit resources pixel-for-pixel at 640x480.
 The illuminated predicate and original Message Index destination remain open.
 See the [rail evidence](evidence/2026-09-12-message-index-rail.md).
 
+P60 recovers and implements the Game Speed control. The day readout opens a
+five-item STRATEGY menu (`FUN_0042d190`), and the rates come from
+`FUN_00487eb0`. Pause sets a stop day one day ahead (`FUN_0041d2f0`,
+`FUN_0041e290`) and opens the REBDLOG alert (`FUN_00417020`), and
+TEXTCOMM accelerator table 11 maps the speed keys. The same pass recovers the
+Message Index window (`FUN_0042a240`, `FUN_00466350`), its category mapping,
+the rail resting path, and the Advice Very Slow drop (`FUN_00487ff0`). The
+rail illumination-on path is not yet recovered. See the
+[game-speed recovery](evidence/2026-09-24-game-speed-recovery.md) and
+[Message Index recovery](evidence/2026-09-24-message-index-recovery.md).
+
 P47A identifies STRATEGY 900 and 901 as the faction shells, with 902 and 903 as
 the bright and dim galaxy resources. P47B proves 902 belongs to Display Off and
 903 to every active GID mode, then restores the default Popular Support caption,

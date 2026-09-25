@@ -133,6 +133,13 @@ visual slice, not a completed `CMD-08` workflow. The illuminated state,
 original index window, category routing, and interaction matrix remain open.
 See the [P49 rail evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-message-index-rail.md).
 
+P60 continues UIP-B03 with the original Game Speed control. The day readout
+opens the five-item STRATEGY speed menu, Pause holds at the next day behind the
+REBDLOG "Resume Game Play?" alert, and the TEXTCOMM accelerators step the
+speed. The replacement status bar is gone. The Message Index window and its
+Advice slowdown are recovered statically for the next CMD-08 slice. See the
+[game-speed recovery](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-game-speed-recovery.md).
+
 P50 replaces the GID root and submenu's synthetic gray stroke with the eight
 original STRATEGY frame tiles, drawn as four corners and four batched repeating
 edges. Both menus open without egui's non-native fade. The native-size harness

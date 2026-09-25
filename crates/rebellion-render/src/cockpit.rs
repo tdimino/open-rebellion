@@ -1038,7 +1038,7 @@ fn gid_submenu_items(category: GidCategory, faction: CockpitFaction) -> Vec<GidM
     }
 }
 
-fn gid_popup_frame() -> egui::Frame {
+pub(crate) fn gid_popup_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(egui::Color32::from_rgba_premultiplied(45, 47, 48, 218))
         // Keep the stroke's layout inset, but paint its visible edge from the
@@ -1048,9 +1048,15 @@ fn gid_popup_frame() -> egui::Frame {
 }
 
 /// `FUN_004511e0` passes STRATEGY 10100..10107 to the native GID frame
-/// constructor. Corners are 2x2; the four one-pixel strips repeat between
-/// them. The video reference also shows the characteristic alternating edge.
-fn paint_gid_frame_border(ui: &egui::Ui, cache: &mut BmpCache, rect: egui::Rect, scale: f32) {
+/// constructor, and `FUN_00442860` passes the same tiles to every Game Menu
+/// Window. Corners are 2x2; the four one-pixel strips repeat between them.
+/// The video reference also shows the characteristic alternating edge.
+pub(crate) fn paint_gid_frame_border(
+    ui: &egui::Ui,
+    cache: &mut BmpCache,
+    rect: egui::Rect,
+    scale: f32,
+) {
     let corner = 2.0 * scale;
     let tile = |ui: &egui::Ui, cache: &mut BmpCache, id, target: egui::Rect| {
         if let Some(texture) = cache.get(ui.ctx(), DllSource::Strategy, id) {
@@ -1135,7 +1141,12 @@ fn paint_gid_frame_border(ui: &egui::Ui, cache: &mut BmpCache, rect: egui::Rect,
     }
 }
 
-fn paint_gid_icon(ui: &egui::Ui, cache: &mut BmpCache, resource_id: u32, rect: egui::Rect) {
+pub(crate) fn paint_gid_icon(
+    ui: &egui::Ui,
+    cache: &mut BmpCache,
+    resource_id: u32,
+    rect: egui::Rect,
+) {
     if let Some(texture) = cache.get(ui.ctx(), DllSource::Strategy, resource_id) {
         ui.painter().image(
             texture.id(),
@@ -1435,7 +1446,7 @@ fn control_resource(control: &StrategicControlSpec, pressed: bool) -> u32 {
     }
 }
 
-fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewport) -> egui::Rect {
+pub(crate) fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewport) -> egui::Rect {
     egui::Rect::from_min_size(
         egui::pos2(
             layout.canvas.x + rect.x * layout.scale,

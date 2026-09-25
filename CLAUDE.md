@@ -22,8 +22,9 @@ functional. Do not repeat historical parity percentages as verified results.
   the next feature. Never mark a partial or inferred result complete.
 - Work directly on `main`; the repository intentionally carries no other local
   or origin branches during this audit.
-- Run browser acceptance through `codex-orchestrator` with Astra at medium
-  effort and retain screenshots, network logs, console logs, and artifact hashes.
+- Run browser acceptance yourself with `agent-browser`, or through
+  `codex-orchestrator` with Astra at medium effort. Either way, retain
+  screenshots, network logs, console logs, and artifact hashes.
 - v1.0 is the complete browser build deployed through password-protected
   Cloudflare Pages; credentials belong in encrypted secrets, never in Git.
 - GitHub Actions workflow definitions are intentionally local and untracked as

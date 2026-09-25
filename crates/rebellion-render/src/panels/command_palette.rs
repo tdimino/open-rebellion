@@ -6,6 +6,7 @@
 use egui_macroquad::egui::{self, Align, Color32, Key, Layout, RichText, ScrollArea};
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher};
+use rebellion_core::tick::GameSpeed;
 
 /// A registered command in the palette.
 #[derive(Debug, Clone)]
@@ -34,10 +35,11 @@ fn command_id_to_action(id: &str) -> Option<super::PanelAction> {
         "advance_10_ticks" => Some(super::PanelAction::AdvanceTicks(10)),
         "advance_100_ticks" => Some(super::PanelAction::AdvanceTicks(100)),
         "advance_1000_ticks" => Some(super::PanelAction::AdvanceTicks(1000)),
-        "speed_paused" => Some(super::PanelAction::SetGameSpeed(0)),
-        "speed_normal" => Some(super::PanelAction::SetGameSpeed(1)),
-        "speed_fast" => Some(super::PanelAction::SetGameSpeed(2)),
-        "speed_faster" => Some(super::PanelAction::SetGameSpeed(4)),
+        "speed_paused" => Some(super::PanelAction::SetGameSpeed(GameSpeed::Paused)),
+        "speed_very_slow" => Some(super::PanelAction::SetGameSpeed(GameSpeed::VerySlow)),
+        "speed_slow" => Some(super::PanelAction::SetGameSpeed(GameSpeed::Slow)),
+        "speed_medium" => Some(super::PanelAction::SetGameSpeed(GameSpeed::Medium)),
+        "speed_fast" => Some(super::PanelAction::SetGameSpeed(GameSpeed::Fast)),
         "show_game_stats" => Some(super::PanelAction::ShowGameStats),
         "list_active_missions" => Some(super::PanelAction::ListActiveMissions),
         "list_active_fleets" => Some(super::PanelAction::ListActiveFleets),

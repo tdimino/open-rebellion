@@ -208,7 +208,7 @@ The local extraction inventory converts the original game's resource DLLs and me
 | Resource | Count | Format | Source |
 |----------|-------|--------|--------|
 | Game data | 51 files | DAT → JSON | dat-dumper (round-trip validated) |
-| UI images | 2,441 extracted; 2,303 runtime-staged | BMP | 9 resource DLLs |
+| UI images | 2,441 extracted; 2,326 runtime-staged | BMP | 9 resource DLLs |
 | Advisor animation | 3,988 runtime-staged | Type-302 indexed deltas | ALSPRITE/EMSPRITE.DLL |
 | DLL data resources | 3,223 files | BIN/data | 9 resource DLLs; includes the text subsets below |
 | Voice lines | 285 WAVs | WAV | VOICEFXA/VOICEFXE.DLL |

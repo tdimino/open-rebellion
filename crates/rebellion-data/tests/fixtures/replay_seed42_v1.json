@@ -480,7 +480,7 @@
     "version": 1,
     "value": "38459aaae1a4a43a"
   },
-  "initial_state_fingerprint": "v1:b38248eb039a8032",
+  "initial_state_fingerprint": "v1:43fa552373e66515",
   "commands": [
     {
       "tick": 0,
@@ -488,7 +488,7 @@
       "actor": "alliance",
       "command": {
         "type": "set_speed",
-        "speed": "Faster"
+        "speed": "Fast"
       }
     },
     {
@@ -565,47 +565,47 @@
     {
       "tick": 0,
       "command_count": 1,
-      "state_fingerprint": "v1:28a462e69d416b5d"
+      "state_fingerprint": "v1:220c8a4f5ccd172d"
     },
     {
       "tick": 0,
       "command_count": 2,
-      "state_fingerprint": "v1:aeed935e623456c7"
+      "state_fingerprint": "v1:838e37b47bb9dc87"
     },
     {
       "tick": 5,
       "command_count": 3,
-      "state_fingerprint": "v1:3b3cdbc63f88a1e3"
+      "state_fingerprint": "v1:80279df31a048475"
     },
     {
       "tick": 10,
       "command_count": 4,
-      "state_fingerprint": "v1:b3abd0dbdafcb4c4"
+      "state_fingerprint": "v1:67684d46e0f300c6"
     },
     {
       "tick": 15,
       "command_count": 5,
-      "state_fingerprint": "v1:45c7a3038602392f"
+      "state_fingerprint": "v1:8905abf607d32fa1"
     },
     {
       "tick": 20,
       "command_count": 6,
-      "state_fingerprint": "v1:d2b0456f1b325fcd"
+      "state_fingerprint": "v1:6f51836687af2365"
     },
     {
       "tick": 25,
       "command_count": 7,
-      "state_fingerprint": "v1:450f400e196c4ff7"
+      "state_fingerprint": "v1:5896c7e32906caef"
     },
     {
       "tick": 25,
       "command_count": 8,
-      "state_fingerprint": "v1:cde64607b027b1d1"
+      "state_fingerprint": "v1:787d8b233aa8ff2d"
     },
     {
       "tick": 25,
       "command_count": 9,
-      "state_fingerprint": "v1:cde64607b027b1d1"
+      "state_fingerprint": "v1:787d8b233aa8ff2d"
     }
   ]
 }

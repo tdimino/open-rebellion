@@ -25,7 +25,7 @@
 //! use rebellion_core::tick::{GameClock, GameSpeed};
 //!
 //! let mut clock = GameClock::new();
-//! clock.set_speed(GameSpeed::Normal);
+//! clock.set_speed(GameSpeed::Medium);
 //!
 //! let mut state = ManufacturingState::new();
 //! // ... populate queues ...
@@ -621,10 +621,10 @@ mod tests {
         state.enqueue(system, cap_ship_item(2));
 
         let mut clock = GameClock::new();
-        clock.set_speed(GameSpeed::Fast); // 2× speed
+        clock.set_speed(GameSpeed::Fast);
 
-        // 1 real second at 2× = 2 ticks — should complete the item
-        let tick_events = clock.advance(1.0);
+        // 0.81 real seconds at 0.4 s/day = 2 ticks — should complete the item
+        let tick_events = clock.advance(0.81);
         assert_eq!(tick_events.len(), 2);
 
         let completions = ManufacturingSystem::advance(&mut state, &tick_events);

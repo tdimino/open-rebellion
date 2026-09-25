@@ -329,6 +329,8 @@ pub enum DllSource {
     Tactical,
     /// `GOKRES.DLL` — entity status sprites, character portraits, ship icons
     Gokres,
+    /// `REBDLOG.DLL` — in-game alert and dialog frames
+    Rebdlog,
 }
 
 impl DllSource {
@@ -342,6 +344,7 @@ impl DllSource {
             DllSource::Common => "common-dll",
             DllSource::Tactical => "tactical-dll",
             DllSource::Gokres => "gokres-dll",
+            DllSource::Rebdlog => "rebdlog-dll",
         }
     }
 
@@ -353,6 +356,7 @@ impl DllSource {
             DllSource::Common => "common",
             DllSource::Tactical => "tactical",
             DllSource::Gokres => "gokres",
+            DllSource::Rebdlog => "rebdlog",
         }
     }
 }
@@ -1772,6 +1776,8 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
             resource_id,
             1026..=1033 | 1038..=1039 | 1042..=1056 | 1060..=1061
         ),
+        // Alert and dialog frames are opaque windows.
+        DllSource::Rebdlog => false,
     }
 }
 

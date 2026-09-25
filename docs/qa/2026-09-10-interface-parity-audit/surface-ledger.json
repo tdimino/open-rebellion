@@ -1224,7 +1224,7 @@
         65,
         66
       ],
-      "current_implementation": "Replacement text buttons and custom status bar.",
+      "current_implementation": "P60 removes the replacement status bar and speed buttons. The top-strip day readout is the Game Speed control: a right-button release inside its recovered rectangle opens the five-item STRATEGY Game Menu Window (Pause, Very Slow, Slow, Medium, Fast); the original has no faster speed, so the very fast cell has no original counterpart. Pause sets the original stop day, finishes the current day, and opens the REBDLOG 412x176 Resume Game Play? alert; its checkmark or Enter resumes at the kept speed. Alt+P, Alt+NumPad+, and Alt+NumPad- follow TEXTCOMM accelerator table 11. Four muted browser sessions cover both factions at 640x480 and 1280x800. The wall-clock rate unit, menu font and background, day font source, Resume tooltip, and every A0 comparison remain open, so no cell is accepted.",
       "finding_ids": [
         "UIP-F-001"
       ],
@@ -1536,7 +1536,7 @@
         158,
         159
       ],
-      "current_implementation": "P49 restores the nine original resting Message Index rail BMPs for each faction at the exact constructor rectangles. Both 640x480 browser rails match all source BMP pixels. The illuminated/unread predicate, control input, original Message Index window, category filtering, report routing, clear/delete actions, and A0 state matrix remain open. Replacement message interfaces elsewhere do not count as parity.",
+      "current_implementation": "P49 restores the nine original resting Message Index rail BMPs for each faction at the exact constructor rectangles. Both 640x480 browser rails match all source BMP pixels. The illuminated/unread predicate, control input, original Message Index window, category filtering, report routing, clear/delete actions, and A0 state matrix remain open. Replacement message interfaces elsewhere do not count as parity. P60 statically recovers the Message Index window, category-to-rail mapping, rail resting path, and the Advice Very Slow drop without implementing them; the illumination-on path remains unrecovered.",
       "finding_ids": [
         "UIP-F-007"
       ],

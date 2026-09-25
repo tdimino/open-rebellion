@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P60",
+  "status": "pass_game_speed_control_strict_a0_pending",
+  "surfaces": ["CMD-05", "CMD-08"],
+  "source_contract": {
+    "day_readout_and_menu": ["FUN_00422ce0", "FUN_0042d190", "FUN_00442590", "FUN_00486fb0"],
+    "menu_records": "STRATEGY RT_RCDATA 0x20..0x24 (Alliance), 0x25..0x29 (Empire)",
+    "rate_setter": "FUN_00487eb0",
+    "rates": {"very_slow": 600, "slow": 60, "medium": 12, "fast": 4},
+    "pause_stop_day": ["FUN_0041d2f0", "FUN_00436890", "FUN_0041e290", "FUN_0041e300", "FUN_0041e2d0"],
+    "pause_alert": ["FUN_00415e60", "FUN_00417020", "FUN_00416de0", "FUN_00417150", "FUN_004011a0"],
+    "alert_resources": {"background": "REBDLOG 0x297e", "resume_normal": "REBDLOG 0x2981", "resume_pressed": "REBDLOG 0x2980", "text": "REBDLOG string 4611"},
+    "accelerators": "TEXTCOMM table 11 via FUN_00421c70, handled in FUN_00422ce0",
+    "advice_slowdown_recovered_not_implemented": "FUN_00487ff0"
+  },
+  "save_format": {
+    "version": 14,
+    "clock_fields": ["tick", "speed", "day_fraction", "stop_day"]
+  },
+  "verification": {
+    "workspace_tests": "785_passed_0_failed_21_ignored",
+    "replay_golden_native": "pass_regenerated_for_save_v14_clock",
+    "replay_check_wasm": "pass_seed42_v1",
+    "scoped_clippy": "clean_for_touched_code",
+    "scoped_rustfmt": "clean_for_touched_files",
+    "stage_ui_assets_go_tests": "pass",
+    "independent_code_review": "sol_high_four_findings_all_fixed",
+    "browser_acceptance": "4_of_4_sessions_pass",
+    "strict_gate_run": false,
+    "tracked_proprietary_paths": 0
+  },
+  "artifacts": {
+    "wasm_sha256": "81b09e6b6be26e2f8f006aac4edd9e6584a6eb7251306e63170fd65c0a77d97e",
+    "runtime_pack_sha256": "3a4d00220b6f5560733f2a23418277e28d41dd47a9065b0e69173ffaa0d68673",
+    "runtime_pack_bytes": 44709520,
+    "runtime_pack_bitmaps": 2326
+  },
+  "representative_capture_sha256": {
+    "alliance_640x480_alert": "6bcef18d16c639cb68dea835bd125dd2fc25d89bdce1b44be05d800b5d3d4595",
+    "alliance_1280x800_alert": "7f20ceb322e315ab9e09537d7ad074904ae4ad172eefb49d2ac44112f9cfe152",
+    "empire_640x480_alert": "4c0b22d442038ed7b87df1222bac935d14113d5d5dcb284b057ddf25231af07b",
+    "empire_1280x800_alert": "16e1c36ab1297b3c6df72fab5ab370694361ed3395bf3a264e7f00c65cdc4c2c"
+  },
+  "open": [
+    "A0 original-runtime comparison for every CMD-05 cell",
+    "wall-clock unit of the original rate value",
+    "Game Menu Window font and background",
+    "day-readout font source and string format",
+    "Resume tooltip",
+    "whether the menu Pause item is ignored while paused (inferred)",
+    "CMD-08 rail illumination path and the Message Index window implementation"
+  ]
+}

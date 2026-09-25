@@ -1,8 +1,8 @@
 # stage-ui-assets
 
 Extract original Star Wars Rebellion assets into the directory layout
-Open Rebellion loads at runtime. One command stages 2,303 standard BMPs and
-3,988 custom advisor frames from six game DLLs, plus voices, menu effects,
+Open Rebellion loads at runtime. One command stages 2,326 standard BMPs and
+3,988 custom advisor frames from seven game DLLs, plus voices, menu effects,
 and soundtrack WAVs, 15 cutscenes, and original text strings. It then verifies
 all outputs. The Go code uses only its standard library; cutscene conversion
 requires `ffmpeg` and `ffprobe`. No Python environment or Windows runtime is needed.
@@ -20,7 +20,7 @@ resource byte for byte. It does not resize or re-encode the artwork.
 - Go 1.22 or later to build or use `go run`.
 - `ffmpeg` (with VP9/Opus encoding and Smacker decoding) and `ffprobe` on PATH
   for extraction. Verification needs neither tool.
-- Your own copy of the six UI DLLs listed below plus `VOICEFXA.DLL` and
+- Your own copy of the seven UI DLLs listed below plus `VOICEFXA.DLL` and
   `VOICEFXE.DLL` and `TEXTSTRA.DLL`, together in one source directory, and the original
   `MDATA.300`–`MDATA.315` soundtrack files and the 15 movies listed below in `source/MDATA` or `--mdata`. Extraction reads these files without modifying them.
 
@@ -89,6 +89,7 @@ collide. Numeric resource IDs become filenames, for example:
 | `TACTICAL.DLL` | 288 | 0 | `tactical-dll/` |
 | `ALSPRITE.DLL` | 38 | 1,640 | `alsprite-dll/` |
 | `EMSPRITE.DLL` | 34 | 2,348 | `emsprite-dll/` |
+| `REBDLOG.DLL` | 23 | 0 | `rebdlog-dll/` |
 
 Standard resources are written to `BMP/{id}.bmp`; custom advisor frames are
 written unchanged to `TYPE302/{id}.bin`.
@@ -107,7 +108,9 @@ used by the runtime catalog:
 | `DATA_BUTTON_DN_FIGHTERGROUP_TACTICS` | 40936 |
 
 Unknown named resources and duplicate IDs within a DLL, including IDs shared by
-multiple languages—cause an error rather than selecting one silently. All six
+multiple languages—cause an error rather than selecting one silently. The one
+exception is `REBDLOG.DLL`'s `DLG_CORNER_GRAB_FRAME`, which `REBEXE.EXE` never
+loads by name; it is skipped rather than given an invented ID. All seven
 DLLs and their expected counts are fixed; there is no single-DLL selection flag.
 
 ## Verify or refresh existing assets
@@ -281,7 +284,7 @@ From the repository root:
 make extract-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
 ```
 
-`GAME_SOURCE` must contain the six UI DLLs plus `VOICEFXA.DLL`,
+`GAME_SOURCE` must contain the seven UI DLLs plus `VOICEFXA.DLL`,
 `VOICEFXE.DLL`, and `TEXTSTRA.DLL`. `MDATA_DIR` defaults to `GAME_SOURCE/MDATA`.
 If the DLLs have already been copied into `data/base`, point at the original media directory:
 

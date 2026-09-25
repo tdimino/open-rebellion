@@ -35,23 +35,23 @@ pub const SEED42_FIXTURE_ID: &str = "seed42-v1";
 pub const SEED42_ARTIFACT_BYTES: &[u8] = include_bytes!("../tests/fixtures/replay_seed42_v1.json");
 pub const SEED42_ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SEED42_SEED: u64 = 42;
-pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:b38248eb039a8032";
-pub const SEED42_FINAL_FINGERPRINT: &str = "v1:cde64607b027b1d1";
+pub const SEED42_INITIAL_FINGERPRINT: &str = "v1:43fa552373e66515";
+pub const SEED42_FINAL_FINGERPRINT: &str = "v1:787d8b233aa8ff2d";
 pub const SEED42_FINAL_TICK: u64 = 25;
 pub const SEED42_DATA_INPUTS: usize = 51;
 pub const SEED42_DATA_BYTES: u64 = 50_597;
 pub const SEED42_DATA_FINGERPRINT: &str = "5facb1c7ba0e81ad";
 
 pub const SEED42_CHECKPOINTS: &[(u64, u64, &str)] = &[
-    (1, 0, "v1:28a462e69d416b5d"),
-    (2, 0, "v1:aeed935e623456c7"),
-    (3, 5, "v1:3b3cdbc63f88a1e3"),
-    (4, 10, "v1:b3abd0dbdafcb4c4"),
-    (5, 15, "v1:45c7a3038602392f"),
-    (6, 20, "v1:d2b0456f1b325fcd"),
-    (7, 25, "v1:450f400e196c4ff7"),
-    (8, 25, "v1:cde64607b027b1d1"),
-    (9, 25, "v1:cde64607b027b1d1"),
+    (1, 0, "v1:220c8a4f5ccd172d"),
+    (2, 0, "v1:838e37b47bb9dc87"),
+    (3, 5, "v1:80279df31a048475"),
+    (4, 10, "v1:67684d46e0f300c6"),
+    (5, 15, "v1:8905abf607d32fa1"),
+    (6, 20, "v1:6f51836687af2365"),
+    (7, 25, "v1:5896c7e32906caef"),
+    (8, 25, "v1:787d8b233aa8ff2d"),
+    (9, 25, "v1:787d8b233aa8ff2d"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,7 +109,7 @@ pub fn seed42_commands() -> Vec<(ReplayActor, ReplayCommand)> {
         (
             ReplayActor::Alliance,
             ReplayCommand::SetSpeed {
-                speed: GameSpeed::Faster,
+                speed: GameSpeed::Fast,
             },
         ),
         (ReplayActor::Engine, ReplayCommand::ToggleDualAi),

@@ -373,7 +373,7 @@ fn main() -> anyhow::Result<()> {
     rebellion_core::story_events::define_story_events(&mut states.events, &world);
 
     // Set clock to maximum speed for headless
-    states.clock.set_speed(GameSpeed::Faster);
+    states.clock.set_speed(GameSpeed::Fast);
 
     let mut logger = EventLogger::new();
     let mut victory_reached = false;

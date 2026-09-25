@@ -14,6 +14,13 @@ var uiDLLTargets = []dllTarget{
 	{Filename: "TACTICAL.DLL", Directory: "tactical-dll", Expected: 288},
 	{Filename: "ALSPRITE.DLL", Directory: "alsprite-dll", Expected: 38, ExpectedType302: 1640},
 	{Filename: "EMSPRITE.DLL", Directory: "emsprite-dll", Expected: 34, ExpectedType302: 2348},
+	{Filename: "REBDLOG.DLL", Directory: "rebdlog-dll", Expected: 23},
+}
+
+// unloadedNamedBitmaps lists named bitmaps that REBEXE.EXE never loads by
+// name. They are skipped instead of given an invented numeric ID.
+var unloadedNamedBitmaps = map[string]bool{
+	"DLG_CORNER_GRAB_FRAME": true,
 }
 
 var namedBitmapIDs = map[string]uint32{

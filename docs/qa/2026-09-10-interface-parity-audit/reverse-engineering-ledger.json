@@ -215,13 +215,15 @@
           "exact rectangles and command IDs from FUN_00427270",
           "pointer capture, release cancellation, strict outer-edge rejection, and original palette-key masks",
           "six recognized commands with no replacement destination panels",
+          "P60 day-readout Game Speed menu, stop-day pause, REBDLOG Resume Game Play? alert, and speed accelerators",
           "F1 through F5 and F7 keyboard routing"
         ],
         "remaining": [
           "A0 original-runtime captures and the full native/browser matrix",
           "disabled control path",
           "all six original destination-window compositions",
-          "speed controls and facility indicators"
+          "speed-control A0 captures, wall-clock rate unit, menu font and background, and Resume tooltip",
+          "facility indicators"
         ]
       }
     },
@@ -323,7 +325,7 @@
       "retrieval": {
         "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL", "REBDLOG.DLL", "VOICEFXA.DLL", "VOICEFXE.DLL"],
         "method": "Cross-reference category labels, report strings, sound IDs, and navigate/delete commands to constructors, filters, item menus, and destination handlers.",
-        "next_proof": "Decompile FUN_0042a240 and the rail state predicate, then recover the original Message Index constructor, category mapping, report navigation, clear/delete actions, and A0 captures."
+        "next_proof": "FUN_0042a240, the Message Index constructor, category mapping, rail resting path, and Advice slowdown are recovered in evidence/2026-09-24-message-index-recovery.md. Recover the illumination-on path (FUN_0048aa90, FUN_00488030, FUN_00603aa0), then implement the window, report navigation, clear/delete actions, and A0 captures."
       },
       "runtime_capture_required": true
     },

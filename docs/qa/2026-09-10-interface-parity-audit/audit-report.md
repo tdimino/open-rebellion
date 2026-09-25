@@ -56,6 +56,12 @@ This explains the observed symptoms:
 - P49 restores the original nine Message Index side-rail resting icons for
   each faction. Their browser pixels match the source STRATEGY bitmaps at
   640x480. The unread state, input, and original index window remain open.
+- P60 replaces the replacement status bar with the original Game Speed
+  control: the day readout, its right-click STRATEGY menu with the five
+  original speeds, the stop-day pause, the REBDLOG "Resume Game Play?" alert,
+  and the three speed accelerators. The Message Index window and the Advice
+  slowdown are recovered statically but not implemented. A0 comparison,
+  the wall-clock rate unit, and several font and tooltip details remain open.
 - P47A and P47B restore the bright Display Off and dim active galaxy resources,
   the default Popular Support caption, compact legend, and native marker
   families. Synthetic labels, circles, glows, facility squares, fleet glyphs,
@@ -89,6 +95,7 @@ The local source inspection establishes the implementation causes:
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
 | Partial authored galaxy and GID | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-render/src/cockpit.rs` | STRATEGY 902/903, GID 10012/10011 and 10026/10025, Game Options 10013/10014 and 10027/10028, 10100 through 10107, 10146 through 10158, 10168, manual pp. 66–73, [P47B evidence](evidence/2026-09-11-popular-support-gid.md), and [P50 evidence](evidence/2026-09-12-gid-menu-frame.md) |
+| Original Game Speed control and pause alert | `crates/rebellion-render/src/game_speed.rs`, `crates/rebellion-core/src/tick.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00422ce0`, `FUN_0042d190`, `FUN_00486fb0`, `FUN_00487eb0`, `FUN_0041d2f0`, `FUN_00417020`, STRATEGY `RT_RCDATA` 0x20..0x29, REBDLOG 0x297e/0x2980/0x2981, and [game-speed recovery](evidence/2026-09-24-game-speed-recovery.md) |
 | Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |

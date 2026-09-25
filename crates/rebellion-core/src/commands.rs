@@ -46,29 +46,35 @@ pub fn all_commands() -> Vec<CommandDef> {
             description: "Step simulation forward by 1000 ticks",
             category: "Time",
         },
-        // Speed
+        // Speed: the original Game Speed menu's five choices.
         CommandDef {
             id: "speed_paused",
-            label: "Set Speed: Paused",
+            label: "Game Speed: Pause",
             description: "Pause the simulation",
             category: "Speed",
         },
         CommandDef {
-            id: "speed_normal",
-            label: "Set Speed: Normal",
-            description: "Set simulation to 1x speed",
+            id: "speed_very_slow",
+            label: "Game Speed: Very Slow",
+            description: "Run at the original Very Slow rate",
+            category: "Speed",
+        },
+        CommandDef {
+            id: "speed_slow",
+            label: "Game Speed: Slow",
+            description: "Run at the original Slow rate",
+            category: "Speed",
+        },
+        CommandDef {
+            id: "speed_medium",
+            label: "Game Speed: Medium",
+            description: "Run at the original Medium rate",
             category: "Speed",
         },
         CommandDef {
             id: "speed_fast",
-            label: "Set Speed: Fast",
-            description: "Set simulation to 2x speed",
-            category: "Speed",
-        },
-        CommandDef {
-            id: "speed_faster",
-            label: "Set Speed: Faster",
-            description: "Set simulation to 4x speed",
+            label: "Game Speed: Fast",
+            description: "Run at the original Fast rate",
             category: "Speed",
         },
         // Inspect
