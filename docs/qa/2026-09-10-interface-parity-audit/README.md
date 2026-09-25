@@ -5,7 +5,7 @@ This folder is the source of truth for restoring every visible surface from
 bitmap-driven interface. Replacement panels, invented controls, approximate
 geometry, and unverified asset mappings do not count as parity.
 
-The current P58-B18 space-battle checkpoint maps all 106 canonical cells to
+The current P58-B19 space-battle checkpoint maps all 106 canonical cells to
 deterministic A1 evidence through 87 journeys and 19 snapshots. Capital and
 fighter combat, tactical commands,
 original results and options panels, resource 5030 stars, empty-space
@@ -13,7 +13,8 @@ presentation, native withdrawal confirmation, destroyed-state presentation,
 selected-ship contents, direct Escort, Battle Alert entry, tactical score and
 the complete 22-variant weapon-audio bank, all 285 source-addressed faction
 tactical voices, selected withdrawal/result/Death Star/trench-run voice
-transitions, production trench-run launch, and exact strategic loss
+transitions, source-exact mixed-task-force target rejection, production
+trench-run launch, and exact strategic loss
 persistence now work within their recorded bounds. The strict result remains
 0 of 106 accepted tactical cells until every row has authoritative A0 evidence
 and passes the complete comparison contract.

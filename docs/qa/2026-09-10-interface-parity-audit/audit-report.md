@@ -341,6 +341,14 @@ recovery, warning, and ordered trench chatter callers, exact shared-RNG
 sequencing, mixing, native audible comparison, and strict A0 acceptance stay
 open.
 
+P58-B19 follows `FUN_005a24d0` for a hostile focus-target command spanning
+selected capitals from multiple task forces. The command now preserves every
+manual, active, and Escort target and queues exact Alliance event `0x84` / WAVE
+`14101` or Imperial event `0x102` / WAVE `15105`. The four-case muted browser
+journey proves both faction routes and unchanged presentation. Exact shared-RNG
+sequencing, mixing, native audible comparison, and strict A0 acceptance stay
+open.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

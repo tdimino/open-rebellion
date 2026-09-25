@@ -812,6 +812,12 @@ would tune around known simulation feedback defects.
   voice resources. Remaining completion, destruction, recovery, warning, and
   ordered trench callers, exact shared-RNG sequencing, mixing, audible native
   comparison, A0 evidence, and strict acceptance remain open.
+  P58-B19 restores `FUN_005a24d0`'s mixed-task-force focus-target rejection.
+  Selecting capitals from different task forces now preserves their manual,
+  active, and Escort targets and routes exact Alliance `0x84`/WAVE `14101` or
+  Imperial `0x102`/WAVE `15105` feedback. The four-case muted browser gate
+  passes; the remaining caller families and all strict A0 comparisons stay
+  open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

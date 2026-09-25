@@ -82,6 +82,7 @@ acceptance plan required before the project can claim 100% functionality.
 | [Tactical weapon-audio proof](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md) | Correct event semantics and the complete WAVE 13033–13054 fire/impact bank pass focused muted browser routing; exact RNG and strict A0 acceptance remain open. |
 | [Tactical command-voice proof](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-command-voice.md) | Exact faction battle-ready and group command mappings route 90 VOICEFXA/VOICEFXE resources through native and browser backends; remaining voice families and strict A0 acceptance remain open. |
 | [Complete tactical voice-bank proof](../2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-complete-voice-bank.md) | All 285 source-addressed faction voices are transported; selected withdrawal, result, Death Star, and trench-run transitions dispatch while remaining production callers and strict A0 acceptance stay open. |
+| [Mixed-task-force target proof](../2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-mixed-task-force-target.md) | `FUN_005a24d0` rejection preserves existing orders and routes the exact Alliance or Imperial feedback when selected capitals span task forces. |
 | [GitHub Pages proof](evidence/2026-09-08-github-pages.md) | Successful deployment run and public HTTP smoke tests for P40. |
 | [Project archive](../../../archive/INDEX.md) | Superseded progress and playtest artifacts retained for provenance. |
 

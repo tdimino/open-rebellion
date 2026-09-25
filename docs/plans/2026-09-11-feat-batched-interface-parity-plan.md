@@ -42,6 +42,12 @@ checkpoints. It is not a release-parity score. A required cell passes only
 after its complete original-evidence, native, browser, viewport, faction,
 interaction, audio, and diagnostic matrix passes.
 
+P58-B19 is the latest tactical checkpoint. It restores source-exact rejection
+of a hostile focus target when selected capitals span multiple task forces,
+preserves their existing orders, and routes the faction response in the shared
+production renderer. Deterministic A1 mapping remains 106/106; strict A0
+acceptance remains 0/106.
+
 ## Working cadence
 
 Each bundle contains three to six tightly related interface changes that form

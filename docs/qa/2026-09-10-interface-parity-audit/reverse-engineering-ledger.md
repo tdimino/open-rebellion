@@ -315,6 +315,13 @@ and viewports. Remaining completion, destruction, recovery, warning, and
 ordered trench chatter callers, exact shared-RNG sequencing, mixing,
 interruption, audible native comparison, and strict A0 acceptance remain open.
 
+[P58-B19 evidence](evidence/2026-09-25-tactical-mixed-task-force-target.md)
+follows `FUN_005a24d0`'s task-force ordinal check before hostile focus-target
+assignment. Mixed capital selections now preserve manual, active, and Escort
+targets and queue Alliance event `0x84` / WAVE `14101` or Imperial event
+`0x102` / WAVE `15105`. Four muted faction/viewport cases pass; audible native
+comparison and strict A0 acceptance remain open.
+
 ## Immediate implementation order
 
 1. Trace SPT to BIN to frame and WAV selection for both factions on top of the

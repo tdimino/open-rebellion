@@ -3610,6 +3610,102 @@ async function probeTacticalGroupPresentation(
     viewport, goldSelected, portraitResource, 505, 76,
   ) });
 
+  const participantLine = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] participant_scene"));
+  const participantPositions = parseTacticalScenePositions(
+    participantLine, "mixed-task-force participant scene",
+  );
+  const playerCapitals = ready.participants
+    .map((participant, index) => ({ participant, objectId: index + 1 }))
+    .filter(({ participant }) => participant.kind === "capital-ship"
+      && participant.faction === faction && participant.active);
+  const addressablePlayerCapitals = playerCapitals
+    .filter(({ objectId }) => {
+      const position = participantPositions.get(objectId);
+      return position
+        && position.x >= offsetX + 40 * scale && position.x < offsetX + 430 * scale
+        && position.y >= offsetY + 40 * scale && position.y < offsetY + 420 * scale;
+    })
+    .sort((left, right) => {
+      const leftPosition = participantPositions.get(left.objectId);
+      const rightPosition = participantPositions.get(right.objectId);
+      const centerX = offsetX + 238 * scale;
+      const centerY = offsetY + 247 * scale;
+      const distance = (position) => (position.x - centerX) ** 2 + (position.y - centerY) ** 2;
+      return distance(leftPosition) - distance(rightPosition);
+    });
+  const firstCapital = addressablePlayerCapitals[0];
+  const secondCapital = addressablePlayerCapitals.find(({ participant }) =>
+    participant.task_force !== firstCapital?.participant.task_force);
+  const hostileCapital = ready.participants
+    .map((participant, index) => ({ participant, objectId: index + 1 }))
+    .find(({ participant }) => participant.kind === "capital-ship"
+      && participant.faction !== faction && participant.active);
+  assert.ok(firstCapital && secondCapital && hostileCapital,
+    "group fixture omitted mixed player task forces or a hostile focus target");
+  const firstPosition = participantPositions.get(firstCapital.objectId);
+  const secondPosition = participantPositions.get(secondCapital.objectId);
+  const hostilePosition = participantPositions.get(hostileCapital.objectId);
+  assert.ok(firstPosition && secondPosition && hostilePosition,
+    "mixed-task-force journey omitted a required projected position");
+
+  await page.mouse.click(firstPosition.x, firstPosition.y);
+  await page.waitForTimeout(80);
+  await page.keyboard.down("ControlLeft");
+  await page.waitForTimeout(80);
+  await page.mouse.click(secondPosition.x, secondPosition.y);
+  await page.waitForTimeout(80);
+  await page.keyboard.up("ControlLeft");
+  await page.waitForTimeout(80);
+  const selectionLogs = consoleLines
+    .filter(({ text }) => text.includes("[tactical_3d] selection object_id="))
+    .map(({ text }) => text);
+  assert.ok(selectionLogs.some((line) => line.includes(`object_id=${firstCapital.objectId} `))
+      && selectionLogs.some((line) => line.includes(`object_id=${secondCapital.objectId} `)),
+  "mixed-task-force journey did not select both projected capitals");
+  await capture("mixed-task-force-selection");
+  const assignedFocusCount = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] focus source_object_ids=")).length;
+  const assignedTargetCount = consoleLines.filter(({ text }) =>
+    text.includes("[tactical_navigation] event=target_assign status=assigned")).length;
+  await page.mouse.click(hostilePosition.x, hostilePosition.y, { button: "right" });
+  await page.waitForTimeout(120);
+  await page.mouse.move(secondPosition.x, secondPosition.y);
+  await page.waitForTimeout(80);
+  const rejectedTarget = await capture("mixed-task-force-target-rejected");
+  assert.equal(consoleLines.filter(({ text }) =>
+    text.includes("[tactical_3d] focus source_object_ids=")).length, assignedFocusCount,
+  "rejected mixed-task-force target entered the focus-assignment path");
+  assert.equal(consoleLines.filter(({ text }) =>
+    text.includes("[tactical_navigation] event=target_assign status=assigned")).length,
+  assignedTargetCount, "rejected mixed-task-force target emitted an assigned order");
+  const rejectionLog = consoleLines.find(({ text }) =>
+    text.includes("[tactical_navigation] event=target_assign")
+      && text.includes("status=rejected_mixed_task_forces"));
+  assert.match(rejectionLog?.text || "", /members=2/,
+    "mixed-task-force target did not report the exact rejected selection");
+  const expectedVoice = faction === "alliance"
+    ? { event: "0x84", wave: 14101, owner: "Alliance" }
+    : { event: "0x102", wave: 15105, owner: "Empire" };
+  const rejectionVoice = consoleLines.find(({ text }) =>
+    text.includes("voice_event=TargetTaskForceRejected")
+      && text.includes(`source_event=${expectedVoice.event}`));
+  assert.match(rejectionVoice?.text || "",
+    new RegExp(`wave=${expectedVoice.wave} faction=${expectedVoice.owner} routed=true loaded=true muted=true`),
+    "mixed-task-force rejection did not route the exact muted faction voice");
+  probes.push({
+    type: "source-rejected-mixed-task-force-target",
+    executable_function: "FUN_005a24d0",
+    player_task_forces: [firstCapital.participant.task_force, secondCapital.participant.task_force],
+    hostile_object_id: hostileCapital.objectId,
+    rejection_log: rejectionLog.text,
+    voice_log: rejectionVoice.text,
+    source_event: expectedVoice.event,
+    resource_id: expectedVoice.wave,
+    assignment_state_unchanged: true,
+    screenshot_sha256: sha256(rejectedTarget),
+  });
+
   await page.keyboard.press("F1");
   await page.waitForTimeout(80);
   const taskOneHotkey = await capture("task-force-1-hotkey");
@@ -4656,6 +4752,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           if (scenario.navigation_camera_presentation) {
             assert.ok(cameraLogs.length >= 6,
               "navigation journey did not exercise the source tactical camera");
+          } else if (scenario.group_presentation) {
+            assert.equal(cameraLogs.length, 3,
+              "group journey did not preserve its initial and two hotkey camera states");
           } else {
             assert.equal(cameraLogs.length, scenario.fighter_detail_journey ? 40 : 1,
               "production participants did not use the source tactical camera");

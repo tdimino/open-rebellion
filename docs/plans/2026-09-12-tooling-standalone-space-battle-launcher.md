@@ -205,6 +205,9 @@ browser transport. P58-B18 extends the executable table through event `0x13c`,
 transports all 285 faction tactical voices, and dispatches selected withdrawal,
 battle-outcome, Death Star, and RGBY trench-run transitions. This completes the
 deterministic A1 crosswalk without running or satisfying the strict A0 gate.
+P58-B19 restores `FUN_005a24d0`'s exact hostile-target rejection for capital
+selections spanning multiple task forces and routes the matching Alliance or
+Imperial voice without mutating existing orders.
 Power allocation, exact planet placement, native Death Star beam behavior,
 shared post-battle bombardment, landing, and navigation orchestration,
 remaining completion, destruction, recovery, warning, and ordered trench voice

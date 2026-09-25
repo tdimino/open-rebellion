@@ -23,7 +23,7 @@
     ["alliance", "fighter_losses", 107, 110, 14076, 14079, "red_blue_green_gold"],
     ["alliance", "capital_formation", 111, 118, 14080, 14087, "task_force_1_to_8"],
     ["alliance", "mission_assignment", 119, 131, 14088, 14100, "generic_then_task_force_1_to_8_then_red_blue_green_gold"],
-    ["alliance", "task_force_capacity", 132, 132, 14101, 14101, "single"],
+    ["alliance", "target_task_force_rejected", 132, 132, 14101, 14101, "mixed_capital_task_forces"],
     ["alliance", "fighter_pilot_ejection", 133, 133, 14102, 14102, "single"],
     ["alliance", "capital_crew_abandonment", 134, 134, 14103, 14103, "single"],
     ["alliance", "fighter_recovery_complete", 135, 138, 14104, 14107, "red_blue_green_gold"],
@@ -48,7 +48,7 @@
     ["empire", "fighter_launch_ready", 233, 236, 15080, 15083, "red_blue_green_gold"],
     ["empire", "capital_formation", 237, 244, 15084, 15091, "task_force_1_to_8"],
     ["empire", "mission_assignment", 245, 257, 15092, 15104, "generic_then_task_force_1_to_8_then_red_blue_green_gold"],
-    ["empire", "task_force_capacity", 258, 258, 15105, 15105, "single"],
+    ["empire", "target_task_force_rejected", 258, 258, 15105, 15105, "mixed_capital_task_forces"],
     ["empire", "fighter_pilot_ejection", 259, 259, 15106, 15106, "single"],
     ["empire", "capital_crew_abandonment", 260, 260, 15107, 15107, "single"],
     ["empire", "fighter_recovery_complete", 261, 264, 15108, 15111, "red_blue_green_gold"],
@@ -71,8 +71,8 @@
     "resource_count": 285,
     "runtime_transport": "implemented",
     "production_dispatch": "partial",
-    "implemented_families": ["battle_ready", "capital_maneuver", "fighter_maneuver", "capital_attack", "fighter_attack", "capital_formation", "mission_assignment", "withdrawal_started", "withdrawal_complete", "battle_won_opponent_withdrew", "battle_won_opponent_destroyed", "battle_lost", "death_star_fire", "death_star_ready", "death_star_attack_broken_off", "death_star_destroyed", "trench_run_group_start", "trench_run_group_outcome"],
-    "open_families": ["maneuver_complete", "orders_complete", "target_destroyed", "capital_destroyed", "fighter_losses", "fighter_launch_ready", "task_force_capacity", "fighter_pilot_ejection", "capital_crew_abandonment", "fighter_recovery_complete", "fighter_recovery_capacity", "withdrawal_warnings", "remaining_death_star_warnings", "ordered_trench_run_chatter"],
+    "implemented_families": ["battle_ready", "capital_maneuver", "fighter_maneuver", "capital_attack", "fighter_attack", "capital_formation", "mission_assignment", "target_task_force_rejected", "withdrawal_started", "withdrawal_complete", "battle_won_opponent_withdrew", "battle_won_opponent_destroyed", "battle_lost", "death_star_fire", "death_star_ready", "death_star_attack_broken_off", "death_star_destroyed", "trench_run_group_start", "trench_run_group_outcome"],
+    "open_families": ["maneuver_complete", "orders_complete", "target_destroyed", "capital_destroyed", "fighter_losses", "fighter_launch_ready", "fighter_pilot_ejection", "capital_crew_abandonment", "fighter_recovery_complete", "fighter_recovery_capacity", "withdrawal_warnings", "remaining_death_star_warnings", "ordered_trench_run_chatter"],
     "open_acceptance": ["exact_shared_rng_sequence", "mixing_ducking_interruption", "audible_native_comparison", "lossless_a0"]
   }
 }

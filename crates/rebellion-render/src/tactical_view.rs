@@ -1661,6 +1661,7 @@ impl TacticalVoiceFaction {
 pub enum TacticalVoiceEvent {
     SourceMapped,
     BattleReady,
+    TargetTaskForceRejected,
     CapitalManeuver,
     FighterManeuver,
     CapitalAttack,
@@ -1719,6 +1720,17 @@ impl TacticalVoiceCue {
     #[must_use]
     pub const fn battle_ready(faction: TacticalVoiceFaction) -> Self {
         Self::from_offset(faction, TacticalVoiceEvent::BattleReady, 0)
+    }
+
+    /// Queue the faction-specific rejection used when an enemy target command
+    /// cannot resolve the selected capitals to one task-force ordinal.
+    #[must_use]
+    pub const fn target_task_force_rejected(faction: TacticalVoiceFaction) -> Self {
+        let source_event = match faction {
+            TacticalVoiceFaction::Alliance => 0x84,
+            TacticalVoiceFaction::Empire => 0x102,
+        };
+        Self::from_source_event(TacticalVoiceEvent::TargetTaskForceRejected, source_event)
     }
 
     #[must_use]
@@ -6964,6 +6976,93 @@ fn selected_player_task_force(session: &BattleSession) -> Option<u8> {
         .then_some(group)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TacticalFocusAssignment {
+    Assigned {
+        object_ids: Vec<usize>,
+        maximum_targets: usize,
+    },
+    RejectedMixedTaskForces {
+        member_count: usize,
+    },
+}
+
+/// Apply the original enemy-focus constraint recovered from `FUN_005a24d0`.
+/// A capital selection spanning more than one task force is rejected before
+/// any target or escort state changes, and the faction-specific source event
+/// is queued for the production audio path.
+fn assign_selected_capital_focus_target(
+    session: &mut BattleSession,
+    target_idx: usize,
+    append: bool,
+) -> TacticalFocusAssignment {
+    let selected = session
+        .ships
+        .iter()
+        .enumerate()
+        .filter_map(|(index, ship)| {
+            (ship.selected && ship.is_attacker == session.player_is_attacker && ship.alive)
+                .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let Some(first) = selected.first().copied() else {
+        return TacticalFocusAssignment::Assigned {
+            object_ids: Vec::new(),
+            maximum_targets: 0,
+        };
+    };
+    let task_force = session.ships[first].task_force;
+    if selected
+        .iter()
+        .any(|index| session.ships[*index].task_force != task_force)
+    {
+        session
+            .pending_voice_cues
+            .push(TacticalVoiceCue::target_task_force_rejected(
+                session.player_voice_faction(),
+            ));
+        return TacticalFocusAssignment::RejectedMixedTaskForces {
+            member_count: selected.len(),
+        };
+    }
+
+    let target = TacticalAttackTarget::CapitalShip(target_idx);
+    for index in selected.iter().copied() {
+        let ship = &mut session.ships[index];
+        ship.escort_target = None;
+        if append {
+            if let Some(position) = ship
+                .manual_targets
+                .iter()
+                .position(|existing| *existing == target)
+            {
+                ship.manual_targets.remove(position);
+            } else {
+                ship.manual_targets.push(target);
+            }
+        } else {
+            ship.manual_targets.clear();
+            ship.manual_targets.push(target);
+        }
+        ship.attack_target = ship.manual_targets.first().copied();
+    }
+    let object_ids = selected
+        .iter()
+        .filter_map(|index| {
+            (session.ships[*index].attack_target == Some(target)).then_some(*index + 1)
+        })
+        .collect::<Vec<_>>();
+    let maximum_targets = selected
+        .iter()
+        .map(|index| session.ships[*index].manual_targets.len())
+        .max()
+        .unwrap_or(0);
+    TacticalFocusAssignment::Assigned {
+        object_ids,
+        maximum_targets,
+    }
+}
+
 fn select_task_force(session: &mut BattleSession, group: u8) -> usize {
     let first = session.ships.iter().position(|ship| {
         ship.alive
@@ -11726,62 +11825,41 @@ fn handle_combat_input(
 
         if let Some(target_idx) = target_hit {
             // Assign one or several ordered focus targets to selected ships.
-            let mut assigned = Vec::new();
-            for ship in &mut session.ships {
-                if ship.selected && ship.is_attacker == session.player_is_attacker && ship.alive {
-                    ship.escort_target = None;
-                    let target = TacticalAttackTarget::CapitalShip(target_idx);
-                    if control {
-                        if let Some(position) = ship
-                            .manual_targets
+            match assign_selected_capital_focus_target(session, target_idx, control) {
+                TacticalFocusAssignment::Assigned {
+                    object_ids,
+                    maximum_targets,
+                } => {
+                    macroquad::logging::info!(
+                        "[tactical_3d] focus source_object_ids={} target_object_id={} source_projection={}",
+                        object_ids
                             .iter()
-                            .position(|existing| *existing == target)
-                        {
-                            ship.manual_targets.remove(position);
-                        } else {
-                            ship.manual_targets.push(target);
-                        }
-                    } else {
-                        ship.manual_targets.clear();
-                        ship.manual_targets.push(target);
-                    }
-                    ship.attack_target = ship.manual_targets.first().copied();
+                            .map(usize::to_string)
+                            .collect::<Vec<_>>()
+                            .join(","),
+                        target_idx + 1,
+                        projections.contains_key(&target_idx)
+                            && object_ids
+                                .iter()
+                                .all(|object_id| projections.contains_key(&(*object_id - 1)))
+                    );
+                    macroquad::logging::info!(
+                        "[tactical_navigation] event=target_assign status=assigned append={} target_object_id={} members={} target_count={}",
+                        control,
+                        target_idx + 1,
+                        object_ids.len(),
+                        maximum_targets,
+                    );
+                }
+                TacticalFocusAssignment::RejectedMixedTaskForces { member_count } => {
+                    macroquad::logging::info!(
+                        "[tactical_navigation] event=target_assign status=rejected_mixed_task_forces append={} target_object_id={} members={}",
+                        control,
+                        target_idx + 1,
+                        member_count,
+                    );
                 }
             }
-            for (index, ship) in session.ships.iter().enumerate() {
-                if ship.selected
-                    && ship.attack_target == Some(TacticalAttackTarget::CapitalShip(target_idx))
-                {
-                    assigned.push(index + 1);
-                }
-            }
-            macroquad::logging::info!(
-                "[tactical_3d] focus source_object_ids={} target_object_id={} source_projection={}",
-                assigned
-                    .iter()
-                    .map(usize::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-                target_idx + 1,
-                projections.contains_key(&target_idx)
-                    && assigned
-                        .iter()
-                        .all(|object_id| projections.contains_key(&(*object_id - 1)))
-            );
-            let maximum_targets = session
-                .ships
-                .iter()
-                .filter(|ship| ship.selected)
-                .map(|ship| ship.manual_targets.len())
-                .max()
-                .unwrap_or(0);
-            macroquad::logging::info!(
-                "[tactical_navigation] event=target_assign append={} target_object_id={} members={} target_count={}",
-                control,
-                target_idx + 1,
-                assigned.len(),
-                maximum_targets,
-            );
         } else {
             // Right-clicked empty space — clear focus targets for selected ships.
             for ship in &mut session.ships {
@@ -13531,6 +13609,24 @@ mod tests {
                 resource_id: 15_159,
             }
         );
+        assert_eq!(
+            TacticalVoiceCue::target_task_force_rejected(TacticalVoiceFaction::Alliance),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::TargetTaskForceRejected,
+                faction: TacticalVoiceFaction::Alliance,
+                source_event: 0x84,
+                resource_id: 14_101,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::target_task_force_rejected(TacticalVoiceFaction::Empire),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::TargetTaskForceRejected,
+                faction: TacticalVoiceFaction::Empire,
+                source_event: 0x102,
+                resource_id: 15_105,
+            }
+        );
 
         let mut empire = test_session(Vec::new(), Vec::new(), false);
         empire.queue_battle_ready_voice();
@@ -14553,6 +14649,182 @@ mod tests {
         refresh_original_attack_targets(&mut session);
         assert!(session.ships[0].manual_targets.is_empty());
         assert_eq!(session.ships[0].attack_target, None);
+    }
+
+    #[test]
+    fn alliance_mixed_task_forces_reject_focus_target_without_mutating_orders() {
+        // FUN_005a24d0 queues source event 0x84 when the selected Alliance
+        // capitals cannot resolve to one task-force ordinal.
+        let mut first = test_ship(64, 0, true, true);
+        first.selected = true;
+        first.task_force = 1;
+        first.manual_targets = vec![TacticalAttackTarget::CapitalShip(3)];
+        first.attack_target = first.manual_targets.first().copied();
+        first.escort_target = Some(3);
+        let mut second = test_ship(65, 1, true, true);
+        second.selected = true;
+        second.task_force = 2;
+        second.manual_targets = vec![TacticalAttackTarget::CapitalShip(4)];
+        second.attack_target = second.manual_targets.first().copied();
+        second.escort_target = Some(4);
+        let hostile = test_ship(128, 2, false, true);
+        let mut session = test_session(vec![first, second, hostile], Vec::new(), true);
+        let before = session.ships[..2]
+            .iter()
+            .map(|ship| {
+                (
+                    ship.manual_targets.clone(),
+                    ship.attack_target,
+                    ship.escort_target,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let result = assign_selected_capital_focus_target(&mut session, 2, false);
+
+        assert_eq!(
+            result,
+            TacticalFocusAssignment::RejectedMixedTaskForces { member_count: 2 }
+        );
+        assert_eq!(
+            session.ships[..2]
+                .iter()
+                .map(|ship| (
+                    ship.manual_targets.clone(),
+                    ship.attack_target,
+                    ship.escort_target
+                ))
+                .collect::<Vec<_>>(),
+            before
+        );
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::target_task_force_rejected(
+                TacticalVoiceFaction::Alliance
+            )]
+        );
+    }
+
+    #[test]
+    fn imperial_mixed_task_forces_reject_focus_target_without_mutating_orders() {
+        // FUN_005a24d0 queues source event 0x102 for the same rejected command
+        // when the player-side tactical manager is Imperial.
+        let hostile = test_ship(64, 0, true, true);
+        let mut first = test_ship(128, 1, false, true);
+        first.selected = true;
+        first.task_force = 3;
+        first.manual_targets = vec![TacticalAttackTarget::CapitalShip(0)];
+        first.attack_target = first.manual_targets.first().copied();
+        let mut second = test_ship(129, 2, false, true);
+        second.selected = true;
+        second.task_force = 4;
+        second.escort_target = Some(0);
+        let mut session = test_session(vec![hostile, first, second], Vec::new(), false);
+        let before = session.ships[1..]
+            .iter()
+            .map(|ship| {
+                (
+                    ship.manual_targets.clone(),
+                    ship.attack_target,
+                    ship.escort_target,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let result = assign_selected_capital_focus_target(&mut session, 0, true);
+
+        assert_eq!(
+            result,
+            TacticalFocusAssignment::RejectedMixedTaskForces { member_count: 2 }
+        );
+        assert_eq!(
+            session.ships[1..]
+                .iter()
+                .map(|ship| (
+                    ship.manual_targets.clone(),
+                    ship.attack_target,
+                    ship.escort_target
+                ))
+                .collect::<Vec<_>>(),
+            before
+        );
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::target_task_force_rejected(
+                TacticalVoiceFaction::Empire
+            )]
+        );
+    }
+
+    #[test]
+    fn one_task_force_assigns_focus_target_without_rejection_voice() {
+        let mut first = test_ship(64, 0, true, true);
+        first.selected = true;
+        first.task_force = 5;
+        let mut second = test_ship(65, 1, true, true);
+        second.selected = true;
+        second.task_force = 5;
+        let hostile = test_ship(128, 2, false, true);
+        let mut session = test_session(vec![first, second, hostile], Vec::new(), true);
+
+        let result = assign_selected_capital_focus_target(&mut session, 2, false);
+
+        assert_eq!(
+            result,
+            TacticalFocusAssignment::Assigned {
+                object_ids: vec![1, 2],
+                maximum_targets: 1,
+            }
+        );
+        assert!(session.ships[..2].iter().all(|ship| {
+            ship.manual_targets == vec![TacticalAttackTarget::CapitalShip(2)]
+                && ship.attack_target == Some(TacticalAttackTarget::CapitalShip(2))
+        }));
+        assert!(session.take_pending_voice_cues().is_empty());
+    }
+
+    #[test]
+    fn appending_an_existing_focus_target_toggles_it_off() {
+        let mut friendly = test_ship(64, 0, true, true);
+        friendly.selected = true;
+        friendly.task_force = 5;
+        friendly.manual_targets = vec![TacticalAttackTarget::CapitalShip(1)];
+        friendly.attack_target = friendly.manual_targets.first().copied();
+        let hostile = test_ship(128, 1, false, true);
+        let mut session = test_session(vec![friendly, hostile], Vec::new(), true);
+
+        let result = assign_selected_capital_focus_target(&mut session, 1, true);
+
+        assert_eq!(
+            result,
+            TacticalFocusAssignment::Assigned {
+                object_ids: Vec::new(),
+                maximum_targets: 0,
+            }
+        );
+        assert!(session.ships[0].manual_targets.is_empty());
+        assert_eq!(session.ships[0].attack_target, None);
+        assert!(session.take_pending_voice_cues().is_empty());
+    }
+
+    #[test]
+    fn focus_target_with_no_selected_capitals_is_a_quiet_noop() {
+        let friendly = test_ship(64, 0, true, true);
+        let hostile = test_ship(128, 1, false, true);
+        let mut session = test_session(vec![friendly, hostile], Vec::new(), true);
+        let before = session.ships[0].manual_targets.clone();
+
+        let result = assign_selected_capital_focus_target(&mut session, 1, false);
+
+        assert_eq!(
+            result,
+            TacticalFocusAssignment::Assigned {
+                object_ids: Vec::new(),
+                maximum_targets: 0,
+            }
+        );
+        assert_eq!(session.ships[0].manual_targets, before);
+        assert!(session.take_pending_voice_cues().is_empty());
     }
 
     #[test]

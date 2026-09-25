@@ -526,7 +526,16 @@
           "implemented_transition_dispatch": ["withdrawal_start", "withdrawal_complete", "battle_win_opponent_withdrew", "battle_win_opponent_destroyed", "battle_loss", "death_star_firing", "death_star_recharge_ready", "death_star_attack_broken_off", "death_star_destroyed", "alliance_trench_run_group_start", "alliance_trench_run_group_result"],
           "open_dispatch_families": ["completion", "destruction", "recovery", "warning", "ordered_trench_chatter"]
         },
-        "latest_verified_tranche": "P58-B18 preserves deterministic A1 mapping for all 106 tactical cells and transports every source-addressed faction tactical voice: 153 Alliance and 132 Imperial, 285 total. Selected withdrawal, battle-outcome, Death Star, and RGBY trench-run transitions dispatch from production paths; the focused muted browser journey loads and routes all 22 weapon and 285 voice resources for both factions and viewports. A0 and strict acceptance remain 0 of 106.",
+        "p58_b19_mixed_task_force_target": {
+          "target_handler": "FUN_005a24d0",
+          "selection_rule": "one_task_force_ordinal_required",
+          "alliance_source_event": "0x84",
+          "alliance_wave": 14101,
+          "empire_source_event": "0x102",
+          "empire_wave": 15105,
+          "rejected_state_mutations": ["manual_targets", "attack_target", "escort_target"]
+        },
+        "latest_verified_tranche": "P58-B19 preserves deterministic A1 mapping for all 106 tactical cells and restores FUN_005a24d0's mixed-task-force hostile-target rejection. Existing manual, active, and Escort targets remain unchanged while exact Alliance event 0x84 / WAVE 14101 or Imperial event 0x102 / WAVE 15105 routes through the production audio path. Four focused muted browser cases pass; A0 and strict acceptance remain 0 of 106.",
         "next_proof": "Recover remaining completion, destruction, recovery, warning, and ordered trench voice dispatch, exact shared-RNG sequencing, mixing, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare audible native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true
