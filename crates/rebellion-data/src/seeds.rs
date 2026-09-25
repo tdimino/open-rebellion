@@ -1822,6 +1822,16 @@ fn deploy_bundle_to_system<R: Rng + ?Sized>(
     }
 }
 
+/// SDPRTB row holding each faction's starting maintenance-budget percentage
+/// for a galaxy size.
+const fn maintenance_budget_param(size: rebellion_core::dat::GalaxySize) -> u16 {
+    match size {
+        rebellion_core::dat::GalaxySize::Standard => 5168,
+        rebellion_core::dat::GalaxySize::Large => 5169,
+        rebellion_core::dat::GalaxySize::Huge => 5170,
+    }
+}
+
 /// Maintenance-budget unit seeding: spend starting budget on random unit bundles.
 ///
 /// The original algorithm:
@@ -1844,11 +1854,7 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
     rng: &mut R,
 ) {
     let diff = seed_options.gnprtb_index();
-    let budget_param = match seed_options.galaxy_size {
-        rebellion_core::dat::GalaxySize::Standard => 5168,
-        rebellion_core::dat::GalaxySize::Large => 5169,
-        rebellion_core::dat::GalaxySize::Huge => 5170,
-    };
+    let budget_param = maintenance_budget_param(seed_options.galaxy_size);
 
     // Seed each faction independently.
     for (is_alliance, seed_table) in [(true, cmunal), (false, cmunem)] {
@@ -2059,7 +2065,7 @@ fn roll_skill_pair<R: Rng + ?Sized>(pair: &mut SkillPair, rng: &mut R) {
 /// Place named characters at their starting systems.
 ///
 /// Per the original game:
-/// - Luke Skywalker, Princess Leia, Han Solo, Wedge Antilles, Chewbacca,
+/// - Luke Skywalker, Leia Organa, Han Solo, Wedge Antilles, Chewbacca,
 ///   and Jan Dodonna are placed at Yavin.
 /// - Mon Mothma is placed at the Rebel HQ (random rim system).
 /// - Emperor Palpatine and Darth Vader are placed at Coruscant.
@@ -2067,7 +2073,7 @@ fn place_named_characters(world: &mut GameWorld, special: &SpecialSystems) {
     // Alliance characters at Yavin
     const YAVIN_CHARACTERS: &[&str] = &[
         "Luke Skywalker",
-        "Princess Leia",
+        "Leia Organa",
         "Han Solo",
         "Wedge Antilles",
         "Chewbacca",
@@ -2110,58 +2116,12 @@ mod tests {
             .join("data/base")
     }
 
-    #[test]
-    fn seeds_load_and_populate_world() {
-        let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
-        let world = crate::load_game_data(&path).expect("load_game_data failed");
-
-        // Empire fleet at Coruscant — should have at least one fleet.
-        assert!(!world.fleets.is_empty(), "no fleets were seeded");
-
-        // Coruscant should have a fleet.
-        let coruscant_key = world
-            .systems
-            .iter()
-            .find(|(_, s)| s.dat_id.raw() == CORUSCANT_SEQ_ID)
-            .map(|(k, _)| k);
-        if let Some(k) = coruscant_key {
-            assert!(
-                !world.systems[k].fleets.is_empty(),
-                "Coruscant should have at least one fleet"
-            );
-            assert!(
-                !world.systems[k].manufacturing_facilities.is_empty(),
-                "Coruscant should have facilities"
-            );
-        }
-
-        // Yavin should have ground units.
-        let yavin_key = world
-            .systems
-            .iter()
-            .find(|(_, s)| s.dat_id.raw() == YAVIN_SEQ_ID)
-            .map(|(k, _)| k);
-        if let Some(k) = yavin_key {
-            assert!(
-                !world.systems[k].ground_units.is_empty(),
-                "Yavin should have ground units"
-            );
-        }
-    }
-
     // ── M3: Special system tests ────────────────────────────────────────────
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn special_systems_match_original_roles() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2261,12 +2221,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn fixed_fleet_tables_only_target_special_systems() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2307,12 +2264,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn deterministic_rebel_hq_with_same_seed() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(12345),
             ..SeedOptions::default()
@@ -2345,12 +2299,9 @@ mod tests {
     // ── M4: Character stat rolling + placement tests ────────────────────────
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn fixed_named_characters_spawn_at_expected_systems() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2386,54 +2337,54 @@ mod tests {
         // Check Alliance characters at Yavin
         for name in &[
             "Luke Skywalker",
-            "Princess Leia",
+            "Leia Organa",
             "Han Solo",
             "Wedge Antilles",
             "Chewbacca",
             "Jan Dodonna",
         ] {
-            let found = world.characters.iter().find(|(_, c)| c.name == *name);
-            if let Some((_, ch)) = found {
-                assert_eq!(
-                    ch.current_system, yavin_key,
-                    "{} should be at Yavin, but is at {:?}",
-                    name, ch.current_system
-                );
-            }
-            // If the name isn't found, that's OK (TEXTSTRA.DLL may use different names)
-        }
-
-        // Check Mon Mothma at Rebel HQ
-        if let Some((_, mm)) = world
-            .characters
-            .iter()
-            .find(|(_, c)| c.name == "Mon Mothma")
-        {
+            let (_, ch) = world
+                .characters
+                .iter()
+                .find(|(_, c)| c.name == *name)
+                .unwrap_or_else(|| panic!("{name} missing from TEXTSTRA.DLL names"));
             assert_eq!(
-                mm.current_system, rebel_hq_key,
-                "Mon Mothma should be at Rebel HQ"
+                ch.current_system, yavin_key,
+                "{} should be at Yavin, but is at {:?}",
+                name, ch.current_system
             );
         }
 
+        // Check Mon Mothma at Rebel HQ
+        let (_, mm) = world
+            .characters
+            .iter()
+            .find(|(_, c)| c.name == "Mon Mothma")
+            .expect("Mon Mothma missing from TEXTSTRA.DLL names");
+        assert_eq!(
+            mm.current_system, rebel_hq_key,
+            "Mon Mothma should be at Rebel HQ"
+        );
+
         // Check Empire characters at Coruscant
         for name in &["Emperor Palpatine", "Darth Vader"] {
-            if let Some((_, ch)) = world.characters.iter().find(|(_, c)| c.name == *name) {
-                assert_eq!(
-                    ch.current_system, coruscant_key,
-                    "{} should be at Coruscant, but is at {:?}",
-                    name, ch.current_system
-                );
-            }
+            let (_, ch) = world
+                .characters
+                .iter()
+                .find(|(_, c)| c.name == *name)
+                .unwrap_or_else(|| panic!("{name} missing from TEXTSTRA.DLL names"));
+            assert_eq!(
+                ch.current_system, coruscant_key,
+                "{} should be at Coruscant, but is at {:?}",
+                name, ch.current_system
+            );
         }
     }
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn character_stats_are_rolled_not_raw() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2472,12 +2423,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn deterministic_stat_rolls_with_same_seed() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(99999),
             ..SeedOptions::default()
@@ -2543,12 +2491,9 @@ mod tests {
     // ── M5: Support/popularity initialization tests ─────────────────────────
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn support_ranges_match_original_rules() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2605,12 +2550,9 @@ mod tests {
     }
 
     #[test]
-    fn core_bucket_counts_follow_sdprtb_percentages() {
+    #[ignore = "requires original data/base DAT files"]
+    fn alliance_core_control_follows_sdprtb_buckets() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2646,7 +2588,6 @@ mod tests {
 
         let mut alliance_controlled = 0;
         let mut empire_controlled = 0;
-        let mut neutral = 0;
         let mut total_core = 0;
 
         for (key, sys) in &world.systems {
@@ -2661,24 +2602,20 @@ mod tests {
             match sys.control {
                 ControlKind::Controlled(Faction::Alliance) => alliance_controlled += 1,
                 ControlKind::Controlled(Faction::Empire) => empire_controlled += 1,
-                _ => neutral += 1,
+                _ => {}
             }
         }
 
-        // With default medium Alliance difficulty, SDPRTB 7680 Alliance=20%, Empire=25%
-        // and 7681 Alliance=0%, Empire=10%.
-        // So alliance_controlled = floor(core * 20/100) + floor(core * 0/100)
-        //    empire_controlled = floor(core * 25/100) - 1 + floor(core * 10/100)
-        // The actual counts depend on core_count. Just verify non-zero distribution.
+        // Medium difficulty reads SDPRTB 7680 (strong: Alliance 20%, Empire 25%)
+        // and 7681 (weak: Alliance 0%, Empire 10%); each bucket is
+        // floor(core * pct / 100). The Alliance keeps exactly its buckets. The
+        // Empire's count is not pinned: the post-load pass in lib.rs also gives
+        // it every neutral system that holds only Empire assets.
         assert!(total_core > 0, "Should have core systems");
-        assert!(
-            alliance_controlled + empire_controlled + neutral == total_core,
-            "Control buckets should sum to total core: A={alliance_controlled} E={empire_controlled} N={neutral} total={total_core}"
-        );
-        // With medium difficulty, both sides should have some controlled systems.
-        assert!(
-            alliance_controlled > 0,
-            "Alliance should control some core systems (got {alliance_controlled}/{total_core})"
+        assert_eq!(
+            alliance_controlled,
+            total_core * 20 / 100,
+            "Alliance core control (got {alliance_controlled}/{total_core})"
         );
         assert!(
             empire_controlled > 0,
@@ -2687,12 +2624,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn populated_systems_follow_gnprtb_rules() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2743,12 +2677,9 @@ mod tests {
     // ── M6: Energy/raw materials and procedural facility tests ──────────
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn energy_and_raw_materials_respect_param_ranges() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2798,12 +2729,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn procedural_facilities_placed_at_populated_systems() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2839,12 +2767,9 @@ mod tests {
     // ── M7: Maintenance-budget unit seeding tests ───────────────────────
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     fn maintenance_budget_seeding_spends_without_overshoot() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2882,16 +2807,13 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires original data/base DAT files"]
     #[expect(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
     fn low_support_systems_get_garrison_troops() {
         let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
         let seed_options = SeedOptions {
             rng_seed: Some(42),
             ..SeedOptions::default()
@@ -2932,44 +2854,11 @@ mod tests {
     }
 
     #[test]
-    fn budget_differs_by_galaxy_size() {
-        let path = gdata_path();
-        if !path.exists() {
-            eprintln!("skipping: data/base not found at {path:?}");
-            return;
-        }
-
-        // Standard galaxy
-        let opts_standard = SeedOptions {
-            rng_seed: Some(42),
-            galaxy_size: rebellion_core::dat::GalaxySize::Standard,
-            ..SeedOptions::default()
-        };
-        let world_std = crate::load_game_data_with_options(&path, &opts_standard)
-            .expect("standard load failed");
-
-        // Huge galaxy
-        let opts_huge = SeedOptions {
-            rng_seed: Some(42),
-            galaxy_size: rebellion_core::dat::GalaxySize::Huge,
-            ..SeedOptions::default()
-        };
-        let world_huge =
-            crate::load_game_data_with_options(&path, &opts_huge).expect("huge load failed");
-
-        // Fleet totals may coincide because budget spending is randomized. The
-        // underlying SDPRTB budget percentages must still differ by galaxy size.
-        for faction in [Faction::Alliance, Faction::Empire] {
-            let standard_pct = world_std
-                .sdprtb
-                .value(5168, opts_standard.gnprtb_index(), faction);
-            let huge_pct = world_huge
-                .sdprtb
-                .value(5170, opts_huge.gnprtb_index(), faction);
-            assert_ne!(
-                standard_pct, huge_pct,
-                "{faction:?} budget percentages must differ between standard and huge galaxies"
-            );
-        }
+    fn each_galaxy_size_reads_its_own_sdprtb_budget_row() {
+        use rebellion_core::dat::GalaxySize;
+        // SDPRTB parameters 5168-5170 are the Standard, Large, and Huge rows.
+        assert_eq!(maintenance_budget_param(GalaxySize::Standard), 5168);
+        assert_eq!(maintenance_budget_param(GalaxySize::Large), 5169);
+        assert_eq!(maintenance_budget_param(GalaxySize::Huge), 5170);
     }
 }

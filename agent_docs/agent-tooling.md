@@ -67,6 +67,9 @@ env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo
 ```
 
 Scope every run to the files a change touches; whole-workspace runs are slow.
+Tests that need original DATs are `#[ignore]`d and the mutant copy omits the
+ignored `data/base`, so mutants cannot see them. Check seeding and replay code
+with `make test-assets` instead.
 Mutants in rendering code often survive because the unit tests draw nothing.
 Browser acceptance covers that code, so record those survivors instead of
 writing tests that only mirror the drawing calls.

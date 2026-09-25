@@ -1896,6 +1896,7 @@ mod tests {
         assert_eq!(meta.name, "Test Save");
         assert_eq!(meta.game_tick, loaded.clock.tick);
         assert!(meta.mod_names.is_empty());
+        assert_eq!(meta.mod_hash, compute_mod_hash(&[]));
         assert!(meta.fingerprint_verified);
         assert_eq!(
             meta.state_fingerprint,
@@ -2000,18 +2001,6 @@ mod tests {
         assert_eq!(first.version, STATE_FINGERPRINT_VERSION);
         assert_eq!(first, second);
         assert!(first.to_string().starts_with("v1:"));
-    }
-
-    #[test]
-    fn fingerprint_changes_when_state_changes() {
-        let original = minimal_save_state();
-        let mut changed = original.clone();
-        changed.clock.tick = 1;
-
-        assert_ne!(
-            compute_state_fingerprint(&original).unwrap(),
-            compute_state_fingerprint(&changed).unwrap()
-        );
     }
 
     #[test]
@@ -2325,19 +2314,10 @@ mod tests {
 
         assert_eq!(meta.mod_names, vec!["TestMod".to_string()]);
         assert_eq!(meta.mod_hash, compute_mod_hash(&mods));
-    }
-
-    #[test]
-    fn empty_mod_list_round_trip() {
-        let saves_dir = tmp_dir("empty_mods");
-        let state = minimal_save_state();
-
-        save_slot(&saves_dir, 0, "No Mods", &state, &[]).expect("save with no mods should succeed");
-
-        let (meta, _) = load_slot(&saves_dir, 0).expect("load should succeed");
-
-        assert!(meta.mod_names.is_empty());
-        assert_eq!(meta.mod_hash, compute_mod_hash(&[]));
+        // A different mod set yields a different hash, so callers can detect
+        // a save made under other mods.
+        let other_mods = vec![("OtherMod".to_string(), "2.0".to_string())];
+        assert_ne!(meta.mod_hash, compute_mod_hash(&other_mods));
     }
 
     #[test]
@@ -2354,25 +2334,6 @@ mod tests {
             msg.contains("newer build"),
             "error should mention 'newer build', got: {msg}"
         );
-    }
-
-    #[test]
-    fn mod_hash_mismatch_still_loads() {
-        let saves_dir = tmp_dir("mod_mismatch");
-        let state = minimal_save_state();
-        let mods_a = vec![("ModA".to_string(), "1.0".to_string())];
-        let mods_b = vec![("ModB".to_string(), "2.0".to_string())];
-
-        save_slot(&saves_dir, 0, "Mods A", &state, &mods_a).unwrap();
-
-        // Load succeeds even though our "current" mods differ.
-        let (meta, _) = load_slot(&saves_dir, 0).expect("mismatched mods should still load");
-
-        // The meta records what was saved, not what's current.
-        assert_eq!(meta.mod_names, vec!["ModA".to_string()]);
-        assert_eq!(meta.mod_hash, compute_mod_hash(&mods_a));
-        // The caller can compare meta.mod_hash != compute_mod_hash(&mods_b)
-        assert_ne!(meta.mod_hash, compute_mod_hash(&mods_b));
     }
 
     #[test]

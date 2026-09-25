@@ -12,6 +12,7 @@ fn data_dir() -> PathBuf {
 }
 
 #[test]
+#[ignore = "requires original data/base DAT files"]
 fn original_troop_classes_use_compound_dat_ids() {
     let world = rebellion_data::load_game_data(&data_dir()).expect("load original game data");
 

@@ -1111,7 +1111,7 @@ version = "1.0.0"
     }
 
     #[test]
-    fn structured_error_on_missing_dep() {
+    fn an_enabled_mod_with_a_missing_dependency_loads_nothing() {
         let tmp = tempfile::tempdir().unwrap();
 
         // Create a mod with a missing dependency

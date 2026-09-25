@@ -729,7 +729,7 @@ mod tests {
         TroopUnit, VictoryConditions,
     };
 
-    fn make_test_states() -> SimulationStates {
+    fn make_test_states() -> (GameWorld, SimulationStates) {
         let mut world = GameWorld::default();
         // Need at least 2 systems for VictoryState
         let s1 = world.systems.insert(rebellion_core::world::System {
@@ -779,86 +779,7 @@ mod tests {
             espionage_rating: 0.0,
         });
 
-        SimulationStates {
-            clock: GameClock::new(),
-            manufacturing: ManufacturingState::new(),
-            missions: MissionState::new(),
-            events: EventState::new(),
-            ai: AIState::new(AiFaction::Empire),
-            ai2: None,
-            movement: MovementState::new(),
-            fog: FogState::new(Faction::Alliance),
-            blockade: BlockadeState::new(),
-            uprising: UprisingState::new(),
-            death_star: DeathStarState::default(),
-            research: ResearchState::new(),
-            jedi: JediState::new(),
-            victory: VictoryState::new(s1, s2),
-            betrayal: BetrayalState::new(),
-            economy: EconomyState::default(),
-            repair: RepairState::default(),
-            troop_transport: TroopTransportState::default(),
-            combat_cooldowns: HashMap::new(),
-            campaign_config: CampaignConfig::default(),
-        }
-    }
-
-    #[test]
-    fn simulation_states_can_be_constructed() {
-        let _states = make_test_states();
-    }
-
-    #[test]
-    fn empty_tick_events_returns_empty() {
-        let mut world = GameWorld::default();
-        // Insert two systems for VictoryState
-        let s1 = world.systems.insert(rebellion_core::world::System {
-            dat_id: rebellion_core::ids::DatId::new(1),
-            name: "A".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-            espionage_rating: 0.0,
-        });
-        let s2 = world.systems.insert(rebellion_core::world::System {
-            dat_id: rebellion_core::ids::DatId::new(2),
-            name: "B".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-            espionage_rating: 0.0,
-        });
-        let mut states = SimulationStates {
+        let states = SimulationStates {
             clock: GameClock::new(),
             manufacturing: ManufacturingState::new(),
             missions: MissionState::new(),
@@ -880,6 +801,12 @@ mod tests {
             combat_cooldowns: HashMap::new(),
             campaign_config: CampaignConfig::default(),
         };
+        (world, states)
+    }
+
+    #[test]
+    fn empty_tick_events_returns_empty() {
+        let (mut world, mut states) = make_test_states();
 
         let result = run_simulation_tick(
             &mut world,

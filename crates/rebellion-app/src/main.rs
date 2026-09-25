@@ -5875,12 +5875,26 @@ mod tactical_ground_tests {
     }
 
     #[test]
-    fn campaign_victory_faction_does_not_depend_on_the_local_player() {
+    fn each_victory_outcome_names_its_winning_faction() {
         let system = rebellion_core::ids::SystemKey::default();
         assert!(victory_winner_is_alliance(
             &rebellion_core::victory::VictoryOutcome::HqCaptured {
                 winner: Faction::Alliance,
                 loser: Faction::Empire,
+                hq_system: system,
+            }
+        ));
+        assert!(!victory_winner_is_alliance(
+            &rebellion_core::victory::VictoryOutcome::HqCaptured {
+                winner: Faction::Empire,
+                loser: Faction::Alliance,
+                hq_system: system,
+            }
+        ));
+        assert!(!victory_winner_is_alliance(
+            &rebellion_core::victory::VictoryOutcome::HqDestroyed {
+                winner: Faction::Empire,
+                loser: Faction::Alliance,
                 hq_system: system,
             }
         ));
