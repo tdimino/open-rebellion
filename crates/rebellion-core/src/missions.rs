@@ -469,10 +469,12 @@ impl MissionState {
         id
     }
 
-    /// Dispatch with mission-state guard.
+    /// Dispatch with mission-state guard, marking the character on a mission.
     ///
     /// Returns `None` if the character is already on a mission or has a
-    /// mandatory mission assignment (prevents double-dispatch).
+    /// mandatory mission assignment. The original tracks both as role flags
+    /// (`RoleOnMissionNotif` `FUN_00536b00`, `RoleOnMandatoryMissionNotif`
+    /// `FUN_00536b80`); completion clears the flag via `CharacterAvailable`.
     #[expect(
         clippy::too_many_arguments,
         reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
@@ -485,12 +487,13 @@ impl MissionState {
         target_system: SystemKey,
         target_character: Option<CharacterKey>,
         duration_roll: f64,
-        world: &GameWorld,
+        world: &mut GameWorld,
     ) -> Option<u64> {
-        if let Some(c) = world.characters.get(character) {
+        if let Some(c) = world.characters.get_mut(character) {
             if c.on_mission || c.on_mandatory_mission {
                 return None;
             }
+            c.on_mission = true;
         }
         Some(self.dispatch(
             kind,
@@ -500,6 +503,15 @@ impl MissionState {
             target_character,
             duration_roll,
         ))
+    }
+
+    /// Cancel a mission by id and free its character for another assignment.
+    pub fn release(&mut self, id: u64, world: &mut GameWorld) -> Option<ActiveMission> {
+        let mission = self.cancel(id)?;
+        if let Some(c) = world.characters.get_mut(mission.character) {
+            c.on_mission = false;
+        }
+        Some(mission)
     }
 
     /// Cancel a mission by id. Returns the mission if found, None otherwise.
@@ -1908,13 +1920,47 @@ mod tests {
             system,
             None,
             0.5,
-            &world,
+            &mut world,
         );
         assert!(
             result.is_none(),
             "mandatory mission character should be blocked"
         );
         assert!(state.is_empty());
+    }
+
+    #[test]
+    fn a_dispatched_character_cannot_take_a_second_mission_until_released() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let character = world.characters.insert(Character {
+            name: "Agent".into(),
+            is_alliance: true,
+            diplomacy: skill_pair(80),
+            ..Default::default()
+        });
+        let mut state = MissionState::new();
+        let send = |state: &mut MissionState, world: &mut GameWorld| {
+            state.dispatch_guarded(
+                MissionKind::Diplomacy,
+                MissionFaction::Alliance,
+                character,
+                system,
+                None,
+                0.5,
+                world,
+            )
+        };
+
+        let first = send(&mut state, &mut world).expect("first dispatch");
+        assert!(world.characters[character].on_mission);
+        assert!(send(&mut state, &mut world).is_none());
+        assert_eq!(state.len(), 1);
+
+        state.release(first, &mut world);
+        assert!(!world.characters[character].on_mission);
+        assert!(send(&mut state, &mut world).is_some());
     }
 
     // --- P0 formula correction tests ---

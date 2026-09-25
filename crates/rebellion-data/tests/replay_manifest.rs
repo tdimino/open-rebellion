@@ -97,12 +97,12 @@ fn original_campaign_replay_matches_after_save_reload() {
             (1, 0, "v1:ecf7c467330431a0".into()),
             (2, 0, "v1:673f16d62626d3fa".into()),
             (3, 5, "v1:5e532cc57cfd2d60".into()),
-            (4, 10, "v1:ba19478c6cb4613b".into()),
-            (5, 15, "v1:4b824eeed928f45d".into()),
-            (6, 20, "v1:e1a835f5f77b7e26".into()),
-            (7, 25, "v1:33f3c44a0582f649".into()),
-            (8, 25, "v1:90ce6c73ea667edf".into()),
-            (9, 25, "v1:90ce6c73ea667edf".into()),
+            (4, 10, "v1:ecdbabda150f5f6d".into()),
+            (5, 15, "v1:8befe5d04e2f8ad7".into()),
+            (6, 20, "v1:e567ee451b540e16".into()),
+            (7, 25, "v1:dccc8df2f32031b2".into()),
+            (8, 25, "v1:0e114a59d20b10b0".into()),
+            (9, 25, "v1:0e114a59d20b10b0".into()),
         ]
     );
     assert_eq!(executed_fingerprint.to_string(), SEED42_FINAL_FINGERPRINT);

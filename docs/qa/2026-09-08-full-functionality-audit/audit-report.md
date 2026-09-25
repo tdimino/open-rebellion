@@ -673,7 +673,7 @@ cross-runtime proof remain open
 ### F-019: Subdue, guarded dispatch, and initial Force awakening are never called
 
 - Severity: P1
-- Status: confirmed
+- Status: partially remediated; UPRIS2TB and decoy rules remain
 - Evidence: `UprisingSystem::try_subdue` (`uprising.rs`), `MissionSystem::
   dispatch_guarded` and `check_decoy` (`missions.rs`), and
   `JediSystem::apply_initial_awakening` (`jedi.rs`) have no production callers.
@@ -682,6 +682,19 @@ cross-runtime proof remain open
   starts Force-aware from `jedi_probability`.
 - Acceptance: each path runs in the simulation with recovered rules and a test
   that fails without the call.
+- Fix (2026-09-25): player, AI, and integrator dispatch now use
+  `dispatch_guarded`, which refuses a character already on a mission or a
+  mandatory mission and marks the dispatched character busy, matching the
+  original role flags (`RoleOnMissionNotif` `FUN_00536b00`,
+  `RoleOnMandatoryMissionNotif` `FUN_00536b80`). Cancelling releases the
+  character. The seed-42 golden changes for this cause.
+- Corrections: seeding already rolls `jedi_probability` for initial Force
+  awareness, so the duplicate `apply_initial_awakening` was removed and the
+  seeding roll gained a test. A successful Subdue Uprising mission already
+  ends the revolt through its SUBDMSTB roll.
+- Open: no recovered code consumes UPRIS2TB (the periodic loyalty evaluator is
+  not decompiled), so `try_subdue` stays uncalled, and `check_decoy`
+  (FDECOYTB) still needs its recovered trigger.
 
 ### F-020: A mod with a missing dependency fails silently
 

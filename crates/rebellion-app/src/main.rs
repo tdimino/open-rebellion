@@ -4535,14 +4535,20 @@ fn apply_panel_action(
             target_character,
             duration_roll,
         } => {
-            mission_state.dispatch(
-                kind,
-                faction,
-                character,
-                target,
-                target_character,
-                duration_roll,
-            );
+            if mission_state
+                .dispatch_guarded(
+                    kind,
+                    faction,
+                    character,
+                    target,
+                    target_character,
+                    duration_roll,
+                    world,
+                )
+                .is_none()
+            {
+                return;
+            }
             let char_name = world
                 .characters
                 .get(character)
@@ -4572,7 +4578,7 @@ fn apply_panel_action(
             ));
         }
         PanelAction::CancelMission(id) => {
-            mission_state.cancel(id);
+            mission_state.release(id, world);
         }
         // Save/load actions are handled by the caller before dispatching here;
         // they require access to the full save state and are not routed through
@@ -5644,14 +5650,20 @@ fn apply_ai_actions(
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
                 roll_idx += 1;
                 let ai_faction = ai_state.faction.unwrap_or(AiFaction::Empire);
-                mission_state.dispatch(
-                    *kind,
-                    ai_faction.as_mission_faction(),
-                    *character,
-                    *target_system,
-                    *target_character,
-                    roll,
-                );
+                if mission_state
+                    .dispatch_guarded(
+                        *kind,
+                        ai_faction.as_mission_faction(),
+                        *character,
+                        *target_system,
+                        *target_character,
+                        roll,
+                        world,
+                    )
+                    .is_none()
+                {
+                    continue;
+                }
                 ai_state.mark_busy(*character);
                 let faction_name = match ai_faction {
                     AiFaction::Alliance => "Alliance",

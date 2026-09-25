@@ -1937,16 +1937,21 @@ fn apply_ai_actions_inner(
             } => {
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
                 roll_idx += 1;
-                mission_state.dispatch(
-                    *kind,
-                    mission_faction,
-                    *character,
-                    *target_system,
-                    *target_character,
-                    roll,
-                );
-                ai_state.mark_busy(*character);
-                true
+                let dispatched = mission_state
+                    .dispatch_guarded(
+                        *kind,
+                        mission_faction,
+                        *character,
+                        *target_system,
+                        *target_character,
+                        roll,
+                        world,
+                    )
+                    .is_some();
+                if dispatched {
+                    ai_state.mark_busy(*character);
+                }
+                dispatched
             }
             AIAction::EnqueueProduction {
                 system,

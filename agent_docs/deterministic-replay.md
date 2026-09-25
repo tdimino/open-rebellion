@@ -120,7 +120,8 @@ the fixture's `set_speed` command now names the original `Fast` speed. Seeding
 then placed Leia Organa at Yavin; the placement table had looked for "Princess
 Leia", a name TEXTSTRA does not use, so she had started nowhere. It now starts
 at `v1:39350fd64a68ecb8`. From tick 10 the AI builds only classes its
-research has reached (F-018), so the campaign ends at `v1:90ce6c73ea667edf`.
+research has reached (F-018), and a dispatched character is marked on a
+mission until it returns (F-019), so the campaign ends at `v1:0e114a59d20b10b0`.
 Before v14, the committed v13 goldens no longer
 reproduced locally even at their own commit `e8d4945`: that commit, with
 unchanged DATs, now computes initial `v1:14ef55dafe6595ee`. The cause is

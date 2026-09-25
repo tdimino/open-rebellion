@@ -2106,6 +2106,27 @@ mod tests {
     use rand_xoshiro::Xoshiro256PlusPlus;
     use std::path::PathBuf;
 
+    #[test]
+    fn game_start_makes_characters_force_aware_by_their_jedi_probability() {
+        let mut world = GameWorld::default();
+        let mut add = |jedi_probability, is_known_jedi| {
+            world.characters.insert(rebellion_core::world::Character {
+                jedi_probability,
+                is_known_jedi,
+                ..Default::default()
+            })
+        };
+        let certain = add(100, false);
+        let never = add(0, false);
+        let known = add(100, true);
+
+        roll_character_stats(&mut world, &mut Xoshiro256PlusPlus::seed_from_u64(7));
+
+        assert_eq!(world.characters[certain].force_tier, ForceTier::Aware);
+        assert_eq!(world.characters[never].force_tier, ForceTier::None);
+        assert_eq!(world.characters[known].force_tier, ForceTier::None);
+    }
+
     fn gdata_path() -> PathBuf {
         // Relative to workspace root when running `cargo test`.
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
