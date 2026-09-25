@@ -1661,11 +1661,14 @@
     {
       "id": "F-020",
       "severity": "P2",
-      "status": "confirmed",
+      "status": "remediated_native_gui_pending",
       "title": "A mod with a missing dependency fails silently",
       "evidence": [
         "crates/rebellion-data/src/mods.rs: enabled_sorted() prints load-order errors and returns an empty list",
-        "ModError::MissingDependency is never constructed; ModRuntime::errors stays empty"
+        "ModError::MissingDependency is never constructed; ModRuntime::errors stays empty",
+        "2026-09-25 fix: ModRuntime::discover, toggle_mod, and refresh record MissingDependency and VersionMismatch for each enabled mod; a disabled dependency counts as missing",
+        "The Mod Manager matches errors by ModError::mod_name() and shows the Display text naming the dependency, replacing a Debug-string contains() match",
+        "Four mods.rs tests fail without the change; scoped cargo mutants catch every mutant in the new code (the only survivors are wasm32 stubs and pre-existing watcher and loader paths)"
       ],
       "acceptance": "Missing-dependency and version-mismatch failures reach ModRuntime::errors and the Mod Manager names the mod and dependency."
     },

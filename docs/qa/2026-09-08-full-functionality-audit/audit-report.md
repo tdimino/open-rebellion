@@ -677,11 +677,17 @@ cross-runtime proof remain open
 ### F-020: A mod with a missing dependency fails silently
 
 - Severity: P2
-- Status: confirmed
+- Status: remediated; native GUI check pending (mods do not load in the browser)
 - Evidence: `ModRuntime::enabled_sorted` (`crates/rebellion-data/src/mods.rs`)
   prints load-order errors to stderr and returns an empty list;
-  `ModError::MissingDependency` is never constructed, so `ModRuntime::errors`
-  and the Mod Manager show nothing.
+  `ModError::MissingDependency` was never constructed, so `ModRuntime::errors`
+  and the Mod Manager showed nothing.
+- Fix (2026-09-25): `discover`, `toggle_mod`, and `refresh` now record
+  `MissingDependency` and `VersionMismatch` for each enabled mod, counting a
+  disabled dependency as missing. The Mod Manager matches errors by
+  `ModError::mod_name()` and shows text such as "requires 'x', which is not
+  installed and enabled" instead of a Debug dump. Four tests fail without the
+  change, and scoped `cargo mutants` catches every mutant in the new code.
 - Acceptance: missing-dependency and version-mismatch failures reach
   `ModRuntime::errors` and the Mod Manager names the mod and dependency.
 

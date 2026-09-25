@@ -3201,7 +3201,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             let err = mod_runtime
                                 .errors
                                 .iter()
-                                .find(|e| format!("{e:?}").contains(&m.name));
+                                .find(|e| e.mod_name() == m.name);
                             rebellion_render::ModInfo {
                                 name: m.name.clone(),
                                 version: m.version.clone(),
@@ -3210,7 +3210,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 enabled: m.enabled,
                                 dependencies: m.dependencies.keys().cloned().collect(),
                                 has_error: err.is_some(),
-                                error_message: err.map(|e| format!("{e:?}")),
+                                error_message: err.map(ToString::to_string),
                             }
                         })
                         .collect();
