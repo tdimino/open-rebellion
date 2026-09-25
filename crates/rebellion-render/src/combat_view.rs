@@ -28,7 +28,7 @@
 use egui_macroquad::egui::{self, Color32, RichText};
 use rebellion_core::ids::SystemKey;
 
-use crate::message_log::{GameMessage, MessageCategory};
+use crate::message_log::{GameMessage, MessageCategory, RailAudience};
 
 // ---------------------------------------------------------------------------
 // CombatResult
@@ -110,6 +110,10 @@ impl CombatResult {
             category: MessageCategory::Combat,
             system: Some(self.system),
             system_name: None,
+            // Battle reports are filed apart from the rail (types 1 and 2).
+            rail: None,
+            audience: RailAudience::Both,
+            unread: false,
         });
 
         // Attacker losses
@@ -124,6 +128,10 @@ impl CombatResult {
                 category: MessageCategory::Combat,
                 system: Some(self.system),
                 system_name: None,
+                // Battle reports are filed apart from the rail (types 1 and 2).
+                rail: None,
+                audience: RailAudience::Both,
+                unread: false,
             });
         }
 
@@ -139,6 +147,10 @@ impl CombatResult {
                 category: MessageCategory::Combat,
                 system: Some(self.system),
                 system_name: None,
+                // Battle reports are filed apart from the rail (types 1 and 2).
+                rail: None,
+                audience: RailAudience::Both,
+                unread: false,
             });
         }
 
@@ -150,6 +162,10 @@ impl CombatResult {
                 category: MessageCategory::Combat,
                 system: Some(self.system),
                 system_name: None,
+                // Battle reports are filed apart from the rail (types 1 and 2).
+                rail: None,
+                audience: RailAudience::Both,
+                unread: false,
             });
         }
 
@@ -161,6 +177,10 @@ impl CombatResult {
                 category: MessageCategory::Combat,
                 system: Some(self.system),
                 system_name: None,
+                // Battle reports are filed apart from the rail (types 1 and 2).
+                rail: None,
+                audience: RailAudience::Both,
+                unread: false,
             });
         }
 

@@ -42,7 +42,7 @@ use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::ids::{FleetKey, TroopKey};
+use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
@@ -86,10 +86,11 @@ use rebellion_render::{
     EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage,
     GameOptionsAction, GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState,
     GroundAction, GroundCombatState, MainMenuAction, MainMenuState, ManufacturingPanelState,
-    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MissionsPanelState,
-    MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState, PanelAction,
-    SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction, SystemWindowState,
-    TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError, VideoPlayer,
+    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MessageRail,
+    MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
+    PanelAction, RailAudience, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
+    SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError,
+    VideoPlayer,
 };
 
 /// Top-level game mode state machine.
@@ -1309,11 +1310,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            economy_tick,
-                            format!("New resources discovered at {name} ({new_output} units)"),
-                            MessageCategory::Event,
-                            *system,
+                        // Notification 0x20, System Resources Messages.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                economy_tick,
+                                format!("New resources discovered at {name} ({new_output} units)"),
+                                MessageCategory::Event,
+                                *system,
+                            ),
+                            MessageRail::Resource,
+                            system_audience(&world, *system),
                         ));
                     }
                     EconomyEvent::MaintenanceShortfall {
@@ -1325,13 +1331,18 @@ async fn main() {
                         } else {
                             "Empire"
                         };
-                        msg_log.push(GameMessage::new(
+                        // Notification 0xc, Maintenance Shortfall.
+                        msg_log.push(filed(
+GameMessage::new(
                             economy_tick,
                             format!(
                                 "{faction_str} reports maintenance shortfall across {deficit_system_count} systems"
                             ),
                             MessageCategory::Event,
-                        ));
+                        ),
+MessageRail::Manufacturing,
+Some(RailAudience::side(*faction_is_alliance)),
+));
                     }
                     _ => {} // Telemetry-only events (collection rate, garrison, incidents, support change tier)
                 }
@@ -1352,11 +1363,16 @@ async fn main() {
                     .systems
                     .get(completion.system)
                     .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                msg_log.push(GameMessage::at_system(
-                    completion.tick,
-                    format!("Construction complete at {sys_name}"),
-                    MessageCategory::Manufacturing,
-                    completion.system,
+                // Notification 0x21, Construction Complete.
+                msg_log.push(filed(
+                    GameMessage::at_system(
+                        completion.tick,
+                        format!("Construction complete at {sys_name}"),
+                        MessageCategory::Manufacturing,
+                        completion.system,
+                    ),
+                    MessageRail::Manufacturing,
+                    system_audience(&world, completion.system),
                 ));
                 advisor_manufacturing_complete(&mut advisor_state, &sys_name);
                 #[cfg(not(target_arch = "wasm32"))]
@@ -1380,18 +1396,25 @@ async fn main() {
             // ── Movement ────────────────────────────────────────────────────
             let arrivals = MovementSystem::advance(&mut movement_state, &tick_events);
             for arrival in &arrivals {
-                if apply_fleet_arrival(&mut world, &mut troop_transport_state, arrival).is_none() {
+                let Some(applied) =
+                    apply_fleet_arrival(&mut world, &mut troop_transport_state, arrival)
+                else {
                     continue;
-                }
+                };
                 let sys_name = world
                     .systems
                     .get(arrival.system)
                     .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                msg_log.push(GameMessage::at_system(
-                    arrival.tick,
-                    format!("Fleet arrived at {sys_name}"),
-                    MessageCategory::Mission,
-                    arrival.system,
+                // Notification 0xd, Unit Arrival.
+                msg_log.push(filed(
+                    GameMessage::at_system(
+                        arrival.tick,
+                        format!("Fleet arrived at {sys_name}"),
+                        MessageCategory::Mission,
+                        arrival.system,
+                    ),
+                    MessageRail::Fleet,
+                    Some(RailAudience::side(applied.is_alliance)),
                 ));
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::FleetArrival, &audio_vol);
@@ -1970,11 +1993,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Blockade established at {name}"),
-                            MessageCategory::Combat,
-                            *system,
+                        // Notification 7, Blockade Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Blockade established at {name}"),
+                                MessageCategory::Combat,
+                                *system,
+                            ),
+                            MessageRail::Conflict,
+                            Some(RailAudience::Both),
                         ));
                     }
                     rebellion_core::blockade::BlockadeEvent::BlockadeEnded { system, tick } => {
@@ -1982,11 +2010,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Blockade lifted at {name}"),
-                            MessageCategory::Combat,
-                            *system,
+                        // Notification 7, Blockade Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Blockade lifted at {name}"),
+                                MessageCategory::Combat,
+                                *system,
+                            ),
+                            MessageRail::Conflict,
+                            Some(RailAudience::Both),
                         ));
                     }
                     rebellion_core::blockade::BlockadeEvent::TroopDestroyed {
@@ -2002,11 +2035,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Troops destroyed by blockade at {name}"),
-                            MessageCategory::Combat,
-                            *system,
+                        // Notification 7, Blockade Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Troops destroyed by blockade at {name}"),
+                                MessageCategory::Combat,
+                                *system,
+                            ),
+                            MessageRail::Conflict,
+                            Some(RailAudience::Both),
                         ));
                     }
                 }
@@ -2053,11 +2091,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Uprising incident at {name}"),
-                            MessageCategory::Diplomacy,
-                            *system,
+                        // Notification 3, Uprising Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Uprising incident at {name}"),
+                                MessageCategory::Diplomacy,
+                                *system,
+                            ),
+                            MessageRail::PopularSupport,
+                            system_audience(&world, *system),
                         ));
                     }
                     rebellion_core::uprising::UprisingEvent::UprisingBegan { system, tick } => {
@@ -2093,11 +2136,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Uprising! {name} has changed hands"),
-                            MessageCategory::Diplomacy,
-                            *system,
+                        // Notification 3, Uprising Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Uprising! {name} has changed hands"),
+                                MessageCategory::Diplomacy,
+                                *system,
+                            ),
+                            MessageRail::PopularSupport,
+                            Some(RailAudience::Both),
                         ));
                         advisor_uprising(&mut advisor_state, &name, player_gains);
                     }
@@ -2106,11 +2154,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Uprising subdued at {name}"),
-                            MessageCategory::Diplomacy,
-                            *system,
+                        // Notification 3, Uprising Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Uprising subdued at {name}"),
+                                MessageCategory::Diplomacy,
+                                *system,
+                            ),
+                            MessageRail::PopularSupport,
+                            system_audience(&world, *system),
                         ));
                     }
                 }
@@ -2173,11 +2226,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Death Star construction complete at {name}"),
-                            MessageCategory::Event,
-                            *system,
+                        // Notification 0x21, Construction Complete.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Death Star construction complete at {name}"),
+                                MessageCategory::Event,
+                                *system,
+                            ),
+                            MessageRail::Manufacturing,
+                            Some(RailAudience::Empire),
                         ));
                     }
                     rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. } => {
@@ -2242,10 +2300,15 @@ async fn main() {
                     rebellion_core::research::TechType::Troop => "Troop",
                     rebellion_core::research::TechType::Facility => "Facility",
                 };
-                msg_log.push(GameMessage::new(
-                    current_tick,
-                    format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
-                    MessageCategory::Event,
+                // Notification 5, Research Report.
+                msg_log.push(filed(
+                    GameMessage::new(
+                        current_tick,
+                        format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
+                        MessageCategory::Event,
+                    ),
+                    MessageRail::Manufacturing,
+                    Some(RailAudience::side(*faction_is_alliance)),
                 ));
             }
             // Apply research level-ups (advance() is now pure — caller must apply)
@@ -2298,10 +2361,15 @@ async fn main() {
                             rebellion_core::world::ForceTier::Training => "Jedi Training",
                             rebellion_core::world::ForceTier::Experienced => "Jedi Knight",
                         };
-                        msg_log.push(GameMessage::new(
-                            current_tick,
-                            format!("{name} has reached {tier_str} tier"),
-                            MessageCategory::Event,
+                        // Notification 0x1d, Force Skill Improvement.
+                        msg_log.push(filed(
+                            GameMessage::new(
+                                current_tick,
+                                format!("{name} has reached {tier_str} tier"),
+                                MessageCategory::Event,
+                            ),
+                            MessageRail::Mission,
+                            character_audience(&world, *character),
                         ));
                     }
                     rebellion_core::jedi::JediEvent::TrainingComplete { character } => {
@@ -2951,6 +3019,11 @@ async fn main() {
                 }
 
                 set_cockpit_viewport_clip(None);
+
+                // The Message Index rail lights each category with unread
+                // messages for the player's side (FUN_0048a2a0).
+                cockpit_state.message_unread_mask =
+                    msg_log.unread_mask(player_faction == MissionFaction::Alliance);
 
                 // 4. All egui panels in a single ui() + draw() pass
                 egui_macroquad::ui(|ctx| {
@@ -4587,10 +4660,15 @@ fn apply_panel_action(
                         .systems
                         .get(system)
                         .map_or("Unknown", |system| system.name.as_str());
-                    msg_log.push(GameMessage::new(
-                        clock.tick,
-                        format!("Alliance headquarters destroyed at {system_name}"),
-                        MessageCategory::Combat,
+                    // Notification 0x1f, Rebel HQ Destroyed.
+                    msg_log.push(filed(
+                        GameMessage::new(
+                            clock.tick,
+                            format!("Alliance headquarters destroyed at {system_name}"),
+                            MessageCategory::Combat,
+                        ),
+                        MessageRail::Resource,
+                        Some(RailAudience::Both),
                     ));
                 }
             }
@@ -4627,18 +4705,28 @@ fn apply_panel_action(
                         effect
                     {
                         if let Some(c) = world.characters.get(character) {
-                            msg_log.push(GameMessage::new(
-                                clock.tick,
-                                format!("{} has been killed.", c.name),
-                                MessageCategory::Event,
+                            // Notification 0x1a, Character Health.
+                            msg_log.push(filed(
+                                GameMessage::new(
+                                    clock.tick,
+                                    format!("{} has been killed.", c.name),
+                                    MessageCategory::Event,
+                                ),
+                                MessageRail::Mission,
+                                character_audience(&world, character),
                             ));
                         }
                     }
                 }
-                msg_log.push(GameMessage::new(
-                    clock.tick,
-                    format!("{name} DESTROYED by Death Star superlaser!"),
-                    MessageCategory::Combat,
+                // Notification 0x15, Planet Destroyed.
+                msg_log.push(filed(
+                    GameMessage::new(
+                        clock.tick,
+                        format!("{name} DESTROYED by Death Star superlaser!"),
+                        MessageCategory::Combat,
+                    ),
+                    MessageRail::Mission,
+                    Some(RailAudience::Both),
                 ));
             }
         }
@@ -4984,11 +5072,18 @@ fn apply_mission_result(
         | MissionKind::DeathStarSabotage
         | MissionKind::Autoscrap => MessageCategory::Mission,
     };
-    log.push(GameMessage::at_system(
-        result.tick,
-        format!("{faction_name} {kind_name} mission at {sys_name} {outcome_str}"),
-        category,
-        result.target_system,
+    // Notifications 0x16 and 0x17, Mission Report and Mission Failed.
+    log.push(filed(
+        GameMessage::at_system(
+            result.tick,
+            format!("{faction_name} {kind_name} mission at {sys_name} {outcome_str}"),
+            category,
+            result.target_system,
+        ),
+        MessageRail::Mission,
+        Some(RailAudience::side(
+            result.faction == MissionFaction::Alliance,
+        )),
     ));
 
     // SFX + voice lines for mission outcomes
@@ -5135,11 +5230,18 @@ fn apply_mission_result(
                     .characters
                     .get(*decoy_character)
                     .map_or_else(|| "Unknown".into(), |c| c.name.clone());
-                log.push(GameMessage::at_system(
-                    result.tick,
-                    format!("Mission intercepted by decoy {char_name} at {sys_name}"),
-                    MessageCategory::Mission,
-                    *system,
+                // Notification 0x17, Mission Failed.
+                log.push(filed(
+                    GameMessage::at_system(
+                        result.tick,
+                        format!("Mission intercepted by decoy {char_name} at {sys_name}"),
+                        MessageCategory::Mission,
+                        *system,
+                    ),
+                    MessageRail::Mission,
+                    Some(RailAudience::side(
+                        result.faction == MissionFaction::Alliance,
+                    )),
                 ));
             }
             MissionEffect::CharacterEscaped {
@@ -5178,10 +5280,19 @@ fn apply_mission_result(
             }
             MissionEffect::DeathStarSabotaged { ticks_delayed } => {
                 // Death Star delay applied in simulation layer (death_star_state.add_sabotage_delay)
-                log.push(GameMessage::new(
-                    result.tick,
-                    format!("Death Star construction sabotaged! {ticks_delayed} ticks delayed."),
-                    MessageCategory::Mission,
+                // Notification 0x23, Death Star Sabotaged.
+                log.push(filed(
+                    GameMessage::new(
+                        result.tick,
+                        format!(
+                            "Death Star construction sabotaged! {ticks_delayed} ticks delayed."
+                        ),
+                        MessageCategory::Mission,
+                    ),
+                    MessageRail::Mission,
+                    Some(RailAudience::side(
+                        result.faction == MissionFaction::Alliance,
+                    )),
                 ));
             }
         }
@@ -5345,11 +5456,16 @@ fn apply_automatic_bombardment(
         ));
     }
     if headquarters_destroyed {
-        log.push(GameMessage::at_system(
-            tick,
-            format!("Alliance headquarters destroyed at {system_name}"),
-            MessageCategory::Combat,
-            system,
+        // Notification 0x1f, Rebel HQ Destroyed.
+        log.push(filed(
+            GameMessage::at_system(
+                tick,
+                format!("Alliance headquarters destroyed at {system_name}"),
+                MessageCategory::Combat,
+                system,
+            ),
+            MessageRail::Resource,
+            Some(RailAudience::Both),
         ));
     }
 }
@@ -5370,11 +5486,16 @@ fn apply_system_occupation(
             .systems
             .get(system)
             .map_or("unknown", |value| value.name.as_str());
-        log.push(GameMessage::at_system(
-            tick,
-            format!("{name} occupied by {winner:?}"),
-            MessageCategory::Combat,
-            system,
+        // Notification 4, System Control Message.
+        log.push(filed(
+            GameMessage::at_system(
+                tick,
+                format!("{name} occupied by {winner:?}"),
+                MessageCategory::Combat,
+                system,
+            ),
+            MessageRail::PopularSupport,
+            Some(RailAudience::Both),
         ));
     }
 
@@ -5656,6 +5777,35 @@ fn draw_fullscreen_texture(texture: &Texture2D) {
             ..Default::default()
         },
     );
+}
+
+/// File a report on the Message Index rail when some side receives it.
+fn filed(message: GameMessage, rail: MessageRail, audience: Option<RailAudience>) -> GameMessage {
+    match audience {
+        Some(audience) => message.on_rail(rail, audience),
+        None => message,
+    }
+}
+
+/// The side that controls `system`, whose Message Index receives its reports.
+fn system_audience(world: &GameWorld, system: SystemKey) -> Option<RailAudience> {
+    match world.systems.get(system)?.control.faction()? {
+        Faction::Alliance => Some(RailAudience::Alliance),
+        Faction::Empire => Some(RailAudience::Empire),
+        Faction::Neutral => None,
+    }
+}
+
+/// The side a character serves, whose Message Index receives its reports.
+fn character_audience(world: &GameWorld, character: CharacterKey) -> Option<RailAudience> {
+    let character = world.characters.get(character)?;
+    if character.is_alliance {
+        Some(RailAudience::Alliance)
+    } else if character.is_empire {
+        Some(RailAudience::Empire)
+    } else {
+        None
+    }
 }
 
 fn victory_winner_is_alliance(outcome: &rebellion_core::victory::VictoryOutcome) -> bool {

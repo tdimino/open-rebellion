@@ -75,6 +75,86 @@ impl MessageCategory {
     }
 }
 
+/// One of the nine Message Index categories on the command-center rail.
+///
+/// Each message class stores one of these masks at `+0x34`; a posted message
+/// lights its category's rail control until that category is read. See
+/// `docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-message-index-recovery.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MessageRail {
+    PopularSupport,
+    Fleet,
+    Mission,
+    Resource,
+    Manufacturing,
+    Defense,
+    Conflict,
+    Advice,
+    Chat,
+}
+
+impl MessageRail {
+    /// Rail controls top to bottom, carrying commands `0x136..0x13e`.
+    pub const RAIL_ORDER: [Self; 9] = [
+        Self::PopularSupport,
+        Self::Fleet,
+        Self::Mission,
+        Self::Resource,
+        Self::Manufacturing,
+        Self::Defense,
+        Self::Conflict,
+        Self::Advice,
+        Self::Chat,
+    ];
+
+    /// Category mask from the class getters, as `FUN_0042d8d0` tests it.
+    #[must_use]
+    pub const fn mask(self) -> u16 {
+        match self {
+            Self::PopularSupport => 0x001,
+            Self::Resource => 0x004,
+            Self::Manufacturing => 0x008,
+            Self::Mission => 0x010,
+            Self::Chat => 0x020,
+            Self::Defense => 0x040,
+            Self::Fleet => 0x080,
+            Self::Conflict => 0x100,
+            Self::Advice => 0x200,
+        }
+    }
+}
+
+/// Which faction's Message Index receives a message. The original keeps one
+/// list per faction (`+0x78` and `+0x84` on the manager at `DAT_006be3a8`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RailAudience {
+    Alliance,
+    Empire,
+    Both,
+}
+
+impl RailAudience {
+    /// The audience of one side.
+    #[must_use]
+    pub const fn side(is_alliance: bool) -> Self {
+        if is_alliance {
+            Self::Alliance
+        } else {
+            Self::Empire
+        }
+    }
+
+    /// Whether the player's side receives the message.
+    #[must_use]
+    pub const fn includes(self, player_is_alliance: bool) -> bool {
+        match self {
+            Self::Alliance => player_is_alliance,
+            Self::Empire => !player_is_alliance,
+            Self::Both => true,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // GameMessage
 // ---------------------------------------------------------------------------
@@ -96,6 +176,16 @@ pub struct GameMessage {
     /// before JSONL export. `None` if no system is linked.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_name: Option<String>,
+    /// Message Index category this message is filed under, if it matches a
+    /// recovered notification type. Other messages never reach the rail.
+    #[serde(skip)]
+    pub rail: Option<MessageRail>,
+    /// Side whose Message Index receives it.
+    #[serde(skip)]
+    pub audience: RailAudience,
+    /// The unread bit (`0x10` at `+0x24`), set when the message is posted.
+    #[serde(skip)]
+    pub unread: bool,
 }
 
 impl GameMessage {
@@ -107,6 +197,9 @@ impl GameMessage {
             category,
             system: None,
             system_name: None,
+            rail: None,
+            audience: RailAudience::Both,
+            unread: false,
         }
     }
 
@@ -123,7 +216,20 @@ impl GameMessage {
             category,
             system: Some(system),
             system_name: None,
+            rail: None,
+            audience: RailAudience::Both,
+            unread: false,
         }
+    }
+
+    /// File the message, unread, under a Message Index category for one or
+    /// both sides.
+    #[must_use]
+    pub fn on_rail(mut self, rail: MessageRail, audience: RailAudience) -> Self {
+        self.rail = Some(rail);
+        self.audience = audience;
+        self.unread = true;
+        self
     }
 }
 
@@ -174,6 +280,27 @@ impl MessageLog {
     #[must_use]
     pub fn messages(&self) -> &[GameMessage] {
         &self.messages
+    }
+
+    /// Categories holding unread messages for the player's side, recomputed
+    /// as `FUN_0048a2a0` rebuilds the mask from every unread message.
+    #[must_use]
+    pub fn unread_mask(&self, player_is_alliance: bool) -> u16 {
+        self.messages
+            .iter()
+            .filter(|msg| msg.unread && msg.audience.includes(player_is_alliance))
+            .filter_map(|msg| msg.rail)
+            .fold(0, |mask, rail| mask | rail.mask())
+    }
+
+    /// Mark every message in one category read, as closing its Message Index
+    /// window does (`FUN_0048a530`).
+    pub fn mark_read(&mut self, rail: MessageRail) {
+        for msg in &mut self.messages {
+            if msg.rail == Some(rail) {
+                msg.unread = false;
+            }
+        }
     }
 
     /// Number of messages currently stored.
@@ -443,6 +570,85 @@ fn category_toggle(ui: &mut egui::Ui, label: &str, category: MessageCategory, en
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rail_masks_match_the_recovered_class_getters() {
+        // Getters FUN_0040f340 (0x001) through FUN_0048b450 (0x200); rail
+        // order follows commands 0x136..0x13e (FUN_0042da10).
+        assert_eq!(
+            MessageRail::RAIL_ORDER.map(MessageRail::mask),
+            [0x001, 0x080, 0x010, 0x004, 0x008, 0x040, 0x100, 0x200, 0x020]
+        );
+    }
+
+    #[test]
+    fn only_unread_rail_messages_light_the_rail() {
+        let mut log = MessageLog::default();
+        log.push(GameMessage::new(1, "saved", MessageCategory::Event));
+        log.push(
+            GameMessage::new(2, "built", MessageCategory::Manufacturing)
+                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
+        );
+        log.push(
+            GameMessage::new(3, "arrived", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+        assert_eq!(log.unread_mask(true), 0x008 | 0x080);
+    }
+
+    #[test]
+    fn reading_one_category_rests_only_its_rail() {
+        let mut log = MessageLog::default();
+        log.push(
+            GameMessage::new(1, "built", MessageCategory::Manufacturing)
+                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
+        );
+        log.push(
+            GameMessage::new(2, "arrived", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+        log.mark_read(MessageRail::Fleet);
+        assert_eq!(log.unread_mask(true), 0x008);
+        log.push(
+            GameMessage::new(3, "arrived again", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::Both),
+        );
+        assert_eq!(log.unread_mask(true), 0x008 | 0x080);
+    }
+
+    #[test]
+    fn two_unread_messages_in_one_category_keep_its_rail_lit() {
+        let mut log = MessageLog::default();
+        for tick in 1..=2 {
+            log.push(
+                GameMessage::new(tick, "arrived", MessageCategory::Mission)
+                    .on_rail(MessageRail::Fleet, RailAudience::Both),
+            );
+        }
+        assert_eq!(log.unread_mask(true), 0x080);
+    }
+
+    #[test]
+    fn a_message_lights_only_its_audience_rail() {
+        let mut log = MessageLog::default();
+        log.push(
+            GameMessage::new(1, "arrived", MessageCategory::Mission)
+                .on_rail(MessageRail::Fleet, RailAudience::side(false)),
+        );
+        assert_eq!(log.unread_mask(true), 0);
+        assert_eq!(log.unread_mask(false), 0x080);
+    }
+
+    #[test]
+    fn dropping_the_oldest_message_can_rest_its_rail() {
+        let mut log = MessageLog::new(1);
+        log.push(
+            GameMessage::new(1, "built", MessageCategory::Manufacturing)
+                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
+        );
+        log.push(GameMessage::new(2, "saved", MessageCategory::Event));
+        assert_eq!(log.unread_mask(true), 0);
+    }
 
     #[test]
     fn export_jsonl_round_trip() {

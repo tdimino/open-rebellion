@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P61",
+  "scope": "muted_browser_message_index_rail_illumination_pixel_match",
+  "result": "pass_with_limits",
+  "run_date": "2026-09-25",
+  "operator": "claude_agent_browser",
+  "viewport": "640x480",
+  "empire": {
+    "day_0": "all_nine_resting_exact",
+    "mid_game": "manufacturing_illuminated_exact_others_resting_exact",
+    "later": "manufacturing_and_conflict_illuminated_exact_others_resting_exact"
+  },
+  "alliance": {
+    "day_0": "all_nine_resting_exact",
+    "before_day_16": "all_nine_resting_exact_no_alliance_message_yet"
+  },
+  "page_errors": 0,
+  "limits": [
+    "alliance_illuminated_state_not_captured_before_the_scripted_day_16_battle",
+    "1280x800_not_run_for_this_slice",
+    "strict_A0_gate_not_run"
+  ]
+}

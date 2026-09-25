@@ -71,7 +71,8 @@ pub use main_menu_destinations::{
     MultiplayerSetupAction, MultiplayerSetupState, MultiplayerTransport,
 };
 pub use message_log::{
-    draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState,
+    draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState, MessageRail,
+    RailAudience,
 };
 pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
 pub use panels::{

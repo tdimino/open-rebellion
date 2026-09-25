@@ -43,6 +43,7 @@ use egui_macroquad::egui;
 use macroquad::prelude::*;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::message_log::MessageRail;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -236,8 +237,8 @@ pub struct StrategicControlSpec {
 /// One original Message Index category control on the command-center rail.
 ///
 /// `FUN_00427270` constructs these nine 27x22 controls for each faction.
-/// The resting and illuminated resources are separate; the latter is not
-/// selected until the original message-state predicate is recovered.
+/// The resting resource shows by default; the illuminated one while the
+/// control's category has unread messages.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MessageIndexControlSpec {
     pub command_id: u16,
@@ -571,6 +572,9 @@ pub struct CockpitState {
     pub gid_mode: GidMode,
     /// Original GID popup and detailed-legend state.
     pub gid_ui: GidUiState,
+    /// Message Index categories with unread messages, one bit per
+    /// [`MessageRail::mask`]. The caller refreshes it each frame.
+    pub message_unread_mask: u16,
     /// Strategic control currently holding native-style pointer capture.
     pressed_control: Option<CockpitButton>,
 }
@@ -584,6 +588,7 @@ impl Default for CockpitState {
             side_gutter_w: 0.0, // no side gutters for now — full width
             gid_mode: GidMode::PopularSupport,
             gid_ui: GidUiState::default(),
+            message_unread_mask: 0,
             pressed_control: None,
         }
     }
@@ -755,7 +760,14 @@ pub fn draw_cockpit_egui_layer(
         strategic_side_control(state.faction),
         primary_down,
     );
-    draw_message_index_rail(ctx, cache, &painter, layout, state.faction);
+    draw_message_index_rail(
+        ctx,
+        cache,
+        &painter,
+        layout,
+        state.faction,
+        state.message_unread_mask,
+    );
 
     if state.gid_mode != GidMode::DisplayOff {
         draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
@@ -770,16 +782,36 @@ pub fn draw_cockpit_egui_layer(
     selected
 }
 
+/// Bitmap a rail control shows: illuminated while its category has unread
+/// messages (`FUN_0042d8d0` clears flag `0x40`), resting otherwise.
+#[must_use]
+pub fn message_index_control_resource(
+    control: &MessageIndexControlSpec,
+    rail: MessageRail,
+    unread_mask: u16,
+) -> u32 {
+    if unread_mask & rail.mask() == 0 {
+        control.resting_resource
+    } else {
+        control.illuminated_resource
+    }
+}
+
 fn draw_message_index_rail(
     ctx: &egui::Context,
     cache: &mut BmpCache,
     painter: &egui::Painter,
     layout: CockpitLayout,
     faction: CockpitFaction,
+    unread_mask: u16,
 ) {
-    for control in strategic_message_index_controls(faction) {
+    for (control, rail) in strategic_message_index_controls(faction)
+        .iter()
+        .zip(MessageRail::RAIL_ORDER)
+    {
+        let resource = message_index_control_resource(control, rail, unread_mask);
         let Some(texture_id) = cache
-            .get(ctx, DllSource::Strategy, control.resting_resource)
+            .get(ctx, DllSource::Strategy, resource)
             .map(egui_macroquad::egui::TextureHandle::id)
         else {
             continue;
@@ -1859,6 +1891,27 @@ mod tests {
                     illuminated_first + u32::from(index)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn an_unread_category_lights_only_its_rail_control() {
+        // FUN_0042d8d0 clears flag 0x40 only on the control whose bit is set;
+        // Fleet (0x080) is the second control, command 0x137.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let controls = strategic_message_index_controls(faction);
+            let shown: Vec<bool> = controls
+                .iter()
+                .zip(MessageRail::RAIL_ORDER)
+                .map(|(control, rail)| {
+                    message_index_control_resource(control, rail, MessageRail::Fleet.mask())
+                        == control.illuminated_resource
+                })
+                .collect();
+            assert_eq!(
+                shown,
+                [false, true, false, false, false, false, false, false, false]
+            );
         }
     }
 

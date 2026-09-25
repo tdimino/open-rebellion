@@ -137,6 +137,41 @@ Type `0x28` (Rescue Attempt) stores no mask; its visitor `FUN_004974f0` only
 walks the record, so its rail is whatever `FUN_004c4b50` leaves at `+0x34`.
 Types `0x29` and `0x2b`–`0x2d` have no name in the extracted TEXTSTRA table.
 
+## P61 implementation
+
+`MessageRail` carries the nine masks in rail order, and each `GameMessage`
+may be filed on one rail for one side or both (`RailAudience`); the original
+keeps one list per faction. The cockpit paints the illuminated resource for
+every category with an unread message for the player's side. Only producers
+whose text matches a recovered notification type are filed:
+
+| Producer | Notification type | Rail | Audience |
+|---|---|---|---|
+| Construction complete, Death Star construction complete | `0x21` Construction Complete | Manufacturing | system controller; Empire |
+| Maintenance shortfall | `0xc` Maintenance Shortfall | Manufacturing | the short side |
+| Tech advanced | `5` Research Report | Manufacturing | the researching side |
+| New resources discovered | `0x20` System Resources Messages | Resource | system controller |
+| Alliance headquarters destroyed | `0x1f` Rebel HQ Destroyed | Resource | both |
+| Fleet arrived | `0xd` Unit Arrival | Fleet | fleet owner |
+| Blockade established, lifted, troops destroyed | `7` Blockade Message | Conflict | both |
+| Uprising incident, subdued | `3` Uprising Message | Popular Support | system controller |
+| Uprising changed hands | `3` Uprising Message | Popular Support | both |
+| System occupied | `4` System Control Message | Popular Support | both |
+| Mission result, decoy interception | `0x16` Mission Report, `0x17` Mission Failed | Mission | mission side |
+| Death Star sabotaged | `0x23` Death Star Sabotaged | Mission | mission side |
+| Force tier reached | `0x1d` Force Skill Improvement | Mission | character side |
+| Character killed | `0x1a` Character Health | Mission | character side |
+| Planet destroyed by the Death Star | `0x15` Planet Destroyed | Mission | both |
+
+Battle reports stay off the rail, as types 1 and 2 do. Player-action
+confirmations, saves, mods, debug listings, AI decisions, and cutscene text
+match no notification type and are not filed. Open: natural disasters, idle
+manufacturing queues, special-force landings, betrayals, Death Star
+detection, escapes, story text, and Force discovery (whose `0x1c` audience is
+unclear). The Message Index window is not implemented yet, so nothing marks a
+category read; the audiences marked "both" are inferred from the event, not
+traced per faction.
+
 ## Advice slows the game
 
 `FUN_00487ff0(this, 1)` saves the speed index at `+0x58` and drops the game to
