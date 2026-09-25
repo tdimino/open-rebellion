@@ -24,6 +24,11 @@ ifneq ($(wildcard data/base/*.[Dd][Aa][Tt]),)
 else
 	@echo "Skipping asset-dependent integration tests: no DAT files in data/base."
 endif
+ifneq ($(wildcard data/base/ui/*),)
+	cargo test -p rebellion-render --lib tactical_view -- --ignored
+else
+	@echo "Skipping bitmap hit-mask tests: no extracted bitmaps in data/base/ui."
+endif
 
 # 2. Formatting validation
 fmt-check:

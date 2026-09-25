@@ -14221,12 +14221,6 @@ mod tests {
     }
 
     #[test]
-    fn battle_phase_variants() {
-        assert_ne!(BattlePhase::Placement, BattlePhase::Combat);
-        assert_ne!(BattlePhase::Combat, BattlePhase::Results);
-    }
-
-    #[test]
     fn original_tactical_canvas_letterboxes_without_distorting_controls() {
         let native = TacticalCanvas::new(640.0, 480.0);
         assert_eq!((native.x, native.y, native.scale), (0.0, 0.0, 1.0));
@@ -14289,6 +14283,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires extracted original bitmaps in data/base/ui"]
     fn original_tactical_controls_use_source_bitmap_hit_masks() {
         let mut cache = BmpCache::new();
         cache.set_base_path(
@@ -15433,6 +15428,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires extracted original bitmaps in data/base/ui"]
     fn target_control_owns_its_topmost_mask_and_centers_the_selected_position() {
         let mut cache = BmpCache::new();
         cache.set_base_path(

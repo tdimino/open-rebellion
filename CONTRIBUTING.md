@@ -56,8 +56,9 @@ runs only the ignored rebellion-data unit tests and the ignored `replay_manifest
 `data/base` (case-insensitive extension). Without DAT files it prints an explicit
 skip message. Partial or corrupt datasets run the tests and fail normally;
 the gate checks availability, not validity. Ignored documentation examples stay
-ignored. You can also run `make test-assets` directly. These tests require the
-original DATs, not extracted UI or audio assets.
+ignored. It also runs the ignored `tactical_view` bitmap hit-mask tests when
+extracted bitmaps are present in `data/base/ui`. You can run `make test-assets`
+directly.
 
 ## Interface acceptance
 
