@@ -76,6 +76,10 @@ dedicated findings close.
   screenshot. Decode or HTTP success alone is insufficient.
 - Keep password/session material in encrypted Cloudflare secrets. Never commit
   credentials, original game data, or generated proprietary asset packs.
+- Follow the testing rules in `CLAUDE.md`: behavior-sentence test names, cited
+  sources for original behavior, no weakened assertions, goldens regenerated
+  only for a named cause, new tests shown to fail, and a scoped `cargo mutants`
+  run before committing.
 
 ## Boundaries
 

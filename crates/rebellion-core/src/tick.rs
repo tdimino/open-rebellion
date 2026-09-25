@@ -344,6 +344,37 @@ mod tests {
     }
 
     #[test]
+    fn a_pause_later_in_the_game_stops_one_day_ahead() {
+        let mut clock = GameClock::new();
+        clock.set_speed(GameSpeed::Fast);
+        clock.advance(1.3);
+        assert_eq!(clock.tick, 3);
+        clock.pause();
+        assert_eq!(clock.advance(4.0), vec![TickEvent { tick: 4 }]);
+        assert_eq!(clock.tick, 4);
+    }
+
+    #[test]
+    fn negative_time_neither_ticks_nor_delays_the_next_day() {
+        let mut clock = GameClock::new();
+        clock.set_speed(GameSpeed::Medium);
+        assert!(clock.advance(-5.0).is_empty());
+        assert_eq!(clock.advance(1.3), vec![TickEvent { tick: 1 }]);
+    }
+
+    #[test]
+    fn a_legacy_clock_keeps_its_partial_day_below_one() {
+        let legacy = GameClockV13 {
+            tick: 7,
+            speed: GameSpeedV13::Normal,
+            accumulator: 1.5,
+        };
+        let clock = GameClock::from(legacy);
+        assert!(clock.accumulator < 1.0);
+        assert!(clock.accumulator > 0.999);
+    }
+
+    #[test]
     fn a_clock_at_paused_speed_has_nothing_to_stop() {
         let mut clock = GameClock::new();
         assert!(!clock.pause());

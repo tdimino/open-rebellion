@@ -743,6 +743,64 @@ mod tests {
     }
 
     #[test]
+    fn menu_touching_an_owner_edge_does_not_flip() {
+        // FUN_00442860 flips only when the menu strictly crosses the edge.
+        let owner = (640.0, 480.0);
+        assert_eq!(
+            game_menu_origin((557.0, 378.0), (83.0, 102.0), owner),
+            (557.0, 378.0)
+        );
+        assert_eq!(
+            game_menu_origin((558.0, 379.0), (83.0, 102.0), owner),
+            (475.0, 277.0)
+        );
+    }
+
+    #[test]
+    fn menu_left_of_the_owner_moves_right_by_its_width() {
+        // FUN_00442860: a negative x gains the menu width; zero stays put.
+        let owner = (640.0, 480.0);
+        assert_eq!(
+            game_menu_origin((-10.0, 26.0), (83.0, 102.0), owner),
+            (73.0, 26.0)
+        );
+        assert_eq!(
+            game_menu_origin((0.0, 26.0), (83.0, 102.0), owner),
+            (0.0, 26.0)
+        );
+    }
+
+    #[test]
+    fn pause_alert_hit_area_matches_its_scaled_rectangle() {
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 100.0,
+                y: 40.0,
+                width: 1280.0,
+                height: 960.0,
+            },
+            galaxy: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+            },
+            scale: 2.0,
+        };
+        let mut clock = running(GameSpeed::Slow);
+        clock.pause();
+        let (left, top) = (100.0 + 114.0 * 2.0, 40.0 + 152.0 * 2.0);
+        let (right, bottom) = (left + 412.0 * 2.0, top + 176.0 * 2.0);
+        let hit = |x, y| pause_alert_contains_screen_point(&clock, layout, (x, y));
+        assert!(hit(left, top));
+        assert!(!hit(left - 0.5, top));
+        assert!(!hit(left, top - 0.5));
+        assert!(hit(right - 0.5, bottom - 0.5));
+        assert!(!hit(right, top));
+        assert!(!hit(left, bottom));
+    }
+
+    #[test]
     fn menu_flips_away_from_right_and_bottom_owner_edges() {
         let owner = (640.0, 480.0);
         assert_eq!(

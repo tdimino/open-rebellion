@@ -54,6 +54,27 @@ Open Rebellion's Ghidra workflow is project-native rather than a general skill:
 | [`image-forge`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/design-media/image-forge) / [`sprite-forge`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/design-media/sprite-forge) | Preparing owned replacement art or sprite assets; never repackage copyrighted source data. |
 | `parakeet` (local, `~/.claude/skills/parakeet`) | Identifying original WAVE resources by content (see below); two MLX engines, no NeMo. |
 
+## Test Quality Gates
+
+`cargo-mutants` is a local CLI (`cargo install --locked cargo-mutants`), not a
+workspace dependency. It changes small pieces of code and reports each change
+the tests fail to notice. A surviving mutant is either a missing test or code
+no test can reach; close it or record why it stays.
+
+```bash
+env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin \
+  cargo mutants -p rebellion-core --file crates/rebellion-core/src/tick.rs
+```
+
+Scope every run to the files a change touches; whole-workspace runs are slow.
+Mutants in rendering code often survive because the unit tests draw nothing.
+Browser acceptance covers that code, so record those survivors instead of
+writing tests that only mirror the drawing calls.
+
+`proptest` is deferred until economy or combat math has edge cases the replay
+goldens do not pin. Adding it needs approval as a dev dependency. Formal
+verification (`kani`) is out of scope for now.
+
 ## Voice Resource Identification
 
 Use this to map an original `WAVE` resource ID (TACTICAL, VOICEFXA/E, COMMON DLLs)
