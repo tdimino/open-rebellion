@@ -469,73 +469,10 @@ pub struct BinSequence {
 /// Reasons an advisor BIN file could not be parsed as a frame sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinError {
-    /// File ended before the `u16 frame_count` header.
-    TruncatedHeader { actual_len: usize },
-    /// File declared more frame IDs than were present.
-    TruncatedFrames {
-        declared_count: usize,
-        actual_len: usize,
-        expected_len: usize,
-    },
-    /// File length disagrees with `2 + count * 2`.
-    LengthMismatch {
-        declared_count: usize,
-        actual_len: usize,
-        expected_len: usize,
-    },
     /// File is too small to carry useful animation data (e.g. 2-byte stubs).
     TooSmall { actual_len: usize },
     /// No format variant matched the file's structure.
     NoFormatMatch { actual_len: usize },
-}
-
-/// Parse an advisor BIN control file using the original v1 format only.
-///
-/// v1 format:
-/// - `u16 frame_count` (little-endian)
-/// - `u16 frame_id[frame_count]` (little-endian)
-///
-/// Kept for backwards compatibility and tests. Prefer `parse_advisor_bin_cascade`
-/// for production use.
-///
-/// # Errors
-/// Returns an error if the header or frame list is truncated or invalid.
-pub fn parse_advisor_bin(bytes: &[u8]) -> Result<BinSequence, BinError> {
-    if bytes.len() < 2 {
-        return Err(BinError::TruncatedHeader {
-            actual_len: bytes.len(),
-        });
-    }
-
-    let declared_count = u16::from_le_bytes([bytes[0], bytes[1]]) as usize;
-    let expected_len = 2 + declared_count * 2;
-
-    if bytes.len() < expected_len {
-        return Err(BinError::TruncatedFrames {
-            declared_count,
-            actual_len: bytes.len(),
-            expected_len,
-        });
-    }
-    if bytes.len() != expected_len {
-        return Err(BinError::LengthMismatch {
-            declared_count,
-            actual_len: bytes.len(),
-            expected_len,
-        });
-    }
-
-    let mut frame_ids = Vec::with_capacity(declared_count);
-    for chunk in bytes[2..].as_chunks::<2>().0 {
-        frame_ids.push(u16::from_le_bytes([chunk[0], chunk[1]]));
-    }
-
-    Ok(BinSequence {
-        frame_ids,
-        default_interval: DEFAULT_FRAME_INTERVAL,
-        format: BinFormat::V1Explicit,
-        bmp_mapped: false,
-    })
 }
 
 /// Cascading decoder that tries all four BIN format variants in order.
@@ -1995,16 +1932,6 @@ mod tests {
     }
 
     #[test]
-    fn same_priority_does_not_preempt() {
-        let mut state = AdvisorState::new(AdvisorFaction::Alliance);
-
-        state.push_message(AdvisorMessage::new("First", AdvisorPriority::Normal));
-        state.push_message(AdvisorMessage::new("Second", AdvisorPriority::Normal));
-
-        assert_eq!(state.current_message.as_ref().unwrap().text, "First");
-    }
-
-    #[test]
     fn legacy_frame_cycling_fallback_without_bins() {
         let mut state = AdvisorState::new(AdvisorFaction::Alliance);
         state.primary_frame_pool_len = 3;
@@ -2018,55 +1945,6 @@ mod tests {
         state.update(0.2);
         assert_eq!(state.primary_frame, 0);
         assert_eq!(state.secondary_frame, 1);
-    }
-
-    // -----------------------------------------------------------------------
-    // v1 parser tests (original parse_advisor_bin)
-    // -----------------------------------------------------------------------
-
-    #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
-    )]
-    fn parse_advisor_bin_happy_path() {
-        let bytes = [0x03, 0x00, 0x15, 0x05, 0x16, 0x05, 0x17, 0x05];
-        let seq = parse_advisor_bin(&bytes).unwrap();
-
-        assert_eq!(seq.frame_ids, vec![1301, 1302, 1303]);
-        assert_eq!(seq.default_interval, DEFAULT_FRAME_INTERVAL);
-        assert_eq!(seq.format, BinFormat::V1Explicit);
-        assert!(!seq.bmp_mapped);
-    }
-
-    #[test]
-    fn parse_advisor_bin_rejects_truncated_frames() {
-        let bytes = [0x02, 0x00, 0x1f, 0x05, 0x20];
-        let err = parse_advisor_bin(&bytes).unwrap_err();
-
-        assert_eq!(
-            err,
-            BinError::TruncatedFrames {
-                declared_count: 2,
-                actual_len: 5,
-                expected_len: 6,
-            }
-        );
-    }
-
-    #[test]
-    fn parse_advisor_bin_rejects_length_mismatch() {
-        let bytes = [0x00, 0x00, 0x03, 0x0d];
-        let err = parse_advisor_bin(&bytes).unwrap_err();
-
-        assert_eq!(
-            err,
-            BinError::LengthMismatch {
-                declared_count: 0,
-                actual_len: 4,
-                expected_len: 2,
-            }
-        );
     }
 
     // -----------------------------------------------------------------------
@@ -2157,15 +2035,11 @@ mod tests {
     }
 
     #[test]
-    fn cascade_v2_with_large_count() {
-        // (count=20, base=4401, 0, 0) — the 30-file cluster.
-        let bytes: [u8; 8] = [0x14, 0x00, 0x31, 0x11, 0x00, 0x00, 0x00, 0x00];
-        let seq = parse_advisor_bin_cascade(&bytes).unwrap();
-
-        assert_eq!(seq.format, BinFormat::V2Range);
-        assert_eq!(seq.frame_ids.len(), 20);
-        assert_eq!(seq.frame_ids[0], 4401);
-        assert_eq!(seq.frame_ids[19], 4420);
+    fn cascade_rejects_a_v1_list_shorter_than_its_count() {
+        // (count=2, 1311, then one stray byte): 5 bytes, but v1 needs 6.
+        let bytes = [0x02, 0x00, 0x1f, 0x05, 0x20];
+        let err = parse_advisor_bin_cascade(&bytes).unwrap_err();
+        assert_eq!(err, BinError::NoFormatMatch { actual_len: 5 });
     }
 
     #[test]

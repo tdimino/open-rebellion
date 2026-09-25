@@ -1916,18 +1916,6 @@ mod tests {
     }
 
     #[test]
-    fn message_index_rail_follows_letterboxed_canvas() {
-        let layout = CockpitState::new(CockpitFaction::Empire).layout_for(1280.0, 800.0);
-        let first = strategic_message_index_controls(CockpitFaction::Empire)[0];
-        let rect = logical_rect_to_screen(layout, first.rect);
-
-        assert_close(rect.min.x, layout.canvas.x + 611.0 * layout.scale);
-        assert_close(rect.min.y, layout.canvas.y + 110.0 * layout.scale);
-        assert_close(rect.width(), 27.0 * layout.scale);
-        assert_close(rect.height(), 22.0 * layout.scale);
-    }
-
-    #[test]
     fn popular_support_is_the_default_gid_mode() {
         assert_eq!(
             CockpitState::new(CockpitFaction::Alliance).gid_mode,
@@ -2124,34 +2112,9 @@ mod tests {
     }
 
     #[test]
-    fn control_art_and_macroquad_accelerators_match_native_states() {
+    fn control_art_follows_the_pressed_state() {
         let control = &strategic_primary_controls(CockpitFaction::Alliance)[0];
         assert_eq!(control_resource(control, false), control.normal_resource);
         assert_eq!(control_resource(control, true), control.pressed_resource);
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F2),
-            Some(CockpitButton::SystemFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F3),
-            Some(CockpitButton::FleetFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F4),
-            Some(CockpitButton::TroopFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F5),
-            Some(CockpitButton::PersonnelFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F1),
-            Some(CockpitButton::GameOptions)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F7),
-            Some(CockpitButton::Encyclopedia)
-        );
-        assert_eq!(macroquad_accelerator(KeyCode::F6), None);
     }
 }

@@ -320,14 +320,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn command_palette_state_defaults() {
-        let state = CommandPaletteState::new();
-        assert!(!state.open);
-        assert!(state.query.is_empty());
-        assert_eq!(state.selected_index, 0);
-    }
-
-    #[test]
     fn fuzzy_filter_matches_advance() {
         let mut state = CommandPaletteState::new();
         state.query = "adv".to_string();

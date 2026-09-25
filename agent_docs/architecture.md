@@ -80,10 +80,8 @@ crates/rebellion-render/src/
 ├── cockpit.rs          — Faction cockpit chrome (top/bottom bars), 9 control buttons, CockpitViewport
 ├── tactical_view.rs    — 2D tactical combat: BattleSession, ship placement, phased combat, targeting, retreat
 ├── ground_combat.rs    — Ground combat: regiment engagement, animated bars, win/loss results
-├── combat_view.rs      — Combat results integration into message log
 ├── event_screen.rs     — Full-screen event overlays for story events. event_id_to_resource() maps story IDs to STRATEGY.DLL BMP offsets with heritage_known branching for Final Battle variants.
 ├── advisor.rs          — Animated droid advisors (C-3PO/R2-D2 or Imperial), priority message queue, BIN-driven frame sequencing with BMP modulo fallback
-├── victory_screen.rs   — Victory/defeat egui modal with faction narrative
 └── panels/
     ├── mod.rs           — PanelAction enum (31 variants, including context menu + combat actions)
     ├── game_setup.rs    — Galaxy size, difficulty, faction selection (replaces faction_select)

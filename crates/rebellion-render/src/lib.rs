@@ -4,7 +4,6 @@ pub mod advisor;
 pub mod audio;
 pub mod bmp_cache;
 pub mod cockpit;
-pub mod combat_view;
 pub mod encyclopedia;
 pub mod event_screen;
 pub mod fleet_movement;
@@ -23,7 +22,6 @@ mod tactical_assets;
 mod tactical_resources;
 pub mod tactical_view;
 pub mod theme;
-pub mod victory_screen;
 pub mod video_player;
 
 use egui_macroquad::egui;
@@ -55,7 +53,6 @@ pub use cockpit::{
     CockpitViewport, GidMode, StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT,
     STRATEGIC_LOGICAL_WIDTH,
 };
-pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
 pub use event_screen::{
     draw_event_screen, show_event_screen, show_event_screen_raw, update_event_screen,
@@ -105,7 +102,6 @@ pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
     TacticalTrenchRunOutcome,
 };
-pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
 pub use video_player::{VideoError, VideoPlayer};
 
 #[cfg(debug_assertions)]
