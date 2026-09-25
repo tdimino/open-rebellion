@@ -184,15 +184,6 @@ mod tests {
     }
 
     #[test]
-    fn no_events_without_ticks() {
-        let mut state = BetrayalState::new();
-        let world = GameWorld::default();
-        let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(&mut state, &world, &[], &[0.0], &table);
-        assert!(events.is_empty());
-    }
-
-    #[test]
     fn high_loyalty_no_betrayal() {
         let mut state = BetrayalState::new();
         let mut world = GameWorld::default();

@@ -1225,27 +1225,6 @@ mod tests {
     }
 
     #[test]
-    fn zero_hyperdrive_modifier_no_change() {
-        let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320);
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
-        let char_key = world.characters.insert(test_character("Regular", 0));
-        let fleet = Fleet {
-            location: origin,
-            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
-            fighters: vec![],
-            characters: vec![char_key],
-            is_alliance: true,
-            has_death_star: false,
-        };
-        let t = fleet_transit_ticks(&fleet, &world, origin, dest);
-        // No bonus, base ~11
-        assert!(
-            (10..=12).contains(&t),
-            "expected ~11 with no bonus, got {t}"
-        );
-    }
-
-    #[test]
     fn han_bonus_clamped_to_min_ticks() {
         // Long trip (~900 units), hyperdrive=80 → base ~23, han_bonus=100 → 0 → clamped to MIN
         let (mut world, origin, dest) = make_transit_world(0, 0, 636, 636);

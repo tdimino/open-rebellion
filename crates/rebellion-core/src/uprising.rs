@@ -569,7 +569,9 @@ mod tests {
             production_facilities: vec![],
             is_headquarters: false,
             is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            // Alliance control at zero support would be loyalty -50, deep in
+            // UPRIS1TB risk, so only the populated gate keeps this quiet.
+            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
 
         let mut state = UprisingState::new();

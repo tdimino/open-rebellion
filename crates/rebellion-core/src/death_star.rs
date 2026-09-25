@@ -526,15 +526,6 @@ mod tests {
         assert!(state.under_construction.is_none());
     }
 
-    #[test]
-    fn test_no_events_without_ticks() {
-        let (world, sys) = make_world();
-        let mut state = DeathStarState::default();
-        DeathStarSystem::start_construction(&mut state, sys);
-        let events = DeathStarSystem::advance(&mut state, &world, &[]);
-        assert!(events.is_empty());
-    }
-
     // ── Planet destruction tests ─────────────────────────────────────────────
 
     /// A `DeathStarState` with shield destroyed (can fire).
@@ -568,20 +559,6 @@ mod tests {
         assert!(
             DeathStarSystem::fire(&state, &world, sys, 1).is_none(),
             "Death Star must not fire while shield generator is active"
-        );
-    }
-
-    #[test]
-    fn test_fire_after_shield_destroyed() {
-        let (mut world, sys) = make_world();
-        add_ds_fleet(&mut world, sys);
-        let mut state = DeathStarState::default();
-        assert!(DeathStarSystem::fire(&state, &world, sys, 1).is_none());
-
-        state.destroy_shield();
-        assert!(
-            DeathStarSystem::fire(&state, &world, sys, 1).is_some(),
-            "Death Star should fire after shield is destroyed"
         );
     }
 

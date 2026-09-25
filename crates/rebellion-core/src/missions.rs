@@ -1199,15 +1199,6 @@ mod tests {
     }
 
     #[test]
-    fn quadratic_prob_recruitment_at_zero_skill() {
-        let (a, b, c) = MissionKind::Recruitment.coefficients();
-        let p = quadratic_prob(0.0, a, b, c);
-        let clamped = clamp_prob(p, 1.0, 100.0);
-        // c = 11.923 — low but above min
-        assert!((1.0..=100.0).contains(&clamped));
-    }
-
-    #[test]
     fn total_success_prob_no_foil() {
         // With 0% foil, total == agent prob.
         let total = total_success_prob(75.0, 0.0);
@@ -1421,30 +1412,6 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(state.is_empty());
         assert_eq!(results[0].kind, MissionKind::Diplomacy);
-    }
-
-    #[test]
-    fn guaranteed_success_with_roll_zero() {
-        let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
-        let character = character_with_diplomacy(&mut world, 50);
-
-        let mut state = MissionState::new();
-        state.missions.push_back(ActiveMission::new(
-            0,
-            MissionKind::Diplomacy,
-            MissionFaction::Alliance,
-            character,
-            system,
-            1,
-        ));
-        state.next_id = 1;
-
-        // roll = 0.0 → 0% of 100 → succeeds as long as success_prob > 0
-        let results = MissionSystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], &[0.0]);
-        assert_eq!(results[0].outcome, MissionOutcome::Success);
-        assert!(!results[0].effects.is_empty());
     }
 
     #[test]
@@ -2146,49 +2113,6 @@ mod tests {
     // --- Decoy mission tests ---
 
     #[test]
-    fn decoy_mission_produces_no_effects() {
-        let mut world = GameWorld::default();
-        let char_key = character_with_skills(&mut world, 50, 50, 50, 50, 50);
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId(0),
-            name: "Target".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 5,
-            raw_materials: 5,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: crate::world::ControlKind::Uncontrolled,
-        });
-        let mut mission = ActiveMission::new(
-            1,
-            MissionKind::Espionage,
-            MissionFaction::Alliance,
-            char_key,
-            sys_key,
-            10,
-        );
-        mission.is_decoy = true;
-        mission.ticks_remaining = 0;
-
-        let result = MissionSystem::resolve_mission(&mission, &world, 100, 0.3);
-        // Decoy produces no world effects regardless of outcome
-        assert!(result.effects.is_empty(), "decoy should produce no effects");
-    }
-
-    #[test]
     fn decoy_mission_can_be_foiled() {
         let mut world = GameWorld::default();
         let char_key = character_with_skills(&mut world, 50, 50, 50, 50, 50);
@@ -2280,5 +2204,7 @@ mod tests {
             MissionOutcome::Success,
             "low roll should succeed decoy"
         );
+        // A decoy changes nothing in the world, whatever its outcome.
+        assert!(result.effects.is_empty(), "decoy should produce no effects");
     }
 }

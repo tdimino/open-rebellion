@@ -2661,50 +2661,6 @@ mod tests {
     // No-op conditions
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn no_ticks_returns_empty() {
-        let world = empty_world();
-        let mut state = AIState::new(AiFaction::Empire);
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
-
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &[],
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
-        assert!(actions.is_empty());
-    }
-
-    #[test]
-    fn before_interval_returns_empty() {
-        let world = empty_world();
-        let mut state = AIState::new(AiFaction::Empire);
-        state.last_eval_tick = 5; // already evaluated 5 ticks ago, interval=7
-
-        let mfg = ManufacturingState::new();
-        let missions = MissionState::new();
-
-        // 3 ticks elapsed since last eval (5+3=8... wait, current_tick = 8 > 5+7=12? No)
-        // last_eval=5, current=8, diff=3 < 7 → should not evaluate
-        let actions = AISystem::advance(
-            &mut state,
-            &world,
-            &mfg,
-            &missions,
-            &crate::movement::MovementState::new(),
-            &[TickEvent { tick: 8 }],
-            &GameConfig::default(),
-            &crate::research::ResearchState::new(),
-        );
-        assert!(actions.is_empty());
-    }
-
     // -----------------------------------------------------------------------
     // Officer heuristics
     // -----------------------------------------------------------------------

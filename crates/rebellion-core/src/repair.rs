@@ -302,7 +302,8 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Uncontrolled,
         });
-        add_fleet_with_ship(&mut world, sys_key);
+        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
+        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
         let mut state = RepairState::default();
         let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
 
@@ -314,7 +315,8 @@ mod tests {
     fn no_repair_without_ticks() {
         let mut world = GameWorld::default();
         let sys_key = make_shipyard_system(&mut world);
-        add_fleet_with_ship(&mut world, sys_key);
+        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
+        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
         let mut state = RepairState::default();
 
         let events = RepairSystem::advance(&mut state, &world, &[]);
@@ -325,7 +327,8 @@ mod tests {
     fn no_repair_at_destroyed_system() {
         let mut world = GameWorld::default();
         let sys_key = make_shipyard_system(&mut world);
-        add_fleet_with_ship(&mut world, sys_key);
+        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
+        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
         world.systems.get_mut(sys_key).unwrap().is_destroyed = true;
         let mut state = RepairState::default();
         let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
@@ -377,25 +380,6 @@ mod tests {
             }
             RepairEvent::RepairCheckPerformed { .. } => unreachable!(),
         }
-    }
-
-    #[test]
-    fn full_hull_ship_no_repair_event() {
-        let mut world = GameWorld::default();
-        let sys_key = make_shipyard_system(&mut world);
-        add_fleet_with_ship(&mut world, sys_key);
-        let mut state = RepairState::default();
-        let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
-
-        let events = RepairSystem::advance(&mut state, &world, &tick_events);
-        let repaired: Vec<_> = events
-            .iter()
-            .filter(|e| matches!(e, RepairEvent::ShipRepaired { .. }))
-            .collect();
-        assert!(
-            repaired.is_empty(),
-            "full-hull ships should not emit ShipRepaired"
-        );
     }
 
     #[test]

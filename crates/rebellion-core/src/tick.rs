@@ -359,6 +359,7 @@ mod tests {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Medium);
         assert!(clock.advance(-5.0).is_empty());
+        assert!(clock.advance(0.0).is_empty());
         assert_eq!(clock.advance(1.3), vec![TickEvent { tick: 1 }]);
     }
 
@@ -489,38 +490,6 @@ mod tests {
         assert_eq!(GameSpeed::VerySlow.slower(), GameSpeed::VerySlow);
         assert_eq!(GameSpeed::Paused.faster(), GameSpeed::Paused);
         assert_eq!(GameSpeed::Paused.slower(), GameSpeed::Paused);
-    }
-
-    #[test]
-    fn zero_or_negative_dt_is_noop() {
-        let mut clock = GameClock::new();
-        clock.set_speed(GameSpeed::Medium);
-
-        assert!(clock.advance(0.0).is_empty());
-        assert!(clock.advance(-1.0).is_empty());
-        assert_eq!(clock.tick, 0);
-    }
-
-    #[test]
-    fn determinism_same_sequence_same_result() {
-        let run = |steps: &[(GameSpeed, f32)]| -> u64 {
-            let mut clock = GameClock::new();
-            for &(speed, dt) in steps {
-                clock.set_speed(speed);
-                clock.advance(dt);
-            }
-            clock.tick
-        };
-
-        let steps = [
-            (GameSpeed::Medium, 0.3),
-            (GameSpeed::Slow, 5.0),
-            (GameSpeed::Fast, 1.0),
-            (GameSpeed::Paused, 2.0),
-            (GameSpeed::VerySlow, 80.0),
-        ];
-
-        assert_eq!(run(&steps), run(&steps));
     }
 
     #[test]

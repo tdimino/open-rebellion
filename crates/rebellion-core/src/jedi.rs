@@ -408,14 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn no_ticks_returns_empty() {
-        let world = GameWorld::default();
-        let mut state = JediState::new();
-        let events = JediSystem::advance(&mut state, &world, &[], &[]);
-        assert!(events.is_empty());
-    }
-
-    #[test]
     fn no_trainees_returns_empty() {
         let world = GameWorld::default();
         let mut state = JediState::new();

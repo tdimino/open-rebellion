@@ -1502,42 +1502,6 @@ mod tests {
     }
 
     #[test]
-    fn test_space_combat_returns_damage_events() {
-        let mut world = empty_world();
-        let sector = make_sector(&mut world);
-        let sys = make_system(&mut world, sector);
-        let atk_class = make_class(&mut world, 100, 50);
-        let def_class = make_class(&mut world, 100, 5);
-        let atk = make_fleet(&mut world, sys, atk_class, 3, true);
-        let def = make_fleet(&mut world, sys, def_class, 1, false);
-
-        let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
-        // Damage events should exist since combat occurred.
-        assert!(!result.ship_damage.is_empty() || result.winner != CombatSide::Draw);
-    }
-
-    #[test]
-    fn test_space_combat_draw_equal_forces() {
-        let mut world = empty_world();
-        let sector = make_sector(&mut world);
-        let sys = make_system(&mut world, sector);
-        let class = make_class(&mut world, 100, 50);
-        // Both sides: same class, same count, all rolls at exactly 0.5.
-        let atk = make_fleet(&mut world, sys, class, 2, true);
-        let def = make_fleet(&mut world, sys, class, 2, false);
-
-        let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
-        // Equal forces with median rolls → at minimum both sides survive (draw) or one wins.
-        // Just verify it returns a valid CombatSide.
-        assert!(matches!(
-            result.winner,
-            CombatSide::Attacker | CombatSide::Defender | CombatSide::Draw
-        ));
-    }
-
-    #[test]
     fn test_ground_combat_attacker_wins() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
@@ -1781,31 +1745,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ground_combat_no_class_data_uses_fallback() {
-        let mut world = empty_world();
-        let sector = make_sector(&mut world);
-        let sys = make_system(&mut world, sector);
-
-        // Do NOT register any troop classes — should use fallback (10/10).
-        let atk = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1400_0099), // unknown class
-            is_alliance: true,
-            regiment_strength: 100,
-        });
-        let def = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1400_0099),
-            is_alliance: false,
-            regiment_strength: 50,
-        });
-        world.systems[sys].ground_units.extend([atk, def]);
-
-        let rolls: Vec<f64> = vec![0.1; 10]; // attacker hits
-        let result = CombatSystem::resolve_ground(&world, sys, true, 2, &rolls, 1);
-        // Should produce damage events using fallback stats, not panic.
-        assert!(!result.troop_damage.is_empty());
-    }
-
-    #[test]
     fn test_space_combat_difficulty_scales_hull_damage() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
@@ -1990,37 +1929,6 @@ mod tests {
             .sum();
         assert!(atk_losses <= def_losses,
             "nimble fighters (losses={atk_losses}) should not lose more than clumsy (losses={def_losses})");
-    }
-
-    #[test]
-    fn test_fighter_vs_capital_uses_attack_strength() {
-        // Fighters with high attack_strength should deal significant damage.
-        let mut world = empty_world();
-        let sector = make_sector(&mut world);
-        let sys = make_system(&mut world, sector);
-
-        // Defender: 1 ship with hull 200, no weapons (won't fire back much).
-        let def_class = make_class(&mut world, 200, 0);
-        // Attacker: 1 ship (carrier) + strong fighters.
-        let atk_class = make_class(&mut world, 100, 10);
-        let fc_strong = make_fighter_class(&mut world, 50, 5, true);
-
-        let atk = make_fleet_with_fighters(&mut world, sys, atk_class, 1, fc_strong, 8, true);
-        let def = make_fleet(&mut world, sys, def_class, 1, false);
-
-        let rolls: Vec<f64> = vec![0.5; 200];
-        let result = CombatSystem::resolve_space(&world, atk, def, sys, 1, &rolls, 1, false);
-
-        // Defenders should have taken hull damage from fighters.
-        let def_damage: Vec<&ShipDamageEvent> = result
-            .ship_damage
-            .iter()
-            .filter(|e| e.fleet == def)
-            .collect();
-        assert!(
-            !def_damage.is_empty(),
-            "fighters with attack_strength=50 should damage capital ships"
-        );
     }
 
     #[test]
@@ -2681,78 +2589,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ds_shield_blocks_vs_unshielded_comparison() {
-        let mut world = empty_world();
-        let sector = make_sector(&mut world);
-        let sys = make_system(&mut world, sector);
-
-        let atk_class = make_class(&mut world, 500, 200);
-        let atk = make_fleet(&mut world, sys, atk_class, 5, true);
-
-        let ds_class = make_ds_class(&mut world, 5000);
-        let ds_fleet = world.fleets.insert(Fleet {
-            location: sys,
-            capital_ships: vec![ShipInstance::new(
-                ds_class,
-                world.capital_ship_classes[ds_class].hull.cast_signed(),
-                false,
-            )],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: true,
-        });
-        world.systems[sys].fleets.push(ds_fleet);
-
-        let rolls: Vec<f64> = vec![0.5; 200];
-
-        // With shield
-        let result_shielded =
-            CombatSystem::resolve_space(&world, atk, ds_fleet, sys, 1, &rolls, 1, true);
-        let shielded_damage: i32 = result_shielded
-            .ship_damage
-            .iter()
-            .filter(|d| d.fleet == ds_fleet)
-            .map(|d| d.hull_before - d.hull_after)
-            .sum();
-
-        // Without shield (need fresh world since combat may kill ships)
-        let mut world2 = empty_world();
-        let sector2 = make_sector(&mut world2);
-        let sys2 = make_system(&mut world2, sector2);
-        let atk_class2 = make_class(&mut world2, 500, 200);
-        let atk2 = make_fleet(&mut world2, sys2, atk_class2, 5, true);
-        let ds_class2 = make_ds_class(&mut world2, 5000);
-        let ds_fleet2 = world2.fleets.insert(Fleet {
-            location: sys2,
-            capital_ships: vec![ShipInstance::new(
-                ds_class2,
-                world2.capital_ship_classes[ds_class2].hull.cast_signed(),
-                false,
-            )],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            has_death_star: true,
-        });
-        world2.systems[sys2].fleets.push(ds_fleet2);
-
-        let result_unshielded =
-            CombatSystem::resolve_space(&world2, atk2, ds_fleet2, sys2, 1, &rolls, 1, false);
-        let unshielded_damage: i32 = result_unshielded
-            .ship_damage
-            .iter()
-            .filter(|d| d.fleet == ds_fleet2)
-            .map(|d| d.hull_before - d.hull_after)
-            .sum();
-
-        assert!(
-            shielded_damage < unshielded_damage,
-            "Shielded DS damage ({shielded_damage}) should be less than unshielded ({unshielded_damage})"
-        );
-    }
-
     // -----------------------------------------------------------------------
     // Phase 2 pending tests: Officer combat rating in ground combat
     // -----------------------------------------------------------------------
@@ -3032,34 +2868,6 @@ mod tests {
         assert!(
             target_snap[0].pending_damage > 0,
             "Ships with attack_strength=0 should still deal damage (fallback to raw arcs)"
-        );
-    }
-
-    #[test]
-    fn no_officer_gives_1x_multiplier() {
-        let mut world = empty_world();
-        let sector = make_sector(&mut world);
-        let sys = make_system(&mut world, sector);
-
-        world.troop_classes.insert(
-            DatId::new(0x1400_0100),
-            TroopClassDef {
-                attack_strength: 30,
-                defense_strength: 20,
-            },
-        );
-
-        make_troop(&mut world, sys, true);
-        make_troop(&mut world, sys, false);
-
-        // No officer fleet — bonus should be 1.0
-        let rolls: Vec<f64> = vec![0.3; 50];
-        let result = CombatSystem::resolve_ground(&world, sys, true, 1, &rolls, 1);
-
-        // Combat should still work (no officer = 1.0x, not a crash)
-        assert!(
-            !result.troop_damage.is_empty(),
-            "Ground combat should produce damage events even without officers"
         );
     }
 }

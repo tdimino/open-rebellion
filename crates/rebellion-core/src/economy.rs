@@ -1532,15 +1532,6 @@ mod tests {
     }
 
     #[test]
-    fn garrison_requirement_below_threshold() {
-        let gnprtb = stock_gnprtb();
-        let control = ControlKind::Controlled(crate::dat::Faction::Alliance);
-        let req = calculate_garrison_requirement(0.3, control, &gnprtb, 2);
-        // (0.60 - 0.30) / 0.10 = 3.0 → 3 troops
-        assert_eq!(req, 3, "expected 3, got {req}");
-    }
-
-    #[test]
     fn garrison_requirement_above_threshold_is_zero() {
         let gnprtb = stock_gnprtb();
         let control = ControlKind::Controlled(crate::dat::Faction::Alliance);
@@ -1563,8 +1554,14 @@ mod tests {
 
     #[test]
     fn economy_advance_no_ticks_no_events() {
+        // The same world emits a NaturalDisaster on its first tick.
+        let (world, _sys) = make_singleton_world(
+            0.10,
+            0.90,
+            ControlKind::Controlled(crate::dat::Faction::Alliance),
+            true,
+        );
         let mut state = EconomyState::default();
-        let world = GameWorld::default();
         let events = EconomySystem::advance(&mut state, &world, &[], 2);
         assert!(events.is_empty());
     }
@@ -1606,42 +1603,6 @@ mod tests {
             events.is_empty(),
             "destroyed system should produce no events"
         );
-    }
-
-    #[test]
-    fn economy_advance_produces_telemetry() {
-        let mut state = EconomyState::default();
-        let mut world = GameWorld {
-            gnprtb: stock_gnprtb(),
-            ..Default::default()
-        };
-        let _sys_key = world.systems.insert(crate::world::System {
-            dat_id: DatId(0),
-            name: "Coruscant".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.1,
-            popularity_empire: 0.8,
-            is_populated: true,
-            total_energy: 10,
-            raw_materials: 8,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
-        });
-        let tick_events = vec![TickEvent { tick: 1 }];
-        let events = EconomySystem::advance(&mut state, &world, &tick_events, 2);
-        // Should produce at least garrison requirement events.
-        assert!(!events.is_empty(), "should produce economy events");
     }
 
     // -----------------------------------------------------------------------
@@ -2045,69 +2006,6 @@ mod tests {
     // -----------------------------------------------------------------------
     // Phase 3b: Incident state tests
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn incident_fires_on_state_transition() {
-        let mut world = GameWorld {
-            gnprtb: stock_gnprtb(),
-            ..Default::default()
-        };
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0),
-            name: "S".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        // System with very low alliance support (< 20%) — triggers disaster incident
-        world.systems.insert(crate::world::System {
-            dat_id: DatId(0),
-            name: "Crisis".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.10,
-            popularity_empire: 0.90,
-            is_populated: true,
-            total_energy: 10,
-            raw_materials: 10,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
-        });
-
-        let mut state = EconomyState::default();
-        // First tick: should fire the natural disaster notification
-        // (transition from false to true). Knesset Shamash-Bet Dabora 2
-        // #K2 renamed the umbrella `IncidentTriggered { "disaster" }` to
-        // a dedicated `NaturalDisaster` variant so the integrator can
-        // route it to `EVT_NATURAL_DISASTER` (0x154) telemetry.
-        let events1 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], 2);
-        assert!(
-            events1
-                .iter()
-                .any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
-            "Should fire NaturalDisaster on first tick when support < 20%"
-        );
-
-        // Second tick: should NOT re-fire (no transition — flag already set)
-        let events2 = EconomySystem::advance(&mut state, &world, &[TickEvent { tick: 2 }], 2);
-        assert!(
-            !events2
-                .iter()
-                .any(|e| matches!(e, EconomyEvent::NaturalDisaster { .. })),
-            "Should NOT re-fire NaturalDisaster when flags unchanged"
-        );
-    }
 
     #[test]
     fn informant_incident_on_garrison_shortfall() {

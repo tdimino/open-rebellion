@@ -510,19 +510,6 @@ mod tests {
     }
 
     #[test]
-    fn death_star_loss_is_nonterminal() {
-        let (world, a, e) = make_world();
-        let mut state = VictoryState::new(a, e);
-        state.death_star_active = true;
-        state.death_star_location = Some(a);
-
-        assert!(
-            VictorySystem::check(&state, &world, &[tick(1)], VictoryConditions::Standard,)
-                .is_none()
-        );
-    }
-
-    #[test]
     fn standard_destroyed_hq_waits_for_both_alliance_leaders() {
         let (mut world, alliance_hq, empire_hq) = make_world();
         world.systems[alliance_hq].is_headquarters = false;

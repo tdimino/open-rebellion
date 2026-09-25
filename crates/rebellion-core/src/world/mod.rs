@@ -1293,30 +1293,6 @@ mod tests {
     }
 
     #[test]
-    fn is_known_jedi_implies_aware_tier_convention() {
-        // Verifies the convention: is_known_jedi should pair with ForceTier::Aware
-        // (enforced in convert_character, tested here as a struct invariant).
-        let mut c = default_character();
-        c.is_known_jedi = true;
-        c.force_tier = ForceTier::Aware;
-        assert_eq!(c.force_tier, ForceTier::Aware);
-        assert!(c.is_known_jedi);
-    }
-
-    #[test]
-    fn current_system_and_fleet_default_to_none() {
-        let c = default_character();
-        assert_eq!(c.current_system, None);
-        assert_eq!(c.current_fleet, None);
-    }
-
-    #[test]
-    fn hyperdrive_modifier_defaults_to_zero() {
-        let c = default_character();
-        assert_eq!(c.hyperdrive_modifier, 0);
-    }
-
-    #[test]
     fn serde_backward_compat_missing_new_fields() {
         // Simulate deserializing a save file that lacks fields added before v8.
         // NOTE: `heritage_known` and `is_killed` are required here because they

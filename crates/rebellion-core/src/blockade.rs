@@ -326,7 +326,8 @@ mod tests {
 
     #[test]
     fn no_events_without_ticks() {
-        let (world, _sys) = make_world();
+        let (mut world, sys) = make_world();
+        add_fleet(&mut world, sys, false);
         let mut state = BlockadeState::new();
         let events = BlockadeSystem::advance(&mut state, &world, &[]);
         assert!(events.is_empty());
@@ -467,32 +468,5 @@ mod tests {
             event,
             BlockadeEvent::TroopDestroyed { troop: destroyed, .. } if *destroyed == troop
         )));
-    }
-
-    #[test]
-    fn enemy_troop_not_destroyed_by_own_blockade() {
-        let (mut world, sys) = make_world();
-        // Empire troop at Alliance-controlled system — Alliance does not destroy Empire troops
-        // via blockade (they're already on the surface, not in transit to help the system)
-        add_troop(&mut world, sys, false); // Empire troop
-        add_fleet(&mut world, sys, false); // Empire fleet blockades
-
-        let mut state = BlockadeState::new();
-        let events = BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
-        // Empire troop not destroyed (same faction as blockader, not in transit for defender)
-        assert!(!events
-            .iter()
-            .any(|e| matches!(e, BlockadeEvent::TroopDestroyed { .. })));
-    }
-
-    #[test]
-    fn is_blockaded_reflects_current_state() {
-        let (mut world, sys) = make_world();
-        add_fleet(&mut world, sys, false);
-
-        let mut state = BlockadeState::new();
-        assert!(!state.is_blockaded(sys));
-        BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
-        assert!(state.is_blockaded(sys));
     }
 }

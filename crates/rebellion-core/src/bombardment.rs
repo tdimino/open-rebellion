@@ -334,20 +334,16 @@ mod tests {
 
     #[test]
     fn test_bombardment_formula_minimum_one_damage() {
-        // Even with zero attack vs zero defense, we get 0 (raw_power=0 guard fires).
-        // But with any positive attack > defense, result must be >= 1.
+        // FUN_0055d8c0 returns `result == 0 ? 1 : result`. atk=(2, 3) vs def=(0, 0)
+        // gives raw_power = sqrt(13) ~= 3.6, which floors to 0 under divisor 5.
         let mut world = make_world_with_gnprtb();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector, Some(Faction::Alliance));
-        let class = make_capital_ship_class(&mut world, 20); // bombardment=20, def=0
-        let fleet = make_fleet(&mut world, sys, class, 3, false); // Empire attacks Alliance
+        let class = make_capital_ship_class(&mut world, 2); // bombardment=2, maneuver=3
+        let fleet = make_fleet(&mut world, sys, class, 1, false); // Empire attacks Alliance
 
         let result = BombardmentSystem::resolve_bombardment(&world, fleet, sys, 2, 1);
-        assert!(
-            result.damage >= 1,
-            "Bombardment damage should be at least 1, got {}",
-            result.damage
-        );
+        assert_eq!(result.damage, 1);
     }
 
     #[test]

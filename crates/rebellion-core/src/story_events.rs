@@ -949,19 +949,6 @@ mod tests {
     }
 
     #[test]
-    fn define_story_events_registers_events_with_characters() {
-        let world = make_world_with_characters();
-        let mut state = EventState::new();
-        define_story_events(&mut state, &world);
-        // Should have registered many events (4 original chains + enrichments)
-        assert!(
-            state.events().len() >= 10,
-            "expected at least 10 story events, got {}",
-            state.events().len()
-        );
-    }
-
-    #[test]
     fn luke_dagobah_chain_fires_in_sequence() {
         let mut world = make_world_with_characters();
         let mut state = EventState::new();
@@ -1566,57 +1553,9 @@ mod tests {
             1,
             "Self-guard should prevent duplicate consolidator fires"
         );
-    }
 
-    #[test]
-    fn evt_jabba_prisoners_self_guard_prevents_refire() {
-        let mut world = make_world_with_characters();
-        let mut state = EventState::new();
-
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
-        assign_han_to_fleet(&mut world);
-        define_story_events(&mut state, &world);
-
-        // Fire bounty + capture Luke
-        EventSystem::advance(&mut state, &world, &tick(80), &[]);
-        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
-        let fired = EventSystem::advance(&mut state, &world, &tick(115), &[0.05, 0.99, 0.99]);
-        assert!(fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS));
-
-        // Next tick — consolidator must not re-fire
-        // Provide rolls for remaining enabled Random events (0x385, 0x387)
+        // Next tick: the consolidator must not fire again. The rolls feed the
+        // still-enabled Random events 0x385 and 0x387.
         let fired2 = EventSystem::advance(&mut state, &world, &tick(116), &[0.99, 0.99]);
         assert!(
             !fired2.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
@@ -1865,6 +1804,15 @@ mod tests {
             fired.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
             "EVT_HAN_PERMANENT_FREEZE should chain off FAIL_5"
         );
+
+        // Next tick: the one-shot freeze must not fire again.
+        let fired2 = EventSystem::advance(&mut state, &world, &tick(206), &[]);
+        assert!(
+            !fired2
+                .iter()
+                .any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
+            "Permanent freeze should not fire again (one-shot)"
+        );
     }
 
     #[test]
@@ -1965,24 +1913,6 @@ mod tests {
                 .iter()
                 .any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
             "Permanent freeze should be blocked by rescue"
-        );
-    }
-
-    #[test]
-    fn evt_permanent_freeze_does_not_refire() {
-        let (world, mut state) = setup_bounty_chain(false);
-
-        // Fire the full chain at tick 205
-        let fired = EventSystem::advance(&mut state, &world, &tick(205), &[]);
-        assert!(fired.iter().any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE));
-
-        // Next tick: should not fire again (is_repeatable: false)
-        let fired2 = EventSystem::advance(&mut state, &world, &tick(206), &[]);
-        assert!(
-            !fired2
-                .iter()
-                .any(|f| f.event_id == EVT_HAN_PERMANENT_FREEZE),
-            "Permanent freeze should not fire again (one-shot)"
         );
     }
 

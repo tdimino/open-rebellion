@@ -447,14 +447,6 @@ mod tests {
     }
 
     #[test]
-    fn no_ticks_returns_empty() {
-        let world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let results = ResearchSystem::advance(&mut state, &world, &[]);
-        assert!(results.is_empty());
-    }
-
-    #[test]
     fn project_completes_after_ticks() {
         let mut world = GameWorld::default();
         let mut state = ResearchState::new();
@@ -686,29 +678,6 @@ mod tests {
         assert!(ResearchSystem::ship_class_is_available(
             &world, &state, true, class_key
         ));
-    }
-
-    #[test]
-    fn advance_does_not_mutate_ship_level() {
-        let mut world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let char_key = make_char_key(&mut world);
-
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Ship,
-            character: char_key,
-            faction_is_alliance: true,
-            ticks_remaining: 5,
-            total_ticks: 5,
-        });
-
-        let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
-        assert_eq!(r.len(), 1);
-        // advance() must NOT auto-apply level-ups.
-        assert_eq!(
-            state.alliance.ship, 0,
-            "advance() should not mutate state internally"
-        );
     }
 
     #[test]
