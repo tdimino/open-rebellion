@@ -53,12 +53,89 @@ and `0x13e` to `0x81`.
   control-offset map.
 - **Opening the window does not clear illumination.**
 
-The path that clears `0x40` when a new message arrives is **not yet
-recovered**. The subagent's first report attributed it to `FUN_00487eb0`, but
-that is the game-speed setter (see the
-[Game Speed recovery](2026-09-24-game-speed-recovery.md)). Next targets:
-`FUN_0048aa90`, `FUN_00488030`, and the toggle-button state
-(`FUN_00603aa0`).
+## Illumination on arrival
+
+`FUN_0042d8d0(mask)` mirrors the resting routine: for each set category bit it
+clears flag `0x40` (`FUN_006030f0`) on the matching rail control, which paints
+the illuminated resource. `FUN_0041db20` reaches it through the command-center
+singleton (`FUN_00422ca0`). The three callers define the rule:
+
+| Caller | Rule |
+|---|---|
+| `FUN_0048a060` (post) | Message kinds 3, 4, 5, and 8 join the list at `+0x10` when their payload exists (`FUN_00583c40`); otherwise the message is destroyed. The class mask at `+0x34` is ORed into the unread mask at `+0x50` and that rail lights. When the category's alert setting (`FUN_0048a1c0`, per-category entry at `+0x44`, else the default at `+0xc`) lacks bit 4 and the message has a display target at `+0x28`, the owner's vtable `+0x14` presents it. The list is then rebuilt. Kinds 1 and 2 go to `+0x1c`, kind 6 to `+0x28`, and kind 7 is posted straight to the window. |
+| `FUN_0048a2a0` (rebuild) | Unless batching is on (`+0x8` bit `0x10000000`, set and cleared by `FUN_0048a610`), drops expired messages and recomputes the unread mask from every message whose unread bit `0x10` at `+0x24` is set. Rails outside the mask rest (`FUN_0041db40`); rails in it light. |
+| `FUN_00488a30` (load) | Restores the saved unread mask at `+0x50` and lights it. |
+
+The earlier guess `FUN_00487eb0` is the game-speed setter, and
+`FUN_00488030` chooses a notification sound, not a rail state.
+
+## Message classes and categories
+
+Every message class constructor calls `FUN_004c4b50` and stores a constant
+category mask at `+0x34` from a one-line getter:
+
+| Mask | Getter | Rail category | Constructors |
+|---|---|---|---|
+| `0x001` | `FUN_0040f340` | Popular Support | `FUN_00490ff0`, `FUN_00498c30`, `FUN_004990b0`, `FUN_004993e0`, `FUN_004996f0` |
+| `0x004` | `FUN_004047d0` | Resource | `FUN_0048e720` |
+| `0x008` | `FUN_0048c2a0` | Manufacturing | `FUN_0048ab40`, `FUN_0048bd10`, `FUN_004975e0`, `FUN_00497890`, `FUN_004988f0`, `FUN_00499a30` |
+| `0x010` | `FUN_0048af30` | Mission | 15 constructors from `FUN_0048adc0` to `FUN_00495460` |
+| `0x020` | `FUN_00526bd0` | Chat | `FUN_00498e90` (incoming chat, event `0x11`) |
+| `0x080` | `FUN_00526670` | Fleet | `FUN_00498140`, `FUN_00499d50` |
+| `0x100` | `FUN_0048bc60` | Conflict | `FUN_0048b8e0`, `FUN_00495dd0`, `FUN_00496080`, `FUN_00496460` |
+| `0x200` | `FUN_0048b450` | Advice | `FUN_0048b2e0` (TEXTSTRA `0x6001 + 3n` Alliance, `0x6802 + 3n` Empire) |
+
+No constructor stores Defense (`0x040`), so no message lights that rail.
+
+## Notification types
+
+The factory `FUN_00489740(type, …)` builds one class per notification type;
+each class's vtable slot 3 returns its type. TEXTSTRA names every type at
+`0x5000 + type` (these are also the Notification Options labels). Types 1
+and 2 (Tactical After Action Report, Tactical Pre Battle Message) build
+battle reports held apart at `+0x1c`. Advice (`FUN_0048b2e0`) and incoming
+chat (`FUN_00498e90`) are built outside the factory.
+
+| Type | TEXTSTRA name (`0x5000 + type`) | Class | Mask | Rail |
+|---|---|---|---|---|
+| `3` | Uprising Message | `FUN_004993e0` | `0x001` | Popular Support |
+| `4` | System Control Message | `FUN_004996f0` | `0x001` | Popular Support |
+| `5` | Research Report | `FUN_00499a30` | `0x008` | Manufacturing |
+| `6` | Repair Message | `FUN_00499d50` | `0x080` | Fleet |
+| `7` | Blockade Message | `FUN_00496080` | `0x100` | Conflict |
+| `9` | Smuggling Message | `FUN_004990b0` | `0x001` | Popular Support |
+| `0xb` | Garrison Warning | `FUN_00498c30` | `0x001` | Popular Support |
+| `0xc` | Maintenance Shortfall | `FUN_004988f0` | `0x008` | Manufacturing |
+| `0xd` | Unit Arrival | `FUN_00498140` | `0x080` | Fleet |
+| `0xe` | Unit Deployment | `FUN_00497890` | `0x008` | Manufacturing |
+| `0xf` | Operation Reports | `FUN_00496460` | `0x100` | Conflict |
+| `0x10` | Deployment Failed | `FUN_004975e0` | `0x008` | Manufacturing |
+| `0x13` | Evacuation Losses | `FUN_00495dd0` | `0x100` | Conflict |
+| `0x14` | Personnel Arrive | `FUN_00495460` | `0x010` | Mission |
+| `0x15, 0x16` | Planet Destroyed / Mission Report | `FUN_00492470` | `0x010` | Mission |
+| `0x17` | Mission Failed | `FUN_00491260` | `0x010` | Mission |
+| `0x18` | Informant Report | `FUN_00490ff0` | `0x001` | Popular Support |
+| `0x19` | Character Captured | `FUN_004902d0` | `0x010` | Mission |
+| `0x1a` | Character Health | `FUN_0048fd80` | `0x010` | Mission |
+| `0x1b` | Bounty Hunters | `FUN_0048f990` | `0x010` | Mission |
+| `0x1c` | Force User Discovered | `FUN_0048f160` | `0x010` | Mission |
+| `0x1d` | Force Skill Improvement | `FUN_0048ed00` | `0x010` | Mission |
+| `0x1e, 0x1f, 0x20` | Coruscant Captured / Rebel HQ Destroyed / System Resources Messages | `FUN_0048e720` | `0x004` | Resource |
+| `0x21` | Construction Complete | `FUN_0048bd10` | `0x008` | Manufacturing |
+| `0x22` | Unit Sabotaged | `FUN_0048b8e0` | `0x100` | Conflict |
+| `0x23, 0x24` | Death Star Sabotaged / Encounter Messages | `FUN_0048d6f0` | `0x010` | Mission |
+| `0x25` | Dagobah Messages | `FUN_0048d070` | `0x010` | Mission |
+| `0x26` | Emperor at Coruscant | `FUN_0048ce00` | `0x010` | Mission |
+| `0x27` | Traitor Discovered | `FUN_0048c940` | `0x010` | Mission |
+| `0x28` | Rescue Attempt | `FUN_0048c3a0` | `0x000` | none stored |
+| `0x29` | — | `FUN_0048b660` | `0x010` | Mission |
+| `0x2b` | — | `FUN_0048afd0` | `0x010` | Mission |
+| `0x2c` | — | `FUN_0048ab40` | `0x008` | Manufacturing |
+| `0x2d` | — | `FUN_0048adc0` | `0x010` | Mission |
+
+Type `0x28` (Rescue Attempt) stores no mask; its visitor `FUN_004974f0` only
+walks the record, so its rail is whatever `FUN_004c4b50` leaves at `+0x34`.
+Types `0x29` and `0x2b`–`0x2d` have no name in the extracted TEXTSTRA table.
 
 ## Advice slows the game
 
