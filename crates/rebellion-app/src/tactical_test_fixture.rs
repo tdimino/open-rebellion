@@ -781,7 +781,7 @@ struct FixtureRecord<'a> {
     tactical_weapon_audio_wave_first: u32,
     tactical_weapon_audio_wave_last: u32,
     tactical_weapon_audio_variant_count: u32,
-    tactical_command_voice_variant_count: u32,
+    tactical_voice_variant_count: u32,
     subsystem_field_command_presentation: bool,
     live_subsystem_damage_presentation: bool,
     subsystem_repair_mobility_presentation: bool,
@@ -1248,7 +1248,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 34,
+        schema_version: 35,
         status: "battle-ready",
         family: "tactical",
         fixture_code: request.code,
@@ -1276,7 +1276,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         tactical_weapon_audio_wave_first: 13_033,
         tactical_weapon_audio_wave_last: 13_054,
         tactical_weapon_audio_variant_count: 22,
-        tactical_command_voice_variant_count: 90,
+        tactical_voice_variant_count: 285,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
@@ -1329,7 +1329,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
     emit(&FixtureRecord {
-        schema_version: 34,
+        schema_version: 35,
         status: "failed",
         family: "tactical",
         fixture_code: request.code,
@@ -1357,7 +1357,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
         tactical_weapon_audio_wave_first: 13_033,
         tactical_weapon_audio_wave_last: 13_054,
         tactical_weapon_audio_variant_count: 22,
-        tactical_command_voice_variant_count: 90,
+        tactical_voice_variant_count: 285,
         subsystem_field_command_presentation: request.subsystem_field_command_presentation,
         live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
         subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,

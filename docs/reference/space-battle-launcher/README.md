@@ -186,6 +186,13 @@ and closes every process. Raw runs live under ignored
   weapon and 90 command-voice resources while muted. Result, withdrawal, and
   Death Star voice families, mixing, audible native comparison, and strict A0
   acceptance remain open.
+- P58-B18 extends the same executable table through event `0x13c`, transports
+  all 285 source-addressed voices, and dispatches selected withdrawal,
+  battle-outcome, Death Star, and RGBY trench-run transitions. The focused
+  four-case muted browser gate loads and routes all 307 tactical weapon and
+  voice resources. Remaining completion, destruction, recovery, warning, and
+  ordered trench callers, mixing, audible native comparison, and strict A0
+  acceptance remain open.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options
@@ -206,8 +213,8 @@ exact original arrival callbacks and recovery trajectories, exact planet
 placement, power allocation,
 beam dimensions and timing, native trench-run playback comparison,
 post-battle bombardment, landing, and navigation orchestration, remaining
-non-weapon result, withdrawal, and Death Star voice events, exact shared-RNG
-sequencing, audio mixing and native comparison, and
+completion, destruction, recovery, warning, and ordered trench voice callers,
+exact shared-RNG sequencing, audio mixing and native comparison, and
 remaining result semantics remain open. The source 3D
 window uses the standard arrow cursor, so no invented targeting cursor is
 required. All

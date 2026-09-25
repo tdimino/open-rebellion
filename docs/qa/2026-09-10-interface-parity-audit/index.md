@@ -123,6 +123,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58-B15 tactical Battle Alert and audio evidence](evidence/2026-09-24-tactical-battle-alert-audio.md) | Source-built faction alerts, Take Command entry, MDATA 307, WAVE 13054, complete 106-cell deterministic A1 mapping, and unchanged 0/106 strict acceptance. |
 | [P58-B16 tactical weapon-audio evidence](evidence/2026-09-24-tactical-weapon-audio.md) | Corrected event semantics, complete eight-event WAVE 13033–13054 bank, production fire/impact dispatch, and focused muted browser routing. |
 | [P58-B17 tactical command-voice evidence](evidence/2026-09-24-tactical-command-voice.md) | Exact battle-ready and group-specific maneuver, attack, formation, and mission mappings across 90 faction WAVs, production command dispatch, and focused muted browser routing. |
+| [P58-B18 complete tactical voice-bank evidence](evidence/2026-09-25-tactical-complete-voice-bank.md) | All 285 faction tactical voices transported from exact executable ranges, selected withdrawal/result/Death Star/trench-run transitions dispatched, and focused muted browser routing. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |

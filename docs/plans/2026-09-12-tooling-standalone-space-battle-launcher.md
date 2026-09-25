@@ -201,12 +201,14 @@ event 0x14 to torpedo impact and restores all eight weapon fire/impact events
 across the 22 WAVE variants at 13033–13054. P58-B17 restores 90 exact
 VOICEFXA/VOICEFXE battle-ready and task-force/RGBY maneuver, attack, formation,
 and mission acknowledgements, with production dispatch and focused muted
-browser transport. This completes the
+browser transport. P58-B18 extends the executable table through event `0x13c`,
+transports all 285 faction tactical voices, and dispatches selected withdrawal,
+battle-outcome, Death Star, and RGBY trench-run transitions. This completes the
 deterministic A1 crosswalk without running or satisfying the strict A0 gate.
 Power allocation, exact planet placement, native Death Star beam behavior,
 shared post-battle bombardment, landing, and navigation orchestration,
-remaining result, withdrawal, and Death Star voice events, exact shared-RNG
-sequencing, mixing,
+remaining completion, destruction, recovery, warning, and ordered trench voice
+callers, exact shared-RNG sequencing, mixing,
 native playback, and A0
 view acceptance remain T3 and T4 work.
 No `TAC-*` acceptance cell is closed.

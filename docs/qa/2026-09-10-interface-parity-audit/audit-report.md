@@ -329,6 +329,18 @@ the focused four-case muted browser gate proves every resource is present and
 routed. Remaining result, withdrawal, and Death Star voice families, mixing,
 native audible comparison, and strict A0 acceptance stay open.
 
+P58-B18 extends the executable table through event `0x13c`: Alliance events
+`0x20–0x99` map to VOICEFXA `14001–14122`, Imperial events `0x9a–0x11d`
+map to VOICEFXE `15001–15132`, and Alliance trench events `0x11e–0x13c`
+map to VOICEFXA `15133–15163`. Exact extraction and validation prove all 285
+resources. Production dispatch now includes withdrawal start/completion,
+battle outcomes, selected Death Star transitions, and RGBY trench-run
+start/results. The focused four-case muted browser gate loads and routes all
+285 voices plus all 22 weapon effects. Remaining completion, destruction,
+recovery, warning, and ordered trench chatter callers, exact shared-RNG
+sequencing, mixing, native audible comparison, and strict A0 acceptance stay
+open.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

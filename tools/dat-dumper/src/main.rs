@@ -9,6 +9,8 @@ mod validate;
 use clap::Parser;
 use std::path::PathBuf;
 
+type TacticalVoiceBank<'a> = (&'a str, &'a str, &'a str, &'a [(u32, u32)]);
+
 #[derive(Parser)]
 #[command(
     name = "dat-dumper",
@@ -42,7 +44,7 @@ struct Cli {
     #[arg(long)]
     extract_tactical_sfx: bool,
 
-    /// Extract source-proven tactical command voices from VOICEFXA.DLL and
+    /// Extract the source-proven tactical voice banks from VOICEFXA.DLL and
     /// VOICEFXE.DLL. Outputs faction directories beneath --output.
     #[arg(long)]
     extract_tactical_voice: bool,
@@ -173,37 +175,20 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // ── VOICEFX tactical command extraction (separate path) ────────────────
+    // ── Complete VOICEFX tactical-bank extraction (separate path) ──────────
     if cli.extract_tactical_voice {
         let out_dir = cli
             .output
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("--output is required with --extract-tactical-voice"))?;
-        let banks = [
+        let banks: [TacticalVoiceBank<'_>; 2] = [
             (
                 "VOICEFXA.DLL",
                 "alliance",
                 "voicefxa",
-                [
-                    (14_001, 14_001),
-                    (14_003, 14_014),
-                    (14_029, 14_040),
-                    (14_080, 14_087),
-                    (14_089, 14_100),
-                ],
+                &[(14_001, 14_122), (15_133, 15_163)],
             ),
-            (
-                "VOICEFXE.DLL",
-                "empire",
-                "voicefxe",
-                [
-                    (15_001, 15_001),
-                    (15_003, 15_014),
-                    (15_029, 15_040),
-                    (15_084, 15_091),
-                    (15_093, 15_104),
-                ],
-            ),
+            ("VOICEFXE.DLL", "empire", "voicefxe", &[(15_001, 15_132)]),
         ];
         for (dll_name, faction_dir, suffix, ranges) in banks {
             let dll_path = cli.gdata.join(dll_name);
@@ -211,7 +196,8 @@ fn main() -> anyhow::Result<()> {
                 anyhow::bail!("{dll_name} not found in {}", cli.gdata.display());
             }
             let resource_ids = ranges
-                .into_iter()
+                .iter()
+                .copied()
                 .flat_map(|(first, last)| first..=last)
                 .collect::<Vec<_>>();
             let waves = types::wave_resources::load_waves(&dll_path, &resource_ids)?;
@@ -225,7 +211,7 @@ fn main() -> anyhow::Result<()> {
                 std::fs::write(&out_path, bytes)?;
             }
             eprintln!(
-                "OK   {dll_name} tactical command bank -> {} ({} WAVs)",
+                "OK   {dll_name} tactical voice bank -> {} ({} WAVs)",
                 destination.display(),
                 waves.len()
             );

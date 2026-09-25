@@ -305,6 +305,16 @@ all 22 weapon and 90 command-voice resources for both factions and viewports.
 Result, withdrawal, and Death Star voice families, mixing, interruption,
 audible native comparison, and strict A0 acceptance remain open.
 
+[P58-B18 evidence](evidence/2026-09-25-tactical-complete-voice-bank.md) extends
+that source table through event `0x13c` and proves complete transport of 285
+recordings: VOICEFXA `14001–14122`, VOICEFXE `15001–15132`, and VOICEFXA
+`15133–15163`. Production now dispatches selected withdrawal, battle-outcome,
+Death Star, and RGBY trench-run transitions. The focused muted browser gate
+loads and routes all 307 tactical weapon and voice resources for both factions
+and viewports. Remaining completion, destruction, recovery, warning, and
+ordered trench chatter callers, exact shared-RNG sequencing, mixing,
+interruption, audible native comparison, and strict A0 acceptance remain open.
+
 ## Immediate implementation order
 
 1. Trace SPT to BIN to frame and WAV selection for both factions on top of the
@@ -320,9 +330,9 @@ audible native comparison, and strict A0 acceptance remain open.
    map input.
 6. Continue the `TAC-01` through `TAC-07` space-battle
    path using the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md),
-   including remaining result, withdrawal, and Death Star voice events,
-   results, and native Death Star behavior, then acquire A0 evidence for the
-   complete mapped matrix.
+   including remaining completion, destruction, recovery, warning, and
+   ordered trench voice dispatch, results, and native Death Star behavior,
+   then acquire A0 evidence for the complete mapped matrix.
 7. Use original-runtime capture only for the remaining dynamic proof boundary.
 
 No static discovery marks a surface complete. It closes only the corresponding

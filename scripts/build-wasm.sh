@@ -151,7 +151,7 @@ if [ -f "$ORIGINAL_GAME_DIR/VOICEFXA.DLL" ] && [ -f "$ORIGINAL_GAME_DIR/VOICEFXE
     "$DAT_DUMPER" --gdata "$ORIGINAL_GAME_DIR" --extract-tactical-voice \
         --output "$WEB_AUDIO/voice"
 else
-    echo "WARNING: VOICEFXA.DLL or VOICEFXE.DLL not found in $ORIGINAL_GAME_DIR; tactical command voices will remain silent."
+    echo "WARNING: VOICEFXA.DLL or VOICEFXE.DLL not found in $ORIGINAL_GAME_DIR; tactical voices will remain silent."
 fi
 
 # ── Stage UI resources into web/data/ui/ ────────────────────────────────────

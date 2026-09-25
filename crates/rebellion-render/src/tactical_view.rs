@@ -1365,8 +1365,8 @@ pub struct BattleSession {
     /// resource identity is fixed when the combat event is emitted so frame
     /// scheduling cannot change variant selection.
     pub pending_audio_cues: Vec<TacticalAudioCue>,
-    /// Source-identified VOICEFXA/VOICEFXE command acknowledgements waiting
-    /// for the application audio backend.
+    /// Source-identified VOICEFXA/VOICEFXE tactical lines waiting for the
+    /// application audio backend.
     pub pending_voice_cues: Vec<TacticalVoiceCue>,
     /// Target-attached tractor/gravity field selected through one shared slot.
     pub field_effects: Vec<TacticalFieldEffect>,
@@ -1656,9 +1656,10 @@ impl TacticalVoiceFaction {
     }
 }
 
-/// Source command family that selected a faction voice acknowledgement.
+/// Source family that selected a faction tactical voice line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TacticalVoiceEvent {
+    SourceMapped,
     BattleReady,
     CapitalManeuver,
     FighterManeuver,
@@ -1667,6 +1668,19 @@ pub enum TacticalVoiceEvent {
     CapitalFormation,
     CapitalMission,
     FighterMission,
+    WithdrawalStarted,
+    WithdrawalComplete,
+    BattleWonWithdrawal,
+    BattleWonDestroyed,
+    BattleLost,
+    DeathStarFiring,
+    DeathStarReady,
+    DeathStarUnderAttack,
+    DeathStarAttackBrokenOff,
+    DeathStarDestroyed,
+    TrenchRunStarted,
+    TrenchRunFailed,
+    TrenchRunSucceeded,
 }
 
 /// One exact tactical voice event and its original WAVE resource.
@@ -1679,17 +1693,27 @@ pub struct TacticalVoiceCue {
 }
 
 impl TacticalVoiceCue {
+    const fn from_source_event(event: TacticalVoiceEvent, source_event: u16) -> Self {
+        let (faction, event_base, resource_base) = match source_event {
+            0x20..=0x99 => (TacticalVoiceFaction::Alliance, 0x20, 14_001),
+            0x9a..=0x11d => (TacticalVoiceFaction::Empire, 0x9a, 15_001),
+            0x11e..=0x13c => (TacticalVoiceFaction::Alliance, 0x11e, 15_133),
+            _ => panic!("source event is outside the recovered tactical voice banks"),
+        };
+        Self {
+            event,
+            faction,
+            source_event,
+            resource_id: resource_base + (source_event - event_base) as u32,
+        }
+    }
+
     const fn from_offset(
         faction: TacticalVoiceFaction,
         event: TacticalVoiceEvent,
         offset: u16,
     ) -> Self {
-        Self {
-            event,
-            faction,
-            source_event: faction.source_event_base() + offset,
-            resource_id: faction.resource_base() + offset as u32,
-        }
+        Self::from_source_event(event, faction.source_event_base() + offset)
     }
 
     #[must_use]
@@ -1770,6 +1794,107 @@ impl TacticalVoiceCue {
             TacticalVoiceEvent::FighterMission,
             base + group.min(3) as u16,
         )
+    }
+
+    #[must_use]
+    pub const fn withdrawal_started(faction: TacticalVoiceFaction) -> Self {
+        let source_event = match faction {
+            TacticalVoiceFaction::Alliance => 0x8f,
+            TacticalVoiceFaction::Empire => 0x10d,
+        };
+        Self::from_source_event(TacticalVoiceEvent::WithdrawalStarted, source_event)
+    }
+
+    #[must_use]
+    pub const fn withdrawal_complete(faction: TacticalVoiceFaction) -> Self {
+        let source_event = match faction {
+            TacticalVoiceFaction::Alliance => 0x96,
+            TacticalVoiceFaction::Empire => 0x118,
+        };
+        Self::from_source_event(TacticalVoiceEvent::WithdrawalComplete, source_event)
+    }
+
+    #[must_use]
+    pub const fn battle_won(faction: TacticalVoiceFaction, opponent_withdrew: bool) -> Self {
+        let source_event = match (faction, opponent_withdrew) {
+            (TacticalVoiceFaction::Alliance, true) => 0x97,
+            (TacticalVoiceFaction::Alliance, false) => 0x98,
+            (TacticalVoiceFaction::Empire, true) => 0x119,
+            (TacticalVoiceFaction::Empire, false) => 0x11a,
+        };
+        Self::from_source_event(
+            if opponent_withdrew {
+                TacticalVoiceEvent::BattleWonWithdrawal
+            } else {
+                TacticalVoiceEvent::BattleWonDestroyed
+            },
+            source_event,
+        )
+    }
+
+    #[must_use]
+    pub const fn battle_lost(faction: TacticalVoiceFaction) -> Self {
+        let source_event = match faction {
+            TacticalVoiceFaction::Alliance => 0x99,
+            TacticalVoiceFaction::Empire => 0x11b,
+        };
+        Self::from_source_event(TacticalVoiceEvent::BattleLost, source_event)
+    }
+
+    #[must_use]
+    pub const fn death_star_firing() -> Self {
+        Self::from_source_event(TacticalVoiceEvent::DeathStarFiring, 0x111)
+    }
+
+    #[must_use]
+    pub const fn death_star_ready() -> Self {
+        Self::from_source_event(TacticalVoiceEvent::DeathStarReady, 0x113)
+    }
+
+    #[must_use]
+    pub const fn death_star_under_attack() -> Self {
+        Self::from_source_event(TacticalVoiceEvent::DeathStarUnderAttack, 0x115)
+    }
+
+    #[must_use]
+    pub const fn death_star_attack_broken_off() -> Self {
+        Self::from_source_event(TacticalVoiceEvent::DeathStarAttackBrokenOff, 0x116)
+    }
+
+    #[must_use]
+    pub const fn death_star_destroyed() -> Self {
+        Self::from_source_event(TacticalVoiceEvent::DeathStarDestroyed, 0x117)
+    }
+
+    const fn trench_run_source_event(group: u8) -> u16 {
+        match group {
+            0 => 0x139,
+            1 => 0x12d,
+            2 => 0x131,
+            _ => 0x135,
+        }
+    }
+
+    #[must_use]
+    pub const fn trench_run_started(group: u8) -> Self {
+        Self::from_source_event(
+            TacticalVoiceEvent::TrenchRunStarted,
+            Self::trench_run_source_event(group),
+        )
+    }
+
+    #[must_use]
+    pub const fn trench_run_outcome(group: u8, outcome: TacticalTrenchRunOutcome) -> Self {
+        let (event, offset) = match outcome {
+            TacticalTrenchRunOutcome::Failure => (TacticalVoiceEvent::TrenchRunFailed, 2),
+            TacticalTrenchRunOutcome::Success => (TacticalVoiceEvent::TrenchRunSucceeded, 3),
+        };
+        Self::from_source_event(event, Self::trench_run_source_event(group) + offset)
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    const fn fixture_source_event(source_event: u16) -> Self {
+        Self::from_source_event(TacticalVoiceEvent::SourceMapped, source_event)
     }
 }
 
@@ -3768,6 +3893,8 @@ impl BattleSession {
             elapsed: 0.0,
             duration: ORIGINAL_PROJECTILE_DURATION_LONG,
         });
+        self.pending_voice_cues
+            .push(TacticalVoiceCue::death_star_firing());
         macroquad::logging::info!(
             "[tactical_death_star] superlaser_committed target_object_id={} charge=0",
             target + 1
@@ -3814,8 +3941,21 @@ impl BattleSession {
         for fighter in &mut self.fighters {
             fighter.advance_original_recharge(ORIGINAL_TACTICAL_STEP_SECONDS);
         }
+        let death_star_was_ready = self.death_star.is_some_and(|death_star| {
+            death_star.is_attacker == self.player_is_attacker
+                && death_star.laser_charge >= ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE
+        });
         if let Some(death_star) = self.death_star.as_mut() {
             death_star.advance_laser_charge(ORIGINAL_TACTICAL_STEP_SECONDS);
+        }
+        if !death_star_was_ready
+            && self.death_star.is_some_and(|death_star| {
+                death_star.is_attacker == self.player_is_attacker
+                    && death_star.laser_charge >= ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE
+            })
+        {
+            self.pending_voice_cues
+                .push(TacticalVoiceCue::death_star_ready());
         }
 
         // Collect alive (non-retreating) ship indices per side for combat.
@@ -3921,11 +4061,13 @@ impl BattleSession {
                 .is_some_and(|death_star| !death_star.is_attacker && !death_star.destroyed);
 
         if !atk_remaining || !def_remaining {
-            self.winner = Some(match (atk_remaining, def_remaining) {
+            let winner = match (atk_remaining, def_remaining) {
                 (true, false) => CombatWinner::Attacker,
                 (false, true) => CombatWinner::Defender,
                 _ => CombatWinner::Draw,
-            });
+            };
+            self.queue_battle_outcome_voice(winner);
+            self.winner = Some(winner);
             self.phase = BattlePhase::Results;
             return true;
         }
@@ -4541,6 +4683,24 @@ impl BattleSession {
         if self.trench_run_outcome.is_some() {
             return;
         }
+        if self.player_is_attacker == self.attacker_is_alliance {
+            let group = self
+                .fighters
+                .iter()
+                .find(|fighter| {
+                    fighter.identity.is_alliance && fighter.order == TacticalOrder::AttackDeathStar
+                })
+                .map_or(0, |fighter| fighter.fighter_group);
+            self.pending_voice_cues
+                .push(TacticalVoiceCue::trench_run_outcome(group, outcome));
+        } else {
+            self.pending_voice_cues.push(match outcome {
+                TacticalTrenchRunOutcome::Failure => {
+                    TacticalVoiceCue::death_star_attack_broken_off()
+                }
+                TacticalTrenchRunOutcome::Success => TacticalVoiceCue::death_star_destroyed(),
+            });
+        }
         self.trench_run_outcome = Some(outcome);
         self.trench_run_cinematic_pending = true;
         self.paused = true;
@@ -4565,13 +4725,52 @@ impl BattleSession {
     /// Queue the original faction-specific readiness call when command passes
     /// from Battle Alert into the active tactical manager.
     pub fn queue_battle_ready_voice(&mut self) {
-        let faction = if self.player_is_attacker == self.attacker_is_alliance {
+        let faction = self.player_voice_faction();
+        self.pending_voice_cues
+            .push(TacticalVoiceCue::battle_ready(faction));
+    }
+
+    /// Queue the original player-faction withdrawal acknowledgement.
+    pub fn queue_withdrawal_started_voice(&mut self) {
+        self.pending_voice_cues
+            .push(TacticalVoiceCue::withdrawal_started(
+                self.player_voice_faction(),
+            ));
+    }
+
+    const fn player_voice_faction(&self) -> TacticalVoiceFaction {
+        if self.player_is_attacker == self.attacker_is_alliance {
             TacticalVoiceFaction::Alliance
         } else {
             TacticalVoiceFaction::Empire
+        }
+    }
+
+    fn queue_battle_outcome_voice(&mut self, winner: CombatWinner) {
+        let player_won = matches!(
+            (winner, self.player_is_attacker),
+            (CombatWinner::Attacker, true) | (CombatWinner::Defender, false)
+        );
+        if winner == CombatWinner::Draw {
+            return;
+        }
+        let faction = self.player_voice_faction();
+        let player_withdrew = self
+            .ships
+            .iter()
+            .any(|ship| ship.is_attacker == self.player_is_attacker && ship.retreated);
+        let opponent_withdrew = self
+            .ships
+            .iter()
+            .any(|ship| ship.is_attacker != self.player_is_attacker && ship.retreated);
+        let cue = if player_won {
+            TacticalVoiceCue::battle_won(faction, opponent_withdrew)
+        } else if player_withdrew {
+            TacticalVoiceCue::withdrawal_complete(faction)
+        } else {
+            TacticalVoiceCue::battle_lost(faction)
         };
-        self.pending_voice_cues
-            .push(TacticalVoiceCue::battle_ready(faction));
+        self.pending_voice_cues.push(cue);
     }
 }
 
@@ -5570,45 +5769,10 @@ impl TacticalState {
             }
         }
         session.pending_voice_cues.clear();
-        for faction in [TacticalVoiceFaction::Alliance, TacticalVoiceFaction::Empire] {
+        for source_event in (0x20..=0x99).chain(0x11e..=0x13c).chain(0x9a..=0x11d) {
             session
                 .pending_voice_cues
-                .push(TacticalVoiceCue::battle_ready(faction));
-            for group in 0..8 {
-                session
-                    .pending_voice_cues
-                    .push(TacticalVoiceCue::capital_maneuver(faction, group));
-            }
-            for group in 0..4 {
-                session
-                    .pending_voice_cues
-                    .push(TacticalVoiceCue::fighter_maneuver(faction, group));
-            }
-            for group in 0..8 {
-                session
-                    .pending_voice_cues
-                    .push(TacticalVoiceCue::capital_attack(faction, group));
-            }
-            for group in 0..4 {
-                session
-                    .pending_voice_cues
-                    .push(TacticalVoiceCue::fighter_attack(faction, group));
-            }
-            for group in 0..8 {
-                session
-                    .pending_voice_cues
-                    .push(TacticalVoiceCue::capital_formation(faction, group));
-            }
-            for group in 0..8 {
-                session
-                    .pending_voice_cues
-                    .push(TacticalVoiceCue::capital_mission(faction, group));
-            }
-            for group in 0..4 {
-                session
-                    .pending_voice_cues
-                    .push(TacticalVoiceCue::fighter_mission(faction, group));
-            }
+                .push(TacticalVoiceCue::fixture_source_event(source_event));
         }
     }
 
@@ -6017,11 +6181,13 @@ impl TacticalState {
                 }
             }
         }
-        session.winner = Some(match result.winner {
+        let winner = match result.winner {
             AutoResolveSide::Attacker => CombatWinner::Attacker,
             AutoResolveSide::Defender => CombatWinner::Defender,
             AutoResolveSide::Draw => CombatWinner::Draw,
-        });
+        };
+        session.queue_battle_outcome_voice(winner);
+        session.winner = Some(winner);
         session.phase = BattlePhase::Results;
         session.paused = true;
         session.selected_ship = None;
@@ -7512,11 +7678,16 @@ fn queue_selected_command_voice(
         TacticalVoiceFaction::Empire
     };
     let cue = if let Some(group) = session.selected_fighter_group {
-        match panel {
-            TacticalCommandPanel::Maneuvers { .. } => {
+        match (panel, order) {
+            (TacticalCommandPanel::Missions { .. }, TacticalOrder::AttackDeathStar)
+                if faction == TacticalVoiceFaction::Alliance =>
+            {
+                TacticalVoiceCue::trench_run_started(group)
+            }
+            (TacticalCommandPanel::Maneuvers { .. }, _) => {
                 TacticalVoiceCue::fighter_maneuver(faction, group)
             }
-            TacticalCommandPanel::Missions { .. }
+            (TacticalCommandPanel::Missions { .. }, _)
                 if matches!(
                     order,
                     TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
@@ -7524,10 +7695,10 @@ fn queue_selected_command_voice(
             {
                 TacticalVoiceCue::fighter_attack(faction, group)
             }
-            TacticalCommandPanel::Missions { .. } => {
+            (TacticalCommandPanel::Missions { .. }, _) => {
                 TacticalVoiceCue::fighter_mission(faction, group)
             }
-            TacticalCommandPanel::Display => return,
+            (TacticalCommandPanel::Display, _) => return,
         }
     } else {
         let Some(group) = selected_player_task_force(session) else {
@@ -8712,6 +8883,9 @@ fn activate_tactical_withdraw_confirmation(
     state.withdraw_confirmation_pressed = None;
     match control {
         TacticalWithdrawConfirmationControl::Confirm => {
+            if let Some(session) = state.session.as_mut() {
+                session.queue_withdrawal_started_voice();
+            }
             macroquad::logging::info!(
                 "[tactical_options] command=withdraw status=withdrawal_started confirmation=accepted"
             );
@@ -10086,6 +10260,9 @@ fn draw_original_battle_alert(state: &mut TacticalState, cache: &mut BmpCache) -
             state.battle_alert_open = false;
             return match control {
                 BattleAlertControl::Retreat => {
+                    if let Some(session) = state.session.as_mut() {
+                        session.queue_withdrawal_started_voice();
+                    }
                     macroquad::logging::info!(
                         "[battle_alert] command=retreat resource={} status=started",
                         skin.buttons[0][0]
@@ -11933,7 +12110,14 @@ mod tests {
 
         assert!(state.present_auto_resolve_result(&result));
         assert!(state.strategic_results_applied());
-        let result_session = state.session.as_ref().unwrap();
+        let result_session = state.session.as_mut().unwrap();
+        assert_eq!(
+            result_session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::battle_won(
+                TacticalVoiceFaction::Alliance,
+                false
+            )]
+        );
         assert_eq!(result_session.phase, BattlePhase::Results);
         assert_eq!(result_session.winner, Some(CombatWinner::Attacker));
         assert!(!result_session.ships[0].alive);
@@ -13295,6 +13479,8 @@ mod tests {
 
     #[test]
     fn tactical_voice_cues_preserve_source_event_and_resource_families() {
+        // FUN_005bae60 supplies the event/resource arithmetic; the named
+        // command callers and audited voice map supply these family offsets.
         assert_eq!(
             TacticalVoiceCue::battle_ready(TacticalVoiceFaction::Alliance),
             TacticalVoiceCue {
@@ -13321,6 +13507,30 @@ mod tests {
             TacticalVoiceCue::fighter_mission(TacticalVoiceFaction::Empire, 3).resource_id,
             15_104
         );
+        assert_eq!(
+            TacticalVoiceCue::withdrawal_started(TacticalVoiceFaction::Alliance),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::WithdrawalStarted,
+                faction: TacticalVoiceFaction::Alliance,
+                source_event: 0x8f,
+                resource_id: 14_112,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::battle_won(TacticalVoiceFaction::Empire, false).resource_id,
+            15_129
+        );
+        assert_eq!(TacticalVoiceCue::death_star_firing().resource_id, 15_120);
+        assert_eq!(TacticalVoiceCue::trench_run_started(0).source_event, 0x139);
+        assert_eq!(
+            TacticalVoiceCue::trench_run_outcome(3, TacticalTrenchRunOutcome::Success),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::TrenchRunSucceeded,
+                faction: TacticalVoiceFaction::Alliance,
+                source_event: 0x138,
+                resource_id: 15_159,
+            }
+        );
 
         let mut empire = test_session(Vec::new(), Vec::new(), false);
         empire.queue_battle_ready_voice();
@@ -13328,6 +13538,127 @@ mod tests {
             empire.take_pending_voice_cues(),
             vec![TacticalVoiceCue::battle_ready(TacticalVoiceFaction::Empire)]
         );
+        empire.queue_withdrawal_started_voice();
+        assert_eq!(
+            empire.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::withdrawal_started(
+                TacticalVoiceFaction::Empire
+            )]
+        );
+    }
+
+    #[test]
+    fn trench_run_groups_route_to_their_exact_source_start_and_outcome_events() {
+        // FUN_005bae60 maps these four Alliance group triplets into the
+        // recovered 15133..15163 trench-run voice bank.
+        let expected = [
+            (0, 0x139, 0x13b, 0x13c),
+            (1, 0x12d, 0x12f, 0x130),
+            (2, 0x131, 0x133, 0x134),
+            (3, 0x135, 0x137, 0x138),
+        ];
+
+        for (group, start, failure, success) in expected {
+            assert_eq!(
+                TacticalVoiceCue::trench_run_started(group).source_event,
+                start
+            );
+            assert_eq!(
+                TacticalVoiceCue::trench_run_outcome(group, TacticalTrenchRunOutcome::Failure)
+                    .source_event,
+                failure
+            );
+            assert_eq!(
+                TacticalVoiceCue::trench_run_outcome(group, TacticalTrenchRunOutcome::Success)
+                    .source_event,
+                success
+            );
+        }
+    }
+
+    #[test]
+    fn selected_death_star_mission_routes_alliance_to_trench_and_empire_to_fighter_voice() {
+        // FUN_005bae60 exposes Alliance-only trench events; the Imperial
+        // command path remains in its recovered fighter-mission family.
+        let panel = TacticalCommandPanel::Missions {
+            pending_order: TacticalOrder::AttackDeathStar,
+        };
+        let mut alliance = test_session(Vec::new(), Vec::new(), true);
+        alliance.selected_fighter_group = Some(2);
+        queue_selected_command_voice(&mut alliance, panel, TacticalOrder::AttackDeathStar, false);
+        assert_eq!(
+            alliance.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::trench_run_started(2)]
+        );
+
+        let mut empire = test_session(Vec::new(), Vec::new(), false);
+        empire.selected_fighter_group = Some(2);
+        queue_selected_command_voice(&mut empire, panel, TacticalOrder::AttackDeathStar, false);
+        assert_eq!(
+            empire.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::fighter_mission(
+                TacticalVoiceFaction::Empire,
+                2
+            )]
+        );
+    }
+
+    #[test]
+    fn tactical_voice_bank_maps_all_source_events_to_exact_resources() {
+        // FUN_005bae60 registers every event from 0x20 through 0x13c.
+        let cues = (0x20..=0x13c)
+            .map(|source_event| {
+                TacticalVoiceCue::from_source_event(TacticalVoiceEvent::SourceMapped, source_event)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(cues.len(), 285);
+        assert_eq!(
+            cues.iter()
+                .map(|cue| (cue.faction, cue.resource_id))
+                .collect::<HashSet<_>>()
+                .len(),
+            285
+        );
+        assert_eq!(cues.first().unwrap().resource_id, 14_001);
+        assert_eq!(cues[121].resource_id, 14_122);
+        assert_eq!(cues[122].resource_id, 15_001);
+        assert_eq!(cues[253].resource_id, 15_132);
+        assert_eq!(cues[254].resource_id, 15_133);
+        assert_eq!(cues.last().unwrap().resource_id, 15_163);
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn tactical_audio_fixture_queues_every_weapon_and_voice_resource_once() {
+        // The fixture mirrors FUN_005bae60's complete source-event mapping,
+        // grouped by the two owned resource DLLs for deterministic loading.
+        let mut state = TacticalState {
+            session: Some(test_session(Vec::new(), Vec::new(), true)),
+            ..TacticalState::default()
+        };
+
+        state.configure_tactical_audio_fixture();
+
+        let session = state.session.as_mut().unwrap();
+        assert_eq!(
+            session
+                .take_pending_audio_cues()
+                .into_iter()
+                .map(|cue| cue.resource_id)
+                .collect::<Vec<_>>(),
+            (13_033..=13_054).collect::<Vec<_>>()
+        );
+        let voice_resources = session
+            .take_pending_voice_cues()
+            .into_iter()
+            .map(|cue| cue.resource_id)
+            .collect::<Vec<_>>();
+        let expected = (14_001..=14_122)
+            .chain(15_133..=15_163)
+            .chain(15_001..=15_132)
+            .collect::<Vec<_>>();
+        assert_eq!(voice_resources, expected);
+        assert_eq!(voice_resources.len(), 285);
     }
 
     #[test]
@@ -13981,7 +14312,10 @@ mod tests {
 
     #[test]
     fn withdrawal_requires_native_confirmation_before_dispatch() {
-        let mut state = TacticalState::default();
+        let mut state = TacticalState {
+            session: Some(test_session(Vec::new(), Vec::new(), true)),
+            ..TacticalState::default()
+        };
         state.battle_options_open = true;
 
         assert_eq!(
@@ -13999,6 +14333,12 @@ mod tests {
             TacticalAction::None
         );
         assert!(!state.withdraw_confirmation_open);
+        assert!(state
+            .session
+            .as_ref()
+            .unwrap()
+            .pending_voice_cues
+            .is_empty());
 
         state.battle_options_open = true;
         assert_eq!(
@@ -14013,6 +14353,12 @@ mod tests {
             TacticalAction::WithdrawFromBattle
         );
         assert!(!state.withdraw_confirmation_open);
+        assert_eq!(
+            state.session.as_mut().unwrap().take_pending_voice_cues(),
+            vec![TacticalVoiceCue::withdrawal_started(
+                TacticalVoiceFaction::Alliance
+            )]
+        );
     }
 
     #[test]
@@ -14281,6 +14627,124 @@ mod tests {
     }
 
     #[test]
+    fn death_star_ready_voice_fires_once_only_when_the_players_laser_crosses_full_charge() {
+        // FUN_005bae60 maps source event 0x113 to the Imperial ready line;
+        // the tactical manager emits it on the player's not-ready/ready edge.
+        let attacker = test_ship(64, 0, true, true);
+        let defender = test_ship(128, 0, false, true);
+        let mut session = test_session(vec![attacker, defender], Vec::new(), true);
+        session.paused = false;
+        session.death_star = Some(TacticalDeathStar {
+            resource: DEATH_STAR_TACTICAL_RESOURCE,
+            is_attacker: true,
+            is_alliance: false,
+            source_position: TacticalWorldPosition::ORIGIN,
+            hull: 100.0,
+            laser_charge: 99.95,
+            destroyed: false,
+            action_committed: false,
+        });
+
+        assert!(!session.step());
+        assert_eq!(session.combat_tick, 1);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::death_star_ready()]
+        );
+        assert!(!session.step());
+        assert_eq!(session.combat_tick, 2);
+        assert!(session.take_pending_voice_cues().is_empty());
+
+        let attacker = test_ship(64, 0, true, true);
+        let defender = test_ship(128, 0, false, true);
+        let mut opponent_owned = test_session(vec![attacker, defender], Vec::new(), true);
+        opponent_owned.paused = false;
+        opponent_owned.death_star = Some(TacticalDeathStar {
+            resource: DEATH_STAR_TACTICAL_RESOURCE,
+            is_attacker: false,
+            is_alliance: false,
+            source_position: TacticalWorldPosition::ORIGIN,
+            hull: 100.0,
+            laser_charge: 99.95,
+            destroyed: false,
+            action_committed: false,
+        });
+
+        assert!(!opponent_owned.step());
+        assert_eq!(opponent_owned.combat_tick, 1);
+        assert!(opponent_owned.take_pending_voice_cues().is_empty());
+    }
+
+    #[test]
+    fn battle_outcome_voice_distinguishes_draw_destruction_and_each_withdrawal_side() {
+        // FUN_005bae60 assigns separate outcome events for withdrawal,
+        // destruction victory, and defeat in each faction's recovered bank.
+        let alliance = test_ship(64, 0, true, true);
+        let empire = test_ship(128, 0, false, true);
+        let mut session = test_session(vec![alliance, empire], Vec::new(), true);
+
+        session.queue_battle_outcome_voice(CombatWinner::Draw);
+        assert!(session.take_pending_voice_cues().is_empty());
+
+        session.queue_battle_outcome_voice(CombatWinner::Attacker);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::battle_won(
+                TacticalVoiceFaction::Alliance,
+                false
+            )]
+        );
+
+        session.ships[1].retreated = true;
+        session.queue_battle_outcome_voice(CombatWinner::Attacker);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::battle_won(
+                TacticalVoiceFaction::Alliance,
+                true
+            )]
+        );
+
+        session.ships[1].retreated = false;
+        session.ships[0].retreated = true;
+        session.queue_battle_outcome_voice(CombatWinner::Defender);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::withdrawal_complete(
+                TacticalVoiceFaction::Alliance
+            )]
+        );
+
+        session.ships[0].retreated = false;
+        session.queue_battle_outcome_voice(CombatWinner::Defender);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::battle_lost(
+                TacticalVoiceFaction::Alliance
+            )]
+        );
+
+        let alliance = test_ship(64, 0, true, true);
+        let empire = test_ship(128, 0, false, true);
+        let mut imperial_player = test_session(vec![alliance, empire], Vec::new(), false);
+        imperial_player.ships[0].retreated = true;
+        imperial_player.queue_battle_outcome_voice(CombatWinner::Defender);
+        assert_eq!(
+            imperial_player.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::battle_won(
+                TacticalVoiceFaction::Empire,
+                true
+            )]
+        );
+        imperial_player.ships[0].retreated = false;
+        imperial_player.queue_battle_outcome_voice(CombatWinner::Attacker);
+        assert_eq!(
+            imperial_player.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::battle_lost(TacticalVoiceFaction::Empire)]
+        );
+    }
+
+    #[test]
     fn death_star_superlaser_requires_player_ownership_full_charge_and_enemy_target() {
         let target = test_ship(64, 0, true, true);
         let mut session = test_session(vec![target], Vec::new(), false);
@@ -14324,6 +14788,10 @@ mod tests {
         });
 
         assert!(session.commit_death_star_shot(0));
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::death_star_firing()]
+        );
         assert_eq!(session.death_star.unwrap().laser_charge, 0.0);
         assert!(session.death_star.unwrap().action_committed);
         assert!(session.death_star_beam.is_some());
@@ -14379,6 +14847,13 @@ mod tests {
             Some(TacticalTrenchRunOutcome::Success)
         );
         assert_eq!(session.take_pending_trench_run_cinematic(), None);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![
+                TacticalVoiceCue::trench_run_outcome(0, TacticalTrenchRunOutcome::Success),
+                TacticalVoiceCue::battle_won(TacticalVoiceFaction::Alliance, false),
+            ]
+        );
     }
 
     #[test]
@@ -14422,6 +14897,13 @@ mod tests {
             Some(TacticalTrenchRunOutcome::Failure)
         );
         assert_eq!(session.take_pending_trench_run_cinematic(), None);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![
+                TacticalVoiceCue::trench_run_outcome(0, TacticalTrenchRunOutcome::Failure),
+                TacticalVoiceCue::battle_lost(TacticalVoiceFaction::Alliance),
+            ]
+        );
     }
 
     #[test]
@@ -14440,6 +14922,70 @@ mod tests {
             Some(TacticalTrenchRunOutcome::Failure)
         );
         assert_eq!(session.take_pending_trench_run_cinematic(), None);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::trench_run_outcome(
+                0,
+                TacticalTrenchRunOutcome::Failure
+            )]
+        );
+    }
+
+    #[test]
+    fn alliance_trench_result_selects_only_the_active_alliance_attack_group() {
+        // FUN_005bae60's RGBY outcome family is selected from the Alliance
+        // group actively executing the Death Star mission.
+        let mut imperial_attacker = test_fighter(5, false);
+        imperial_attacker.fighter_group = 1;
+        imperial_attacker.order = TacticalOrder::AttackDeathStar;
+        let mut inactive_alliance = test_fighter(3, true);
+        inactive_alliance.fighter_group = 2;
+        inactive_alliance.order = TacticalOrder::None;
+        let mut active_alliance = test_fighter(4, true);
+        active_alliance.fighter_group = 3;
+        active_alliance.order = TacticalOrder::AttackDeathStar;
+        let mut session = test_session(
+            Vec::new(),
+            vec![imperial_attacker, inactive_alliance, active_alliance],
+            true,
+        );
+
+        session.record_trench_run_outcome(TacticalTrenchRunOutcome::Success);
+
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::trench_run_outcome(
+                3,
+                TacticalTrenchRunOutcome::Success
+            )]
+        );
+    }
+
+    #[test]
+    fn imperial_trench_run_observer_routes_failure_and_success_to_death_star_events() {
+        // FUN_005bae60 supplies distinct Imperial events for a broken-off
+        // Alliance attack and destruction of the Death Star.
+        let mut failure = test_session(Vec::new(), Vec::new(), false);
+        failure.record_trench_run_outcome(TacticalTrenchRunOutcome::Failure);
+        assert_eq!(
+            failure.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::death_star_attack_broken_off()]
+        );
+        assert_eq!(
+            failure.trench_run_outcome,
+            Some(TacticalTrenchRunOutcome::Failure)
+        );
+
+        let mut success = test_session(Vec::new(), Vec::new(), false);
+        success.record_trench_run_outcome(TacticalTrenchRunOutcome::Success);
+        assert_eq!(
+            success.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::death_star_destroyed()]
+        );
+        assert_eq!(
+            success.trench_run_outcome,
+            Some(TacticalTrenchRunOutcome::Success)
+        );
     }
 
     #[test]

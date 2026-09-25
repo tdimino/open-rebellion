@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B18",
+  "status": "pass_complete_voice_transport_selected_dispatch_strict_a0_pending",
+  "source_contract": {
+    "audio_manager": [
+      "FUN_005bae60",
+      "FUN_005ba980",
+      "FUN_005bad50"
+    ],
+    "alliance_main": {
+      "event_range": "0x20-0x99",
+      "resource_range": "14001-14122",
+      "count": 122
+    },
+    "empire_main": {
+      "event_range": "0x9a-0x11d",
+      "resource_range": "15001-15132",
+      "count": 132
+    },
+    "alliance_trench": {
+      "event_range": "0x11e-0x13c",
+      "resource_range": "15133-15163",
+      "count": 31
+    },
+    "alliance_variants": 153,
+    "empire_variants": 132,
+    "total_variants": 285,
+    "voicefxa_dll_sha256": "0f2310bc2c03fa6f4f08aa0a7e70f1b6843e26625d426b4b1d419f7403fe9798",
+    "voicefxe_dll_sha256": "2c742109d6dabd5ea374dcdd030d43de10bc8ed3a1e1d89c2039d2ee0d64aabf"
+  },
+  "implemented_transition_dispatch": [
+    "withdrawal_start",
+    "withdrawal_complete",
+    "battle_win_opponent_withdrew",
+    "battle_win_opponent_destroyed",
+    "battle_loss",
+    "death_star_firing",
+    "death_star_recharge_ready",
+    "death_star_attack_broken_off",
+    "death_star_destroyed",
+    "alliance_trench_run_group_start",
+    "alliance_trench_run_group_result"
+  ],
+  "browser_run": {
+    "run_id": "2026-09-25T14-33-15-631Z-45212",
+    "scenario": "production-tactical-audio-routing",
+    "passed": 4,
+    "failed": 0,
+    "muted_launches": 4,
+    "four_request_startups": 4,
+    "browser_processes_closed": 4,
+    "weapon_variants_per_case": 22,
+    "tactical_voice_variants_per_case": 285
+  },
+  "verification": {
+    "workspace_tests": "804_passed_0_failed_21_ignored",
+    "focused_render_tests": "285_passed_0_failed_1_ignored",
+    "fixture_feature_render_tests": "286_passed_0_failed_2_ignored",
+    "focused_app_tests": "17_passed_0_failed",
+    "owned_dll_extraction": "285_passed_153_alliance_132_empire",
+    "dual_engine_manifest_hash_match": "285_of_285",
+    "catalog_schema": "pass_38_tactical_scenarios",
+    "matrix_coverage": "106_of_106_deterministic_A1",
+    "browser_audio_probe": "4_of_4_pass_22_weapon_and_285_voice_cache_hits_muted",
+    "independent_browser_review": "pass_no_in_scope_blockers_combined_source_screenshots_byte_identical",
+    "mutation_default": "71_total_50_caught_16_unviable_5_explained",
+    "mutation_fixture_feature": "68_total_51_caught_17_unviable_0_missed",
+    "mutation_survivor_explanation": "2_fixture_only_mutations_caught_with_feature_enabled_3_process_status_outputs_covered_by_extraction_and_browser_integration",
+    "strict_gate_run": false,
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_640x480": "ca0b7d83d0d1cf0dfb90c6d01f296c3662cb58d71a85e9359556b44d1ba7df55",
+    "alliance_1280x800": "65e169fafa6311f8d46556c877d5464395998534259bddeb19c1ed4819810833",
+    "empire_640x480": "b1f75f11831900324162f2ff2de9269199310d8f3d7391fbc582d73b09d7710d",
+    "empire_1280x800": "084d8a7a56d11d5a5caa13b2abb667e4545633a7e609517346dd2925b83304f7"
+  },
+  "fixture_wasm_sha256": "6394743761a8308a5a2aaa558ee6cecc949601edc59111dfa386a55d45c49496",
+  "production_wasm_sha256": "69c1633e38cdd015ed86328fe07894cb20e50cb310849c3851dc1da43cd71a24",
+  "runtime_pack_sha256": "b76ed32899e1408f5433c899effb489681e8e01732e4dffca0274c9c6d355e5a",
+  "limits": [
+    "remaining_completion_destruction_recovery_and_warning_dispatch_open",
+    "ordered_trench_chatter_dispatch_open",
+    "exact_shared_rng_sequence_open",
+    "mixing_ducking_and_interruption_open",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ],
+  "proprietary_artifacts_committed": false
+}

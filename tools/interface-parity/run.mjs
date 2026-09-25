@@ -3185,7 +3185,7 @@ function probeTacticalAudioRouting(folder, stable, consoleLines, ready) {
   assert.equal(ready.tactical_weapon_audio_wave_first, 13033);
   assert.equal(ready.tactical_weapon_audio_wave_last, 13054);
   assert.equal(ready.tactical_weapon_audio_variant_count, 22);
-  assert.equal(ready.tactical_command_voice_variant_count, 90);
+  assert.equal(ready.tactical_voice_variant_count, 285);
   assert.equal(ready.battle_alert_open, false);
   const music = consoleLines.find(({ text }) =>
     text.includes("[audio] context=combat track=Battle mdata=307"));
@@ -3215,17 +3215,15 @@ function probeTacticalAudioRouting(folder, stable, consoleLines, ready) {
     return { sourceEvent: Number.parseInt(match[1], 16), wave: Number(match[2]), faction: match[3] };
   });
   const resourceRanges = [
-    ["Alliance", 14001, 14001], ["Alliance", 14003, 14014],
-    ["Alliance", 14029, 14040], ["Alliance", 14080, 14087],
-    ["Alliance", 14089, 14100], ["Empire", 15001, 15001],
-    ["Empire", 15003, 15014], ["Empire", 15029, 15040],
-    ["Empire", 15084, 15091], ["Empire", 15093, 15104],
+    ["Alliance", 14001, 14122], ["Alliance", 15133, 15163],
+    ["Empire", 15001, 15132],
   ];
   const expectedVoices = resourceRanges.flatMap(([faction, first, last]) =>
     Array.from({ length: last - first + 1 }, (_, index) => ({ faction, wave: first + index })));
   assert.deepEqual(voices.map(({ faction, wave }) => ({ faction, wave })), expectedVoices);
-  assert.equal(new Set(voices.map(({ faction, wave }) => `${faction}:${wave}`)).size, 90);
-  assert.deepEqual(voices.slice(0, 2).map(({ sourceEvent }) => sourceEvent), [0x20, 0x22]);
+  assert.equal(new Set(voices.map(({ faction, wave }) => `${faction}:${wave}`)).size, 285);
+  assert.deepEqual(voices.slice(0, 2).map(({ sourceEvent }) => sourceEvent), [0x20, 0x21]);
+  assert.equal(voices.find(({ faction, wave }) => faction === "Alliance" && wave === 15133).sourceEvent, 0x11e);
   assert.equal(voices.find(({ faction, wave }) => faction === "Empire" && wave === 15001).sourceEvent, 0x9a);
   fs.writeFileSync(path.join(folder, "tactical-audio-muted.png"), stable.bytes);
   return [{
@@ -3234,7 +3232,7 @@ function probeTacticalAudioRouting(folder, stable, consoleLines, ready) {
     tactical_wave_first: 13033,
     tactical_wave_last: 13054,
     tactical_wave_variants: 22,
-    tactical_command_voice_variants: 90,
+    tactical_voice_variants: 285,
     music_log: music.text,
     cue_logs: cueLogs.map(({ text }) => text),
     voice_logs: voiceLogs.map(({ text }) => text),
@@ -4056,7 +4054,7 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         : [{ type: "tactical-3d-negative-control", proof_enabled: false }])]
       : await probeGid(page, faction, scenario, viewport, folder, consoleLines, ready);
     if (battle) {
-      assert.equal(ready.schema_version, 34);
+      assert.equal(ready.schema_version, 35);
       assert.equal(ready.family, "tactical");
       assert.equal(ready.faction, faction);
       assert.equal(ready.proof_enabled, scenario.tactical_proof);

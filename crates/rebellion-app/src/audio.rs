@@ -221,22 +221,18 @@ fn voice_faction_dir(faction: TacticalVoiceFaction) -> &'static str {
     }
 }
 
-/// Source-proven tactical command banks. These cover battle-ready and the
-/// group-specific maneuver, attack, formation, and mission acknowledgements.
+/// Complete source-proven tactical voice banks.
+///
+/// `VOICEFXA.DLL` stores the Alliance command/result bank at 14001-14122 and
+/// the Alliance trench-run bank at 15133-15163. `VOICEFXE.DLL` stores the
+/// Imperial command/result/Death Star bank at 15001-15132.
 pub const TACTICAL_VOICE_RANGES: &[(TacticalVoiceFaction, u32, u32)] = &[
-    (TacticalVoiceFaction::Alliance, 14_001, 14_001),
-    (TacticalVoiceFaction::Alliance, 14_003, 14_014),
-    (TacticalVoiceFaction::Alliance, 14_029, 14_040),
-    (TacticalVoiceFaction::Alliance, 14_080, 14_087),
-    (TacticalVoiceFaction::Alliance, 14_089, 14_100),
-    (TacticalVoiceFaction::Empire, 15_001, 15_001),
-    (TacticalVoiceFaction::Empire, 15_003, 15_014),
-    (TacticalVoiceFaction::Empire, 15_029, 15_040),
-    (TacticalVoiceFaction::Empire, 15_084, 15_091),
-    (TacticalVoiceFaction::Empire, 15_093, 15_104),
+    (TacticalVoiceFaction::Alliance, 14_001, 14_122),
+    (TacticalVoiceFaction::Alliance, 15_133, 15_163),
+    (TacticalVoiceFaction::Empire, 15_001, 15_132),
 ];
 
-/// Runtime-pack path and resource identity for every restored command voice.
+/// Runtime-pack path and resource identity for every restored tactical voice.
 pub fn tactical_voice_assets() -> Vec<(TacticalVoiceFaction, String, u32)> {
     TACTICAL_VOICE_RANGES
         .iter()
@@ -273,7 +269,7 @@ pub struct AudioEngine {
     /// Original tactical weapon-event variants keyed by WAVE resource ID.
     tactical_sfx: HashMap<u32, Sound>,
 
-    /// Source-mapped tactical command voices keyed by faction and WAVE ID.
+    /// Source-mapped tactical voices keyed by faction and WAVE ID.
     tactical_voice: HashMap<(TacticalVoiceFaction, u32), Sound>,
 
     /// Currently loaded music track + which track it is.
@@ -352,7 +348,7 @@ impl AudioEngine {
         }
     }
 
-    /// Pre-load the source-proven tactical command voice bank. Missing files
+    /// Pre-load the complete source-proven tactical voice bank. Missing files
     /// remain silent so an installation without the original DLLs still runs.
     pub fn load_tactical_voice(&mut self, sounds_dir: &Path) {
         let audio_root = audio_base_path(sounds_dir);
@@ -434,7 +430,7 @@ impl AudioEngine {
         }
     }
 
-    /// Load source-proven command acknowledgements from owned faction DLLs.
+    /// Load the complete source-proven tactical voice banks from owned DLLs.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_original_tactical_voice(&mut self, alliance_dll: &Path, empire_dll: &Path) {
         for (faction, dll_path) in [
@@ -486,7 +482,7 @@ impl AudioEngine {
         self.tactical_sfx.insert(resource_id, sound);
     }
 
-    /// Load one source-mapped tactical command voice from raw bytes.
+    /// Load one source-mapped tactical voice from raw bytes.
     pub fn load_tactical_voice_bytes(
         &mut self,
         faction: TacticalVoiceFaction,
@@ -585,7 +581,7 @@ impl AudioEngine {
         }
     }
 
-    /// Play one exact tactical command voice at the current SFX volume.
+    /// Play one exact tactical voice at the current SFX volume.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
@@ -740,14 +736,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tactical_voice_assets_cover_exact_source_backed_command_bank() {
+    fn tactical_voice_assets_cover_complete_source_backed_banks() {
+        // FUN_005bae60 registers the three continuous faction event ranges.
         let assets = tactical_voice_assets();
-        assert_eq!(assets.len(), 90);
+        assert_eq!(assets.len(), 285);
         let identities = assets
             .iter()
             .map(|(faction, _, resource_id)| (*faction, *resource_id))
             .collect::<HashSet<_>>();
-        assert_eq!(identities.len(), 90);
+        assert_eq!(identities.len(), 285);
         assert!(assets.contains(&(
             TacticalVoiceFaction::Alliance,
             "voice/alliance/14001-voicefxa.wav".to_string(),
@@ -755,12 +752,16 @@ mod tests {
         )));
         assert!(assets.contains(&(
             TacticalVoiceFaction::Empire,
-            "voice/empire/15104-voicefxe.wav".to_string(),
-            15_104,
+            "voice/empire/15132-voicefxe.wav".to_string(),
+            15_132,
         )));
-        assert!(!identities.contains(&(TacticalVoiceFaction::Alliance, 14_002)));
-        assert!(!identities.contains(&(TacticalVoiceFaction::Empire, 15_002)));
-        assert!(!identities.contains(&(TacticalVoiceFaction::Alliance, 14_088)));
-        assert!(!identities.contains(&(TacticalVoiceFaction::Empire, 15_092)));
+        assert!(assets.contains(&(
+            TacticalVoiceFaction::Alliance,
+            "voice/alliance/15163-voicefxa.wav".to_string(),
+            15_163,
+        )));
+        assert!(!identities.contains(&(TacticalVoiceFaction::Alliance, 15_001)));
+        assert!(!identities.contains(&(TacticalVoiceFaction::Alliance, 15_132)));
+        assert!(!identities.contains(&(TacticalVoiceFaction::Empire, 15_133)));
     }
 }

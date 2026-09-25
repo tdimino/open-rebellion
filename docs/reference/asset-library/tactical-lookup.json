@@ -134,37 +134,26 @@
     "runtime_grade": "provisional-A1",
     "implementation": ["crates/rebellion-render/src/tactical_view.rs", "crates/rebellion-app/src/audio.rs"],
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md",
-    "open": ["exact shared-RNG sequence", "remaining non-weapon and voice events", "mixing, ducking, and interruption", "audible native comparison", "strict A0 acceptance"]
+    "open": ["exact shared-RNG sequence", "remaining non-weapon events and voice dispatch", "mixing, ducking, and interruption", "audible native comparison", "strict A0 acceptance"]
   },
   "command_voice_contract": {
+    "complete_bank_map": "tactical-voice-map.json",
     "resource_type": "WAVE",
     "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50"],
     "faction_banks": [
       {
         "faction": "alliance",
         "dll": "VOICEFXA.DLL",
-        "event_base": 32,
-        "resource_base": 14001,
-        "resources": [
-          [14001, 14001],
-          [14003, 14014],
-          [14029, 14040],
-          [14080, 14087],
-          [14089, 14100]
-        ]
+        "event_ranges": [[32, 153], [286, 316]],
+        "resource_ranges": [[14001, 14122], [15133, 15163]],
+        "variant_count": 153
       },
       {
         "faction": "empire",
         "dll": "VOICEFXE.DLL",
-        "event_base": 154,
-        "resource_base": 15001,
-        "resources": [
-          [15001, 15001],
-          [15003, 15014],
-          [15029, 15040],
-          [15084, 15091],
-          [15093, 15104]
-        ]
+        "event_ranges": [[154, 285]],
+        "resource_ranges": [[15001, 15132]],
+        "variant_count": 132
       }
     ],
     "families": [
@@ -175,14 +164,24 @@
       "fighter_attack",
       "capital_formation",
       "capital_mission",
-      "fighter_mission"
+      "fighter_mission",
+      "withdrawal",
+      "battle_outcome",
+      "completion",
+      "destruction",
+      "recovery",
+      "warning",
+      "death_star",
+      "trench_run"
     ],
-    "variant_count": 90,
+    "variant_count": 285,
     "identity_grade": "source-proven",
     "runtime_grade": "provisional-A1",
     "implementation": ["crates/rebellion-render/src/tactical_view.rs", "crates/rebellion-app/src/audio.rs"],
-    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-command-voice.md",
-    "open": ["remaining result withdrawal and Death Star voice events", "mixing ducking and interruption", "audible native comparison", "strict A0 acceptance"]
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-complete-voice-bank.md",
+    "full_bank_transport": "285 source resources implemented",
+    "production_dispatch": "command, withdrawal, battle outcome, selected Death Star, and group trench-run transitions implemented",
+    "open": ["remaining completion destruction recovery warning and ordered trench dispatch", "exact shared RNG sequence", "mixing ducking and interruption", "audible native comparison", "strict A0 acceptance"]
   },
   "projectile_field_contract": {
     "projectile_source_functions": ["FUN_005b1ea0", "FUN_005b1f60", "FUN_005b2080", "FUN_005b2c70", "FUN_005d3de0", "FUN_005ee590", "LAB_005eeb90"],

@@ -512,8 +512,22 @@
           "empire_variant_count": 45,
           "total_variant_count": 90
         },
-        "latest_verified_tranche": "P58-B17 preserves deterministic A1 mapping for all 106 tactical cells and restores 90 exact faction command recordings from VOICEFXA/VOICEFXE. Battle ready and task-force/RGBY maneuver, attack, formation, and mission events dispatch from production commands; the focused muted browser journey loads and routes all 22 weapon and 90 voice resources for both factions and viewports. A0 and strict acceptance remain 0 of 106.",
-        "next_proof": "Recover remaining result, withdrawal, and Death Star voice events, exact shared-RNG sequencing, mixing, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare audible native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
+        "p58_b18_complete_voice_bank": {
+          "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50"],
+          "alliance_main_event_range": "0x20-0x99",
+          "alliance_main_wave_range": "14001-14122",
+          "empire_main_event_range": "0x9a-0x11d",
+          "empire_main_wave_range": "15001-15132",
+          "alliance_trench_event_range": "0x11e-0x13c",
+          "alliance_trench_wave_range": "15133-15163",
+          "alliance_variant_count": 153,
+          "empire_variant_count": 132,
+          "total_variant_count": 285,
+          "implemented_transition_dispatch": ["withdrawal_start", "withdrawal_complete", "battle_win_opponent_withdrew", "battle_win_opponent_destroyed", "battle_loss", "death_star_firing", "death_star_recharge_ready", "death_star_attack_broken_off", "death_star_destroyed", "alliance_trench_run_group_start", "alliance_trench_run_group_result"],
+          "open_dispatch_families": ["completion", "destruction", "recovery", "warning", "ordered_trench_chatter"]
+        },
+        "latest_verified_tranche": "P58-B18 preserves deterministic A1 mapping for all 106 tactical cells and transports every source-addressed faction tactical voice: 153 Alliance and 132 Imperial, 285 total. Selected withdrawal, battle-outcome, Death Star, and RGBY trench-run transitions dispatch from production paths; the focused muted browser journey loads and routes all 22 weapon and 285 voice resources for both factions and viewports. A0 and strict acceptance remain 0 of 106.",
+        "next_proof": "Recover remaining completion, destruction, recovery, warning, and ordered trench voice dispatch, exact shared-RNG sequencing, mixing, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare audible native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true
     },

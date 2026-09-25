@@ -805,6 +805,13 @@ would tune around known simulation feedback defects.
   all 22 weapon and 90 command-voice resources. Result, withdrawal, and Death
   Star voice families, mixing, audible native comparison, A0 evidence, and
   strict acceptance remain open.
+  P58-B18 transports every source-addressed tactical voice: 153 Alliance and
+  132 Imperial, 285 total. Production paths now dispatch selected withdrawal,
+  battle-outcome, Death Star, and RGBY trench-run transitions; the focused
+  four-case muted browser gate loads and routes all 307 tactical weapon and
+  voice resources. Remaining completion, destruction, recovery, warning, and
+  ordered trench callers, exact shared-RNG sequencing, mixing, audible native
+  comparison, A0 evidence, and strict acceptance remain open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production
