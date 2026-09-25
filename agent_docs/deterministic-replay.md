@@ -119,7 +119,9 @@ because the save version is hashed, the clock carries the pause stop day, and
 the fixture's `set_speed` command now names the original `Fast` speed. Seeding
 then placed Leia Organa at Yavin; the placement table had looked for "Princess
 Leia", a name TEXTSTRA does not use, so she had started nowhere. It now starts
-at `v1:39350fd64a68ecb8` and ends at `v1:573f3e9f29e9dc20`. Before v14, the committed v13 goldens no longer
+at `v1:39350fd64a68ecb8`. From tick 10 the AI builds only classes its
+research has reached (F-018), so the campaign ends at `v1:90ce6c73ea667edf`.
+Before v14, the committed v13 goldens no longer
 reproduced locally even at their own commit `e8d4945`: that commit, with
 unchanged DATs, now computes initial `v1:14ef55dafe6595ee`. The cause is
 outside the committed code and remains open. The unit tests use

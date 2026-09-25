@@ -324,7 +324,14 @@ impl AISystem {
         Self::evaluate_rescue(state, world, faction, config, &mut actions);
         Self::evaluate_reconnaissance(state, world, faction, config, &mut actions);
         Self::evaluate_research(state, world, research_state, faction, &mut actions);
-        Self::evaluate_production(world, mfg_state, faction, config, &mut actions);
+        Self::evaluate_production(
+            world,
+            mfg_state,
+            research_state,
+            faction,
+            config,
+            &mut actions,
+        );
         Self::evaluate_uprising_prevention(state, world, faction, config, &mut actions);
         Self::evaluate_ds_escort(world, movement, faction, config, &mut actions);
         Self::evaluate_fleet_deployment(
@@ -1249,12 +1256,13 @@ impl AISystem {
     fn evaluate_production(
         world: &GameWorld,
         mfg_state: &ManufacturingState,
+        research_state: &ResearchState,
         faction: AiFaction,
         config: &GameConfig,
         actions: &mut Vec<AIAction>,
     ) {
-        let best_fighter = Self::best_fighter_class(world, faction);
-        let best_capship = Self::best_capital_ship_class(world, faction);
+        let best_fighter = Self::best_fighter_class(world, research_state, faction);
+        let best_capship = Self::best_capital_ship_class(world, research_state, faction);
 
         // Count existing fleet assets to decide what to build next.
         let is_alliance = matches!(faction, AiFaction::Alliance);
@@ -1412,33 +1420,35 @@ impl AISystem {
         }
     }
 
-    /// Select the most advanced fighter class available for this faction.
-    fn best_fighter_class(
-        world: &GameWorld,
+    /// Select the most advanced fighter class this faction has researched.
+    fn best_fighter_class<'w>(
+        world: &'w GameWorld,
+        research_state: &ResearchState,
         faction: AiFaction,
-    ) -> Option<(FighterKey, &crate::world::FighterClass)> {
+    ) -> Option<(FighterKey, &'w crate::world::FighterClass)> {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
         world
             .fighter_classes
             .iter()
-            .filter(|(_, fc)| match faction {
-                AiFaction::Alliance => fc.is_alliance,
-                AiFaction::Empire => fc.is_empire,
+            .filter(|(key, _)| {
+                ResearchSystem::fighter_class_is_available(world, research_state, is_alliance, *key)
             })
             .max_by_key(|(_, fc)| fc.refined_material_cost)
     }
 
-    /// Select the most advanced capital ship class available for this faction.
+    /// Select the most advanced capital ship class this faction has researched.
     /// Prefers higher hull (stronger ships) as the tiebreaker.
-    fn best_capital_ship_class(
-        world: &GameWorld,
+    fn best_capital_ship_class<'w>(
+        world: &'w GameWorld,
+        research_state: &ResearchState,
         faction: AiFaction,
-    ) -> Option<(CapitalShipKey, &crate::world::CapitalShipClass)> {
+    ) -> Option<(CapitalShipKey, &'w crate::world::CapitalShipClass)> {
+        let is_alliance = matches!(faction, AiFaction::Alliance);
         world
             .capital_ship_classes
             .iter()
-            .filter(|(_, cs)| match faction {
-                AiFaction::Alliance => cs.is_alliance,
-                AiFaction::Empire => cs.is_empire,
+            .filter(|(key, _)| {
+                ResearchSystem::ship_class_is_available(world, research_state, is_alliance, *key)
             })
             .max_by_key(|(_, cs)| cs.hull)
     }
@@ -2887,6 +2897,111 @@ mod tests {
             has_fighter_enqueue,
             "expected fighter production at empire system"
         );
+    }
+
+    /// Fighter the Empire AI enqueues at an idle shipyard system holding a
+    /// researched TIE Fighter (order 0) and a TIE Defender (FIGHTSD.DAT
+    /// research_order 8) at the given Ship research level.
+    fn empire_fighter_choice_at_ship_level(ship_level: u32) -> DatId {
+        let mut world = empty_world();
+        let sector = add_sector(&mut world);
+        let mfg_key =
+            world
+                .manufacturing_facilities
+                .insert(crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(1),
+                    is_alliance: false,
+                    is_shipyard: false,
+                });
+        world.systems.insert(System {
+            dat_id: DatId(0),
+            name: "Coruscant".into(),
+            sector,
+            x: 0,
+            y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.1,
+            popularity_empire: 0.9,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces: vec![],
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![mfg_key],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: ControlKind::Controlled(crate::dat::Faction::Empire),
+        });
+        for (id, name, cost, order) in [(5, "TIE Fighter", 20, 0), (8, "TIE Defender", 60, 8)] {
+            world.fighter_classes.insert(FighterClass {
+                dat_id: DatId(id),
+                name: name.into(),
+                is_empire: true,
+                refined_material_cost: cost,
+                squadron_size: 6,
+                research_order: order,
+                ..FighterClass::default()
+            });
+        }
+        let mut research = crate::research::ResearchState::new();
+        research.empire.ship = ship_level;
+
+        let actions = AISystem::advance(
+            &mut AIState::new(AiFaction::Empire),
+            &world,
+            &ManufacturingState::new(),
+            &MissionState::new(),
+            &crate::movement::MovementState::new(),
+            &ticks(7),
+            &GameConfig::default(),
+            &research,
+        );
+        actions
+            .iter()
+            .find_map(|a| match a {
+                AIAction::EnqueueProduction {
+                    kind: BuildableKind::Fighter(key),
+                    ..
+                } => Some(world.fighter_classes[*key].dat_id),
+                _ => None,
+            })
+            .expect("fighter production")
+    }
+
+    #[test]
+    fn ai_picks_its_strongest_researched_capital_ship() {
+        let mut world = empty_world();
+        // CAPSHPSD.DAT: order-0 classes start buildable; 9 is late-game.
+        for (id, hull, order) in [(131, 100, 0), (128, 900, 9)] {
+            world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    dat_id: DatId(id),
+                    is_empire: true,
+                    hull,
+                    research_order: order,
+                    ..Default::default()
+                });
+        }
+        let mut research = crate::research::ResearchState::new();
+        let pick = |research: &crate::research::ResearchState| {
+            AISystem::best_capital_ship_class(&world, research, AiFaction::Empire)
+                .map(|(_, c)| c.dat_id)
+        };
+
+        assert_eq!(pick(&research), Some(DatId(131)));
+        research.empire.ship = 9;
+        assert_eq!(pick(&research), Some(DatId(128)));
+    }
+
+    #[test]
+    fn ai_builds_only_fighters_its_ship_research_has_reached() {
+        assert_eq!(empire_fighter_choice_at_ship_level(7), DatId(5));
+        assert_eq!(empire_fighter_choice_at_ship_level(8), DatId(8));
     }
 
     #[test]

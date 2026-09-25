@@ -1639,10 +1639,13 @@
     {
       "id": "F-018",
       "severity": "P1",
-      "status": "confirmed",
+      "status": "partially_remediated",
       "title": "Research never limits which ships can be built",
       "evidence": [
-        "crates/rebellion-core/src/research.rs: ship_class_is_available() and fighter_class_is_available() have no callers"
+        "crates/rebellion-core/src/research.rs: ship_class_is_available() and fighter_class_is_available() have no callers",
+        "2026-09-25 fix: the manufacturing panel and AI production offer only capital ships and fighters with research_order <= the side's Ship level; fighters use their own FIGHTSD.DAT research_order against the Ship tree",
+        "Three tests fail without the gate and scoped cargo mutants catch all 13 mutants in the gate; the seed-42 golden changes from tick 10 for this named cause",
+        "Open: troop and facility classes do not load research_order, so those trees gate nothing; FUN_0052e4f0 and FUN_0052e510 (buildability checks) are empty in the text export, so the <= comparison and level-0 start rest on the rebellion2 prototype and DAT data"
       ],
       "acceptance": "Build lists and manufacturing orders respect the recovered research-order gate for both factions."
     },

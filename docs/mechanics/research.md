@@ -74,7 +74,27 @@ Each tick, active projects decrement `ticks_remaining`. When a project completes
 
 ### Fighter Availability
 
-Fighter classes currently lack a `research_order` field. They are treated as available at any research level, consistent with the original game where fighters unlock alongside their parent capital ships.
+FIGHTSD.DAT carries its own `research_order` (X-wing, Y-wing, and TIE Fighter
+are 0; the B-wing is 5; the TIE Defender is 8). Fighters come from shipyards,
+so they unlock against the Ship tree, the counter behind `SideShipyardRdOrderNotif`.
+
+### Where the Gate Applies
+
+The manufacturing panel lists, and the AI builds, only capital ships and
+fighters the faction has researched. Troop and facility classes carry
+`research_order` in their DAT records, but the runtime class types do not yet
+load it, so those trees gate nothing.
+
+### Evidence
+
+The per-side notifications `SideShipyardRdOrderNotif` (`FUN_00532d60`),
+`SideTrainingFacilRdOrderNotif` (`FUN_00532db0`), and
+`SideConstructionYardRdOrderNotif` (`FUN_00532e00`) confirm three per-side
+research counters. The buildability checks `FUN_0052e4f0` and `FUN_0052e510`
+are empty in the text export, so the `<=` comparison and the starting level of
+0 come from the `rebellion2` prototype and the DAT data. Each side has
+order-0 capital ships and fighters, so a level-0 start leaves a buildable
+opening fleet.
 
 ## Source Material
 

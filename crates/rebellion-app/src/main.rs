@@ -3107,6 +3107,7 @@ Some(RailAudience::side(*faction_is_alliance)),
                             &mfg_state,
                             &mut mfg_panel_state,
                             player_faction,
+                            &research_state,
                         ) {
                             panel_actions.push(action);
                         }

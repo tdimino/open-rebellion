@@ -654,10 +654,19 @@ cross-runtime proof remain open
 ### F-018: Research never limits which ships can be built
 
 - Severity: P1
-- Status: confirmed
+- Status: partially remediated; troop and facility trees remain
 - Evidence: `ResearchSystem::ship_class_is_available` and
-  `fighter_class_is_available` (`crates/rebellion-core/src/research.rs`) have
-  no callers, so manufacturing offers every class regardless of research level.
+  `fighter_class_is_available` (`crates/rebellion-core/src/research.rs`) had
+  no callers, so manufacturing offered every class regardless of research level.
+- Fix (2026-09-25): the manufacturing panel and AI production offer only
+  capital ships and fighters whose `research_order` is at or below the side's
+  Ship level. Fighters use their own FIGHTSD.DAT order. Three tests fail
+  without the gate, scoped `cargo mutants` catches all 13 gate mutants, and
+  the seed-42 golden changes from tick 10 for this cause.
+- Open: troop and facility classes do not load `research_order` yet. The
+  buildability checks `FUN_0052e4f0` and `FUN_0052e510` are empty in the text
+  export, so the `<=` comparison and the level-0 start rest on the `rebellion2`
+  prototype and the DAT data until the saved project confirms them.
 - Acceptance: build lists and manufacturing orders respect the recovered
   research-order gate for both factions.
 

@@ -342,9 +342,7 @@ impl ResearchSystem {
         state.is_unlocked(faction_is_alliance, class.research_order, TechType::Ship)
     }
 
-    /// True if a fighter class is available at the current research level.
-    ///
-    /// Fighter classes use `research_order` the same way as capital ships.
+    /// True if a fighter class is available at the current Ship research level.
     #[must_use]
     pub fn fighter_class_is_available(
         world: &GameWorld,
@@ -363,11 +361,9 @@ impl ResearchSystem {
         if !faction_ok {
             return false;
         }
-        // Fighter classes carry research_order implicitly via refined_material_cost ordering.
-        // Until FighterClass gains a research_order field, treat all fighters as available
-        // at any level (consistent with original game where fighters unlock with ships).
-        let _ = state;
-        true
+        // FIGHTSD.DAT carries its own research_order; fighters come from
+        // shipyards, so they advance with the Ship tree (SideShipyardRdOrder).
+        state.is_unlocked(faction_is_alliance, class.research_order, TechType::Ship)
     }
 }
 
@@ -676,6 +672,33 @@ mod tests {
 
         state.alliance.ship = 3;
         assert!(ResearchSystem::ship_class_is_available(
+            &world, &state, true, class_key
+        ));
+    }
+
+    #[test]
+    fn a_fighter_unlocks_when_ship_research_reaches_its_order() {
+        // FIGHTSD.DAT: the B-wing carries research_order 5.
+        let mut world = GameWorld::default();
+        let class_key = world.fighter_classes.insert(crate::world::FighterClass {
+            is_alliance: true,
+            research_order: 5,
+            ..Default::default()
+        });
+        let mut state = ResearchState::new();
+        state.alliance.ship = 4;
+        state.alliance.troop = 5;
+        state.alliance.facility = 5;
+
+        assert!(!ResearchSystem::fighter_class_is_available(
+            &world, &state, true, class_key
+        ));
+        assert!(!ResearchSystem::fighter_class_is_available(
+            &world, &state, false, class_key
+        ));
+
+        state.alliance.ship = 5;
+        assert!(ResearchSystem::fighter_class_is_available(
             &world, &state, true, class_key
         ));
     }
