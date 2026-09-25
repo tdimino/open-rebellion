@@ -598,6 +598,12 @@ pub enum ModError {
         mod_name: String,
         message: String,
     },
+    /// The enabled set has no load order (a dependency cycle or a duplicate
+    /// name), so no enabled mod loads.
+    LoadOrder {
+        mod_name: String,
+        message: String,
+    },
 }
 
 impl ModError {
@@ -607,7 +613,8 @@ impl ModError {
         match self {
             Self::MissingDependency { mod_name, .. }
             | Self::VersionMismatch { mod_name, .. }
-            | Self::ParseError { mod_name, .. } => mod_name,
+            | Self::ParseError { mod_name, .. }
+            | Self::LoadOrder { mod_name, .. } => mod_name,
         }
     }
 }
@@ -631,6 +638,7 @@ impl std::fmt::Display for ModError {
                 "requires '{dep_name}' {required}, but {found} is enabled"
             ),
             Self::ParseError { message, .. } => f.write_str(message),
+            Self::LoadOrder { message, .. } => write!(f, "not loaded: {message}"),
         }
     }
 }
@@ -662,6 +670,16 @@ fn dependency_errors(discovered: &[ModManifest]) -> Vec<ModError> {
                     found: dep.version.clone(),
                 });
             }
+        }
+    }
+    if errors.is_empty() {
+        let enabled: Vec<ModManifest> = discovered.iter().filter(|m| m.enabled).cloned().collect();
+        let names: Vec<String> = enabled.iter().map(|m| m.name.clone()).collect();
+        if let Err(e) = ModLoader::resolve_load_order(enabled) {
+            errors.extend(names.into_iter().map(|mod_name| ModError::LoadOrder {
+                mod_name,
+                message: e.to_string(),
+            }));
         }
     }
     errors
@@ -809,12 +827,8 @@ impl ModRuntime {
 
     /// Replace dependency errors with ones computed from the current enabled set.
     fn refresh_dependency_errors(&mut self) {
-        self.errors.retain(|e| {
-            !matches!(
-                e,
-                ModError::MissingDependency { .. } | ModError::VersionMismatch { .. }
-            )
-        });
+        self.errors
+            .retain(|e| matches!(e, ModError::ParseError { .. }));
         self.errors.extend(dependency_errors(&self.discovered));
     }
 
@@ -1281,6 +1295,40 @@ version = "1.0.0"
 
         assert!(runtime.errors.is_empty());
         assert_eq!(runtime.enabled_sorted().len(), 2);
+    }
+
+    #[test]
+    fn a_dependency_cycle_names_every_enabled_mod_it_blocks() {
+        let tmp = tempfile::tempdir().unwrap();
+        for (name, dep) in [("mod-a", "mod-b"), ("mod-b", "mod-a")] {
+            write_manifest(
+                tmp.path(),
+                name,
+                &format!("version = \"1.0.0\"\n[dependencies]\n\"{dep}\" = \">=1.0.0\"\n"),
+            );
+        }
+        let mut config = ModConfig::default();
+        config.toggle("mod-a");
+        config.toggle("mod-b");
+        config.save(tmp.path()).unwrap();
+
+        let mut runtime = ModRuntime::discover(tmp.path());
+        assert!(runtime.enabled_sorted().is_empty());
+        let mut named: Vec<_> = runtime
+            .errors
+            .iter()
+            .filter(|e| matches!(e, ModError::LoadOrder { .. }))
+            .map(ModError::mod_name)
+            .collect();
+        named.sort_unstable();
+        assert_eq!(named, ["mod-a", "mod-b"]);
+
+        runtime.toggle_mod("mod-b");
+        assert!(
+            runtime.errors.iter().all(|e| e.mod_name() == "mod-a"
+                && matches!(e, ModError::MissingDependency { .. })),
+            "breaking the cycle replaces the load-order errors"
+        );
     }
 
     #[test]

@@ -708,8 +708,10 @@ cross-runtime proof remain open
   `MissingDependency` and `VersionMismatch` for each enabled mod, counting a
   disabled dependency as missing. The Mod Manager matches errors by
   `ModError::mod_name()` and shows text such as "requires 'x', which is not
-  installed and enabled" instead of a Debug dump. Four tests fail without the
-  change, and scoped `cargo mutants` catches every mutant in the new code.
+  installed and enabled" instead of a Debug dump. A dependency cycle or
+  duplicate name records a `LoadOrder` error on every enabled mod it blocks.
+  Five tests fail without the change, and scoped `cargo mutants` catches every
+  mutant in the new code.
 - Acceptance: missing-dependency and version-mismatch failures reach
   `ModRuntime::errors` and the Mod Manager names the mod and dependency.
 
