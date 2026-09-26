@@ -651,8 +651,7 @@ cross-runtime proof remain open
   real role follow recovered Ghidra evidence, with tests that fail without
   each rule and a browser pass of the fire command.
 - Fix (2026-09-25): the superlaser no longer waits on the shield generator.
-  `FUN_005617b0` checks only the target's destroyed bit (`+0xac`) and the
-  Death Star's active bit (`+0x50`); the shield only absorbs hull damage in
+  `FUN_005617b0` never references it; the shield only absorbs hull damage in
   battle. The Death Star is CAPSHPSD record 136 (TEXTSTRA 10120), an ordinary
   research-order-0 capital ship built at shipyards. Every Death Star check
   tested DatId family `0x34`, but seeded classes carry the record id, so no
@@ -665,7 +664,11 @@ cross-runtime proof remain open
   Death Star Sabotage delays a timer nothing starts. The superlaser effect
   applicator `FUN_0055f650` is not decompiled, so galaxy-wide effects of
   destroying a planet are unverified. The fire command still needs a browser
-  pass. Battle shield absorption stays limited to original family-`0x34` ids:
+  pass. `FUN_005617b0` also compares an object from `FUN_004f6b50` with
+  entity `0x90000109` and tests its `+0x24 & 0xc0 == 0x80` bits, passing the
+  result as a flag to the undecompiled `FUN_0055f650`; until that is
+  resolved, our refusal to fire on Empire-controlled systems has no source.
+  Battle shield absorption stays limited to original family-`0x34` ids:
   nothing destroys the shield generator (`destroy_shield` has no caller), so
   applying it to the seeded Death Star would make it unkillable in
   auto-resolved battles.

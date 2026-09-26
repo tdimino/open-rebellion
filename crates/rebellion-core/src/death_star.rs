@@ -226,9 +226,8 @@ impl DeathStarSystem {
     /// Attempt to fire the Death Star superlaser at `target_system`.
     ///
     /// Mirrors `FUN_005617b0` + `FUN_0055f650` precondition checks:
-    /// - The shield generator does not gate firing: `FUN_005617b0` checks only
-    ///   the target's destroyed bit (`+0xac`) and the Death Star's active bit
-    ///   (`+0x50`). The shield protects the Death Star in battle instead.
+    /// - The shield generator does not gate firing: `FUN_005617b0` never
+    ///   references it. The shield protects the Death Star in battle instead.
     /// - Target must not already be destroyed (`!system.is_destroyed`).
     /// - An Empire Death Star fleet must be present at `target_system`.
     /// - Target must not be Empire-controlled (no self-destruction).
@@ -550,8 +549,8 @@ mod tests {
 
     #[test]
     fn an_active_shield_generator_does_not_stop_the_superlaser() {
-        // FUN_005617b0 checks only the target's destroyed bit and the Death
-        // Star's active bit; the shield guards the Death Star in battle.
+        // FUN_005617b0 never references the shield generator; the shield
+        // guards the Death Star in battle.
         let (mut world, sys) = make_world();
         add_ds_fleet(&mut world, sys);
         let state = DeathStarState::default(); // shield_generator_active = true
