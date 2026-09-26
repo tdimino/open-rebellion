@@ -338,7 +338,10 @@ impl CombatSystem {
             .filter(|ship| ship.alive)
             .map(|ship| {
                 let class = &world.capital_ship_classes[ship.class];
-                let is_ds_ship = is_ds_fleet && class.is_death_star();
+                // Only original family-0x34 ids get shield absorption. The seeded Death
+                // Star (CAPSHPSD 136) fights as an ordinary hull because nothing yet
+                // destroys the shield generator, which would make it unkillable.
+                let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
                 ShipSnap {
                     hull_current: ship.hull_current,
                     hull_max: class.hull.cast_signed(),
@@ -2518,6 +2521,38 @@ mod tests {
             atk_damage > 0,
             "Attacker should take damage, confirming combat occurred"
         );
+    }
+
+    #[test]
+    fn the_seeded_death_star_takes_hull_damage_while_nothing_can_drop_its_shield() {
+        let mut world = empty_world();
+        let sector = make_sector(&mut world);
+        let sys = make_system(&mut world, sector);
+        let atk_class = make_class(&mut world, 500, 200);
+        let atk = make_fleet(&mut world, sys, atk_class, 3, true);
+        let ds_class = make_ds_class(&mut world, 5000);
+        // CAPSHPSD record 136, as seeding stores it.
+        world.capital_ship_classes[ds_class].dat_id = DatId::new(crate::world::DEATH_STAR_CLASS_ID);
+        let ds_fleet = world.fleets.insert(Fleet {
+            location: sys,
+            capital_ships: vec![ShipInstance::new(ds_class, 5000, false)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: true,
+        });
+        world.systems[sys].fleets.push(ds_fleet);
+
+        let result =
+            CombatSystem::resolve_space(&world, atk, ds_fleet, sys, 1, &[0.5; 200], 1, true);
+
+        let ds_damage: i32 = result
+            .ship_damage
+            .iter()
+            .filter(|d| d.fleet == ds_fleet)
+            .map(|d| d.hull_before - d.hull_after)
+            .sum();
+        assert!(ds_damage > 0, "no path destroys the shield generator yet");
     }
 
     #[test]

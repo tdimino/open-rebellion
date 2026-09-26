@@ -1634,8 +1634,8 @@
         "start_construction() has no caller, so no Death Star fleet is built",
         "Found by the 2026-09-25 test-pruning pass",
         "2026-09-25 fix: DeathStarSystem::fire no longer requires the shield generator down; FUN_005617b0 checks only the target destroyed bit (+0xac) and the Death Star active bit (+0x50), and the shield only absorbs hull damage in battle",
-        "The Death Star is CAPSHPSD record 136 (TEXTSTRA 10120), a research-order-0 capital ship; family-0x34 checks never matched seeded classes, so CapitalShipClass::is_death_star accepts the record id and a completed Death Star build marks its fleet",
-        "Open: start_construction's uncited 1,825-tick timer duplicates ordinary manufacturing so sabotage delays nothing; FUN_0055f650 (superlaser effects) is not decompiled; the fire command needs a browser pass"
+        "The Death Star is CAPSHPSD record 136 (TEXTSTRA 10120), a research-order-0 capital ship; family-0x34 checks never matched seeded classes, so CapitalShipClass::is_death_star accepts the record id for firing and fleet bookkeeping and a completed Death Star build marks its fleet and a destroyed one clears it",
+        "Open: start_construction's uncited 1,825-tick timer duplicates ordinary manufacturing so sabotage delays nothing; FUN_0055f650 (superlaser effects) is not decompiled; the fire command needs a browser pass; battle shield absorption stays limited to family-0x34 ids because nothing destroys the shield generator, which would make the seeded Death Star unkillable in auto-resolved battles"
       ],
       "acceptance": "Construction, completion, planet destruction, and the shield's recovered role follow Ghidra evidence, with failing-without tests and a browser fire-command pass."
     },

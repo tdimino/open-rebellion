@@ -657,14 +657,18 @@ cross-runtime proof remain open
   research-order-0 capital ship built at shipyards. Every Death Star check
   tested DatId family `0x34`, but seeded classes carry the record id, so no
   real Death Star was ever recognized in combat or firing.
-  `CapitalShipClass::is_death_star` accepts both, and a completed Death Star
-  build now marks its fleet so it can fire. Two tests fail without the change.
+  `CapitalShipClass::is_death_star` accepts both; a completed Death Star
+  build now marks its fleet so it can fire, and a destroyed one clears it.
+  Tests fail without each change.
 - Open: `DeathStarState::start_construction` and its uncited 1,825-tick timer
   are now a second construction path beside ordinary manufacturing, so
   Death Star Sabotage delays a timer nothing starts. The superlaser effect
   applicator `FUN_0055f650` is not decompiled, so galaxy-wide effects of
   destroying a planet are unverified. The fire command still needs a browser
-  pass.
+  pass. Battle shield absorption stays limited to original family-`0x34` ids:
+  nothing destroys the shield generator (`destroy_shield` has no caller), so
+  applying it to the seeded Death Star would make it unkillable in
+  auto-resolved battles.
 
 ### F-018: Research never limits which ships can be built
 
