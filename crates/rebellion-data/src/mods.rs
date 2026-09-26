@@ -598,6 +598,91 @@ pub enum ModError {
         mod_name: String,
         message: String,
     },
+    /// The enabled set has no load order (a dependency cycle or a duplicate
+    /// name), so no enabled mod loads.
+    LoadOrder {
+        mod_name: String,
+        message: String,
+    },
+}
+
+impl ModError {
+    /// The mod this error belongs to; empty when no single mod is at fault.
+    #[must_use]
+    pub fn mod_name(&self) -> &str {
+        match self {
+            Self::MissingDependency { mod_name, .. }
+            | Self::VersionMismatch { mod_name, .. }
+            | Self::ParseError { mod_name, .. }
+            | Self::LoadOrder { mod_name, .. } => mod_name,
+        }
+    }
+}
+
+impl std::fmt::Display for ModError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingDependency { dep_name, .. } => {
+                write!(
+                    f,
+                    "requires '{dep_name}', which is not installed and enabled"
+                )
+            }
+            Self::VersionMismatch {
+                dep_name,
+                required,
+                found,
+                ..
+            } => write!(
+                f,
+                "requires '{dep_name}' {required}, but {found} is enabled"
+            ),
+            Self::ParseError { message, .. } => f.write_str(message),
+            Self::LoadOrder { message, .. } => write!(f, "not loaded: {message}"),
+        }
+    }
+}
+
+/// Dependency problems among the enabled mods. A dependency that is installed
+/// but disabled counts as missing, because only enabled mods load; while any
+/// remain, `enabled_sorted` loads nothing.
+fn dependency_errors(discovered: &[ModManifest]) -> Vec<ModError> {
+    let mut errors = Vec::new();
+    for manifest in discovered.iter().filter(|m| m.enabled) {
+        for (dep_name, required) in &manifest.dependencies {
+            let Some(dep) = discovered.iter().find(|m| m.enabled && &m.name == dep_name) else {
+                errors.push(ModError::MissingDependency {
+                    mod_name: manifest.name.clone(),
+                    dep_name: dep_name.clone(),
+                });
+                continue;
+            };
+            // An unparseable requirement or version can never be satisfied.
+            let matches = match (semver::VersionReq::parse(required), dep.semver_version()) {
+                (Ok(req), Ok(version)) => req.matches(&version),
+                _ => false,
+            };
+            if !matches {
+                errors.push(ModError::VersionMismatch {
+                    mod_name: manifest.name.clone(),
+                    dep_name: dep_name.clone(),
+                    required: required.clone(),
+                    found: dep.version.clone(),
+                });
+            }
+        }
+    }
+    if errors.is_empty() {
+        let enabled: Vec<ModManifest> = discovered.iter().filter(|m| m.enabled).cloned().collect();
+        let names: Vec<String> = enabled.iter().map(|m| m.name.clone()).collect();
+        if let Err(e) = ModLoader::resolve_load_order(enabled) {
+            errors.extend(names.into_iter().map(|mod_name| ModError::LoadOrder {
+                mod_name,
+                message: e.to_string(),
+            }));
+        }
+    }
+    errors
 }
 
 /// Runtime mod management: discovery, validation, and application.
@@ -637,6 +722,7 @@ impl ModRuntime {
         for manifest in &mut discovered {
             manifest.enabled = config.is_enabled(&manifest.name);
         }
+        errors.extend(dependency_errors(&discovered));
 
         Self {
             discovered,
@@ -739,6 +825,13 @@ impl ModRuntime {
         errors
     }
 
+    /// Replace dependency errors with ones computed from the current enabled set.
+    fn refresh_dependency_errors(&mut self) {
+        self.errors
+            .retain(|e| matches!(e, ModError::ParseError { .. }));
+        self.errors.extend(dependency_errors(&self.discovered));
+    }
+
     /// Toggle a mod's enabled state and persist config.
     pub fn toggle_mod(&mut self, name: &str) {
         self.config.toggle(name);
@@ -747,6 +840,7 @@ impl ModRuntime {
                 m.enabled = self.config.is_enabled(name);
             }
         }
+        self.refresh_dependency_errors();
         if let Err(e) = self.config.save(&self.mods_dir) {
             eprintln!("[mod-runtime] failed to save config: {e}");
         }
@@ -768,6 +862,7 @@ impl ModRuntime {
         for m in &mut self.discovered {
             m.enabled = self.config.is_enabled(&m.name);
         }
+        self.refresh_dependency_errors();
     }
 
     /// WASM stub: apply_enabled (no filesystem access).
@@ -1031,7 +1126,7 @@ version = "0.1.0"
     // ── ModRuntime tests ────────────────────────────────────────────────────
 
     #[test]
-    fn discover_empty_dir() {
+    fn discover_on_empty_directory_finds_no_mods() {
         let tmp = tempfile::tempdir().unwrap();
         let runtime = ModRuntime::discover(tmp.path());
         assert_eq!(runtime.discovered.len(), 0);
@@ -1039,7 +1134,7 @@ version = "0.1.0"
     }
 
     #[test]
-    fn config_toggle_persistence() {
+    fn toggled_config_persists_after_save_and_reload() {
         let tmp = tempfile::tempdir().unwrap();
         let mut config = ModConfig::default();
 
@@ -1063,7 +1158,7 @@ version = "0.1.0"
     }
 
     #[test]
-    fn apply_only_enabled() {
+    fn apply_patches_skips_disabled_mods() {
         let tmp = tempfile::tempdir().unwrap();
 
         // Create mod-a (will be enabled)
@@ -1111,7 +1206,7 @@ version = "1.0.0"
     }
 
     #[test]
-    fn structured_error_on_missing_dep() {
+    fn an_enabled_mod_with_a_missing_dependency_loads_nothing_and_reports_why() {
         let tmp = tempfile::tempdir().unwrap();
 
         // Create a mod with a missing dependency
@@ -1137,6 +1232,126 @@ version = "1.0.0"
         // enabled_sorted() should return empty (load order resolution fails)
         let sorted = runtime.enabled_sorted();
         assert!(sorted.is_empty());
+        assert!(matches!(
+            runtime.errors.as_slice(),
+            [ModError::MissingDependency { mod_name, dep_name }]
+                if mod_name == "mod-bad" && dep_name == "nonexistent"
+        ));
+        assert_eq!(
+            runtime.errors[0].to_string(),
+            "requires 'nonexistent', which is not installed and enabled"
+        );
+    }
+
+    fn write_manifest(root: &Path, name: &str, body: &str) {
+        let dir = root.join(name);
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("mod.toml"), format!("name = \"{name}\"\n{body}")).unwrap();
+    }
+
+    #[test]
+    fn a_dependency_below_the_required_version_is_reported_as_a_mismatch() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_manifest(tmp.path(), "mod-base", "version = \"1.0.0\"\n");
+        write_manifest(
+            tmp.path(),
+            "mod-top",
+            "version = \"1.0.0\"\n[dependencies]\n\"mod-base\" = \">=2.0.0\"\n",
+        );
+        let mut config = ModConfig::default();
+        config.toggle("mod-base");
+        config.toggle("mod-top");
+        config.save(tmp.path()).unwrap();
+
+        let runtime = ModRuntime::discover(tmp.path());
+
+        assert!(runtime.enabled_sorted().is_empty());
+        assert!(matches!(
+            runtime.errors.as_slice(),
+            [ModError::VersionMismatch { mod_name, dep_name, required, found }]
+                if mod_name == "mod-top" && dep_name == "mod-base"
+                    && required == ">=2.0.0" && found == "1.0.0"
+        ));
+    }
+
+    #[test]
+    fn refresh_clears_the_missing_error_once_the_dependency_is_installed() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_manifest(
+            tmp.path(),
+            "mod-top",
+            "version = \"1.0.0\"\n[dependencies]\n\"mod-base\" = \">=1.0.0\"\n",
+        );
+        let mut config = ModConfig::default();
+        config.toggle("mod-top");
+        config.toggle("mod-base");
+        config.save(tmp.path()).unwrap();
+
+        let mut runtime = ModRuntime::discover(tmp.path());
+        assert_eq!(runtime.errors.len(), 1);
+
+        write_manifest(tmp.path(), "mod-base", "version = \"1.0.0\"\n");
+        runtime.refresh();
+
+        assert!(runtime.errors.is_empty());
+        assert_eq!(runtime.enabled_sorted().len(), 2);
+    }
+
+    #[test]
+    fn a_dependency_cycle_names_every_enabled_mod_it_blocks() {
+        let tmp = tempfile::tempdir().unwrap();
+        for (name, dep) in [("mod-a", "mod-b"), ("mod-b", "mod-a")] {
+            write_manifest(
+                tmp.path(),
+                name,
+                &format!("version = \"1.0.0\"\n[dependencies]\n\"{dep}\" = \">=1.0.0\"\n"),
+            );
+        }
+        let mut config = ModConfig::default();
+        config.toggle("mod-a");
+        config.toggle("mod-b");
+        config.save(tmp.path()).unwrap();
+
+        let mut runtime = ModRuntime::discover(tmp.path());
+        assert!(runtime.enabled_sorted().is_empty());
+        let mut named: Vec<_> = runtime
+            .errors
+            .iter()
+            .filter(|e| matches!(e, ModError::LoadOrder { .. }))
+            .map(ModError::mod_name)
+            .collect();
+        named.sort_unstable();
+        assert_eq!(named, ["mod-a", "mod-b"]);
+
+        runtime.toggle_mod("mod-b");
+        assert!(
+            runtime.errors.iter().all(|e| e.mod_name() == "mod-a"
+                && matches!(e, ModError::MissingDependency { .. })),
+            "breaking the cycle replaces the load-order errors"
+        );
+    }
+
+    #[test]
+    fn enabling_a_disabled_dependency_clears_its_missing_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_manifest(tmp.path(), "mod-base", "version = \"1.0.0\"\n");
+        write_manifest(
+            tmp.path(),
+            "mod-top",
+            "version = \"1.0.0\"\n[dependencies]\n\"mod-base\" = \">=1.0.0\"\n",
+        );
+        let mut config = ModConfig::default();
+        config.toggle("mod-top");
+        config.save(tmp.path()).unwrap();
+
+        let mut runtime = ModRuntime::discover(tmp.path());
+        assert_eq!(runtime.errors.len(), 1);
+        assert_eq!(runtime.errors[0].mod_name(), "mod-top");
+
+        runtime.toggle_mod("mod-base");
+
+        assert!(runtime.errors.is_empty());
+        assert_eq!(runtime.enabled_sorted().len(), 2);
     }
 
     #[test]

@@ -39,7 +39,9 @@ DeathStarSystem::start_construction(&mut ds_state, system); // -> bool (false if
 
 ## Superlaser Fire Preconditions
 
-From `FUN_005617b0` + `FUN_0055f650`:
+No recovered source for the superlaser fire path. FUN_005617b0 is the
+CharacterMgr SeatOfPower check; FUN_0055f650 stores that flag. The
+preconditions below are gameplay requirements, not decompiled logic:
 1. Target not already destroyed (`!sys.is_destroyed`)
 2. Empire Death Star fleet present at target system
 3. Target not Empire-controlled (no self-destruction)
@@ -50,6 +52,6 @@ Scans all Alliance-controlled systems within `NEARBY_WARNING_RADIUS = 300` coord
 
 ## Source
 
-- `ghidra/notes/annotated-functions.md` § FUN_005617b0
 - `ghidra/notes/economy-systems.md` § SystemDeathStarNearbyNotif
+- `ghidra/notes/community-address-remap.md` — FUN_005617b0 is SeatOfPower, not the fire path
 - `entity-system.md §4.2` — alive_flag inverted semantics

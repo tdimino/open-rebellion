@@ -76,6 +76,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P47B Popular Support evidence](evidence/2026-09-11-popular-support-gid.md) | Active STRATEGY 903 predicate, faction GID control, compact legend, native marker families, support thresholds, tests, and browser acceptance. |
 | [P48 GID browser-harness evidence](evidence/2026-09-12-gid-browser-harness.md) | Code-built GID command tree, test-only fixture isolation, muted browser matrix, and unaccepted visual states. |
 | [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md) | Original faction rail positions and BMPs, exact resting-pixel checks, and open category/index behavior. |
+| [P60 Game Speed evidence](evidence/p60-game-speed/README.md) | Day-readout speed menu, stop-day pause, REBDLOG alert, accelerators, save v14, four-session muted browser run, and the static Message Index recovery. |
 | [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md) | Eight source frame tiles, instant menu display, source-pixel border checks, and remaining menu gaps. |
 | [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md) | Unsupported hover-wash removal and source-pixel checks on visible frame edges beneath a system window. |
 | [P52 tactical shell and controls evidence](evidence/2026-09-12-tactical-shell-controls.md) | Original 640×480 shell, first working bitmap controls, exact source-pixel probes, and explicit tactical gaps. |
@@ -111,6 +112,20 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P58F12 tactical attack-targeting evidence](evidence/2026-09-18-tactical-attack-targeting.md) | Typed Attack Fighters and Attack Capital Ships acquisition for capital and fighter owners, visible target endpoints, 88-case muted browser gate, and explicit A0 limits. |
 | [P58F13 tactical attack-target lifecycle evidence](evidence/2026-09-19-tactical-attack-target-lifecycle.md) | Same-class target invalidation and replacement for capital and fighter owners, visible target endpoints, 92-case muted browser gate, and explicit A0 limits. |
 | [P58-B06 tactical completion evidence](evidence/2026-09-22-tactical-completion-bundle.md) | Capital and fighter combat, collision, retained formations, Death Star and trench-run routes, original result/options surfaces, clean 120-case muted browser gate, and explicit A0 limits. |
+| [P58-B07 tactical matrix-contract evidence](evidence/2026-09-22-tactical-106-matrix-contract.md) | Ledger-derived 106-cell denominator, exact family distribution, lossless A0 manifest contract, proprietary-artifact exclusion, and explicit 0/106 starting boundary. |
+| [P58-B08 tactical A0-ingestion evidence](evidence/2026-09-22-tactical-a0-ingestion.md) | Exact original-executable provenance, 640×480/hash/ledger validation, ignored per-cell storage, replacement rejection, and explicit 0/106 offline-host boundary. |
+| [P58-B09 tactical A1-crosswalk evidence](evidence/2026-09-22-tactical-a1-crosswalk.md) | Schema-validated journey/snapshot/negative-control classes, 82 mapped cells, 24 explicit scenario gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B10 tactical navigation/camera evidence](evidence/2026-09-23-tactical-navigation-camera.md) | Four navigation sets, ordered routes and targets, camera memory/chase, Anvil and Stand Off, 96 mapped cells, ten explicit gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B11 tactical trench-run/persistence evidence](evidence/2026-09-23-tactical-trench-persistence.md) | Production order-6 trench-run launch, exact 3-to-2 strategic capital/fighter persistence, 98 mapped cells, eight explicit gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B12 tactical Game Options/empty-space evidence](evidence/2026-09-23-tactical-game-options-empty-space.md) | Original COMMON Game Options routing, disabled in-battle display controls, empty-space starfield presentation, 100 mapped cells, six explicit gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B13 tactical withdrawal-confirmation evidence](evidence/2026-09-23-tactical-withdraw-confirmation.md) | Executable-derived panel/text/control contract, cancel and confirm routing, 101 mapped cells, five explicit gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B14 tactical detail and Escort evidence](evidence/2026-09-23-tactical-detail-escort.md) | Complete destroyed presentation, compact selected-capital contents, direct source order-code 1 Escort, 104 mapped cells, two explicit gaps, and unchanged 0/106 strict acceptance. |
+| [P58-B15 tactical Battle Alert and audio evidence](evidence/2026-09-24-tactical-battle-alert-audio.md) | Source-built faction alerts, Take Command entry, MDATA 307, WAVE 13054, complete 106-cell deterministic A1 mapping, and unchanged 0/106 strict acceptance. |
+| [P58-B16 tactical weapon-audio evidence](evidence/2026-09-24-tactical-weapon-audio.md) | Corrected event semantics, complete eight-event WAVE 13033–13054 bank, production fire/impact dispatch, and focused muted browser routing. |
+| [P58-B17 tactical command-voice evidence](evidence/2026-09-24-tactical-command-voice.md) | Exact battle-ready and group-specific maneuver, attack, formation, and mission mappings across 90 faction WAVs, production command dispatch, and focused muted browser routing. |
+| [P58-B18 complete tactical voice-bank evidence](evidence/2026-09-25-tactical-complete-voice-bank.md) | All 285 faction tactical voices transported from exact executable ranges, selected withdrawal/result/Death Star/trench-run transitions dispatched, and focused muted browser routing. |
+| [P58-B19 mixed-task-force target evidence](evidence/2026-09-25-tactical-mixed-task-force-target.md) | Source-exact rejection of a hostile focus target across multiple selected task forces, unchanged orders, and exact Alliance/Imperial voice routing. |
+| [P58-B20 recovery/withdrawal feedback evidence](evidence/2026-09-26-tactical-recovery-withdrawal-feedback.md) | Final-group recovery, no-carrier-capacity, and disabled-hyperdrive withdrawal feedback with exact faction voice routing across twelve muted browser cases. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |
@@ -126,6 +141,8 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | Required baseline cells pending or open | 564 |
 | Required families with retrieval packages | 43 of 43 |
 | Space-battle baseline cells | 106 across TAC-01 through TAC-07 |
+| Deterministic tactical A1 mappings | 106 of 106; 87 journeys and 19 snapshots |
+| Lossless tactical A0 captures | 0 of 106 |
 | Reference images retained | 370 |
 | Required surface families not at complete parity | 43 |
 | Scoped shuttle implementation | **Pass** |

@@ -4,11 +4,12 @@ pub mod advisor;
 pub mod audio;
 pub mod bmp_cache;
 pub mod cockpit;
-pub mod combat_view;
 pub mod encyclopedia;
 pub mod event_screen;
 pub mod fleet_movement;
 pub mod fog;
+pub mod game_options;
+pub mod game_speed;
 pub mod ground_combat;
 pub mod main_menu;
 pub mod main_menu_destinations;
@@ -21,7 +22,6 @@ mod tactical_assets;
 mod tactical_resources;
 pub mod tactical_view;
 pub mod theme;
-pub mod victory_screen;
 pub mod video_player;
 
 use egui_macroquad::egui;
@@ -33,7 +33,6 @@ use rebellion_core::ids::{FleetKey, SystemKey};
 use rebellion_core::manufacturing::ManufacturingState;
 use rebellion_core::missions::{MissionFaction, MissionState};
 use rebellion_core::movement::MovementState;
-use rebellion_core::tick::{GameClock, GameSpeed};
 use rebellion_core::world::{ControlKind, GameWorld, System};
 
 #[cfg(target_arch = "wasm32")]
@@ -43,9 +42,7 @@ pub use advisor::{
     advisor_mission_result, advisor_uprising, draw_advisor, AdvisorFaction, AdvisorMessage,
     AdvisorPriority, AdvisorState,
 };
-pub use audio::{
-    draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine,
-};
+pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
@@ -56,7 +53,6 @@ pub use cockpit::{
     CockpitViewport, GidMode, StrategicControlSpec, STRATEGIC_LOGICAL_HEIGHT,
     STRATEGIC_LOGICAL_WIDTH,
 };
-pub use combat_view::{draw_combat_summary, BattleOutcome, CombatResult, CombatSummaryState};
 pub use encyclopedia::{draw_encyclopedia, EncyclopediaState, EncyclopediaTab};
 pub use event_screen::{
     draw_event_screen, show_event_screen, show_event_screen_raw, update_event_screen,
@@ -64,6 +60,7 @@ pub use event_screen::{
 };
 pub use fleet_movement::{draw_fleet_overlays, hovered_fleet};
 pub use fog::draw_fog_overlay;
+pub use game_options::{draw_game_options, GameOptionsAction, GameOptionsOrigin, GameOptionsState};
 pub use ground_combat::{draw_ground_combat, GroundAction, GroundCombatState, GroundWinner};
 pub use main_menu::{draw_main_menu, MainMenuAction, MainMenuControl, MainMenuState};
 pub use main_menu_destinations::{
@@ -71,7 +68,8 @@ pub use main_menu_destinations::{
     MultiplayerSetupAction, MultiplayerSetupState, MultiplayerTransport,
 };
 pub use message_log::{
-    draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState,
+    draw_message_log, GameMessage, MessageCategory, MessageLog, MessageLogState, MessageRail,
+    RailAudience,
 };
 pub use panels::game_setup::{draw_game_setup, Difficulty, GameSetupAction, GameSetupState};
 pub use panels::{
@@ -104,7 +102,6 @@ pub use tactical_view::{
     draw_tactical_view, BattlePhase, BattleSession, CombatWinner, TacticalAction, TacticalState,
     TacticalTrenchRunOutcome,
 };
-pub use victory_screen::{draw_victory_screen, GameStats, VictoryScreenState};
 pub use video_player::{VideoError, VideoPlayer};
 
 #[cfg(debug_assertions)]
@@ -1738,63 +1735,6 @@ pub fn draw_fleet_context_menu(
     }
 
     action
-}
-
-/// Draw the bottom status bar with speed controls, day counter, world stats,
-/// and audio volume controls.
-///
-/// Call inside `egui_macroquad::ui(|ctx| { ... })`.
-pub fn draw_status_bar(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    clock: &mut GameClock,
-    audio_vol: &mut AudioVolumeState,
-) {
-    egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            // ── Speed controls ───────────────────────────────────────────
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Paused, "⏸ Pause")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Paused);
-            }
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Normal, "▶ 1×")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Normal);
-            }
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Fast, "▶▶ 2×")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Fast);
-            }
-            if ui
-                .selectable_label(clock.speed == GameSpeed::Faster, "▶▶▶ 4×")
-                .clicked()
-            {
-                clock.set_speed(GameSpeed::Faster);
-            }
-
-            ui.separator();
-            ui.label(format!("Day {}", clock.tick));
-            ui.separator();
-
-            ui.label(format!(
-                "Systems: {} | Sectors: {} | Ships: {} | Fighters: {} | Characters: {}",
-                world.systems.len(),
-                world.sectors.len(),
-                world.capital_ship_classes.len(),
-                world.fighter_classes.len(),
-                world.characters.len(),
-            ));
-
-            // ── Audio controls ───────────────────────────────────────────
-            audio::draw_audio_controls(ui, audio_vol);
-        });
-    });
 }
 
 #[cfg(test)]

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B14",
+  "status": "pass_partial_a1_crosswalk",
+  "catalog_scenarios": 34,
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 104,
+    "journey_cells": 85,
+    "snapshot_cells": 19,
+    "catalog_cells_missing": 2,
+    "a0_coverage": 0,
+    "parity_acceptance": 0
+  },
+  "source_contract": {
+    "selected_panel_resource": 1302,
+    "destroyed_effect_resource": 3368,
+    "escort_order_code": 1,
+    "major_character_resource_offset": 17920,
+    "minor_character_resource_offset": 18176,
+    "functions": [
+      "FUN_005ca6d0",
+      "FUN_005d0af0",
+      "FUN_005cf910",
+      "FUN_005cf920",
+      "FUN_005ceda0",
+      "FUN_005cee20"
+    ]
+  },
+  "browser_runs": [
+    {
+      "run_id": "2026-09-23T21-50-46-842Z-16241",
+      "scenario": "production-detail-escort-presentation",
+      "passed": 4,
+      "failed": 0,
+      "muted_launches": 4,
+      "four_request_startups": 4,
+      "browser_processes_closed": 4
+    }
+  ],
+  "verification": {
+    "rebellion_render_tests": "253_passed_1_ignored",
+    "rebellion_app_tests": "16_passed_0_failed",
+    "harness_unit_tests": "26_passed_0_failed",
+    "harness_check": "pass",
+    "source_bitmap_probes": "TACTICAL_1302_3368_and_compact_GOKRES_exact",
+    "escort_probe": "direct_friendly_right_click_order_1_target_marker_and_stable_follow",
+    "independent_browser_review": "bounded_A1_pass_no_P0_P1_P2_or_P3",
+    "production_fixture_exclusion": "pass_zero_tokens",
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_detail_640x480": "80f278b38225109e03965f032913b7dffe3c4115fb5f9ec5adcf4f91ebb4c671",
+    "alliance_escort_640x480": "8b6672e7f77578c5a63c916abd4b5177b5021b043742499f091bc7f5448cc011",
+    "empire_detail_640x480": "3294278bd38ef51c7895ee976639d8e7a44261108ecfc0b968e95fe3cb6ba6f5",
+    "empire_escort_640x480": "e8bd99f7dcec91842bed87e69a0af258b2ace2b275ec2471f07af110610da456"
+  },
+  "fixture_wasm_sha256": "8446846a015b8fbc84387fbb80c2e351cc79f3babb4de8621107e64c1e54c58f",
+  "runtime_pack_sha256": "7f0289265d9f85bfc971b8160edcab0da2425f1ed7246c35e570b6a07fdde631",
+  "proprietary_artifacts_committed": false
+}

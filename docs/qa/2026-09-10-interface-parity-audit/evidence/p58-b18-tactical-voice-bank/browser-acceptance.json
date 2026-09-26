@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B18",
+  "scope": "focused_muted_browser_routing_of_complete_tactical_weapon_and_voice_banks",
+  "result": "pass",
+  "run_id": "2026-09-25T14-33-15-631Z-45212",
+  "cases": 4,
+  "independent_review": "pass",
+  "independent_review_basis": "all_four_combined_source_screenshots_byte_identical_to_reviewed_run",
+  "verified": [
+    "both_faction_tactical_shells_populated",
+    "640x480_and_1280x800_letterboxed",
+    "22_weapon_variants_loaded_and_routed",
+    "285_unique_tactical_voices_loaded_and_routed",
+    "153_alliance_and_132_empire_voice_resources",
+    "browser_and_in_game_audio_muted",
+    "four_request_startup",
+    "zero_console_or_network_errors",
+    "stable_screenshot_hashes",
+    "browser_cleanup"
+  ],
+  "limits": [
+    "implementation_screenshots_unbaselined",
+    "remaining_production_voice_dispatch_families_open",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ]
+}

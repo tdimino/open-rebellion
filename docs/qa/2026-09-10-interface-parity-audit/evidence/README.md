@@ -36,12 +36,27 @@ the source of truth for scope, acceptance, and current work.
 | P58F12 | [Tactical attack target acquisition](2026-09-18-tactical-attack-targeting.md) | [`p58f12-tactical-attack-targeting/`](p58f12-tactical-attack-targeting/) |
 | P58F13 | [Tactical attack target lifecycle](2026-09-19-tactical-attack-target-lifecycle.md) | [`p58f13-tactical-attack-target-lifecycle/`](p58f13-tactical-attack-target-lifecycle/) |
 | P58-B06 | [Tactical completion checkpoint](2026-09-22-tactical-completion-bundle.md) | [`p58-b06-tactical-completion/`](p58-b06-tactical-completion/) |
+| P58-B07 | [Tactical 106-cell matrix contract](2026-09-22-tactical-106-matrix-contract.md) | [`p58-b07-tactical-matrix-contract/`](p58-b07-tactical-matrix-contract/) |
+| P58-B08 | [Tactical A0 ingestion](2026-09-22-tactical-a0-ingestion.md) | [`p58-b08-tactical-a0-ingestion/`](p58-b08-tactical-a0-ingestion/) |
+| P58-B09 | [Tactical A1 crosswalk](2026-09-22-tactical-a1-crosswalk.md) | [`p58-b09-tactical-a1-crosswalk/`](p58-b09-tactical-a1-crosswalk/) |
+| P58-B10 | [Tactical navigation and camera](2026-09-23-tactical-navigation-camera.md) | [`p58-b10-tactical-navigation-camera/`](p58-b10-tactical-navigation-camera/) |
+| P58-B11 | [Tactical trench-run launch and persistence](2026-09-23-tactical-trench-persistence.md) | [`p58-b11-tactical-trench-persistence/`](p58-b11-tactical-trench-persistence/) |
+| P58-B12 | [Tactical Game Options and empty space](2026-09-23-tactical-game-options-empty-space.md) | [`p58-b12-tactical-game-options-empty-space/`](p58-b12-tactical-game-options-empty-space/) |
+| P58-B13 | [Tactical withdrawal confirmation](2026-09-23-tactical-withdraw-confirmation.md) | [`p58-b13-tactical-withdraw-confirmation/`](p58-b13-tactical-withdraw-confirmation/) |
+| P58-B14 | [Tactical detail and Escort](2026-09-23-tactical-detail-escort.md) | [`p58-b14-tactical-detail-escort/`](p58-b14-tactical-detail-escort/) |
+| P58-B15 | [Tactical Battle Alert and audio](2026-09-24-tactical-battle-alert-audio.md) | [`p58-b15-tactical-alert-audio/`](p58-b15-tactical-alert-audio/) |
+| P58-B16 | [Tactical weapon audio bank](2026-09-24-tactical-weapon-audio.md) | [`p58-b16-tactical-weapon-audio/`](p58-b16-tactical-weapon-audio/) |
+| P58-B17 | [Tactical command voice bank](2026-09-24-tactical-command-voice.md) | [`p58-b17-tactical-command-voice/`](p58-b17-tactical-command-voice/) |
+| P58-B18 | [Complete tactical voice bank](2026-09-25-tactical-complete-voice-bank.md) | [`p58-b18-tactical-voice-bank/`](p58-b18-tactical-voice-bank/) |
+| P58-B19 | [Mixed-task-force target rejection](2026-09-25-tactical-mixed-task-force-target.md) | [`p58-b19-tactical-mixed-task-force-target/`](p58-b19-tactical-mixed-task-force-target/) |
+| P58-B20 | [Recovery and withdrawal feedback](2026-09-26-tactical-recovery-withdrawal-feedback.md) | [`p58-b20-tactical-recovery-withdrawal-feedback/`](p58-b20-tactical-recovery-withdrawal-feedback/) |
 
 ## Current strategic correction
 
 | Checkpoint | Report | Artifact bundle |
 |---|---|---|
 | PR #11 | [Cockpit routing correction](2026-09-14-cockpit-routing-correction.md) | [`pr11-cockpit-routing/`](pr11-cockpit-routing/) |
+| P60 | [Game Speed recovery](2026-09-24-game-speed-recovery.md) and [Message Index recovery](2026-09-24-message-index-recovery.md) | [`p60-game-speed/`](p60-game-speed/) |
 
 Earlier strategic, GID, shell, control, staging, and render reports are indexed
 in the parent [audit overview](../index.md). Every new artifact directory must

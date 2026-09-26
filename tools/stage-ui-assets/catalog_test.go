@@ -64,8 +64,8 @@ func TestBitmapResourceIDMapsKnownTacticalNamesToCatalogIDs(t *testing.T) {
 			for i, codeUnit := range encoded {
 				binary.LittleEndian.PutUint16(resourceData[2+i*2:4+i*2], codeUnit)
 			}
-			id, err := bitmapResourceID(resourceData, resourceSubdirectory, namedBitmapIDs)
-			if err != nil {
+			id, skip, err := bitmapResourceID(resourceData, resourceSubdirectory, namedBitmapIDs)
+			if err != nil || skip {
 				t.Fatalf("bitmapResourceID() error = %v", err)
 			}
 			if id != test.id {

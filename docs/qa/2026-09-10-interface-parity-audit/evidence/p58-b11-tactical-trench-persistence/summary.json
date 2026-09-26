@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B11",
+  "status": "pass_partial_a1_crosswalk",
+  "catalog_scenarios": 32,
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 98,
+    "journey_cells": 80,
+    "snapshot_cells": 18,
+    "catalog_cells_missing": 8,
+    "a0_coverage": 0,
+    "parity_acceptance": 0
+  },
+  "browser_runs": [
+    {
+      "run_id": "2026-09-23T14-01-07-522Z-36710",
+      "scenario": "production-death-star-presentation",
+      "passed": 2,
+      "failed": 0,
+      "muted_launches": 2,
+      "four_request_startups": 2,
+      "browser_processes_closed": 2
+    },
+    {
+      "run_id": "2026-09-23T14-03-23-078Z-38031",
+      "scenario": "production-battle-results-presentation",
+      "passed": 2,
+      "failed": 0,
+      "muted_launches": 2,
+      "four_request_startups": 2,
+      "browser_processes_closed": 2
+    }
+  ],
+  "verification": {
+    "rebellion_render_tests": "248_passed_1_ignored",
+    "rebellion_app_tests": "16_passed",
+    "harness_unit_tests": "26_passed_0_failed",
+    "harness_check": "pass",
+    "independent_browser_review": "bounded_A1_pass_no_P0_or_P1_two_P2_limits",
+    "production_fixture_exclusion": "pass_zero_tokens",
+    "tracked_proprietary_a0_paths": 0
+  },
+  "review_limits": [
+    "fleet_destination_does_not_visibly_confirm_a_fleet_roster",
+    "alliance_death_star_is_clipped_near_the_top_of_the_tactical_aperture"
+  ],
+  "representative_capture_sha256": {
+    "alliance_attack_death_star_selected_640x480": "1b0e272aab97f5b9ff2d3a3cb2681d8937cac732f210df9ee44f01b4bad69457",
+    "empire_attack_death_star_disabled_640x480": "eeb046fef3b282fb7a0e8fc1bd7e482524e191cfe62cd67a7bd6729d8a25e47d",
+    "alliance_result_route_system_640x480": "cc51ade02022d6da449c0a726b920c7280ac3a21ab921fa3452d3a4c72c33574",
+    "empire_result_route_fleet_640x480": "50aa4a5e89d0889f97a8d2ece0cb31905cea38692c745603e9cdb220a204ee0f"
+  },
+  "fixture_wasm_sha256": "125d87f84cfe2becb4519b406b6bf3005361a1a9d8408e9ab817767b47ff3967",
+  "runtime_pack_sha256": "7f0289265d9f85bfc971b8160edcab0da2425f1ed7246c35e570b6a07fdde631",
+  "proprietary_artifacts_committed": false
+}

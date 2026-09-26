@@ -41,7 +41,7 @@ When ticks reach 0, `DeathStarEvent::ConstructionCompleted` fires. The construct
 
 ### Fire Preconditions
 
-`DeathStarSystem::fire()` mirrors `FUN_005617b0` / `FUN_0055f650` from the binary. All must be true:
+`DeathStarSystem::fire()` enforces the following preconditions. The original superlaser fire path is unrecovered; FUN_005617b0 is the CharacterMgr SeatOfPower check and FUN_0055f650 stores that flag. All must be true:
 
 1. Target system is **not already destroyed** (`!system.is_destroyed`).
 2. An Empire Death Star fleet is **present** at the target system (`has_death_star && !is_alliance`).

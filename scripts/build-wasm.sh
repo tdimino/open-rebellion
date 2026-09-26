@@ -87,7 +87,7 @@ fi
 DAT_COUNT=$(ls -1 "$WEB_DATA"/*.DAT 2>/dev/null | wc -l | tr -d ' ')
 echo "Staged $DAT_COUNT DAT files + textstra.json in web/data/base/"
 
-# Stage the licensed main-menu music without adding it to version control.
+# Stage licensed music without adding it to version control.
 # REBELLION_MDATA_DIR may point at an original installation's MDATA directory.
 mkdir -p "$WEB_AUDIO/music"
 if [ -f "$MDATA_DIR/MDATA.300" ]; then
@@ -96,6 +96,13 @@ if [ -f "$MDATA_DIR/MDATA.300" ]; then
 else
     rm -f "$WEB_AUDIO/music/main_theme.wav"
     echo "WARNING: MDATA.300 not found in $MDATA_DIR; the menu will remain silent."
+fi
+if [ -f "$MDATA_DIR/MDATA.307" ]; then
+    cp "$MDATA_DIR/MDATA.307" "$WEB_AUDIO/music/battle.wav"
+    echo "Staged MDATA.307 as the tactical battle score."
+else
+    rm -f "$WEB_AUDIO/music/battle.wav"
+    echo "WARNING: MDATA.307 not found in $MDATA_DIR; tactical battles will remain silent."
 fi
 
 mkdir -p "$WEB_AUDIO/sfx"
@@ -107,6 +114,44 @@ else
         "$WEB_AUDIO/sfx/menu_quit.wav" \
         "$WEB_AUDIO/sfx/menu_select.wav"
     echo "WARNING: COMMON.DLL not found in $ORIGINAL_GAME_DIR; cockpit SFX will remain silent."
+fi
+if [ -f "$ORIGINAL_GAME_DIR/TACTICAL.DLL" ]; then
+    rm -f "$WEB_AUDIO/sfx/tactical_ship_destroyed.wav"
+    "$DAT_DUMPER" --gdata "$ORIGINAL_GAME_DIR" --extract-tactical-sfx --output "$WEB_AUDIO/sfx"
+else
+    rm -f "$WEB_AUDIO/sfx/tactical_ship_destroyed.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0d_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0d_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0d_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0e_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0e_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0e_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0f_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0f_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_0f_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_10_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_10_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_10_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_11_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_11_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_11_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_12_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_12_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_12_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_13_0.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_13_1.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_13_2.wav" \
+        "$WEB_AUDIO/sfx/tactical_event_14_0.wav"
+    echo "WARNING: TACTICAL.DLL not found in $ORIGINAL_GAME_DIR; tactical event cues will remain silent."
+fi
+
+mkdir -p "$WEB_AUDIO/voice/alliance" "$WEB_AUDIO/voice/empire"
+rm -f "$WEB_AUDIO/voice/alliance"/*.wav "$WEB_AUDIO/voice/empire"/*.wav
+if [ -f "$ORIGINAL_GAME_DIR/VOICEFXA.DLL" ] && [ -f "$ORIGINAL_GAME_DIR/VOICEFXE.DLL" ]; then
+    "$DAT_DUMPER" --gdata "$ORIGINAL_GAME_DIR" --extract-tactical-voice \
+        --output "$WEB_AUDIO/voice"
+else
+    echo "WARNING: VOICEFXA.DLL or VOICEFXE.DLL not found in $ORIGINAL_GAME_DIR; tactical voices will remain silent."
 fi
 
 # ── Stage UI resources into web/data/ui/ ────────────────────────────────────

@@ -51,13 +51,14 @@ the Makefile does not replace packaged WASM, browser, or release acceptance.
 Platform notes and the macOS compiler-path workaround are in [AGENTS.md](AGENTS.md).
 
 `make test` runs the normal workspace suite, then `make test-assets`. The latter
-runs only the ignored `replay_manifest`, `state_fingerprint`, and
-`telemetry_coverage` integration suites when any `.DAT` files are present in
+runs only the ignored rebellion-data unit tests and the ignored `replay_manifest`,
+`troop_classes`, and `telemetry_coverage` integration suites when any `.DAT` files are present in
 `data/base` (case-insensitive extension). Without DAT files it prints an explicit
 skip message. Partial or corrupt datasets run the tests and fail normally;
 the gate checks availability, not validity. Ignored documentation examples stay
-ignored. You can also run `make test-assets` directly. These tests require the
-original DATs, not extracted UI or audio assets.
+ignored. It also runs the ignored `tactical_view` bitmap hit-mask tests when
+extracted bitmaps are present in `data/base/ui`. You can run `make test-assets`
+directly.
 
 ## Interface acceptance
 

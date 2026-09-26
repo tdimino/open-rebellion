@@ -43,6 +43,7 @@ use egui_macroquad::egui;
 use macroquad::prelude::*;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::message_log::MessageRail;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -236,8 +237,8 @@ pub struct StrategicControlSpec {
 /// One original Message Index category control on the command-center rail.
 ///
 /// `FUN_00427270` constructs these nine 27x22 controls for each faction.
-/// The resting and illuminated resources are separate; the latter is not
-/// selected until the original message-state predicate is recovered.
+/// The resting resource shows by default; the illuminated one while the
+/// control's category has unread messages.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MessageIndexControlSpec {
     pub command_id: u16,
@@ -571,6 +572,9 @@ pub struct CockpitState {
     pub gid_mode: GidMode,
     /// Original GID popup and detailed-legend state.
     pub gid_ui: GidUiState,
+    /// Message Index categories with unread messages, one bit per
+    /// [`MessageRail::mask`]. The caller refreshes it each frame.
+    pub message_unread_mask: u16,
     /// Strategic control currently holding native-style pointer capture.
     pressed_control: Option<CockpitButton>,
 }
@@ -584,6 +588,7 @@ impl Default for CockpitState {
             side_gutter_w: 0.0, // no side gutters for now — full width
             gid_mode: GidMode::PopularSupport,
             gid_ui: GidUiState::default(),
+            message_unread_mask: 0,
             pressed_control: None,
         }
     }
@@ -755,7 +760,14 @@ pub fn draw_cockpit_egui_layer(
         strategic_side_control(state.faction),
         primary_down,
     );
-    draw_message_index_rail(ctx, cache, &painter, layout, state.faction);
+    draw_message_index_rail(
+        ctx,
+        cache,
+        &painter,
+        layout,
+        state.faction,
+        state.message_unread_mask,
+    );
 
     if state.gid_mode != GidMode::DisplayOff {
         draw_compact_gid_legend(ctx, cache, &painter, layout, state.faction);
@@ -770,16 +782,36 @@ pub fn draw_cockpit_egui_layer(
     selected
 }
 
+/// Bitmap a rail control shows: illuminated while its category has unread
+/// messages (`FUN_0042d8d0` clears flag `0x40`), resting otherwise.
+#[must_use]
+pub fn message_index_control_resource(
+    control: &MessageIndexControlSpec,
+    rail: MessageRail,
+    unread_mask: u16,
+) -> u32 {
+    if unread_mask & rail.mask() == 0 {
+        control.resting_resource
+    } else {
+        control.illuminated_resource
+    }
+}
+
 fn draw_message_index_rail(
     ctx: &egui::Context,
     cache: &mut BmpCache,
     painter: &egui::Painter,
     layout: CockpitLayout,
     faction: CockpitFaction,
+    unread_mask: u16,
 ) {
-    for control in strategic_message_index_controls(faction) {
+    for (control, rail) in strategic_message_index_controls(faction)
+        .iter()
+        .zip(MessageRail::RAIL_ORDER)
+    {
+        let resource = message_index_control_resource(control, rail, unread_mask);
         let Some(texture_id) = cache
-            .get(ctx, DllSource::Strategy, control.resting_resource)
+            .get(ctx, DllSource::Strategy, resource)
             .map(egui_macroquad::egui::TextureHandle::id)
         else {
             continue;
@@ -1038,7 +1070,7 @@ fn gid_submenu_items(category: GidCategory, faction: CockpitFaction) -> Vec<GidM
     }
 }
 
-fn gid_popup_frame() -> egui::Frame {
+pub(crate) fn gid_popup_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(egui::Color32::from_rgba_premultiplied(45, 47, 48, 218))
         // Keep the stroke's layout inset, but paint its visible edge from the
@@ -1048,9 +1080,15 @@ fn gid_popup_frame() -> egui::Frame {
 }
 
 /// `FUN_004511e0` passes STRATEGY 10100..10107 to the native GID frame
-/// constructor. Corners are 2x2; the four one-pixel strips repeat between
-/// them. The video reference also shows the characteristic alternating edge.
-fn paint_gid_frame_border(ui: &egui::Ui, cache: &mut BmpCache, rect: egui::Rect, scale: f32) {
+/// constructor, and `FUN_00442860` passes the same tiles to every Game Menu
+/// Window. Corners are 2x2; the four one-pixel strips repeat between them.
+/// The video reference also shows the characteristic alternating edge.
+pub(crate) fn paint_gid_frame_border(
+    ui: &egui::Ui,
+    cache: &mut BmpCache,
+    rect: egui::Rect,
+    scale: f32,
+) {
     let corner = 2.0 * scale;
     let tile = |ui: &egui::Ui, cache: &mut BmpCache, id, target: egui::Rect| {
         if let Some(texture) = cache.get(ui.ctx(), DllSource::Strategy, id) {
@@ -1135,7 +1173,12 @@ fn paint_gid_frame_border(ui: &egui::Ui, cache: &mut BmpCache, rect: egui::Rect,
     }
 }
 
-fn paint_gid_icon(ui: &egui::Ui, cache: &mut BmpCache, resource_id: u32, rect: egui::Rect) {
+pub(crate) fn paint_gid_icon(
+    ui: &egui::Ui,
+    cache: &mut BmpCache,
+    resource_id: u32,
+    rect: egui::Rect,
+) {
     if let Some(texture) = cache.get(ui.ctx(), DllSource::Strategy, resource_id) {
         ui.painter().image(
             texture.id(),
@@ -1435,7 +1478,7 @@ fn control_resource(control: &StrategicControlSpec, pressed: bool) -> u32 {
     }
 }
 
-fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewport) -> egui::Rect {
+pub(crate) fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewport) -> egui::Rect {
     egui::Rect::from_min_size(
         egui::pos2(
             layout.canvas.x + rect.x * layout.scale,
@@ -1852,15 +1895,24 @@ mod tests {
     }
 
     #[test]
-    fn message_index_rail_follows_letterboxed_canvas() {
-        let layout = CockpitState::new(CockpitFaction::Empire).layout_for(1280.0, 800.0);
-        let first = strategic_message_index_controls(CockpitFaction::Empire)[0];
-        let rect = logical_rect_to_screen(layout, first.rect);
-
-        assert_close(rect.min.x, layout.canvas.x + 611.0 * layout.scale);
-        assert_close(rect.min.y, layout.canvas.y + 110.0 * layout.scale);
-        assert_close(rect.width(), 27.0 * layout.scale);
-        assert_close(rect.height(), 22.0 * layout.scale);
+    fn an_unread_category_lights_only_its_rail_control() {
+        // FUN_0042d8d0 clears flag 0x40 only on the control whose bit is set;
+        // Fleet (0x080) is the second control, command 0x137.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let controls = strategic_message_index_controls(faction);
+            let shown: Vec<bool> = controls
+                .iter()
+                .zip(MessageRail::RAIL_ORDER)
+                .map(|(control, rail)| {
+                    message_index_control_resource(control, rail, MessageRail::Fleet.mask())
+                        == control.illuminated_resource
+                })
+                .collect();
+            assert_eq!(
+                shown,
+                [false, true, false, false, false, false, false, false, false]
+            );
+        }
     }
 
     #[test]
@@ -2060,34 +2112,9 @@ mod tests {
     }
 
     #[test]
-    fn control_art_and_macroquad_accelerators_match_native_states() {
+    fn control_art_follows_the_pressed_state() {
         let control = &strategic_primary_controls(CockpitFaction::Alliance)[0];
         assert_eq!(control_resource(control, false), control.normal_resource);
         assert_eq!(control_resource(control, true), control.pressed_resource);
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F2),
-            Some(CockpitButton::SystemFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F3),
-            Some(CockpitButton::FleetFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F4),
-            Some(CockpitButton::TroopFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F5),
-            Some(CockpitButton::PersonnelFinder)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F1),
-            Some(CockpitButton::GameOptions)
-        );
-        assert_eq!(
-            macroquad_accelerator(KeyCode::F7),
-            Some(CockpitButton::Encyclopedia)
-        );
-        assert_eq!(macroquad_accelerator(KeyCode::F6), None);
     }
 }

@@ -22,8 +22,9 @@ functional. Do not repeat historical parity percentages as verified results.
   the next feature. Never mark a partial or inferred result complete.
 - Work directly on `main`; the repository intentionally carries no other local
   or origin branches during this audit.
-- Run browser acceptance through `codex-orchestrator` with Astra at medium
-  effort and retain screenshots, network logs, console logs, and artifact hashes.
+- Run browser acceptance yourself with `agent-browser`, or through
+  `codex-orchestrator` with Astra at medium effort. Either way, retain
+  screenshots, network logs, console logs, and artifact hashes.
 - v1.0 is the complete browser build deployed through password-protected
   Cloudflare Pages; credentials belong in encrypted secrets, never in Git.
 - GitHub Actions workflow definitions are intentionally local and untracked as
@@ -66,6 +67,22 @@ green until their dedicated findings close.
 - Do not claim bitmap correctness from decode or HTTP success alone. Require a
   resource mapping, cache hit, and inspected screenshot on each claimed platform.
 - Preserve user changes and unrelated untracked files. Do not stage broad paths.
+
+## Testing
+
+- Name each test as a behavior sentence, such as
+  `pause_finishes_the_current_day_then_holds`.
+- A test that asserts original-game behavior cites its source in a comment or
+  constant: a Ghidra function, a resource ID, or a manual page. Tests of our
+  own helpers and layout need no citation.
+- Never delete, weaken, or broaden an assertion to make code pass. Change an
+  expectation only with evidence that it was wrong.
+- Regenerate replay goldens or fixtures only for a named cause, such as a save
+  format change or recovered original behavior, and name it in the commit.
+- When one change writes both code and its test, show the test fails without
+  the change before calling it done.
+- Before committing, run `cargo mutants` on the touched files and close or
+  explain each surviving mutant. See `agent_docs/agent-tooling.md`.
 
 ## Git and Dependencies
 

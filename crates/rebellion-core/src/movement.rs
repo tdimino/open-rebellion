@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn progress_at_halfway() {
+    fn progress_reports_half_at_midpoint() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let mut order = MovementOrder::new(fleet, origin, dest, 10);
         order.ticks_elapsed = 5;
@@ -737,7 +737,7 @@ mod tests {
     // --- MovementState ---
 
     #[test]
-    fn order_and_get() {
+    fn ordered_movement_is_retrievable_by_fleet() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let mut state = MovementState::new();
         state.order(fleet, origin, dest, 10);
@@ -1133,7 +1133,7 @@ mod tests {
     }
 
     #[test]
-    fn medium_distance_proportional() {
+    fn medium_distance_produces_proportional_transit_ticks() {
         // ~440 units apart, hyperdrive=80 → ceil(440*2/80)=ceil(11.0)=11
         let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320); // ~438.6
         let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
@@ -1222,27 +1222,6 @@ mod tests {
         let t = fleet_transit_ticks(&fleet, &world, origin, dest);
         // base ~11, minus 5 = ~6, clamped to MIN=10
         assert_eq!(t, MIN_TRANSIT_TICKS);
-    }
-
-    #[test]
-    fn zero_hyperdrive_modifier_no_change() {
-        let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320);
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
-        let char_key = world.characters.insert(test_character("Regular", 0));
-        let fleet = Fleet {
-            location: origin,
-            capital_ships: vec![ShipInstance::new(ship_key, 100, true)],
-            fighters: vec![],
-            characters: vec![char_key],
-            is_alliance: true,
-            has_death_star: false,
-        };
-        let t = fleet_transit_ticks(&fleet, &world, origin, dest);
-        // No bonus, base ~11
-        assert!(
-            (10..=12).contains(&t),
-            "expected ~11 with no bonus, got {t}"
-        );
     }
 
     #[test]

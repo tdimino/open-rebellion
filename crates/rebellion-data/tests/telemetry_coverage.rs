@@ -152,7 +152,7 @@ fn telemetry_coverage_all_sys_constants_emit() {
         enabled: true,
         system_tag: SystemTag::Events,
     });
-    states.clock.set_speed(GameSpeed::Faster);
+    states.clock.set_speed(GameSpeed::Fast);
 
     // ── Fixture injections to guarantee all 17 systems fire ─────────────
 

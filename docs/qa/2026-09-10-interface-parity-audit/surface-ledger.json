@@ -16,6 +16,25 @@
     "viewport",
     "device_pixel_ratio"
   ],
+  "tactical_acceptance_matrix": {
+    "families": [
+      "TAC-01",
+      "TAC-02",
+      "TAC-03",
+      "TAC-04",
+      "TAC-05",
+      "TAC-06",
+      "TAC-07"
+    ],
+    "expected_distribution": [13, 13, 20, 14, 23, 9, 14],
+    "required_cells": 106,
+    "validator": "tools/interface-parity/validate-tactical-matrix.mjs",
+    "a0_schema": "tools/interface-parity/schemas/tactical-a0-manifest.schema.json",
+    "current_matrix_coverage": 0,
+    "current_a0_coverage": 0,
+    "current_parity_acceptance": 0,
+    "checkpoint": "P58-B19"
+  },
   "surfaces": [
     {
       "id": "PRE-01",
@@ -1205,7 +1224,7 @@
         65,
         66
       ],
-      "current_implementation": "Replacement text buttons and custom status bar.",
+      "current_implementation": "P60 removes the replacement status bar and speed buttons. The top-strip day readout is the Game Speed control: a right-button release inside its recovered rectangle opens the five-item STRATEGY Game Menu Window (Pause, Very Slow, Slow, Medium, Fast); the original has no faster speed, so the very fast cell has no original counterpart. Pause sets the original stop day, finishes the current day, and opens the REBDLOG 412x176 Resume Game Play? alert; its checkmark or Enter resumes at the kept speed. Alt+P, Alt+NumPad+, and Alt+NumPad- follow TEXTCOMM accelerator table 11. Four muted browser sessions cover both factions at 640x480 and 1280x800. The wall-clock rate unit, menu font and background, day font source, Resume tooltip, and every A0 comparison remain open, so no cell is accepted.",
       "finding_ids": [
         "UIP-F-001"
       ],
@@ -1517,7 +1536,7 @@
         158,
         159
       ],
-      "current_implementation": "P49 restores the nine original resting Message Index rail BMPs for each faction at the exact constructor rectangles. Both 640x480 browser rails match all source BMP pixels. The illuminated/unread predicate, control input, original Message Index window, category filtering, report routing, clear/delete actions, and A0 state matrix remain open. Replacement message interfaces elsewhere do not count as parity.",
+      "current_implementation": "P49 restores the nine original resting Message Index rail BMPs for each faction at the exact constructor rectangles. Both 640x480 browser rails match all source BMP pixels. The illuminated/unread predicate, control input, original Message Index window, category filtering, report routing, clear/delete actions, and A0 state matrix remain open. Replacement message interfaces elsewhere do not count as parity. P60 statically recovers the Message Index window, category-to-rail mapping, rail resting path, and the Advice Very Slow drop without implementing them; the illumination-on path remains unrecovered.",
       "finding_ids": [
         "UIP-F-007"
       ],
@@ -4253,7 +4272,7 @@
       "title": "Main space-battle viewport and faction HUD",
       "required": true,
       "status": "fail",
-      "latest_checkpoint": "P58-B06 adds source-backed capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, the superlaser journey, both trench-run routes, and exact strategic result application. The complete muted tactical harness passes 120 of 120 cases, and independent visual review is a qualified A1 pass with no P0 or P1 findings. Authentic Game Options, Alliance Death Star framing, persistent trench-run outcome proof, native beam behavior, shared post-battle orchestration, native playback, A0 comparison, and all TAC-01 cells remain open.",
+      "latest_checkpoint": "P58-B19 preserves deterministic A1 mapping for all 106 tactical cells and restores FUN_005a24d0's mixed-task-force hostile-target rejection. Selected capitals spanning task forces retain their manual, active, and Escort targets while exact Alliance event 0x84 / WAVE 14101 or Imperial event 0x102 / WAVE 15105 routes through the production audio path. Four focused muted browser cases pass across both factions and viewports. A0 coverage and strict acceptance remain 0 of 106; the strict gate was not run and every TAC-01 cell remains pending.",
       "required_states": [
         "Alliance",
         "Imperial",
@@ -4288,7 +4307,7 @@
         149,
         150
       ],
-      "current_implementation": "P54 through P58F13 restore the original shell, complete tactical asset transport, camera and render state, exact participant identities, fighter detail, group controls, planets, effects, fields, selected damage, subsystem behavior, movement, commands, recovery, and typed target lifecycle. P58-B06 adds source-backed capital and fighter combat, collision, automatic colored groups, capability-sorted task forces with forward-relative retained formations, the separate Death Star object, original Battle Results and Battle Options surfaces, resource 5030 stars, the superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. The complete implementation matrix passes 120 of 120 muted browser cases. Exact global RNG sequencing, original arrival callbacks, exact planet placement, power allocation, native beam behavior, shared post-battle bombardment, landing, and navigation orchestration, native playback, Battle Alert, audio, rare states, and lossless A0 comparison keep every TAC-01 cell pending.",
+      "current_implementation": "P54 through P58F13 restore the original shell, complete tactical asset transport, camera and render state, exact participant identities, fighter detail, group controls, planets, effects, fields, selected damage, subsystem behavior, movement, commands, recovery, and typed target lifecycle. P58-B06 adds source-backed capital and fighter combat, collision, automatic colored groups, capability-sorted task forces with forward-relative retained formations, the separate Death Star object, original Battle Results and Battle Options surfaces, resource 5030 stars, the superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. P58-B12 adds deterministic empty-space presentation. P58-B15 restores the source-built faction Battle Alert, paused Take Command entry, and MDATA 307 battle music. P58-B16 restores all 22 TACTICAL weapon-audio variants. P58-B17 restores 90 exact VOICEFXA/VOICEFXE battle-ready and task-force/RGBY command acknowledgements. P58-B18 transports all 285 source-addressed faction voices and dispatches selected withdrawal, battle-outcome, Death Star, and RGBY trench-run transitions. P58-B19 restores source-exact mixed-task-force hostile-target rejection and faction feedback without mutating existing orders. All 106 cells have deterministic A1 scenarios through 87 journeys and 19 snapshots. Exact global RNG sequencing, original arrival callbacks, exact planet placement, power allocation, native beam behavior, shared post-battle bombardment, landing, navigation orchestration, remaining completion/destruction/recovery/warning and ordered trench voice callers, native playback, rare states, and lossless A0 comparison keep every TAC-01 cell pending.",
       "finding_ids": [
         "UIP-F-009"
       ],
@@ -4544,7 +4563,7 @@
         145,
         146
       ],
-      "current_implementation": "P58B through P58F13 restore production identities, projection-aligned selection and targeting, fighter and capital detail panels, portraits, live meters, subsystem condition and repair, movement, authentic command delivery, recovery, typed targets, and stable reacquisition. P58-B06 adds capital and fighter weapon behavior, collision, retained formations, the separate Death Star selection and attack path, original result/options surfaces, superlaser controls, and both trench-run routes. Exact global RNG sequencing, original arrival callbacks, power allocation, passenger and destroyed-selection matrices, native beam behavior, and A0 comparison remain open, so every TAC-03 cell stays pending.",
+      "current_implementation": "P58B through P58F13 restore production identities, projection-aligned selection and targeting, fighter and capital detail panels, portraits, live meters, subsystem condition and repair, movement, authentic command delivery, recovery, typed targets, and stable reacquisition. P58-B06 adds capital and fighter weapon behavior, collision, retained formations, the separate Death Star selection and attack path, original result/options surfaces, superlaser controls, and both trench-run routes. P58-B14 adds a complete TACTICAL 3368 destroyed presentation and compact GOKRES personnel assignments in the original selected-capital 1302 contents apertures. Exact global RNG sequencing, original arrival callbacks, power allocation, the complete passenger and destroyed-selection matrices, native beam behavior, and A0 comparison remain open, so every TAC-03 cell stays pending.",
       "finding_ids": [
         "UIP-F-009",
         "UIP-F-012"
@@ -4712,7 +4731,7 @@
         145,
         146
       ],
-      "current_implementation": "P57B2A through P58E restore faction camera entry, zoom, rotate, tilt, clip planes, D-pad controls, centered targeting, source lanes and positions, authored transforms, render state, production participants, fighter-detail zoom, and task-force/RGBY selection. P58-B06 adds automatic group assignment and forward-relative retained task-force movement. Navigation sets, multiple routes, memorize/recall, chase camera, the complete interaction matrix, and A0 comparison remain open, so every TAC-04 cell stays pending.",
+      "current_implementation": "P57B2A through P58E restore faction camera entry, zoom, rotate, tilt, clip planes, D-pad controls, centered targeting, source lanes and positions, authored transforms, render state, production participants, fighter-detail zoom, and task-force/RGBY selection. P58-B06 adds automatic group assignment and forward-relative retained task-force movement. P58-B10 adds all four navigation-set controls, ordered route and multiple-target editing, camera memorize/recall, and task-force/fighter-group chase. Navigation-point coordinates, the complete interaction matrix, and A0 comparison remain open, so every TAC-04 cell stays pending.",
       "finding_ids": [
         "UIP-F-009"
       ],
@@ -4849,7 +4868,7 @@
         147,
         148
       ],
-      "current_implementation": "P58F9 through P58F13 restore original command panels, shared order and tactic codes, disabled states, maneuver execution, Hold, Recover, typed attack orders, and stable target replacement. P58-B06 adds capital and fighter fire, Attack Death Star gating, exact 1021 through 1024 laser controls, charge, target assignment, delayed destruction, and exact result-state routing to the two trench-run films. Native beam dimensions and timing, the original trench-run result producer, native playback, the complete state matrix, and A0 comparison remain open.",
+      "current_implementation": "P58F9 through P58F13 restore original command panels, shared order and tactic codes, disabled states, maneuver execution, Hold, Recover, typed attack orders, and stable target replacement. P58-B06 adds capital and fighter fire, Attack Death Star gating, exact 1021 through 1024 laser controls, charge, target assignment, delayed destruction, and exact result-state routing to the two trench-run films. P58-B10 adds explicit Anvil and Stand Off browser journeys. P58-B11 proves that committed order 6 enters the production trench-run lifecycle while the friendly Death Star path remains disabled. P58-B14 restores direct right-click Escort as source order code 1 with retained friendly target, white target marker, follow, autonomous opportunity fire, and invalid-target cleanup. Native beam dimensions and timing, native playback, the complete state matrix, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-009",
         "UIP-F-012"
@@ -5024,7 +5043,7 @@
       "manual_pages": [
         148
       ],
-      "current_implementation": "P58-B06 restores the original Battle Options panel and source-mapped withdraw, simulate, observe/take-command, game-options, close, pressed, selected, and disabled states. Deterministic browser journeys cover both factions and viewports, including one-shot withdrawal and disabled repeat rejection. Native confirmation and strategic-return semantics plus A0 comparison remain open.",
+      "current_implementation": "P58-B06 restores the original Battle Options panel and source-mapped withdraw, simulate, observe/take-command, game-options, close, pressed, selected, and disabled states. P58-B12 routes Game Options to the original COMMON 20002 surface, verifies disabled mid-battle tactical-display controls, and returns to the live battle. P58-B13 restores the executable-derived TACTICAL 1310 withdrawal confirmation, TEXTTACT title and prompt, controls 1113 through 1116, cancel and confirm routing, and disabled repeat rejection. Strategic-return semantics, complete Game Options confirmations and save/load behavior, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-009"
       ],
@@ -5124,7 +5143,7 @@
         149,
         150
       ],
-      "current_implementation": "P58-B06 restores the original Battle Results surface, both force tabs, overview categories, survivor and loss rows, Go to Fleet and Go to System controls, and shared strategic result transport for exact hull and fighter roster slots, officer capture, Death Star state, cargo, and empty fleets. Bombardment, landing, report presentation, final navigation orchestration, the full native outcome matrix, and A0 comparison remain open.",
+      "current_implementation": "P58-B06 restores the original Battle Results surface, both force tabs, overview categories, survivor and loss rows, Go to Fleet and Go to System controls, and shared strategic result transport for exact hull and fighter roster slots, officer capture, Death Star state, cargo, and empty fleets. P58-B11 browser-proves exact 3-to-2 capital and fighter loss persistence for both strategic fleets before system or fleet destination routing. The fleet destination still lacks unmistakable roster confirmation. Bombardment, landing, report presentation, final navigation orchestration, the full native outcome matrix, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-008"
       ],

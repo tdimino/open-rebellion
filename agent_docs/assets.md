@@ -31,7 +31,7 @@ Original BMPs from game's installed directories:
 | Characters (major) | ~6 | EData/ | 072-077 |
 | Characters (minor) | ~54 | EData/ | 078-137 |
 | Systems (planets) | ~200 | EData/ | 138+ |
-| DLL UI | 2,303 BMPs and 3,988 advisor frames | GOKRES/STRATEGY/TACTICAL/COMMON/ALSPRITE/EMSPRITE.DLL | Resource IDs |
+| DLL UI | 2,326 BMPs and 3,988 advisor frames | GOKRES/STRATEGY/TACTICAL/COMMON/ALSPRITE/EMSPRITE/REBDLOG.DLL | Resource IDs |
 
 **Prerequisite**: `data/base/EData/` must contain extracted BMPs from a legal game copy. Extracted game data also at `~/Desktop/Programming/star-wars-rebellion/GData/`.
 

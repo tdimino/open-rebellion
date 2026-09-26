@@ -3,7 +3,7 @@ title: "Standalone Space-Battle Test Launcher"
 description: "Test-only entry into the production tactical battle path and its original-interface parity matrix"
 category: plan
 created: 2026-09-12
-updated: 2026-09-19
+updated: 2026-09-22
 tags: [interface, parity, tactical, browser, testing]
 status: in_progress
 ---
@@ -11,6 +11,11 @@ status: in_progress
 # Standalone Space-Battle Test Launcher
 
 This is a test harness for `UIP-B06` in the [batched interface plan](2026-09-11-feat-batched-interface-parity-plan.md). A developer should be able to choose a deterministic battle, open the actual game directly in that battle, use its real controls, and inspect the result without playing a campaign first. The launcher is outside the game canvas and absent from production builds. It must not introduce another tactical renderer or an invented in-game menu.
+
+The [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md)
+is the final execution plan for authoritative original captures, exact catalog
+coverage, A0/A1 comparison, remaining production closure, and the completion
+push.
 
 Use the [space-battle launcher reference](../reference/space-battle-launcher/README.md)
 for current routes, fixture codes, commands, evidence, and verified limits.
@@ -81,11 +86,11 @@ Exact global RNG sequencing, exact original arrival callbacks and recovery
 trajectories, power allocation, exact planet placement, the native Death Star
 beam contract, native trench-run playback, shared post-battle bombardment,
 landing, and navigation orchestration, original view acceptance, and all 106
-visual cells remain open. The practical launcher
-estimate is about 96%
-implemented. The complete 120-case implementation matrix passes both factions
-and both viewports with clean muted-browser isolation. This planning
-estimate does not replace the strict 0 of 106 tactical-cell acceptance result.
+visual cells remain open. The deterministic A1 matrix now maps all 106
+canonical tactical cells through 87 browser journeys and 19 snapshots. The
+complete 120-case implementation matrix passes both factions and both
+viewports with clean muted-browser isolation. This implementation coverage
+does not replace the strict 0 of 106 tactical-cell acceptance result.
 
 ## Current contract and limits
 
@@ -182,9 +187,33 @@ capability-sorted task forces and forward-relative retained follower geometry,
 Death Star transport,
 original result/options panels, resource 5030 stars, the superlaser control
 journey, exact 201/202 trench-run routing, and strategic result application.
+P58-B13 restores the executable-derived TACTICAL 1310 withdrawal confirmation,
+its TEXTTACT title and prompt, exact confirm/cancel resources, and both modal
+outcomes before fleet retreat.
+P58-B14 restores compact GOKRES contents in the selected-capital 1302 panel,
+a complete TACTICAL 3368 destroyed presentation, and source order-code 1
+Escort through direct friendly right-click, protected-target marking, follow,
+opportunity fire, and invalid-target cleanup.
+P58-B15 restores the source-built faction Battle Alert, its tab and command
+resources, the paused Take Command transition, MDATA 307 battle music, and the
+first source-identified tactical WAVE transport at 13054. P58-B16 corrects
+event 0x14 to torpedo impact and restores all eight weapon fire/impact events
+across the 22 WAVE variants at 13033–13054. P58-B17 restores 90 exact
+VOICEFXA/VOICEFXE battle-ready and task-force/RGBY maneuver, attack, formation,
+and mission acknowledgements, with production dispatch and focused muted
+browser transport. P58-B18 extends the executable table through event `0x13c`,
+transports all 285 faction tactical voices, and dispatches selected withdrawal,
+battle-outcome, Death Star, and RGBY trench-run transitions. This completes the
+deterministic A1 crosswalk without running or satisfying the strict A0 gate.
+P58-B19 restores `FUN_005a24d0`'s exact hostile-target rejection for capital
+selections spanning multiple task forces and routes the matching Alliance or
+Imperial voice without mutating existing orders.
 Power allocation, exact planet placement, native Death Star beam behavior,
-shared post-battle bombardment, landing, and navigation orchestration, audio,
-native playback, and A0 view acceptance remain T3 and T4 work.
+shared post-battle bombardment, landing, and navigation orchestration,
+remaining completion, destruction, recovery, warning, and ordered trench voice
+callers, exact shared-RNG sequencing, mixing,
+native playback, and A0
+view acceptance remain T3 and T4 work.
 No `TAC-*` acceptance cell is closed.
 
 ### Consolidated completion boundary

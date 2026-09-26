@@ -1481,7 +1481,7 @@ mod tests {
     }
 
     #[test]
-    fn executor_accepts_an_initial_state_restored_from_save_v13() {
+    fn executor_accepts_an_initial_state_restored_from_a_save() {
         let data = sample_data();
         let environment = ReplayEnvironment {
             engine_version: "0.1.0-test",

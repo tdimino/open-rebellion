@@ -46,10 +46,12 @@ family is `1`; Alliance is `1`; Empire is `2`. The canonical catalog is
 | `production-death-star-presentation` | 65816 | 66072 | Separate manager sprite and hostile fighter mission control |
 | `production-battle-results-presentation` | 65817 | 66073 | Original bitmap result summary and force tabs |
 | `production-battle-options-presentation` | 65818 | 66074 | Original options panel and source control states |
-| `production-battle-options-withdrawal` | 65819 | 66075 | Withdrawal command and disabled post-command state |
+| `production-battle-options-withdrawal` | 65819 | 66075 | Native withdrawal confirmation, cancel/confirm routing, and disabled post-command state |
 | `production-death-star-laser-journey` | 65820 | 66076 | Original star surface and owner-gated superlaser journey |
 | `production-trench-run-success` | 65821 | 66077 | Result state 6, MDATA.201, and tactical return |
 | `production-trench-run-failure` | 65822 | 66078 | Result state 7, MDATA.202, and tactical return |
+| `production-battle-alert-entry` | 65827 | 66083 | Source-built faction alert, four tabs, held Take Command, and paused tactical entry |
+| `production-tactical-audio-routing` | 65828 | 66084 | MDATA.307 battle score, all 22 TACTICAL weapon WAVs, and 90 source-mapped VOICEFXA/VOICEFXE command acknowledgements while muted |
 
 ## Run it
 
@@ -153,6 +155,49 @@ and closes every process. Raw runs live under ignored
 - P58F13 retains valid typed targets, replaces invalid ones with the first
   eligible hostile target of the same class, and clears exhausted target lists
   without random or cross-class fallback.
+- P58-B10 adds all four navigation sets, ordered multi-point routes and
+  multi-target queues, camera memorize/recall and chase, plus explicit Anvil
+  and Stand Off journeys. The deterministic A1 crosswalk is 96/106; strict A0
+  acceptance remains 0/106.
+- P58-B11 proves that committed Attack Death Star order 6 enters the production
+  trench-run lifecycle and that Battle Results persists exact capital and
+  fighter losses before destination routing. The deterministic A1 crosswalk is
+  98/106; strict A0 acceptance remains 0/106.
+- P58-B12 restores shared Game Options routing and empty-space presentation.
+  P58-B13 restores the source TACTICAL 1310 withdrawal confirmation, exact
+  text/control identities, cancel and confirm routing, and disabled repeat
+  rejection. The deterministic A1 crosswalk is 101/106; strict A0 acceptance
+  remains 0/106.
+- P58-B14 restores complete destroyed presentation, compact GOKRES contents in
+  selected-capital panel 1302, and direct source order-code 1 Escort with its
+  protected-target marker and lifecycle. The deterministic A1 crosswalk is
+  104/106; strict A0 acceptance remains 0/106.
+- P58-B15 restores the source-built faction Battle Alert, paused Take Command
+  transition, MDATA 307 battle score, and TACTICAL WAVE 13054 event routing.
+  The deterministic A1 crosswalk is 106/106 through 87 journeys and 19
+  snapshots; A0 coverage and strict acceptance remain 0/106.
+- P58-B16 corrects event 0x14 to torpedo impact and restores all eight weapon
+  fire/impact events across the complete 22-variant WAVE 13033–13054 bank.
+  Exact shared-RNG sequencing, audible native comparison, and strict A0
+  acceptance remain open.
+- P58-B17 restores 90 exact faction command recordings: battle ready plus
+  task-force and RGBY maneuver, attack, formation, and mission
+  acknowledgements. The focused four-case browser gate loads and routes all 22
+  weapon and 90 command-voice resources while muted. Result, withdrawal, and
+  Death Star voice families, mixing, audible native comparison, and strict A0
+  acceptance remain open.
+- P58-B18 extends the same executable table through event `0x13c`, transports
+  all 285 source-addressed voices, and dispatches selected withdrawal,
+  battle-outcome, Death Star, and RGBY trench-run transitions. The focused
+  four-case muted browser gate loads and routes all 307 tactical weapon and
+  voice resources. Remaining completion, destruction, recovery, warning, and
+  ordered trench callers, mixing, audible native comparison, and strict A0
+  acceptance remain open.
+- P58-B20 activates exact RGBG fighter recovery-complete and no-carrier-slot
+  feedback plus the faction disabled-hyperdrive withdrawal warning. Twelve
+  focused muted browser cases cover both factions and both viewports. Remaining
+  completion, destruction, warning, and ordered trench callers, mixing,
+  audible native comparison, and strict A0 acceptance remain open.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options
@@ -172,7 +217,9 @@ A0 comparison, exact global RNG sequencing,
 exact original arrival callbacks and recovery trajectories, exact planet
 placement, power allocation,
 beam dimensions and timing, native trench-run playback comparison,
-post-battle bombardment, landing, and navigation orchestration, audio, and
+post-battle bombardment, landing, and navigation orchestration, remaining
+completion, destruction, recovery, warning, and ordered trench voice callers,
+exact shared-RNG sequencing, audio mixing and native comparison, and
 remaining result semantics remain open. The source 3D
 window uses the standard arrow cursor, so no invented targeting cursor is
 required. All
@@ -183,6 +230,10 @@ required. All
 
 - [Ranked Windows/Ghidra recovery map](reverse-engineering-map.md)
 - [P58-B06 tactical completion evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md)
+- [P58-B13 tactical withdrawal-confirmation evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md)
+- [P58-B14 tactical detail and Escort evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md)
+- [P58-B15 tactical Battle Alert and audio evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md)
+- [P58-B16 tactical weapon-audio evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md)
 - [P58F13 tactical attack-target lifecycle evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-19-tactical-attack-target-lifecycle.md)
 - [P58F12 tactical attack-targeting evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-attack-targeting.md)
 - [P58F11 tactical command-progression evidence](../../qa/2026-09-10-interface-parity-audit/evidence/2026-09-18-tactical-command-progression.md)

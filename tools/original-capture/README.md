@@ -60,8 +60,8 @@ captures land in that copy, not in `~/VMs/rebellion/`.
 
 The VM must carry a sound card. `REBEXE.exe` calls `DirectSoundCreate` during
 startup (`FUN_00610d00`), and with no audio device the returned interface is
-unusable; the game then faults dereferencing it (`FUN_00611140`, exception
-`0xc000041d`) before a window ever appears. `create-vm.applescript` requests no
+unusable; the game then faults dereferencing it (near `FUN_00611140`; address
+unverified from our Ghidra project, exception `0xc000041d`) before a window ever appears. `create-vm.applescript` requests no
 sound, so after the VM exists, set one while it is stopped:
 
 ```sh
@@ -122,6 +122,23 @@ writes `<name>.png` and `<name>.json` (sha256, size, client origin, screen
 size, Windows build, timestamp, method). Captures come from the guest's own
 framebuffer, never from the host window or a VNC client.
 
+For a tactical A0 cell, include its exact ledger ID and requirement, the setup
+provenance, and the ordered input trace. The script also hashes the running
+executable:
+
+```powershell
+& D:\capture.ps1 `
+  -Name TAC-01-C001 -Out D:\captures `
+  -CellId TAC-01-C001 -Requirement Alliance `
+  -StateSetupKind original-save -StateSetupIdentifier alliance-battle-01 `
+  -StateSetupNotes "Owned English installation" `
+  -InputTrace @("load alliance-battle-01", "enter tactical battle", "wait for stable frame")
+```
+
+When `-CellId` is supplied, the script rejects missing requirements, setup
+identifiers, and input traces. It still accepts ordinary non-matrix captures
+without those tactical parameters.
+
 Launch the game and `capture.ps1` from an elevated prompt: the GOG compat
 layer sets `RUNASADMIN`, and a child started from an already-elevated shell
 inherits elevation without a UAC prompt. The game window is always-on-top, so
@@ -133,10 +150,14 @@ server does not synthesise on its own.
 
 ## Registration
 
-On the development Mac, copy the PNG and JSON out of `payload.img`, run the
-host-side checks (640x480, no decoration, every aperture pixel a member of the
-decoded STRATEGY 900/901 palette, the Alliance GID control at 446,406 27x16
-equal to resource 10012 pixel-for-pixel), then record the hash in
-`docs/qa/2026-09-10-interface-parity-audit/reference-captures/owned-a0/SHA256SUMS`
-and `tools/interface-parity/baselines/accepted-original.json`. A capture that
-fails a check is recorded in the evidence file, not registered.
+On the development Mac, copy the PNG and JSON out of `payload.img`. Tactical
+captures are registered with `tools/interface-parity/ingest-tactical-a0.mjs` as
+documented by the [interface harness](../interface-parity/README.md). The host
+ingester independently decodes the PNG, verifies its hash and dimensions,
+checks the exact ledger requirement and executable provenance, and writes only
+to the ignored `.artifacts/interface-parity/a0/` store. A failed capture is not
+registered or credited toward coverage.
+
+Strategic captures continue through their surface-specific host checks and
+`tools/interface-parity/baselines/accepted-original.json`. No original-game
+capture, save, executable, audio, or extracted asset may be committed.

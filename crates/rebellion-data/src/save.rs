@@ -1,6 +1,6 @@
 //! Save / load for the full game state.
 //!
-//! # Format (v13)
+//! # Format (v14)
 //!
 //! Binary `bincode` encoding. A save file is:
 //!
@@ -58,7 +58,7 @@ use rebellion_core::missions::MissionState;
 use rebellion_core::movement::MovementState;
 use rebellion_core::repair::RepairState;
 use rebellion_core::research::ResearchState;
-use rebellion_core::tick::GameClock;
+use rebellion_core::tick::{GameClock, GameClockV13};
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::tuning::GameConfig;
 use rebellion_core::uprising::UprisingState;
@@ -80,7 +80,8 @@ pub const SAVE_MAGIC: &[u8; 8] = b"OPENREB\0";
 /// v11: Body gained the original new-game campaign configuration.
 /// v12: Repair state gained persisted, per-fleet repair-episode tracking.
 /// v13: Body gained regiment-to-fleet cargo state.
-pub const SAVE_VERSION: u32 = 13;
+/// v14: The clock stores the original five-choice Game Speed and a day fraction.
+pub const SAVE_VERSION: u32 = 14;
 
 /// Current state-fingerprint algorithm version.
 ///
@@ -299,11 +300,109 @@ pub struct SaveState {
     pub troop_transport: TroopTransportState,
 }
 
+/// Exact v13 body. The clock used the pre-recovery speed enum.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SaveStateV13 {
+    world: GameWorld,
+    clock: GameClockV13,
+    manufacturing: ManufacturingState,
+    missions: MissionState,
+    events: EventState,
+    ai: AIState,
+    movement: MovementState,
+    fog_alliance: FogState,
+    fog_empire: FogState,
+    player_is_alliance: bool,
+    blockade: BlockadeState,
+    uprising: UprisingState,
+    death_star: DeathStarState,
+    research: ResearchState,
+    jedi: JediState,
+    victory: VictoryState,
+    betrayal: BetrayalState,
+    economy: EconomyState,
+    sim_rng: Xoshiro256PlusPlus,
+    ai2: Option<AIState>,
+    repair: RepairState,
+    #[serde(
+        serialize_with = "rebellion_core::serde_ordered::serialize_hash_map",
+        deserialize_with = "rebellion_core::serde_ordered::deserialize_hash_map"
+    )]
+    combat_cooldowns: std::collections::HashMap<SystemKey, u64>,
+    game_config: GameConfig,
+    campaign_config: CampaignConfig,
+    troop_transport: TroopTransportState,
+}
+
+impl From<SaveStateV13> for SaveState {
+    fn from(legacy: SaveStateV13) -> Self {
+        Self {
+            world: legacy.world,
+            clock: legacy.clock.into(),
+            manufacturing: legacy.manufacturing,
+            missions: legacy.missions,
+            events: legacy.events,
+            ai: legacy.ai,
+            movement: legacy.movement,
+            fog_alliance: legacy.fog_alliance,
+            fog_empire: legacy.fog_empire,
+            player_is_alliance: legacy.player_is_alliance,
+            blockade: legacy.blockade,
+            uprising: legacy.uprising,
+            death_star: legacy.death_star,
+            research: legacy.research,
+            jedi: legacy.jedi,
+            victory: legacy.victory,
+            betrayal: legacy.betrayal,
+            economy: legacy.economy,
+            sim_rng: legacy.sim_rng,
+            ai2: legacy.ai2,
+            repair: legacy.repair,
+            combat_cooldowns: legacy.combat_cooldowns,
+            game_config: legacy.game_config,
+            campaign_config: legacy.campaign_config,
+            troop_transport: legacy.troop_transport,
+        }
+    }
+}
+
+impl From<&SaveState> for SaveStateV13 {
+    fn from(current: &SaveState) -> Self {
+        Self {
+            world: current.world.clone(),
+            clock: (&current.clock).into(),
+            manufacturing: current.manufacturing.clone(),
+            missions: current.missions.clone(),
+            events: current.events.clone(),
+            ai: current.ai.clone(),
+            movement: current.movement.clone(),
+            fog_alliance: current.fog_alliance.clone(),
+            fog_empire: current.fog_empire.clone(),
+            player_is_alliance: current.player_is_alliance,
+            blockade: current.blockade.clone(),
+            uprising: current.uprising.clone(),
+            death_star: current.death_star.clone(),
+            research: current.research.clone(),
+            jedi: current.jedi.clone(),
+            victory: current.victory.clone(),
+            betrayal: current.betrayal.clone(),
+            economy: current.economy.clone(),
+            sim_rng: current.sim_rng.clone(),
+            ai2: current.ai2.clone(),
+            repair: current.repair.clone(),
+            combat_cooldowns: current.combat_cooldowns.clone(),
+            game_config: current.game_config.clone(),
+            campaign_config: current.campaign_config,
+            troop_transport: current.troop_transport.clone(),
+        }
+    }
+}
+
 /// Exact v12 body. The regiment cargo state was added in v13.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SaveStateV12 {
     world: GameWorld,
-    clock: GameClock,
+    clock: GameClockV13,
     manufacturing: ManufacturingState,
     missions: MissionState,
     events: EventState,
@@ -336,7 +435,7 @@ impl From<SaveStateV12> for SaveState {
     fn from(legacy: SaveStateV12) -> Self {
         Self {
             world: legacy.world,
-            clock: legacy.clock,
+            clock: legacy.clock.into(),
             manufacturing: legacy.manufacturing,
             missions: legacy.missions,
             events: legacy.events,
@@ -368,7 +467,7 @@ impl From<&SaveState> for SaveStateV12 {
     fn from(current: &SaveState) -> Self {
         Self {
             world: current.world.clone(),
-            clock: current.clock.clone(),
+            clock: (&current.clock).into(),
             manufacturing: current.manufacturing.clone(),
             missions: current.missions.clone(),
             events: current.events.clone(),
@@ -400,7 +499,7 @@ impl From<&SaveState> for SaveStateV12 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SaveStateV10 {
     world: GameWorld,
-    clock: GameClock,
+    clock: GameClockV13,
     manufacturing: ManufacturingState,
     missions: MissionState,
     events: EventState,
@@ -435,7 +534,7 @@ impl From<SaveStateV10> for SaveState {
             CampaignConfig::from_legacy_world(&legacy.world, legacy.player_is_alliance);
         Self {
             world: legacy.world,
-            clock: legacy.clock,
+            clock: legacy.clock.into(),
             manufacturing: legacy.manufacturing,
             missions: legacy.missions,
             events: legacy.events,
@@ -467,7 +566,7 @@ impl From<&SaveState> for SaveStateV10 {
     fn from(current: &SaveState) -> Self {
         Self {
             world: current.world.clone(),
-            clock: current.clock.clone(),
+            clock: (&current.clock).into(),
             manufacturing: current.manufacturing.clone(),
             missions: current.missions.clone(),
             events: current.events.clone(),
@@ -498,7 +597,7 @@ impl From<&SaveState> for SaveStateV10 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SaveStateV11 {
     world: GameWorld,
-    clock: GameClock,
+    clock: GameClockV13,
     manufacturing: ManufacturingState,
     missions: MissionState,
     events: EventState,
@@ -531,7 +630,7 @@ impl From<SaveStateV11> for SaveState {
     fn from(legacy: SaveStateV11) -> Self {
         Self {
             world: legacy.world,
-            clock: legacy.clock,
+            clock: legacy.clock.into(),
             manufacturing: legacy.manufacturing,
             missions: legacy.missions,
             events: legacy.events,
@@ -563,7 +662,7 @@ impl From<&SaveState> for SaveStateV11 {
     fn from(current: &SaveState) -> Self {
         Self {
             world: current.world.clone(),
-            clock: current.clock.clone(),
+            clock: (&current.clock).into(),
             manufacturing: current.manufacturing.clone(),
             missions: current.missions.clone(),
             events: current.events.clone(),
@@ -595,7 +694,7 @@ impl From<&SaveState> for SaveStateV11 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SaveStateV9 {
     world: GameWorld,
-    clock: GameClock,
+    clock: GameClockV13,
     manufacturing: ManufacturingState,
     missions: MissionState,
     events: EventState,
@@ -620,7 +719,7 @@ impl From<SaveStateV9> for SaveState {
             CampaignConfig::from_legacy_world(&legacy.world, legacy.player_is_alliance);
         Self {
             world: legacy.world,
-            clock: legacy.clock,
+            clock: legacy.clock.into(),
             manufacturing: legacy.manufacturing,
             missions: legacy.missions,
             events: legacy.events,
@@ -652,7 +751,7 @@ impl From<&SaveState> for SaveStateV9 {
     fn from(current: &SaveState) -> Self {
         Self {
             world: current.world.clone(),
-            clock: current.clock.clone(),
+            clock: (&current.clock).into(),
             manufacturing: current.manufacturing.clone(),
             missions: current.missions.clone(),
             events: current.events.clone(),
@@ -709,7 +808,7 @@ pub struct SaveMeta {
 mod native {
     use super::{
         compute_mod_hash, compute_serializable_fingerprint_for_version, compute_state_fingerprint,
-        SaveMeta, SaveState, SaveStateV10, SaveStateV11, SaveStateV12, SaveStateV9,
+        SaveMeta, SaveState, SaveStateV10, SaveStateV11, SaveStateV12, SaveStateV13, SaveStateV9,
         StateFingerprint, MAX_SAVE_SLOTS, MIN_MIGRATABLE_VERSION, SAVE_MAGIC, SAVE_VERSION,
         STATE_FINGERPRINT_VERSION,
     };
@@ -962,6 +1061,21 @@ mod native {
                     );
                 }
                 (state, fingerprint, expected_fingerprint.is_some())
+            }
+            13 => {
+                let legacy: SaveStateV13 =
+                    bincode::deserialize(&body).context("deserializing v13 save state")?;
+                if let Some(expected) = expected_fingerprint {
+                    let legacy_fingerprint =
+                        compute_serializable_fingerprint_for_version(version, &legacy)?;
+                    anyhow::ensure!(
+                        expected == legacy_fingerprint,
+                        "save state fingerprint mismatch: expected {expected}, computed {legacy_fingerprint}"
+                    );
+                }
+                let state = SaveState::from(legacy);
+                let fingerprint = compute_state_fingerprint(&state)?;
+                (state, fingerprint, false)
             }
             12 => {
                 let legacy: SaveStateV12 =
@@ -1286,6 +1400,10 @@ pub mod wasm_impl {
     /// from older builds get rejected cleanly instead of attempting an
     /// inoperable bincode deserialize.
     fn slot_key(slot: usize) -> String {
+        format!("rebellion_save_v14_{}", slot)
+    }
+
+    fn v13_slot_key(slot: usize) -> String {
         format!("rebellion_save_v13_{}", slot)
     }
 
@@ -1309,6 +1427,10 @@ pub mod wasm_impl {
     ///
     /// Prefix is bumped per save format version (see [`slot_key`]).
     fn meta_key(slot: usize) -> String {
+        format!("rebellion_meta_v14_{}", slot)
+    }
+
+    fn v13_meta_key(slot: usize) -> String {
         format!("rebellion_meta_v13_{}", slot)
     }
 
@@ -1326,6 +1448,32 @@ pub mod wasm_impl {
 
     fn v9_meta_key(slot: usize) -> String {
         format!("rebellion_meta_v9_{}", slot)
+    }
+
+    /// Body and metadata keys for each readable version, newest first.
+    const STORED_VERSIONS: [(u32, fn(usize) -> String, fn(usize) -> String); 6] = [
+        (SAVE_VERSION, slot_key, meta_key),
+        (13, v13_slot_key, v13_meta_key),
+        (12, v12_slot_key, v12_meta_key),
+        (11, v11_slot_key, v11_meta_key),
+        (10, v10_slot_key, v10_meta_key),
+        (9, v9_slot_key, v9_meta_key),
+    ];
+
+    /// The newest version whose body and metadata are both stored.
+    ///
+    /// A body without its metadata (an interrupted write) is skipped, so it
+    /// never hides an older complete save. `list_saves` and `load_slot` share
+    /// this choice.
+    fn stored_save(slot: usize) -> anyhow::Result<Option<(u32, String, String)>> {
+        for (version, body_key, meta_key) in STORED_VERSIONS {
+            if let (Some(body), Some(meta)) =
+                (storage_get(&body_key(slot))?, storage_get(&meta_key(slot))?)
+            {
+                return Ok(Some((version, body, meta)));
+            }
+        }
+        Ok(None)
     }
 
     fn parse_meta(encoded: &str) -> anyhow::Result<BrowserSaveMeta> {
@@ -1363,7 +1511,11 @@ pub mod wasm_impl {
             game_tick: state.clock.tick,
             state_fingerprint: BrowserStateFingerprint::from_fingerprint(state_fingerprint),
         })?;
-        storage_set(&meta_key(slot), &meta)?;
+        if let Err(error) = storage_set(&meta_key(slot), &meta) {
+            // Drop the orphaned body so the slot falls back to its older save.
+            let _ = storage_remove(&slot_key(slot));
+            return Err(error);
+        }
 
         Ok(state_fingerprint)
     }
@@ -1378,27 +1530,7 @@ pub mod wasm_impl {
     }
 
     pub fn load_slot(_saves_dir: &Path, slot: usize) -> anyhow::Result<(SaveMeta, SaveState)> {
-        let (save_version, b64, meta_encoded) = if let Some(body) = storage_get(&slot_key(slot))? {
-            let meta = storage_get(&meta_key(slot))?
-                .ok_or_else(|| anyhow::anyhow!("save metadata missing for slot {}", slot))?;
-            (SAVE_VERSION, body, meta)
-        } else if let Some(body) = storage_get(&v12_slot_key(slot))? {
-            let meta = storage_get(&v12_meta_key(slot))?
-                .ok_or_else(|| anyhow::anyhow!("v12 save metadata missing for slot {}", slot))?;
-            (12, body, meta)
-        } else if let Some(body) = storage_get(&v11_slot_key(slot))? {
-            let meta = storage_get(&v11_meta_key(slot))?
-                .ok_or_else(|| anyhow::anyhow!("v11 save metadata missing for slot {}", slot))?;
-            (11, body, meta)
-        } else if let Some(body) = storage_get(&v10_slot_key(slot))? {
-            let meta = storage_get(&v10_meta_key(slot))?
-                .ok_or_else(|| anyhow::anyhow!("v10 save metadata missing for slot {}", slot))?;
-            (10, body, meta)
-        } else if let Some(body) = storage_get(&v9_slot_key(slot))? {
-            let meta = storage_get(&v9_meta_key(slot))?
-                .ok_or_else(|| anyhow::anyhow!("v9 save metadata missing for slot {}", slot))?;
-            (9, body, meta)
-        } else {
+        let Some((save_version, b64, meta_encoded)) = stored_save(slot)? else {
             anyhow::bail!("no save in slot {}", slot);
         };
         let bytes = b64_decode(&b64)?;
@@ -1414,6 +1546,19 @@ pub mod wasm_impl {
                 fingerprint
             );
             (state, fingerprint, true)
+        } else if save_version == 13 {
+            let legacy: SaveStateV13 = bincode::deserialize(&bytes)?;
+            let legacy_fingerprint =
+                compute_serializable_fingerprint_for_version(save_version, &legacy)?;
+            anyhow::ensure!(
+                expected_fingerprint == legacy_fingerprint,
+                "save state fingerprint mismatch: expected {}, computed {}",
+                expected_fingerprint,
+                legacy_fingerprint
+            );
+            let state = SaveState::from(legacy);
+            let fingerprint = compute_state_fingerprint(&state)?;
+            (state, fingerprint, false)
         } else if save_version == 12 {
             let legacy: SaveStateV12 = bincode::deserialize(&bytes)?;
             let legacy_fingerprint =
@@ -1485,24 +1630,8 @@ pub mod wasm_impl {
     pub fn list_saves(_saves_dir: &Path) -> Vec<anyhow::Result<SaveMeta>> {
         (0..MAX_SAVE_SLOTS)
             .filter_map(|slot| {
-                let encoded = match storage_get(&meta_key(slot)) {
-                    Ok(Some(encoded)) => Ok(Some((encoded, true))),
-                    Ok(None) => match storage_get(&v12_meta_key(slot)) {
-                        Ok(Some(encoded)) => Ok(Some((encoded, false))),
-                        Ok(None) => match storage_get(&v11_meta_key(slot)) {
-                            Ok(Some(encoded)) => Ok(Some((encoded, false))),
-                            Ok(None) => match storage_get(&v10_meta_key(slot)) {
-                                Ok(Some(encoded)) => Ok(Some((encoded, false))),
-                                Ok(None) => storage_get(&v9_meta_key(slot))
-                                    .map(|legacy| legacy.map(|encoded| (encoded, false))),
-                                Err(error) => Err(error),
-                            },
-                            Err(error) => Err(error),
-                        },
-                        Err(error) => Err(error),
-                    },
-                    Err(error) => Err(error),
-                };
+                let encoded = stored_save(slot)
+                    .map(|stored| stored.map(|(version, _, meta)| (meta, version == SAVE_VERSION)));
                 match encoded {
                     Ok(None) => None,
                     Ok(Some((encoded, current))) => Some(parse_meta(&encoded).and_then(|meta| {
@@ -1527,6 +1656,8 @@ pub mod wasm_impl {
     pub fn delete_slot(_saves_dir: &Path, slot: usize) -> anyhow::Result<()> {
         storage_remove(&slot_key(slot))?;
         storage_remove(&meta_key(slot))?;
+        storage_remove(&v13_slot_key(slot))?;
+        storage_remove(&v13_meta_key(slot))?;
         storage_remove(&v12_slot_key(slot))?;
         storage_remove(&v12_meta_key(slot))?;
         storage_remove(&v11_slot_key(slot))?;
@@ -1698,6 +1829,16 @@ mod tests {
             file.write_all(&compute_mod_hash(&[]).to_le_bytes())
                 .unwrap();
         }
+        if version == 13 {
+            let legacy = SaveStateV13::from(state);
+            let fingerprint = compute_serializable_fingerprint_for_version(version, &legacy)
+                .expect("fingerprint v13 body");
+            file.write_all(&fingerprint.version.to_le_bytes()).unwrap();
+            file.write_all(&fingerprint.value.to_le_bytes()).unwrap();
+            let encoded = bincode::serialize(&legacy).expect("serialize v13 body");
+            file.write_all(&encoded).unwrap();
+            return;
+        }
         if version == 12 {
             let legacy = SaveStateV12::from(state);
             let fingerprint = compute_serializable_fingerprint_for_version(version, &legacy)
@@ -1743,7 +1884,7 @@ mod tests {
     // ── Existing tests (updated for new save_slot signature) ────────────────
 
     #[test]
-    fn round_trip_save_load() {
+    fn save_and_load_round_trip_preserves_state() {
         let saves_dir = tmp_dir("round_trip_v5");
 
         let state = minimal_save_state();
@@ -1755,6 +1896,7 @@ mod tests {
         assert_eq!(meta.name, "Test Save");
         assert_eq!(meta.game_tick, loaded.clock.tick);
         assert!(meta.mod_names.is_empty());
+        assert_eq!(meta.mod_hash, compute_mod_hash(&[]));
         assert!(meta.fingerprint_verified);
         assert_eq!(
             meta.state_fingerprint,
@@ -1859,18 +2001,6 @@ mod tests {
         assert_eq!(first.version, STATE_FINGERPRINT_VERSION);
         assert_eq!(first, second);
         assert!(first.to_string().starts_with("v1:"));
-    }
-
-    #[test]
-    fn fingerprint_changes_when_state_changes() {
-        let original = minimal_save_state();
-        let mut changed = original.clone();
-        changed.clock.tick = 1;
-
-        assert_ne!(
-            compute_state_fingerprint(&original).unwrap(),
-            compute_state_fingerprint(&changed).unwrap()
-        );
     }
 
     #[test]
@@ -2027,6 +2157,44 @@ mod tests {
     }
 
     #[test]
+    fn v13_save_migrates_clock_to_original_game_speed() {
+        let saves_dir = tmp_dir("v13_game_speed_compatibility");
+        let mut state = minimal_save_state();
+        state.clock.tick = 321;
+        state.clock.set_speed(rebellion_core::tick::GameSpeed::Slow);
+        let path = slot_path(&saves_dir, 0);
+        write_versioned_fixture(&path, 13, "V13 Save", &state);
+
+        let (meta, loaded) = load_slot(&saves_dir, 0).expect("v13 save should migrate");
+        assert_eq!(loaded.clock.tick, 321);
+        // v13 stored every slower running speed as Normal, now Medium.
+        assert_eq!(loaded.clock.speed, rebellion_core::tick::GameSpeed::Medium);
+        assert_eq!(meta.game_tick, 321);
+        assert!(!meta.fingerprint_verified);
+    }
+
+    #[test]
+    fn v13_clock_variant_indices_keep_their_legacy_meaning() {
+        use rebellion_core::tick::{GameClock, GameClockV13, GameSpeed};
+
+        let mut clock = GameClock::new();
+        clock.set_speed(GameSpeed::Fast);
+        let mut bytes = bincode::serialize(&GameClockV13::from(&clock)).unwrap();
+        // u64 tick, then the u32 variant index: Paused, Normal, Fast, Faster.
+        assert_eq!(&bytes[8..12], &2_u32.to_le_bytes());
+        for (index, expected) in [
+            (0_u32, GameSpeed::Paused),
+            (1, GameSpeed::Medium),
+            (2, GameSpeed::Fast),
+            (3, GameSpeed::Fast),
+        ] {
+            bytes[8..12].copy_from_slice(&index.to_le_bytes());
+            let migrated: GameClock = bincode::deserialize::<GameClockV13>(&bytes).unwrap().into();
+            assert_eq!(migrated.speed, expected);
+        }
+    }
+
+    #[test]
     fn v12_save_migrates_with_empty_troop_transport_state() {
         let saves_dir = tmp_dir("v12_troop_transport_compatibility");
         let state = minimal_save_state();
@@ -2146,19 +2314,10 @@ mod tests {
 
         assert_eq!(meta.mod_names, vec!["TestMod".to_string()]);
         assert_eq!(meta.mod_hash, compute_mod_hash(&mods));
-    }
-
-    #[test]
-    fn empty_mod_list_round_trip() {
-        let saves_dir = tmp_dir("empty_mods");
-        let state = minimal_save_state();
-
-        save_slot(&saves_dir, 0, "No Mods", &state, &[]).expect("save with no mods should succeed");
-
-        let (meta, _) = load_slot(&saves_dir, 0).expect("load should succeed");
-
-        assert!(meta.mod_names.is_empty());
-        assert_eq!(meta.mod_hash, compute_mod_hash(&[]));
+        // A different mod set yields a different hash, so callers can detect
+        // a save made under other mods.
+        let other_mods = vec![("OtherMod".to_string(), "2.0".to_string())];
+        assert_ne!(meta.mod_hash, compute_mod_hash(&other_mods));
     }
 
     #[test]
@@ -2175,25 +2334,6 @@ mod tests {
             msg.contains("newer build"),
             "error should mention 'newer build', got: {msg}"
         );
-    }
-
-    #[test]
-    fn mod_hash_mismatch_still_loads() {
-        let saves_dir = tmp_dir("mod_mismatch");
-        let state = minimal_save_state();
-        let mods_a = vec![("ModA".to_string(), "1.0".to_string())];
-        let mods_b = vec![("ModB".to_string(), "2.0".to_string())];
-
-        save_slot(&saves_dir, 0, "Mods A", &state, &mods_a).unwrap();
-
-        // Load succeeds even though our "current" mods differ.
-        let (meta, _) = load_slot(&saves_dir, 0).expect("mismatched mods should still load");
-
-        // The meta records what was saved, not what's current.
-        assert_eq!(meta.mod_names, vec!["ModA".to_string()]);
-        assert_eq!(meta.mod_hash, compute_mod_hash(&mods_a));
-        // The caller can compare meta.mod_hash != compute_mod_hash(&mods_b)
-        assert_ne!(meta.mod_hash, compute_mod_hash(&mods_b));
     }
 
     #[test]

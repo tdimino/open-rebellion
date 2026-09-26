@@ -1,0 +1,47 @@
+
+uint __cdecl FUN_0053fbd0(uint param_1,void *param_2,void *param_3)
+
+{
+  uint *puVar1;
+  uint uVar2;
+  undefined4 *puVar3;
+  bool bVar4;
+  void *local_c;
+  undefined1 *puStack_8;
+  undefined4 local_4;
+  
+  local_4 = 0xffffffff;
+  puStack_8 = &LAB_00646a18;
+  local_c = ExceptionList;
+  puVar3 = (undefined4 *)0x0;
+  if (((int)param_1 < 0x300) || (0x37f < (int)param_1)) {
+    bVar4 = false;
+    ExceptionList = &local_c;
+  }
+  else {
+    ExceptionList = &local_c;
+    puVar3 = (undefined4 *)FUN_0054f100(param_1);
+    bVar4 = puVar3 != (undefined4 *)0x0;
+  }
+  uVar2 = 0;
+  if (bVar4) {
+    uVar2 = puVar3[6];
+    if (uVar2 == 0) {
+      if (puVar3 != (undefined4 *)0x0) {
+        (**(code **)*puVar3)(1);
+      }
+    }
+    else if (puVar3 != (undefined4 *)0x0) {
+      puVar1 = FUN_004025b0(param_2,&param_1);
+      local_4 = 0;
+      FUN_004f26d0(puVar3 + 0xf,puVar1);
+      local_4 = 0xffffffff;
+      FUN_00619730();
+      FUN_004fd490(puVar3 + 8,param_3);
+      uVar2 = FUN_0053fcd0(puVar3);
+    }
+  }
+  ExceptionList = local_c;
+  return uVar2;
+}
+

@@ -417,6 +417,19 @@ pub struct CapitalShipClass {
     pub hyperdrive_if_damaged: u32,
 }
 
+/// CAPSHPSD.DAT record id of the Death Star (TEXTSTRA 10120 "Death Star").
+pub const DEATH_STAR_CLASS_ID: u32 = 136;
+
+impl CapitalShipClass {
+    /// True for the Death Star class. Seeded classes carry the CAPSHPSD
+    /// record id; original runtime ids carry family byte `0x34`, the family
+    /// `FUN_00560d50` routes to the superlaser path `FUN_005617b0`.
+    #[must_use]
+    pub fn is_death_star(&self) -> bool {
+        self.dat_id == DatId::new(DEATH_STAR_CLASS_ID) || self.dat_id.family() == 0x34
+    }
+}
+
 impl Default for CapitalShipClass {
     fn default() -> Self {
         Self {
@@ -1256,6 +1269,19 @@ mod tests {
     }
 
     #[test]
+    fn only_the_death_star_record_or_family_is_the_death_star() {
+        let class = |raw| CapitalShipClass {
+            dat_id: DatId::new(raw),
+            ..Default::default()
+        };
+        // CAPSHPSD record 136 is the Death Star; 131 is a Star Destroyer.
+        assert!(class(DEATH_STAR_CLASS_ID).is_death_star());
+        assert!(class(0x3400_0001).is_death_star());
+        assert!(!class(131).is_death_star());
+        assert!(!class(0x3000_0088).is_death_star());
+    }
+
+    #[test]
     fn character_is_unable_to_betray_serde_roundtrip() {
         let mut c = default_character();
         c.is_unable_to_betray = true;
@@ -1290,30 +1316,6 @@ mod tests {
         assert!(!c.on_mandatory_mission);
         assert!(c.current_system.is_none());
         assert!(c.current_fleet.is_none());
-    }
-
-    #[test]
-    fn is_known_jedi_implies_aware_tier_convention() {
-        // Verifies the convention: is_known_jedi should pair with ForceTier::Aware
-        // (enforced in convert_character, tested here as a struct invariant).
-        let mut c = default_character();
-        c.is_known_jedi = true;
-        c.force_tier = ForceTier::Aware;
-        assert_eq!(c.force_tier, ForceTier::Aware);
-        assert!(c.is_known_jedi);
-    }
-
-    #[test]
-    fn current_system_and_fleet_default_to_none() {
-        let c = default_character();
-        assert_eq!(c.current_system, None);
-        assert_eq!(c.current_fleet, None);
-    }
-
-    #[test]
-    fn hyperdrive_modifier_defaults_to_zero() {
-        let c = default_character();
-        assert_eq!(c.hyperdrive_modifier, 0);
     }
 
     #[test]

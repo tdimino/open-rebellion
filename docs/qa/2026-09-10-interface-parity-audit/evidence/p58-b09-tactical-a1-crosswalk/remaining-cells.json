@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B09",
+  "count": 24,
+  "cells": [
+    { "id": "TAC-01-C007", "requirement": "empty space", "work": "add a star-only battle fixture without a planet surface" },
+    { "id": "TAC-01-C010", "requirement": "battle entry from Battle Alert", "work": "route the original Battle Alert surface into production tactical entry" },
+    { "id": "TAC-01-C012", "requirement": "tactical music and voice", "work": "verify faction tactical music and authored voice routing" },
+    { "id": "TAC-02-C007", "requirement": "unassigned", "work": "stage and probe an unassigned task-force slot" },
+    { "id": "TAC-02-C009", "requirement": "hover", "work": "probe every group-control hover state" },
+    { "id": "TAC-02-C012", "requirement": "disabled", "work": "stage and reject disabled group controls" },
+    { "id": "TAC-03-C001", "requirement": "healthy", "work": "stage a fully healthy selected object" },
+    { "id": "TAC-03-C004", "requirement": "destroyed", "work": "retain and inspect the destroyed-object presentation" },
+    { "id": "TAC-03-C012", "requirement": "contents", "work": "open and verify the selected-object contents surface" },
+    { "id": "TAC-03-C014", "requirement": "previous", "work": "navigate to the previous eligible object" },
+    { "id": "TAC-03-C015", "requirement": "next", "work": "navigate to the next eligible object" },
+    { "id": "TAC-04-C001", "requirement": "nav sets 1–4", "work": "stage and select all four navigation sets" },
+    { "id": "TAC-04-C002", "requirement": "route ordered", "work": "commit a navigation route through production input" },
+    { "id": "TAC-04-C003", "requirement": "multiple targets", "work": "stage and edit a multi-waypoint route" },
+    { "id": "TAC-04-C012", "requirement": "memorize", "work": "memorize a camera or navigation state" },
+    { "id": "TAC-04-C013", "requirement": "recall", "work": "recall and verify the memorized state" },
+    { "id": "TAC-04-C014", "requirement": "chase camera", "work": "enter and exit the original chase camera" },
+    { "id": "TAC-05-C003", "requirement": "anvil", "work": "commit and execute Anvil" },
+    { "id": "TAC-05-C006", "requirement": "standoff", "work": "commit and execute Standoff" },
+    { "id": "TAC-05-C011", "requirement": "escort", "work": "commit and execute Escort" },
+    { "id": "TAC-05-C023", "requirement": "trench-run launch", "work": "reach the result through the production fighter mission producer" },
+    { "id": "TAC-06-C003", "requirement": "withdraw confirmation", "work": "restore and probe the original confirmation dialog" },
+    { "id": "TAC-06-C007", "requirement": "game options", "work": "restore the shared original Game Options window" },
+    { "id": "TAC-07-C014", "requirement": "strategic state persistence", "work": "prove exact state after the browser return journey" }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B14",
+  "count": 2,
+  "cells": [
+    { "id": "TAC-01-C010", "requirement": "battle entry from Battle Alert" },
+    { "id": "TAC-01-C012", "requirement": "tactical music and voice" }
+  ]
+}

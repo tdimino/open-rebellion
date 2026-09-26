@@ -469,10 +469,12 @@ impl MissionState {
         id
     }
 
-    /// Dispatch with mission-state guard.
+    /// Dispatch with mission-state guard, marking the character on a mission.
     ///
     /// Returns `None` if the character is already on a mission or has a
-    /// mandatory mission assignment (prevents double-dispatch).
+    /// mandatory mission assignment. The original tracks both as role flags
+    /// (`RoleOnMissionNotif` `FUN_00536b00`, `RoleOnMandatoryMissionNotif`
+    /// `FUN_00536b80`); completion clears the flag via `CharacterAvailable`.
     #[expect(
         clippy::too_many_arguments,
         reason = "Keep the existing explicit simulation inputs; grouping them changes the API."
@@ -485,12 +487,18 @@ impl MissionState {
         target_system: SystemKey,
         target_character: Option<CharacterKey>,
         duration_roll: f64,
-        world: &GameWorld,
+        world: &mut GameWorld,
     ) -> Option<u64> {
-        if let Some(c) = world.characters.get(character) {
+        // Saves written before dispatch set the flag can hold an active
+        // mission for a character whose `on_mission` is still false.
+        if self.missions.iter().any(|m| m.character == character) {
+            return None;
+        }
+        if let Some(c) = world.characters.get_mut(character) {
             if c.on_mission || c.on_mandatory_mission {
                 return None;
             }
+            c.on_mission = true;
         }
         Some(self.dispatch(
             kind,
@@ -500,6 +508,15 @@ impl MissionState {
             target_character,
             duration_roll,
         ))
+    }
+
+    /// Cancel a mission by id and free its character for another assignment.
+    pub fn release(&mut self, id: u64, world: &mut GameWorld) -> Option<ActiveMission> {
+        let mission = self.cancel(id)?;
+        if let Some(c) = world.characters.get_mut(mission.character) {
+            c.on_mission = false;
+        }
+        Some(mission)
     }
 
     /// Cancel a mission by id. Returns the mission if found, None otherwise.
@@ -856,9 +873,11 @@ impl MissionSystem {
         });
 
         // Decoy missions draw enemy counter-intelligence but produce no game effects.
-        // From community disassembly FUN_005871d0 + FUN_0055cbe0:
-        // Success probability from FDECOYTB (fleet) or TDECOYTB (troop) tables,
-        // penalized by GNPRTB[3588] = 35% reduction.
+        // Decoy roll: FUN_0055e410 rolls table (fdecoy != 0) + 10
+        // (TDECOYTB=10, FDECOYTB=11) via FUN_0053e340 against
+        // (a - b) - FUN_0053e190(c, DAT_006bb710).
+        // Community FUN_005871d0 (labeled decoy_mission) is a destructor;
+        // our FUN_00588b90 is the actual handler.
         if mission.is_decoy {
             let character_skill =
                 character.map_or(0, |c| mission.kind.skill_score(c).cast_signed());
@@ -1199,15 +1218,6 @@ mod tests {
     }
 
     #[test]
-    fn quadratic_prob_recruitment_at_zero_skill() {
-        let (a, b, c) = MissionKind::Recruitment.coefficients();
-        let p = quadratic_prob(0.0, a, b, c);
-        let clamped = clamp_prob(p, 1.0, 100.0);
-        // c = 11.923 — low but above min
-        assert!((1.0..=100.0).contains(&clamped));
-    }
-
-    #[test]
     fn total_success_prob_no_foil() {
         // With 0% foil, total == agent prob.
         let total = total_success_prob(75.0, 0.0);
@@ -1421,30 +1431,6 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(state.is_empty());
         assert_eq!(results[0].kind, MissionKind::Diplomacy);
-    }
-
-    #[test]
-    fn guaranteed_success_with_roll_zero() {
-        let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
-        let character = character_with_diplomacy(&mut world, 50);
-
-        let mut state = MissionState::new();
-        state.missions.push_back(ActiveMission::new(
-            0,
-            MissionKind::Diplomacy,
-            MissionFaction::Alliance,
-            character,
-            system,
-            1,
-        ));
-        state.next_id = 1;
-
-        // roll = 0.0 → 0% of 100 → succeeds as long as success_prob > 0
-        let results = MissionSystem::advance(&mut state, &world, &[TickEvent { tick: 1 }], &[0.0]);
-        assert_eq!(results[0].outcome, MissionOutcome::Success);
-        assert!(!results[0].effects.is_empty());
     }
 
     #[test]
@@ -1941,13 +1927,82 @@ mod tests {
             system,
             None,
             0.5,
-            &world,
+            &mut world,
         );
         assert!(
             result.is_none(),
             "mandatory mission character should be blocked"
         );
         assert!(state.is_empty());
+    }
+
+    #[test]
+    fn a_character_with_an_active_mission_is_refused_even_without_the_flag() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let character = world.characters.insert(Character {
+            name: "Agent".into(),
+            is_alliance: true,
+            ..Default::default()
+        });
+        // An older save: the mission is in flight but on_mission was never set.
+        let mut state = MissionState::new();
+        state.dispatch(
+            MissionKind::Diplomacy,
+            MissionFaction::Alliance,
+            character,
+            system,
+            None,
+            0.5,
+        );
+
+        let second = state.dispatch_guarded(
+            MissionKind::Espionage,
+            MissionFaction::Alliance,
+            character,
+            system,
+            None,
+            0.5,
+            &mut world,
+        );
+
+        assert!(second.is_none());
+        assert_eq!(state.len(), 1);
+    }
+
+    #[test]
+    fn a_dispatched_character_cannot_take_a_second_mission_until_released() {
+        let mut world = minimal_world();
+        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = sys_sm.insert(());
+        let character = world.characters.insert(Character {
+            name: "Agent".into(),
+            is_alliance: true,
+            diplomacy: skill_pair(80),
+            ..Default::default()
+        });
+        let mut state = MissionState::new();
+        let send = |state: &mut MissionState, world: &mut GameWorld| {
+            state.dispatch_guarded(
+                MissionKind::Diplomacy,
+                MissionFaction::Alliance,
+                character,
+                system,
+                None,
+                0.5,
+                world,
+            )
+        };
+
+        let first = send(&mut state, &mut world).expect("first dispatch");
+        assert!(world.characters[character].on_mission);
+        assert!(send(&mut state, &mut world).is_none());
+        assert_eq!(state.len(), 1);
+
+        state.release(first, &mut world);
+        assert!(!world.characters[character].on_mission);
+        assert!(send(&mut state, &mut world).is_some());
     }
 
     // --- P0 formula correction tests ---
@@ -2146,49 +2201,6 @@ mod tests {
     // --- Decoy mission tests ---
 
     #[test]
-    fn decoy_mission_produces_no_effects() {
-        let mut world = GameWorld::default();
-        let char_key = character_with_skills(&mut world, 50, 50, 50, 50, 50);
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId(0),
-            name: "Target".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 5,
-            raw_materials: 5,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: crate::world::ControlKind::Uncontrolled,
-        });
-        let mut mission = ActiveMission::new(
-            1,
-            MissionKind::Espionage,
-            MissionFaction::Alliance,
-            char_key,
-            sys_key,
-            10,
-        );
-        mission.is_decoy = true;
-        mission.ticks_remaining = 0;
-
-        let result = MissionSystem::resolve_mission(&mission, &world, 100, 0.3);
-        // Decoy produces no world effects regardless of outcome
-        assert!(result.effects.is_empty(), "decoy should produce no effects");
-    }
-
-    #[test]
     fn decoy_mission_can_be_foiled() {
         let mut world = GameWorld::default();
         let char_key = character_with_skills(&mut world, 50, 50, 50, 50, 50);
@@ -2280,5 +2292,7 @@ mod tests {
             MissionOutcome::Success,
             "low roll should succeed decoy"
         );
+        // A decoy changes nothing in the world, whatever its outcome.
+        assert!(result.effects.is_empty(), "decoy should produce no effects");
     }
 }

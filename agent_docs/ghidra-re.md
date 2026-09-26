@@ -91,7 +91,7 @@ Two binding tables map GNPRTB parameter IDs to global data addresses:
 | 0x08-0x0f | Characters |
 | 0x14-0x1b | Troops / Special Forces |
 | 0x30-0x3b | Capital Ships + Fighters |
-| 0x34 | Death Star (special) |
+| 0x34 | Empire major characters (0x34000280 Emperor Palpatine, 0x35000281 Darth Vader) |
 | 0x71-0x72 | Fighter squadron types |
 | 0x73-0x74 | Special combat entity |
 | 0x90-0x98 | Star Systems |

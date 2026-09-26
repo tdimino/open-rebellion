@@ -1,0 +1,30 @@
+{
+  "$schema": "schemas/tactical-a0-manifest.schema.json",
+  "schema_version": 1,
+  "kind": "open-rebellion-tactical-a0-manifest",
+  "source": {
+    "executable_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
+    "executable_identity": "REBEXE.EXE",
+    "installation_id": "owned-original-installation",
+    "language": "en-US",
+    "unmodified": true,
+    "vm": {
+      "id": "windows-a0-capture-vm",
+      "os": "Windows",
+      "display_width": 640,
+      "display_height": 480,
+      "scale_percent": 100,
+      "color_depth_bits": 32
+    },
+    "capture": {
+      "format": "png",
+      "width": 640,
+      "height": 480,
+      "device_scale_factor": 1,
+      "lossless": true,
+      "client_area_only": true,
+      "host_scaling": false
+    }
+  },
+  "captures": []
+}

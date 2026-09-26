@@ -93,7 +93,7 @@ aggregate fingerprint is `5facb1c7ba0e81ad`.
 `crates/rebellion-data/tests/fixtures/replay_seed42_v1.json` is the single
 reviewed artifact used by both runtimes. It contains nine commands and nine
 checkpoints through tick 25. Native `replay-gate` and the query-gated WASM
-runner both embed and decode those exact 13,482 bytes, rebuild the seed-42
+runner both embed and decode those exact 13,480 bytes, rebuild the seed-42
 campaign independently, and echo the original text into their reports.
 
 The browser gate runs only at `?replay-check=seed42-v1`. It strictly loads
@@ -113,10 +113,19 @@ python3 scripts/check-replay-equivalence.py --skip-build --json
 
 The ignored fixture test requires the locally supplied original `.DAT` files.
 It records a nine-command, 25-tick, 200-system campaign, reloads its initial
-state through save v13, and checks every command-prefix fingerprint against a
-cross-process golden. F-007E re-reviewed the unchanged command stream after
-adding persisted troop cargo and occupation state. It now starts at
-`v1:b38248eb039a8032` and ends at `v1:cde64607b027b1d1`. The unit tests use
+state through the current save format, and checks every command-prefix
+fingerprint against a cross-process golden. Save v14 changes every fingerprint,
+because the save version is hashed, the clock carries the pause stop day, and
+the fixture's `set_speed` command now names the original `Fast` speed. Seeding
+then placed Leia Organa at Yavin; the placement table had looked for "Princess
+Leia", a name TEXTSTRA does not use, so she had started nowhere. It now starts
+at `v1:39350fd64a68ecb8`. From tick 10 the AI builds only classes its
+research has reached (F-018), and a dispatched character is marked on a
+mission until it returns (F-019), so the campaign ends at `v1:0e114a59d20b10b0`.
+Before v14, the committed v13 goldens no longer
+reproduced locally even at their own commit `e8d4945`: that commit, with
+unchanged DATs, now computes initial `v1:14ef55dafe6595ee`. The cause is
+outside the committed code and remains open. The unit tests use
 synthetic data and run in normal repository test passes.
 
 ## Next implementation boundary

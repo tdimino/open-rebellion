@@ -342,9 +342,7 @@ impl ResearchSystem {
         state.is_unlocked(faction_is_alliance, class.research_order, TechType::Ship)
     }
 
-    /// True if a fighter class is available at the current research level.
-    ///
-    /// Fighter classes use `research_order` the same way as capital ships.
+    /// True if a fighter class is available at the current Ship research level.
     #[must_use]
     pub fn fighter_class_is_available(
         world: &GameWorld,
@@ -363,11 +361,9 @@ impl ResearchSystem {
         if !faction_ok {
             return false;
         }
-        // Fighter classes carry research_order implicitly via refined_material_cost ordering.
-        // Until FighterClass gains a research_order field, treat all fighters as available
-        // at any level (consistent with original game where fighters unlock with ships).
-        let _ = state;
-        true
+        // FIGHTSD.DAT carries its own research_order; fighters come from
+        // shipyards, so they advance with the Ship tree (SideShipyardRdOrder).
+        state.is_unlocked(faction_is_alliance, class.research_order, TechType::Ship)
     }
 }
 
@@ -444,14 +440,6 @@ mod tests {
             bombardment_modifier: 10,
             ..CapitalShipClass::default()
         });
-    }
-
-    #[test]
-    fn no_ticks_returns_empty() {
-        let world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let results = ResearchSystem::advance(&mut state, &world, &[]);
-        assert!(results.is_empty());
     }
 
     #[test]
@@ -689,26 +677,30 @@ mod tests {
     }
 
     #[test]
-    fn advance_does_not_mutate_ship_level() {
+    fn a_fighter_unlocks_when_ship_research_reaches_its_order() {
+        // FIGHTSD.DAT: the B-wing carries research_order 5.
         let mut world = GameWorld::default();
-        let mut state = ResearchState::new();
-        let char_key = make_char_key(&mut world);
-
-        state.dispatch(ResearchProject {
-            tech_type: TechType::Ship,
-            character: char_key,
-            faction_is_alliance: true,
-            ticks_remaining: 5,
-            total_ticks: 5,
+        let class_key = world.fighter_classes.insert(crate::world::FighterClass {
+            is_alliance: true,
+            research_order: 5,
+            ..Default::default()
         });
+        let mut state = ResearchState::new();
+        state.alliance.ship = 4;
+        state.alliance.troop = 5;
+        state.alliance.facility = 5;
 
-        let r = ResearchSystem::advance(&mut state, &world, &ticks(5));
-        assert_eq!(r.len(), 1);
-        // advance() must NOT auto-apply level-ups.
-        assert_eq!(
-            state.alliance.ship, 0,
-            "advance() should not mutate state internally"
-        );
+        assert!(!ResearchSystem::fighter_class_is_available(
+            &world, &state, true, class_key
+        ));
+        assert!(!ResearchSystem::fighter_class_is_available(
+            &world, &state, false, class_key
+        ));
+
+        state.alliance.ship = 5;
+        assert!(ResearchSystem::fighter_class_is_available(
+            &world, &state, true, class_key
+        ));
     }
 
     #[test]

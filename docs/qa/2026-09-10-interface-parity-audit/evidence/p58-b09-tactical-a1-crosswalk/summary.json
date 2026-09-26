@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B09",
+  "status": "pass_partial_a1_crosswalk",
+  "catalog_scenarios": 30,
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 82,
+    "journey_cells": 64,
+    "snapshot_cells": 18,
+    "catalog_cells_missing": 24,
+    "a0_coverage": 0,
+    "parity_acceptance": 0
+  },
+  "verification": {
+    "harness_unit_tests": "26_passed_0_failed",
+    "tactical_catalog_schema": "pass",
+    "duplicate_unknown_kind_and_negative_control_guards": "pass",
+    "harness_check": "pass",
+    "ledger_validator": "pass_44_families_569_cells_106_tactical_cells",
+    "production_fixture_exclusion": "pass_zero_tokens",
+    "tracked_proprietary_a0_paths": 0,
+    "diff_check": "pass"
+  },
+  "proprietary_artifacts_committed": false
+}

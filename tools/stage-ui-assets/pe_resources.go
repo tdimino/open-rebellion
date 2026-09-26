@@ -61,9 +61,12 @@ func parseBitmapResources(resourceData []byte, resolveRVA func(uint32, uint32) (
 			return nil, fmt.Errorf("read bitmap IDs: %w", err)
 		}
 		for _, idEntry := range ids {
-			resourceID, err := bitmapResourceID(resourceData, idEntry.name, namedIDs)
+			resourceID, skip, err := bitmapResourceID(resourceData, idEntry.name, namedIDs)
 			if err != nil {
 				return nil, err
+			}
+			if skip {
+				continue
 			}
 			if idEntry.target&resourceSubdirectory == 0 {
 				return nil, fmt.Errorf("bitmap resource %d does not point to a language directory", resourceID)
@@ -221,19 +224,24 @@ func parseRawResourcesMode(resourceData []byte, resolveRVA func(uint32, uint32) 
 	return resources, nil
 }
 
-func bitmapResourceID(resourceData []byte, rawName uint32, namedIDs map[string]uint32) (uint32, error) {
+// bitmapResourceID resolves a bitmap's numeric ID. It reports skip for a
+// named resource in unloadedNamedBitmaps.
+func bitmapResourceID(resourceData []byte, rawName uint32, namedIDs map[string]uint32) (uint32, bool, error) {
 	if rawName&resourceSubdirectory == 0 {
-		return rawName, nil
+		return rawName, false, nil
 	}
 	name, err := resourceName(resourceData, rawName)
 	if err != nil {
-		return 0, err
+		return 0, false, err
+	}
+	if unloadedNamedBitmaps[name] {
+		return 0, true, nil
 	}
 	id, ok := namedIDs[name]
 	if !ok {
-		return 0, fmt.Errorf("unsupported named bitmap resource %q", name)
+		return 0, false, fmt.Errorf("unsupported named bitmap resource %q", name)
 	}
-	return id, nil
+	return id, false, nil
 }
 
 func readResourceDirectory(resourceData []byte, offset uint32) ([]resourceDirectoryEntry, error) {

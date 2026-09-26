@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B16",
+  "status": "pass_weapon_audio_bank_strict_a0_pending",
+  "source_contract": {
+    "event_registration": "FUN_005a7500",
+    "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
+    "capital_weapon_dispatch": "FUN_005b3f10",
+    "event_first": 13,
+    "event_last": 20,
+    "wave_first": 13033,
+    "wave_last": 13054,
+    "variant_count": 22,
+    "events": [
+      {"id": 13, "name": "SHIP_FIRELASERCANNON", "waves": [13033, 13034, 13035]},
+      {"id": 14, "name": "SHIP_FIRETURBOLASER", "waves": [13036, 13037, 13038]},
+      {"id": 15, "name": "SHIP_FIREIONCANNON", "waves": [13039, 13040, 13041]},
+      {"id": 16, "name": "SHIP_FIRETORPEDO", "waves": [13042, 13043, 13044]},
+      {"id": 17, "name": "SHIP_TAKE_LASER_HIT", "waves": [13045, 13046, 13047]},
+      {"id": 18, "name": "SHIP_TAKE_ION_HIT", "waves": [13048, 13049, 13050]},
+      {"id": 19, "name": "SHIP_TAKE_TURBO_HIT", "waves": [13051, 13052, 13053]},
+      {"id": 20, "name": "SHIP_TAKE_TORPEDO_HIT", "waves": [13054]}
+    ],
+    "tactical_dll_sha256": "db12cdcfb6c85cec572a425307d2ad617bbc850027657424c3cc1f61c6ec275a"
+  },
+  "browser_run": {
+    "run_id": "2026-09-24T19-52-42-277Z-71200",
+    "scenario": "production-tactical-audio-routing",
+    "passed": 4,
+    "failed": 0,
+    "muted_launches": 4,
+    "four_request_startups": 4,
+    "browser_processes_closed": 4
+  },
+  "verification": {
+    "workspace_tests": "758_passed_0_failed_21_ignored",
+    "rebellion_render_tests": "255_passed_1_ignored",
+    "rebellion_app_tests": "16_passed_0_failed",
+    "runtime_pack_python_tests": "4_passed_0_failed",
+    "harness_unit_tests": "26_passed_0_failed",
+    "harness_check": "pass_A1_106_of_106_strict_0_of_106",
+    "browser_audio_probe": "4_of_4_pass_22_waves_8_events_22_cache_hits_muted",
+    "strict_gate_run": false,
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_640x480": "ca0b7d83d0d1cf0dfb90c6d01f296c3662cb58d71a85e9359556b44d1ba7df55",
+    "alliance_1280x800": "65e169fafa6311f8d46556c877d5464395998534259bddeb19c1ed4819810833",
+    "empire_640x480": "b1f75f11831900324162f2ff2de9269199310d8f3d7391fbc582d73b09d7710d",
+    "empire_1280x800": "084d8a7a56d11d5a5caa13b2abb667e4545633a7e609517346dd2925b83304f7"
+  },
+  "fixture_wasm_sha256": "1bcf847687db5582c9e207d85262a0d0ab6b9461d48cdca610b913b7a0c63e3d",
+  "runtime_pack_sha256": "16d3002f939f2853156c301ca1b55e720d3fad4727171296110fa25b04453998",
+  "limits": [
+    "exact_global_rng_sequence_open",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ],
+  "proprietary_artifacts_committed": false
+}

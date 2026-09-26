@@ -12,7 +12,7 @@
 //! there is no link conflict.  It supports native (`CoreAudio` on macOS,
 //! ALSA/PulseAudio on Linux) and WASM (`WebAudio`) through the same unified
 //! API.  Feature parity for this project's needs: looped background music,
-//! one-shot SFX, and one-shot voice lines — all fully covered.
+//! one-shot SFX, and one-shot tactical voice lines — all fully covered.
 //!
 //! # File layout convention
 //!
@@ -49,7 +49,7 @@
 //! All files are optional: missing files are silently skipped and the engine
 //! remains silent rather than crashing.
 //!
-//! # Voice line resource IDs
+//! # Tactical voice resource IDs
 //!
 //! The original VOICEFXA.DLL contains resources 14001–15163 (Alliance).
 //! VOICEFXE.DLL contains resources 15001–15132 (Empire).  Extracted files
@@ -90,7 +90,6 @@
 //!
 //! // On game events:
 //! audio.play_sfx(SfxKind::BuildComplete, &vol_state);
-//! audio.play_voice(VoiceLine::AllianceBuildComplete, &vol_state);
 //!
 //! // Each frame after egui controls:
 //! if vol_state.dirty {
@@ -104,7 +103,8 @@ use std::path::{Path, PathBuf};
 
 use quad_snd::{AudioContext, Sound};
 
-pub use rebellion_render::audio::{AudioVolumeState, MusicContext, MusicTrack, SfxKind, VoiceLine};
+pub use rebellion_render::audio::{AudioVolumeState, MusicContext, MusicTrack, SfxKind};
+use rebellion_render::tactical_view::TacticalVoiceFaction;
 
 #[cfg(target_arch = "wasm32")]
 const AUDIO_PREFIX: &str = "web/data";
@@ -154,6 +154,33 @@ pub const MENU_SFX_ASSETS: &[(SfxKind, &str, u32)] = &[
     (SfxKind::MenuSelect, "sfx/menu_select.wav", 8004),
 ];
 
+/// Exact weapon-event variant table built by `FUN_005bae60`. Each row is
+/// `(event_id, variant, runtime_path, TACTICAL.DLL WAVE resource)`.
+pub const TACTICAL_SFX_ASSETS: &[(u8, u8, &str, u32)] = &[
+    (0x0d, 0, "sfx/tactical_event_0d_0.wav", 13_033),
+    (0x0d, 1, "sfx/tactical_event_0d_1.wav", 13_034),
+    (0x0d, 2, "sfx/tactical_event_0d_2.wav", 13_035),
+    (0x0e, 0, "sfx/tactical_event_0e_0.wav", 13_036),
+    (0x0e, 1, "sfx/tactical_event_0e_1.wav", 13_037),
+    (0x0e, 2, "sfx/tactical_event_0e_2.wav", 13_038),
+    (0x0f, 0, "sfx/tactical_event_0f_0.wav", 13_039),
+    (0x0f, 1, "sfx/tactical_event_0f_1.wav", 13_040),
+    (0x0f, 2, "sfx/tactical_event_0f_2.wav", 13_041),
+    (0x10, 0, "sfx/tactical_event_10_0.wav", 13_042),
+    (0x10, 1, "sfx/tactical_event_10_1.wav", 13_043),
+    (0x10, 2, "sfx/tactical_event_10_2.wav", 13_044),
+    (0x11, 0, "sfx/tactical_event_11_0.wav", 13_045),
+    (0x11, 1, "sfx/tactical_event_11_1.wav", 13_046),
+    (0x11, 2, "sfx/tactical_event_11_2.wav", 13_047),
+    (0x12, 0, "sfx/tactical_event_12_0.wav", 13_048),
+    (0x12, 1, "sfx/tactical_event_12_1.wav", 13_049),
+    (0x12, 2, "sfx/tactical_event_12_2.wav", 13_050),
+    (0x13, 0, "sfx/tactical_event_13_0.wav", 13_051),
+    (0x13, 1, "sfx/tactical_event_13_1.wav", 13_052),
+    (0x13, 2, "sfx/tactical_event_13_2.wav", 13_053),
+    (0x14, 0, "sfx/tactical_event_14_0.wav", 13_054),
+];
+
 fn music_file(track: MusicTrack) -> &'static str {
     match track {
         MusicTrack::MainTheme => "main_theme.wav",
@@ -176,39 +203,53 @@ pub fn track_for_context(ctx: MusicContext) -> MusicTrack {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Voice line resource IDs
-// ---------------------------------------------------------------------------
-
-/// Return `(faction_dir, resource_id)` for a `VoiceLine`.
-///
-/// Resource IDs match the VOICEFXA/VOICEFXE extraction output filenames.
-/// File names follow the pattern `{id}-voicefxa.wav` / `{id}-voicefxe.wav`.
-fn voice_path(line: VoiceLine) -> (&'static str, u32) {
-    match line {
-        // Alliance voice lines (VOICEFXA.DLL, resource IDs 14001–15163)
-        VoiceLine::AllianceMissionSuccess => ("alliance", 14001),
-        VoiceLine::AllianceMissionFail => ("alliance", 14002),
-        VoiceLine::AllianceFleetDeparts => ("alliance", 14003),
-        VoiceLine::AllianceBuildComplete => ("alliance", 14004),
-        // Empire voice lines (VOICEFXE.DLL, resource IDs 15001–15132)
-        VoiceLine::EmpireMissionSuccess => ("empire", 15001),
-        VoiceLine::EmpireMissionFail => ("empire", 15002),
-        VoiceLine::EmpireFleetDeparts => ("empire", 15003),
-        VoiceLine::EmpireBuildComplete => ("empire", 15004),
-    }
-}
-
 /// Build the filename for a voice line as found in the extracted DLL output.
 ///
 /// Alliance: `{id}-voicefxa.wav`, Empire: `{id}-voicefxe.wav`.
-fn voice_filename(faction: &str, id: u32) -> String {
-    let suffix = if faction == "empire" {
-        "voicefxe"
-    } else {
-        "voicefxa"
+fn voice_filename(faction: TacticalVoiceFaction, id: u32) -> String {
+    let suffix = match faction {
+        TacticalVoiceFaction::Alliance => "voicefxa",
+        TacticalVoiceFaction::Empire => "voicefxe",
     };
     format!("{id}-{suffix}.wav")
+}
+
+fn voice_faction_dir(faction: TacticalVoiceFaction) -> &'static str {
+    match faction {
+        TacticalVoiceFaction::Alliance => "alliance",
+        TacticalVoiceFaction::Empire => "empire",
+    }
+}
+
+/// Complete source-proven tactical voice banks.
+///
+/// `VOICEFXA.DLL` stores the Alliance command/result bank at 14001-14122 and
+/// the Alliance trench-run bank at 15133-15163. `VOICEFXE.DLL` stores the
+/// Imperial command/result/Death Star bank at 15001-15132.
+pub const TACTICAL_VOICE_RANGES: &[(TacticalVoiceFaction, u32, u32)] = &[
+    (TacticalVoiceFaction::Alliance, 14_001, 14_122),
+    (TacticalVoiceFaction::Alliance, 15_133, 15_163),
+    (TacticalVoiceFaction::Empire, 15_001, 15_132),
+];
+
+/// Runtime-pack path and resource identity for every restored tactical voice.
+pub fn tactical_voice_assets() -> Vec<(TacticalVoiceFaction, String, u32)> {
+    TACTICAL_VOICE_RANGES
+        .iter()
+        .flat_map(|&(faction, first, last)| {
+            (first..=last).map(move |resource_id| {
+                (
+                    faction,
+                    format!(
+                        "voice/{}/{}",
+                        voice_faction_dir(faction),
+                        voice_filename(faction, resource_id)
+                    ),
+                    resource_id,
+                )
+            })
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -225,8 +266,11 @@ pub struct AudioEngine {
     /// Pre-loaded one-shot SFX.
     sfx: HashMap<SfxKind, Sound>,
 
-    /// Pre-loaded voice lines.
-    voice: HashMap<VoiceLine, Sound>,
+    /// Original tactical weapon-event variants keyed by WAVE resource ID.
+    tactical_sfx: HashMap<u32, Sound>,
+
+    /// Source-mapped tactical voices keyed by faction and WAVE ID.
+    tactical_voice: HashMap<(TacticalVoiceFaction, u32), Sound>,
 
     /// Currently loaded music track + which track it is.
     music: Option<(Sound, MusicTrack)>,
@@ -244,7 +288,8 @@ impl AudioEngine {
         AudioEngine {
             ctx: AudioContext::new(),
             sfx: HashMap::new(),
-            voice: HashMap::new(),
+            tactical_sfx: HashMap::new(),
+            tactical_voice: HashMap::new(),
             music: None,
             music_playing: false,
             missing_music_logged: HashSet::new(),
@@ -285,38 +330,39 @@ impl AudioEngine {
                 Err(e) => eprintln!("[audio] Failed to read SFX {}: {e}", path.display()),
             }
         }
-    }
-
-    /// Pre-load all voice lines from `sounds_dir/voice/`.  Missing files are silently skipped.
-    ///
-    /// Voice files live at:
-    /// - `sounds_dir/voice/alliance/{id}-voicefxa.wav`
-    /// - `sounds_dir/voice/empire/{id}-voicefxe.wav`
-    pub fn load_voice(&mut self, sounds_dir: &Path) {
-        let voice_dir = audio_base_path(sounds_dir).join("voice");
-        let lines = [
-            VoiceLine::AllianceMissionSuccess,
-            VoiceLine::AllianceMissionFail,
-            VoiceLine::AllianceFleetDeparts,
-            VoiceLine::AllianceBuildComplete,
-            VoiceLine::EmpireMissionSuccess,
-            VoiceLine::EmpireMissionFail,
-            VoiceLine::EmpireFleetDeparts,
-            VoiceLine::EmpireBuildComplete,
-        ];
-        for line in lines {
-            let (faction, id) = voice_path(line);
-            let filename = voice_filename(faction, id);
-            let path = voice_dir.join(faction).join(&filename);
+        let audio_root = audio_base_path(sounds_dir);
+        for &(_, _, relative_path, resource_id) in TACTICAL_SFX_ASSETS {
+            let path = audio_root.join(relative_path);
             if !path.exists() {
                 continue;
             }
             match std::fs::read(&path) {
-                Ok(bytes) => {
-                    let sound = Sound::load(&self.ctx, &bytes);
-                    self.voice.insert(line, sound);
+                Ok(bytes) => self.load_tactical_sfx_bytes(resource_id, &bytes),
+                Err(error) => {
+                    eprintln!(
+                        "[audio] Failed to read tactical SFX {}: {error}",
+                        path.display()
+                    );
                 }
-                Err(e) => eprintln!("[audio] Failed to read voice line {}: {e}", path.display()),
+            }
+        }
+    }
+
+    /// Pre-load the complete source-proven tactical voice bank. Missing files
+    /// remain silent so an installation without the original DLLs still runs.
+    pub fn load_tactical_voice(&mut self, sounds_dir: &Path) {
+        let audio_root = audio_base_path(sounds_dir);
+        for (faction, relative_path, resource_id) in tactical_voice_assets() {
+            let path = audio_root.join(relative_path);
+            if !path.exists() {
+                continue;
+            }
+            match std::fs::read(&path) {
+                Ok(bytes) => self.load_tactical_voice_bytes(faction, resource_id, &bytes),
+                Err(error) => eprintln!(
+                    "[audio] Failed to read tactical voice {}: {error}",
+                    path.display()
+                ),
             }
         }
     }
@@ -327,7 +373,7 @@ impl AudioEngine {
     /// `play_music`.
     pub fn load_all(&mut self, sounds_dir: &Path) {
         self.load_sfx(sounds_dir);
-        self.load_voice(sounds_dir);
+        self.load_tactical_voice(sounds_dir);
     }
 
     /// Load the binary-mapped cockpit sounds directly from an owned COMMON.DLL.
@@ -357,6 +403,68 @@ impl AudioEngine {
         }
     }
 
+    /// Load recovered tactical event cues from an owned TACTICAL.DLL.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_original_tactical_sfx(&mut self, tactical_dll: &Path) {
+        let resource_ids: Vec<u32> = TACTICAL_SFX_ASSETS
+            .iter()
+            .map(|(_, _, _, resource_id)| *resource_id)
+            .collect();
+        match rebellion_data::load_wave_resources(tactical_dll, &resource_ids) {
+            Ok(waves) => {
+                for &(_, _, _, resource_id) in TACTICAL_SFX_ASSETS {
+                    if let Some(bytes) = waves.get(&resource_id) {
+                        self.load_tactical_sfx_bytes(resource_id, bytes);
+                    }
+                }
+                eprintln!(
+                    "[audio] loaded {} original tactical SFX from {}",
+                    waves.len(),
+                    tactical_dll.display()
+                );
+            }
+            Err(error) => eprintln!(
+                "[audio] original tactical SFX unavailable path={} error={error}",
+                tactical_dll.display()
+            ),
+        }
+    }
+
+    /// Load the complete source-proven tactical voice banks from owned DLLs.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_original_tactical_voice(&mut self, alliance_dll: &Path, empire_dll: &Path) {
+        for (faction, dll_path) in [
+            (TacticalVoiceFaction::Alliance, alliance_dll),
+            (TacticalVoiceFaction::Empire, empire_dll),
+        ] {
+            if !dll_path.exists() {
+                continue;
+            }
+            let resource_ids = tactical_voice_assets()
+                .into_iter()
+                .filter_map(|(candidate, _, resource_id)| {
+                    (candidate == faction).then_some(resource_id)
+                })
+                .collect::<Vec<_>>();
+            match rebellion_data::load_wave_resources(dll_path, &resource_ids) {
+                Ok(waves) => {
+                    for (resource_id, bytes) in waves {
+                        self.load_tactical_voice_bytes(faction, resource_id, &bytes);
+                    }
+                    eprintln!(
+                        "[audio] loaded {} original tactical voices from {}",
+                        resource_ids.len(),
+                        dll_path.display()
+                    );
+                }
+                Err(error) => eprintln!(
+                    "[audio] original tactical voice unavailable path={} error={error}",
+                    dll_path.display()
+                ),
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // WASM byte-level loaders (for macroquad::file::load_file results)
     // -----------------------------------------------------------------------
@@ -368,11 +476,21 @@ impl AudioEngine {
         self.sfx.insert(kind, sound);
     }
 
-    /// Load a single voice line from raw bytes.
-    #[allow(dead_code)]
-    pub fn load_voice_bytes(&mut self, line: VoiceLine, bytes: &[u8]) {
+    /// Load one source-mapped TACTICAL.DLL WAVE resource.
+    pub fn load_tactical_sfx_bytes(&mut self, resource_id: u32, bytes: &[u8]) {
         let sound = Sound::load(&self.ctx, bytes);
-        self.voice.insert(line, sound);
+        self.tactical_sfx.insert(resource_id, sound);
+    }
+
+    /// Load one source-mapped tactical voice from raw bytes.
+    pub fn load_tactical_voice_bytes(
+        &mut self,
+        faction: TacticalVoiceFaction,
+        resource_id: u32,
+        bytes: &[u8],
+    ) {
+        let sound = Sound::load(&self.ctx, bytes);
+        self.tactical_voice.insert((faction, resource_id), sound);
     }
 
     /// Begin decoding a music track supplied by the browser runtime pack.
@@ -440,26 +558,54 @@ impl AudioEngine {
         }
     }
 
-    /// Play a one-shot voice line at the current SFX volume.
-    ///
-    /// No-op when the line was not loaded or the effective volume is zero.
+    /// Play one concrete original tactical event variant.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
-    pub fn play_voice(&mut self, line: VoiceLine, vol_state: &AudioVolumeState) {
+    pub fn play_tactical_sfx(&mut self, resource_id: u32, vol_state: &AudioVolumeState) -> bool {
         let vol = vol_state.effective_sfx_volume() as f32;
-        if vol <= 0.0 {
-            return;
+        if let Some(sound) = self.tactical_sfx.get(&resource_id) {
+            if vol > 0.0 {
+                sound.play(
+                    &self.ctx,
+                    quad_snd::PlaySoundParams {
+                        looped: false,
+                        volume: vol,
+                    },
+                );
+            }
+            true
+        } else {
+            false
         }
-        if let Some(sound) = self.voice.get(&line) {
-            sound.play(
-                &self.ctx,
-                quad_snd::PlaySoundParams {
-                    looped: false,
-                    volume: vol,
-                },
-            );
+    }
+
+    /// Play one exact tactical voice at the current SFX volume.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Audio gains are bounded values; the playback API takes f32."
+    )]
+    pub fn play_tactical_voice(
+        &mut self,
+        faction: TacticalVoiceFaction,
+        resource_id: u32,
+        vol_state: &AudioVolumeState,
+    ) -> bool {
+        let vol = vol_state.effective_sfx_volume() as f32;
+        if let Some(sound) = self.tactical_voice.get(&(faction, resource_id)) {
+            if vol > 0.0 {
+                sound.play(
+                    &self.ctx,
+                    quad_snd::PlaySoundParams {
+                        looped: false,
+                        volume: vol,
+                    },
+                );
+            }
+            true
+        } else {
+            false
         }
     }
 
@@ -582,5 +728,40 @@ impl AudioEngine {
     )]
     pub fn is_available(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tactical_voice_assets_cover_complete_source_backed_banks() {
+        // FUN_005bae60 registers the three continuous faction event ranges.
+        let assets = tactical_voice_assets();
+        assert_eq!(assets.len(), 285);
+        let identities = assets
+            .iter()
+            .map(|(faction, _, resource_id)| (*faction, *resource_id))
+            .collect::<HashSet<_>>();
+        assert_eq!(identities.len(), 285);
+        assert!(assets.contains(&(
+            TacticalVoiceFaction::Alliance,
+            "voice/alliance/14001-voicefxa.wav".to_string(),
+            14_001,
+        )));
+        assert!(assets.contains(&(
+            TacticalVoiceFaction::Empire,
+            "voice/empire/15132-voicefxe.wav".to_string(),
+            15_132,
+        )));
+        assert!(assets.contains(&(
+            TacticalVoiceFaction::Alliance,
+            "voice/alliance/15163-voicefxa.wav".to_string(),
+            15_163,
+        )));
+        assert!(!identities.contains(&(TacticalVoiceFaction::Alliance, 15_001)));
+        assert!(!identities.contains(&(TacticalVoiceFaction::Alliance, 15_132)));
+        assert!(!identities.contains(&(TacticalVoiceFaction::Empire, 15_133)));
     }
 }

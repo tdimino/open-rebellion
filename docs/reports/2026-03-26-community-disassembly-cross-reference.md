@@ -12,6 +12,15 @@ tags: [ghidra, reverse-engineering, parity, cross-reference]
 
 # Community Disassembly Cross-Reference Report
 
+> **Correction (2026-09-26)**: The community dump comes from a different
+> REBEXE.EXE build. Its addresses do not name functions in our binary.
+> The "0x10-0x30 offset" reported in the Address Alignment section below
+> understates the actual shift (which varies by code region, from +0x360
+> to +0x19c0). The `FUN_005029a0` / `FUN_005022d0` pairing in the
+> Verified Cross-References table is wrong: `FUN_005022d0` is a hull
+> getter, not our `FUN_005029a0` (`CapShipHullValueDamageNotif`).
+> See `ghidra/notes/community-address-remap.md` for the full remap table.
+
 ## Executive Summary
 
 A community reverse-engineering effort produced 13,036 decompiled C functions from REBEXE.EXE, more than double our own Ghidra campaign's 5,151 functions. 1,471 functions carry human-readable labels. Four parallel research agents cross-referenced the dump against our Rust implementation across combat, AI/missions, seeding/economy, and events/entities.

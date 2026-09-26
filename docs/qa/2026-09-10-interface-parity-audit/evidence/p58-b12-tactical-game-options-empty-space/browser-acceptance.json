@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B12",
+  "scope": "bounded_visual_review_of_game_options_and_empty_space_montage",
+  "result": "pass",
+  "findings": {
+    "P0": [],
+    "P1": [],
+    "P2": []
+  },
+  "limits": [
+    "visible_evidence_only",
+    "interaction_semantics_proven_by_automated_browser_journeys",
+    "not_authoritative_A0_comparison"
+  ]
+}

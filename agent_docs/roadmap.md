@@ -314,7 +314,7 @@ Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchit
 ### Remaining Gaps (P2) — ALL CLOSED (2026-04-14)
 
 5. **Defense facility construction** — CLOSED. FUN_00508660 is an entity-type dispatcher, not a priority function. Current order is FAITHFUL.
-7. **AI resource rebalancing** — CLOSED. FUN_00558660 has no decompiled source; cross-ref describes minor random resource perturbation via RESRCTB (4 entries). Negligible gameplay impact.
+7. **AI resource rebalancing** — CLOSED. FUN_00559ee0 looks up RESRCTB (table 0x2b) with a random draw; the resource perturbation is minor. Negligible gameplay impact.
 
 ---
 
@@ -450,6 +450,16 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
   follow-up, uprisings, bombardment, HQ relocation, and principal missions.
   Do not require symmetric attack counts from an asymmetric game.
 - [ ] Enable AI Death Star construction/fire/cleanup and repair parity oracles.
+  The Death Star currently can never fire (F-017).
+- [ ] Wire the recovered rules the 2026-09-25 test-pruning pass found uncalled:
+  research gating of buildable ships (F-018), Subdue Uprising, guarded
+  dispatch, and initial Force awakening (F-019), mod dependency errors (F-020),
+  and blockade troop destruction (F-021).
+- [ ] Correct or re-source the code behaviors the 2026-09-26 citation audit
+  found without a binary source: the economy's KDY production modifier
+  (F-023), the Emperor's 1.5x battle bonus (F-024), family-`0x34` Death Star
+  detection (F-025), and the missing disaster and uprising incident effects
+  (F-026).
 - [ ] Pass five reproducibly configured 5,000-tick seeds: transit ≤10%, orders
   ≤1.5× arrivals, and fleet arena ≤3× initial. Record 50–400 engagements, eight
   systems, busiest-system ≤40%, and 10% minority-faction attack share as
@@ -529,6 +539,14 @@ would tune around known simulation feedback defects.
   pixel-for-pixel in the muted 640x480 browser harness. `CMD-08` remains open
   for illuminated/unread states, pointer routing, the original index window,
   categories, navigation, and its full acceptance matrix.
+- [x] Restore the P60 original Game Speed control: the day readout and its
+  right-click STRATEGY menu with Pause, Very Slow, Slow, Medium, and Fast (the
+  original has no faster speed); the stop-day pause with the REBDLOG "Resume
+  Game Play?" alert; and the Alt+P and Alt+NumPad accelerators. Save v14
+  persists the speed and pause stop. Statically recover the Message Index
+  window, categories, rail resting path, and Advice slowdown. `CMD-05` stays
+  open for A0 comparison, the wall-clock rate unit, and font and tooltip
+  details; `CMD-08` for rail illumination and the window itself.
 - [x] Restore the P50 GID root and submenu frame from STRATEGY 10100 through
   10107. Paint repeated edges in four batched meshes, remove the invented menu
   fade, and check native-size root pixels against the source BMPs in both
@@ -740,11 +758,98 @@ would tune around known simulation feedback defects.
   native playback comparison, persistent trench-run outcome, shared
   post-battle bombardment, landing, and navigation orchestration, the strict
   106-cell A0 evidence matrix, and release gates remain pending, so this parent
-  item is not checked off.
+  item is not checked off. Execute the remaining work as the local commit set
+  in the [Tactical 106-Cell Acceptance Train](../docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md),
+  then push only after its strict matrix passes. P58-B07 completes C1: the
+  ledger-derived validator fixes the denominator at 106, enforces the
+  13/13/20/14/23/9/14 family distribution, validates original-capture
+  provenance, and fails closed on missing, duplicate, unknown, or tracked A0
+  evidence. P58-B08 completes the fail-closed C2 ingestion path: the guest
+  records the running executable hash and per-cell provenance, while the host
+  verifies and stores exact 640×480 PNGs only under the ignored A0 tree.
+  Authoritative capture remains 0/106 because the owned Windows capture host
+  was offline at this checkpoint; C2 is not complete until all 106 source
+  states are captured and ingested. P58-B09 begins C5 by schema-validating the
+  tactical catalog and mapping 82/106 cells to current deterministic evidence:
+  64 journeys and 18 snapshots. The remaining 24 cells have a concrete
+  new-scenario queue; none is accepted without its A0 and comparison gates.
+  P58-B10 expands that crosswalk to 96/106 cells: 78 journeys and 18 snapshots.
+  Four navigation sets, ordered routes and targets, camera memory/chase, Anvil,
+  and Stand Off now have deterministic production journeys. The remaining ten
+  cells and all A0 comparisons stay open.
+  P58-B11 expands the crosswalk to 98/106 cells: 80 journeys and 18 snapshots.
+  Production order 6 now proves an active trench-run launch, and Battle Results
+  proves exact 3-to-2 strategic capital and fighter losses before system/fleet
+  routing. The fleet destination presentation and Alliance Death Star framing
+  remain bounded follow-ups. The remaining eight cells and all A0 comparisons
+  stay open.
+  P58-B12 expands the crosswalk to 100/106 cells: 81 journeys and 19 snapshots.
+  The original COMMON Game Options surface now serves shuttle, command-center,
+  and tactical routes; its in-battle display controls are disabled as in the
+  manual. Empty-space battles retain resource 5030 stars and omit the planet.
+  The remaining six cells and all A0 comparisons stay open.
+  P58-B13 expands the crosswalk to 101/106 cells: 82 journeys and 19 snapshots.
+  The tactical withdrawal command now opens the source TACTICAL 1310 panel,
+  uses TEXTTACT 56772/56771, and routes controls 1113 through 1116 through
+  cancel and confirm before withdrawal. The remaining five cells and all A0
+  comparisons stay open.
+  P58-B14 expands the crosswalk to 104/106 cells: 85 journeys and 19 snapshots.
+  The selected-capital 1302 contents apertures now use compact GOKRES
+  assignments, destroyed presentation retains TACTICAL 3368, and direct
+  right-click Escort uses source order code 1 with the protected-target marker
+  and target lifecycle. Battle Alert entry, tactical audio, and every A0
+  comparison remain open.
+  P58-B15 completes deterministic A1 mapping at 106/106 cells: 87 journeys and
+  19 snapshots. It restores the source-built faction Battle Alert, Take
+  Command entry, MDATA 307 battle score, and TACTICAL WAVE 13054 event routing.
+  A0 evidence and strict acceptance remain 0/106; the strict gate was not run.
+  P58-B16 corrects event 0x14 from the provisional destruction label to its
+  registered torpedo-impact meaning and restores all eight weapon fire/impact
+  events across TACTICAL WAVE 13033–13054. Production capital and fighter
+  paths now emit the typed cues; exact shared-RNG sequencing, audible native
+  comparison, A0 evidence, and strict acceptance remain open.
+  P58-B17 restores 90 exact faction command recordings from VOICEFXA and
+  VOICEFXE: battle ready plus task-force and RGBY maneuver, attack, formation,
+  and mission acknowledgements. Production commands now queue the source event
+  and group ordinal; the focused four-case muted browser gate loads and routes
+  all 22 weapon and 90 command-voice resources. Result, withdrawal, and Death
+  Star voice families, mixing, audible native comparison, A0 evidence, and
+  strict acceptance remain open.
+  P58-B18 transports every source-addressed tactical voice: 153 Alliance and
+  132 Imperial, 285 total. Production paths now dispatch selected withdrawal,
+  battle-outcome, Death Star, and RGBY trench-run transitions; the focused
+  four-case muted browser gate loads and routes all 307 tactical weapon and
+  voice resources. Remaining completion, destruction, recovery, warning, and
+  ordered trench callers, exact shared-RNG sequencing, mixing, audible native
+  comparison, A0 evidence, and strict acceptance remain open.
+  P58-B19 restores `FUN_005a24d0`'s mixed-task-force focus-target rejection.
+  Selecting capitals from different task forces now preserves their manual,
+  active, and Escort targets and routes exact Alliance `0x84`/WAVE `14101` or
+  Imperial `0x102`/WAVE `15105` feedback. The four-case muted browser gate
+  passes; the remaining caller families and all strict A0 comparisons stay
+  open.
+  P58-B20 restores final RGBG fighter recovery, no-carrier-capacity, and
+  disabled-hyperdrive withdrawal feedback. `FUN_005b8630` and
+  `FUN_005a0240`/`FUN_005b1b70` anchor the recovered source routes; twelve
+  muted browser cases pass across both factions and viewports. Remaining
+  completion, destruction, warning, and ordered trench callers, audible native
+  comparison, and every strict A0 comparison stay open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production
   battle scene and remain outside the original 106-cell parity denominator.
+- [ ] After original 640×480 parity, add an optional enhanced-widescreen layout.
+  Preserve authentic bitmap panels and control sizes while extending only the
+  galaxy, system, and tactical viewports into the additional horizontal space.
+  Treat genuine 16:9 support as a separate modernization track outside the
+  original 106-cell parity denominator:
+  - anchor authentic cockpit panels to the screen edges;
+  - extend backgrounds without stretching their bitmaps;
+  - adjust tactical-camera projection and galaxy-map bounds;
+  - translate pointer coordinates through the widescreen layout;
+  - preserve original hit masks and control geometry;
+  - pillarbox videos and other fixed 4:3 surfaces; and
+  - maintain separate visual baselines for supported 16:9 resolutions.
 - [ ] Execute `RE-ADV-02` for authored SPT/BIN/FDT action, cadence, preemption,
   and voice mappings; extend the decoder/pack to briefings and every other
   required resource kind; then consume the proven shell/control/window mappings.

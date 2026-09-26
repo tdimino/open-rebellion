@@ -56,10 +56,35 @@ class RuntimePackBuilderTests(unittest.TestCase):
             (base / "SYSTEMSD.DAT").write_bytes(b"systems")
             (bmp / "20001.bmp").write_bytes(b"bitmap")
             (audio / "main_theme.wav").write_bytes(b"wave")
+            (audio / "battle.wav").write_bytes(b"battle")
+            sfx = root / "audio" / "sfx"
+            sfx.mkdir()
+            tactical_names = [
+                *(
+                    f"tactical_event_{event:02x}_{variant}.wav"
+                    for event in range(0x0D, 0x14)
+                    for variant in range(3)
+                ),
+                "tactical_event_14_0.wav",
+            ]
+            for name in tactical_names:
+                (sfx / name).write_bytes(b"cue")
 
             entries = PACKER.collect_entries(base, root / "ui", root / "audio")
             self.assertIn(
                 (PACKER.KIND_AUDIO, "music/main_theme.wav"),
+                [(entry.kind, entry.key) for entry in entries],
+            )
+            self.assertIn(
+                (PACKER.KIND_AUDIO, "music/battle.wav"),
+                [(entry.kind, entry.key) for entry in entries],
+            )
+            self.assertIn(
+                (PACKER.KIND_AUDIO, "sfx/tactical_event_0d_0.wav"),
+                [(entry.kind, entry.key) for entry in entries],
+            )
+            self.assertIn(
+                (PACKER.KIND_AUDIO, "sfx/tactical_event_14_0.wav"),
                 [(entry.kind, entry.key) for entry in entries],
             )
 

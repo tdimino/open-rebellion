@@ -308,7 +308,141 @@ cross-runtime proof remain open
   capture/evasion, the wider campaign loop, and five-seed cross-runtime proof
   do not yet pass. The source-backed victory rules pass dedicated fixtures;
   P30 remains open for end-to-end result-screen and campaign acceptance.
+
+### P58-B11: Tactical trench-run launch and strategic persistence
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: the production Attack Death Star control now proves that committed
+  source order `6` enters the live trench-run lifecycle. Battle Results proves
+  exact three-to-two capital and fighter persistence for both strategic fleets
+  before destination routing.
+- Matrix: 98 of 106 cells have deterministic A1 scenarios through 80 browser
+  journeys and 18 snapshots. Eight scenarios and all 106 lossless A0 captures
+  remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-trench-persistence.md`.
   Qualitative behavior is adjudicated against the historical reference.
+
+### P58-B12: Tactical Game Options and empty space
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: the original COMMON Game Options surface now serves the shuttle,
+  command center, and tactical Battle Options routes. Tactical display controls
+  are disabled during a battle, and the empty-space fixture retains its
+  starfield while omitting the planet.
+- Matrix: 100 of 106 cells have deterministic A1 scenarios through 81 browser
+  journeys and 19 snapshots. Six scenarios and all 106 lossless A0 captures
+  remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-game-options-empty-space.md`.
+
+### P58-B13: Tactical withdrawal confirmation
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: the original TACTICAL 1310 panel, TEXTTACT title and prompt, and
+  controls 1113 through 1116 now mediate withdrawal. Cancel closes without
+  retreat; confirm starts withdrawal; the disabled repeat remains inert.
+- Matrix: 101 of 106 cells have deterministic A1 scenarios through 82 browser
+  journeys and 19 snapshots. Five scenarios and all 106 lossless A0 captures
+  remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md`.
+
+### P58-B14: Tactical detail and Escort
+
+- Status: partial A1 coverage; strict acceptance remains open
+- Evidence: TACTICAL 3368 supplies a complete destroyed presentation, panel
+  1302 displays compact GOKRES assignments, and direct friendly right-click
+  assigns source order-code 1 Escort with retained target, marker, follow,
+  opportunity fire, and invalid-target cleanup.
+- Matrix: 104 of 106 cells have deterministic A1 scenarios through 85 browser
+  journeys and 19 snapshots. Battle Alert entry, tactical audio, and all 106
+  lossless A0 captures remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md`.
+
+### P58-B15: Tactical Battle Alert and audio
+
+- Status: complete deterministic A1 mapping; strict acceptance remains open
+- Evidence: the source-built faction Battle Alert now precedes tactical
+  command, its four tabs and three command families use recovered resources,
+  Take Command enters paused combat, MDATA 307 supplies the battle score, and
+  TACTICAL WAVE 13054 is extracted, packaged, and routed. P58-B16 corrects the
+  provisional label from ship destruction to torpedo impact and restores all
+  eight weapon events and 22 WAVE variants at 13033–13054.
+- Matrix: all 106 cells have deterministic A1 scenarios through 87 browser
+  journeys and 19 snapshots. A0 coverage and strict acceptance remain 0/106;
+  the strict gate was not run. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md`.
+
+### P58-B16: Tactical weapon audio bank
+
+- Status: complete within the deterministic A1 boundary; strict acceptance
+  remains open.
+- Evidence: production capital and fighter combat emit the recovered laser,
+  turbolaser, ion, and torpedo fire/impact events. Exact TACTICAL WAVE
+  13033–13054 resources are extracted and routed through native and browser
+  backends.
+- Verification: workspace tests, pack tests, harness checks, and the focused
+  four-case muted browser journey pass. Exact original RNG sequencing, audible
+  native comparison, and strict A0 acceptance remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md`.
+
+### P58-B17: Tactical command voice bank
+
+- Status: complete within the deterministic A1 boundary; strict acceptance
+  remains open.
+- Evidence: the original faction battle-ready calls and all task-force/RGBY
+  maneuver, attack, formation, and mission acknowledgements now select exact
+  VOICEFXA/VOICEFXE events and WAVEs. Unsupported strategic aliases to these
+  tactical recordings were removed.
+- Verification: focused Rust tests, exact 90-file owned-DLL extraction, the
+  packaged WASM build, four muted browser cases, and independent visual review
+  pass. Remaining tactical voice families, audible native comparison, mixing,
+  interruption, and strict A0 acceptance remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-command-voice.md`.
+
+### P58-B18: Complete tactical voice-bank transport
+
+- Status: complete transport and selected production dispatch within the
+  deterministic A1 boundary; strict acceptance remains open.
+- Evidence: the executable's continuous event table now maps and transports
+  all 285 VOICEFXA/VOICEFXE resources: 153 Alliance and 132 Imperial. Tactical
+  withdrawal, battle result, selected Death Star, and RGBY trench-run
+  transitions emit their source event in addition to the command paths from
+  P58-B17.
+- Verification: the complete workspace, exact owned-DLL extraction and hash
+  cross-check, mapping validator, packaged WASM, four muted browser cases, and
+  independent visual review pass. Remaining production completion,
+  destruction, recovery, warning, and ordered trench chatter callers, audible
+  native comparison, mixing, interruption, and strict A0 acceptance remain
+  open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-complete-voice-bank.md`.
+
+### P58-B19: Mixed-task-force target rejection
+
+- Status: complete within the deterministic A1 boundary; strict acceptance
+  remains open.
+- Evidence: `FUN_005a24d0` requires one task-force ordinal before a hostile
+  focus target can be assigned. A mixed capital selection now preserves its
+  manual, active, and Escort targets and queues exact Alliance event `0x84` /
+  WAVE `14101` or Imperial event `0x102` / WAVE `15105`.
+- Verification: behavior-first and focused Rust tests, the scoped mutation
+  gate, packaged production and fixture WASM, four fresh muted browser cases,
+  and independent visual review pass. Audible native comparison and strict A0
+  acceptance remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-mixed-task-force-target.md`.
+
+### P58-B20: Tactical recovery and withdrawal feedback
+
+- Status: complete within the deterministic A1 boundary; strict acceptance
+  remains open.
+- Evidence: `FUN_005b8630` now queues the exact RGBG acknowledgement after the
+  last live player fighter-group member recovers. Recover queues one exact
+  RGBG capacity warning when no friendly carrier slot remains. Confirmed
+  withdrawal follows `FUN_005a0240` and `FUN_005b1b70` to queue the exact
+  faction warning when a hyperdrive-disabled capital must remain behind.
+- Verification: the complete workspace, focused renderer and fixture tests,
+  packaged production and fixture WASM, twelve fresh muted browser cases, and
+  independent visual review pass. Audible native comparison and strict A0
+  acceptance remain open. See
+  `../2026-09-10-interface-parity-audit/evidence/2026-09-26-tactical-recovery-withdrawal-feedback.md`.
 
 ### F-008: Browser media and mods are incomplete
 
@@ -516,6 +650,246 @@ cross-runtime proof remain open
   The original 14-control contract remains intact; the optional music-only
   control is documented as an extension. P03 and P04 are complete.
 
+### F-017: The Death Star can never fire
+
+- Severity: P1
+- Status: partially remediated; construction timing, sabotage, and browser fire pass remain
+- Evidence: `DeathStarSystem::fire` (`crates/rebellion-core/src/death_star.rs`)
+  refuses while `shield_generator_active` is true, and the only other writer
+  (`crates/rebellion-app/src/tactical_flow.rs`) sets it to true;
+  `DeathStarState::destroy_shield` has no caller. Nothing calls
+  `start_construction`, so no Death Star fleet is ever built. The shield gate
+  may itself be a wrong model: in the original the shield protects the
+  Death Star rather than preventing it from firing. Found by the 2026-09-25
+  test-pruning pass.
+- Acceptance: construction, completion, planet destruction, and the shield's
+  real role follow recovered Ghidra evidence, with tests that fail without
+  each rule and a browser pass of the fire command.
+- Fix (2026-09-25): the superlaser no longer waits on the shield generator.
+  `FUN_005617b0` never references it; the shield only absorbs hull damage in
+  battle. The Death Star is CAPSHPSD record 136 (TEXTSTRA 10120), an ordinary
+  research-order-0 capital ship built at shipyards. Every Death Star check
+  tested DatId family `0x34`, but seeded classes carry the record id, so no
+  real Death Star was ever recognized in combat or firing.
+  `CapitalShipClass::is_death_star` accepts both; a completed Death Star
+  build now marks its fleet so it can fire, and a destroyed one clears it.
+  Tests fail without each change.
+- Open: `DeathStarState::start_construction` and its uncited 1,825-tick timer
+  are now a second construction path beside ordinary manufacturing, so
+  Death Star Sabotage delays a timer nothing starts. The fire command still
+  needs a browser pass. Battle shield absorption stays limited to family-`0x34` ids:
+  nothing destroys the shield generator (`destroy_shield` has no caller), so
+  applying it to the seeded Death Star would make it unkillable in
+  auto-resolved battles.
+- Correction (2026-09-26): `FUN_005617b0` is not a superlaser check, and the
+  2026-09-25 fix and the fire() docs were wrong to cite it. It recomputes the
+  CharacterMgr SeatOfPower flag: `FUN_005070d0` finds `0x34000280`, which
+  MJCHARSD and TEXTSTRA 10368 name Emperor Palpatine, and the flag is set when
+  he is alive (`+0xac` bit 0 clear) and active (`+0x50` bit 0) at `0x90000109`
+  (Coruscant) under Empire control (`+0x24 & 0xc0 == 0x80`). `FUN_0055f650`
+  is decompiled: it stores the flag in `+0x58` bit 0 and notifies
+  `CharacterMgrSeatOfPowerNotif` (`FUN_00562450`, event `0x230`). The real
+  superlaser path is unrecovered (`DEATHSTAR_FIRE` appears only in the
+  tactical constructor `FUN_005a7500`), so every `fire()` precondition lacks
+  a source. Family `0x34` is the Empire major characters, not the Death Star;
+  see F-025.
+
+### F-018: Research never limits which ships can be built
+
+- Severity: P1
+- Status: partially remediated; troop and facility trees remain
+- Evidence: `ResearchSystem::ship_class_is_available` and
+  `fighter_class_is_available` (`crates/rebellion-core/src/research.rs`) had
+  no callers, so manufacturing offered every class regardless of research level.
+- Fix (2026-09-25): the manufacturing panel and AI production offer only
+  capital ships and fighters whose `research_order` is at or below the side's
+  Ship level. Fighters use their own FIGHTSD.DAT order. Three tests fail
+  without the gate, scoped `cargo mutants` catches all 13 gate mutants, and
+  the seed-42 golden changes from tick 10 for this cause.
+- Open: troop and facility classes do not load `research_order` yet. The
+  `<=` comparison and the level-0 start rest on the `rebellion2` prototype
+  and the DAT data.
+- Correction (2026-09-26): `FUN_0052e4f0` and `FUN_0052e510` are not empty and
+  are not buildability checks. Each returns `FUN_005839e0(this+0x88 / +0x8c,
+  key)`, a count of matching list entries. Their only caller, `FUN_005330b0`,
+  validates that each object in families `0x2d..0x2e` and `0x28..0x2b` sits in
+  its side's list exactly when its `+0x58` is 1. No recovered code gates
+  research.
+- Acceptance: build lists and manufacturing orders respect the recovered
+  research-order gate for both factions.
+
+### F-019: Subdue, guarded dispatch, and initial Force awakening are never called
+
+- Severity: P1
+- Status: partially remediated; UPRIS2TB and decoy rules remain
+- Evidence (before the 2026-09-25 fix): `UprisingSystem::try_subdue`
+  (`uprising.rs`), `MissionSystem::dispatch_guarded` and `check_decoy`
+  (`missions.rs`), and `JediSystem::apply_initial_awakening` (`jedi.rs`) had
+  no production callers.
+  Subdue Uprising missions never end a revolt, dispatch does not refuse busy or
+  mandatory-mission characters through the guarded path, and no character
+  starts Force-aware from `jedi_probability`.
+- Acceptance: each path runs in the simulation with recovered rules and a test
+  that fails without the call.
+- Fix (2026-09-25): player, AI, and integrator dispatch now use
+  `dispatch_guarded`, which refuses a character already on a mission or a
+  mandatory mission and marks the dispatched character busy, matching the
+  original role flags (`RoleOnMissionNotif` `FUN_00536b00`,
+  `RoleOnMandatoryMissionNotif` `FUN_00536b80`). Cancelling releases the
+  character. The seed-42 golden changes for this cause.
+- Corrections: seeding already rolls `jedi_probability` for initial Force
+  awareness, so the duplicate `apply_initial_awakening` was removed and the
+  seeding roll gained a test. A successful Subdue Uprising mission ended the
+  revolt only in the headless integrator; the app's own mission handler
+  dropped both the uprising clear and Death Star sabotage delay. Both paths
+  now share `apply_mission_state_effects`.
+- Review follow-up: the guard also refuses a character who already has an
+  active mission, which covers saves written before dispatch set the flag,
+  and the player's commander list omits busy characters, with a message if a
+  dispatch is still refused.
+- Pending: the app's call to `apply_mission_state_effects` runs inside the
+  frame loop, which no unit test reaches; a Subdue Uprising success needs a
+  browser pass to confirm the uprising clears.
+- Recovery (2026-09-26): `FUN_0058b420` assigns the table ids (resource
+  `0x642` `GDATA\` plus an `RT_RCDATA` file name): TDECOYTB 10, FDECOYTB 11,
+  the ten mission tables `0x14..0x1d`, UPRIS1TB `0x28`, UPRIS2TB `0x29`,
+  ESCAPETB `0x2c`. See `ghidra/notes/uprising-incident.md`.
+- Correction: UPRIS1TB and UPRIS2TB are not subdue probabilities.
+  `FUN_00559ce0` reads both during the uprising incident (system `+0x88`
+  bit 18, slot `+0x250` `FUN_00511840`, `FUN_0050d030`), turning one score
+  into two outcome codes that `FUN_0050d150` applies as facility or regiment
+  losses and character effects (F-026). `try_subdue`'s premise is
+  contradicted, so it stays unwired; the Subdue Uprising mission table is
+  SUBDMSTB (`FUN_0055c780`).
+- Open: the decoy roll is `FUN_0055e410` (table `(fleet != 0) + 10`, argument
+  `(p2 - p4) - FUN_0053e190(p3, DAT_006bb710)`), called by `FUN_00588b90`.
+  Which character fields feed it is not yet traced, so `check_decoy` stays
+  unwired.
+
+### F-020: A mod with a missing dependency fails silently
+
+- Severity: P2
+- Status: remediated; native GUI check pending (mods do not load in the browser)
+- Evidence: `ModRuntime::enabled_sorted` (`crates/rebellion-data/src/mods.rs`)
+  prints load-order errors to stderr and returns an empty list;
+  `ModError::MissingDependency` was never constructed, so `ModRuntime::errors`
+  and the Mod Manager showed nothing.
+- Fix (2026-09-25): `discover`, `toggle_mod`, and `refresh` now record
+  `MissingDependency` and `VersionMismatch` for each enabled mod, counting a
+  disabled dependency as missing. The Mod Manager matches errors by
+  `ModError::mod_name()` and shows text such as "requires 'x', which is not
+  installed and enabled" instead of a Debug dump. A dependency cycle or
+  duplicate name records a `LoadOrder` error on every enabled mod it blocks.
+  Five tests fail without the change, and scoped `cargo mutants` catches every
+  mutant in the new code.
+- Acceptance: missing-dependency and version-mismatch failures reach
+  `ModRuntime::errors` and the Mod Manager names the mod and dependency.
+
+### F-021: The blockade troop-destruction event is never raised
+
+- Severity: P1
+- Status: remediated; browser pass pending
+- Evidence: before the fix, `BlockadeEvent::TroopDestroyed` (event `0x340`,
+  `FUN_00504a00`) was matched by the integrator and the app but never built.
+- Recovery (`ghidra/notes/blockade-troop-withdrawal.md`): `FUN_00504a00` only
+  notifies. The loss is the regiment's withdraw-percent roll. `FUN_0050b310`
+  keeps a system at 100 unless it is blockaded with no active KDY-150; then it
+  is `max(0, 100 - ships * GNPRTB[7684] - fighters * GNPRTB[7685])`. A regiment
+  added to a system copies that value, landing resets it to 100, and entering
+  transit keeps it only if `random(0..=99) < percent` (`FUN_00504990`).
+- Correction: `FUN_00504a00` is regiment vtable slot `+0x1f8`, not `+0x204`;
+  `FUN_004ff3c0`'s `+0x204` call reaches `FleetBlockadeNotif` on fleet views.
+- Fix: `BlockadeSystem::running_regiments` observes embarked regiments after
+  arrivals and landings and again at the blockade step, and `resolve_running`
+  rolls those leaving; both run in the headless step and the app frame loop.
+  Destroyed regiments leave their fleet's cargo and emit
+  `blockade_troop_destroyed` telemetry. Nine tests, all 37 viable mutants
+  caught, seed-42 golden unchanged.
+- Open: the tracking is not saved (a save-version bump needs approval), the
+  model has no system-based fighters outside fleets, and the app path needs a
+  browser pass.
+- Acceptance: a regiment carried into a blockaded system without a KDY-150
+  rolls against the recovered percent when it leaves, garrisons and
+  surface-loaded regiments are never rolled, and a browser pass shows the
+  loss message.
+
+### F-022: Two tactical tests needed untracked bitmaps
+
+- Severity: P3
+- Status: remediated in `9901c34`
+- Evidence: two `tactical_view` hit-mask tests read the gitignored
+  `data/base/ui` and failed in a clean checkout. They are now `#[ignore]`d with
+  a reason, and `make test-assets` runs them when extracted bitmaps exist.
+- Acceptance: met.
+
+### F-023: The economy applies the blockade troop-withdraw formula as a KDY production modifier
+
+- Severity: P2
+- Status: open
+- Evidence: `economy.rs` step 4 computes
+  `clamp(100 - capships * GNPRTB[7684] - fighters * GNPRTB[7685])` as a
+  production modifier, citing `FUN_0050a480`, a community-dump address inside
+  a `CALL` operand in our binary. The community function is our
+  `FUN_0050b310` + `FUN_0055a020`, the blockade withdraw percent ported under
+  F-021. No recovered code applies it to production; the value feeds only
+  telemetry.
+- Acceptance: the modifier is dropped or re-sourced, with any golden change
+  named.
+
+### F-024: The Emperor's 1.5x battle damage bonus has no source
+
+- Severity: P2
+- Status: open
+- Evidence: `combat.rs` multiplies the Empire's pending weapon damage by 1.5
+  when a character named Palpatine or Emperor is in the fleet, citing
+  `FUN_00542050`. Ours is a two-line thunk; the community function maps to our
+  `FUN_005438a0`, a named-character check (Leia, Luke, Han, the Emperor, Vader,
+  Chewbacca). Neither shows a damage modifier.
+- Acceptance: the bonus is removed or traced to recovered code.
+
+### F-025: Death Star combat checks key on the Empire major-character family
+
+- Severity: P2
+- Status: open
+- Evidence: `combat.rs` derives `is_death_star` and `CombatEntityKind::DeathStar`
+  from DatId family `0x34`. MJCHARSD and TEXTSTRA show `0x34000280` is Emperor
+  Palpatine and `0x35000281` Darth Vader; `FUN_00560d50` routes family `0x34`
+  to the SeatOfPower check. No shipped hull uses `0x34`, so shield absorption
+  never runs on real data.
+- Acceptance: Death Star detection uses the recovered class identity and the
+  shield's battle role follows recovered code.
+
+### F-026: The disaster and uprising incidents have no effect
+
+- Severity: P2
+- Status: open
+- Evidence: system `+0x88` bit 20 is the disaster incident (`FUN_0050ac10`,
+  `SystemDisasterIncidentNotif`). Slot `+0x258`, `FUN_00511930`, erodes system
+  `+0x5c` and `+0x64` with GNPRTB 7715 and destroys each unprotected
+  manufacturing and defense facility at GNPRTB 7716 (10 percent), reason
+  `0xb`. Bit 18 is the uprising incident (`FUN_0050ab30`,
+  `SystemUprisingIncidentNotif`); `FUN_0050d030` turns UPRIS1TB/UPRIS2TB
+  outcome codes into facility and regiment losses, character effects, and a
+  support change. `economy.rs` placed its flags at bits 16-19 without a source
+  and only emits messages.
+- Acceptance: both incidents trigger and apply their recovered effects with
+  failing-without tests, after the open character slots (`+0x2e4`, `+0x214`)
+  and system `+0x54` fields are recovered.
+
+### F-027: Community-dump citations named the wrong functions
+
+- Severity: P3
+- Status: remediated
+- Evidence: `disassembly.zip` came from a different REBEXE.EXE build; its
+  addresses shift by region (`+0x360` to `+0x19c0`). Thirty-two cited
+  addresses were not function entries in our binary.
+  `ghidra/notes/community-address-remap.md` matches 43 community functions to
+  ours, and the citations now name our addresses. A five-slice check labelled
+  716 citation sites: 505 confirmed, 131 vague, 23 unsupported, and 57
+  contradicted. Review overturned 2 (the `FUN_005c81d0` formation order is
+  correct); the other 55 are corrected or ledgered above.
+- Acceptance: met for citations.
+
 ## Fable 5.1 audit synthesis
 
 The Fable review confirmed the original blockers and sharpened several
@@ -614,7 +988,7 @@ and underlying state mutation are both demonstrated.
 | P21 | Blockade and repair | Enter/exit, ownership/economy effects, breach outcomes, hull recovery, cost/cap, interruptions, and persistence. |
 | P22 | AI | Both factions; validator pass/reject boundaries; budgets; research; production; troop deployment; recon; defense; retreat; target deconfliction; Death Star escort/targeting. |
 | P23 | Core space combat | Seven phases, weapon classes, shields, ion effects, recharge, carriers, fighters, officers, Emperor, retreat, destruction, and result application. |
-| P24 | Tactical space combat | Placement, selection, formations, movement, focus fire, pause/speed, retreat, visual state, accepted formulas, and galaxy result application. [Per-hull/fighter result identity and shared entry](evidence/2026-09-12-tactical-result-identity.md) are verified partial tranches. P54 through P57B2C2B stage and decode the original 3D corpus and recover its camera, placement, transform, palette, light, and retained-mode state. [P58A](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md) joins every ship and fighter DAT identity to its original resources and transports all 87 meshes and 397 textures. P58B through P58F13 render live capital/fighter families and restore their interaction and command paths. The [P58-B06 checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md) adds capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. Its 120-case implementation matrix passes, and independent visual review is a qualified A1 pass with no P0 or P1 findings. Original view acceptance, exact global RNG sequencing, original arrival callbacks and recovery trajectories, power allocation, native beam behavior, native playback, persistent trench-run outcome proof, shared post-battle bombardment, landing, and navigation orchestration, and battle acceptance remain open. |
+| P24 | Tactical space combat | Placement, selection, formations, movement, focus fire, pause/speed, retreat, visual state, accepted formulas, and galaxy result application. [Per-hull/fighter result identity and shared entry](evidence/2026-09-12-tactical-result-identity.md) are verified partial tranches. P54 through P57B2C2B stage and decode the original 3D corpus and recover its camera, placement, transform, palette, light, and retained-mode state. [P58A](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md) joins every ship and fighter DAT identity to its original resources and transports all 87 meshes and 397 textures. P58B through P58F13 render live capital/fighter families and restore their interaction and command paths. The [P58-B06 checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md) adds capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. [P58-B15](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md) restores Battle Alert entry and MDATA 307, completing deterministic A1 mapping at 106/106. [P58-B16](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md) corrects event 0x14 and restores all 22 weapon-audio variants. [P58-B17](../2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-command-voice.md) restores 90 exact faction battle-ready and group command acknowledgements. [P58-B18](../2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-complete-voice-bank.md) transports all 285 tactical voices and dispatches selected withdrawal, result, Death Star, and trench-run transitions. [P58-B19](../2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-mixed-task-force-target.md) restores source-exact mixed-task-force focus-target rejection and faction feedback without mutating existing orders. [P58-B20](../2026-09-10-interface-parity-audit/evidence/2026-09-26-tactical-recovery-withdrawal-feedback.md) restores final-group recovery, carrier-capacity, and disabled-hyperdrive withdrawal feedback. [P58-B07](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-106-matrix-contract.md) generates and validates the exact 106-cell denominator. [P58-B08](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-a0-ingestion.md) adds fail-closed original-capture provenance and ingestion, while the offline capture host leaves A0 coverage and acceptance at 0. Original view acceptance, exact global RNG sequencing, original arrival callbacks and recovery trajectories, power allocation, native beam behavior, native playback, remaining completion/destruction/warning voice callers, shared post-battle bombardment, landing, navigation orchestration, and battle acceptance remain open. |
 | P25 | Ground combat | Troop attack/defense, facilities, officers/difficulty, selection, casualties, conquest, visuals, and parity between automatic and interactive paths. |
 | P26 | Bombardment | Eligibility, shields, losses, popularity, ownership, messages, persistence, and visual feedback. |
 | P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, contribution to the Imperial HQ objective, and nonterminal Alliance destruction behavior. |

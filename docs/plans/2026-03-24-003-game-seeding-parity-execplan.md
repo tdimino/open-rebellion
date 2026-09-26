@@ -125,7 +125,7 @@ After Milestone 2, prove the save policy explicitly. If the branch chooses a ver
 
 ```bash
 cd /Users/tomdimino/Desktop/Programming/open-rebellion
-PATH=/usr/bin:$PATH cargo test -p rebellion-data save::tests::round_trip_save_load -- --exact
+PATH=/usr/bin:$PATH cargo test -p rebellion-data save::tests::save_and_load_round_trip_preserves_state -- --exact
 PATH=/usr/bin:$PATH cargo test -p rebellion-data save::tests::v4_or_v5_compatibility_path -- --exact
 ```
 

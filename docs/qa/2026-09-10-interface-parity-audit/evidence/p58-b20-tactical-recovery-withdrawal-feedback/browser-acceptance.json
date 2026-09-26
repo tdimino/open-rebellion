@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B20",
+  "scope": "focused_muted_browser_recovery_and_withdrawal_feedback",
+  "result": "pass",
+  "run_ids": [
+    "2026-09-26T07-34-05-938Z-6406",
+    "2026-09-26T07-34-57-421Z-8272",
+    "2026-09-26T07-36-08-167Z-9901"
+  ],
+  "cases": 12,
+  "independent_review": "pass",
+  "verified": [
+    "both_faction_tactical_shells_populated",
+    "640x480_and_1280x800_letterboxed",
+    "recover_mission_selected_for_two_group_members",
+    "alliance_capacity_event_0x8b_wave_14108_routed_muted",
+    "empire_capacity_event_0x109_wave_15112_routed_muted",
+    "alliance_completion_event_0x88_wave_14105_routed_muted",
+    "empire_completion_event_0x106_wave_15109_routed_muted",
+    "alliance_withdrawal_events_0x8f_and_0x95_routed_muted",
+    "empire_withdrawal_events_0x10d_and_0x10e_routed_muted",
+    "four_request_startup",
+    "no_console_page_or_request_errors",
+    "browser_cleanup"
+  ],
+  "visual_review_note": "Small text is not used to prove event wording; deterministic console assertions verify exact event and resource identities.",
+  "limits": [
+    "implementation_screenshots_unbaselined",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ]
+}

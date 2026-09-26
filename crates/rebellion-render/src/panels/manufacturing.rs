@@ -10,6 +10,7 @@ use egui_macroquad::egui::{self, Color32, RichText, ScrollArea};
 use rebellion_core::ids::SystemKey;
 use rebellion_core::manufacturing::{BuildableKind, ManufacturingState};
 use rebellion_core::missions::MissionFaction;
+use rebellion_core::research::{ResearchState, ResearchSystem};
 use rebellion_core::world::GameWorld;
 
 use super::PanelAction;
@@ -54,6 +55,7 @@ pub fn draw_manufacturing(
     mfg_state: &ManufacturingState,
     panel_state: &mut ManufacturingPanelState,
     player_faction: MissionFaction,
+    research_state: &ResearchState,
 ) -> Option<PanelAction> {
     let mut action = None;
 
@@ -225,22 +227,31 @@ pub fn draw_manufacturing(
                                     .color(Color32::from_gray(180)),
                             );
 
-                            // Collect buildable capital ships for this faction.
+                            // Collect the classes this faction has researched.
+                            let is_alliance = player_faction == MissionFaction::Alliance;
                             let ships: Vec<_> = world
                                 .capital_ship_classes
                                 .iter()
-                                .filter(|(_, c)| match player_faction {
-                                    MissionFaction::Alliance => c.is_alliance,
-                                    MissionFaction::Empire => c.is_empire,
+                                .filter(|(key, _)| {
+                                    ResearchSystem::ship_class_is_available(
+                                        world,
+                                        research_state,
+                                        is_alliance,
+                                        *key,
+                                    )
                                 })
                                 .collect();
 
                             let fighters: Vec<_> = world
                                 .fighter_classes
                                 .iter()
-                                .filter(|(_, c)| match player_faction {
-                                    MissionFaction::Alliance => c.is_alliance,
-                                    MissionFaction::Empire => c.is_empire,
+                                .filter(|(key, _)| {
+                                    ResearchSystem::fighter_class_is_available(
+                                        world,
+                                        research_state,
+                                        is_alliance,
+                                        *key,
+                                    )
                                 })
                                 .collect();
 

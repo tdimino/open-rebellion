@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B15",
+  "status": "pass_complete_a1_crosswalk_strict_a0_pending",
+  "catalog_scenarios": 36,
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 106,
+    "journey_cells": 87,
+    "snapshot_cells": 19,
+    "catalog_cells_missing": 0,
+    "a0_coverage": 0,
+    "parity_acceptance": 0,
+    "strict_gate_run": false
+  },
+  "source_contract": {
+    "battle_alert_constructor": "FUN_0044f860",
+    "faction_frames": [10710, 10711],
+    "faction_scenes": [10712, 10713],
+    "faction_rails": [10820, 10821],
+    "alliance_controls": [10971, 10972, 10973, 10716, 10717, 10718, 10719, 10720, 10721],
+    "empire_controls": [10974, 10975, 10976, 10722, 10723, 10724, 10725, 10726, 10727],
+    "battle_music_mdata_id": 307,
+    "battle_music_sha256": "58f7166f9805e10f83ba6dea9cbd853c041000f2aca4c6111d44cf5cf1b99803",
+    "tactical_event_code": 20,
+    "tactical_event_wave_id": 13054,
+    "tactical_dll_sha256": "db12cdcfb6c85cec572a425307d2ad617bbc850027657424c3cc1f61c6ec275a",
+    "audio_functions": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
+    "semantic_correction": "P58-B16 identifies event 0x14 as SHIP_TAKE_TORPEDO_HIT rather than ship destruction"
+  },
+  "browser_runs": [
+    {
+      "run_id": "2026-09-24T07-32-09-945Z-63160",
+      "scenario": "production-battle-alert-entry",
+      "passed": 4,
+      "failed": 0,
+      "muted_launches": 4,
+      "four_request_startups": 4,
+      "browser_processes_closed": 4
+    },
+    {
+      "run_id": "2026-09-24T07-33-06-960Z-64951",
+      "scenario": "production-tactical-audio-routing",
+      "passed": 4,
+      "failed": 0,
+      "muted_launches": 4,
+      "four_request_startups": 4,
+      "browser_processes_closed": 4
+    }
+  ],
+  "verification": {
+    "rebellion_render_tests": "254_passed_1_ignored",
+    "rebellion_app_tests": "16_passed_0_failed",
+    "dat_dumper_tests": "pass",
+    "harness_unit_tests": "26_passed_0_failed",
+    "harness_check": "pass",
+    "source_bitmap_probes": "Battle_Alert_frame_scene_rail_tabs_and_controls_exact_at_640x480",
+    "audio_probe": "MDATA_307_and_TACTICAL_WAVE_13054_loaded_routed_and_muted",
+    "independent_browser_review": "8_of_8_pass_one_A0_reference_needed_text_contrast_note",
+    "production_fixture_exclusion": "pass_zero_tokens",
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_alert_640x480": "b62edbe696d87e6b770c53258b33987a7343974c3602e6780d000b0fa4641d07",
+    "empire_alert_640x480": "3a3c770a53f44d106f7e9829903ed438b60ad215012b31c020065596f540cad9",
+    "alliance_audio_640x480": "7b7296461a73e1b39b43d7c97ee754460955b9d9bd486ab9fa4b0a04140d2486",
+    "empire_audio_640x480": "129ffb37e0172f69815730aec0645f0ab072ce58efa8ef031848d1a4c8bb8f8d"
+  },
+  "fixture_wasm_sha256": "8c5c2fdcd4466547228c3f91884f29fe4053f70c27c6e03dfae93d9287f1403c",
+  "runtime_pack_sha256": "fad82c78c5aec237c046d8a7103426256314007303492f4d9323a506b25905fb",
+  "proprietary_artifacts_committed": false
+}

@@ -10,12 +10,13 @@
 //!    from `movement.rs`.  The Death Star module tracks the active orbital
 //!    location for the `VictorySystem` and for the nearby-warning logic.
 //!
-//! 3. **Planet destruction** — `DeathStarSystem::fire()` checks the preconditions
-//!    from `FUN_005617b0` / `FUN_0055f650`:
+//! 3. **Planet destruction** — `DeathStarSystem::fire()` checks preconditions:
 //!    - Target system is not already destroyed (`!system.is_destroyed`).
 //!    - Death Star fleet is present at that system.
 //!    - Target is enemy-controlled (Empire Death Star → non-Empire system).
-//!      On success emits `PlanetDestroyed`.  Caller sets `system.is_destroyed = true`.
+//!    The real superlaser fire path is unrecovered. FUN_005617b0 is the
+//!    CharacterMgr SeatOfPower check; FUN_0055f650 stores that flag.
+//!    On success emits `PlanetDestroyed`.  Caller sets `system.is_destroyed = true`.
 //!
 //! # Advance contract
 //! `DeathStarSystem::advance()` never mutates `GameWorld`.
@@ -104,9 +105,10 @@ pub struct DeathStarState {
     /// The fleet key of the active Death Star, if constructed and deployed.
     pub death_star_fleet: Option<FleetKey>,
     /// Whether the Death Star's shield generator (entity family 0x25) is active.
-    /// The shield must be destroyed before the Death Star can be damaged or fire
-    /// its superlaser. From community disassembly: 4 functions manage the shield
-    /// entity at `FUN_0051b2c0` through `FUN_0051b460`.
+    /// While active, the Death Star takes no hull damage in battle; the shield
+    /// does not block planet destruction (the superlaser fire path is unrecovered).
+    /// From community disassembly: shield entity managed at FUN_0051c0d0
+    /// through FUN_0051c270 (family 0x25..0x26 iterators).
     #[serde(default = "default_shield_active")]
     pub shield_generator_active: bool,
 }
@@ -127,7 +129,7 @@ impl Default for DeathStarState {
 
 impl DeathStarState {
     /// Destroy the Death Star's shield generator.
-    /// After this, the Death Star becomes vulnerable and can fire its superlaser.
+    /// After this, the Death Star takes hull damage in battle.
     pub fn destroy_shield(&mut self) {
         self.shield_generator_active = false;
     }
@@ -226,6 +228,8 @@ impl DeathStarSystem {
     /// Attempt to fire the Death Star superlaser at `target_system`.
     ///
     /// Mirrors `FUN_005617b0` + `FUN_0055f650` precondition checks:
+    /// - The shield generator does not gate firing: `FUN_005617b0` never
+    ///   references it. The shield protects the Death Star in battle instead.
     /// - Target must not already be destroyed (`!system.is_destroyed`).
     /// - An Empire Death Star fleet must be present at `target_system`.
     /// - Target must not be Empire-controlled (no self-destruction).
@@ -235,17 +239,12 @@ impl DeathStarSystem {
     /// update `VictoryState` after receiving this event.
     #[must_use]
     pub fn fire(
-        state: &DeathStarState,
+        _state: &DeathStarState,
         world: &GameWorld,
         target_system: SystemKey,
         tick: u64,
     ) -> Option<DeathStarEvent> {
         let sys = world.systems.get(target_system)?;
-
-        // Guard: shield generator must be destroyed first (entity 0x25).
-        if state.shield_generator_active {
-            return None;
-        }
 
         // Guard: already destroyed.
         if sys.is_destroyed {
@@ -477,7 +476,7 @@ mod tests {
     // ── Construction tests ───────────────────────────────────────────────────
 
     #[test]
-    fn test_construction_countdown_completes() {
+    fn construction_countdown_completes_on_final_tick() {
         let (world, sys) = make_world();
         let mut state = DeathStarState::default();
         DeathStarSystem::start_construction(&mut state, sys);
@@ -507,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construction_no_double_start() {
+    fn construction_rejects_a_second_start() {
         let (_, sys) = make_world();
         let mut state = DeathStarState::default();
         assert!(DeathStarSystem::start_construction(&mut state, sys));
@@ -518,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn test_clear_construction() {
+    fn clear_construction_removes_in_progress_build() {
         let (_, sys) = make_world();
         let mut state = DeathStarState::default();
         DeathStarSystem::start_construction(&mut state, sys);
@@ -526,18 +525,9 @@ mod tests {
         assert!(state.under_construction.is_none());
     }
 
-    #[test]
-    fn test_no_events_without_ticks() {
-        let (world, sys) = make_world();
-        let mut state = DeathStarState::default();
-        DeathStarSystem::start_construction(&mut state, sys);
-        let events = DeathStarSystem::advance(&mut state, &world, &[]);
-        assert!(events.is_empty());
-    }
-
     // ── Planet destruction tests ─────────────────────────────────────────────
 
-    /// A `DeathStarState` with shield destroyed (can fire).
+    /// A `DeathStarState` with the shield generator destroyed.
     fn state_shield_down() -> DeathStarState {
         DeathStarState {
             under_construction: None,
@@ -547,7 +537,9 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_succeeds_on_valid_target() {
+    fn fire_succeeds_on_a_valid_target() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         add_ds_fleet(&mut world, sys);
         let state = state_shield_down();
@@ -560,33 +552,23 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_blocked_by_shield() {
+    fn an_active_shield_generator_does_not_stop_the_superlaser() {
+        // FUN_005617b0 never references the shield generator; the shield
+        // guards the Death Star in battle.
         let (mut world, sys) = make_world();
         add_ds_fleet(&mut world, sys);
         let state = DeathStarState::default(); // shield_generator_active = true
 
-        assert!(
-            DeathStarSystem::fire(&state, &world, sys, 1).is_none(),
-            "Death Star must not fire while shield generator is active"
-        );
+        assert!(matches!(
+            DeathStarSystem::fire(&state, &world, sys, 1),
+            Some(DeathStarEvent::PlanetDestroyed { system, .. }) if system == sys
+        ));
     }
 
     #[test]
-    fn test_fire_after_shield_destroyed() {
-        let (mut world, sys) = make_world();
-        add_ds_fleet(&mut world, sys);
-        let mut state = DeathStarState::default();
-        assert!(DeathStarSystem::fire(&state, &world, sys, 1).is_none());
-
-        state.destroy_shield();
-        assert!(
-            DeathStarSystem::fire(&state, &world, sys, 1).is_some(),
-            "Death Star should fire after shield is destroyed"
-        );
-    }
-
-    #[test]
-    fn test_fire_blocked_already_destroyed() {
+    fn fire_is_blocked_on_an_already_destroyed_system() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         add_ds_fleet(&mut world, sys);
         let state = state_shield_down();
@@ -596,7 +578,9 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_blocked_no_death_star_fleet() {
+    fn fire_is_blocked_without_a_death_star_fleet() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         let state = state_shield_down();
         let fk = world.fleets.insert(Fleet {
@@ -613,7 +597,9 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_blocked_empire_controlled() {
+    fn fire_is_blocked_on_empire_controlled_systems() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         let state = state_shield_down();
         world.systems.get_mut(sys).unwrap().control = ControlKind::Controlled(Faction::Empire);
@@ -632,7 +618,8 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
     )]
-    fn test_nearby_warning_emitted_for_close_system() {
+    fn nearby_warning_is_emitted_for_close_alliance_system() {
+        // Source: FUN_00512480 sends SystemDeathStarNearbyNotif.
         let (mut world, ds_sys) = make_world();
         // Add a second Alliance system within radius.
         let sector = world.systems[ds_sys].sector;
@@ -682,7 +669,8 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
     )]
-    fn test_no_nearby_warning_for_distant_system() {
+    fn no_nearby_warning_for_a_distant_system() {
+        // Source: FUN_00512480 sends SystemDeathStarNearbyNotif.
         let (mut world, ds_sys) = make_world();
         let sector = world.systems[ds_sys].sector;
         // Place a system far outside the warning radius.

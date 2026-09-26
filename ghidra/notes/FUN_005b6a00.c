@@ -1,0 +1,100 @@
+
+void __thiscall FUN_005b6a00(void *this,void *param_1)
+
+{
+  void *pvVar1;
+  int iVar2;
+  void *this_00;
+  int iVar3;
+  
+  pvVar1 = param_1;
+  FUN_005cd0f0(this,param_1);
+  param_1 = *(void **)((int)this + 0xec);
+  FUN_005f4db0(pvVar1,&param_1);
+  FUN_005f4db0(pvVar1,(int)this + 0xf4);
+  FUN_005f4db0(pvVar1,(int)this + 0xf8);
+  FUN_005f4db0(pvVar1,(int)this + 0x100);
+  FUN_005f4db0(pvVar1,(int)this + 0x108);
+  FUN_005f4db0(pvVar1,(int)this + 0x110);
+  FUN_005f4db0(pvVar1,(int)this + 0x114);
+  FUN_005f4db0(pvVar1,(int)this + 0x128);
+  FUN_005f4db0(pvVar1,(int)this + 300);
+  FUN_005f4db0(pvVar1,(int)this + 0x130);
+  FUN_005f4db0(pvVar1,(int)this + 0x134);
+  FUN_005f4db0(pvVar1,(int)this + 0x138);
+  param_1 = *(void **)((int)this + 0x13c);
+  FUN_005f4db0(pvVar1,&param_1);
+  param_1 = *(void **)((int)this + 0x140);
+  FUN_005f4db0(pvVar1,&param_1);
+  FUN_005f3590((void *)((int)this + 0x144),pvVar1);
+  FUN_005f4db0(pvVar1,(int)this + 0x150);
+  FUN_005f4db0(pvVar1,(int)this + 0x154);
+  FUN_005f4db0(pvVar1,(int)this + 0x158);
+  FUN_005f4db0(pvVar1,(int)this + 0x15c);
+  FUN_005f4db0(pvVar1,(int)this + 0x160);
+  FUN_005f4db0(pvVar1,(int)this + 0x164);
+  param_1 = *(void **)((int)this + 0x168);
+  FUN_005f4db0(pvVar1,&param_1);
+  FUN_005f4db0(pvVar1,(int)this + 0x16c);
+  param_1 = *(void **)((int)this + 0x170);
+  FUN_005f4db0(pvVar1,&param_1);
+  FUN_005f4db0(pvVar1,(int)this + 0x174);
+  FUN_005f4db0(pvVar1,(int)this + 0x178);
+  iVar2 = (int)this + 0x34c;
+  this_00 = (void *)((int)this + 0x17c);
+  param_1 = (void *)0x4;
+  do {
+    FUN_005b0d40(this_00,pvVar1);
+    FUN_005f4db0(pvVar1,iVar2);
+    iVar2 = iVar2 + 4;
+    this_00 = (void *)((int)this_00 + 0x74);
+    param_1 = (void *)((int)param_1 + -1);
+  } while (param_1 != (void *)0x0);
+  FUN_005f4db0(pvVar1,(int)this + 0x35c);
+  FUN_005f4db0(pvVar1,(int)this + 0x36c);
+  FUN_005f4db0(pvVar1,(int)this + 0x370);
+  FUN_005f4db0(pvVar1,(int)this + 0x374);
+  FUN_005f4db0(pvVar1,(int)this + 0x378);
+  FUN_005f4db0(pvVar1,(int)this + 0x37c);
+  FUN_005f4db0(pvVar1,(int)this + 0x380);
+  iVar2 = (int)this + 900;
+  iVar3 = 4;
+  do {
+    FUN_005f4db0(pvVar1,iVar2);
+    iVar2 = iVar2 + 4;
+    iVar3 = iVar3 + -1;
+  } while (iVar3 != 0);
+  FUN_005f4db0(pvVar1,(int)this + 0x394);
+  FUN_005f4db0(pvVar1,(int)this + 0x398);
+  FUN_005f4db0(pvVar1,(int)this + 0x39c);
+  FUN_005f4db0(pvVar1,(int)this + 0x3a0);
+  FUN_005f4db0(pvVar1,(int)this + 0x3a4);
+  FUN_005f4db0(pvVar1,(int)this + 0x3a8);
+  FUN_005f4db0(pvVar1,(int)this + 0x3ac);
+  FUN_005f4db0(pvVar1,(int)this + 0x3b0);
+  FUN_005f4db0(pvVar1,(int)this + 0x3b4);
+  FUN_005f4db0(pvVar1,(int)this + 0x3b8);
+  FUN_005f4db0(pvVar1,(int)this + 0x3bc);
+  FUN_005f4db0(pvVar1,(int)this + 0x3c0);
+  FUN_005f4db0(pvVar1,(int)this + 0x3c8);
+  FUN_005f4db0(pvVar1,(int)this + 0x3cc);
+  FUN_005f4db0(pvVar1,(int)this + 0x3d4);
+  FUN_005f4db0(pvVar1,(int)this + 0x3d8);
+  FUN_005f4db0(pvVar1,(int)this + 0x3dc);
+  FUN_005f4db0(pvVar1,(int)this + 0x3e0);
+  FUN_005f4db0(pvVar1,(int)this + 0x3e4);
+  FUN_005f4db0(pvVar1,(int)this + 1000);
+  FUN_005f4db0(pvVar1,(int)this + 0x3ec);
+  FUN_005f4db0(pvVar1,(int)this + 0x3f0);
+  FUN_005f4db0(pvVar1,(int)this + 0x3f4);
+  FUN_005f4db0(pvVar1,(int)this + 0x3f8);
+  FUN_005f4db0(pvVar1,(int)this + 0x3fc);
+  FUN_005f4db0(pvVar1,(int)this + 0x400);
+  FUN_005f4db0(pvVar1,(int)this + 0x404);
+  FUN_005f4db0(pvVar1,(int)this + 0x408);
+  FUN_005f4db0(pvVar1,(int)this + 0x40c);
+  FUN_005f4db0(pvVar1,(int)this + 0x414);
+  FUN_005f4db0(pvVar1,(int)this + 0x410);
+  return;
+}
+

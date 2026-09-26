@@ -5,15 +5,21 @@ This folder is the source of truth for restoring every visible surface from
 bitmap-driven interface. Replacement panels, invented controls, approximate
 geometry, and unverified asset mappings do not count as parity.
 
-The current P58-B06 space-battle checkpoint is approximately 96%
-implemented as a planning measure. Capital and fighter combat, collision,
-automatic groups, capability-sorted task forces with follower geometry,
-original results/options panels, resource 5030 stars, the provisional Death
-Star superlaser journey, and exact result-to-film trench-run routing now work.
-Independent visual review is a qualified A1 pass with no P0 or P1 findings.
-The strict result remains 0 of 106 accepted tactical cells until the native
-beam contract, persistent trench-run outcome, shared post-battle orchestration,
-native playback, and A0 gates pass.
+The current P58-B20 space-battle checkpoint maps all 106 canonical cells to
+deterministic A1 evidence through 87 journeys and 19 snapshots. Capital and
+fighter combat, tactical commands,
+original results and options panels, resource 5030 stars, empty-space
+presentation, native withdrawal confirmation, destroyed-state presentation,
+selected-ship contents, direct Escort, Battle Alert entry, tactical score and
+the complete 22-variant weapon-audio bank, all 285 source-addressed faction
+tactical voices, selected withdrawal/result/Death Star/trench-run voice
+transitions, source-exact mixed-task-force target rejection, exact fighter
+recovery completion and capacity feedback, disabled-hyperdrive withdrawal
+warning, production
+trench-run launch, and exact strategic loss
+persistence now work within their recorded bounds. The strict result remains
+0 of 106 accepted tactical cells until every row has authoritative A0 evidence
+and passes the complete comparison contract.
 
 ## Start here
 
@@ -22,6 +28,10 @@ native playback, and A0 gates pass.
 - Follow the current
   [batched execution plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md)
   for bundle boundaries, verification cadence, browser review, and commit gates.
+- Use the
+  [Tactical 106-Cell Acceptance Train](../../plans/2026-09-22-tooling-tactical-106-cell-acceptance.md)
+  for the final A0 capture, deterministic A1 mapping, comparison, and strict
+  `TAC-01` through `TAC-07` completion push.
 - Use its
   [acceleration sidecar](../../plans/2026-09-11-tooling-interface-parity-acceleration-sidecar.md)
   for the permanent muted harness, deterministic fixtures, visual comparisons,
@@ -64,6 +74,8 @@ native playback, and A0 gates pass.
   original-reference and filter-predicate gaps.
 - Review the [P49 Message Index rail evidence](evidence/2026-09-12-message-index-rail.md)
   for exact faction resting bitmaps and the still-open index behavior.
+- Review the [P60 Game Speed evidence](evidence/p60-game-speed/README.md)
+  for the original speed menu, stop-day pause, alert, and remaining gaps.
 - Review the [P50 GID menu-frame evidence](evidence/2026-09-12-gid-menu-frame.md)
   for original frame tiles, source-pixel checks, and the remaining menu gaps.
 - Review the [P51 GID hover and occlusion evidence](evidence/2026-09-12-gid-hover-and-occlusion.md)
@@ -168,6 +180,44 @@ native playback, and A0 gates pass.
   for capital and fighter combat, collision, retained formations, Death Star
   and trench-run routes, original result/options surfaces, the clean 120-case
   browser gate, qualified independent visual review, and remaining A0 boundary.
+- Review the [P58-B07 tactical matrix-contract evidence](evidence/2026-09-22-tactical-106-matrix-contract.md)
+  for the generated 106-cell denominator, exact family distribution, A0
+  provenance schema, exclusion checks, and deliberately unclaimed coverage.
+- Review the [P58-B08 tactical A0-ingestion evidence](evidence/2026-09-22-tactical-a0-ingestion.md)
+  for the guest provenance extension, fail-closed host registration path, and
+  explicit 0/106 capture-host boundary.
+- Review the [P58-B09 tactical A1 crosswalk](evidence/2026-09-22-tactical-a1-crosswalk.md)
+  for the 82 mapped cells, journey/snapshot distinction, and exact 24-cell
+  new-scenario queue.
+- Review the [P58-B10 tactical navigation and camera evidence](evidence/2026-09-23-tactical-navigation-camera.md)
+  for four navigation sets, ordered routes and targets, camera memory/chase,
+  Anvil and Stand Off, and the reduced ten-cell scenario queue.
+- Review the [P58-B11 tactical trench-run launch and persistence evidence](evidence/2026-09-23-tactical-trench-persistence.md)
+  for production order-6 launch, exact strategic capital/fighter loss
+  persistence, two bounded visual follow-ups, and the reduced eight-cell queue.
+- Review the [P58-B12 tactical Game Options and empty-space evidence](evidence/2026-09-23-tactical-game-options-empty-space.md)
+  for original COMMON `20002` routing, disabled mid-battle display controls,
+  empty-space starfield presentation, and the reduced six-cell queue.
+- Review the [P58-B13 tactical withdrawal-confirmation evidence](evidence/2026-09-23-tactical-withdraw-confirmation.md)
+  for executable-derived panel geometry, exact text/resource identities,
+  cancel/confirm routing, and the reduced five-cell queue.
+- Review the [P58-B14 tactical detail and Escort evidence](evidence/2026-09-23-tactical-detail-escort.md)
+  for destroyed presentation, compact selected-capital contents, source order
+  code 1 Escort, direct right-click routing, and the reduced two-cell queue.
+- Review the [P58-B15 tactical Battle Alert and audio evidence](evidence/2026-09-24-tactical-battle-alert-audio.md)
+  for the source-built pre-battle surface, paused Take Command transition,
+  MDATA 307 score, WAVE 13054 event cue, and complete 106-cell A1 crosswalk.
+- Review the [P58-B16 tactical weapon-audio evidence](evidence/2026-09-24-tactical-weapon-audio.md)
+  for corrected event semantics, all eight fire/impact families, all 22 WAVE
+  variants, production dispatch, and focused muted browser routing.
+- Review the [P58-B17 tactical command-voice evidence](evidence/2026-09-24-tactical-command-voice.md)
+  and [P58-B18 complete tactical voice-bank evidence](evidence/2026-09-25-tactical-complete-voice-bank.md)
+  for command acknowledgements, the complete 285-resource source table,
+  selected battle-transition dispatch, and focused muted browser proof.
+- Review the [P58-B19 mixed-task-force target evidence](evidence/2026-09-25-tactical-mixed-task-force-target.md)
+  and [P58-B20 recovery/withdrawal feedback evidence](evidence/2026-09-26-tactical-recovery-withdrawal-feedback.md)
+  for preserved focus orders, final-group recovery acknowledgement,
+  no-carrier-capacity feedback, and disabled-hyperdrive withdrawal warning.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 

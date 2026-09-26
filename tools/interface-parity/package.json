@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "bash ../../scripts/build-interface-test-wasm.sh",
-    "test:unit": "node --test command-events.test.mjs browser-launch.test.mjs",
+    "test:unit": "node --test *.test.mjs",
     "test:smoke": "node run.mjs --smoke",
     "test:gid": "node run.mjs --all",
     "test:gid:no-build": "node run.mjs --all --no-build",
-    "check": "node validate-catalog.mjs && node verify-production-exclusion.mjs"
+    "check": "node validate-catalog.mjs && node validate-tactical-matrix.mjs && node verify-tactical-a0-exclusion.mjs && node verify-production-exclusion.mjs"
   },
   "dependencies": {
     "ajv": "8.17.1",

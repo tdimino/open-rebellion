@@ -462,29 +462,6 @@ mod tests {
     }
 
     #[test]
-    fn ground_combat_resolves() {
-        let sys = make_system_key();
-        let troop = TroopKey::default();
-        let mut state = GroundCombatState::new(
-            sys,
-            "Hoth".into(),
-            true,
-            vec![(troop, "Rebel Infantry".into(), 100)],
-            vec![(troop, "Stormtroopers".into(), 50)],
-        );
-        assert_eq!(state.phase, GroundPhase::Engaging);
-
-        // Run until resolved.
-        for _ in 0..200 {
-            if state.step() {
-                break;
-            }
-        }
-        assert_eq!(state.phase, GroundPhase::Results);
-        assert!(state.winner.is_some());
-    }
-
-    #[test]
     fn ground_combat_stronger_wins() {
         let sys = make_system_key();
         let troop = TroopKey::default();
@@ -495,11 +472,13 @@ mod tests {
             vec![(troop, "Rebel Elite".into(), 200)],
             vec![(troop, "Scout Troop".into(), 30)],
         );
+        assert_eq!(state.phase, GroundPhase::Engaging);
         for _ in 0..200 {
             if state.step() {
                 break;
             }
         }
+        assert_eq!(state.phase, GroundPhase::Results);
         assert_eq!(state.winner, Some(GroundWinner::Attacker));
     }
 }

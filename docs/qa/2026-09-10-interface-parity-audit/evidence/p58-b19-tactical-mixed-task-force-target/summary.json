@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B19",
+  "status": "pass_mixed_task_force_target_rejected_strict_a0_pending",
+  "source_contract": {
+    "handler": "FUN_005a24d0",
+    "alliance": {
+      "source_event": "0x84",
+      "resource_id": 14101
+    },
+    "empire": {
+      "source_event": "0x102",
+      "resource_id": 15105
+    },
+    "rule": "selected_player_capitals_must_share_one_task_force_before_enemy_focus_assignment"
+  },
+  "implemented_behavior": [
+    "reject_mixed_capital_task_forces",
+    "preserve_manual_attack_and_escort_targets",
+    "queue_exact_faction_rejection_voice",
+    "preserve_same_task_force_replace_append_and_toggle"
+  ],
+  "browser_run": {
+    "run_id": "2026-09-25T17-11-51-529Z-58971",
+    "scenario": "production-group-presentation",
+    "passed": 4,
+    "failed": 0,
+    "muted_launches": 4,
+    "four_request_startups": 4,
+    "browser_processes_closed": 4
+  },
+  "verification": {
+    "behavior_first_failure": "alliance_rejection_test_failed_before_constructor_variant_and_helper_existed",
+    "workspace_tests": "731_passed_0_failed_32_ignored",
+    "focused_render_tests": "265_passed_0_failed_1_ignored",
+    "fixture_feature_render_tests": "266_passed_0_failed_2_ignored",
+    "harness_tests": "26_passed_0_failed",
+    "lookup_validation": "29_ship_ordinals_8_fighter_ordinals_285_voices",
+    "scoped_clippy": "pass_with_preexisting_argument_count_and_constant_assertion_warnings",
+    "matrix_coverage": "106_of_106_deterministic_A1",
+    "mutation": "11_total_8_caught_2_unviable_1_browser_bounded_input_survivor",
+    "browser_probe": "4_of_4_pass_no_assignment_path_and_exact_faction_voice",
+    "independent_browser_review": "pass_no_in_scope_blocker",
+    "strict_gate_run": false,
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_640x480": "40b0eb567e04d2cf0f06bbf33c1ab2d456ad2a7578d986acf5678d66bd7ddb0b",
+    "alliance_1280x800": "ebb95c94de11f5e8df9a235331a1709f473adb8b829697d24593a40dd65180ef",
+    "empire_640x480": "657264654ea8abb4133de3573052e195985c3ea911ed1b02f8dc6aa3ab5682a9",
+    "empire_1280x800": "fb7a8f8af725e8e84558c05f217cf990eba1bbbd03b587f59b3338075cca7fd6"
+  },
+  "fixture_wasm_sha256": "49ded0d0a0c7924015ed6789a785d08fee0f29d8c9c6abd2db41d457ffaf5a7c",
+  "production_wasm_sha256": "18e973bba2ecf9faf93b64fb33c8e100239760245568710b7deebf0ba4490bce",
+  "runtime_pack_sha256": "b76ed32899e1408f5433c899effb489681e8e01732e4dffca0274c9c6d355e5a",
+  "limits": [
+    "remaining_completion_destruction_recovery_and_warning_dispatch_open",
+    "ordered_trench_chatter_dispatch_open",
+    "exact_shared_rng_sequence_open",
+    "mixing_ducking_and_interruption_open",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ],
+  "proprietary_artifacts_committed": false
+}

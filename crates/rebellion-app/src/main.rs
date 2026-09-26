@@ -42,7 +42,7 @@ use rebellion_core::death_star::{DeathStarState, DeathStarSystem};
 use rebellion_core::economy::{EconomyEvent, EconomyState, EconomySystem};
 use rebellion_core::events::{EventAction, EventState, EventSystem};
 use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::ids::{FleetKey, TroopKey};
+use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
 use rebellion_core::jedi::{JediState, JediSystem};
 use rebellion_core::manufacturing::{ManufacturingState, ManufacturingSystem, QueueItem};
 use rebellion_core::missions::{
@@ -63,6 +63,11 @@ use rebellion_core::world::{
     VictoryConditions,
 };
 
+use rebellion_render::game_speed::{
+    choose_game_speed, draw_day_readout, draw_game_speed_menu, draw_pause_alert,
+    open_game_speed_menu_on_right_click, pause_alert_contains_screen_point, stepped_game_speed,
+    GameSpeedUiState,
+};
 use rebellion_render::panels::bombardment::{draw_bombardment, BombardmentPanelState};
 use rebellion_render::panels::death_star::draw_death_star;
 use rebellion_render::panels::jedi::{draw_jedi, JediPanelState};
@@ -73,18 +78,19 @@ use rebellion_render::{
     advisor_mission_result, advisor_uprising, draw_advisor, draw_audio_controls,
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer, draw_credits,
     draw_encyclopedia, draw_event_screen, draw_fleets, draw_galaxy_backdrop, draw_galaxy_map,
-    draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing, draw_missions,
-    draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
+    draw_game_options, draw_game_setup, draw_ground_combat, draw_main_menu, draw_manufacturing,
+    draw_missions, draw_multiplayer_setup, draw_officers, draw_save_load, draw_sector_windows,
     draw_system_windows, draw_tactical_view, handle_cockpit_egui_input, set_cockpit_viewport_clip,
     show_event_screen, update_event_screen, AdvisorFaction, AdvisorState, AssetRenderProfile,
     AudioVolumeState, BmpCache, CockpitButton, CockpitFaction, CockpitState, CreditsState,
-    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage, GameSetupAction,
-    GameSetupState, GroundAction, GroundCombatState, MainMenuAction, MainMenuState,
-    ManufacturingPanelState, MenuDestinationAction, MessageCategory, MessageLog, MessageLogState,
+    EncyclopediaState, EventScreenState, FleetsState, GalaxyMapState, GameMessage,
+    GameOptionsAction, GameOptionsOrigin, GameOptionsState, GameSetupAction, GameSetupState,
+    GroundAction, GroundCombatState, MainMenuAction, MainMenuState, ManufacturingPanelState,
+    MenuDestinationAction, MessageCategory, MessageLog, MessageLogState, MessageRail,
     MissionsPanelState, MultiplayerSetupAction, MultiplayerSetupState, MusicContext, OfficersState,
-    PanelAction, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
+    PanelAction, RailAudience, SectorWindowAction, SectorWindowState, SfxKind, SystemWindowAction,
     SystemWindowState, TacticalAction, TacticalState, TacticalTrenchRunOutcome, VideoError,
-    VideoPlayer, VoiceLine,
+    VideoPlayer,
 };
 
 /// Top-level game mode state machine.
@@ -107,6 +113,8 @@ enum GameMode {
     GameSetup,
     /// The main strategy game: galaxy map + War Room panels.
     Galaxy,
+    /// Original unified save, audio, and tactical-display options screen.
+    GameOptions { origin: GameOptionsOrigin },
     /// 2D tactical combat view for player-involved battles.
     TacticalCombat,
     /// Ground combat phase after space combat.
@@ -874,6 +882,7 @@ async fn main() {
 
     // ── Cockpit chrome ───────────────────────────────────────────────────────
     let mut cockpit_state = CockpitState::new(CockpitFaction::Alliance);
+    let mut game_speed_ui = GameSpeedUiState::default();
     let mut sector_window_state = SectorWindowState::default();
     let mut system_window_state = SystemWindowState::default();
     let mut bmp_cache = BmpCache::new();
@@ -917,6 +926,7 @@ async fn main() {
 
     // ── Audio state ─────────────────────────────────────────────────────────
     let mut audio_vol = AudioVolumeState::default();
+    let mut game_options_state = GameOptionsState::default();
     let sounds_dir = PathBuf::from("data/sounds");
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -929,6 +939,14 @@ async fn main() {
         if common_dll.exists() {
             engine.load_original_menu_sfx(&common_dll);
         }
+        let tactical_dll = original_game_dir().join("TACTICAL.DLL");
+        if tactical_dll.exists() {
+            engine.load_original_tactical_sfx(&tactical_dll);
+        }
+        engine.load_original_tactical_voice(
+            &original_game_dir().join("VOICEFXA.DLL"),
+            &original_game_dir().join("VOICEFXE.DLL"),
+        );
         audio_vol.backend_available = engine.is_available();
         engine
     };
@@ -936,12 +954,37 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let browser_main_theme = browser_audio_files.remove("music/main_theme.wav");
     #[cfg(target_arch = "wasm32")]
+    let browser_battle_theme = browser_audio_files.remove("music/battle.wav");
+    #[cfg(target_arch = "wasm32")]
     let browser_menu_sfx: Vec<_> = audio::MENU_SFX_ASSETS
         .iter()
         .filter_map(|&(kind, path, _)| browser_audio_files.remove(path).map(|bytes| (kind, bytes)))
         .collect();
     #[cfg(target_arch = "wasm32")]
-    let mut browser_menu_audio = if browser_main_theme.is_some() || !browser_menu_sfx.is_empty() {
+    let browser_tactical_sfx: Vec<_> = audio::TACTICAL_SFX_ASSETS
+        .iter()
+        .filter_map(|&(_, _, path, resource_id)| {
+            browser_audio_files
+                .remove(path)
+                .map(|bytes| (resource_id, bytes))
+        })
+        .collect();
+    #[cfg(target_arch = "wasm32")]
+    let browser_tactical_voice: Vec<_> = audio::tactical_voice_assets()
+        .into_iter()
+        .filter_map(|(faction, path, resource_id)| {
+            browser_audio_files
+                .remove(&path)
+                .map(|bytes| (faction, resource_id, bytes))
+        })
+        .collect();
+    #[cfg(target_arch = "wasm32")]
+    let mut browser_menu_audio = if browser_main_theme.is_some()
+        || browser_battle_theme.is_some()
+        || !browser_menu_sfx.is_empty()
+        || !browser_tactical_sfx.is_empty()
+        || !browser_tactical_voice.is_empty()
+    {
         // Initialise WebAudio and begin decoding before the first interaction.
         // Its resume handlers are then ready for the first user gesture.
         let mut engine = audio::AudioEngine::new();
@@ -950,6 +993,12 @@ async fn main() {
         }
         for (kind, bytes) in &browser_menu_sfx {
             engine.load_sfx_bytes(*kind, bytes);
+        }
+        for (resource_id, bytes) in &browser_tactical_sfx {
+            engine.load_tactical_sfx_bytes(*resource_id, bytes);
+        }
+        for (faction, resource_id, bytes) in &browser_tactical_voice {
+            engine.load_tactical_voice_bytes(*faction, *resource_id, bytes);
         }
         Some(engine)
     } else {
@@ -961,6 +1010,7 @@ async fn main() {
     {
         audio_vol.backend_available = browser_menu_audio.is_some();
     }
+    let mut tactical_music_active = false;
 
     let mut cutscene_player = open_cutscene(
         Path::new(INTRO_CUTSCENE),
@@ -1043,6 +1093,16 @@ async fn main() {
     loop {
         let dt = get_frame_time();
 
+        #[cfg(target_arch = "wasm32")]
+        if !browser_menu_audio_requested
+            && (is_mouse_button_pressed(macroquad::input::MouseButton::Left)
+                || is_key_pressed(KeyCode::Enter)
+                || is_key_pressed(KeyCode::Space)
+                || is_key_pressed(KeyCode::Tab))
+        {
+            browser_menu_audio_requested = true;
+        }
+
         // Apply theme on first frame (egui context exists after first next_frame)
         if !theme_applied {
             egui_macroquad::ui(|ctx| {
@@ -1069,13 +1129,22 @@ async fn main() {
                 }
             }
         } else if is_key_pressed(KeyCode::Escape) && !event_screen_state.is_active() {
-            if game_mode == GameMode::LoadGame {
+            if let GameMode::GameOptions { origin } = game_mode.clone() {
+                game_mode = match origin {
+                    GameOptionsOrigin::ShuttleCockpit => GameMode::MainMenu,
+                    GameOptionsOrigin::CommandCenter => GameMode::Galaxy,
+                    GameOptionsOrigin::TacticalBattle => GameMode::TacticalCombat,
+                };
+            } else if game_mode == GameMode::LoadGame {
                 save_load_panel_state.close();
                 game_mode = GameMode::MainMenu;
             } else if matches!(game_mode, GameMode::Credits | GameMode::MultiplayerSetup) {
                 game_mode = GameMode::MainMenu;
             } else if game_mode == GameMode::Galaxy {
-                if cockpit_state.gid_ui.menu_open {
+                if game_speed_ui.menu_anchor.is_some() {
+                    // Escape closes only the open Game Speed menu.
+                    game_speed_ui.menu_anchor = None;
+                } else if cockpit_state.gid_ui.menu_open {
                     cockpit_state.gid_ui.menu_open = false;
                     cockpit_state.gid_ui.category = None;
                 } else {
@@ -1107,22 +1176,20 @@ async fn main() {
             if is_key_pressed(KeyCode::R) {
                 map_state = GalaxyMapState::default();
             }
-            // Speed controls
-            if is_key_pressed(KeyCode::Space) {
-                if clock.speed == GameSpeed::Paused {
-                    clock.set_speed(GameSpeed::Normal);
+            // Game Speed keys from the manual's keyboard reference.
+            if is_key_down(KeyCode::LeftAlt) || is_key_down(KeyCode::RightAlt) {
+                let requested = if is_key_pressed(KeyCode::P) {
+                    Some(GameSpeed::Paused)
+                } else if is_key_pressed(KeyCode::KpAdd) {
+                    stepped_game_speed(&clock, true)
+                } else if is_key_pressed(KeyCode::KpSubtract) {
+                    stepped_game_speed(&clock, false)
                 } else {
-                    clock.set_speed(GameSpeed::Paused);
+                    None
+                };
+                if let Some(requested) = requested {
+                    choose_game_speed(&mut clock, requested);
                 }
-            }
-            if is_key_pressed(KeyCode::Key1) {
-                clock.set_speed(GameSpeed::Normal);
-            }
-            if is_key_pressed(KeyCode::Key2) {
-                clock.set_speed(GameSpeed::Fast);
-            }
-            if is_key_pressed(KeyCode::Key3) {
-                clock.set_speed(GameSpeed::Faster);
             }
             // Panel toggles (mutually exclusive left panels).
             macro_rules! toggle_panel {
@@ -1243,11 +1310,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            economy_tick,
-                            format!("New resources discovered at {name} ({new_output} units)"),
-                            MessageCategory::Event,
-                            *system,
+                        // Notification 0x20, System Resources Messages.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                economy_tick,
+                                format!("New resources discovered at {name} ({new_output} units)"),
+                                MessageCategory::Event,
+                                *system,
+                            ),
+                            MessageRail::Resource,
+                            system_audience(&world, *system),
                         ));
                     }
                     EconomyEvent::MaintenanceShortfall {
@@ -1259,13 +1331,18 @@ async fn main() {
                         } else {
                             "Empire"
                         };
-                        msg_log.push(GameMessage::new(
+                        // Notification 0xc, Maintenance Shortfall.
+                        msg_log.push(filed(
+GameMessage::new(
                             economy_tick,
                             format!(
                                 "{faction_str} reports maintenance shortfall across {deficit_system_count} systems"
                             ),
                             MessageCategory::Event,
-                        ));
+                        ),
+MessageRail::Manufacturing,
+Some(RailAudience::side(*faction_is_alliance)),
+));
                     }
                     _ => {} // Telemetry-only events (collection rate, garrison, incidents, support change tier)
                 }
@@ -1286,11 +1363,16 @@ async fn main() {
                     .systems
                     .get(completion.system)
                     .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                msg_log.push(GameMessage::at_system(
-                    completion.tick,
-                    format!("Construction complete at {sys_name}"),
-                    MessageCategory::Manufacturing,
-                    completion.system,
+                // Notification 0x21, Construction Complete.
+                msg_log.push(filed(
+                    GameMessage::at_system(
+                        completion.tick,
+                        format!("Construction complete at {sys_name}"),
+                        MessageCategory::Manufacturing,
+                        completion.system,
+                    ),
+                    MessageRail::Manufacturing,
+                    system_audience(&world, completion.system),
                 ));
                 advisor_manufacturing_complete(&mut advisor_state, &sys_name);
                 #[cfg(not(target_arch = "wasm32"))]
@@ -1314,18 +1396,25 @@ async fn main() {
             // ── Movement ────────────────────────────────────────────────────
             let arrivals = MovementSystem::advance(&mut movement_state, &tick_events);
             for arrival in &arrivals {
-                if apply_fleet_arrival(&mut world, &mut troop_transport_state, arrival).is_none() {
+                let Some(applied) =
+                    apply_fleet_arrival(&mut world, &mut troop_transport_state, arrival)
+                else {
                     continue;
-                }
+                };
                 let sys_name = world
                     .systems
                     .get(arrival.system)
                     .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                msg_log.push(GameMessage::at_system(
-                    arrival.tick,
-                    format!("Fleet arrived at {sys_name}"),
-                    MessageCategory::Mission,
-                    arrival.system,
+                // Notification 0xd, Unit Arrival.
+                msg_log.push(filed(
+                    GameMessage::at_system(
+                        arrival.tick,
+                        format!("Fleet arrived at {sys_name}"),
+                        MessageCategory::Mission,
+                        arrival.system,
+                    ),
+                    MessageRail::Fleet,
+                    Some(RailAudience::side(applied.is_alliance)),
                 ));
                 #[cfg(not(target_arch = "wasm32"))]
                 audio_engine.play_sfx(SfxKind::FleetArrival, &audio_vol);
@@ -1470,6 +1559,7 @@ async fn main() {
                         eprintln!("Skipping invalid tactical battle at {sys_name}: {error:?}");
                         continue;
                     }
+                    tactical_state.set_display_options(game_options_state.tactical_flags());
                     #[cfg(not(target_arch = "wasm32"))]
                     audio_engine.play_sfx(SfxKind::CombatStart, &audio_vol);
                     break; // Handle one player battle at a time.
@@ -1595,6 +1685,20 @@ async fn main() {
                 );
             }
 
+            // Observe embarked regiments after arrivals and landings, so a
+            // fleet that arrives and is ordered away again this tick still
+            // copies the arrival system's withdraw percent.
+            let mut running_regiments = if tick_events.is_empty() {
+                Vec::new()
+            } else {
+                BlockadeSystem::running_regiments(
+                    &mut blockade_state,
+                    &world,
+                    &movement_state,
+                    &troop_transport_state,
+                )
+            };
+
             // ── Fog of war ──────────────────────────────────────────────────
             let alliance_reveals =
                 FogSystem::advance(&mut fog_alliance_state, &world, &movement_state);
@@ -1633,6 +1737,11 @@ async fn main() {
                     &mut audio_engine,
                     #[cfg(not(target_arch = "wasm32"))]
                     &audio_vol,
+                );
+                rebellion_data::integrator::apply_mission_state_effects(
+                    &result.effects,
+                    &mut uprising_state,
+                    &mut death_star_state,
                 );
                 ai_state.mark_available(result.character);
 
@@ -1894,8 +2003,24 @@ async fn main() {
             }
 
             // ── Blockade ─────────────────────────────────────────────────────
-            let blockade_events =
+            let mut blockade_events =
                 BlockadeSystem::advance(&mut blockade_state, &world, &tick_events);
+            if let Some(last) = tick_events.last() {
+                running_regiments.extend(BlockadeSystem::running_regiments(
+                    &mut blockade_state,
+                    &world,
+                    &movement_state,
+                    &troop_transport_state,
+                ));
+                let running_rolls: Vec<f64> = (0..running_regiments.len())
+                    .map(|_| sim_rng.gen::<f64>())
+                    .collect();
+                blockade_events.extend(BlockadeSystem::resolve_running(
+                    &running_regiments,
+                    &running_rolls,
+                    last.tick,
+                ));
+            }
             for evt in &blockade_events {
                 match evt {
                     rebellion_core::blockade::BlockadeEvent::BlockadeStarted { system, tick } => {
@@ -1903,11 +2028,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Blockade established at {name}"),
-                            MessageCategory::Combat,
-                            *system,
+                        // Notification 7, Blockade Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Blockade established at {name}"),
+                                MessageCategory::Combat,
+                                *system,
+                            ),
+                            MessageRail::Conflict,
+                            Some(RailAudience::Both),
                         ));
                     }
                     rebellion_core::blockade::BlockadeEvent::BlockadeEnded { system, tick } => {
@@ -1915,11 +2045,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Blockade lifted at {name}"),
-                            MessageCategory::Combat,
-                            *system,
+                        // Notification 7, Blockade Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Blockade lifted at {name}"),
+                                MessageCategory::Combat,
+                                *system,
+                            ),
+                            MessageRail::Conflict,
+                            Some(RailAudience::Both),
                         ));
                     }
                     rebellion_core::blockade::BlockadeEvent::TroopDestroyed {
@@ -1927,19 +2062,22 @@ async fn main() {
                         troop,
                         tick,
                     } => {
-                        if let Some(sys) = world.systems.get_mut(*system) {
-                            sys.ground_units.retain(|&k| k != *troop);
-                        }
-                        world.troops.remove(*troop);
+                        // The regiment was aboard a fleet leaving the system.
+                        troop_transport_state.destroy_embarked(&mut world, *troop);
                         let name = world
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Troops destroyed by blockade at {name}"),
-                            MessageCategory::Combat,
-                            *system,
+                        // Notification 7, Blockade Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Troops destroyed by blockade at {name}"),
+                                MessageCategory::Combat,
+                                *system,
+                            ),
+                            MessageRail::Conflict,
+                            Some(RailAudience::Both),
                         ));
                     }
                 }
@@ -1986,11 +2124,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Uprising incident at {name}"),
-                            MessageCategory::Diplomacy,
-                            *system,
+                        // Notification 3, Uprising Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Uprising incident at {name}"),
+                                MessageCategory::Diplomacy,
+                                *system,
+                            ),
+                            MessageRail::PopularSupport,
+                            system_audience(&world, *system),
                         ));
                     }
                     rebellion_core::uprising::UprisingEvent::UprisingBegan { system, tick } => {
@@ -2026,11 +2169,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Uprising! {name} has changed hands"),
-                            MessageCategory::Diplomacy,
-                            *system,
+                        // Notification 3, Uprising Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Uprising! {name} has changed hands"),
+                                MessageCategory::Diplomacy,
+                                *system,
+                            ),
+                            MessageRail::PopularSupport,
+                            Some(RailAudience::Both),
                         ));
                         advisor_uprising(&mut advisor_state, &name, player_gains);
                     }
@@ -2039,11 +2187,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Uprising subdued at {name}"),
-                            MessageCategory::Diplomacy,
-                            *system,
+                        // Notification 3, Uprising Message.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Uprising subdued at {name}"),
+                                MessageCategory::Diplomacy,
+                                *system,
+                            ),
+                            MessageRail::PopularSupport,
+                            system_audience(&world, *system),
                         ));
                     }
                 }
@@ -2106,11 +2259,16 @@ async fn main() {
                             .systems
                             .get(*system)
                             .map_or_else(|| "unknown".into(), |s| s.name.clone());
-                        msg_log.push(GameMessage::at_system(
-                            *tick,
-                            format!("Death Star construction complete at {name}"),
-                            MessageCategory::Event,
-                            *system,
+                        // Notification 0x21, Construction Complete.
+                        msg_log.push(filed(
+                            GameMessage::at_system(
+                                *tick,
+                                format!("Death Star construction complete at {name}"),
+                                MessageCategory::Event,
+                                *system,
+                            ),
+                            MessageRail::Manufacturing,
+                            Some(RailAudience::Empire),
                         ));
                     }
                     rebellion_core::death_star::DeathStarEvent::PlanetDestroyed { .. } => {
@@ -2175,10 +2333,15 @@ async fn main() {
                     rebellion_core::research::TechType::Troop => "Troop",
                     rebellion_core::research::TechType::Facility => "Facility",
                 };
-                msg_log.push(GameMessage::new(
-                    current_tick,
-                    format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
-                    MessageCategory::Event,
+                // Notification 5, Research Report.
+                msg_log.push(filed(
+                    GameMessage::new(
+                        current_tick,
+                        format!("{faction_name} {tech_name} tech advanced to level {new_level}"),
+                        MessageCategory::Event,
+                    ),
+                    MessageRail::Manufacturing,
+                    Some(RailAudience::side(*faction_is_alliance)),
                 ));
             }
             // Apply research level-ups (advance() is now pure — caller must apply)
@@ -2231,10 +2394,15 @@ async fn main() {
                             rebellion_core::world::ForceTier::Training => "Jedi Training",
                             rebellion_core::world::ForceTier::Experienced => "Jedi Knight",
                         };
-                        msg_log.push(GameMessage::new(
-                            current_tick,
-                            format!("{name} has reached {tier_str} tier"),
-                            MessageCategory::Event,
+                        // Notification 0x1d, Force Skill Improvement.
+                        msg_log.push(filed(
+                            GameMessage::new(
+                                current_tick,
+                                format!("{name} has reached {tier_str} tier"),
+                                MessageCategory::Event,
+                            ),
+                            MessageRail::Mission,
+                            character_audience(&world, *character),
                         ));
                     }
                     rebellion_core::jedi::JediEvent::TrainingComplete { character } => {
@@ -2435,8 +2603,13 @@ async fn main() {
                         }
                         MainMenuAction::LoadGame => {
                             save_slots = read_save_slots(&saves_dir);
-                            save_load_panel_state.open_load();
-                            game_mode = GameMode::LoadGame;
+                            game_options_state.set_origin(GameOptionsOrigin::ShuttleCockpit);
+                            game_mode = GameMode::GameOptions {
+                                origin: GameOptionsOrigin::ShuttleCockpit,
+                            };
+                            macroquad::logging::info!(
+                                "[interface] command=load_options destination=game_options status=opened_original"
+                            );
                         }
                         MainMenuAction::Credits => {
                             credits_state.reset();
@@ -2531,6 +2704,48 @@ async fn main() {
                 egui_macroquad::draw();
             }
 
+            GameMode::GameOptions { origin } => {
+                let action = draw_game_options(
+                    &mut game_options_state,
+                    &mut bmp_cache,
+                    &save_slots,
+                    &mut audio_vol,
+                );
+                match action {
+                    GameOptionsAction::None => {}
+                    GameOptionsAction::Return => {
+                        game_mode = match origin {
+                            GameOptionsOrigin::ShuttleCockpit => GameMode::MainMenu,
+                            GameOptionsOrigin::CommandCenter => GameMode::Galaxy,
+                            GameOptionsOrigin::TacticalBattle => GameMode::TacticalCombat,
+                        };
+                        macroquad::logging::info!(
+                            "[game_options] command=return origin={:?}",
+                            origin
+                        );
+                    }
+                    GameOptionsAction::Restart => {
+                        game_mode = GameMode::MainMenu;
+                        macroquad::logging::info!("[game_options] command=restart");
+                    }
+                    GameOptionsAction::Exit => {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        audio_engine.stop_music();
+                        #[cfg(target_arch = "wasm32")]
+                        if let Some(engine) = browser_menu_audio.as_mut() {
+                            engine.stop_music();
+                        }
+                        break;
+                    }
+                    GameOptionsAction::Save { slot, name } => {
+                        panel_actions.push(PanelAction::SaveGame { slot, name });
+                    }
+                    GameOptionsAction::Load { slot } => {
+                        panel_actions.push(PanelAction::LoadGame { slot });
+                    }
+                }
+            }
+
             GameMode::GameSetup => {
                 let mut setup_action = pending_cockpit_start.take();
                 if setup_action.is_none() {
@@ -2588,6 +2803,7 @@ async fn main() {
                                         rng_seed.wrapping_add(u64::from(campaign_generation)),
                                     );
                                     clock = GameClock::new();
+                                    game_speed_ui = GameSpeedUiState::default();
                                     mfg_state = ManufacturingState::new();
                                     mission_state = MissionState::new();
                                     event_state = EventState::new();
@@ -2752,13 +2968,6 @@ async fn main() {
                                         &sounds_dir,
                                         &audio_vol,
                                     );
-                                    // Play the appropriate faction voice line for game start.
-                                    let greeting = if faction == MissionFaction::Alliance {
-                                        VoiceLine::AllianceMissionSuccess
-                                    } else {
-                                        VoiceLine::EmpireMissionSuccess
-                                    };
-                                    audio_engine.play_voice(greeting, &audio_vol);
                                 }
 
                                 // Sync advisor faction and send greeting
@@ -2807,6 +3016,8 @@ async fn main() {
                     .contains_screen_point(cockpit_layout, pointer)
                     || system_window_state.contains_screen_point(cockpit_layout, pointer)
                     || cockpit_state.gid_ui.menu_open
+                    || game_speed_ui.menu_anchor.is_some()
+                    || pause_alert_contains_screen_point(&clock, cockpit_layout, pointer)
                     || event_screen_state.is_active();
 
                 // Keep every macroquad map layer inside the shell's transparent
@@ -2842,6 +3053,11 @@ async fn main() {
 
                 set_cockpit_viewport_clip(None);
 
+                // The Message Index rail lights each category with unread
+                // messages for the player's side (FUN_0048a2a0).
+                cockpit_state.message_unread_mask =
+                    msg_log.unread_mask(player_faction == MissionFaction::Alliance);
+
                 // 4. All egui panels in a single ui() + draw() pass
                 egui_macroquad::ui(|ctx| {
                     // Register the cockpit background before panels so the
@@ -2864,6 +3080,32 @@ async fn main() {
                         if let Some(request) = interface_fixture_request {
                             interface_test_fixture::emit_selected(request, cockpit_state.gid_mode);
                         }
+                    }
+
+                    // The day readout is the Game Speed control; a right
+                    // click on it opens the original speed menu.
+                    draw_day_readout(ctx, cockpit_layout, cockpit_state.faction, clock.tick);
+                    let speed_input = !event_screen_state.is_active();
+                    if speed_input {
+                        open_game_speed_menu_on_right_click(
+                            ctx,
+                            &mut game_speed_ui,
+                            cockpit_layout,
+                            cockpit_state.faction,
+                        );
+                    }
+                    if let Some(speed) = draw_game_speed_menu(
+                        ctx,
+                        &mut game_speed_ui,
+                        &mut bmp_cache,
+                        cockpit_layout,
+                        cockpit_state.faction,
+                        speed_input,
+                    ) {
+                        choose_game_speed(&mut clock, speed);
+                    }
+                    if draw_pause_alert(ctx, &clock, &mut bmp_cache, cockpit_layout, speed_input) {
+                        clock.resume();
                     }
 
                     // War Room panels (mutually exclusive left panels)
@@ -2898,6 +3140,7 @@ async fn main() {
                             &mfg_state,
                             &mut mfg_panel_state,
                             player_faction,
+                            &research_state,
                         ) {
                             panel_actions.push(action);
                         }
@@ -2992,7 +3235,7 @@ async fn main() {
                             let err = mod_runtime
                                 .errors
                                 .iter()
-                                .find(|e| format!("{e:?}").contains(&m.name));
+                                .find(|e| e.mod_name() == m.name);
                             rebellion_render::ModInfo {
                                 name: m.name.clone(),
                                 version: m.version.clone(),
@@ -3001,7 +3244,7 @@ async fn main() {
                                 enabled: m.enabled,
                                 dependencies: m.dependencies.keys().cloned().collect(),
                                 has_error: err.is_some(),
-                                error_message: err.map(|e| format!("{e:?}")),
+                                error_message: err.map(ToString::to_string),
                             }
                         })
                         .collect();
@@ -3121,11 +3364,24 @@ async fn main() {
                                 return;
                             }
                         };
-                        macroquad::logging::info!(
-                            "[interface] command=0x{:x} destination={} status=pending_original_window",
-                            command,
-                            destination
-                        );
+                        if btn == CockpitButton::GameOptions {
+                            save_slots = read_save_slots(&saves_dir);
+                            game_options_state.set_origin(GameOptionsOrigin::CommandCenter);
+                            game_mode = GameMode::GameOptions {
+                                origin: GameOptionsOrigin::CommandCenter,
+                            };
+                            macroquad::logging::info!(
+                                "[interface] command=0x{:x} destination={} status=opened_original",
+                                command,
+                                destination
+                            );
+                        } else {
+                            macroquad::logging::info!(
+                                "[interface] command=0x{:x} destination={} status=pending_original_window",
+                                command,
+                                destination
+                            );
+                        }
                     }
                 });
                 egui_macroquad::draw();
@@ -3152,6 +3408,7 @@ async fn main() {
                         // Advance from placement to combat phase.
                         if let Some(ref mut session) = tactical_state.session {
                             session.phase = rebellion_render::BattlePhase::Combat;
+                            session.queue_battle_ready_voice();
                         }
                     }
                     TacticalAction::AutoResolve => {
@@ -3258,11 +3515,33 @@ async fn main() {
                             let battle_return = if strategic_results_applied {
                                 tactical_flow::summarize_results(&session)
                             } else {
-                                tactical_flow::apply_results(
+                                let before = tactical_flow::persistence_snapshot(&session, &world);
+                                let result = tactical_flow::apply_results(
                                     &session,
                                     &mut world,
                                     &mut troop_transport_state,
-                                )
+                                );
+                                let after = tactical_flow::persistence_snapshot(&session, &world);
+                                macroquad::logging::info!(
+                                    "[tactical_results] strategic_persistence applied=true attacker_present={}->{} defender_present={}->{} attacker_capitals={}->{} defender_capitals={}->{} attacker_fighters={}->{} defender_fighters={}->{} attacker_death_star={}->{} defender_death_star={}->{}",
+                                    before.attacker_present,
+                                    after.attacker_present,
+                                    before.defender_present,
+                                    after.defender_present,
+                                    before.attacker_capital_ships,
+                                    after.attacker_capital_ships,
+                                    before.defender_capital_ships,
+                                    after.defender_capital_ships,
+                                    before.attacker_fighter_squadrons,
+                                    after.attacker_fighter_squadrons,
+                                    before.defender_fighter_squadrons,
+                                    after.defender_fighter_squadrons,
+                                    before.attacker_has_death_star,
+                                    after.attacker_has_death_star,
+                                    before.defender_has_death_star,
+                                    after.defender_has_death_star,
+                                );
+                                result
                             };
                             if !strategic_results_applied {
                                 tactical_flow::reconcile_death_star_result(
@@ -3470,13 +3749,32 @@ async fn main() {
                             session.selected_fighter_group = None;
                         }
                     }
+                    TacticalAction::RetreatBeforeBattle => {
+                        if let Some(ref mut session) = tactical_state.session {
+                            let player_side = session.player_is_attacker;
+                            for ship in &mut session.ships {
+                                if ship.alive
+                                    && ship.is_attacker == player_side
+                                    && ship.subsystem_capacity.hyperdrive > 0
+                                    && ship.subsystem_condition.hyperdrive > 0
+                                {
+                                    ship.retreating = true;
+                                    ship.selected = false;
+                                }
+                            }
+                            session.selected_ship = None;
+                            session.selected_fighter_group = None;
+                            session.paused = false;
+                        }
+                    }
                     TacticalAction::OpenGameOptions => {
-                        // The tactical bitmap routes to the shared Game Options
-                        // window. Keep this fail-closed until that original
-                        // unified surface is restored rather than substituting
-                        // another menu.
+                        save_slots = read_save_slots(&saves_dir);
+                        game_options_state.set_origin(GameOptionsOrigin::TacticalBattle);
+                        game_mode = GameMode::GameOptions {
+                            origin: GameOptionsOrigin::TacticalBattle,
+                        };
                         macroquad::logging::info!(
-                            "[interface] command=0x133 destination=game_options status=pending_original_window"
+                            "[interface] command=0x133 destination=game_options status=opened_original"
                         );
                     }
                     TacticalAction::None => {}
@@ -3717,6 +4015,7 @@ async fn main() {
                                 campaign_config: &mut campaign_config,
                             }
                             .restore(state);
+                            game_speed_ui = GameSpeedUiState::default();
                             macroquad::logging::info!(
                                 "[campaign] loaded configuration={}",
                                 campaign_config.summary()
@@ -3794,6 +4093,7 @@ async fn main() {
                         }
                     }
                 }
+                PanelAction::SetGameSpeed(speed) => choose_game_speed(&mut clock, speed),
                 PanelAction::CloseSaveLoadPanel => {
                     save_load_panel_state.close();
                     show_save_load = false;
@@ -3857,7 +4157,105 @@ async fn main() {
             }
         }
 
-        // 6. Apply audio volume changes on both native and WebAudio backends.
+        // 6. Route the recovered tactical score and event cue. Battle Alert
+        // remains in the strategic sound context until Take Command.
+        let tactical_audio_context =
+            game_mode == GameMode::TacticalCombat && !tactical_state.battle_alert_open();
+        if tactical_audio_context && !tactical_music_active {
+            #[cfg(not(target_arch = "wasm32"))]
+            audio_engine.play_music_for_context(
+                rebellion_render::MusicContext::Combat,
+                &sounds_dir,
+                &audio_vol,
+            );
+            #[cfg(target_arch = "wasm32")]
+            if let (Some(engine), Some(bytes)) =
+                (browser_menu_audio.as_mut(), browser_battle_theme.as_deref())
+            {
+                engine.load_music_bytes(rebellion_render::MusicTrack::Battle, bytes);
+            }
+            macroquad::logging::info!(
+                "[audio] context=combat track=Battle mdata=307 loaded={} muted={}",
+                {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        original_game_dir().join("MDATA/MDATA.307").exists()
+                            || sounds_dir.join("music/battle.wav").exists()
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        browser_battle_theme.is_some()
+                    }
+                },
+                audio_vol.muted || audio_vol.music_muted
+            );
+            tactical_music_active = true;
+        } else if !tactical_audio_context && tactical_music_active {
+            #[cfg(not(target_arch = "wasm32"))]
+            if matches!(game_mode, GameMode::MainMenu | GameMode::Galaxy) {
+                audio_engine.play_music_for_context(
+                    if game_mode == GameMode::MainMenu {
+                        rebellion_render::MusicContext::MainMenu
+                    } else {
+                        rebellion_render::MusicContext::GalaxyMap
+                    },
+                    &sounds_dir,
+                    &audio_vol,
+                );
+            }
+            #[cfg(target_arch = "wasm32")]
+            if let (Some(engine), Some(bytes)) =
+                (browser_menu_audio.as_mut(), browser_main_theme.as_deref())
+            {
+                engine.load_music_bytes(rebellion_render::MusicTrack::MainTheme, bytes);
+            }
+            tactical_music_active = false;
+        }
+
+        if tactical_audio_context {
+            for cue in tactical_state.take_pending_audio_cues() {
+                #[cfg(not(target_arch = "wasm32"))]
+                let loaded = audio_engine.play_tactical_sfx(cue.resource_id, &audio_vol);
+                #[cfg(target_arch = "wasm32")]
+                let loaded = browser_menu_audio
+                    .as_mut()
+                    .is_some_and(|engine| engine.play_tactical_sfx(cue.resource_id, &audio_vol));
+                macroquad::logging::info!(
+                    "[audio] context=combat event=0x{:02x} wave={} routed=true loaded={} muted={}",
+                    cue.event.event_id(),
+                    cue.resource_id,
+                    loaded,
+                    audio_vol.muted
+                );
+            }
+            for cue in tactical_state.take_pending_voice_cues() {
+                #[cfg(not(target_arch = "wasm32"))]
+                let loaded =
+                    audio_engine.play_tactical_voice(cue.faction, cue.resource_id, &audio_vol);
+                #[cfg(target_arch = "wasm32")]
+                let loaded = browser_menu_audio.as_mut().is_some_and(|engine| {
+                    engine.play_tactical_voice(cue.faction, cue.resource_id, &audio_vol)
+                });
+                macroquad::logging::info!(
+                    "[audio] context=combat voice_event={:?} source_event=0x{:x} wave={} faction={:?} routed=true loaded={} muted={}",
+                    cue.event,
+                    cue.source_event,
+                    cue.resource_id,
+                    cue.faction,
+                    loaded,
+                    audio_vol.muted
+                );
+            }
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        if browser_menu_audio_requested {
+            if let Some(engine) = browser_menu_audio.as_mut() {
+                engine.try_play_loaded_music(&audio_vol);
+            }
+        }
+
+        // Apply audio volume changes on both native and WebAudio backends.
         if audio_vol.dirty {
             #[cfg(not(target_arch = "wasm32"))]
             audio_engine.apply_volume(&audio_vol);
@@ -4128,12 +4526,6 @@ fn apply_panel_action(
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
-                        let voice = if departure.is_alliance {
-                            VoiceLine::AllianceFleetDeparts
-                        } else {
-                            VoiceLine::EmpireFleetDeparts
-                        };
-                        audio_engine.play_voice(voice, audio_vol);
                     }
                 }
                 Err(error) => {
@@ -4176,14 +4568,29 @@ fn apply_panel_action(
             target_character,
             duration_roll,
         } => {
-            mission_state.dispatch(
-                kind,
-                faction,
-                character,
-                target,
-                target_character,
-                duration_roll,
-            );
+            if mission_state
+                .dispatch_guarded(
+                    kind,
+                    faction,
+                    character,
+                    target,
+                    target_character,
+                    duration_roll,
+                    world,
+                )
+                .is_none()
+            {
+                let char_name = world
+                    .characters
+                    .get(character)
+                    .map_or_else(|| "Unknown".into(), |c| c.name.clone());
+                msg_log.push(GameMessage::new(
+                    clock.tick,
+                    format!("{char_name} is already on a mission"),
+                    MessageCategory::Mission,
+                ));
+                return;
+            }
             let char_name = world
                 .characters
                 .get(character)
@@ -4213,7 +4620,7 @@ fn apply_panel_action(
             ));
         }
         PanelAction::CancelMission(id) => {
-            mission_state.cancel(id);
+            mission_state.release(id, world);
         }
         // Save/load actions are handled by the caller before dispatching here;
         // they require access to the full save state and are not routed through
@@ -4302,10 +4709,15 @@ fn apply_panel_action(
                         .systems
                         .get(system)
                         .map_or("Unknown", |system| system.name.as_str());
-                    msg_log.push(GameMessage::new(
-                        clock.tick,
-                        format!("Alliance headquarters destroyed at {system_name}"),
-                        MessageCategory::Combat,
+                    // Notification 0x1f, Rebel HQ Destroyed.
+                    msg_log.push(filed(
+                        GameMessage::new(
+                            clock.tick,
+                            format!("Alliance headquarters destroyed at {system_name}"),
+                            MessageCategory::Combat,
+                        ),
+                        MessageRail::Resource,
+                        Some(RailAudience::Both),
                     ));
                 }
             }
@@ -4342,18 +4754,28 @@ fn apply_panel_action(
                         effect
                     {
                         if let Some(c) = world.characters.get(character) {
-                            msg_log.push(GameMessage::new(
-                                clock.tick,
-                                format!("{} has been killed.", c.name),
-                                MessageCategory::Event,
+                            // Notification 0x1a, Character Health.
+                            msg_log.push(filed(
+                                GameMessage::new(
+                                    clock.tick,
+                                    format!("{} has been killed.", c.name),
+                                    MessageCategory::Event,
+                                ),
+                                MessageRail::Mission,
+                                character_audience(&world, character),
                             ));
                         }
                     }
                 }
-                msg_log.push(GameMessage::new(
-                    clock.tick,
-                    format!("{name} DESTROYED by Death Star superlaser!"),
-                    MessageCategory::Combat,
+                // Notification 0x15, Planet Destroyed.
+                msg_log.push(filed(
+                    GameMessage::new(
+                        clock.tick,
+                        format!("{name} DESTROYED by Death Star superlaser!"),
+                        MessageCategory::Combat,
+                    ),
+                    MessageRail::Mission,
+                    Some(RailAudience::Both),
                 ));
             }
         }
@@ -4397,15 +4819,8 @@ fn apply_panel_action(
             // emits the pending TickEvents. For instant effect, set speed to Faster.
             clock.tick += n;
         }
-        PanelAction::SetGameSpeed(speed) => {
-            let game_speed = match speed {
-                0 => GameSpeed::Paused,
-                1 => GameSpeed::Normal,
-                2 => GameSpeed::Fast,
-                _ => GameSpeed::Faster,
-            };
-            clock.set_speed(game_speed);
-        }
+        // The caller routes speed through the clock's pause stop.
+        PanelAction::SetGameSpeed(_) => {}
         PanelAction::ToggleDualAI => {
             *dual_ai_mode = !*dual_ai_mode;
             if *dual_ai_mode {
@@ -4706,29 +5121,26 @@ fn apply_mission_result(
         | MissionKind::DeathStarSabotage
         | MissionKind::Autoscrap => MessageCategory::Mission,
     };
-    log.push(GameMessage::at_system(
-        result.tick,
-        format!("{faction_name} {kind_name} mission at {sys_name} {outcome_str}"),
-        category,
-        result.target_system,
+    // Notifications 0x16 and 0x17, Mission Report and Mission Failed.
+    log.push(filed(
+        GameMessage::at_system(
+            result.tick,
+            format!("{faction_name} {kind_name} mission at {sys_name} {outcome_str}"),
+            category,
+            result.target_system,
+        ),
+        MessageRail::Mission,
+        Some(RailAudience::side(
+            result.faction == MissionFaction::Alliance,
+        )),
     ));
 
     // SFX + voice lines for mission outcomes
     #[cfg(not(target_arch = "wasm32"))]
     if result.outcome == rebellion_core::missions::MissionOutcome::Success {
         audio_engine.play_sfx(SfxKind::MissionSuccess, audio_vol);
-        let voice = match result.faction {
-            MissionFaction::Alliance => VoiceLine::AllianceMissionSuccess,
-            MissionFaction::Empire => VoiceLine::EmpireMissionSuccess,
-        };
-        audio_engine.play_voice(voice, audio_vol);
     } else {
         audio_engine.play_sfx(SfxKind::MissionFail, audio_vol);
-        let voice = match result.faction {
-            MissionFaction::Alliance => VoiceLine::AllianceMissionFail,
-            MissionFaction::Empire => VoiceLine::EmpireMissionFail,
-        };
-        audio_engine.play_voice(voice, audio_vol);
     }
 
     for effect in &result.effects {
@@ -4867,11 +5279,18 @@ fn apply_mission_result(
                     .characters
                     .get(*decoy_character)
                     .map_or_else(|| "Unknown".into(), |c| c.name.clone());
-                log.push(GameMessage::at_system(
-                    result.tick,
-                    format!("Mission intercepted by decoy {char_name} at {sys_name}"),
-                    MessageCategory::Mission,
-                    *system,
+                // Notification 0x17, Mission Failed.
+                log.push(filed(
+                    GameMessage::at_system(
+                        result.tick,
+                        format!("Mission intercepted by decoy {char_name} at {sys_name}"),
+                        MessageCategory::Mission,
+                        *system,
+                    ),
+                    MessageRail::Mission,
+                    Some(RailAudience::side(
+                        result.faction == MissionFaction::Alliance,
+                    )),
                 ));
             }
             MissionEffect::CharacterEscaped {
@@ -4906,14 +5325,23 @@ fn apply_mission_result(
                         sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
                     }
                 }
-                // Clear uprising — uprising_state not accessible here, handled in simulation layer
+                // The caller ends the uprising via apply_mission_state_effects.
             }
             MissionEffect::DeathStarSabotaged { ticks_delayed } => {
-                // Death Star delay applied in simulation layer (death_star_state.add_sabotage_delay)
-                log.push(GameMessage::new(
-                    result.tick,
-                    format!("Death Star construction sabotaged! {ticks_delayed} ticks delayed."),
-                    MessageCategory::Mission,
+                // The caller applies the delay via apply_mission_state_effects.
+                // Notification 0x23, Death Star Sabotaged.
+                log.push(filed(
+                    GameMessage::new(
+                        result.tick,
+                        format!(
+                            "Death Star construction sabotaged! {ticks_delayed} ticks delayed."
+                        ),
+                        MessageCategory::Mission,
+                    ),
+                    MessageRail::Mission,
+                    Some(RailAudience::side(
+                        result.faction == MissionFaction::Alliance,
+                    )),
                 ));
             }
         }
@@ -5077,11 +5505,16 @@ fn apply_automatic_bombardment(
         ));
     }
     if headquarters_destroyed {
-        log.push(GameMessage::at_system(
-            tick,
-            format!("Alliance headquarters destroyed at {system_name}"),
-            MessageCategory::Combat,
-            system,
+        // Notification 0x1f, Rebel HQ Destroyed.
+        log.push(filed(
+            GameMessage::at_system(
+                tick,
+                format!("Alliance headquarters destroyed at {system_name}"),
+                MessageCategory::Combat,
+                system,
+            ),
+            MessageRail::Resource,
+            Some(RailAudience::Both),
         ));
     }
 }
@@ -5102,11 +5535,16 @@ fn apply_system_occupation(
             .systems
             .get(system)
             .map_or("unknown", |value| value.name.as_str());
-        log.push(GameMessage::at_system(
-            tick,
-            format!("{name} occupied by {winner:?}"),
-            MessageCategory::Combat,
-            system,
+        // Notification 4, System Control Message.
+        log.push(filed(
+            GameMessage::at_system(
+                tick,
+                format!("{name} occupied by {winner:?}"),
+                MessageCategory::Combat,
+                system,
+            ),
+            MessageRail::PopularSupport,
+            Some(RailAudience::Both),
         ));
     }
 
@@ -5254,14 +5692,20 @@ fn apply_ai_actions(
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
                 roll_idx += 1;
                 let ai_faction = ai_state.faction.unwrap_or(AiFaction::Empire);
-                mission_state.dispatch(
-                    *kind,
-                    ai_faction.as_mission_faction(),
-                    *character,
-                    *target_system,
-                    *target_character,
-                    roll,
-                );
+                if mission_state
+                    .dispatch_guarded(
+                        *kind,
+                        ai_faction.as_mission_faction(),
+                        *character,
+                        *target_system,
+                        *target_character,
+                        roll,
+                        world,
+                    )
+                    .is_none()
+                {
+                    continue;
+                }
                 ai_state.mark_busy(*character);
                 let faction_name = match ai_faction {
                     AiFaction::Alliance => "Alliance",
@@ -5307,12 +5751,6 @@ fn apply_ai_actions(
                         #[cfg(not(target_arch = "wasm32"))]
                         {
                             audio_engine.play_sfx(SfxKind::FleetDeparture, audio_vol);
-                            let voice = if is_alliance {
-                                VoiceLine::AllianceFleetDeparts
-                            } else {
-                                VoiceLine::EmpireFleetDeparts
-                            };
-                            audio_engine.play_voice(voice, audio_vol);
                         }
                         let reason_str = match reason {
                             FleetMoveReason::Attack => "attack",
@@ -5396,6 +5834,35 @@ fn draw_fullscreen_texture(texture: &Texture2D) {
     );
 }
 
+/// File a report on the Message Index rail when some side receives it.
+fn filed(message: GameMessage, rail: MessageRail, audience: Option<RailAudience>) -> GameMessage {
+    match audience {
+        Some(audience) => message.on_rail(rail, audience),
+        None => message,
+    }
+}
+
+/// The side that controls `system`, whose Message Index receives its reports.
+fn system_audience(world: &GameWorld, system: SystemKey) -> Option<RailAudience> {
+    match world.systems.get(system)?.control.faction()? {
+        Faction::Alliance => Some(RailAudience::Alliance),
+        Faction::Empire => Some(RailAudience::Empire),
+        Faction::Neutral => None,
+    }
+}
+
+/// The side a character serves, whose Message Index receives its reports.
+fn character_audience(world: &GameWorld, character: CharacterKey) -> Option<RailAudience> {
+    let character = world.characters.get(character)?;
+    if character.is_alliance {
+        Some(RailAudience::Alliance)
+    } else if character.is_empire {
+        Some(RailAudience::Empire)
+    } else {
+        None
+    }
+}
+
 fn victory_winner_is_alliance(outcome: &rebellion_core::victory::VictoryOutcome) -> bool {
     match outcome {
         rebellion_core::victory::VictoryOutcome::HqCaptured { winner, .. }
@@ -5463,12 +5930,26 @@ mod tactical_ground_tests {
     }
 
     #[test]
-    fn campaign_victory_faction_does_not_depend_on_the_local_player() {
+    fn each_victory_outcome_names_its_winning_faction() {
         let system = rebellion_core::ids::SystemKey::default();
         assert!(victory_winner_is_alliance(
             &rebellion_core::victory::VictoryOutcome::HqCaptured {
                 winner: Faction::Alliance,
                 loser: Faction::Empire,
+                hq_system: system,
+            }
+        ));
+        assert!(!victory_winner_is_alliance(
+            &rebellion_core::victory::VictoryOutcome::HqCaptured {
+                winner: Faction::Empire,
+                loser: Faction::Alliance,
+                hq_system: system,
+            }
+        ));
+        assert!(!victory_winner_is_alliance(
+            &rebellion_core::victory::VictoryOutcome::HqDestroyed {
+                winner: Faction::Empire,
+                loser: Faction::Alliance,
                 hq_system: system,
             }
         ));
@@ -5657,6 +6138,7 @@ mod tactical_ground_tests {
                     order: rebellion_render::tactical_view::TacticalOrder::None,
                     tactic: rebellion_render::tactical_view::TacticalTactic::StandOff,
                     attack_target: None,
+                    escort_target: None,
                     recovery_state: rebellion_render::tactical_view::TacticalFighterRecoveryState::AwaitingCarrier,
                     recovery_target: None,
                 },
@@ -5697,6 +6179,7 @@ mod tactical_ground_tests {
                     order: rebellion_render::tactical_view::TacticalOrder::None,
                     tactic: rebellion_render::tactical_view::TacticalTactic::StandOff,
                     attack_target: None,
+                    escort_target: None,
                     recovery_state: rebellion_render::tactical_view::TacticalFighterRecoveryState::AwaitingCarrier,
                     recovery_target: None,
                 },
@@ -5718,6 +6201,7 @@ mod tactical_ground_tests {
             death_star_beam: None,
             trench_run_outcome: None,
             trench_run_cinematic_pending: false,
+            navigation_sets: std::array::from_fn(|_| Vec::new()),
             source_layout: rebellion_render::tactical_view::OriginalTacticalLayout::default(),
             selected_ship: None,
             selected_fighter_group: None,
@@ -5726,6 +6210,8 @@ mod tactical_ground_tests {
             combat_tick: 1,
             weapon_effects: vec![],
             impact_effects: vec![],
+            pending_audio_cues: vec![],
+            pending_voice_cues: vec![],
             field_effects: vec![],
             subsystem_repairs: vec![],
             paused: false,
@@ -5788,6 +6274,7 @@ mod tactical_ground_tests {
                 z: 0.0,
             },
             source_waypoint: None,
+            navigation_route: Vec::new(),
             source_collision_envelope: None,
             name: "Ship".into(),
             x: 0.0,
@@ -5832,6 +6319,9 @@ mod tactical_ground_tests {
             shield_recharge_carry: 0.0,
             weapon_recharge_queue: Vec::new(),
             attack_target: None,
+            manual_targets: Vec::new(),
+            escort_target: None,
+            contents: Vec::new(),
             retreating: false,
             retreat_progress: 0.0,
             retreated: false,

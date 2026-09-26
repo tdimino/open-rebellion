@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-rebellion.example/schemas/tactical-catalog-v1.json",
+  "type": "object",
+  "required": ["schema_version", "family", "fixture_namespace", "status", "factions", "viewports", "scenarios"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "family": { "const": "TAC-01..TAC-07" },
+    "fixture_namespace": { "const": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "factions": {
+      "const": ["alliance", "empire"]
+    },
+    "viewports": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "width", "height", "device_scale_factor"]
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["slug", "description", "fixture_codes", "execution_kind", "expected_status", "audit_cells", "acceptance"],
+        "properties": {
+          "slug": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 },
+          "fixture_codes": {
+            "type": "object",
+            "required": ["alliance", "empire"],
+            "properties": {
+              "alliance": { "type": "integer", "minimum": 1 },
+              "empire": { "type": "integer", "minimum": 1 }
+            }
+          },
+          "execution_kind": { "enum": ["journey", "snapshot", "negative-control"] },
+          "expected_status": { "const": "battle-ready" },
+          "audit_cells": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^TAC-0[1-7]-C\\d{3}$" }
+          },
+          "acceptance": { "type": "string", "minLength": 1 }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "execution_kind": { "const": "negative-control" } },
+              "required": ["execution_kind"]
+            },
+            "then": {
+              "properties": { "audit_cells": { "type": "array", "maxItems": 0 } }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

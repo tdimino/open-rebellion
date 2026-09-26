@@ -28,8 +28,8 @@ mixing, or genuine two-peer ordering.
 | 2 | `FUN_005a7500`; vtables `0x0066c2d0`, `0x0066bdd0`, `0x0066bdb8`, `0x0066c390`, `0x0066c380`, `0x0066c370`; registered event slots | Concrete handlers for groups, targets, missions, formations, navigation, damage, recovery, retreat, pause, results, and Death Star events |
 | 3 | `FUN_00597610_ship_db`; registry order consumed by `FUN_005ab650`; `CAPSHPSD.DAT`; `FIGHTSD.DAT` | Complete in P58A: definitive ship/fighter ordinal-to-DAT identity and removal of the approximate `class_to_sprite_id` path |
 | 4 | `FUN_005ab650`, `FUN_005a9030`, `FUN_005adfa0`, `FUN_005c1100`, `FUN_005c12a0`, `FUN_00595be0`, `FUN_005c1080`, `FUN_005d9640`, `FUN_005c7150`, `FUN_005c63f0`, `FUN_0059f680`, `FUN_005cfec0`, `0x005d4af0`; preserve `SYSTEMSD.picture_id` | Production placement on the recovered force-dependent extent and lanes, fighter groups, bounds, planet selection, resource family, production camera distance, and stable selected-object frame binding. Authored coordinates and handedness are proven in P57B2C1, live capital-family drawing in P58B, fighter resources plus projected capital interaction in P58C, all independent fighter-detail transitions in P58D, source-backed task-force and RGBY presentation in P58E, the exact system-selected planet pair in P58F1, and automatic production grouping in P58-B06. Exact planet placement remains open. |
-| 5 | `TACTICALRESULT_UPDATE`; `FUN_005caf20`, `FUN_005caf50`, `FUN_005cfec0`; `FUN_005c0fb0`, `FUN_005c0ff0`; `FUN_0059cc60`, `FUN_0059cc80`; `FUN_00421ba0`; callers and setters around `FUN_0040a700` states `7`–`9` and `0x15`–`0x17`; `FUN_005445d0_combat_result`; Battle Alert and Death Star callbacks | P58F17C proves result state 6 selects MDATA.201, state 7 selects MDATA.202, both return to tactical combat, and campaign victory must not reuse those films. Complete results composition, simulate/observe flow, reports, native playback, and shared strategic return remain open. |
-| 6 | `FUN_005bae60`; vtable `0x0066c748`; audio-manager callers; TACTICAL WAVE `13000`–`13065`; TEXTTACT `MDATA.401`–`MDATA.406` | Event-to-SFX/voice mapping, faction variants, and the missing tactical-audio staging path |
+| 5 | `TACTICALRESULT_UPDATE`; `FUN_005caf20`, `FUN_005caf50`, `FUN_005cfec0`; `FUN_005c0fb0`, `FUN_005c0ff0`; `FUN_0059cc60`, `FUN_0059cc80`; `FUN_00421ba0`; callers and setters around `FUN_0040a700` states `7`–`9` and `0x15`–`0x17`; `FUN_005445d0_combat_result`; `FUN_0044f860`; Battle Alert and Death Star callbacks | P58-B15 restores the source-built faction Battle Alert and its Take Command path. P58F17C proves result state 6 selects MDATA.201, state 7 selects MDATA.202, both return to tactical combat, and campaign victory must not reuse those films. Complete results composition, simulate/observe comparison, reports, native playback, and shared strategic return remain open. |
+| 6 | `FUN_005a7500`; `FUN_005bae60`; `FUN_005ba980`; `FUN_005bad50`; `FUN_005ba520`; `FUN_005b3f10`; `FUN_005b8630`; `FUN_005a0240`; `FUN_005b1b70`; vtable `0x0066c748`; audio-manager callers; TACTICAL WAVE `13000`–`13065`; VOICEFXA `14001`–`14122`, `15133`–`15163`; VOICEFXE `15001`–`15132`; TEXTTACT `MDATA.401`–`MDATA.406` | P58-B15 stages MDATA.307. P58-B16 maps and emits all 22 weapon variants. P58-B18 maps and transports all 285 faction voices and dispatches selected withdrawal/result/Death Star/trench-run transitions. P58-B20 restores final fighter-recovery and disabled-hyperdrive withdrawal feedback plus exact no-carrier-capacity routing. Recover remaining completion/destruction/warning/ordered-trench callers, exact shared-RNG sequencing, ducking, interruption, and native audible comparison. |
 | 7 | `FUN_00596ad0`, `FUN_005c2e60`, `FUN_005d4d10`, `FUN_005d9eb0`, `FUN_005da150`, `FUN_005d59e0`; retained-mode COM slots | Back plane, quality, filtering, culling, material, and lighting rules. Palette realization is proven in P57B2C1, the light rig in P57B2C2A, and remaining device/material state in P57B2C2B. |
 | 8 | `FUN_005a7500`, `FUN_005d39a0`, `FUN_005d3e90`, `FUN_005d41a0`, `FUN_005d3de0`, `FUN_005ee590`, `LAB_005eeb90`; field handlers `FUN_005b23e0` through `FUN_005b25d0`, `FUN_005d3ac0`, `FUN_005d3cc0`; subsystem constructors `FUN_005e45f0`, `FUN_005e7540`, `FUN_005e77c0`; damage path `FUN_005b54d0`, `0x005b1970`, `0x005b1ab0`, `FUN_005b05c0`, `FUN_0040b8a0`; repair and mobility `FUN_005b0330`, `FUN_005b1490`, `FUN_005b16b0`, `FUN_005b1790`, `FUN_005b17f0`; maneuver and movement `FUN_005ad750`, `FUN_005afb70`, `FUN_005b2f30`, `FUN_005cd640`, `FUN_005cd2d0`, `FUN_005cd460`; command panels `FUN_005e4110`, `FUN_005e7030`, `FUN_005dcc70`, `FUN_005dd080`, `FUN_005dd140`, `FUN_005dd290`, `FUN_005dd3a0`, `FUN_005def00`, `FUN_005df110`, `FUN_005df4f0`, `FUN_005df5f0`, `FUN_005df660`, `FUN_005df6b0`; order execution `FUN_005ca6d0`, `FUN_005cef00`, `FUN_005cf1a0`, `FUN_005cf410`, `FUN_005cf680`, `FUN_005cf930`, `FUN_005cf940`, `FUN_005cf980`, `FUN_005d21b0`, `FUN_005cda40`, `FUN_005a9530`, `FUN_005a8f70`; progression `FUN_005b9c60`, `FUN_005ba270`, `FUN_005cf190`, `FUN_005cf8f0`, `FUN_005b1e10`, `FUN_005b84e0`, `FUN_005b8630`, `_DAT_0066d088`; attack acquisition `FUN_005d0b10`, `FUN_005d0bb0`, `FUN_005c91e0`, `FUN_005c91c0`, `FUN_005f5060`, `FUN_005a8fc0`, vtables `0x0066cf48`, `0x0066cf78`; grouping and formation `FUN_005c81d0`, `FUN_005c8300`, `FUN_005c83c0`, `FUN_005cbbc0`, `FUN_005eb040`, `FUN_005ea250`, `FUN_005ec400`; BMP families `1105`–`1195`, `1201`–`1225`, `1308`, `1309`; type-303 families `3020`–`3375`, `3500`–`3527`, `3600`–`3627`, `4200`–`4204`, `5030` | P58F2 through P58-B06 complete target effects, retained projectile families, fields, subsystem damage and repair, mobility, maneuver integration, authentic command panels, maneuver execution and progression, typed targeting and reacquisition, capital and fighter weapon behavior, collision, automatic groups, capability-sorted task forces, forward-relative retained formation geometry, the separate Death Star object, and its control journey. Exact global RNG sequencing, original arrival callbacks and recovery trajectories, exact superlaser beam dimensions and timing, and A0 comparison remain open. |
 | 9 | Fixture schema and shared result path | Stable seed/clock, explicit system/fleet/class DAT IDs, original ordinal/resources, state fingerprints, event trace, losses, winner, reports, and destination |
@@ -48,8 +48,30 @@ mixing, or genuine two-peer ordering.
 - [`FUN_005a7500`](../../../ghidra/notes/FUN_005a7500.c) is the tactical battle
   manager/controller registry. It is not merely an individual ship constructor.
 - [`FUN_005c2e60`](../../../ghidra/notes/FUN_005c2e60.c) selects and realizes a
-  type-303 palette. `TACTICAL.DLL` also contains 66 WAVE resources (`13000`–
-  `13065`) that the current audio staging path does not yet ingest.
+  type-303 palette. `TACTICAL.DLL` contains 66 WAVE resources (`13000`–
+  `13065`); P58-B16 maps and stages all 22 weapon-event variants at
+  `13033–13054`.
+- [`FUN_0044f860`](../../../ghidra/notes/FUN_0044f860.c) constructs the faction
+  Battle Alert from frames 10710/10711, scenes 10712/10713, rails 10820/10821,
+  four tab families, and Retreat, Simulate, and Take Command controls.
+- `FUN_005a7500` registers laser, turbolaser, ion, and torpedo fire and impact
+  events `0x0d–0x14`. `FUN_005bae60`, `FUN_005ba980`, `FUN_005bad50`, and
+  `FUN_005ba520` establish their tactical audio-manager resource families and
+  variant selection. WAVE `13033–13054` supplies 22 weapon variants;
+  MDATA.307 supplies the battle score.
+- `FUN_005bae60` establishes a continuous tactical voice table: Alliance
+  `0x20–0x99` maps to `14001–14122`, Imperial `0x9a–0x11d` maps to
+  `15001–15132`, and Alliance trench events `0x11e–0x13c` map to
+  `15133–15163`. P58-B17 follows the command callers at `FUN_005a3020`, `FUN_005a3f00`,
+  `FUN_005a4e50`, `FUN_005a3aa0`, `FUN_005a3740`, `FUN_005a3850`,
+  `FUN_005a3630`, and `FUN_005a48d0` to restore 90 exact battle-ready,
+  maneuver, attack, formation, and mission recordings. P58-B18 transports all
+  285 resources and dispatches selected withdrawal, battle-outcome, Death Star,
+  and RGBY trench-run transitions. P58-B20 follows `FUN_005b8630` and
+  `FUN_005a0240`/`FUN_005b1b70` for final fighter recovery and
+  disabled-hyperdrive withdrawal feedback, and activates exact no-slot
+  recovery-capacity routing. Remaining completion, destruction, warning, and
+  ordered trench callers remain open.
 - The current fixture selects exact system DAT identities for its two faction
   cases and emits stable system, participant, layout, palette, tactical
   ordinal, and resource-base identities. P58A browser-proves four

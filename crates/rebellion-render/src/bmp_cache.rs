@@ -329,6 +329,8 @@ pub enum DllSource {
     Tactical,
     /// `GOKRES.DLL` — entity status sprites, character portraits, ship icons
     Gokres,
+    /// `REBDLOG.DLL` — in-game alert and dialog frames
+    Rebdlog,
 }
 
 impl DllSource {
@@ -342,6 +344,7 @@ impl DllSource {
             DllSource::Common => "common-dll",
             DllSource::Tactical => "tactical-dll",
             DllSource::Gokres => "gokres-dll",
+            DllSource::Rebdlog => "rebdlog-dll",
         }
     }
 
@@ -353,6 +356,7 @@ impl DllSource {
             DllSource::Common => "common",
             DllSource::Tactical => "tactical",
             DllSource::Gokres => "gokres",
+            DllSource::Rebdlog => "rebdlog",
         }
     }
 }
@@ -374,6 +378,37 @@ pub mod resources {
     pub mod common {
         /// Main title-screen background.
         pub const MAIN_MENU_BG: u32 = 20001;
+        /// Unified in-game Game Options screen.
+        pub const GAME_OPTIONS_BG: u32 = 20002;
+
+        /// Game Options music toggle: normal, pressed, and disabled.
+        pub const OPTIONS_MUSIC_NORMAL: u32 = 10040;
+        pub const OPTIONS_MUSIC_PRESSED: u32 = 10041;
+        pub const OPTIONS_MUSIC_DISABLED: u32 = 10042;
+        /// Game Options tactical toggle: on, pressed, and off or disabled.
+        pub const OPTIONS_TOGGLE_ON: u32 = 10043;
+        pub const OPTIONS_TOGGLE_PRESSED: u32 = 10044;
+        pub const OPTIONS_TOGGLE_OFF: u32 = 10045;
+        /// Per-slot save control: normal, pressed, and disabled.
+        pub const OPTIONS_SAVE_NORMAL: u32 = 10046;
+        pub const OPTIONS_SAVE_PRESSED: u32 = 10047;
+        pub const OPTIONS_SAVE_DISABLED: u32 = 10048;
+        /// Per-slot load control: normal, pressed, and disabled.
+        pub const OPTIONS_LOAD_NORMAL: u32 = 10049;
+        pub const OPTIONS_LOAD_PRESSED: u32 = 10050;
+        pub const OPTIONS_LOAD_DISABLED: u32 = 10051;
+        /// Music and sound slider rails plus their shared handle.
+        pub const OPTIONS_VOLUME_RAIL: u32 = 10052;
+        pub const OPTIONS_VOLUME_RAIL_ALT: u32 = 10053;
+        pub const OPTIONS_VOLUME_HANDLE: u32 = 10054;
+        /// Saved-game faction emblems.
+        pub const OPTIONS_EMPIRE_MARKER: u32 = 10055;
+        pub const OPTIONS_ALLIANCE_MARKER: u32 = 10056;
+
+        /// Return to the current command center: normal, pressed, and disabled.
+        pub const BTN_RETURN_COMMAND_CENTER_NORMAL: u32 = 10020;
+        pub const BTN_RETURN_COMMAND_CENTER_PRESSED: u32 = 10021;
+        pub const BTN_RETURN_COMMAND_CENTER_DISABLED: u32 = 10022;
 
         /// First animated shuttle-cockpit control frame.
         pub const MAIN_MENU_ANIMATION_FIRST: u32 = 11001;
@@ -386,6 +421,9 @@ pub mod resources {
         pub const BTN_RESTART_GAME_PRESSED: u32 = 10036;
         /// Main-menu button: restart the game (disabled).
         pub const BTN_RESTART_GAME_DISABLED: u32 = 10037;
+        /// Exit the game: normal and pressed.
+        pub const BTN_EXIT_GAME_NORMAL: u32 = 10038;
+        pub const BTN_EXIT_GAME_PRESSED: u32 = 10039;
     }
 
     /// Resource IDs for `STRATEGY.DLL` BMPs.
@@ -652,6 +690,37 @@ pub mod resources {
         pub const BATTLE_RAIL_ALLIANCE: u32 = 10820;
         /// Imperial right-hand rail for the battle window.
         pub const BATTLE_RAIL_EMPIRE: u32 = 10821;
+        /// Alliance and Imperial Battle Alert frames. These are distinct from
+        /// the post-battle result frames above and use a blue keyed aperture.
+        pub const BATTLE_ALERT_WINDOW_ALLIANCE: u32 = 10710;
+        pub const BATTLE_ALERT_WINDOW_EMPIRE: u32 = 10711;
+        /// Faction-authored Battle Alert summary scenes.
+        pub const BATTLE_ALERT_SCENE_ALLIANCE: u32 = 10712;
+        pub const BATTLE_ALERT_SCENE_EMPIRE: u32 = 10713;
+        /// Disabled Battle Alert summary scenes.
+        pub const BATTLE_ALERT_SCENE_ALLIANCE_DISABLED: u32 = 10714;
+        pub const BATTLE_ALERT_SCENE_EMPIRE_DISABLED: u32 = 10715;
+        /// Simulate Battle controls: normal, pressed, and disabled.
+        pub const BATTLE_ALERT_SIMULATE_ALLIANCE_NORMAL: u32 = 10716;
+        pub const BATTLE_ALERT_SIMULATE_ALLIANCE_PRESSED: u32 = 10717;
+        pub const BATTLE_ALERT_SIMULATE_ALLIANCE_DISABLED: u32 = 10718;
+        pub const BATTLE_ALERT_SIMULATE_EMPIRE_NORMAL: u32 = 10722;
+        pub const BATTLE_ALERT_SIMULATE_EMPIRE_PRESSED: u32 = 10723;
+        pub const BATTLE_ALERT_SIMULATE_EMPIRE_DISABLED: u32 = 10724;
+        /// Take Command controls: normal, pressed, and disabled.
+        pub const BATTLE_ALERT_COMMAND_ALLIANCE_NORMAL: u32 = 10719;
+        pub const BATTLE_ALERT_COMMAND_ALLIANCE_PRESSED: u32 = 10720;
+        pub const BATTLE_ALERT_COMMAND_ALLIANCE_DISABLED: u32 = 10721;
+        pub const BATTLE_ALERT_COMMAND_EMPIRE_NORMAL: u32 = 10725;
+        pub const BATTLE_ALERT_COMMAND_EMPIRE_PRESSED: u32 = 10726;
+        pub const BATTLE_ALERT_COMMAND_EMPIRE_DISABLED: u32 = 10727;
+        /// Retreat controls: normal, pressed, and disabled.
+        pub const BATTLE_ALERT_RETREAT_ALLIANCE_NORMAL: u32 = 10971;
+        pub const BATTLE_ALERT_RETREAT_ALLIANCE_PRESSED: u32 = 10972;
+        pub const BATTLE_ALERT_RETREAT_ALLIANCE_DISABLED: u32 = 10973;
+        pub const BATTLE_ALERT_RETREAT_EMPIRE_NORMAL: u32 = 10974;
+        pub const BATTLE_ALERT_RETREAT_EMPIRE_PRESSED: u32 = 10975;
+        pub const BATTLE_ALERT_RETREAT_EMPIRE_DISABLED: u32 = 10976;
         /// Two-column force-detail mask used by the battle window.
         pub const BATTLE_FORCE_DETAIL_TWO_COLUMN: u32 = 10761;
         /// Three-column operational/damaged/destroyed force-detail mask.
@@ -685,6 +754,9 @@ pub mod resources {
         /// Alliance battle-window Imperial-forces tab, normal and pressed.
         pub const BATTLE_EMPIRE_FORCES_ALLIANCE_NORMAL: u32 = 10732;
         pub const BATTLE_EMPIRE_FORCES_ALLIANCE_PRESSED: u32 = 10733;
+        /// Alliance Battle Alert system-summary tab, normal and pressed.
+        pub const BATTLE_SYSTEM_ALLIANCE_NORMAL: u32 = 10734;
+        pub const BATTLE_SYSTEM_ALLIANCE_PRESSED: u32 = 10735;
         /// Alliance battle-window destination tab, normal and pressed.
         pub const BATTLE_DESTINATION_ALLIANCE_NORMAL: u32 = 10791;
         pub const BATTLE_DESTINATION_ALLIANCE_PRESSED: u32 = 10792;
@@ -698,6 +770,9 @@ pub mod resources {
         /// Imperial battle-window Imperial-forces tab, normal and pressed.
         pub const BATTLE_EMPIRE_FORCES_EMPIRE_NORMAL: u32 = 10742;
         pub const BATTLE_EMPIRE_FORCES_EMPIRE_PRESSED: u32 = 10743;
+        /// Imperial Battle Alert system-summary tab, normal and pressed.
+        pub const BATTLE_SYSTEM_EMPIRE_NORMAL: u32 = 10744;
+        pub const BATTLE_SYSTEM_EMPIRE_PRESSED: u32 = 10745;
         /// Imperial battle-window destination tab, normal and pressed.
         pub const BATTLE_DESTINATION_EMPIRE_NORMAL: u32 = 10520;
         pub const BATTLE_DESTINATION_EMPIRE_PRESSED: u32 = 10521;
@@ -782,6 +857,20 @@ pub mod resources {
         /// Battle Options HUD control, pressed state.
         pub const BTN_BATTLE_OPTIONS_PRESSED: u32 = 1039;
 
+        /// Navigation-point set 1 through 4, normal states.
+        pub const BTN_NAVIGATION_SET_NORMAL: [u32; 4] = [1026, 1027, 1028, 1029];
+        /// Navigation-point set 1 through 4, selected/pressed states.
+        pub const BTN_NAVIGATION_SET_SELECTED: [u32; 4] = [1030, 1031, 1032, 1033];
+
+        /// Return to the memorized camera position, normal state.
+        pub const BTN_CAMERA_RECALL_NORMAL: u32 = 1040;
+        /// Return to the memorized camera position, pressed state.
+        pub const BTN_CAMERA_RECALL_PRESSED: u32 = 1041;
+        /// Memorize the current camera position, normal state.
+        pub const BTN_CAMERA_MEMORIZE_NORMAL: u32 = 1042;
+        /// Memorize the current camera position, pressed state.
+        pub const BTN_CAMERA_MEMORIZE_PRESSED: u32 = 1043;
+
         /// Tactical combat is running; clicking pauses it.
         pub const BTN_PAUSE_RUNNING: u32 = 1060;
         /// Tactical combat is paused; clicking resumes it.
@@ -816,6 +905,14 @@ pub mod resources {
         /// Camera target control, pressed state.
         pub const BTN_CAMERA_TARGET_PRESSED: u32 = 1059;
 
+        /// Selected-capital navigator: previous ship in task force, normal state.
+        pub const BTN_PREVIOUS_CAPITAL_NORMAL: u32 = 1101;
+        /// Selected-capital navigator: previous ship in task force, pressed state.
+        pub const BTN_PREVIOUS_CAPITAL_PRESSED: u32 = 1102;
+        /// Selected-capital navigator: next ship in task force, normal state.
+        pub const BTN_NEXT_CAPITAL_NORMAL: u32 = 1103;
+        /// Selected-capital navigator: next ship in task force, pressed state.
+        pub const BTN_NEXT_CAPITAL_PRESSED: u32 = 1104;
         /// Tactical command button: Maneuvers/Tactics, normal state.
         pub const BTN_MANEUVERS_TACTICS_NORMAL: u32 = 1105;
         /// Tactical command button: Maneuvers/Tactics, pressed state.
@@ -939,6 +1036,8 @@ pub mod resources {
         pub const MISSIONS_PANEL: u32 = 1308;
         /// Tactical maneuvers and tactics assignment panel.
         pub const MANEUVERS_PANEL: u32 = 1309;
+        /// Tactical withdrawal confirmation panel.
+        pub const WITHDRAW_CONFIRMATION_PANEL: u32 = 1310;
 
         /// Maneuver confirmation graphic: left hook.
         pub const MANEUVER_HUD_LEFT_HOOK: u32 = 2101;
@@ -1677,6 +1776,8 @@ fn uses_blue_screen_transparency(source: DllSource, resource_id: u32) -> bool {
             resource_id,
             1026..=1033 | 1038..=1039 | 1042..=1056 | 1060..=1061
         ),
+        // Alert and dialog frames are opaque windows.
+        DllSource::Rebdlog => false,
     }
 }
 

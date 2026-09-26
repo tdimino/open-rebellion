@@ -215,13 +215,15 @@
           "exact rectangles and command IDs from FUN_00427270",
           "pointer capture, release cancellation, strict outer-edge rejection, and original palette-key masks",
           "six recognized commands with no replacement destination panels",
+          "P60 day-readout Game Speed menu, stop-day pause, REBDLOG Resume Game Play? alert, and speed accelerators",
           "F1 through F5 and F7 keyboard routing"
         ],
         "remaining": [
           "A0 original-runtime captures and the full native/browser matrix",
           "disabled control path",
           "all six original destination-window compositions",
-          "speed controls and facility indicators"
+          "speed-control A0 captures, wall-clock rate unit, menu font and background, and Resume tooltip",
+          "facility indicators"
         ]
       }
     },
@@ -323,7 +325,7 @@
       "retrieval": {
         "sources": ["REBEXE.EXE", "STRATEGY.DLL", "TEXTSTRA.DLL", "REBDLOG.DLL", "VOICEFXA.DLL", "VOICEFXE.DLL"],
         "method": "Cross-reference category labels, report strings, sound IDs, and navigate/delete commands to constructors, filters, item menus, and destination handlers.",
-        "next_proof": "Decompile FUN_0042a240 and the rail state predicate, then recover the original Message Index constructor, category mapping, report navigation, clear/delete actions, and A0 captures."
+        "next_proof": "FUN_0042a240, the Message Index constructor, category mapping, rail resting path, and Advice slowdown are recovered in evidence/2026-09-24-message-index-recovery.md. Recover the illumination-on path (FUN_0048aa90, FUN_00488030, FUN_00603aa0), then implement the window, report navigation, clear/delete actions, and A0 captures."
       },
       "runtime_capture_required": true
     },
@@ -464,8 +466,77 @@
           "executor_state": ["FUN_005d0b00", "FUN_005cf910", "FUN_005cf920"],
           "separate_weapon_loop": ["FUN_005b3a40", "FUN_005b3f10", "FUN_005b6530"]
         },
-        "latest_verified_tranche": "P58-B06 restores source-backed capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, the superlaser journey, both trench-run routes, exact strategic roster, capture, and Death Star-state application, and a clean 120-case implementation matrix.",
-        "next_proof": "Recover native beam behavior and the original trench-run result producer, complete shared post-battle bombardment, landing, and navigation orchestration, compare native playback, and acquire the lossless A0 evidence for the 106 strict tactical cells."
+        "p58_b13_withdrawal_confirmation": {
+          "constructor": "FUN_005f0c20",
+          "panel_and_controls": ["FUN_005f0f40", "TACTICAL:1310", "TACTICAL:1113", "TACTICAL:1114", "TACTICAL:1115", "TACTICAL:1116"],
+          "text_layout": ["FUN_005f1050", "TEXTTACT:56772", "TEXTTACT:56771"],
+          "command_handler": "FUN_005f1170"
+        },
+        "p58_b14_detail_escort": {
+          "selected_detail_panel": "TACTICAL:1302",
+          "destroyed_effect": "TACTICAL:3368",
+          "escort_dispatch": "FUN_005ca6d0_order_1",
+          "escort_target_lifecycle": ["FUN_005d0af0", "FUN_005cf910", "FUN_005cf920"],
+          "escort_serialization": ["FUN_005ceda0", "FUN_005cee20"],
+          "compact_gokres_major_offset": 17920,
+          "compact_gokres_minor_offset": 18176
+        },
+        "p58_b15_battle_alert_audio": {
+          "battle_alert_constructor": "FUN_0044f860",
+          "faction_frames": [10710, 10711],
+          "faction_scenes": [10712, 10713],
+          "faction_rails": [10820, 10821],
+          "battle_music_mdata_id": 307,
+          "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
+          "first_routed_event": "event_0x14_to_TACTICAL_WAVE_13054",
+          "semantic_correction": "P58-B16_identifies_event_0x14_as_SHIP_TAKE_TORPEDO_HIT"
+        },
+        "p58_b16_weapon_audio": {
+          "event_registration": "FUN_005a7500",
+          "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
+          "capital_weapon_dispatch": "FUN_005b3f10",
+          "event_range": "0x0d–0x14",
+          "wave_range": "13033–13054",
+          "variant_count": 22,
+          "corrected_event": "event_0x14_is_SHIP_TAKE_TORPEDO_HIT_not_ship_destruction"
+        },
+        "p58_b17_command_voice": {
+          "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50"],
+          "alliance_event_base": 32,
+          "alliance_wave_base": 14001,
+          "empire_event_base": 154,
+          "empire_wave_base": 15001,
+          "command_callers": ["FUN_005a3020", "FUN_005a3f00", "FUN_005a4e50", "FUN_005a3aa0", "FUN_005a3740", "FUN_005a3850", "FUN_005a3630", "FUN_005a48d0"],
+          "families": ["battle_ready", "capital_maneuver", "fighter_maneuver", "capital_attack", "fighter_attack", "capital_formation", "capital_mission", "fighter_mission"],
+          "alliance_variant_count": 45,
+          "empire_variant_count": 45,
+          "total_variant_count": 90
+        },
+        "p58_b18_complete_voice_bank": {
+          "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50"],
+          "alliance_main_event_range": "0x20-0x99",
+          "alliance_main_wave_range": "14001-14122",
+          "empire_main_event_range": "0x9a-0x11d",
+          "empire_main_wave_range": "15001-15132",
+          "alliance_trench_event_range": "0x11e-0x13c",
+          "alliance_trench_wave_range": "15133-15163",
+          "alliance_variant_count": 153,
+          "empire_variant_count": 132,
+          "total_variant_count": 285,
+          "implemented_transition_dispatch": ["withdrawal_start", "withdrawal_complete", "battle_win_opponent_withdrew", "battle_win_opponent_destroyed", "battle_loss", "death_star_firing", "death_star_recharge_ready", "death_star_attack_broken_off", "death_star_destroyed", "alliance_trench_run_group_start", "alliance_trench_run_group_result"],
+          "open_dispatch_families": ["completion", "destruction", "recovery", "warning", "ordered_trench_chatter"]
+        },
+        "p58_b19_mixed_task_force_target": {
+          "target_handler": "FUN_005a24d0",
+          "selection_rule": "one_task_force_ordinal_required",
+          "alliance_source_event": "0x84",
+          "alliance_wave": 14101,
+          "empire_source_event": "0x102",
+          "empire_wave": 15105,
+          "rejected_state_mutations": ["manual_targets", "attack_target", "escort_target"]
+        },
+        "latest_verified_tranche": "P58-B19 preserves deterministic A1 mapping for all 106 tactical cells and restores FUN_005a24d0's mixed-task-force hostile-target rejection. Existing manual, active, and Escort targets remain unchanged while exact Alliance event 0x84 / WAVE 14101 or Imperial event 0x102 / WAVE 15105 routes through the production audio path. Four focused muted browser cases pass; A0 and strict acceptance remain 0 of 106.",
+        "next_proof": "Recover remaining completion, destruction, recovery, warning, and ordered trench voice dispatch, exact shared-RNG sequencing, mixing, native beam behavior, and original result producers; complete shared post-battle bombardment, landing, and navigation orchestration; compare audible native playback; and acquire lossless A0 evidence for the 106 strict tactical cells."
       },
       "runtime_capture_required": true
     },

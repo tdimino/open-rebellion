@@ -1013,6 +1013,7 @@ pub(crate) struct TacticalAssetRenderer {
     logged_projectile_scene: Option<String>,
     logged_planet_scene: Option<u32>,
     logged_backdrop_scene: bool,
+    high_detail_models: bool,
 }
 
 impl Default for TacticalAssetRenderer {
@@ -1054,11 +1055,25 @@ impl Default for TacticalAssetRenderer {
             logged_projectile_scene: None,
             logged_planet_scene: None,
             logged_backdrop_scene: false,
+            high_detail_models: true,
         }
     }
 }
 
 impl TacticalAssetRenderer {
+    pub(crate) fn set_high_detail(&mut self, enabled: bool) {
+        if self.high_detail_models != enabled {
+            self.high_detail_models = enabled;
+            self.participant_lods.clear();
+            self.fighter_details.clear();
+            #[cfg(feature = "interface-test-fixtures")]
+            {
+                self.view.high_detail = enabled;
+                self.logged_lod = None;
+            }
+        }
+    }
+
     pub(crate) fn set_palette_selector(&mut self, selector: u8) {
         let selector = selector.clamp(1, 27);
         if self.palette_selector != selector {
@@ -1265,6 +1280,42 @@ impl TacticalAssetRenderer {
         if let Some(camera) = &mut self.source_camera {
             camera.focus_target(target_object_id, target);
         }
+    }
+
+    /// Capture the complete source camera state for the original memorize and
+    /// recall controls. `OriginalTacticalCamera` is `Copy`, so restoring this
+    /// value also restores the exact field, orbit step, and followed target.
+    pub(crate) fn camera_state(&self) -> Option<OriginalTacticalCamera> {
+        self.source_camera
+    }
+
+    /// Restore a source camera state captured by [`Self::camera_state`].
+    pub(crate) fn restore_camera_state(&mut self, camera: OriginalTacticalCamera) {
+        self.source_camera = Some(camera);
+        self.logged_camera = None;
+    }
+
+    /// Project one authored source position through the same retained-mode
+    /// camera used for ships, fighters, fields, and effects.
+    pub(crate) fn project_source_position(
+        &self,
+        aperture: (f32, f32, f32, f32),
+        position: Vec3,
+    ) -> Option<Vec2> {
+        let source_camera = self.source_camera?;
+        let pose = source_camera.pose();
+        let (_, _, width, height) = aperture;
+        let camera = Camera3D {
+            position: pose.position,
+            target: pose.target,
+            up: pose.up,
+            fovy: pose.fovy_radians,
+            aspect: Some(width / height),
+            z_near: pose.near,
+            z_far: pose.far,
+            ..Default::default()
+        };
+        project_world_position(camera.matrix(), position, aperture)
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -1531,7 +1582,7 @@ impl TacticalAssetRenderer {
                 TacticalLodView {
                     view_depth: pose.position.distance(object.position),
                     projection_scale: 1.0,
-                    high_detail: true,
+                    high_detail: self.high_detail_models,
                 },
             );
             let asset = &family[lod as usize];
@@ -1685,7 +1736,7 @@ impl TacticalAssetRenderer {
                 .get(&object.object_id)
                 .copied()
                 .unwrap_or(OriginalFighterDetail::Far);
-            let detail = select_original_fighter_detail(prior, view_span, true);
+            let detail = select_original_fighter_detail(prior, view_span, self.high_detail_models);
             let Some(family) = self.fighter_families.get(&object.close_resource_id) else {
                 continue;
             };

@@ -30,7 +30,7 @@ ghidra/
 │   ├── modders-taxonomy.md     # 805 lines — 10 game systems for total conversion mods
 │   ├── rust-implementation-guide.md  # 1,267 lines — C→Rust translation for Knesset Tiamat
 │   ├── cpp-class-hierarchy.md  # 445 lines — vtable map, inheritance, field layouts
-│   └── FUN_*.c                 # ~4,900 decompiled C pseudocode files
+│   └── FUN_*.c                 # 5,408 decompiled C files, none empty (see notes/INDEX.md)
 └── scripts/                    # Ghidra Jython scripts (8 total)
     ├── FindAllFunctions.py     # x86 prologue scanner
     ├── DumpStrings.py          # Keyword string search → file

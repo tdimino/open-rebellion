@@ -56,6 +56,12 @@ This explains the observed symptoms:
 - P49 restores the original nine Message Index side-rail resting icons for
   each faction. Their browser pixels match the source STRATEGY bitmaps at
   640x480. The unread state, input, and original index window remain open.
+- P60 replaces the replacement status bar with the original Game Speed
+  control: the day readout, its right-click STRATEGY menu with the five
+  original speeds, the stop-day pause, the REBDLOG "Resume Game Play?" alert,
+  and the three speed accelerators. The Message Index window and the Advice
+  slowdown are recovered statically but not implemented. A0 comparison,
+  the wall-clock rate unit, and several font and tooltip details remain open.
 - P47A and P47B restore the bright Display Off and dim active galaxy resources,
   the default Popular Support caption, compact legend, and native marker
   families. Synthetic labels, circles, glows, facility squares, fleet glyphs,
@@ -89,6 +95,7 @@ The local source inspection establishes the implementation causes:
 | Recovered strategic shell canvas | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/lib.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00421c70`, STRATEGY 900/901, and [P46A evidence](evidence/2026-09-11-strategic-shell-canvas.md) |
 | Recovered primary strategy controls | `crates/rebellion-render/src/cockpit.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00427270`, `FUN_006028c0`, `FUN_00602d30`, `FUN_005fca00`, manual Figure 3.8, and [P46B evidence](evidence/2026-09-11-strategic-command-controls.md) |
 | Partial authored galaxy and GID | `crates/rebellion-render/src/lib.rs`, `crates/rebellion-render/src/bmp_cache.rs`, `crates/rebellion-render/src/cockpit.rs` | STRATEGY 902/903, GID 10012/10011 and 10026/10025, Game Options 10013/10014 and 10027/10028, 10100 through 10107, 10146 through 10158, 10168, manual pp. 66–73, [P47B evidence](evidence/2026-09-11-popular-support-gid.md), and [P50 evidence](evidence/2026-09-12-gid-menu-frame.md) |
+| Original Game Speed control and pause alert | `crates/rebellion-render/src/game_speed.rs`, `crates/rebellion-core/src/tick.rs`, `crates/rebellion-app/src/main.rs` | `FUN_00422ce0`, `FUN_0042d190`, `FUN_00486fb0`, `FUN_00487eb0`, `FUN_0041d2f0`, `FUN_00417020`, STRATEGY `RT_RCDATA` 0x20..0x29, REBDLOG 0x297e/0x2980/0x2981, and [game-speed recovery](evidence/2026-09-24-game-speed-recovery.md) |
 | Partial original sector and system navigation | `crates/rebellion-render/src/sector_window.rs`, `crates/rebellion-render/src/system_window.rs` | Manual pp. 67–68, 97–100, and 122–124; recovered constructors, [navigation evidence](evidence/2026-09-11-strategic-window-navigation.md), and [tab-item evidence](evidence/2026-09-11-detailed-system-tab-items.md) |
 | Partial browser droids | `crates/rebellion-render/src/advisor.rs` | Manual pp. 20–21 and 73–79; official Steam faction captures; [P44 evidence](../2026-09-08-full-functionality-audit/evidence/2026-09-10-authentic-droid-advisors.md) |
 | Blank browser encyclopedia art | `crates/rebellion-render/src/encyclopedia.rs:486` | Manual pp. 71–72 and 192 original EDATA entries |
@@ -246,6 +253,110 @@ missions, recovery, withdrawal, simulation and observation, Death Star charge
 and attack states, trench-run routing, battle results, and strategic return.
 `TAC-08` is separately reserved for the original ground-assault summary and
 report flow, which had no live tactical minigame.
+
+P58-B07 makes that denominator executable as a generated contract. The matrix
+validator derives all 106 rows from `surface-ledger.json`, enforces the exact
+13/13/20/14/23/9/14 family distribution, rejects missing, duplicate, unknown,
+or non-counting mappings, and validates lossless A0 provenance without tracking
+original media. Its current report is deliberately 0 mapped, 0 A0, and 0
+accepted. C2 and C5 populate those dimensions; the validator prevents either
+from being mistaken for acceptance.
+
+P58-B08 adds the original-capture ingestion path. The Windows guest records the
+running executable hash and per-cell provenance; the host independently checks
+the ledger requirement, source identity, decoded 640×480 PNG, hashes, setup and
+input trace, and confines accepted bytes to the ignored A0 store. The owned
+capture host was offline at this checkpoint, so A0 coverage and strict tactical
+acceptance both remain 0/106.
+
+P58-B09 maps the 30 existing deterministic tactical scenarios to 82 canonical
+cells: 64 browser journeys and 18 snapshots. Scenario kinds are schema-checked,
+and negative controls cannot claim cells. Twenty-four cells now form the exact
+new-scenario queue. Matrix coverage is not parity acceptance; every mapped cell
+still requires authoritative A0 comparison before it can pass.
+
+P58-B10 expands the catalog to 32 scenarios and maps 96 canonical cells: 78
+browser journeys and 18 snapshots. It adds all four navigation sets, ordered
+routes and targets, camera memory and chase, Anvil, and Stand Off. Ten cells
+remain without a deterministic scenario. Strict acceptance remains 0/106.
+
+P58-B11 maps 98 canonical cells: 80 browser journeys and 18 snapshots. It
+proves that source order `6` enters the production trench-run lifecycle and
+that Battle Results applies exact 3-to-2 capital and fighter losses to both
+strategic fleets before destination routing. Eight scenarios remain. The
+fleet-destination presentation and Alliance Death Star framing remain bounded
+P2 follow-ups, and strict acceptance remains 0/106.
+
+P58-B12 maps 100 canonical cells: 81 browser journeys and 19 snapshots. It
+routes the shuttle, command center, and Battle Options panel to the original
+COMMON `20002` Game Options surface, disables tactical-display controls during
+combat, and proves empty-space starfield presentation without a planet. Six
+scenarios remain, and strict acceptance remains 0/106.
+
+P58-B13 maps 101 canonical cells: 82 browser journeys and 19 snapshots. It
+restores the executable-derived TACTICAL 1310 withdrawal confirmation,
+TEXTTACT 56772/56771, controls 1113 through 1116, cancel and confirm routing,
+and disabled repeat rejection. Five scenarios remain, and strict acceptance
+remains 0/106.
+
+P58-B14 maps 104 canonical cells: 85 browser journeys and 19 snapshots. It
+adds a complete TACTICAL 3368 destroyed presentation, compact GOKRES contents
+inside selected-capital panel 1302, and source order-code 1 Escort through a
+direct friendly right-click, retained target, white target marker, follow,
+opportunity fire, and target cleanup. Battle Alert entry and tactical audio
+remain unmapped, and strict acceptance remains 0/106.
+
+P58-B15 maps all 106 canonical cells: 87 browser journeys and 19 snapshots. It
+restores the source-built faction Battle Alert, exercises its tabs and Take
+Command transition, stages MDATA 307 as the battle score, and routes recovered
+TACTICAL WAVE 13054. This completes deterministic A1
+scenario mapping only. A0 coverage and strict acceptance remain 0/106, and the
+strict gate was not run.
+
+P58-B16 corrects the provisional event label: source event `0x14` is
+`SHIP_TAKE_TORPEDO_HIT`, not ship destruction. It recovers events `0x0d`
+through `0x14`, extracts all 22 weapon fire/impact variants at TACTICAL WAVE
+`13033–13054`, and emits them from production capital and fighter combat. The
+focused four-case muted browser journey passes. Exact shared-RNG sequencing,
+audible native comparison, A0 coverage, and strict acceptance remain open.
+
+P58-B17 follows the faction voice table from `FUN_005bae60`, the queue and
+selection path in `FUN_005ba980`/`FUN_005bad50`, and the command-manager
+callers. It restores 90 exact battle-ready, task-force, and RGBY maneuver,
+attack, formation, and mission acknowledgements across VOICEFXA/VOICEFXE.
+Production command confirmation emits the matching faction and group ordinal;
+the focused four-case muted browser gate proves every resource is present and
+routed. Remaining result, withdrawal, and Death Star voice families, mixing,
+native audible comparison, and strict A0 acceptance stay open.
+
+P58-B18 extends the executable table through event `0x13c`: Alliance events
+`0x20–0x99` map to VOICEFXA `14001–14122`, Imperial events `0x9a–0x11d`
+map to VOICEFXE `15001–15132`, and Alliance trench events `0x11e–0x13c`
+map to VOICEFXA `15133–15163`. Exact extraction and validation prove all 285
+resources. Production dispatch now includes withdrawal start/completion,
+battle outcomes, selected Death Star transitions, and RGBY trench-run
+start/results. The focused four-case muted browser gate loads and routes all
+285 voices plus all 22 weapon effects. Remaining completion, destruction,
+recovery, warning, and ordered trench chatter callers, exact shared-RNG
+sequencing, mixing, native audible comparison, and strict A0 acceptance stay
+open.
+
+P58-B19 follows `FUN_005a24d0` for a hostile focus-target command spanning
+selected capitals from multiple task forces. The command now preserves every
+manual, active, and Escort target and queues exact Alliance event `0x84` / WAVE
+`14101` or Imperial event `0x102` / WAVE `15105`. The four-case muted browser
+journey proves both faction routes and unchanged presentation. Exact shared-RNG
+sequencing, mixing, native audible comparison, and strict A0 acceptance stay
+open.
+
+P58-B20 follows `FUN_005b8630` for final RGBG fighter recovery and
+`FUN_005a0240`/`FUN_005b1b70` for a confirmed withdrawal containing a
+hyperdrive-disabled capital. It also activates the exact mapped no-carrier-slot
+feedback when Recover cannot reserve capacity. Three four-case muted browser
+journeys prove both factions and both viewports, exact event/WAVE routes, and
+clean startup and cleanup. Remaining completion, destruction, warning, and
+ordered trench callers, exact shared-RNG sequencing, mixing, native audible
+comparison, and strict A0 acceptance stay open.
 
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every

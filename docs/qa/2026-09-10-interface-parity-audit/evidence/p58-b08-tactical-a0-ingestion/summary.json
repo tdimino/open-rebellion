@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B08",
+  "status": "pass_ingestion_infrastructure_capture_blocked",
+  "a0_coverage": 0,
+  "a0_missing": 106,
+  "strict_tactical_acceptance": 0,
+  "capture_host": {
+    "status": "offline",
+    "checked_at": "2026-09-22",
+    "effect": "no_authoritative_original_capture_produced"
+  },
+  "verified_contract": [
+    "known_cell_and_exact_requirement",
+    "audited_original_executable_sha256",
+    "unmodified_english_source_manifest",
+    "lossless_640x480_sidecar_and_decoded_png",
+    "state_setup_and_ordered_input_trace",
+    "png_sidecar_sha256_match",
+    "ignored_per_cell_destination",
+    "idempotent_same_record",
+    "different_replacement_rejected",
+    "atomic_manifest_write"
+  ],
+  "verification": {
+    "harness_unit_tests": "25_passed_0_failed",
+    "harness_check": "pass",
+    "ledger_validator": "pass_44_families_569_cells_106_tactical_cells",
+    "tracked_proprietary_a0_paths": 0,
+    "diff_check": "pass"
+  },
+  "proprietary_artifacts_committed": false
+}

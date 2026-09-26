@@ -375,9 +375,9 @@ mod tests {
     #[test]
     fn non_final_battle_ignores_heritage() {
         // Other events should return the same resource regardless of heritage_known
-        let bounty_false = event_id_to_resource(0x212, false);
-        let bounty_true = event_id_to_resource(0x212, true);
-        assert_eq!(bounty_false, bounty_true);
+        let bounty = Some(STRATEGY_EVENT_BASE + 16);
+        assert_eq!(event_id_to_resource(0x212, false), bounty);
+        assert_eq!(event_id_to_resource(0x212, true), bounty);
     }
 
     #[test]

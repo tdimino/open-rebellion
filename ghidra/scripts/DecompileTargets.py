@@ -47,11 +47,11 @@ try:
             continue
 
         destination = File(output_dir, "%s.c" % target)
-        writer = FileWriter(destination)
+        file_writer = FileWriter(destination)
         try:
-            writer.write(result.getDecompiledFunction().getC())
+            file_writer.write(result.getDecompiledFunction().getC())
         finally:
-            writer.close()
+            file_writer.close()
         println("decompiled %s -> %s" % (target, destination.getAbsolutePath()))
 
         callers = set()
@@ -60,24 +60,24 @@ try:
             if caller is not None:
                 callers.add("%s %s" % (caller.getName(), caller.getEntryPoint()))
         caller_file = File(output_dir, "%s.callers.txt" % target)
-        writer = FileWriter(caller_file)
+        file_writer = FileWriter(caller_file)
         try:
-            writer.write("\n".join(sorted(callers)))
+            file_writer.write("\n".join(sorted(callers)))
             if callers:
-                writer.write("\n")
+                file_writer.write("\n")
         finally:
-            writer.close()
+            file_writer.close()
 
         callees = set()
         for callee in function.getCalledFunctions(monitor):
             callees.add("%s %s" % (callee.getName(), callee.getEntryPoint()))
         callee_file = File(output_dir, "%s.callees.txt" % target)
-        writer = FileWriter(callee_file)
+        file_writer = FileWriter(callee_file)
         try:
-            writer.write("\n".join(sorted(callees)))
+            file_writer.write("\n".join(sorted(callees)))
             if callees:
-                writer.write("\n")
+                file_writer.write("\n")
         finally:
-            writer.close()
+            file_writer.close()
 finally:
     decompiler.dispose()

@@ -85,7 +85,7 @@ Where `foil_prob` comes from `FOILTB.DAT` (14 entries) — the counter-intellige
 
 ### Decoy System
 
-Missions 7 (Rescue) and others with `bVar3=true` check `FDECOYTB.DAT` for fleet decoy success via `FUN_0050eea0`. Decoys redirect enemy attention, improving mission survival odds.
+Missions 7 (Rescue) and others with decoy flags draw from FDECOYTB.DAT (fleet) or TDECOYTB.DAT (troop) tables. The decoy roll function is FUN_0055e410; the consumer FUN_0050eea0 is unverified. Decoys redirect enemy attention, improving mission survival odds.
 
 ### Escape System
 

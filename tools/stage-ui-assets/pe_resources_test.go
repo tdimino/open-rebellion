@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestParseBitmapResourcesWalksTypeIDAndLanguageDirectories(t *testing.T) {
@@ -140,12 +141,25 @@ func TestReadPEMixedRawResourcesPreservesNamedIdentifier(t *testing.T) {
 func TestBitmapResourceIDUsesSuppliedMapping(t *testing.T) {
 	// A one-character UTF-16 resource name, independent of the game catalog.
 	data := []byte{1, 0, 'X', 0}
-	id, err := bitmapResourceID(data, resourceSubdirectory, map[string]uint32{"X": 123})
-	if err != nil || id != 123 {
-		t.Fatalf("bitmapResourceID() = (%d, %v), want (123, nil)", id, err)
+	id, skip, err := bitmapResourceID(data, resourceSubdirectory, map[string]uint32{"X": 123})
+	if err != nil || skip || id != 123 {
+		t.Fatalf("bitmapResourceID() = (%d, %v, %v), want (123, false, nil)", id, skip, err)
 	}
-	if _, err := bitmapResourceID(data, resourceSubdirectory, nil); err == nil {
+	if _, _, err := bitmapResourceID(data, resourceSubdirectory, nil); err == nil {
 		t.Fatal("unmapped name accepted")
+	}
+}
+
+func TestBitmapResourceIDSkipsUnloadedNamedBitmap(t *testing.T) {
+	name := utf16.Encode([]rune("DLG_CORNER_GRAB_FRAME"))
+	data := make([]byte, 2+len(name)*2)
+	binary.LittleEndian.PutUint16(data[0:2], uint16(len(name)))
+	for i, codeUnit := range name {
+		binary.LittleEndian.PutUint16(data[2+i*2:4+i*2], codeUnit)
+	}
+	_, skip, err := bitmapResourceID(data, resourceSubdirectory, nil)
+	if err != nil || !skip {
+		t.Fatalf("bitmapResourceID() = (skip %v, %v), want skip without error", skip, err)
 	}
 }
 

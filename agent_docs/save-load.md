@@ -1,6 +1,6 @@
 ---
 title: "Save/Load System"
-description: "Native and browser save v13, canonical fingerprints, campaign setup, continuation state, troop cargo, and historical migration"
+description: "Native and browser save v14, canonical fingerprints, campaign setup, continuation state, troop cargo, and historical migration"
 category: "agent-docs"
 created: 2026-03-15
 updated: 2026-09-10
@@ -11,9 +11,9 @@ tags: [save-load, bincode, migration, serialization, wasm, determinism]
 
 `crates/rebellion-data/src/save.rs` owns native files and browser storage.
 `crates/rebellion-app/src/main.rs` converts between a live campaign and the
-serializable snapshot. The current format is v13.
+serializable snapshot. The current format is v14.
 
-## Native format (v13)
+## Native format (v14)
 
 ```text
 [magic: 8 bytes "OPENREB\0"]
@@ -72,6 +72,9 @@ selected difficulty, original galaxy-size label, player faction, and Standard
 versus Headquarters Only victory mode. Save v12 persists the fleet set already
 under repair so `RepairCheckPerformed` remains a true episode-start event
 across save/load. Save v13 persists regiment cargo keyed by its carrying fleet.
+Save v14 stores the clock's original Game Speed (Paused, Very Slow, Slow,
+Medium, Fast), its partial day as a fraction of a day, and the pause stop day,
+so a game saved while paused reloads paused at its kept speed.
 
 ## Deterministic fingerprints
 
@@ -87,7 +90,13 @@ interactive app/playtest and combat-path convergence remain open.
 
 ## Migration rules
 
-- v13 is read directly and its stored fingerprint must match.
+- v14 is read directly and its stored fingerprint must match.
+- v13 is decoded through the exact historical `SaveStateV13` body, whose clock
+  is `GameClockV13`. Its stored fingerprint is checked before migration. Normal
+  becomes Medium, and Fast and Faster become Fast. The accumulator carries over
+  unchanged, because v13 counted Normal-speed seconds against a one-second day,
+  which equals a fraction of a day. The migrated fingerprint is unverified.
+  v9 through v12 bodies use the same legacy clock.
 - v12 is decoded through the exact historical `SaveStateV12` body. Its stored
   fingerprint is checked before migration, troop cargo begins empty, and the
   migrated fingerprint is unverified.
@@ -97,7 +106,7 @@ interactive app/playtest and combat-path convergence remain open.
 - v10 is decoded through the exact historical `SaveStateV10` body. Its stored
   fingerprint is checked before migration. Faction and difficulty are inferred
   from preserved state; galaxy size and victory mode use explicit Standard
-  defaults because v10 did not retain them. The migrated v13 fingerprint is
+  defaults because v10 did not retain them. The migrated fingerprint is
   reported as unverified.
 - v9 is decoded through the exact historical `SaveStateV9` body. Its v9
   fingerprint is checked before migration; v10 continuation fields and v11
@@ -106,7 +115,7 @@ interactive app/playtest and combat-path convergence remain open.
 - v8 uses the same historical body without a stored fingerprint. It migrates
   with explicit defaults and is reported as unverified.
 - v3–v7 are recognized but rejected with an incompatibility explanation.
-- Versions newer than v13 and versions older than v3 fail closed.
+- Versions newer than v14 and versions older than v3 fail closed.
 
 Do not rely on `#[serde(default)]` to migrate bincode. Bincode is positional.
 Changing `SaveState` requires a version bump and an exact legacy body struct.
@@ -118,14 +127,14 @@ the real migration boundary.
 WASM stores base64 bincode and versioned JSON metadata in `localStorage`:
 
 ```text
-rebellion_save_v13_<slot>
-rebellion_meta_v13_<slot>
+rebellion_save_v14_<slot>
+rebellion_meta_v14_<slot>
 ```
 
 Metadata includes the full save name, game tick, and fingerprint with its
 `u64` value encoded as a decimal string so JavaScript cannot truncate it. The
-reader falls back through v12, v11, v10, and v9 keys, validates any stored
-fingerprint, migrates the body, and writes new saves only under v13 keys.
+reader falls back through v13, v12, v11, v10, and v9 keys, validates any stored
+fingerprint, migrates the body, and writes new saves only under v14 keys.
 Delete removes all five generations.
 
 This path is functional but not the production persistence target: base64 and

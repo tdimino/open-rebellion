@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B19",
+  "scope": "focused_muted_browser_rejection_of_mixed_task_force_focus_target",
+  "result": "pass",
+  "run_id": "2026-09-25T17-11-51-529Z-58971",
+  "cases": 4,
+  "independent_review": "pass",
+  "independent_review_basis": "final_combined_run_representative_screenshots_byte_match_the_astra_low_reviewed_run",
+  "verified": [
+    "both_faction_tactical_shells_populated",
+    "640x480_and_1280x800_letterboxed",
+    "two_capitals_selected_from_different_task_forces",
+    "hostile_focus_target_rejected",
+    "no_focus_assignment_or_assigned_order_event",
+    "alliance_event_0x84_wave_14101_routed_muted",
+    "empire_event_0x102_wave_15105_routed_muted",
+    "four_request_startup",
+    "browser_cleanup"
+  ],
+  "limits": [
+    "implementation_screenshots_unbaselined",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ]
+}

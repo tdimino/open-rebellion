@@ -883,7 +883,7 @@ void get_combat_stat(void* entity, uint4* out_stat) {
 **File**: Likely `fleet.cpp` or `spacebattle.cpp`
 **Called by**: System battle orchestrator (FUN_00514a60) for space combat
 **Calls**:
-- FUN_005438a0 (validate combat is space-eligible)
+- FUN_005438a0 (named-character check)
 - FUN_00549910 (run the 7-phase space combat pipeline)
 
 ### Pseudocode (annotated)
@@ -898,30 +898,30 @@ uint4 space_combat(void* battle_state, int* attacker, uint4 atk_id, uint4 def_id
 ```
 
 ### Game Rules Extracted
-- Space combat is gated on `FUN_005438a0` which validates entity type codes
+- `FUN_005438a0` tests whether a DatId is one of six named characters (see below)
 - If validation fails, returns 1 (success, no-op) — non-space entities gracefully skip
 
 ---
 
-## FUN_005438a0 — Space Combat Entity Validator
+## FUN_005438a0 — Named-Character Check
 
 **File**: Likely `spacebattle.cpp`
 **Called by**: FUN_005457f0 (space combat entry)
-**Purpose**: Checks if the given entity ID corresponds to a space-combat-eligible unit
+**Purpose**: True if the given DatId is one of six named characters
 
-### Validated Entity Type Codes
+### Accepted Character Ids
 | Constant | Hex | Meaning |
 |----------|-----|---------|
-| `0x31000241` | — | Ship type 1 (likely Star Destroyer class) |
-| `0x32000242` | — | Ship type 2 |
-| `0x33000243` | — | Ship type 3 |
-| `0x35000281` | — | Ship type 5 |
-| `0x34000280` | — | Ship type 4 |
-| `0x38000343` | — | Ship type 8 (likely Mon Calamari Star Cruiser) |
+| `0x31000241` | — | Leia Organa (MJCHARSD, TEXTSTRA 10305) |
+| `0x32000242` | — | Luke Skywalker (TEXTSTRA 10306) |
+| `0x33000243` | — | Han Solo (TEXTSTRA 10307) |
+| `0x35000281` | — | Darth Vader (TEXTSTRA 10369) |
+| `0x34000280` | — | Emperor Palpatine (TEXTSTRA 10368) |
+| `0x38000343` | — | Chewbacca (MNCHARSD) |
 
 ### Pseudocode (annotated)
 ```c
-bool is_space_combat_eligible(int* entity_id) {
+bool is_named_character(int* entity_id) {
     int id = *entity_id;
     return id == 0x32000242 || id == 0x31000241 || id == 0x33000243 ||
            id == 0x38000343 || id == 0x35000281 || id == 0x34000280;
@@ -929,10 +929,8 @@ bool is_space_combat_eligible(int* entity_id) {
 ```
 
 ### Game Rules Extracted
-- Exactly 6 entity type codes are space-combat eligible
-- These appear to be specific DatId values, not family ranges — each is a specific unit type
-- High bytes `0x31-0x38` align with the `0x30-0x3b` capital ship family range from ground-combat.md
-- The `0x34` in `0x34000280` confirms the Death Star (family 0x34) is included in the space combat eligible set
+- Exactly six specific character DatIds pass: Leia, Luke, Han, the Emperor, Vader, and Chewbacca
+- Correction (2026-09-26): these were earlier read as ship types and `0x34000280` as the Death Star; MJCHARSD, MNCHARSD, and TEXTSTRA show they are characters
 
 ---
 

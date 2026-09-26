@@ -985,7 +985,7 @@ fn tab_visual_items(
     }
 }
 
-fn character_mini_resource_id(dat_id: DatId, is_major: bool) -> Option<u32> {
+pub(crate) fn character_mini_resource_id(dat_id: DatId, is_major: bool) -> Option<u32> {
     let index = dat_id.index();
     if is_major {
         matches!(index, 576..=579 | 592 | 640..=641).then_some(index + 17_920)

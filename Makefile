@@ -15,13 +15,19 @@ test:
 	cargo test --workspace
 	$(MAKE) test-assets
 
-# Only these integration suites require original DATs. Ignored doc examples
+# These tests require original DATs: the rebellion-data unit tests marked
+# ignored plus the integration suites below. Ignored doc examples
 # remain ignored. Any DAT presence opts in; incomplete/corrupt data must fail.
 test-assets:
 ifneq ($(wildcard data/base/*.[Dd][Aa][Tt]),)
-	cargo test -p rebellion-data --test replay_manifest --test state_fingerprint --test telemetry_coverage -- --ignored
+	cargo test -p rebellion-data --lib --test replay_manifest --test troop_classes --test telemetry_coverage -- --ignored
 else
 	@echo "Skipping asset-dependent integration tests: no DAT files in data/base."
+endif
+ifneq ($(wildcard data/base/ui/*),)
+	cargo test -p rebellion-render --lib tactical_view -- --ignored
+else
+	@echo "Skipping bitmap hit-mask tests: no extracted bitmaps in data/base/ui."
 endif
 
 # 2. Formatting validation

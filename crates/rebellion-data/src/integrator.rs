@@ -22,19 +22,19 @@ use rebellion_core::events::{EventAction, FiredEvent, SkillField, SystemTag};
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::{
     GameEventRecord, EVT_AI_ACTION, EVT_BETRAYAL_CHECK, EVT_BLOCKADE_ENDED, EVT_BLOCKADE_STARTED,
-    EVT_BOMBARDMENT, EVT_BUILD_COMPLETE, EVT_CAMPAIGN_SNAPSHOT, EVT_CAPTURE, EVT_CHARACTER_HEALTH,
-    EVT_CHARACTER_KILLED, EVT_COLLECTION_RATE, EVT_COMBAT_GROUND, EVT_COMBAT_SPACE,
-    EVT_CONTROL_CHANGED, EVT_DS_CONSTRUCTION, EVT_DS_FIRED, EVT_DS_STATUS, EVT_ECONOMY_TICK,
-    EVT_ESCAPE, EVT_EVENT_FIRED, EVT_FLEET_ARRIVED, EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED,
-    EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK, EVT_JEDI_DISCOVERED, EVT_JEDI_TIER,
-    EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE, EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER,
-    EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY, EVT_SABOTEUR_DETECTED, EVT_SHIP_REPAIRED,
-    EVT_SHIP_REPAIR_STARTED, EVT_SIDE_CHANGE, EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT,
-    EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED, EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN,
-    EVT_UPRISING_CHECK, EVT_UPRISING_INCIDENT, EVT_VICTORY, EVT_VICTORY_CHECK, SYS_AI,
-    SYS_BETRAYAL, SYS_BLOCKADE, SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY, SYS_EVENTS, SYS_FOG,
-    SYS_JEDI, SYS_MANUFACTURING, SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR, SYS_RESEARCH, SYS_STORY,
-    SYS_UPRISING, SYS_VICTORY,
+    EVT_BLOCKADE_TROOP_DESTROYED, EVT_BOMBARDMENT, EVT_BUILD_COMPLETE, EVT_CAMPAIGN_SNAPSHOT,
+    EVT_CAPTURE, EVT_CHARACTER_HEALTH, EVT_CHARACTER_KILLED, EVT_COLLECTION_RATE,
+    EVT_COMBAT_GROUND, EVT_COMBAT_SPACE, EVT_CONTROL_CHANGED, EVT_DS_CONSTRUCTION, EVT_DS_FIRED,
+    EVT_DS_STATUS, EVT_ECONOMY_TICK, EVT_ESCAPE, EVT_EVENT_FIRED, EVT_FLEET_ARRIVED,
+    EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED, EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK,
+    EVT_JEDI_DISCOVERED, EVT_JEDI_TIER, EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE,
+    EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER, EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY,
+    EVT_SABOTEUR_DETECTED, EVT_SHIP_REPAIRED, EVT_SHIP_REPAIR_STARTED, EVT_SIDE_CHANGE,
+    EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT, EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED,
+    EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN, EVT_UPRISING_CHECK, EVT_UPRISING_INCIDENT, EVT_VICTORY,
+    EVT_VICTORY_CHECK, SYS_AI, SYS_BETRAYAL, SYS_BLOCKADE, SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY,
+    SYS_EVENTS, SYS_FOG, SYS_JEDI, SYS_MANUFACTURING, SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR,
+    SYS_RESEARCH, SYS_STORY, SYS_UPRISING, SYS_VICTORY,
 };
 use rebellion_core::ids::DatId;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
@@ -54,7 +54,8 @@ use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
 use rebellion_core::world::{
-    ControlKind, FighterEntry, Fleet, GameWorld, ShipInstance, SpecialForceUnit, TroopUnit,
+    CapitalShipClass, ControlKind, FighterEntry, Fleet, GameWorld, ShipInstance, SpecialForceUnit,
+    TroopUnit,
 };
 
 // ---------------------------------------------------------------------------
@@ -1095,7 +1096,12 @@ impl PerceptionIntegrator {
     // ── Step 8: Blockade ──────────────────────────────────────────────────
 
     /// Apply blockade events: troop destruction + telemetry.
-    pub fn apply_blockade_events(&mut self, world: &mut GameWorld, events: &[BlockadeEvent]) {
+    pub fn apply_blockade_events(
+        &mut self,
+        world: &mut GameWorld,
+        transport: &mut TroopTransportState,
+        events: &[BlockadeEvent],
+    ) {
         for evt in events {
             match evt {
                 BlockadeEvent::BlockadeStarted { system, tick } => {
@@ -1116,11 +1122,21 @@ impl PerceptionIntegrator {
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
-                BlockadeEvent::TroopDestroyed { system, troop, .. } => {
-                    if let Some(sys) = world.systems.get_mut(*system) {
-                        sys.ground_units.retain(|&k| k != *troop);
+                BlockadeEvent::TroopDestroyed {
+                    system,
+                    troop,
+                    tick,
+                } => {
+                    // The regiment was aboard a fleet leaving the system.
+                    if transport.destroy_embarked(world, *troop) {
+                        self.events.push(GameEventRecord::new(
+                            *tick,
+                            self.wall_ms,
+                            SYS_BLOCKADE,
+                            EVT_BLOCKADE_TROOP_DESTROYED,
+                            serde_json::json!({ "system": sys_name(world, *system) }),
+                        ));
                     }
-                    world.troops.remove(*troop);
                 }
             }
         }
@@ -1618,11 +1634,28 @@ fn apply_mission_effects_inner(
                         sys.popularity_alliance = (sys.popularity_alliance - 0.05).clamp(0.0, 1.0);
                     }
                 }
-                uprising_state.clear_uprising(*system);
             }
+            MissionEffect::DeathStarSabotaged { .. } => {}
+        }
+    }
+    apply_mission_state_effects(effects, uprising_state, death_star_state);
+}
+
+/// Apply the mission effects that live outside `GameWorld`: a subdued
+/// uprising ends and Death Star sabotage delays construction. The native and
+/// browser app shares this with the headless integrator.
+pub fn apply_mission_state_effects(
+    effects: &[MissionEffect],
+    uprising_state: &mut UprisingState,
+    death_star_state: &mut DeathStarState,
+) {
+    for effect in effects {
+        match effect {
+            MissionEffect::UprisingSubdued { system } => uprising_state.clear_uprising(*system),
             MissionEffect::DeathStarSabotaged { ticks_delayed } => {
                 death_star_state.add_sabotage_delay(*ticks_delayed);
             }
+            _ => {}
         }
     }
 }
@@ -1937,16 +1970,21 @@ fn apply_ai_actions_inner(
             } => {
                 let roll = rolls.get(roll_idx).copied().unwrap_or(*duration_roll);
                 roll_idx += 1;
-                mission_state.dispatch(
-                    *kind,
-                    mission_faction,
-                    *character,
-                    *target_system,
-                    *target_character,
-                    roll,
-                );
-                ai_state.mark_busy(*character);
-                true
+                let dispatched = mission_state
+                    .dispatch_guarded(
+                        *kind,
+                        mission_faction,
+                        *character,
+                        *target_system,
+                        *target_character,
+                        roll,
+                        world,
+                    )
+                    .is_some();
+                if dispatched {
+                    ai_state.mark_busy(*character);
+                }
+                dispatched
             }
             AIAction::EnqueueProduction {
                 system,
@@ -2057,6 +2095,42 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Controlled(Faction::Empire),
         })
+    }
+
+    #[test]
+    fn a_subdue_success_ends_the_uprising_and_sabotage_delays_the_death_star() {
+        let mut systems: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        let system = systems.insert(());
+        let mut uprisings = UprisingState::new();
+        uprisings.active_uprisings.insert(
+            system,
+            rebellion_core::uprising::ActiveUprising {
+                started_tick: 0,
+                loyalty_at_start: 0,
+            },
+        );
+        let mut death_star = DeathStarState::default();
+        rebellion_core::death_star::DeathStarSystem::start_construction(&mut death_star, system);
+        let before = death_star
+            .under_construction
+            .as_ref()
+            .unwrap()
+            .ticks_remaining;
+
+        apply_mission_state_effects(
+            &[
+                MissionEffect::UprisingSubdued { system },
+                MissionEffect::DeathStarSabotaged { ticks_delayed: 50 },
+            ],
+            &mut uprisings,
+            &mut death_star,
+        );
+
+        assert!(!uprisings.is_uprising(system));
+        assert_eq!(
+            death_star.under_construction.unwrap().ticks_remaining,
+            before + 50
+        );
     }
 
     #[test]
@@ -2224,6 +2298,159 @@ mod tests {
         let garrison = world.systems[origin].fleets[0];
         assert_ne!(garrison, transit);
         assert_eq!(world.fleets[garrison].ship_count(), 2);
+    }
+
+    #[test]
+    fn a_completed_death_star_can_fire_from_its_new_fleet() {
+        // CAPSHPSD.DAT record 136 is the Death Star (TEXTSTRA 10120).
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Yard");
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(rebellion_core::world::DEATH_STAR_CLASS_ID),
+            is_empire: true,
+            hull: 25_000,
+            ..Default::default()
+        });
+        let target = add_system(&mut world, "Target");
+        world.systems[target].control = ControlKind::Controlled(Faction::Alliance);
+
+        apply_build_completion_inner(
+            &CompletionEvent {
+                system,
+                tick: 1,
+                kind: BuildableKind::CapitalShip(class),
+            },
+            &mut world,
+        );
+
+        let fleet = world.systems[system].fleets[0];
+        assert!(world.fleets[fleet].has_death_star);
+        world.systems[system].fleets.clear();
+        world.systems[target].fleets.push(fleet);
+        world.fleets[fleet].location = target;
+        assert!(rebellion_core::death_star::DeathStarSystem::fire(
+            &DeathStarState::default(),
+            &world,
+            target,
+            2
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn a_regiment_lost_running_a_blockade_leaves_its_fleet_and_is_reported() {
+        // FUN_00504990 destroys the regiment; FUN_00504a00 raises event 0x340.
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Bespin");
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            troop_capacity: 1,
+            ..CapitalShipClass::default()
+        });
+        let fleet = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![ShipInstance::new(class, 100, false)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        world.systems[system].fleets.push(fleet);
+        let troop = world.troops.insert(rebellion_core::world::TroopUnit {
+            class_dat_id: DatId::new(0x1000_0001),
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        world.systems[system].ground_units.push(troop);
+        let mut transport = TroopTransportState::default();
+        transport.embark(&mut world, fleet, &[troop]).unwrap();
+        let mut integrator = PerceptionIntegrator::new(9, 0);
+
+        integrator.apply_blockade_events(
+            &mut world,
+            &mut transport,
+            &[BlockadeEvent::TroopDestroyed {
+                system,
+                troop,
+                tick: 9,
+            }],
+        );
+
+        assert!(transport.cargo(fleet).is_empty());
+        assert!(!world.troops.contains_key(troop));
+        let events = integrator.finish();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EVT_BLOCKADE_TROOP_DESTROYED);
+        assert_eq!(events[0].details["system"], "Bespin");
+    }
+
+    #[test]
+    fn a_death_star_joining_a_fleet_marks_it_and_other_ships_do_not() {
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Yard");
+        let mut add_class = |id| {
+            world.capital_ship_classes.insert(CapitalShipClass {
+                dat_id: DatId::new(id),
+                is_empire: true,
+                hull: 100,
+                ..Default::default()
+            })
+        };
+        let star_destroyer = add_class(131);
+        let death_star = add_class(rebellion_core::world::DEATH_STAR_CLASS_ID);
+        let build = |world: &mut GameWorld, class| {
+            apply_build_completion_inner(
+                &CompletionEvent {
+                    system,
+                    tick: 1,
+                    kind: BuildableKind::CapitalShip(class),
+                },
+                world,
+            );
+        };
+
+        build(&mut world, star_destroyer);
+        let fleet = world.systems[system].fleets[0];
+        assert!(!world.fleets[fleet].has_death_star);
+
+        build(&mut world, death_star);
+        assert_eq!(world.systems[system].fleets, [fleet]);
+        assert!(world.fleets[fleet].has_death_star);
+    }
+
+    #[test]
+    fn completed_squadrons_stack_in_their_own_side_fleet() {
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Yard");
+        let enemy = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        world.systems[system].fleets.push(enemy);
+        let tie = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                is_empire: true,
+                ..Default::default()
+            });
+        for _ in 0..2 {
+            apply_build_completion_inner(
+                &CompletionEvent {
+                    system,
+                    tick: 1,
+                    kind: BuildableKind::Fighter(tie),
+                },
+                &mut world,
+            );
+        }
+
+        assert!(world.fleets[enemy].fighters.is_empty());
+        let own = world.systems[system].fleets[1];
+        assert_eq!(world.fleets[own].fighters.len(), 1);
+        assert_eq!(world.fleets[own].fighters[0].count, 2);
     }
 
     #[test]
@@ -2460,8 +2687,7 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
                 .capital_ships
                 .iter()
                 .fold((false, false), |(present, alive), ship| {
-                    let is_death_star =
-                        world.capital_ship_classes[ship.class].dat_id.family() == 0x34;
+                    let is_death_star = world.capital_ship_classes[ship.class].is_death_star();
                     (
                         present || is_death_star,
                         alive || (is_death_star && ship.alive),
@@ -2807,6 +3033,10 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                 .capital_ship_classes
                 .get(*class_key)
                 .is_some_and(|c| c.is_alliance);
+            let is_death_star = world
+                .capital_ship_classes
+                .get(*class_key)
+                .is_some_and(CapitalShipClass::is_death_star);
 
             let fleet_key = {
                 let Some(sys) = world.systems.get(sys_key) else {
@@ -2829,6 +3059,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                     fleet
                         .capital_ships
                         .push(ShipInstance::new(*class_key, hull, is_alliance));
+                    fleet.has_death_star |= is_death_star;
                 }
             } else {
                 let hull = world
@@ -2841,7 +3072,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                     fighters: vec![],
                     characters: vec![],
                     is_alliance,
-                    has_death_star: false,
+                    has_death_star: is_death_star,
                 };
                 let fk = world.fleets.insert(fleet);
                 if let Some(sys) = world.systems.get_mut(sys_key) {

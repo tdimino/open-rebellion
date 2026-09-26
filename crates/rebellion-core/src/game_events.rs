@@ -77,6 +77,8 @@ pub const EVT_EVENT_FIRED: &str = "event_fired";
 pub const EVT_AI_ACTION: &str = "ai_action";
 pub const EVT_BLOCKADE_STARTED: &str = "blockade_started";
 pub const EVT_BLOCKADE_ENDED: &str = "blockade_ended";
+/// A regiment was destroyed leaving a blockaded system (event `0x340`).
+pub const EVT_BLOCKADE_TROOP_DESTROYED: &str = "blockade_troop_destroyed";
 pub const EVT_UPRISING_INCIDENT: &str = "uprising_incident";
 pub const EVT_UPRISING_BEGAN: &str = "uprising_began";
 pub const EVT_DS_CONSTRUCTION: &str = "death_star_construction";
@@ -181,6 +183,7 @@ mod tests {
             EVT_AI_ACTION,
             EVT_BLOCKADE_STARTED,
             EVT_BLOCKADE_ENDED,
+            EVT_BLOCKADE_TROOP_DESTROYED,
             EVT_UPRISING_INCIDENT,
             EVT_UPRISING_BEGAN,
             EVT_DS_CONSTRUCTION,

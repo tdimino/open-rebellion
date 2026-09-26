@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B17",
+  "status": "pass_command_voice_bank_strict_a0_pending",
+  "source_contract": {
+    "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50"],
+    "capital_maneuver_callers": ["FUN_005a3020", "FUN_005a3f00"],
+    "fighter_maneuver_caller": "FUN_005a4e50",
+    "capital_attack_caller": "FUN_005a3aa0",
+    "capital_formation_callers": ["FUN_005a3740", "FUN_005a3850"],
+    "capital_mission_caller": "FUN_005a3630",
+    "fighter_mission_caller": "FUN_005a48d0",
+    "alliance_event_base": 32,
+    "alliance_resource_base": 14001,
+    "empire_event_base": 154,
+    "empire_resource_base": 15001,
+    "alliance_variants": 45,
+    "empire_variants": 45,
+    "total_variants": 90,
+    "voicefxa_dll_sha256": "0f2310bc2c03fa6f4f08aa0a7e70f1b6843e26625d426b4b1d419f7403fe9798",
+    "voicefxe_dll_sha256": "2c742109d6dabd5ea374dcdd030d43de10bc8ed3a1e1d89c2039d2ee0d64aabf"
+  },
+  "browser_run": {
+    "run_id": "2026-09-24T20-58-40-136Z-18584",
+    "scenario": "production-tactical-audio-routing",
+    "passed": 4,
+    "failed": 0,
+    "muted_launches": 4,
+    "four_request_startups": 4,
+    "browser_processes_closed": 4,
+    "weapon_variants_per_case": 22,
+    "command_voice_variants_per_case": 90
+  },
+  "verification": {
+    "workspace_tests": "760_passed_0_failed_21_ignored_clean_isolated_patch_tree",
+    "focused_render_tests": "256_passed_0_failed_1_ignored",
+    "focused_app_tests": "17_passed_0_failed",
+    "owned_dll_extraction": "90_passed_45_per_faction",
+    "catalog_schema": "pass_36_tactical_scenarios",
+    "matrix_coverage": "106_of_106_deterministic_A1",
+    "browser_audio_probe": "4_of_4_pass_22_weapon_and_90_voice_cache_hits_muted",
+    "independent_browser_review": "astra_low_pass_no_in_scope_blockers",
+    "strict_gate_run": false,
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_640x480": "ca0b7d83d0d1cf0dfb90c6d01f296c3662cb58d71a85e9359556b44d1ba7df55",
+    "alliance_1280x800": "65e169fafa6311f8d46556c877d5464395998534259bddeb19c1ed4819810833",
+    "empire_640x480": "b1f75f11831900324162f2ff2de9269199310d8f3d7391fbc582d73b09d7710d",
+    "empire_1280x800": "084d8a7a56d11d5a5caa13b2abb667e4545633a7e609517346dd2925b83304f7"
+  },
+  "fixture_wasm_sha256": "d43340c06f3e3b8c07d295bfc8a339f9845abba5b055a5eee441faa2aa868bf9",
+  "runtime_pack_sha256": "3debbd31c667319ee992befddd76c4a31842d12aaa42c64dde68e8bdaa180060",
+  "limits": [
+    "remaining_non_weapon_result_withdrawal_and_death_star_voice_events_open",
+    "mixing_ducking_and_interruption_open",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ],
+  "proprietary_artifacts_committed": false
+}

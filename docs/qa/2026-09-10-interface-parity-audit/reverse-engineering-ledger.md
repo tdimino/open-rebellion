@@ -79,6 +79,17 @@ faction rails match their original 8-bit resources pixel-for-pixel at 640x480.
 The illuminated predicate and original Message Index destination remain open.
 See the [rail evidence](evidence/2026-09-12-message-index-rail.md).
 
+P60 recovers and implements the Game Speed control. The day readout opens a
+five-item STRATEGY menu (`FUN_0042d190`), and the rates come from
+`FUN_00487eb0`. Pause sets a stop day one day ahead (`FUN_0041d2f0`,
+`FUN_0041e290`) and opens the REBDLOG alert (`FUN_00417020`), and
+TEXTCOMM accelerator table 11 maps the speed keys. The same pass recovers the
+Message Index window (`FUN_0042a240`, `FUN_00466350`), its category mapping,
+the rail resting path, and the Advice Very Slow drop (`FUN_00487ff0`). The
+rail illumination-on path is not yet recovered. See the
+[game-speed recovery](evidence/2026-09-24-game-speed-recovery.md) and
+[Message Index recovery](evidence/2026-09-24-message-index-recovery.md).
+
 P47A identifies STRATEGY 900 and 901 as the faction shells, with 902 and 903 as
 the bright and dim galaxy resources. P47B proves 902 belongs to Display Off and
 903 to every active GID mode, then restores the default Popular Support caption,
@@ -105,7 +116,9 @@ when a required export is empty.
 ## Original resource truth
 
 Runtime pack v2 contains 52 game-data entries, 2,303 standard BMPs, all 3,988
-ALSPRITE and EMSPRITE type-302 frames, and five audio files. The owned
+ALSPRITE and EMSPRITE type-302 frames, and 118 audio files: two music cues,
+four menu effects, 22 tactical weapon effects, and 90 tactical command voices.
+The owned
 installation contains important additional families that are not yet staged or
 packed:
 
@@ -115,7 +128,8 @@ packed:
 | EMSPRITE | 753 BIN controls and 216 WAVs; its 34 BMPs and 2,348 type-302 frames are staged |
 | ALBRIEF | 366 BIN controls, 2,684 type-302 frames, 17 WAVs |
 | EMBRIEF | 471 BIN controls, 2,738 type-302 frames, 22 WAVs |
-| TACTICAL | 87 type-301 DirectX meshes, 397 type-303 textures, 66 WAVs |
+| TACTICAL | 87 type-301 DirectX meshes, 397 type-303 textures, and 44 WAVs beyond the 22 staged weapon variants |
+| VOICEFXA and VOICEFXE | 195 WAVs beyond the 90 staged battle-ready and group-command recordings |
 | STRATEGY | 96 RCDATA resources and 66 WAVs beyond its staged BMPs |
 | REBDLOG and TEXTCOMM | Original dialog chrome, text, templates, and accelerators |
 | EData and ENCYTEXT | 187 400×200 entity images and 348 descriptions |
@@ -152,7 +166,7 @@ and a next proof in the [machine-readable ledger](reverse-engineering-ledger.jso
 | RE-BAT-01 | Battle Alert, strategic reports, and results | static-partial | Trace state setters and callers into constructors, choices, force tabs, results, media callbacks, and return routing |
 | RE-GND-01 | Original ground-assault presentation | static-partial | Prove report-only flow and remove the invented live-combat route |
 | RE-TAC-01 | Tactical loader, control tree, and event-handler registry | static-proven | Join subordinate control vtables and event slots to exact rectangles, predicates, handlers, and observable transitions |
-| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus and joins plus live rendering, damage, repair, movement, commands, capital/fighter combat, collision, groups, retained formations, Death Star, original result/options panels, trench-run routes, and strategic result application source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, original arrival callbacks, power allocation, native beam behavior, post-battle orchestration, native playback, remaining controls, and A0 comparison |
+| RE-TAC-02 | Tactical control geometry and resource-state selection | static-partial; complete corpus and joins plus live rendering, damage, repair, movement, commands, capital/fighter combat, collision, groups, retained formations, Death Star, original result/options panels, withdrawal confirmation, destroyed presentation, selected-ship contents, Escort, trench-run routes, and strategic result application source-proven/browser-rendered | Follow the [ranked recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md) through exact global RNG sequencing, original arrival callbacks, power allocation, native beam behavior, post-battle orchestration, native playback, remaining controls, and A0 comparison |
 | RE-TAC-03 | Tactical battle-results composition | static-partial | Connect state setters, result construction, canonical application, reports, media, and strategic return |
 | RE-DS-01 | Strategic Destroy System and sabotage paths | static-partial | Resolve confirmation, report, and family `0x34` predicates |
 | RE-DS-02 | Tactical Death Star and trench-run routing | static-partial; exact result-to-film dispatch proven and implemented | Recover the original state-6 versus state-7 producer, compare native playback and return timing, and close A0 |
@@ -255,10 +269,58 @@ restores live invalidation, stable same-class replacement, and exhausted-list
 clearing. The [P58-B06 checkpoint](evidence/2026-09-22-tactical-completion-bundle.md)
 adds capital and fighter combat, collision, automatic groups, retained
 formations, the separate Death Star, original result/options panels, and both
-trench-run routes. Exact global RNG sequencing, original arrival callbacks and
+trench-run routes. [P58-B13 evidence](evidence/2026-09-23-tactical-withdraw-confirmation.md)
+restores the executable-derived withdrawal confirmation and exact panel,
+text, control, cancel, and confirm contract. The
+[P58-B14 evidence](evidence/2026-09-23-tactical-detail-escort.md) adds complete
+destroyed presentation, compact GOKRES assignments in panel 1302, and direct
+right-click Escort from `FUN_005ca6d0` with order code 1, retained target,
+marker, follow, opportunity fire, and target cleanup. Exact global RNG
+sequencing, original arrival callbacks and
 recovery trajectories, power allocation, native beam behavior, shared
 post-battle bombardment, landing, and navigation orchestration, native
 playback, and original visual acceptance remain open.
+
+[P58-B15 evidence](evidence/2026-09-24-tactical-battle-alert-audio.md) traces
+`FUN_0044f860` into the faction Battle Alert resources and recovers MDATA 307
+plus event `0x14` to TACTICAL WAVE 13054 through `FUN_005bae60`,
+`FUN_005ba980`, `FUN_005bad50`, and `FUN_005ba520`. The deterministic A1
+crosswalk now maps all 106 cells; A0 coverage and strict acceptance remain
+0/106.
+
+[P58-B16 evidence](evidence/2026-09-24-tactical-weapon-audio.md) corrects the
+provisional event label: `FUN_005a7500` registers event `0x14` as
+`SHIP_TAKE_TORPEDO_HIT`, not ship destruction. Together with the audio-manager
+tables and `FUN_005b3f10`, it maps events `0x0d–0x14` to all 22 WAVE
+`13033–13054` variants and dispatches them from production capital and fighter
+combat. Exact shared-RNG sequencing and remaining non-weapon/voice events stay
+open.
+
+[P58-B17 evidence](evidence/2026-09-24-tactical-command-voice.md) follows the
+faction event bases in `FUN_005bae60` and the production command callers to 90
+exact VOICEFXA/VOICEFXE recordings. Battle ready and task-force/RGBY maneuver,
+attack, formation, and mission acknowledgements now dispatch through native
+and browser audio backends. The focused muted browser gate loads and routes
+all 22 weapon and 90 command-voice resources for both factions and viewports.
+Result, withdrawal, and Death Star voice families, mixing, interruption,
+audible native comparison, and strict A0 acceptance remain open.
+
+[P58-B18 evidence](evidence/2026-09-25-tactical-complete-voice-bank.md) extends
+that source table through event `0x13c` and proves complete transport of 285
+recordings: VOICEFXA `14001–14122`, VOICEFXE `15001–15132`, and VOICEFXA
+`15133–15163`. Production now dispatches selected withdrawal, battle-outcome,
+Death Star, and RGBY trench-run transitions. The focused muted browser gate
+loads and routes all 307 tactical weapon and voice resources for both factions
+and viewports. Remaining completion, destruction, recovery, warning, and
+ordered trench chatter callers, exact shared-RNG sequencing, mixing,
+interruption, audible native comparison, and strict A0 acceptance remain open.
+
+[P58-B19 evidence](evidence/2026-09-25-tactical-mixed-task-force-target.md)
+follows `FUN_005a24d0`'s task-force ordinal check before hostile focus-target
+assignment. Mixed capital selections now preserve manual, active, and Escort
+targets and queue Alliance event `0x84` / WAVE `14101` or Imperial event
+`0x102` / WAVE `15105`. Four muted faction/viewport cases pass; audible native
+comparison and strict A0 acceptance remain open.
 
 ## Immediate implementation order
 
@@ -273,9 +335,11 @@ playback, and original visual acceptance remain open.
 5. Continue the full GID mapping without replacement art: recover the code-built
    menu, expanded legend, remaining filter predicates and overlays, and exact
    map input.
-6. Recover and implement the complete `TAC-01` through `TAC-07` space-battle
+6. Continue the `TAC-01` through `TAC-07` space-battle
    path using the [ranked Windows/Ghidra recovery map](../../reference/space-battle-launcher/reverse-engineering-map.md),
-   including type-301/303 resources, tactical audio, results, and Death Star controls.
+   including remaining completion, destruction, recovery, warning, and
+   ordered trench voice dispatch, results, and native Death Star behavior,
+   then acquire A0 evidence for the complete mapped matrix.
 7. Use original-runtime capture only for the remaining dynamic proof boundary.
 
 No static discovery marks a surface complete. It closes only the corresponding

@@ -1,7 +1,11 @@
 # Open Rebellion plans
 
-The [Batched Interface Parity Execution Plan](2026-09-11-feat-batched-interface-parity-plan.md)
-is the current primary plan. Strategic shell, GID, system-window, and first
+The [Tactical 106-Cell Acceptance Train](2026-09-22-tooling-tactical-106-cell-acceptance.md)
+is the current space-battle completion plan. It defines the local commit set,
+authoritative A0 capture contract, deterministic A1 mapping, comparison gate,
+and single verified push required for an honest 106/106 result. The broader
+[Batched Interface Parity Execution Plan](2026-09-11-feat-batched-interface-parity-plan.md)
+remains the primary interface plan. Strategic shell, GID, system-window, and first
 tactical-shell checkpoints are in place. The first original three-LOD family,
 source predicate, and live no-reload slot journey pass the isolated browser
 matrix. Source camera, authored mesh coordinates, system palette selection,
@@ -20,12 +24,12 @@ velocity, physical integration, authentic tactical command assignment,
 recovered maneuver waypoints, Hold execution, source-rate turning, waypoint completion,
 full fighter recovery states, typed attack target acquisition, and stable
 same-class target replacement when a target becomes invalid. The next
-space-battle commit is one consolidated completion bundle covering exact weapon
-resolution, fighter combat, collision and formation, Death Star and outcome
-paths, campaign return, and standalone production-scene launchability. Its
-final browser gate runs the complete 106-cell matrix with independent review.
-Missing lossless original baselines remain explicit A0 blockers and cannot be
-accepted by browser evidence alone.
+space-battle checkpoint now passes its 120-case implementation gate, and the
+deterministic A1 crosswalk maps all 106 cells through 87 journeys and 19
+snapshots. The final acceptance train captures and compares all 106 strict
+cells. Missing
+lossless original baselines remain explicit A0 blockers and cannot be accepted
+by browser evidence alone.
 
 The active
 [Interface Parity Acceleration Sidecar](2026-09-11-tooling-interface-parity-acceleration-sidecar.md)

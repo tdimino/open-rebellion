@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B13",
+  "status": "pass_partial_a1_crosswalk",
+  "catalog_scenarios": 33,
+  "summary": {
+    "denominator": 106,
+    "matrix_coverage": 101,
+    "journey_cells": 82,
+    "snapshot_cells": 19,
+    "catalog_cells_missing": 5,
+    "a0_coverage": 0,
+    "parity_acceptance": 0
+  },
+  "source_contract": {
+    "panel_resource": 1310,
+    "confirm_resources": [1113, 1114],
+    "cancel_resources": [1115, 1116],
+    "title_text_id": 56772,
+    "prompt_text_id": 56771,
+    "functions": ["FUN_005f0c20", "FUN_005f0f40", "FUN_005f1050", "FUN_005f1170"]
+  },
+  "browser_runs": [
+    {
+      "run_id": "2026-09-23T18-00-18-002Z-85165",
+      "scenario": "production-battle-options-withdrawal",
+      "passed": 2,
+      "failed": 0,
+      "muted_launches": 2,
+      "four_request_startups": 2,
+      "browser_processes_closed": 2
+    }
+  ],
+  "verification": {
+    "rebellion_render_tests": "252_passed_1_ignored",
+    "harness_unit_tests": "26_passed_0_failed",
+    "harness_check": "pass",
+    "source_bitmap_probes": "panel_1310_controls_1113_1114_1115_1116_exact",
+    "independent_browser_review": "bounded_A1_pass_no_P0_P1_P2_or_P3",
+    "production_fixture_exclusion": "pass_zero_tokens",
+    "tracked_proprietary_a0_paths": 0
+  },
+  "representative_capture_sha256": {
+    "alliance_confirmation_640x480": "b2c470f403535678725660168eaca4d7851a6423533398710bc9745a1318313a",
+    "empire_confirmation_640x480": "67ead1627d62f60cb7e4115bb0ed40b9782a54bc1b7379af163f38f4e2c94fbe"
+  },
+  "fixture_wasm_sha256": "f408491af698d80e6038f798634c02f2bb2ba5ead2973f5329274d076508e3d2",
+  "runtime_pack_sha256": "7f0289265d9f85bfc971b8160edcab0da2425f1ed7246c35e570b6a07fdde631",
+  "proprietary_artifacts_committed": false
+}

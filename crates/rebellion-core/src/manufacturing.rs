@@ -25,7 +25,7 @@
 //! use rebellion_core::tick::{GameClock, GameSpeed};
 //!
 //! let mut clock = GameClock::new();
-//! clock.set_speed(GameSpeed::Normal);
+//! clock.set_speed(GameSpeed::Medium);
 //!
 //! let mut state = ManufacturingState::new();
 //! // ... populate queues ...
@@ -454,7 +454,7 @@ mod tests {
     // --- ProductionQueue tests ---
 
     #[test]
-    fn enqueue_and_active() {
+    fn enqueued_item_becomes_the_active_production() {
         let mut q = ProductionQueue::new();
         assert!(q.active().is_none());
 
@@ -464,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn advance_partial_progress() {
+    fn partial_advance_reduces_ticks_remaining() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         let completed = q.advance_ticks(4);
@@ -507,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_active_item() {
+    fn canceling_the_active_item_promotes_the_next() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         q.enqueue(fighter_item(5));
@@ -540,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn progress_fraction() {
+    fn progress_fraction_reports_half_after_half_the_ticks() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         q.advance_ticks(5);
@@ -621,10 +621,10 @@ mod tests {
         state.enqueue(system, cap_ship_item(2));
 
         let mut clock = GameClock::new();
-        clock.set_speed(GameSpeed::Fast); // 2× speed
+        clock.set_speed(GameSpeed::Fast);
 
-        // 1 real second at 2× = 2 ticks — should complete the item
-        let tick_events = clock.advance(1.0);
+        // 0.81 real seconds at 0.4 s/day = 2 ticks — should complete the item
+        let tick_events = clock.advance(0.81);
         assert_eq!(tick_events.len(), 2);
 
         let completions = ManufacturingSystem::advance(&mut state, &tick_events);

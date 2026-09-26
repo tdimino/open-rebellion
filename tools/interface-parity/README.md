@@ -18,6 +18,52 @@ node run.mjs --all --scenario=pan --no-build  # four focused faction/viewport ca
 
 Harness unit regressions can be run from the repository root with
 `make test-interface-harness`, or here with `npm run test:unit`.
+
+The tactical acceptance denominator is generated directly from the surface
+ledger rather than maintained as a second hand-written list:
+
+```sh
+node validate-tactical-matrix.mjs
+node validate-tactical-matrix.mjs --rows
+node validate-tactical-matrix.mjs \
+  --a0-manifest=.artifacts/interface-parity/a0/manifest.json --strict
+```
+
+The first command reports coverage totals, while `--rows` emits every stable
+cell from `TAC-01` through `TAC-07`. Strict mode requires exactly 106 unique
+catalog mappings and 106 provenance-complete A0 capture records. Add
+`--require-accepted` only at the final release gate; it fails until all 106
+canonical ledger cells are marked passed. The manifest schema and safe empty
+example are [`schemas/tactical-a0-manifest.schema.json`](schemas/tactical-a0-manifest.schema.json)
+and [`tactical-a0-manifest.example.json`](tactical-a0-manifest.example.json).
+Actual manifests and captures live under ignored
+`.artifacts/interface-parity/a0/`; the exclusion check rejects any tracked
+artifact from that store.
+
+Catalog scenarios declare `execution_kind` as `journey`, `snapshot`, or
+`negative-control`. The current crosswalk maps 106/106 cells: 87 journeys and
+19 snapshots. Negative controls may not map cells. Complete deterministic A1
+mapping does not convert any cell into original acceptance; A0 coverage and
+strict parity acceptance remain 0/106.
+
+Initialize the ignored local manifest once, then ingest each guest capture with
+its JSON sidecar:
+
+```sh
+mkdir -p .artifacts/interface-parity/a0
+cp tools/interface-parity/tactical-a0-manifest.example.json \
+  .artifacts/interface-parity/a0/manifest.json
+node tools/interface-parity/ingest-tactical-a0.mjs \
+  --manifest=.artifacts/interface-parity/a0/manifest.json \
+  --png=/path/to/TAC-01-C001.png \
+  --metadata=/path/to/TAC-01-C001.json
+```
+
+Ingestion verifies the exact ledger requirement, audited executable hash,
+unmodified source manifest, 640×480 sidecar and decoded PNG dimensions, capture
+provenance, input trace, and SHA-256. It copies accepted bytes only to the
+cell's ignored A0 directory and refuses a different replacement for an already
+registered cell. It does not resize or otherwise transform original output.
 GID actions register a fresh expected command event before input, then wait
 through the following paint; the combined wait has a two-second deadline.
 This prevents a stale log or an early screenshot from satisfying a new action.
@@ -52,7 +98,7 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 120 entry, negative-control,
+`node run.mjs --battle --all --no-build` for all 128 entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, selected-damage, subsystem/field-command,
 live-subsystem-damage, subsystem-repair/mobility, maneuver/movement,
@@ -67,7 +113,7 @@ active-force extent, four lane values, stable DAT and fleet-roster identities,
 exact signed-zero X slots, and selected source-world target. Each scenario uses a fresh muted
 browser. Source-bound 3D cases also assert the recovered Gouraud, dither,
 filtering, culling, depth, specular, diffuse, and emissive render-state contract.
-Fixture schema 27 additionally asserts representative capital-ship and fighter
+Fixture schema 29 additionally asserts representative capital-ship and fighter
 DAT-to-tactical-resource joins, exact production rendering of two joined
 capital-ship families, exact fighter close/far/indicator resource triplets,
 the test-only fighter focus used by the detail journey, and a 3D-off control
@@ -118,6 +164,10 @@ live engagements, and the absence of a wrong-class fallback.
 The attack-target-lifecycle snapshot invalidates the first hostile capital and
 fighter entries, then verifies stable same-class replacement for capital and
 fighter owners without cross-class or random fallback.
+The navigation/camera journey verifies all four original navigation-set
+controls, ordered routes and multiple targets, camera memorize/recall, and
+task-force chase in both factions and viewports. Navigation-point coordinates
+remain provisional until original-executable comparison.
 The Death Star journeys verify the owner-gated 1021 through 1024 control,
 resource 5030 as the sparse 440 by 438 tactical star surface, right-click
 target assignment, a visible delayed beam, destruction, and the hostile-only

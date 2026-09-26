@@ -42,6 +42,12 @@ checkpoints. It is not a release-parity score. A required cell passes only
 after its complete original-evidence, native, browser, viewport, faction,
 interaction, audio, and diagnostic matrix passes.
 
+P58-B19 is the latest tactical checkpoint. It restores source-exact rejection
+of a hostile focus target when selected capitals span multiple task forces,
+preserves their existing orders, and routes the faction response in the shared
+production renderer. Deterministic A1 mapping remains 106/106; strict A0
+acceptance remains 0/106.
+
 ## Working cadence
 
 Each bundle contains three to six tightly related interface changes that form
@@ -132,6 +138,13 @@ with exact 640x480 source-pixel checks in the muted harness. This is a UIP-B03
 visual slice, not a completed `CMD-08` workflow. The illuminated state,
 original index window, category routing, and interaction matrix remain open.
 See the [P49 rail evidence](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-12-message-index-rail.md).
+
+P60 continues UIP-B03 with the original Game Speed control. The day readout
+opens the five-item STRATEGY speed menu, Pause holds at the next day behind the
+REBDLOG "Resume Game Play?" alert, and the TEXTCOMM accelerators step the
+speed. The replacement status bar is gone. The Message Index window and its
+Advice slowdown are recovered statically for the next CMD-08 slice. See the
+[game-speed recovery](../qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-game-speed-recovery.md).
 
 P50 replaces the GID root and submenu's synthetic gray stroke with the eight
 original STRATEGY frame tiles, drawn as four corners and four batched repeating

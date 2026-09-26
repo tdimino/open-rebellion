@@ -177,8 +177,8 @@ pub enum PanelAction {
     // ── Play-testing (command palette) ────────────────────────────────
     /// Advance simulation by N ticks immediately.
     AdvanceTicks(u64),
-    /// Set game speed (0=paused, 1=normal, 2=fast, 4=faster).
-    SetGameSpeed(u32),
+    /// Set one of the original Game Speed menu's choices.
+    SetGameSpeed(rebellion_core::tick::GameSpeed),
     /// Toggle AI control for both factions.
     ToggleDualAI,
     /// Immediately evaluate victory conditions.

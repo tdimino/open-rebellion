@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P61",
+  "status": "pass_rail_illumination_window_pending",
+  "surfaces": ["CMD-08"],
+  "source_contract": {
+    "illuminate": "FUN_0042d8d0 via FUN_0041db20",
+    "rest": "FUN_0042da10 via FUN_0041db40",
+    "post": "FUN_0048a060",
+    "rebuild": "FUN_0048a2a0",
+    "load": "FUN_00488a30",
+    "factory": "FUN_00489740",
+    "type_names": "TEXTSTRA 0x5000 + type",
+    "masks": {"popular_support": 1, "resource": 4, "manufacturing": 8, "mission": 16, "chat": 32, "defense": 64, "fleet": 128, "conflict": 256, "advice": 512}
+  },
+  "verification": {
+    "render_and_app_tests": "300_passed_0_failed_before_final_test",
+    "mutation_gate": "rail_logic_all_caught_after_same_category_test",
+    "browser_rail_pixel_match": "empire_lit_and_rest_exact_alliance_rest_exact",
+    "strict_gate_run": false
+  },
+  "artifacts": {
+    "wasm_sha256": "f45018e89edbd97f918ebfe35a0e2e02a260500718991fd2a97c08daf54b69d1",
+    "runtime_pack_bytes": 44709520
+  },
+  "representative_capture_sha256": {
+    "empire_mid_manufacturing_lit": "0955a195d178bd36c19e78c6cefa2fb1cb9665a09b6dd20a9c00770da709f5fb",
+    "empire_later_manufacturing_conflict_lit": "bdccf7c8f375d0f152b6af8082efba81cf400f1eb9f82b4ce6d3c8643efff2c9",
+    "alliance_before_battle_resting": "ae71cbc5d5bfa57e7a394ab947efa0278bc0866d76788f7919957c1a436412a0"
+  },
+  "open": [
+    "Message Index window, category read, and rail rest",
+    "rail click routing to the window",
+    "unfiled producers listed in the recovery doc",
+    "per-faction audiences marked both are inferred",
+    "unread state is not saved",
+    "A0 comparison"
+  ]
+}

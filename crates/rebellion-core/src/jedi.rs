@@ -22,7 +22,8 @@
 //! # Lifecycle
 //!
 //! 1. At game start, characters with `jedi_probability > 0` roll against that probability.
-//!    Those that succeed have `force_tier` set to `Aware` by `JediSystem::apply_initial_awakening`.
+//!    Those that succeed have `force_tier` set to `Aware` by seeding
+//!    (`roll_character_stats` in `rebellion-data`).
 //! 2. A Force-aware character can be placed in Jedi training (`JediState::start_training`).
 //! 3. Each tick while in training, `force_experience` increments by 1.
 //! 4. When `force_experience` crosses a tier threshold, a `JediEvent::TierAdvanced` fires.
@@ -277,44 +278,6 @@ impl JediSystem {
         events
     }
 
-    /// Apply initial Force awakenings at game start.
-    ///
-    /// For each character with `jedi_probability > 0`, rolls against that probability
-    /// using the provided rng rolls. Characters that pass have their `force_tier` set
-    /// to `Aware`. Returns the keys of newly awakened characters.
-    ///
-    /// Caller must update `world.characters[key].force_tier = ForceTier::Aware`
-    /// for each returned key.
-    #[must_use]
-    pub fn apply_initial_awakening(world: &GameWorld, rng_rolls: &[f64]) -> Vec<CharacterKey> {
-        let mut awakened = Vec::new();
-        let mut roll_idx = 0;
-
-        for (key, character) in &world.characters {
-            if character.jedi_probability == 0 {
-                continue;
-            }
-            if character.force_tier != ForceTier::None {
-                continue; // already awakened (e.g. Luke)
-            }
-
-            let threshold = f64::from(character.jedi_probability) / 100.0;
-            let roll = if roll_idx < rng_rolls.len() {
-                let r = rng_rolls[roll_idx];
-                roll_idx += 1;
-                r
-            } else {
-                0.5
-            };
-
-            if roll < threshold {
-                awakened.push(key);
-            }
-        }
-
-        awakened
-    }
-
     /// Determine the Force tier for a given experience value.
     fn tier_for_xp(xp: u32) -> ForceTier {
         if xp >= XP_TO_EXPERIENCED {
@@ -405,14 +368,6 @@ mod tests {
             force_experience: force_xp,
             ..Default::default()
         })
-    }
-
-    #[test]
-    fn no_ticks_returns_empty() {
-        let world = GameWorld::default();
-        let mut state = JediState::new();
-        let events = JediSystem::advance(&mut state, &world, &[], &[]);
-        assert!(events.is_empty());
     }
 
     #[test]
@@ -545,28 +500,6 @@ mod tests {
         assert!(
             !detected,
             "already-discovered Jedi should not trigger detection again"
-        );
-    }
-
-    #[test]
-    fn initial_awakening_respects_probability() {
-        let mut world = GameWorld::default();
-
-        // High-probability Jedi (50%).
-        let high_key = add_jedi_character(&mut world, 50, 0, ForceTier::None);
-        // Zero-probability character.
-        let none_key = add_jedi_character(&mut world, 0, 0, ForceTier::None);
-
-        // Roll 0.3 < 0.5 → awakened; second character has jedi_probability=0 → skipped.
-        let awakened = JediSystem::apply_initial_awakening(&world, &[0.3, 0.3]);
-
-        assert!(
-            awakened.contains(&high_key),
-            "high-probability character should awaken"
-        );
-        assert!(
-            !awakened.contains(&none_key),
-            "zero-probability character should not awaken"
         );
     }
 

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "source_binary": "REBEXE.EXE",
   "source_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
-  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0", "ghidra/notes/tactical-planet-resource-path.md", "ghidra/notes/tactical-impact-effect-path.md", "ghidra/notes/tactical-projectile-field-path.md"],
+  "source_functions": ["ghidra/notes/FUN_00597610_ship_db.c", "ghidra/notes/FUN_005ab650.c", "FUN_005c7150", "FUN_005c63f0", "0x005d4af0", "ghidra/notes/tactical-planet-resource-path.md", "ghidra/notes/tactical-impact-effect-path.md", "ghidra/notes/tactical-projectile-field-path.md", "ghidra/notes/FUN_005a7500_weapons_fire.c", "ghidra/notes/FUN_005bae60.c", "ghidra/notes/FUN_005bad50.c"],
   "resource_module": "TACTICAL.DLL",
   "capital_ship_resource_type": 301,
   "fighter_resource_type": 303,
@@ -113,6 +113,75 @@
     "identity_grade": "source-proven",
     "visual_grade": "provisional-A1",
     "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-impact-effects.md"
+  },
+  "weapon_audio_contract": {
+    "resource_type": "WAVE",
+    "event_registration": "FUN_005a7500",
+    "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50", "FUN_005ba520"],
+    "capital_weapon_dispatch": "FUN_005b3f10",
+    "events": [
+      {"event": 13, "name": "SHIP_FIRELASERCANNON", "resources": [13033, 13034, 13035]},
+      {"event": 14, "name": "SHIP_FIRETURBOLASER", "resources": [13036, 13037, 13038]},
+      {"event": 15, "name": "SHIP_FIREIONCANNON", "resources": [13039, 13040, 13041]},
+      {"event": 16, "name": "SHIP_FIRETORPEDO", "resources": [13042, 13043, 13044]},
+      {"event": 17, "name": "SHIP_TAKE_LASER_HIT", "resources": [13045, 13046, 13047]},
+      {"event": 18, "name": "SHIP_TAKE_ION_HIT", "resources": [13048, 13049, 13050]},
+      {"event": 19, "name": "SHIP_TAKE_TURBO_HIT", "resources": [13051, 13052, 13053]},
+      {"event": 20, "name": "SHIP_TAKE_TORPEDO_HIT", "resources": [13054]}
+    ],
+    "variant_count": 22,
+    "identity_grade": "source-proven",
+    "runtime_grade": "provisional-A1",
+    "implementation": ["crates/rebellion-render/src/tactical_view.rs", "crates/rebellion-app/src/audio.rs"],
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md",
+    "open": ["exact shared-RNG sequence", "remaining non-weapon events and voice dispatch", "mixing, ducking, and interruption", "audible native comparison", "strict A0 acceptance"]
+  },
+  "command_voice_contract": {
+    "complete_bank_map": "tactical-voice-map.json",
+    "resource_type": "WAVE",
+    "audio_manager": ["FUN_005bae60", "FUN_005ba980", "FUN_005bad50"],
+    "faction_banks": [
+      {
+        "faction": "alliance",
+        "dll": "VOICEFXA.DLL",
+        "event_ranges": [[32, 153], [286, 316]],
+        "resource_ranges": [[14001, 14122], [15133, 15163]],
+        "variant_count": 153
+      },
+      {
+        "faction": "empire",
+        "dll": "VOICEFXE.DLL",
+        "event_ranges": [[154, 285]],
+        "resource_ranges": [[15001, 15132]],
+        "variant_count": 132
+      }
+    ],
+    "families": [
+      "battle_ready",
+      "capital_maneuver",
+      "fighter_maneuver",
+      "capital_attack",
+      "fighter_attack",
+      "capital_formation",
+      "capital_mission",
+      "fighter_mission",
+      "withdrawal",
+      "battle_outcome",
+      "completion",
+      "destruction",
+      "recovery",
+      "warning",
+      "death_star",
+      "trench_run"
+    ],
+    "variant_count": 285,
+    "identity_grade": "source-proven",
+    "runtime_grade": "provisional-A1",
+    "implementation": ["crates/rebellion-render/src/tactical_view.rs", "crates/rebellion-app/src/audio.rs"],
+    "evidence": "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-complete-voice-bank.md",
+    "full_bank_transport": "285 source resources implemented",
+    "production_dispatch": "command, withdrawal, battle outcome, selected Death Star, and group trench-run transitions implemented",
+    "open": ["remaining completion destruction recovery warning and ordered trench dispatch", "exact shared RNG sequence", "mixing ducking and interruption", "audible native comparison", "strict A0 acceptance"]
   },
   "projectile_field_contract": {
     "projectile_source_functions": ["FUN_005b1ea0", "FUN_005b1f60", "FUN_005b2080", "FUN_005b2c70", "FUN_005d3de0", "FUN_005ee590", "LAB_005eeb90"],

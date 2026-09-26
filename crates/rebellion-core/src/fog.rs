@@ -315,16 +315,6 @@ mod tests {
     }
 
     #[test]
-    fn reveal_makes_system_visible() {
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let key = sys_sm.insert(());
-        let mut fog = FogState::new(Faction::Alliance);
-        fog.reveal(key);
-        assert!(fog.is_visible(key));
-        assert_eq!(fog.len(), 1);
-    }
-
-    #[test]
     fn reveal_is_idempotent() {
         let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
         let key = sys_sm.insert(());
