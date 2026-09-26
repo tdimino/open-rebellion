@@ -1,14 +1,16 @@
 ---
 title: "Ghidra RE Notes — Index"
-description: "Master index of 5,127 decompiled C files, 8 Jython scripts, and recovered subsystem notes"
+description: "Master index of 5,395 decompiled C files (5,194 by address, 201 named copies), Ghidra scripts, and recovered subsystem notes"
 category: "ghidra"
 created: 2026-03-13
-updated: 2026-09-19
+updated: 2026-09-26
 ---
 
 # Ghidra RE Notes — Index
 
-**5,127 decompiled C files, 8 Jython scripts, and indexed recovery notes**
+**5,395 decompiled C files (5,194 `FUN_<address>.c` plus 201 named copies), Ghidra scripts, and indexed recovery notes**
+
+Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placeholders from commit aa2b333. They were filled, and 188 functions cited elsewhere in the repo were added, with Ghidra 12.1.3 headless `CreateAndDecompileTargets.java` against the read-only project. 29 of those files explain instead of decompiling: 27 addresses lie inside another function and name it, 1 (`0x005587d0`) is a jump stub outside any function, and 1 records the only decompiler failure (`FUN_006197d2`, "Overlapping input varnodes"). No note is empty.
 
 ## Scholar Documents
 
@@ -48,7 +50,7 @@ updated: 2026-09-19
 | [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | [bombardment.md](bombardment.md) | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
 
-## Decompiled Functions (5,127 files)
+## Decompiled Functions (5,395 files)
 
 ### By Game System
 

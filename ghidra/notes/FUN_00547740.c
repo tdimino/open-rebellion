@@ -1,0 +1,59 @@
+
+/* WARNING: Type propagation algorithm not settling */
+
+bool __thiscall
+FUN_00547740(void *this,int param_1,uint *param_2,int param_3,int param_4,uint param_5)
+
+{
+  bool bVar1;
+  uint *puVar2;
+  int iVar3;
+  undefined4 *puVar4;
+  int iVar5;
+  uint local_24;
+  int local_20 [5];
+  void *local_c;
+  undefined1 *puStack_8;
+  int local_4;
+  
+  local_4 = 0xffffffff;
+  puStack_8 = &LAB_00647918;
+  local_c = ExceptionList;
+  ExceptionList = &local_c;
+  FUN_004ece30(&local_24);
+  puVar2 = param_2;
+  bVar1 = false;
+  local_4 = 0;
+  FUN_004f26d0(local_20,param_2);
+  iVar5 = param_3;
+  local_20[1] = 1;
+  local_20[2] = -1;
+  local_4._0_1_ = 2;
+  iVar3 = FUN_0054bf00(param_3,&local_24,local_20 + 1);
+  if (local_20[2] == -1) {
+    puVar4 = FUN_004f4340(local_20 + 3);
+    param_2 = (uint *)0x43000003;
+    local_4._0_1_ = 4;
+    iVar5 = FUN_00547ba0(this,0,0,param_1,puVar2,(uint *)&param_2,local_20,&local_24,iVar5,puVar4,
+                         (void *)0x0,param_4,1,param_5);
+    if ((iVar5 == 0) || (iVar3 == 0)) {
+      bVar1 = false;
+    }
+    else {
+      bVar1 = true;
+    }
+    local_4._0_1_ = 3;
+    FUN_00619730();
+    local_4._0_1_ = 2;
+    FUN_004f4380(local_20 + 3);
+  }
+  local_4._0_1_ = 1;
+  FUN_00619730();
+  local_4 = (uint)local_4._1_3_ << 8;
+  FUN_00619730();
+  local_4 = 0xffffffff;
+  FUN_00619730();
+  ExceptionList = local_c;
+  return bVar1;
+}
+
