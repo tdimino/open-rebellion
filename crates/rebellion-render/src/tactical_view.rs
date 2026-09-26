@@ -4191,13 +4191,17 @@ impl BattleSession {
                     continue;
                 }
                 Some(TacticalAttackTarget::FighterGroup(_)) => {
-                    // The recovered Attack Fighters executor owns a fighter
-                    // target. Its arc-based weapon callback remains a separate
-                    // source-recovery gate, so do not redirect the shot to an
-                    // unrelated capital ship.
+                    // FUN_005d0bb0 accepts only object class 1, and
+                    // FUN_005a8fc0 links that typed fighter target. Once the
+                    // shared list lifecycle clears it, do not enter the
+                    // autonomous capital-target path.
                     continue;
                 }
-                None if ships[fire_idx].order == TacticalOrder::AttackCapitalShips => {
+                None if matches!(
+                    ships[fire_idx].order,
+                    TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters
+                ) =>
+                {
                     // No eligible target of the requested class remains.
                     continue;
                 }
@@ -13226,6 +13230,70 @@ mod tests {
             session.ships[0].attack_target, None,
             "an exhausted fighter list must not fall through to a capital target"
         );
+    }
+
+    #[test]
+    fn recovered_fighter_clears_attack_fighters_without_capital_fire_or_audio() {
+        fn session_with_source_order(order: TacticalOrder) -> BattleSession {
+            let mut source = test_ship(64, 0, true, true);
+            source.order = order;
+            source.attack_target = (order == TacticalOrder::AttackFighters)
+                .then_some(TacticalAttackTarget::FighterGroup(0));
+            source.weapon_arcs[0] = TacticalWeaponArc::new(300, 0, 0);
+            source.weapon_ranges.laser_cannon = 100.0;
+
+            let mut capital = test_ship(128, 0, false, true);
+            capital.hull_current = 1_000;
+            capital.hull_max = 1_000;
+            capital.shield = 1_000;
+            capital.shield_max = 1_000;
+
+            // FUN_005cf980 advances Docking (state 3) to Recovered (state 4)
+            // without removing the strategic squadron count. FUN_005d0bb0
+            // and FUN_005a8fc0 keep Attack Fighters bound to class 1, so the
+            // resulting empty typed list must not fall through to a capital.
+            let mut exhausted_fighter = test_fighter(5, false);
+            exhausted_fighter.recovery_state = TacticalFighterRecoveryState::Docking;
+            exhausted_fighter.squad_count = 12;
+
+            let mut session = test_session(vec![source, capital], vec![exhausted_fighter], true);
+            session.paused = false;
+            session
+        }
+
+        let mut ordered = session_with_source_order(TacticalOrder::AttackFighters);
+        let ordered_capital_before = (ordered.ships[1].hull_current, ordered.ships[1].shield);
+
+        ordered.step();
+
+        assert_eq!(
+            ordered.fighters[0].recovery_state,
+            TacticalFighterRecoveryState::Recovered
+        );
+        assert!(!ordered.fighters[0].alive);
+        assert_eq!(ordered.fighters[0].squad_count, 12);
+        assert_eq!(ordered.ships[0].attack_target, None);
+        assert_eq!(
+            (ordered.ships[1].hull_current, ordered.ships[1].shield),
+            ordered_capital_before
+        );
+        assert!(ordered.weapon_effects.is_empty());
+        assert!(ordered.impact_effects.is_empty());
+        assert!(ordered.pending_audio_cues.is_empty());
+
+        let mut autonomous = session_with_source_order(TacticalOrder::None);
+        let autonomous_capital_before =
+            (autonomous.ships[1].hull_current, autonomous.ships[1].shield);
+
+        autonomous.step();
+
+        assert_ne!(
+            (autonomous.ships[1].hull_current, autonomous.ships[1].shield),
+            autonomous_capital_before
+        );
+        assert_eq!(autonomous.weapon_effects.len(), 1);
+        assert_eq!(autonomous.impact_effects.len(), 1);
+        assert!(!autonomous.pending_audio_cues.is_empty());
     }
 
     #[test]
