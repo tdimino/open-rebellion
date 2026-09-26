@@ -1,6 +1,6 @@
 ---
 title: "Ghidra RE Notes — Index"
-description: "Master index of 5,395 decompiled C files (5,194 by address, 201 named copies), Ghidra scripts, and recovered subsystem notes"
+description: "Master index of 5,408 decompiled C files (5,207 by address, 201 named copies), Ghidra scripts, and recovered subsystem notes"
 category: "ghidra"
 created: 2026-03-13
 updated: 2026-09-26
@@ -8,7 +8,7 @@ updated: 2026-09-26
 
 # Ghidra RE Notes — Index
 
-**5,395 decompiled C files (5,194 `FUN_<address>.c` plus 201 named copies), Ghidra scripts, and indexed recovery notes**
+**5,408 decompiled C files (5,207 `FUN_<address>.c` plus 201 named copies), Ghidra scripts, and indexed recovery notes**
 
 Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placeholders from commit aa2b333. They were filled, and 188 functions cited elsewhere in the repo were added, with Ghidra 12.1.3 headless `CreateAndDecompileTargets.java` against the read-only project. 29 of those files explain instead of decompiling: 27 addresses lie inside another function and name it, 1 (`0x005587d0`) is a jump stub outside any function, and 1 records the only decompiler failure (`FUN_006197d2`, "Overlapping input varnodes"). No note is empty.
 
@@ -50,8 +50,10 @@ Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placehold
 | [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | [bombardment.md](bombardment.md) | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
 | [blockade-troop-withdrawal.md](blockade-troop-withdrawal.md) | Regiments lost running a blockade: withdraw percent, per-regiment copy, departure roll, event 0x340 | FUN_0050b310, FUN_0055a020, FUN_00504990, FUN_00504a00, FUN_00508660 |
+| [uprising-incident.md](uprising-incident.md) | Table ids to DAT files; uprising incident outcome codes from UPRIS1TB/UPRIS2TB; mission, decoy, foil, escape table consumers | FUN_0058b420, FUN_0053e240, FUN_00559ce0, FUN_0050d030, FUN_0050d150 |
+| [community-address-remap.md](community-address-remap.md) | The community disassembly is a different REBEXE build; region shifts and 43 remapped functions | FUN_00508250, FUN_0050b310, FUN_00559fe0, FUN_0055e410 |
 
-## Decompiled Functions (5,395 files)
+## Decompiled Functions (5,408 files)
 
 ### By Game System
 

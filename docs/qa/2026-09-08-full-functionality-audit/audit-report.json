@@ -1635,7 +1635,10 @@
         "Found by the 2026-09-25 test-pruning pass",
         "2026-09-25 fix: DeathStarSystem::fire no longer requires the shield generator down; FUN_005617b0 never references it, and the shield only absorbs hull damage in battle",
         "The Death Star is CAPSHPSD record 136 (TEXTSTRA 10120), a research-order-0 capital ship; family-0x34 checks never matched seeded classes, so CapitalShipClass::is_death_star accepts the record id for firing and fleet bookkeeping and a completed Death Star build marks its fleet and a destroyed one clears it",
-        "Open: start_construction's uncited 1,825-tick timer duplicates ordinary manufacturing so sabotage delays nothing; FUN_0055f650 (superlaser effects) is not decompiled; FUN_005617b0 passes it a flag from comparing a FUN_004f6b50 object with entity 0x90000109 and testing its +0x24 & 0xc0 == 0x80 bits, so our refusal to fire on Empire-controlled systems has no source yet; the fire command needs a browser pass; battle shield absorption stays limited to family-0x34 ids because nothing destroys the shield generator, which would make the seeded Death Star unkillable in auto-resolved battles"
+        "Open: start_construction's uncited 1,825-tick timer duplicates ordinary manufacturing so sabotage delays nothing; the superlaser fire path is unrecovered, so our fire() preconditions, including the refusal to fire on Empire-controlled systems, have no source; the fire command needs a browser pass; battle shield absorption stays limited to family-0x34 ids because nothing destroys the shield generator, which would make the seeded Death Star unkillable in auto-resolved battles",
+        "2026-09-26 correction: FUN_005617b0 is not a superlaser check. It recomputes CharacterMgr SeatOfPower: FUN_005070d0 finds 0x34000280, which MJCHARSD and TEXTSTRA 10368 name Emperor Palpatine, and the flag is set when he is alive (+0xac bit 0 clear) and active (+0x50 bit 0) at 0x90000109 (Coruscant, TEXTSTRA 12133) under Empire control ((+0x24 & 0xc0) == 0x80). FUN_0055f650 is decompiled: it stores that flag in +0x58 bit 0 and notifies CharacterMgrSeatOfPowerNotif (FUN_00562450, event 0x230); CharacterMgr vtable 0x006630c0",
+        "The real superlaser fire path is still unrecovered: DEATHSTAR_FIRE is referenced only by the tactical constructor FUN_005a7500, and the port's fire() preconditions have no source",
+        "Family 0x34 is the Empire major-character family (0x34000280 Emperor Palpatine, 0x35000281 Darth Vader), so the family-0x34 shield absorption matches no shipped hull; see F-025"
       ],
       "acceptance": "Construction, completion, planet destruction, and the shield's recovered role follow Ghidra evidence, with failing-without tests and a browser fire-command pass."
     },
@@ -1648,7 +1651,8 @@
         "crates/rebellion-core/src/research.rs: ship_class_is_available() and fighter_class_is_available() have no callers",
         "2026-09-25 fix: the manufacturing panel and AI production offer only capital ships and fighters with research_order <= the side's Ship level; fighters use their own FIGHTSD.DAT research_order against the Ship tree",
         "Three tests fail without the gate and scoped cargo mutants catch all 13 mutants in the gate; the seed-42 golden changes from tick 10 for this named cause",
-        "Open: troop and facility classes do not load research_order, so those trees gate nothing; FUN_0052e4f0 and FUN_0052e510 (buildability checks) are empty in the text export, so the <= comparison and level-0 start rest on the rebellion2 prototype and DAT data"
+        "Open: troop and facility classes do not load research_order, so those trees gate nothing; the <= comparison and level-0 start rest on the rebellion2 prototype and DAT data",
+        "2026-09-26 correction: FUN_0052e4f0 and FUN_0052e510 are not empty and are not buildability checks. Each returns FUN_005839e0(this+0x88 / this+0x8c, key), a count of list entries matching the key; their only caller, FUN_005330b0, is a consistency validator that checks each object in families 0x2d..0x2e and 0x28..0x2b against its side's list. The research gate's source remains the rebellion2 prototype and DAT data"
       ],
       "acceptance": "Build lists and manufacturing orders respect the recovered research-order gate for both factions."
     },
@@ -1666,7 +1670,10 @@
         "Correction: a successful Subdue Uprising mission ended the revolt only in the headless integrator; the app's mission handler dropped the uprising clear and the Death Star sabotage delay until both paths shared apply_mission_state_effects",
         "Review follow-up: dispatch_guarded also refuses a character with an active mission (covering saves written before the flag was set), and the commander list omits busy characters with a message if a dispatch is still refused",
         "Open: try_subdue's UPRIS2TB roll has no recovered consumer (the periodic loyalty evaluator is not decompiled), and check_decoy (FDECOYTB) is still uncalled; both need recovered rules before wiring",
-        "Pending: the app's apply_mission_state_effects call runs in the frame loop, which no unit test reaches; a Subdue Uprising success needs a browser pass"
+        "Pending: the app's apply_mission_state_effects call runs in the frame loop, which no unit test reaches; a Subdue Uprising success needs a browser pass",
+        "2026-09-26 recovery: table ids come from FUN_0058b420 (resource 0x642 GDATA\\ plus an RT_RCDATA file name): TDECOYTB 10, FDECOYTB 11, the ten mission tables 0x14..0x1d, UPRIS1TB 0x28, UPRIS2TB 0x29, ESCAPETB 0x2c (ghidra/notes/uprising-incident.md)",
+        "UPRIS1TB and UPRIS2TB are not subdue probabilities. FUN_00559ce0 reads both during the uprising incident (system +0x88 bit 18, slot +0x250 FUN_00511840, FUN_0050d030), mapping one score to two outcome codes that FUN_0050d150 applies: destroy a random facility or regiment (reason 8) or act on characters through slots +0x2e4 and +0x214. try_subdue's premise is contradicted and it stays unwired; the Subdue Uprising mission table is SUBDMSTB (FUN_0055c780)",
+        "check_decoy: the decoy roll is FUN_0055e410 (table (fleet != 0) + 10, argument (p2 - p4) - FUN_0053e190(p3, DAT_006bb710)), called by FUN_00588b90; the arguments' character fields are not yet traced, so check_decoy stays unwired"
       ],
       "acceptance": "Each path runs in the simulation with recovered rules and a test that fails without the call."
     },
@@ -1710,6 +1717,65 @@
         "make test-assets runs them when data/base/ui exists"
       ],
       "acceptance": "Met."
+    },
+    {
+      "id": "F-023",
+      "severity": "P2",
+      "status": "open",
+      "title": "The economy applies the blockade troop-withdraw formula as a KDY production modifier",
+      "evidence": [
+        "crates/rebellion-core/src/economy.rs step 4 computes clamp(100 - capships * GNPRTB[7684] - fighters * GNPRTB[7685]) as a production modifier and cited FUN_0050a480, a community-dump address that lies inside a CALL operand in our binary",
+        "The community function is our FUN_0050b310 + FUN_0055a020: the system withdraw percent for regiments leaving a blockaded system without a KDY-150 (ghidra/notes/blockade-troop-withdrawal.md), ported in BlockadeSystem::withdraw_percent under F-021",
+        "No recovered code applies the value to production; the modifier currently feeds only telemetry"
+      ],
+      "acceptance": "economy.rs drops or re-sources the modifier, with the seed-42 golden regenerated only for that named cause."
+    },
+    {
+      "id": "F-024",
+      "severity": "P2",
+      "status": "open",
+      "title": "The Emperor's 1.5x battle damage bonus has no source",
+      "evidence": [
+        "crates/rebellion-core/src/combat.rs multiplies the Empire's pending weapon damage by 1.5 when a character named Palpatine or Emperor is in the fleet, citing FUN_00542050",
+        "Our FUN_00542050 is a two-line thunk; the community function at that address maps to our FUN_005438a0, a named-character check for Leia, Luke, Han, the Emperor, Vader, and Chewbacca. Neither shows a damage modifier"
+      ],
+      "acceptance": "The bonus is removed or traced to recovered code, with tests and any golden change named."
+    },
+    {
+      "id": "F-025",
+      "severity": "P2",
+      "status": "open",
+      "title": "Death Star combat checks key on the Empire major-character family",
+      "evidence": [
+        "combat.rs sets ShipSnap::is_death_star and CombatEntityKind::DeathStar from DatId family 0x34",
+        "MJCHARSD and TEXTSTRA show family 0x34 is the Empire major characters: 0x34000280 is Emperor Palpatine (10368) and 0x35000281 is Darth Vader (10369). FUN_00560d50 routes family 0x34 to FUN_005617b0, the CharacterMgr SeatOfPower check",
+        "No shipped capital ship uses family 0x34, so Death Star shield absorption never runs on real data; the seeded Death Star is CAPSHPSD record 136 (F-017)"
+      ],
+      "acceptance": "Death Star detection uses the recovered class identity, and the shield's battle role follows recovered code with tests."
+    },
+    {
+      "id": "F-026",
+      "severity": "P2",
+      "status": "open",
+      "title": "The disaster and uprising incidents have no effect",
+      "evidence": [
+        "System +0x88 bit 20 is the disaster incident (FUN_0050ac10; views get SystemDisasterIncidentNotif, FUN_00512620). Master slot +0x258, FUN_00511930, erodes system +0x5c and +0x64 with GNPRTB 7715 and destroys each unprotected manufacturing (0x28..0x2f) and defense (0x22..0x27) facility at GNPRTB 7716 = 10 percent, reason 0xb",
+        "System +0x88 bit 18 is the uprising incident (FUN_0050ab30, FUN_00512580). FUN_0050d030 turns UPRIS1TB/UPRIS2TB outcome codes into facility and regiment losses (reason 8), character effects, and a support change (ghidra/notes/uprising-incident.md)",
+        "economy.rs IncidentFlags placed these at bits 16-19 with no source and only emits messages; the comments now give the recovered bits"
+      ],
+      "acceptance": "Both incidents trigger and apply their recovered effects, with tests that fail without them; open slots (+0x2e4, +0x214, system +0x54) are recovered first."
+    },
+    {
+      "id": "F-027",
+      "severity": "P3",
+      "status": "remediated",
+      "title": "Community-dump citations named the wrong functions",
+      "evidence": [
+        "disassembly.zip was decompiled from a different REBEXE.EXE build; its addresses shift by region (+0x360 to +0x19c0). 32 cited addresses were not function entries in our binary and economy.rs, missions.rs, death_star.rs, and several docs cited community addresses",
+        "ghidra/notes/community-address-remap.md matches 43 community functions to ours by normalized pseudocode; the citations now name our addresses",
+        "A five-slice citation check labelled 716 sites against the decompiled notes: 505 confirmed, 131 vague, 23 unsupported, 57 contradicted. Review overturned 2 (the FUN_005c81d0 formation order is correct: DAT_0066cbb0 is -10000.0); the other 55 are corrected in comments and docs or ledgered (F-017, F-018, F-019, F-023..F-026)"
+      ],
+      "acceptance": "Met for citations; code-behavior contradictions are tracked by their own findings."
     }
   ],
   "fable_review": {

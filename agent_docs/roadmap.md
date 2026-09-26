@@ -314,7 +314,7 @@ Based on 3-agent review + 23-function GhidraMCP session (2026-03-23) + TheArchit
 ### Remaining Gaps (P2) — ALL CLOSED (2026-04-14)
 
 5. **Defense facility construction** — CLOSED. FUN_00508660 is an entity-type dispatcher, not a priority function. Current order is FAITHFUL.
-7. **AI resource rebalancing** — CLOSED. FUN_00558660 has no decompiled source; cross-ref describes minor random resource perturbation via RESRCTB (4 entries). Negligible gameplay impact.
+7. **AI resource rebalancing** — CLOSED. FUN_00559ee0 looks up RESRCTB (table 0x2b) with a random draw; the resource perturbation is minor. Negligible gameplay impact.
 
 ---
 
@@ -455,6 +455,11 @@ acceptance. Their JSON ledgers provide stable finding and feature IDs.
   research gating of buildable ships (F-018), Subdue Uprising, guarded
   dispatch, and initial Force awakening (F-019), mod dependency errors (F-020),
   and blockade troop destruction (F-021).
+- [ ] Correct or re-source the code behaviors the 2026-09-26 citation audit
+  found without a binary source: the economy's KDY production modifier
+  (F-023), the Emperor's 1.5x battle bonus (F-024), family-`0x34` Death Star
+  detection (F-025), and the missing disaster and uprising incident effects
+  (F-026).
 - [ ] Pass five reproducibly configured 5,000-tick seeds: transit ≤10%, orders
   ≤1.5× arrivals, and fleet arena ≤3× initial. Record 50–400 engagements, eight
   systems, busiest-system ≤40%, and 10% minority-faction attack share as

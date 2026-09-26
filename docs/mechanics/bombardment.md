@@ -73,7 +73,7 @@ The bombardment divisor is GNPRTB parameter `0x1400`. In the base game data, thi
 
 ### Difficulty Modifier
 
-Applied via `FUN_0053e190` using the difficulty modifier table at `DAT_00661a88`. In practice, the base game's GNPRTB values are uniform across difficulty, so this modifier is effectively 1.0.
+Applied via `FUN_0053e190` which computes `a * b / 100` (DAT_00661a88 is the constant 100, not a difficulty table). In practice, the base game's GNPRTB values are uniform across difficulty, so this modifier is effectively 1.0.
 
 ## Source Material
 

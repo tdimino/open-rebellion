@@ -54,7 +54,7 @@ Key gotchas from RE:
 
 ## Bombardment
 
-Formula from `FUN_005617b0`: `damage = sqrt((atk-def)²) / GNPRTB[0x1400]` with difficulty modifier, minimum 1 damage (only after division, not on zero raw_power).
+The bombardment formula is in FUN_0055d8c0 (damage formula) and FUN_0055d860 (Euclidean distance): `damage = sqrt((atk-def)²) / GNPRTB[0x1400]` with difficulty modifier, minimum 1 damage (only after division, not on zero raw_power). FUN_005617b0 is the CharacterMgr SeatOfPower check, not a bombardment function.
 
 ## Effect Application (main.rs)
 

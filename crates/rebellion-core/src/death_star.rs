@@ -10,12 +10,13 @@
 //!    from `movement.rs`.  The Death Star module tracks the active orbital
 //!    location for the `VictorySystem` and for the nearby-warning logic.
 //!
-//! 3. **Planet destruction** — `DeathStarSystem::fire()` checks the preconditions
-//!    from `FUN_005617b0` / `FUN_0055f650`:
+//! 3. **Planet destruction** — `DeathStarSystem::fire()` checks preconditions:
 //!    - Target system is not already destroyed (`!system.is_destroyed`).
 //!    - Death Star fleet is present at that system.
 //!    - Target is enemy-controlled (Empire Death Star → non-Empire system).
-//!      On success emits `PlanetDestroyed`.  Caller sets `system.is_destroyed = true`.
+//!    The real superlaser fire path is unrecovered. FUN_005617b0 is the
+//!    CharacterMgr SeatOfPower check; FUN_0055f650 stores that flag.
+//!    On success emits `PlanetDestroyed`.  Caller sets `system.is_destroyed = true`.
 //!
 //! # Advance contract
 //! `DeathStarSystem::advance()` never mutates `GameWorld`.
@@ -104,9 +105,10 @@ pub struct DeathStarState {
     /// The fleet key of the active Death Star, if constructed and deployed.
     pub death_star_fleet: Option<FleetKey>,
     /// Whether the Death Star's shield generator (entity family 0x25) is active.
-    /// While active, the Death Star takes no hull damage in battle; it does not
-    /// stop the superlaser (`FUN_005617b0`). From community disassembly: 4 functions manage the shield
-    /// entity at `FUN_0051b2c0` through `FUN_0051b460`.
+    /// While active, the Death Star takes no hull damage in battle; the shield
+    /// does not block planet destruction (the superlaser fire path is unrecovered).
+    /// From community disassembly: shield entity managed at FUN_0051c0d0
+    /// through FUN_0051c270 (family 0x25..0x26 iterators).
     #[serde(default = "default_shield_active")]
     pub shield_generator_active: bool,
 }

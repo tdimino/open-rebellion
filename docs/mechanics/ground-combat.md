@@ -36,7 +36,7 @@ The combat dispatcher classifies entities by DatId family byte (`id >> 24`):
 |-------------|------|------|
 | `0x14-0x1b` | Troops / Special Forces | Combat-eligible ground units |
 | `0x30-0x3b` | Capital Ships | Delegated to space combat path |
-| `0x34` | Death Star | Special handler (`FUN_005617b0`, 68 lines) |
+| `0x34` | Empire major characters (0x34000280 is Emperor Palpatine) | `FUN_005617b0` recomputes CharacterMgr SeatOfPower |
 | `0x08-0x0f` | Characters | Side validation only |
 
 ### Combat Flow
@@ -73,7 +73,7 @@ The hit probability is proportional to attacker strength versus combined strengt
 
 ### Death Star Handler
 
-Family `0x34` triggers `FUN_005617b0` (68 lines) instead of normal ground combat. This handles planet destruction via the superlaser — the Death Star always wins ground engagements at its target system.
+Family `0x34` routes to `FUN_005617b0`, which recomputes the CharacterMgr SeatOfPower flag: Emperor Palpatine (`0x34000280`) alive and active at Coruscant (`0x90000109`) under Empire control. It is not a superlaser or Death Star handler; the port's family-0x34 Death Star checks match no shipped hull (audit finding F-025).
 
 ## Source Material
 

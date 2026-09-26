@@ -1,6 +1,7 @@
 //! Per-system economy tick loop — the territorial control feedback system.
 //!
-//! Implements the 18 sub-functions from the original `FUN_005073d0_adjust_and_deploy_each_system`.
+//! Implements the 18 sub-functions from the original `FUN_00508250`
+//! (the community dump calls it `FUN_005073d0_adjust_and_deploy_each_system`).
 //! Runs every tick for every system. Governs popular support drift, collection rates,
 //! garrison requirements, and resource allocation.
 //!
@@ -58,26 +59,30 @@ const GNPRTB_MAINTENANCE_RATE_CONTROLLED: u16 = 7694; // =30: ticks between main
 // Economy state
 // ---------------------------------------------------------------------------
 
-/// Incident state flags (bits 16-19 of original `field_0x88`).
+/// Incident state flags (original `field_0x88` bits 18-20).
 /// When these change between ticks, the corresponding incident notification fires.
-/// `FUN_0050a970` evaluates these each tick; `FUN_0050d720` dispatches on transitions.
+/// `FUN_0050b800` evaluates these each tick; `FUN_0050e5b0` dispatches on transitions.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
 pub struct IncidentFlags {
-    /// Bit 16 (0x10000): uprising incident active (event 0x152).
+    /// Original bit 18 (0x40000), set by `FUN_0050ab30`; views get
+    /// `SystemUprisingIncidentNotif` (`FUN_00512580`). Event ids here are unverified.
     pub uprising: bool,
-    /// Bit 17 (0x20000): informant incident active (event 0x153).
+    /// Original bit 19 (0x80000), set by `FUN_0050aba0`; views get
+    /// `SystemInformantIncidentNotif` (`FUN_005125d0`).
     pub informant: bool,
-    /// Bit 18 (0x40000): disaster incident active (event 0x154).
+    /// Original bit 20 (0x100000), set by `FUN_0050ac10`; views get
+    /// `SystemDisasterIncidentNotif` (`FUN_00512620`). The effect
+    /// (`FUN_00511930`) is not ported (audit finding F-026).
     pub disaster: bool,
-    /// Bit 19 (0x80000): resource incident active (event 0x155).
+    /// No recovered bit or notifier.
     pub resource: bool,
 }
 
-/// Fleet posture summary for a system (`FUN_0050add0/af70/b4c0`).
+/// Fleet posture summary for a system (`FUN_0050bc60`/`FUN_0050be00`/`FUN_0050c350`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FleetPosture {
     /// Number of Alliance capital ship hulls at this system.
@@ -88,7 +93,7 @@ pub struct FleetPosture {
     pub is_contested: bool,
 }
 
-/// Fighter posture for a system (`FUN_0050aa50`).
+/// Fighter posture for a system (`FUN_0050b8e0`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FighterPosture {
     /// True if both sides have fighters present.
@@ -103,13 +108,13 @@ pub struct FighterPosture {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SystemSummary {
     /// Troops present minus garrison requirement (negative = deficit).
-    /// `FUN_0050a670`.
+    /// `FUN_0050b500`.
     pub troop_surplus: i32,
     /// Total troops for the controlling faction.
-    /// `FUN_0050ac00`.
+    /// `FUN_0050ba90`.
     pub total_controlling_troops: u32,
     /// Whether an orbital shipyard is present.
-    /// `FUN_0050ace0`.
+    /// `FUN_0050bb70`.
     pub has_shipyard: bool,
     /// Fleet posture (3-pass result).
     pub fleet_posture: FleetPosture,
@@ -174,10 +179,10 @@ pub struct SystemEconomy {
     /// Production speed modifier from fleet/KDY presence (0-100).
     pub production_modifier: i8,
     /// Current energy output (sum of production facility outputs, capped at system capacity).
-    /// `FUN_00509ed0`: if `energy_allocated` > `System.total_energy`, cap it.
+    /// `FUN_0050ad60`: if `energy_allocated` > `System.total_energy`, cap it.
     pub energy_allocated: u32,
     /// Current raw material output (sum of mine outputs, capped at system capacity).
-    /// `FUN_0050a220`: if `raw_material_allocated` > `System.raw_materials`, cap it.
+    /// `FUN_0050b0b0`: if `raw_material_allocated` > `System.raw_materials`, cap it.
     pub raw_material_allocated: u32,
     /// True if facilities exceed energy capacity (facility pruning needed).
     pub energy_overcapped: bool,
@@ -185,10 +190,10 @@ pub struct SystemEconomy {
     pub raw_material_overcapped: bool,
     /// Derived troop/fleet/shipyard summary (functions 9-15).
     pub summary: SystemSummary,
-    /// Incident state flags (bits 16-19 of `field_0x88`). `FUN_0050a970`.
+    /// Incident state flags (original `field_0x88` bits 18-20). `FUN_0050b800`.
     /// When these change from the previous tick, corresponding incidents fire.
     pub incident_flags: IncidentFlags,
-    /// System is visibly under uprising. `FUN_0050ac70`.
+    /// System is visibly under uprising. `FUN_0050bb00`.
     pub uprising_visible: bool,
     /// Previous-tick support band for the controlling faction. Drives
     /// `EVT_SUPPORT_CHANGE` (0x100) transition detection. Persists across
@@ -264,23 +269,23 @@ pub enum EconomyEvent {
         system: SystemKey,
         new_requirement: u32,
     },
-    /// System control resolved from troop presence (`FUN_0050a780_system_join_side`).
+    /// System control resolved from troop presence (`FUN_0050b610`).
     ControlResolved {
         system: SystemKey,
         new_control: ControlKind,
     },
-    /// Incident state changed — fire the corresponding notification (`FUN_0050a970` + `FUN_0050d720`).
+    /// Incident state changed — fire the corresponding notification (`FUN_0050b800` + `FUN_0050e5b0`).
     IncidentTriggered {
         system: SystemKey,
         incident_type: &'static str,
     },
-    /// Energy allocated exceeds system capacity (`FUN_00509ed0`).
+    /// Energy allocated exceeds system capacity (`FUN_0050ad60`).
     EnergyOvercapped {
         system: SystemKey,
         allocated: u32,
         capacity: u32,
     },
-    /// Raw material output exceeds system capacity (`FUN_0050a220`).
+    /// Raw material output exceeds system capacity (`FUN_0050b0b0`).
     RawMaterialOvercapped {
         system: SystemKey,
         allocated: u32,
@@ -367,7 +372,7 @@ impl EconomySystem {
             // Count military presence at this system.
             let presence = count_military_presence(world, sys);
 
-            // 0a. Resource capacity enforcement (FUN_00509ed0 + FUN_00509ef0 + FUN_0050a220).
+            // 0a. Resource capacity enforcement (FUN_0050ad60 + FUN_0050ad80 + FUN_0050b0b0).
             // Sum facility/mine outputs and cap at system limits.
             let eco = state.per_system.entry(sys_key).or_default();
             let prev_raw_allocated = eco.raw_material_allocated;
@@ -442,12 +447,10 @@ impl EconomySystem {
                 difficulty,
             );
 
-            // 4. KDY production modifier (FUN_0050a480_adjust_for_kdy).
-            // Formula: clamp_nonneg(100 - capships * GNPRTB[7684] - fighters * GNPRTB[7685])
-            // Original only applies at systems with KDY flag (field_0x88 bit 5).
-            // We apply to all controlled systems — modifier is 100 when no ships, harmless.
-            // Note: uses alive ship counts per fleet, not fleet object counts.
-            // The original iterates fleet ship lists and sums individual hull entries.
+            // 4. Blockade withdraw percent (FUN_0050b310 + FUN_0055a020).
+            // Original formula: 100 unless the system is blockaded (+0x88 bit5)
+            // with no KDY-150, else max(0, 100 - ships*GNPRTB[7684] - fighters*GNPRTB[7685]).
+            // Our production modifier use has no recovered source (audit finding F-023).
             let capship_penalty = gnprtb.value(GNPRTB_KDY_CAPSHIP_PENALTY, difficulty);
             let fighter_penalty = gnprtb.value(GNPRTB_KDY_FIGHTER_PENALTY, difficulty);
             let total_capships =
@@ -458,7 +461,7 @@ impl EconomySystem {
                 (100 - total_capships * capship_penalty - total_fighters * fighter_penalty)
                     .clamp(0, 100) as i8;
 
-            // 5. Troop-based side resolution (FUN_0050a780_system_join_side).
+            // 5. Troop-based side resolution (FUN_0050b610).
             // Original resolves controlling faction every tick from troop presence.
             // If Alliance troops only: Alliance controls. Empire only: Empire controls.
             // Both: keep existing (contested). Neither: uncontrolled.
@@ -477,7 +480,7 @@ impl EconomySystem {
             eco.garrison_requirement = new_garrison;
             eco.production_modifier = new_prod_mod;
 
-            // 6. Troop/fleet summary propagation (FUN_0050a670 through FUN_0050aa50).
+            // 6. Troop/fleet summary propagation (FUN_0050b500 through FUN_0050b8e0).
             eco.summary = compute_system_summary(
                 world,
                 sys,
@@ -487,7 +490,7 @@ impl EconomySystem {
                 difficulty,
             );
 
-            // 7. Incident state + uprising visibility (FUN_0050a970 + FUN_0050ac70).
+            // 7. Incident state + uprising visibility (FUN_0050b800 + FUN_0050bb00).
             // Evaluate incident flags based on system state. Fire events on transitions.
             //
             // K2 (EVT_NATURAL_DISASTER 0x154): clear-before-emit ordering —
@@ -642,7 +645,7 @@ struct MilitaryPresence {
     alliance_troops: u32,
     empire_troops: u32,
     /// Total alive capital ship hulls (count of alive `ShipInstances` across all fleets).
-    /// Used by KDY production modifier (`FUN_0050a480`).
+    /// Used by blockade withdraw percent (`FUN_0050b310`); production modifier use has no recovered source.
     alliance_capships: u32,
     empire_capships: u32,
 }
@@ -689,12 +692,12 @@ fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> Mil
 }
 
 // ---------------------------------------------------------------------------
-// Popular support drift (FUN_005583c0)
+// Popular support drift (FUN_00559c40)
 // ---------------------------------------------------------------------------
 
 /// Calculate support drift for a system based on military presence.
 ///
-/// From the decompiled `FUN_005583c0_calculate_adjusted_support_value`:
+/// From the decompiled `FUN_00559c40` (the community dump calls it calculate_adjusted_support_value):
 /// ```text
 /// if support <= 40 AND no_friendly_fleet:
 ///     if support > 20 AND support <= 30: base = 50
@@ -715,7 +718,7 @@ fn calculate_support_drift(
     difficulty: u8,
     strong_support: bool,
 ) -> (f32, f32) {
-    // All computation in integer 0-100 to match original (FUN_005583c0).
+    // All computation in integer 0-100 to match original (FUN_00559c40).
     // Our popularity fields are f32 0.0-1.0; convert at boundary.
     let fleet_influence = gnprtb.value(GNPRTB_FLEET_INFLUENCE, difficulty).max(1);
     let fighter_influence = gnprtb.value(GNPRTB_FIGHTER_INFLUENCE, difficulty).max(1);
@@ -767,7 +770,7 @@ fn calculate_support_drift(
     }
 
     // Determine base drift rate based on support bracket.
-    // Original bracket logic from FUN_005583c0:
+    // Original bracket logic from FUN_00559c40:
     //   if threshold_1 < support <= threshold_2: base = base_low_mid (50)
     //   elif support > threshold_1: base = base_mid (25)
     //   else: base = base_low (75)
@@ -779,7 +782,7 @@ fn calculate_support_drift(
         base_mid // 31-40: mild drift (25)
     };
 
-    // Empire troop doubling via FUN_005582e0_adjust_value_for_strong_support:
+    // Empire troop doubling via FUN_00559b60 (the community dump calls it adjust_value_for_strong_support):
     // When side==Empire (side==2) AND strong_support bit (field_0x88 bit 11) is set,
     // troop count is multiplied by GNPRTB[7680] (=2).
     // This doubles troop suppression effectiveness for the Empire.
@@ -812,7 +815,7 @@ fn calculate_support_drift(
 }
 
 // ---------------------------------------------------------------------------
-// Resource capacity (FUN_00509ed0 + FUN_00509ef0 + FUN_0050a220)
+// Resource capacity (FUN_0050ad60 + FUN_0050ad80 + FUN_0050b0b0)
 // ---------------------------------------------------------------------------
 
 /// Calculate total energy and raw material allocation from facilities and mines.
@@ -847,12 +850,12 @@ fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) 
 }
 
 // ---------------------------------------------------------------------------
-// Troop-based side resolution (FUN_0050a780_system_join_side)
+// Troop-based side resolution (FUN_0050b610)
 // ---------------------------------------------------------------------------
 
 /// Resolve which faction controls a system based on troop presence.
 ///
-/// Original logic (`FUN_0050a780`):
+/// Original logic (`FUN_0050b610`):
 /// - If system not populated: Uncontrolled
 /// - If only Alliance troops: Alliance controls
 /// - If only Empire troops: Empire controls
@@ -894,7 +897,7 @@ fn resolve_system_control(
 }
 
 // ---------------------------------------------------------------------------
-// Troop/fleet summary propagation (FUN_0050a670 through FUN_0050aa50)
+// Troop/fleet summary propagation (FUN_0050b500 through FUN_0050b8e0)
 // ---------------------------------------------------------------------------
 
 /// Compute the per-system derived summary from troop/fleet/facility presence.
@@ -911,7 +914,7 @@ fn compute_system_summary(
     gnprtb: &GnprtbParams,
     difficulty: u8,
 ) -> SystemSummary {
-    // FUN_0050a670: troop surplus = controlling troops - garrison requirement
+    // FUN_0050b500: troop surplus = controlling troops - garrison requirement
     let controlling_troops = match sys.control {
         ControlKind::Controlled(crate::dat::Faction::Alliance) => presence.alliance_troops,
         ControlKind::Controlled(crate::dat::Faction::Empire) => presence.empire_troops,
@@ -919,10 +922,10 @@ fn compute_system_summary(
     };
     let troop_surplus = controlling_troops.cast_signed() - garrison_requirement.cast_signed();
 
-    // FUN_0050ac00: total controlling troops
+    // FUN_0050ba90: total controlling troops
     let total_controlling_troops = controlling_troops;
 
-    // FUN_0050ace0: shipyard presence (check manufacturing facilities for shipyard type).
+    // FUN_0050bb70: shipyard presence (check manufacturing facilities for shipyard type).
     let has_shipyard = sys.manufacturing_facilities.iter().any(|k| {
         world
             .manufacturing_facilities
@@ -930,14 +933,14 @@ fn compute_system_summary(
             .is_some_and(|f| f.is_shipyard)
     });
 
-    // FUN_0050add0/af70/b4c0: fleet posture (3 passes)
+    // FUN_0050bc60/FUN_0050be00/FUN_0050c350: fleet posture (3 passes)
     let fleet_posture = FleetPosture {
         alliance_capships: presence.alliance_capships,
         empire_capships: presence.empire_capships,
         is_contested: presence.alliance_fleets >= 2 && presence.empire_fleets >= 2,
     };
 
-    // FUN_0050aa50: fighter posture
+    // FUN_0050b8e0: fighter posture
     let fighter_posture = FighterPosture {
         is_contested: presence.alliance_fighters > 0 && presence.empire_fighters > 0,
         alliance_fighters: presence.alliance_fighters,
@@ -946,7 +949,7 @@ fn compute_system_summary(
 
     // Bit 11 of field_0x88: "strong support" — set when controlling faction's
     // support exceeds the drift threshold. Controls Empire troop doubling in
-    // FUN_005582e0_adjust_value_for_strong_support.
+    // FUN_00559b60 (the community dump calls it adjust_value_for_strong_support).
     let drift_threshold = gnprtb.value(GNPRTB_DRIFT_THRESHOLD, difficulty);
     let controlling_support = match sys.control {
         ControlKind::Controlled(crate::dat::Faction::Alliance) => {
@@ -970,13 +973,13 @@ fn compute_system_summary(
 }
 
 // ---------------------------------------------------------------------------
-// Incident evaluation (FUN_0050a970 + FUN_0050ac70)
+// Incident evaluation (FUN_0050b800 + FUN_0050bb00)
 // ---------------------------------------------------------------------------
 
 /// Evaluate incident flags for a system based on its current state.
 ///
-/// In the original, `FUN_0050a970` evaluates `field_0x88` bits and the galaxy
-/// notification hub (`FUN_0050d720`) fires incidents on state transitions.
+/// In the original, `FUN_0050b800` evaluates `field_0x88` bits and the galaxy
+/// notification hub (`FUN_0050e5b0`) fires incidents on state transitions.
 /// We compute flags each tick and let the advance loop detect transitions.
 ///
 /// Flags:
@@ -1020,9 +1023,10 @@ fn evaluate_incident_flags(
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
 fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8) -> f32 {
-    // Original: FUN_0053c8d0_calculate_percentage(GNPRTB[7763], 100, support)
+    // Original: FUN_0053e170(GNPRTB[7763], 100, support)
     //         = (100 * GNPRTB[7763]) / max(support_int, 1)
     //         = 10000 / support_int  (with stock GNPRTB[7763]=100)
+    // Note: FUN_0053e190(a,b) = FUN_0053e170(a,b,100) = a*b/100.
     // Result: integer percentage (100 at full support, 10000 at near-zero).
     // Higher values = higher taxation burden on the system.
     let base = gnprtb.value(GNPRTB_COLLECTION_RATE_BASE, difficulty).max(1);
@@ -1033,7 +1037,7 @@ fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8
 }
 
 // ---------------------------------------------------------------------------
-// Garrison requirement (FUN_00558760 + FUN_005587d0)
+// Garrison requirement (FUN_00559fe0 + FUN_0055a050)
 // ---------------------------------------------------------------------------
 
 /// Calculate troops needed to prevent uprising at this system.
@@ -1050,7 +1054,7 @@ fn calculate_garrison_requirement(
     gnprtb: &GnprtbParams,
     difficulty: u8,
 ) -> u32 {
-    // Integer arithmetic matching FUN_005587d0_uprising_threshold + FUN_00558760_garrison_requirement.
+    // Integer arithmetic matching FUN_0055a050 (uprising threshold) + FUN_00559fe0 (garrison requirement).
     // Our support is f32 0.0-1.0; convert to integer 0-100.
     let support_int = (support * 100.0).round() as i32;
     let threshold = gnprtb.value(GNPRTB_GARRISON_THRESHOLD, difficulty); // 60

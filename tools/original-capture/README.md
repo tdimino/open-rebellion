@@ -60,8 +60,8 @@ captures land in that copy, not in `~/VMs/rebellion/`.
 
 The VM must carry a sound card. `REBEXE.exe` calls `DirectSoundCreate` during
 startup (`FUN_00610d00`), and with no audio device the returned interface is
-unusable; the game then faults dereferencing it (`FUN_00611140`, exception
-`0xc000041d`) before a window ever appears. `create-vm.applescript` requests no
+unusable; the game then faults dereferencing it (near `FUN_00611140`; address
+unverified from our Ghidra project, exception `0xc000041d`) before a window ever appears. `create-vm.applescript` requests no
 sound, so after the VM exists, set one while it is stopped:
 
 ```sh

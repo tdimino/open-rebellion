@@ -90,9 +90,11 @@ load it, so those trees gate nothing.
 The per-side notifications `SideShipyardRdOrderNotif` (`FUN_00532d60`),
 `SideTrainingFacilRdOrderNotif` (`FUN_00532db0`), and
 `SideConstructionYardRdOrderNotif` (`FUN_00532e00`) confirm three per-side
-research counters. The buildability checks `FUN_0052e4f0` and `FUN_0052e510`
-are empty in the text export, so the `<=` comparison and the starting level of
-0 come from the `rebellion2` prototype and the DAT data. Each side has
+research counters. `FUN_0052e4f0` and `FUN_0052e510` are not empty: each
+returns FUN_005839e0(this+0x88 / this+0x8c, param), counting list entries that
+match the parameter's key. Nothing in their decompiled bodies shows them to be
+buildability checks. The `<=` comparison and the starting level of 0 come from
+the `rebellion2` prototype and the DAT data. Each side has
 order-0 capital ships and fighters, so a level-0 start leaves a buildable
 opening fleet.
 

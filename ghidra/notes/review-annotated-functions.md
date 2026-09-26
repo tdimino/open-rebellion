@@ -135,7 +135,7 @@ Reviewed against decompiled C source files in `ghidra/notes/`. Every function ad
 - Returns `1` by default — CORRECT
 - Calls `FUN_005438a0` for validation, then `FUN_00549910` for pipeline — CORRECT
 
-### FUN_005438a0 — Space Combat Entity Validator
+### FUN_005438a0 — Named-Character Check (corrected 2026-09-26: the six ids are characters, not ship types)
 - Exactly 6 entity codes: `0x32000242, 0x31000241, 0x33000243, 0x38000343, 0x35000281, 0x34000280` — CORRECT
 
 ### FUN_005442f0 — Combat Initialization

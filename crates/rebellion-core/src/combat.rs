@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{FleetKey, SystemKey, TroopKey};
 use crate::world::GameWorld;
 
-/// GNPRTB parameter for combat difficulty modifier (`DAT_00661a88`).
-/// Scales combat damage output. Value is percentage (100 = 1.0x).
-/// Same param used by `FUN_0053e190` for bombardment and ground combat.
+/// GNPRTB parameter 0x1400 for combat difficulty scaling.
+/// FUN_0053e190(a,b) computes a*b/100 (DAT_00661a88 is the constant 100).
+/// Value is percentage (100 = 1.0x).
 const GNPRTB_COMBAT_DIFFICULTY_MODIFIER: u16 = 0x1400;
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,9 @@ struct ShipSnap {
     /// Weapon recharge allocation nibble (bits 4-7 of C++ +0x64).
     weapon_nibble: u8,
     alive: bool,
-    /// True if this ship is a Death Star hull (entity family 0x34).
+    /// True if this ship's class has family byte 0x34. That family is the
+    /// Empire major characters (0x34000280 is Emperor Palpatine), so no shipped
+    /// hull sets it (audit finding F-025).
     /// When the Death Star shield generator is active, hull damage is absorbed.
     is_death_star: bool,
 }
@@ -232,11 +234,11 @@ impl CombatSystem {
             Self::phase_weapon_fire(world, defender, &def_ships, &mut atk_ships, &mut rng);
         }
 
-        // R12: Emperor Palpatine combat modifier (FUN_00542050).
-        // When the Emperor is co-located with an engagement, his faction's
-        // weapon fire damage is multiplied by 1.5×. Applied after Phase 3
-        // (weapon fire computes pending_damage) and before Phase 4 (shields
-        // absorb it). Only Imperial-side bonus — the Emperor is always Empire.
+        // R12: Emperor Palpatine combat modifier.
+        // The 1.5x Emperor bonus has no recovered source (audit finding F-024).
+        // FUN_00542050 compares against Luke Skywalker in both builds; neither
+        // shows an Emperor combat modifier. The code is retained as a
+        // gameplay augmentation.
         let emperor_in_fleet = |fk: FleetKey| -> bool {
             let fleet = &world.fleets[fk];
             fleet.characters.iter().any(|&ck| {
@@ -338,7 +340,8 @@ impl CombatSystem {
             .filter(|ship| ship.alive)
             .map(|ship| {
                 let class = &world.capital_ship_classes[ship.class];
-                // Only original family-0x34 ids get shield absorption. The seeded Death
+                // Only family-0x34 ids get shield absorption; 0x34 is the Empire major
+                // character family, so no shipped class matches (F-025). The seeded Death
                 // Star (CAPSHPSD 136) fights as an ordinary hull because nothing yet
                 // destroys the shield generator, which would make it unkillable.
                 let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
@@ -1044,7 +1047,8 @@ impl CombatSystem {
     /// (`TroopClassDef`). Defense facilities at the system grant a defense bonus
     /// to the defending faction's troops.
     ///
-    /// Death Star (family 0x34) takes a separate path — see `DeathStarSystem::fire()`.
+    /// Family 0x34 (the Empire major characters, not the Death Star; F-025) takes a
+    /// separate path — see `DeathStarSystem::fire()`.
     ///
     /// # Advance contract
     /// - Does NOT mutate world. Returns `TroopDamageEvents`.
@@ -1287,8 +1291,9 @@ impl CombatSystem {
 
     // Death Star superlaser resolution is NOT handled by the combat system.
     // Planet destruction goes through DeathStarSystem::fire() in death_star.rs.
-    // The original FUN_005617b0 (68 lines) was a stub that was never called
-    // in the retail game's combat dispatch path either.
+    // FUN_005617b0 recomputes CharacterMgr SeatOfPower (Emperor Palpatine,
+    // 0x34000280, alive and active at Coruscant held by the Empire); it is not a
+    // superlaser fire check. The real superlaser fire path is unrecovered.
 }
 
 // ---------------------------------------------------------------------------
@@ -1303,7 +1308,8 @@ impl CombatSystem {
 pub enum CombatEntityKind {
     /// family 0x30-0x33, 0x35-0x3b
     CapitalShip,
-    /// family 0x34 → `FUN_005617b0` / `FUN_00534640`
+    /// family 0x34. FUN_00560d50 routes it to FUN_005617b0 (SeatOfPower); 0x34
+    /// is the Empire major-character family, not the Death Star (F-025).
     DeathStar,
     /// family 0x71-0x72 (`alt_shield_path`: +0x78 bit7)
     FighterSquadron,
@@ -1334,8 +1340,9 @@ impl CombatEntityKind {
     }
 }
 
-/// Extract difficulty level (0-3) from the C++ packed difficulty field.
-/// C++ source: `*(uint *)((int)this + 0x24) >> 4 & 3` (line 21 of `FUN_0054a1d0`).
+/// Extract bits 4-5 of a packed field. `FUN_0054a1d0` reads
+/// `*(uint *)((int)this + 0x24) >> 4 & 3` as the side it passes to
+/// `FUN_004fd600`, not a difficulty; nothing in the simulation calls this.
 #[must_use]
 pub fn extract_difficulty(packed: u32) -> u8 {
     ((packed >> 4) & 3) as u8
@@ -2456,10 +2463,11 @@ mod tests {
     // Phase 2 pending tests: DS shield hull-damage path
     // -----------------------------------------------------------------------
 
-    /// Make a Death Star class with family byte 0x34 (required for `is_death_star` detection)
+    /// Make a class with family byte 0x34, which `is_death_star` keys on. No shipped
+    /// hull uses 0x34, the Empire major-character family (audit finding F-025).
     fn make_ds_class(world: &mut GameWorld, hull: u32) -> CapitalShipKey {
         world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x3400_0001), // family 0x34 = DeathStar
+            dat_id: DatId::new(0x3400_0001), // family 0x34, which `is_death_star` keys on
             name: "Death Star".into(),
             is_alliance: false,
             is_empire: true,

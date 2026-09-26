@@ -144,9 +144,9 @@ Two combat resolution modes: `CONVERT_TO_TACT` (2D tactical view, player-control
 | FUN_0054a410 | Fighter damage applied |
 | FUN_0054a4a0 | Victory determined |
 
-**Difficulty modifier**: `entity+0x24 bits 4-5` (2-bit, 0-3). Applied via FUN_004fd600 inside FUN_0054a1d0.
+**Side selector, not difficulty**: FUN_0054a1d0 passes `entity+0x24 >> 4 & 3` to FUN_004fd600, which picks the Alliance (1) or Empire (2) view. No difficulty modifier is read there.
 
-**Space combat entity validator**: FUN_005438a0. Accepts exactly 6 type codes: `0x31000241`, `0x32000242`, `0x33000243`, `0x34000280`, `0x35000281`, `0x38000343`. The `0x34` prefix confirms Death Star is space-combat eligible.
+**Named-character check**: FUN_005438a0. True for exactly six character ids: Leia Organa `0x31000241`, Luke Skywalker `0x32000242`, Han Solo `0x33000243`, Emperor Palpatine `0x34000280`, Darth Vader `0x35000281`, and Chewbacca `0x38000343` (MJCHARSD/MNCHARSD with TEXTSTRA names). These are characters, not ships; `0x34` is not the Death Star.
 
 **Space combat tactical constructor**: FUN_005a7500 (4856 bytes). Registers message handlers for the 2D tactical view: `SHIP_ADD/REMOVE/ABSTRACT_DESTROY`, all `SHIP_FIRE*` and `SHIP_TAKE_*_HIT` events, `SHIPGROUP_*`, `NAV_*`, `cmSHIP_POST_DS_STATUS`. This is the entry point for the player-controlled tactical battle mode.
 
@@ -260,8 +260,8 @@ Each `*MSTB.DAT` file defines a skill-threshold → probability curve for one mi
 | FOILTB.DAT | Mission foil probability |
 | INFORMTB.DAT | Informant probability |
 | CSCRHTTB.DAT | Covert search probability |
-| UPRIS1TB.DAT | Uprising start |
-| UPRIS2TB.DAT | Uprising end |
+| UPRIS1TB.DAT | Uprising incident outcome (first code) |
+| UPRIS2TB.DAT | Uprising incident outcome (second code) |
 | RLEVADTB.DAT | Rebel evasion probability |
 | RESRCTB.DAT | Resource threshold |
 | TDECOYTB.DAT | Troop decoy success |
@@ -461,7 +461,7 @@ Three conditions all required: `FUN_0055e4d0` (stat check), `FUN_0055ff60` (seco
 | FUN_00512540 | Battle pending caused blockade | `BattlePendingCausedCurrentBlockade` |—|
 | FUN_005126c0 | Blockade + battle pending management required | `BlockadeAndBattlePendingManagementRequired` |—|
 
-**Loyalty-driven control**: `LoyaltyCausedCurrentControlKind` notif string confirms that loyalty thresholds directly trigger faction control changes. Thresholds are likely in UPRIS1TB.DAT / UPRIS2TB.DAT.
+**Loyalty-driven control**: `LoyaltyCausedCurrentControlKind` notif string confirms that loyalty thresholds directly trigger faction control changes. UPRIS1TB and UPRIS2TB are read by `FUN_00559ce0`, which the uprising incident (`FUN_0050d030`) uses to pick outcome codes; see `ghidra/notes/uprising-incident.md`.
 
 **System state notification strings** (from rebellion-strings.txt):
 - `SystemLoyaltyNotif` / `Loyalty`
@@ -470,7 +470,7 @@ Three conditions all required: `FUN_0055e4d0` (stat check), `FUN_0055ff60` (seco
 
 ### GNPRTB Parameters
 
-UPRIS1TB.DAT (3 entries) and UPRIS2TB.DAT (4 entries) control uprising start/end thresholds at the IntTableEntry level. GNPRTB likely has additional parameters for loyalty decay rates, diplomacy shift magnitudes, and uprising suppression costs.
+UPRIS1TB.DAT (3 entries) and UPRIS2TB.DAT (4 entries) map an uprising-incident score to outcome codes 0-5, read by `FUN_00559ce0` (see `ghidra/notes/uprising-incident.md`). FUN_005121e0 and FUN_00511f40 fire uprising notifications (events 0x14b and 0x151) and do not read them.
 
 ### What to Change for a Total Conversion
 
@@ -805,9 +805,9 @@ The three notification dispatchers differ by parameter count:
 
 | DAT File | Used By |
 |----------|---------|
-| CAPSHPSD.DAT | FUN_00501490 (hull max via vtable), FUN_005438a0 (type codes) |
+| CAPSHPSD.DAT | FUN_00501490 (hull max via vtable) |
 | GNPRTB.DAT | FUN_0055d8c0 (bombardment divisor via DAT_006bb6e8) |
 | `*MSTB.DAT` files | Mission probability lookup (traced via FUN_0050d5a0 dispatch chain) |
-| UPRIS1TB.DAT / UPRIS2TB.DAT | FUN_005121e0, FUN_00511f40 (uprising threshold consumers) |
+| UPRIS1TB.DAT / UPRIS2TB.DAT | FUN_00559ce0 (uprising incident outcome codes, called by FUN_0050d030) |
 | MISSNSD.DAT | FUN_0050d5a0, FUN_004fc080 (mission type switch) |
 | MJCHARSD / MNCHARSD | FUN_005341a0 (loyalty), FUN_004ee030 (enhanced loyalty), FUN_004ee470 (hyperdrive), FUN_0058a3f0 (Force) |

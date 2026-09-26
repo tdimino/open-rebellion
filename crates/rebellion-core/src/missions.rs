@@ -873,9 +873,11 @@ impl MissionSystem {
         });
 
         // Decoy missions draw enemy counter-intelligence but produce no game effects.
-        // From community disassembly FUN_005871d0 + FUN_0055cbe0:
-        // Success probability from FDECOYTB (fleet) or TDECOYTB (troop) tables,
-        // penalized by GNPRTB[3588] = 35% reduction.
+        // Decoy roll: FUN_0055e410 rolls table (fdecoy != 0) + 10
+        // (TDECOYTB=10, FDECOYTB=11) via FUN_0053e340 against
+        // (a - b) - FUN_0053e190(c, DAT_006bb710).
+        // Community FUN_005871d0 (labeled decoy_mission) is a destructor;
+        // our FUN_00588b90 is the actual handler.
         if mission.is_decoy {
             let character_skill =
                 character.map_or(0, |c| mission.kind.skill_score(c).cast_signed());

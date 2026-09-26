@@ -676,17 +676,23 @@ cross-runtime proof remain open
   Tests fail without each change.
 - Open: `DeathStarState::start_construction` and its uncited 1,825-tick timer
   are now a second construction path beside ordinary manufacturing, so
-  Death Star Sabotage delays a timer nothing starts. The superlaser effect
-  applicator `FUN_0055f650` is not decompiled, so galaxy-wide effects of
-  destroying a planet are unverified. The fire command still needs a browser
-  pass. `FUN_005617b0` also compares an object from `FUN_004f6b50` with
-  entity `0x90000109` and tests its `+0x24 & 0xc0 == 0x80` bits, passing the
-  result as a flag to the undecompiled `FUN_0055f650`; until that is
-  resolved, our refusal to fire on Empire-controlled systems has no source.
-  Battle shield absorption stays limited to original family-`0x34` ids:
+  Death Star Sabotage delays a timer nothing starts. The fire command still
+  needs a browser pass. Battle shield absorption stays limited to family-`0x34` ids:
   nothing destroys the shield generator (`destroy_shield` has no caller), so
   applying it to the seeded Death Star would make it unkillable in
   auto-resolved battles.
+- Correction (2026-09-26): `FUN_005617b0` is not a superlaser check, and the
+  2026-09-25 fix and the fire() docs were wrong to cite it. It recomputes the
+  CharacterMgr SeatOfPower flag: `FUN_005070d0` finds `0x34000280`, which
+  MJCHARSD and TEXTSTRA 10368 name Emperor Palpatine, and the flag is set when
+  he is alive (`+0xac` bit 0 clear) and active (`+0x50` bit 0) at `0x90000109`
+  (Coruscant) under Empire control (`+0x24 & 0xc0 == 0x80`). `FUN_0055f650`
+  is decompiled: it stores the flag in `+0x58` bit 0 and notifies
+  `CharacterMgrSeatOfPowerNotif` (`FUN_00562450`, event `0x230`). The real
+  superlaser path is unrecovered (`DEATHSTAR_FIRE` appears only in the
+  tactical constructor `FUN_005a7500`), so every `fire()` precondition lacks
+  a source. Family `0x34` is the Empire major characters, not the Death Star;
+  see F-025.
 
 ### F-018: Research never limits which ships can be built
 
@@ -701,9 +707,14 @@ cross-runtime proof remain open
   without the gate, scoped `cargo mutants` catches all 13 gate mutants, and
   the seed-42 golden changes from tick 10 for this cause.
 - Open: troop and facility classes do not load `research_order` yet. The
-  buildability checks `FUN_0052e4f0` and `FUN_0052e510` are empty in the text
-  export, so the `<=` comparison and the level-0 start rest on the `rebellion2`
-  prototype and the DAT data until the saved project confirms them.
+  `<=` comparison and the level-0 start rest on the `rebellion2` prototype
+  and the DAT data.
+- Correction (2026-09-26): `FUN_0052e4f0` and `FUN_0052e510` are not empty and
+  are not buildability checks. Each returns `FUN_005839e0(this+0x88 / +0x8c,
+  key)`, a count of matching list entries. Their only caller, `FUN_005330b0`,
+  validates that each object in families `0x2d..0x2e` and `0x28..0x2b` sits in
+  its side's list exactly when its `+0x58` is 1. No recovered code gates
+  research.
 - Acceptance: build lists and manufacturing orders respect the recovered
   research-order gate for both factions.
 
@@ -739,9 +750,21 @@ cross-runtime proof remain open
 - Pending: the app's call to `apply_mission_state_effects` runs inside the
   frame loop, which no unit test reaches; a Subdue Uprising success needs a
   browser pass to confirm the uprising clears.
-- Open: no recovered code consumes UPRIS2TB (the periodic loyalty evaluator is
-  not decompiled), so `try_subdue` stays uncalled, and `check_decoy`
-  (FDECOYTB) still needs its recovered trigger.
+- Recovery (2026-09-26): `FUN_0058b420` assigns the table ids (resource
+  `0x642` `GDATA\` plus an `RT_RCDATA` file name): TDECOYTB 10, FDECOYTB 11,
+  the ten mission tables `0x14..0x1d`, UPRIS1TB `0x28`, UPRIS2TB `0x29`,
+  ESCAPETB `0x2c`. See `ghidra/notes/uprising-incident.md`.
+- Correction: UPRIS1TB and UPRIS2TB are not subdue probabilities.
+  `FUN_00559ce0` reads both during the uprising incident (system `+0x88`
+  bit 18, slot `+0x250` `FUN_00511840`, `FUN_0050d030`), turning one score
+  into two outcome codes that `FUN_0050d150` applies as facility or regiment
+  losses and character effects (F-026). `try_subdue`'s premise is
+  contradicted, so it stays unwired; the Subdue Uprising mission table is
+  SUBDMSTB (`FUN_0055c780`).
+- Open: the decoy roll is `FUN_0055e410` (table `(fleet != 0) + 10`, argument
+  `(p2 - p4) - FUN_0053e190(p3, DAT_006bb710)`), called by `FUN_00588b90`.
+  Which character fields feed it is not yet traced, so `check_decoy` stays
+  unwired.
 
 ### F-020: A mod with a missing dependency fails silently
 
@@ -798,6 +821,74 @@ cross-runtime proof remain open
   `data/base/ui` and failed in a clean checkout. They are now `#[ignore]`d with
   a reason, and `make test-assets` runs them when extracted bitmaps exist.
 - Acceptance: met.
+
+### F-023: The economy applies the blockade troop-withdraw formula as a KDY production modifier
+
+- Severity: P2
+- Status: open
+- Evidence: `economy.rs` step 4 computes
+  `clamp(100 - capships * GNPRTB[7684] - fighters * GNPRTB[7685])` as a
+  production modifier, citing `FUN_0050a480`, a community-dump address inside
+  a `CALL` operand in our binary. The community function is our
+  `FUN_0050b310` + `FUN_0055a020`, the blockade withdraw percent ported under
+  F-021. No recovered code applies it to production; the value feeds only
+  telemetry.
+- Acceptance: the modifier is dropped or re-sourced, with any golden change
+  named.
+
+### F-024: The Emperor's 1.5x battle damage bonus has no source
+
+- Severity: P2
+- Status: open
+- Evidence: `combat.rs` multiplies the Empire's pending weapon damage by 1.5
+  when a character named Palpatine or Emperor is in the fleet, citing
+  `FUN_00542050`. Ours is a two-line thunk; the community function maps to our
+  `FUN_005438a0`, a named-character check (Leia, Luke, Han, the Emperor, Vader,
+  Chewbacca). Neither shows a damage modifier.
+- Acceptance: the bonus is removed or traced to recovered code.
+
+### F-025: Death Star combat checks key on the Empire major-character family
+
+- Severity: P2
+- Status: open
+- Evidence: `combat.rs` derives `is_death_star` and `CombatEntityKind::DeathStar`
+  from DatId family `0x34`. MJCHARSD and TEXTSTRA show `0x34000280` is Emperor
+  Palpatine and `0x35000281` Darth Vader; `FUN_00560d50` routes family `0x34`
+  to the SeatOfPower check. No shipped hull uses `0x34`, so shield absorption
+  never runs on real data.
+- Acceptance: Death Star detection uses the recovered class identity and the
+  shield's battle role follows recovered code.
+
+### F-026: The disaster and uprising incidents have no effect
+
+- Severity: P2
+- Status: open
+- Evidence: system `+0x88` bit 20 is the disaster incident (`FUN_0050ac10`,
+  `SystemDisasterIncidentNotif`). Slot `+0x258`, `FUN_00511930`, erodes system
+  `+0x5c` and `+0x64` with GNPRTB 7715 and destroys each unprotected
+  manufacturing and defense facility at GNPRTB 7716 (10 percent), reason
+  `0xb`. Bit 18 is the uprising incident (`FUN_0050ab30`,
+  `SystemUprisingIncidentNotif`); `FUN_0050d030` turns UPRIS1TB/UPRIS2TB
+  outcome codes into facility and regiment losses, character effects, and a
+  support change. `economy.rs` placed its flags at bits 16-19 without a source
+  and only emits messages.
+- Acceptance: both incidents trigger and apply their recovered effects with
+  failing-without tests, after the open character slots (`+0x2e4`, `+0x214`)
+  and system `+0x54` fields are recovered.
+
+### F-027: Community-dump citations named the wrong functions
+
+- Severity: P3
+- Status: remediated
+- Evidence: `disassembly.zip` came from a different REBEXE.EXE build; its
+  addresses shift by region (`+0x360` to `+0x19c0`). Thirty-two cited
+  addresses were not function entries in our binary.
+  `ghidra/notes/community-address-remap.md` matches 43 community functions to
+  ours, and the citations now name our addresses. A five-slice check labelled
+  716 citation sites: 505 confirmed, 131 vague, 23 unsupported, and 57
+  contradicted. Review overturned 2 (the `FUN_005c81d0` formation order is
+  correct); the other 55 are corrected or ledgered above.
+- Acceptance: met for citations.
 
 ## Fable 5.1 audit synthesis
 
