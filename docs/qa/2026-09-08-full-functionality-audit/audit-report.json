@@ -1626,13 +1626,16 @@
     {
       "id": "F-017",
       "severity": "P1",
-      "status": "confirmed",
+      "status": "partially_remediated",
       "title": "The Death Star can never fire",
       "evidence": [
         "crates/rebellion-core/src/death_star.rs: fire() requires shield_generator_active == false; destroy_shield() has no caller",
         "crates/rebellion-app/src/tactical_flow.rs: the only other writer sets shield_generator_active = true",
         "start_construction() has no caller, so no Death Star fleet is built",
-        "Found by the 2026-09-25 test-pruning pass"
+        "Found by the 2026-09-25 test-pruning pass",
+        "2026-09-25 fix: DeathStarSystem::fire no longer requires the shield generator down; FUN_005617b0 checks only the target destroyed bit (+0xac) and the Death Star active bit (+0x50), and the shield only absorbs hull damage in battle",
+        "The Death Star is CAPSHPSD record 136 (TEXTSTRA 10120), a research-order-0 capital ship; family-0x34 checks never matched seeded classes, so CapitalShipClass::is_death_star accepts the record id and a completed Death Star build marks its fleet",
+        "Open: start_construction's uncited 1,825-tick timer duplicates ordinary manufacturing so sabotage delays nothing; FUN_0055f650 (superlaser effects) is not decompiled; the fire command needs a browser pass"
       ],
       "acceptance": "Construction, completion, planet destruction, and the shield's recovered role follow Ghidra evidence, with failing-without tests and a browser fire-command pass."
     },
@@ -1662,7 +1665,8 @@
         "Correction: initial Force awareness already happens at seeding (roll_character_stats rolls jedi_probability); the duplicate apply_initial_awakening was removed and the seeding roll gained a test",
         "Correction: a successful Subdue Uprising mission ended the revolt only in the headless integrator; the app's mission handler dropped the uprising clear and the Death Star sabotage delay until both paths shared apply_mission_state_effects",
         "Review follow-up: dispatch_guarded also refuses a character with an active mission (covering saves written before the flag was set), and the commander list omits busy characters with a message if a dispatch is still refused",
-        "Open: try_subdue's UPRIS2TB roll has no recovered consumer (the periodic loyalty evaluator is not decompiled), and check_decoy (FDECOYTB) is still uncalled; both need recovered rules before wiring"
+        "Open: try_subdue's UPRIS2TB roll has no recovered consumer (the periodic loyalty evaluator is not decompiled), and check_decoy (FDECOYTB) is still uncalled; both need recovered rules before wiring",
+        "Pending: the app's apply_mission_state_effects call runs in the frame loop, which no unit test reaches; a Subdue Uprising success needs a browser pass"
       ],
       "acceptance": "Each path runs in the simulation with recovered rules and a test that fails without the call."
     },

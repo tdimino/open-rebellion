@@ -417,6 +417,19 @@ pub struct CapitalShipClass {
     pub hyperdrive_if_damaged: u32,
 }
 
+/// CAPSHPSD.DAT record id of the Death Star (TEXTSTRA 10120 "Death Star").
+pub const DEATH_STAR_CLASS_ID: u32 = 136;
+
+impl CapitalShipClass {
+    /// True for the Death Star class. Seeded classes carry the CAPSHPSD
+    /// record id; original runtime ids carry family byte `0x34`, the family
+    /// `FUN_00560d50` routes to the superlaser path `FUN_005617b0`.
+    #[must_use]
+    pub fn is_death_star(&self) -> bool {
+        self.dat_id == DatId::new(DEATH_STAR_CLASS_ID) || self.dat_id.family() == 0x34
+    }
+}
+
 impl Default for CapitalShipClass {
     fn default() -> Self {
         Self {
@@ -1253,6 +1266,19 @@ mod tests {
             name: "Test".into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn only_the_death_star_record_or_family_is_the_death_star() {
+        let class = |raw| CapitalShipClass {
+            dat_id: DatId::new(raw),
+            ..Default::default()
+        };
+        // CAPSHPSD record 136 is the Death Star; 131 is a Star Destroyer.
+        assert!(class(DEATH_STAR_CLASS_ID).is_death_star());
+        assert!(class(0x3400_0001).is_death_star());
+        assert!(!class(131).is_death_star());
+        assert!(!class(0x3000_0088).is_death_star());
     }
 
     #[test]

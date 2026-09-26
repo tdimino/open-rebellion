@@ -638,7 +638,7 @@ cross-runtime proof remain open
 ### F-017: The Death Star can never fire
 
 - Severity: P1
-- Status: confirmed
+- Status: partially remediated; construction timing, sabotage, and browser fire pass remain
 - Evidence: `DeathStarSystem::fire` (`crates/rebellion-core/src/death_star.rs`)
   refuses while `shield_generator_active` is true, and the only other writer
   (`crates/rebellion-app/src/tactical_flow.rs`) sets it to true;
@@ -650,6 +650,21 @@ cross-runtime proof remain open
 - Acceptance: construction, completion, planet destruction, and the shield's
   real role follow recovered Ghidra evidence, with tests that fail without
   each rule and a browser pass of the fire command.
+- Fix (2026-09-25): the superlaser no longer waits on the shield generator.
+  `FUN_005617b0` checks only the target's destroyed bit (`+0xac`) and the
+  Death Star's active bit (`+0x50`); the shield only absorbs hull damage in
+  battle. The Death Star is CAPSHPSD record 136 (TEXTSTRA 10120), an ordinary
+  research-order-0 capital ship built at shipyards. Every Death Star check
+  tested DatId family `0x34`, but seeded classes carry the record id, so no
+  real Death Star was ever recognized in combat or firing.
+  `CapitalShipClass::is_death_star` accepts both, and a completed Death Star
+  build now marks its fleet so it can fire. Two tests fail without the change.
+- Open: `DeathStarState::start_construction` and its uncited 1,825-tick timer
+  are now a second construction path beside ordinary manufacturing, so
+  Death Star Sabotage delays a timer nothing starts. The superlaser effect
+  applicator `FUN_0055f650` is not decompiled, so galaxy-wide effects of
+  destroying a planet are unverified. The fire command still needs a browser
+  pass.
 
 ### F-018: Research never limits which ships can be built
 
@@ -699,6 +714,9 @@ cross-runtime proof remain open
   active mission, which covers saves written before dispatch set the flag,
   and the player's commander list omits busy characters, with a message if a
   dispatch is still refused.
+- Pending: the app's call to `apply_mission_state_effects` runs inside the
+  frame loop, which no unit test reaches; a Subdue Uprising success needs a
+  browser pass to confirm the uprising clears.
 - Open: no recovered code consumes UPRIS2TB (the periodic loyalty evaluator is
   not decompiled), so `try_subdue` stays uncalled, and `check_decoy`
   (FDECOYTB) still needs its recovered trigger.

@@ -338,7 +338,7 @@ impl CombatSystem {
             .filter(|ship| ship.alive)
             .map(|ship| {
                 let class = &world.capital_ship_classes[ship.class];
-                let is_ds_ship = is_ds_fleet && class.dat_id.family() == 0x34;
+                let is_ds_ship = is_ds_fleet && class.is_death_star();
                 ShipSnap {
                     hull_current: ship.hull_current,
                     hull_max: class.hull.cast_signed(),

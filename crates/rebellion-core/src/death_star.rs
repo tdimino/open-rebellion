@@ -104,8 +104,8 @@ pub struct DeathStarState {
     /// The fleet key of the active Death Star, if constructed and deployed.
     pub death_star_fleet: Option<FleetKey>,
     /// Whether the Death Star's shield generator (entity family 0x25) is active.
-    /// The shield must be destroyed before the Death Star can be damaged or fire
-    /// its superlaser. From community disassembly: 4 functions manage the shield
+    /// While active, the Death Star takes no hull damage in battle; it does not
+    /// stop the superlaser (`FUN_005617b0`). From community disassembly: 4 functions manage the shield
     /// entity at `FUN_0051b2c0` through `FUN_0051b460`.
     #[serde(default = "default_shield_active")]
     pub shield_generator_active: bool,
@@ -127,7 +127,7 @@ impl Default for DeathStarState {
 
 impl DeathStarState {
     /// Destroy the Death Star's shield generator.
-    /// After this, the Death Star becomes vulnerable and can fire its superlaser.
+    /// After this, the Death Star takes hull damage in battle.
     pub fn destroy_shield(&mut self) {
         self.shield_generator_active = false;
     }
@@ -226,6 +226,9 @@ impl DeathStarSystem {
     /// Attempt to fire the Death Star superlaser at `target_system`.
     ///
     /// Mirrors `FUN_005617b0` + `FUN_0055f650` precondition checks:
+    /// - The shield generator does not gate firing: `FUN_005617b0` checks only
+    ///   the target's destroyed bit (`+0xac`) and the Death Star's active bit
+    ///   (`+0x50`). The shield protects the Death Star in battle instead.
     /// - Target must not already be destroyed (`!system.is_destroyed`).
     /// - An Empire Death Star fleet must be present at `target_system`.
     /// - Target must not be Empire-controlled (no self-destruction).
@@ -235,17 +238,12 @@ impl DeathStarSystem {
     /// update `VictoryState` after receiving this event.
     #[must_use]
     pub fn fire(
-        state: &DeathStarState,
+        _state: &DeathStarState,
         world: &GameWorld,
         target_system: SystemKey,
         tick: u64,
     ) -> Option<DeathStarEvent> {
         let sys = world.systems.get(target_system)?;
-
-        // Guard: shield generator must be destroyed first (entity 0x25).
-        if state.shield_generator_active {
-            return None;
-        }
 
         // Guard: already destroyed.
         if sys.is_destroyed {
@@ -528,7 +526,7 @@ mod tests {
 
     // ── Planet destruction tests ─────────────────────────────────────────────
 
-    /// A `DeathStarState` with shield destroyed (can fire).
+    /// A `DeathStarState` with the shield generator destroyed.
     fn state_shield_down() -> DeathStarState {
         DeathStarState {
             under_construction: None,
@@ -551,15 +549,17 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_blocked_by_shield() {
+    fn an_active_shield_generator_does_not_stop_the_superlaser() {
+        // FUN_005617b0 checks only the target's destroyed bit and the Death
+        // Star's active bit; the shield guards the Death Star in battle.
         let (mut world, sys) = make_world();
         add_ds_fleet(&mut world, sys);
         let state = DeathStarState::default(); // shield_generator_active = true
 
-        assert!(
-            DeathStarSystem::fire(&state, &world, sys, 1).is_none(),
-            "Death Star must not fire while shield generator is active"
-        );
+        assert!(matches!(
+            DeathStarSystem::fire(&state, &world, sys, 1),
+            Some(DeathStarEvent::PlanetDestroyed { system, .. }) if system == sys
+        ));
     }
 
     #[test]

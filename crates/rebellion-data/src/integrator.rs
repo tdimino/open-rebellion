@@ -54,7 +54,8 @@ use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::uprising::{UprisingEvent, UprisingState};
 use rebellion_core::victory::VictoryOutcome;
 use rebellion_core::world::{
-    ControlKind, FighterEntry, Fleet, GameWorld, ShipInstance, SpecialForceUnit, TroopUnit,
+    CapitalShipClass, ControlKind, FighterEntry, Fleet, GameWorld, ShipInstance, SpecialForceUnit,
+    TroopUnit,
 };
 
 // ---------------------------------------------------------------------------
@@ -2285,6 +2286,113 @@ mod tests {
     }
 
     #[test]
+    fn a_completed_death_star_can_fire_from_its_new_fleet() {
+        // CAPSHPSD.DAT record 136 is the Death Star (TEXTSTRA 10120).
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Yard");
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(rebellion_core::world::DEATH_STAR_CLASS_ID),
+            is_empire: true,
+            hull: 25_000,
+            ..Default::default()
+        });
+        let target = add_system(&mut world, "Target");
+        world.systems[target].control = ControlKind::Controlled(Faction::Alliance);
+
+        apply_build_completion_inner(
+            &CompletionEvent {
+                system,
+                tick: 1,
+                kind: BuildableKind::CapitalShip(class),
+            },
+            &mut world,
+        );
+
+        let fleet = world.systems[system].fleets[0];
+        assert!(world.fleets[fleet].has_death_star);
+        world.systems[system].fleets.clear();
+        world.systems[target].fleets.push(fleet);
+        world.fleets[fleet].location = target;
+        assert!(rebellion_core::death_star::DeathStarSystem::fire(
+            &DeathStarState::default(),
+            &world,
+            target,
+            2
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn a_death_star_joining_a_fleet_marks_it_and_other_ships_do_not() {
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Yard");
+        let mut add_class = |id| {
+            world.capital_ship_classes.insert(CapitalShipClass {
+                dat_id: DatId::new(id),
+                is_empire: true,
+                hull: 100,
+                ..Default::default()
+            })
+        };
+        let star_destroyer = add_class(131);
+        let death_star = add_class(rebellion_core::world::DEATH_STAR_CLASS_ID);
+        let build = |world: &mut GameWorld, class| {
+            apply_build_completion_inner(
+                &CompletionEvent {
+                    system,
+                    tick: 1,
+                    kind: BuildableKind::CapitalShip(class),
+                },
+                world,
+            );
+        };
+
+        build(&mut world, star_destroyer);
+        let fleet = world.systems[system].fleets[0];
+        assert!(!world.fleets[fleet].has_death_star);
+
+        build(&mut world, death_star);
+        assert_eq!(world.systems[system].fleets, [fleet]);
+        assert!(world.fleets[fleet].has_death_star);
+    }
+
+    #[test]
+    fn completed_squadrons_stack_in_their_own_side_fleet() {
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Yard");
+        let enemy = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: true,
+            has_death_star: false,
+        });
+        world.systems[system].fleets.push(enemy);
+        let tie = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                is_empire: true,
+                ..Default::default()
+            });
+        for _ in 0..2 {
+            apply_build_completion_inner(
+                &CompletionEvent {
+                    system,
+                    tick: 1,
+                    kind: BuildableKind::Fighter(tie),
+                },
+                &mut world,
+            );
+        }
+
+        assert!(world.fleets[enemy].fighters.is_empty());
+        let own = world.systems[system].fleets[1];
+        assert_eq!(world.fleets[own].fighters.len(), 1);
+        assert_eq!(world.fleets[own].fighters[0].count, 2);
+    }
+
+    #[test]
     fn troop_production_preserves_original_class_and_faction() {
         let mut world = GameWorld::default();
         let system = add_system(&mut world, "Training World");
@@ -2518,8 +2626,7 @@ pub fn apply_space_combat_result_inner(result: &SpaceCombatResult, world: &mut G
                 .capital_ships
                 .iter()
                 .fold((false, false), |(present, alive), ship| {
-                    let is_death_star =
-                        world.capital_ship_classes[ship.class].dat_id.family() == 0x34;
+                    let is_death_star = world.capital_ship_classes[ship.class].is_death_star();
                     (
                         present || is_death_star,
                         alive || (is_death_star && ship.alive),
@@ -2865,6 +2972,10 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                 .capital_ship_classes
                 .get(*class_key)
                 .is_some_and(|c| c.is_alliance);
+            let is_death_star = world
+                .capital_ship_classes
+                .get(*class_key)
+                .is_some_and(CapitalShipClass::is_death_star);
 
             let fleet_key = {
                 let Some(sys) = world.systems.get(sys_key) else {
@@ -2887,6 +2998,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                     fleet
                         .capital_ships
                         .push(ShipInstance::new(*class_key, hull, is_alliance));
+                    fleet.has_death_star |= is_death_star;
                 }
             } else {
                 let hull = world
@@ -2899,7 +3011,7 @@ pub fn apply_build_completion_inner(completion: &CompletionEvent, world: &mut Ga
                     fighters: vec![],
                     characters: vec![],
                     is_alliance,
-                    has_death_star: false,
+                    has_death_star: is_death_star,
                 };
                 let fk = world.fleets.insert(fleet);
                 if let Some(sys) = world.systems.get_mut(sys_key) {
