@@ -293,6 +293,21 @@ impl TroopTransportState {
         cargo
     }
 
+    /// Destroy one embarked regiment, removing it from its fleet's cargo and
+    /// from the arena. Returns `false` if it was not aboard any fleet.
+    pub fn destroy_embarked(&mut self, world: &mut GameWorld, troop: TroopKey) -> bool {
+        let mut found = false;
+        for cargo in self.cargo.values_mut() {
+            let before = cargo.len();
+            cargo.retain(|&key| key != troop);
+            found |= cargo.len() != before;
+        }
+        if found {
+            world.troops.remove(troop);
+        }
+        found
+    }
+
     /// Remove regiments that no longer have living transport capacity.
     ///
     /// A fleet may survive because an escort remains after every transport is

@@ -1685,6 +1685,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                 );
             }
 
+            // Observe embarked regiments after arrivals and landings, so a
+            // fleet that arrives and is ordered away again this tick still
+            // copies the arrival system's withdraw percent.
+            let mut running_regiments = if tick_events.is_empty() {
+                Vec::new()
+            } else {
+                BlockadeSystem::running_regiments(
+                    &mut blockade_state,
+                    &world,
+                    &movement_state,
+                    &troop_transport_state,
+                )
+            };
+
             // ── Fog of war ──────────────────────────────────────────────────
             let alliance_reveals =
                 FogSystem::advance(&mut fog_alliance_state, &world, &movement_state);
@@ -1989,8 +2003,24 @@ Some(RailAudience::side(*faction_is_alliance)),
             }
 
             // ── Blockade ─────────────────────────────────────────────────────
-            let blockade_events =
+            let mut blockade_events =
                 BlockadeSystem::advance(&mut blockade_state, &world, &tick_events);
+            if let Some(last) = tick_events.last() {
+                running_regiments.extend(BlockadeSystem::running_regiments(
+                    &mut blockade_state,
+                    &world,
+                    &movement_state,
+                    &troop_transport_state,
+                ));
+                let running_rolls: Vec<f64> = (0..running_regiments.len())
+                    .map(|_| sim_rng.gen::<f64>())
+                    .collect();
+                blockade_events.extend(BlockadeSystem::resolve_running(
+                    &running_regiments,
+                    &running_rolls,
+                    last.tick,
+                ));
+            }
             for evt in &blockade_events {
                 match evt {
                     rebellion_core::blockade::BlockadeEvent::BlockadeStarted { system, tick } => {
@@ -2032,10 +2062,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         troop,
                         tick,
                     } => {
-                        if let Some(sys) = world.systems.get_mut(*system) {
-                            sys.ground_units.retain(|&k| k != *troop);
-                        }
-                        world.troops.remove(*troop);
+                        // The regiment was aboard a fleet leaving the system.
+                        troop_transport_state.destroy_embarked(&mut world, *troop);
                         let name = world
                             .systems
                             .get(*system)

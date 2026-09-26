@@ -750,13 +750,30 @@ cross-runtime proof remain open
 ### F-021: The blockade troop-destruction event is never raised
 
 - Severity: P1
-- Status: confirmed
-- Evidence: `BlockadeEvent::TroopDestroyed` (event `0x340`,
-  `FUN_00504a00`) is matched by the integrator and the app but never built by
-  `BlockadeSystem::advance`, so regiments moving through a blockade are never
-  destroyed.
-- Acceptance: troops in transit through a blockaded system are destroyed per
-  `FUN_00504a00`, and stationed defenders survive.
+- Status: remediated; browser pass pending
+- Evidence: before the fix, `BlockadeEvent::TroopDestroyed` (event `0x340`,
+  `FUN_00504a00`) was matched by the integrator and the app but never built.
+- Recovery (`ghidra/notes/blockade-troop-withdrawal.md`): `FUN_00504a00` only
+  notifies. The loss is the regiment's withdraw-percent roll. `FUN_0050b310`
+  keeps a system at 100 unless it is blockaded with no active KDY-150; then it
+  is `max(0, 100 - ships * GNPRTB[7684] - fighters * GNPRTB[7685])`. A regiment
+  added to a system copies that value, landing resets it to 100, and entering
+  transit keeps it only if `random(0..=99) < percent` (`FUN_00504990`).
+- Correction: `FUN_00504a00` is regiment vtable slot `+0x1f8`, not `+0x204`;
+  `FUN_004ff3c0`'s `+0x204` call reaches `FleetBlockadeNotif` on fleet views.
+- Fix: `BlockadeSystem::running_regiments` observes embarked regiments after
+  arrivals and landings and again at the blockade step, and `resolve_running`
+  rolls those leaving; both run in the headless step and the app frame loop.
+  Destroyed regiments leave their fleet's cargo and emit
+  `blockade_troop_destroyed` telemetry. Nine tests, all 37 viable mutants
+  caught, seed-42 golden unchanged.
+- Open: the tracking is not saved (a save-version bump needs approval), the
+  model has no system-based fighters outside fleets, and the app path needs a
+  browser pass.
+- Acceptance: a regiment carried into a blockaded system without a KDY-150
+  rolls against the recovered percent when it leaves, garrisons and
+  surface-loaded regiments are never rolled, and a browser pass shows the
+  loss message.
 
 ### F-022: Two tactical tests needed untracked bitmaps
 

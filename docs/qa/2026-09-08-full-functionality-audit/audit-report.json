@@ -1688,13 +1688,17 @@
     {
       "id": "F-021",
       "severity": "P1",
-      "status": "confirmed",
+      "status": "remediated_browser_pending",
       "title": "The blockade troop-destruction event is never raised",
       "evidence": [
-        "crates/rebellion-core/src/blockade.rs: BlockadeEvent::TroopDestroyed (event 0x340, FUN_00504a00) is never built by BlockadeSystem::advance",
-        "The integrator and app already handle the event"
+        "Before the fix: crates/rebellion-core/src/blockade.rs built BlockadeEvent::TroopDestroyed (event 0x340, FUN_00504a00) nowhere",
+        "2026-09-26 recovery (ghidra/notes/blockade-troop-withdrawal.md): FUN_00504a00 only notifies; the loss is the regiment's WithdrawPercent roll. FUN_0050b310 sets the system's percent to 100, or, when blockaded with no active KDY-150 (family 0x22), to max(0, 100 - ships*GNPRTB[7684] - fighters*GNPRTB[7685]) (FUN_0055a020, FUN_0053e120); a regiment added to a system copies it (FUN_00508660 -> FUN_0050c540 -> FUN_00504470); activation resets it to 100 (FUN_00504960); entering transit rolls random(0..=99) < percent (FUN_00504990, FUN_0053e2f0) and a failure raises TroopRegDestroyedRunningBlockade and event 0x340",
+        "Correction: the earlier chain FUN_004ff3c0 -> slot +0x204 -> FUN_00504a00 was wrong; the regiment vtable is 0x0065e438, FUN_00504a00 is slot +0x1f8, and +0x204 on fleet views is FleetBlockadeNotif (FUN_004ff7f0)",
+        "2026-09-26 fix: BlockadeSystem::running_regiments tracks embarked regiments, observed after arrivals and landings and again at the blockade step so a fleet that arrives and is ordered away in one tick still takes the arrival percent; resolve_running rolls those leaving a system below 100; the headless step and the app frame loop both apply TroopDestroyed through TroopTransportState::destroy_embarked and record blockade_troop_destroyed telemetry; garrisons and regiments loaded from the surface are never rolled",
+        "Nine tests cover the rule and its application, scoped cargo mutants catch all 37 viable mutants, and the seed-42 golden is unchanged (no regiment runs a blockade in that campaign)",
+        "Open: the per-regiment tracking is not saved (saves are positional bincode; persisting it needs a save-version bump), so a regiment restarts at 100 after a load; our model has no system-based fighters outside fleets; the app frame-loop path needs a browser pass"
       ],
-      "acceptance": "Troops in transit through a blockaded system are destroyed per FUN_00504a00, and stationed defenders survive."
+      "acceptance": "A regiment carried into a blockaded system without a KDY-150 rolls against the recovered withdraw percent when it leaves, garrisons and surface-loaded regiments are never rolled, and a browser pass shows the loss message."
     },
     {
       "id": "F-022",

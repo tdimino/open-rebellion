@@ -410,6 +410,20 @@ pub fn run_simulation_tick(
         }
     }
 
+    // Observe embarked regiments after arrivals and landings, so a fleet that
+    // arrives and is ordered away again this tick still copies the arrival
+    // system's withdraw percent. Their rolls happen at the blockade step.
+    let mut running_regiments = if tick_events.is_empty() {
+        Vec::new()
+    } else {
+        BlockadeSystem::running_regiments(
+            &mut states.blockade,
+            world,
+            &states.movement,
+            &states.troop_transport,
+        )
+    };
+
     // ── 4. Fog of war ────────────────────────────────────────────────────
     let reveals = FogSystem::advance(&mut states.fog, world, &states.movement);
     integrator.emit_fog_reveals(&reveals, world);
@@ -603,8 +617,22 @@ pub fn run_simulation_tick(
     }
 
     // ── 8. Blockade ──────────────────────────────────────────────────────
-    let blockade_events = BlockadeSystem::advance(&mut states.blockade, world, tick_events);
-    integrator.apply_blockade_events(world, &blockade_events);
+    let mut blockade_events = BlockadeSystem::advance(&mut states.blockade, world, tick_events);
+    if let Some(last) = tick_events.last() {
+        running_regiments.extend(BlockadeSystem::running_regiments(
+            &mut states.blockade,
+            world,
+            &states.movement,
+            &states.troop_transport,
+        ));
+        let running_rolls = take_rolls(running_regiments.len());
+        blockade_events.extend(BlockadeSystem::resolve_running(
+            &running_regiments,
+            &running_rolls,
+            last.tick,
+        ));
+    }
+    integrator.apply_blockade_events(world, &mut states.troop_transport, &blockade_events);
 
     // ── 9. Uprising ──────────────────────────────────────────────────────
     let uprising_rolls = take_rolls(world.systems.len());

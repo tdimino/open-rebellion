@@ -49,6 +49,7 @@ Provenance: until 2026-09-26, 2,752 `FUN_<address>.c` files were empty placehold
 | [tactical-death-star-path.md](tactical-death-star-path.md) | Separate Death Star object, operational fields, sprite state, laser charge, attack mission, and exact 201/202 trench-run result routing | FUN_005ba420, FUN_005ba5e0, FUN_005ba7f0, FUN_005afe40, FUN_005caf20, FUN_005cfec0, FUN_005c4ed0, FUN_005df110 |
 | [ground-combat.md](ground-combat.md) | Ground combat — troop iteration + per-unit resolution | FUN_00560d50, FUN_004ee350, FUN_005617b0 |
 | [bombardment.md](bombardment.md) | Orbital bombardment — Euclidean distance formula | FUN_00556430, FUN_0055d8c0, FUN_0055d860 |
+| [blockade-troop-withdrawal.md](blockade-troop-withdrawal.md) | Regiments lost running a blockade: withdraw percent, per-regiment copy, departure roll, event 0x340 | FUN_0050b310, FUN_0055a020, FUN_00504990, FUN_00504a00, FUN_00508660 |
 
 ## Decompiled Functions (5,395 files)
 

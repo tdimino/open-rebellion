@@ -22,19 +22,19 @@ use rebellion_core::events::{EventAction, FiredEvent, SkillField, SystemTag};
 use rebellion_core::fog::RevealEvent;
 use rebellion_core::game_events::{
     GameEventRecord, EVT_AI_ACTION, EVT_BETRAYAL_CHECK, EVT_BLOCKADE_ENDED, EVT_BLOCKADE_STARTED,
-    EVT_BOMBARDMENT, EVT_BUILD_COMPLETE, EVT_CAMPAIGN_SNAPSHOT, EVT_CAPTURE, EVT_CHARACTER_HEALTH,
-    EVT_CHARACTER_KILLED, EVT_COLLECTION_RATE, EVT_COMBAT_GROUND, EVT_COMBAT_SPACE,
-    EVT_CONTROL_CHANGED, EVT_DS_CONSTRUCTION, EVT_DS_FIRED, EVT_DS_STATUS, EVT_ECONOMY_TICK,
-    EVT_ESCAPE, EVT_EVENT_FIRED, EVT_FLEET_ARRIVED, EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED,
-    EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK, EVT_JEDI_DISCOVERED, EVT_JEDI_TIER,
-    EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE, EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER,
-    EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY, EVT_SABOTEUR_DETECTED, EVT_SHIP_REPAIRED,
-    EVT_SHIP_REPAIR_STARTED, EVT_SIDE_CHANGE, EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT,
-    EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED, EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN,
-    EVT_UPRISING_CHECK, EVT_UPRISING_INCIDENT, EVT_VICTORY, EVT_VICTORY_CHECK, SYS_AI,
-    SYS_BETRAYAL, SYS_BLOCKADE, SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY, SYS_EVENTS, SYS_FOG,
-    SYS_JEDI, SYS_MANUFACTURING, SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR, SYS_RESEARCH, SYS_STORY,
-    SYS_UPRISING, SYS_VICTORY,
+    EVT_BLOCKADE_TROOP_DESTROYED, EVT_BOMBARDMENT, EVT_BUILD_COMPLETE, EVT_CAMPAIGN_SNAPSHOT,
+    EVT_CAPTURE, EVT_CHARACTER_HEALTH, EVT_CHARACTER_KILLED, EVT_COLLECTION_RATE,
+    EVT_COMBAT_GROUND, EVT_COMBAT_SPACE, EVT_CONTROL_CHANGED, EVT_DS_CONSTRUCTION, EVT_DS_FIRED,
+    EVT_DS_STATUS, EVT_ECONOMY_TICK, EVT_ESCAPE, EVT_EVENT_FIRED, EVT_FLEET_ARRIVED,
+    EVT_FOG_REVEALED, EVT_GARRISON_REQUIRED, EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK,
+    EVT_JEDI_DISCOVERED, EVT_JEDI_TIER, EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE,
+    EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER, EVT_RESEARCH_UNLOCKED, EVT_RESOURCE_DISCOVERY,
+    EVT_SABOTEUR_DETECTED, EVT_SHIP_REPAIRED, EVT_SHIP_REPAIR_STARTED, EVT_SIDE_CHANGE,
+    EVT_SUPPORT_CHANGE, EVT_SUPPORT_DRIFT, EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED,
+    EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN, EVT_UPRISING_CHECK, EVT_UPRISING_INCIDENT, EVT_VICTORY,
+    EVT_VICTORY_CHECK, SYS_AI, SYS_BETRAYAL, SYS_BLOCKADE, SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY,
+    SYS_EVENTS, SYS_FOG, SYS_JEDI, SYS_MANUFACTURING, SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR,
+    SYS_RESEARCH, SYS_STORY, SYS_UPRISING, SYS_VICTORY,
 };
 use rebellion_core::ids::DatId;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
@@ -1096,7 +1096,12 @@ impl PerceptionIntegrator {
     // ── Step 8: Blockade ──────────────────────────────────────────────────
 
     /// Apply blockade events: troop destruction + telemetry.
-    pub fn apply_blockade_events(&mut self, world: &mut GameWorld, events: &[BlockadeEvent]) {
+    pub fn apply_blockade_events(
+        &mut self,
+        world: &mut GameWorld,
+        transport: &mut TroopTransportState,
+        events: &[BlockadeEvent],
+    ) {
         for evt in events {
             match evt {
                 BlockadeEvent::BlockadeStarted { system, tick } => {
@@ -1117,11 +1122,21 @@ impl PerceptionIntegrator {
                         serde_json::json!({ "system": sys_name(world, *system) }),
                     ));
                 }
-                BlockadeEvent::TroopDestroyed { system, troop, .. } => {
-                    if let Some(sys) = world.systems.get_mut(*system) {
-                        sys.ground_units.retain(|&k| k != *troop);
+                BlockadeEvent::TroopDestroyed {
+                    system,
+                    troop,
+                    tick,
+                } => {
+                    // The regiment was aboard a fleet leaving the system.
+                    if transport.destroy_embarked(world, *troop) {
+                        self.events.push(GameEventRecord::new(
+                            *tick,
+                            self.wall_ms,
+                            SYS_BLOCKADE,
+                            EVT_BLOCKADE_TROOP_DESTROYED,
+                            serde_json::json!({ "system": sys_name(world, *system) }),
+                        ));
                     }
-                    world.troops.remove(*troop);
                 }
             }
         }
@@ -2320,6 +2335,52 @@ mod tests {
             2
         )
         .is_some());
+    }
+
+    #[test]
+    fn a_regiment_lost_running_a_blockade_leaves_its_fleet_and_is_reported() {
+        // FUN_00504990 destroys the regiment; FUN_00504a00 raises event 0x340.
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, "Bespin");
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            troop_capacity: 1,
+            ..CapitalShipClass::default()
+        });
+        let fleet = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![ShipInstance::new(class, 100, false)],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            has_death_star: false,
+        });
+        world.systems[system].fleets.push(fleet);
+        let troop = world.troops.insert(rebellion_core::world::TroopUnit {
+            class_dat_id: DatId::new(0x1000_0001),
+            is_alliance: false,
+            regiment_strength: 100,
+        });
+        world.systems[system].ground_units.push(troop);
+        let mut transport = TroopTransportState::default();
+        transport.embark(&mut world, fleet, &[troop]).unwrap();
+        let mut integrator = PerceptionIntegrator::new(9, 0);
+
+        integrator.apply_blockade_events(
+            &mut world,
+            &mut transport,
+            &[BlockadeEvent::TroopDestroyed {
+                system,
+                troop,
+                tick: 9,
+            }],
+        );
+
+        assert!(transport.cargo(fleet).is_empty());
+        assert!(!world.troops.contains_key(troop));
+        let events = integrator.finish();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EVT_BLOCKADE_TROOP_DESTROYED);
+        assert_eq!(events[0].details["system"], "Bespin");
     }
 
     #[test]
