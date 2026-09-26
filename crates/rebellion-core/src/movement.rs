@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn progress_at_halfway() {
+    fn progress_reports_half_at_midpoint() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let mut order = MovementOrder::new(fleet, origin, dest, 10);
         order.ticks_elapsed = 5;
@@ -737,7 +737,7 @@ mod tests {
     // --- MovementState ---
 
     #[test]
-    fn order_and_get() {
+    fn ordered_movement_is_retrievable_by_fleet() {
         let (fleet, origin, dest) = mock_fleet_and_systems();
         let mut state = MovementState::new();
         state.order(fleet, origin, dest, 10);
@@ -1133,7 +1133,7 @@ mod tests {
     }
 
     #[test]
-    fn medium_distance_proportional() {
+    fn medium_distance_produces_proportional_transit_ticks() {
         // ~440 units apart, hyperdrive=80 → ceil(440*2/80)=ceil(11.0)=11
         let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320); // ~438.6
         let ship_key = world.capital_ship_classes.insert(test_ship_class(80));

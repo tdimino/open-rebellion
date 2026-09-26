@@ -1884,7 +1884,7 @@ mod tests {
     // ── Existing tests (updated for new save_slot signature) ────────────────
 
     #[test]
-    fn round_trip_save_load() {
+    fn save_and_load_round_trip_preserves_state() {
         let saves_dir = tmp_dir("round_trip_v5");
 
         let state = minimal_save_state();

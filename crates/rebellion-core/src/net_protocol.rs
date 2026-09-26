@@ -747,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    fn serialization_round_trip() {
+    fn net_message_survives_serialization_round_trip() {
         let msg = NetMessage::StoryFinalBattle;
         let json = serde_json::to_string(&msg).unwrap();
         let back: NetMessage = serde_json::from_str(&json).unwrap();
@@ -755,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn known_event_ids() {
+    fn known_event_ids_match_expected_values() {
         assert_eq!(NetMessage::SideRecruitmentDone.event_id(), Some(0x12c));
         assert_eq!(NetMessage::StoryFinalBattle.event_id(), Some(0x220));
         assert_eq!(

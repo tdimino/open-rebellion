@@ -474,7 +474,7 @@ mod tests {
     // ── Construction tests ───────────────────────────────────────────────────
 
     #[test]
-    fn test_construction_countdown_completes() {
+    fn construction_countdown_completes_on_final_tick() {
         let (world, sys) = make_world();
         let mut state = DeathStarState::default();
         DeathStarSystem::start_construction(&mut state, sys);
@@ -504,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construction_no_double_start() {
+    fn construction_rejects_a_second_start() {
         let (_, sys) = make_world();
         let mut state = DeathStarState::default();
         assert!(DeathStarSystem::start_construction(&mut state, sys));
@@ -515,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn test_clear_construction() {
+    fn clear_construction_removes_in_progress_build() {
         let (_, sys) = make_world();
         let mut state = DeathStarState::default();
         DeathStarSystem::start_construction(&mut state, sys);
@@ -535,7 +535,9 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_succeeds_on_valid_target() {
+    fn fire_succeeds_on_a_valid_target() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         add_ds_fleet(&mut world, sys);
         let state = state_shield_down();
@@ -562,7 +564,9 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_blocked_already_destroyed() {
+    fn fire_is_blocked_on_an_already_destroyed_system() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         add_ds_fleet(&mut world, sys);
         let state = state_shield_down();
@@ -572,7 +576,9 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_blocked_no_death_star_fleet() {
+    fn fire_is_blocked_without_a_death_star_fleet() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         let state = state_shield_down();
         let fk = world.fleets.insert(Fleet {
@@ -589,7 +595,9 @@ mod tests {
     }
 
     #[test]
-    fn test_fire_blocked_empire_controlled() {
+    fn fire_is_blocked_on_empire_controlled_systems() {
+        // No recovered source: FUN_005617b0 is the CharacterMgr SeatOfPower
+        // check, not a fire precondition (ghidra/notes/FUN_005617b0.c).
         let (mut world, sys) = make_world();
         let state = state_shield_down();
         world.systems.get_mut(sys).unwrap().control = ControlKind::Controlled(Faction::Empire);
@@ -608,7 +616,8 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
     )]
-    fn test_nearby_warning_emitted_for_close_system() {
+    fn nearby_warning_is_emitted_for_close_alliance_system() {
+        // Source: FUN_00512480 sends SystemDeathStarNearbyNotif.
         let (mut world, ds_sys) = make_world();
         // Add a second Alliance system within radius.
         let sector = world.systems[ds_sys].sector;
@@ -658,7 +667,8 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
     )]
-    fn test_no_nearby_warning_for_distant_system() {
+    fn no_nearby_warning_for_a_distant_system() {
+        // Source: FUN_00512480 sends SystemDeathStarNearbyNotif.
         let (mut world, ds_sys) = make_world();
         let sector = world.systems[ds_sys].sector;
         // Place a system far outside the warning radius.

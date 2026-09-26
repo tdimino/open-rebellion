@@ -1455,7 +1455,7 @@ mod tests {
     }
 
     #[test]
-    fn test_entity_kind_classification() {
+    fn entity_kind_classifies_family_bytes_correctly() {
         assert_eq!(
             CombatEntityKind::from_family_byte(0x30),
             CombatEntityKind::CapitalShip
@@ -1479,7 +1479,9 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_difficulty() {
+    fn extract_difficulty_reads_packed_bits_four_and_five() {
+        // No recovered source for difficulty here: FUN_0054a1d0 reads
+        // `+0x24 >> 4 & 3` as the side passed to FUN_004fd600.
         // difficulty bits 4-5: value 2 = hard → packed = 0x20
         assert_eq!(extract_difficulty(0x20), 2);
         assert_eq!(extract_difficulty(0x00), 0);
@@ -1488,7 +1490,7 @@ mod tests {
     }
 
     #[test]
-    fn test_space_combat_attacker_wins_overwhelming_force() {
+    fn space_combat_attacker_wins_with_overwhelming_force() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1505,7 +1507,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ground_combat_attacker_wins() {
+    fn ground_combat_attacker_wins_with_superior_strength() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1532,7 +1534,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ground_combat_no_troops_is_draw() {
+    fn ground_combat_with_no_troops_is_a_draw() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1544,7 +1546,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ground_combat_zero_strength_troops_skip() {
+    fn ground_combat_skips_zero_strength_troops() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1572,7 +1574,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_ground_combat_uses_class_attack_defense_stats() {
+    fn ground_combat_uses_class_attack_and_defense_stats() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1619,7 +1621,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ground_combat_defense_facility_helps_defender() {
+    fn ground_combat_defense_facility_helps_the_defender() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1677,7 +1679,9 @@ mod tests {
     }
 
     #[test]
-    fn test_ground_combat_difficulty_scales_damage() {
+    fn ground_combat_difficulty_scales_damage() {
+        // FUN_0053e190(a, b) = a * b / 100 (DAT_00661a88 is 100); GNPRTB
+        // 0x1400 as its second argument is not yet traced to a caller.
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1748,7 +1752,9 @@ mod tests {
     }
 
     #[test]
-    fn test_space_combat_difficulty_scales_hull_damage() {
+    fn space_combat_difficulty_scales_hull_damage() {
+        // FUN_0053e190(a, b) = a * b / 100 (DAT_00661a88 is 100); GNPRTB
+        // 0x1400 as its second argument is not yet traced to a caller.
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1796,7 +1802,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ground_combat_large_asymmetric_battle() {
+    fn elite_troops_overcome_numerically_superior_militia() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1900,7 +1906,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fighter_dogfight_maneuverability_advantage() {
+    fn higher_maneuverability_wins_the_fighter_dogfight() {
         // Side A: high maneuverability (10 attack, 20 maneuverability).
         // Side B: low maneuverability (10 attack, 2 maneuverability).
         // Same squad count — side A should take fewer losses.
@@ -1935,7 +1941,7 @@ mod tests {
     }
 
     #[test]
-    fn test_system_based_fighter_wing_can_engage_without_carrier() {
+    fn system_based_fighter_wing_can_engage_without_carrier() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -1972,7 +1978,7 @@ mod tests {
     }
 
     #[test]
-    fn test_capital_ship_laser_cannons_screen_enemy_fighters() {
+    fn capital_ship_laser_cannons_screen_enemy_fighters() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -2015,7 +2021,7 @@ mod tests {
     }
 
     #[test]
-    fn test_outnumbered_system_fighter_wing_takes_integer_attrition() {
+    fn outnumbered_fighter_wing_takes_integer_attrition() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -2054,7 +2060,7 @@ mod tests {
     }
 
     #[test]
-    fn test_carrier_capacity_limits_fighter_launch() {
+    fn carrier_capacity_limits_fighter_launch() {
         // Carrier with fighter_capacity=2, but fleet has 10 fighter squads.
         // Only 2 should launch.
         let mut world = empty_world();
@@ -2103,7 +2109,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fighter_recall_after_carrier_destruction() {
+    fn fighters_are_lost_when_carrier_is_destroyed() {
         // If all carriers are destroyed, no fighters can be recalled.
         let mut world = empty_world();
         let sector = make_sector(&mut world);
@@ -2154,7 +2160,7 @@ mod tests {
     }
 
     #[test]
-    fn test_no_fighters_skips_fighter_phase() {
+    fn no_fighters_skips_the_fighter_phase() {
         // Two fleets with no fighters — fighter loss events should be empty.
         let mut world = empty_world();
         let sector = make_sector(&mut world);
@@ -2172,7 +2178,7 @@ mod tests {
     }
 
     #[test]
-    fn test_asymmetric_fighter_engagement() {
+    fn attacker_fighters_damage_defender_without_dogfight_losses() {
         // Only attacker has fighters; defender has none.
         // Attacker fighters should damage defender ships without dogfight losses.
         let mut world = empty_world();
@@ -2233,7 +2239,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_absorbs_damage_before_hull() {
+    fn shield_absorbs_damage_before_hull() {
         let mut ships = vec![ShipSnap {
             hull_current: 100,
             hull_max: 100,
@@ -2254,7 +2260,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_overflow_damages_hull() {
+    fn shield_overflow_damages_the_hull() {
         let mut ships = vec![ShipSnap {
             hull_current: 100,
             hull_max: 100,
@@ -2276,7 +2282,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ion_cannon_2x_shield_damage() {
+    fn ion_cannon_deals_double_shield_damage() {
         let mut ion_vec = vec![ShipSnap {
             hull_current: 200,
             hull_max: 200,
@@ -2312,7 +2318,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_recharge_per_tick() {
+    fn shield_recharges_each_tick() {
         let mut ships = vec![ShipSnap {
             hull_current: 100,
             hull_max: 100,
@@ -2332,7 +2338,7 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_shield_passes_all_damage_to_hull() {
+    fn zero_shield_passes_all_damage_to_hull() {
         let mut ships = vec![ShipSnap {
             hull_current: 100,
             hull_max: 100,
@@ -2352,7 +2358,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_prevents_death() {
+    fn shield_prevents_hull_death() {
         let mut ships = vec![ShipSnap {
             hull_current: 50,
             hull_max: 50,
@@ -2373,7 +2379,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_integration_full_combat() {
+    fn shielded_defender_takes_less_hull_damage_in_full_combat() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);
@@ -2404,7 +2410,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ion_cannon_integration() {
+    fn ion_cannon_strips_shields_faster_than_turbolasers() {
         let mut world = empty_world();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector);

@@ -2653,7 +2653,7 @@ mod tests {
     }
 
     #[test]
-    fn busy_character_tracking() {
+    fn busy_character_can_be_marked_and_cleared() {
         let mut world = empty_world();
         let sector = add_sector(&mut world);
         let _ = add_system(&mut world, sector, 0.5, 0.5);

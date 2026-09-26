@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn subdue_success() {
+    fn successful_subdue_ends_the_uprising() {
         let (world, sys) = make_world_with_system(0.1, Faction::Alliance);
         let mut state = UprisingState::new();
         state.active_uprisings.insert(
@@ -511,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn subdue_failure() {
+    fn failed_subdue_leaves_the_uprising_active() {
         let (world, sys) = make_world_with_system(0.1, Faction::Alliance);
         let mut state = UprisingState::new();
         state.active_uprisings.insert(

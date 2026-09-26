@@ -451,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn invert_popularity_shift() {
+    fn inverted_popularity_shift_negates_both_deltas() {
         let effect = GameEffect::PopularityShifted {
             system: SystemKey::default(),
             alliance_delta: 0.1,

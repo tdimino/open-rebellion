@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bombardment_formula_minimum_one_damage() {
+    fn bombardment_formula_clamps_to_minimum_one_damage() {
         // FUN_0055d8c0 returns `result == 0 ? 1 : result`. atk=(2, 3) vs def=(0, 0)
         // gives raw_power = sqrt(13) ~= 3.6, which floors to 0 under divisor 5.
         let mut world = make_world_with_gnprtb();
@@ -347,7 +347,8 @@ mod tests {
     }
 
     #[test]
-    fn test_bombardment_no_self_damage() {
+    fn bombardment_never_damages_own_faction() {
+        // No recovered source: FUN_00556430 does not show this guard.
         let mut world = make_world_with_gnprtb();
         let sector = make_sector(&mut world);
         // Empire controls, Empire attacks → self-bombardment → damage = 0.
@@ -360,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bombardment_scales_with_fleet_strength() {
+    fn bombardment_scales_with_fleet_strength() {
         let mut world = make_world_with_gnprtb();
         let sector = make_sector(&mut world);
         let sys = make_system(&mut world, sector, Some(Faction::Alliance));
@@ -382,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bombardment_euclidean_formula_exact() {
+    fn bombardment_euclidean_formula_matches_expected_values() {
         // Manual calculation: atk=(30, 3*1=3), def=(0, 0), divisor=5.
         // raw_power = sqrt(30² + 3²) = sqrt(900 + 9) = sqrt(909) ≈ 30.15
         // damage = floor(30.15 / 5) = floor(6.03) = 6

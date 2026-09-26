@@ -1126,7 +1126,7 @@ version = "0.1.0"
     // ── ModRuntime tests ────────────────────────────────────────────────────
 
     #[test]
-    fn discover_empty_dir() {
+    fn discover_on_empty_directory_finds_no_mods() {
         let tmp = tempfile::tempdir().unwrap();
         let runtime = ModRuntime::discover(tmp.path());
         assert_eq!(runtime.discovered.len(), 0);
@@ -1134,7 +1134,7 @@ version = "0.1.0"
     }
 
     #[test]
-    fn config_toggle_persistence() {
+    fn toggled_config_persists_after_save_and_reload() {
         let tmp = tempfile::tempdir().unwrap();
         let mut config = ModConfig::default();
 
@@ -1158,7 +1158,7 @@ version = "0.1.0"
     }
 
     #[test]
-    fn apply_only_enabled() {
+    fn apply_patches_skips_disabled_mods() {
         let tmp = tempfile::tempdir().unwrap();
 
         // Create mod-a (will be enabled)

@@ -2203,7 +2203,7 @@ mod tests {
     }
 
     #[test]
-    fn faction_from_cockpit() {
+    fn advisor_faction_converts_from_cockpit_faction() {
         assert_eq!(
             AdvisorFaction::from(CockpitFaction::Alliance),
             AdvisorFaction::Alliance,

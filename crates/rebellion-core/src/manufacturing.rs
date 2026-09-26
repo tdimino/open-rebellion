@@ -454,7 +454,7 @@ mod tests {
     // --- ProductionQueue tests ---
 
     #[test]
-    fn enqueue_and_active() {
+    fn enqueued_item_becomes_the_active_production() {
         let mut q = ProductionQueue::new();
         assert!(q.active().is_none());
 
@@ -464,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn advance_partial_progress() {
+    fn partial_advance_reduces_ticks_remaining() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         let completed = q.advance_ticks(4);
@@ -507,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_active_item() {
+    fn canceling_the_active_item_promotes_the_next() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         q.enqueue(fighter_item(5));
@@ -540,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn progress_fraction() {
+    fn progress_fraction_reports_half_after_half_the_ticks() {
         let mut q = ProductionQueue::new();
         q.enqueue(cap_ship_item(10));
         q.advance_ticks(5);
