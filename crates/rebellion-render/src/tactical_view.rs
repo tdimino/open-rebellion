@@ -4191,10 +4191,10 @@ impl BattleSession {
                     continue;
                 }
                 Some(TacticalAttackTarget::FighterGroup(_)) => {
-                    // The recovered Attack Fighters executor owns a fighter
-                    // target. Its arc-based weapon callback remains a separate
-                    // source-recovery gate, so do not redirect the shot to an
-                    // unrelated capital ship.
+                    // FUN_005d0bb0 accepts only object class 1, and
+                    // FUN_005a8fc0 links that typed fighter target. Once the
+                    // shared list lifecycle clears it, do not enter the
+                    // autonomous capital-target path.
                     continue;
                 }
                 None if matches!(
@@ -13233,7 +13233,7 @@ mod tests {
     }
 
     #[test]
-    fn attack_fighters_cleared_target_does_not_fire_at_capital() {
+    fn recovered_fighter_clears_attack_fighters_without_capital_fire_or_audio() {
         fn session_with_source_order(order: TacticalOrder) -> BattleSession {
             let mut source = test_ship(64, 0, true, true);
             source.order = order;
@@ -13248,11 +13248,13 @@ mod tests {
             capital.shield = 1_000;
             capital.shield_max = 1_000;
 
+            // FUN_005cf980 advances Docking (state 3) to Recovered (state 4)
+            // without removing the strategic squadron count. FUN_005d0bb0
+            // and FUN_005a8fc0 keep Attack Fighters bound to class 1, so the
+            // resulting empty typed list must not fall through to a capital.
             let mut exhausted_fighter = test_fighter(5, false);
-            exhausted_fighter.alive = false;
-            exhausted_fighter.squad_count = 0;
-            exhausted_fighter.hull_current = 0.0;
-            exhausted_fighter.shield = 0.0;
+            exhausted_fighter.recovery_state = TacticalFighterRecoveryState::Docking;
+            exhausted_fighter.squad_count = 12;
 
             let mut session = test_session(vec![source, capital], vec![exhausted_fighter], true);
             session.paused = false;
@@ -13264,6 +13266,12 @@ mod tests {
 
         ordered.step();
 
+        assert_eq!(
+            ordered.fighters[0].recovery_state,
+            TacticalFighterRecoveryState::Recovered
+        );
+        assert!(!ordered.fighters[0].alive);
+        assert_eq!(ordered.fighters[0].squad_count, 12);
         assert_eq!(ordered.ships[0].attack_target, None);
         assert_eq!(
             (ordered.ships[1].hull_current, ordered.ships[1].shield),
@@ -13271,6 +13279,7 @@ mod tests {
         );
         assert!(ordered.weapon_effects.is_empty());
         assert!(ordered.impact_effects.is_empty());
+        assert!(ordered.pending_audio_cues.is_empty());
 
         let mut autonomous = session_with_source_order(TacticalOrder::None);
         let autonomous_capital_before =
@@ -13284,6 +13293,7 @@ mod tests {
         );
         assert_eq!(autonomous.weapon_effects.len(), 1);
         assert_eq!(autonomous.impact_effects.len(), 1);
+        assert!(!autonomous.pending_audio_cues.is_empty());
     }
 
     #[test]
