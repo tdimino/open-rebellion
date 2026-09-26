@@ -62,13 +62,13 @@
     "system_navigation": "partial_sector_system_shells_tabs_source_mapped_item_minis_bounded_scroll_coarse_intelligence_gating_and_rail_lifecycle_work_nested_compositions_exact_intelligence_commands_and_complete_matrix_open",
     "wasm_advisors": "partial_original_idle_runs_visible_in_scaled_apertures_actions_voice_and_chrome_open",
     "wasm_encyclopedia_art": "fail",
-    "tactical_interface": "fail_p58_b17_maps_106_of_106_deterministic_A1_cells_with_87_browser_journeys_and_19_snapshots_and_restores_Battle_Alert_weapon_audio_and_90_command_voices_A0_comparison_and_strict_acceptance_open",
+    "tactical_interface": "fail_p58_b20_maps_106_of_106_deterministic_A1_cells_with_87_browser_journeys_and_19_snapshots_and_restores_Battle_Alert_weapon_audio_all_285_tactical_voices_mixed_task_force_rejection_recovery_feedback_and_disabled_hyperdrive_withdrawal_warning_A0_comparison_and_strict_acceptance_open",
     "required_baseline_cells": "564_pending_or_open",
     "retrieval_package_coverage": "43_of_43_required_surface_families",
     "space_battle_scope": "106_baseline_cells_across_TAC-01_through_TAC-07",
     "tactical_matrix_contract": "pass_P58_B07_ledger_derived_106_cells_distribution_13_13_20_14_23_9_14_current_0_mapped_0_A0_0_accepted_missing_duplicate_unknown_unsafe_and_tracked_A0_fail_closed",
     "tactical_a0_ingestion": "pass_P58_B08_guest_executable_and_cell_provenance_host_exact_ledger_640x480_hash_source_and_destination_validation_capture_host_offline_current_0_of_106",
-    "tactical_a1_crosswalk": "pass_P58_B17_36_scenarios_106_of_106_cells_87_journeys_19_snapshots_0_explicit_gaps_0_A0_0_accepted",
+    "tactical_a1_crosswalk": "pass_P58_B20_36_scenarios_106_of_106_cells_87_journeys_19_snapshots_0_explicit_gaps_0_A0_0_accepted",
     "space_battle_launcher_practical_progress": "106_of_106_deterministic_A1_cells_0_of_106_strict_cells_accepted",
     "multiplayer_interface": "blocked",
     "release_interface_parity": "blocked"
@@ -167,7 +167,7 @@
       "id": "UIP-F-009",
       "severity": "P1",
       "status": "fail",
-      "title": "The tactical completion work maps all 106 canonical cells through 87 browser journeys and 19 source-backed snapshots; Battle Alert, score, and the complete 22-variant weapon-audio bank are routed, while A0 coverage, comparison, and all 106 strict cells remain open",
+      "title": "The tactical completion work maps all 106 canonical cells through 87 browser journeys and 19 source-backed snapshots; Battle Alert, score, the complete weapon and tactical voice banks, mixed-task-force rejection, recovery feedback, and disabled-hyperdrive withdrawal warning are routed, while A0 coverage, comparison, and all 106 strict cells remain open",
       "evidence": [
         "crates/rebellion-render/src/tactical_view.rs",
         "crates/rebellion-render/src/bmp_cache.rs",
@@ -210,7 +210,11 @@
       "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-withdraw-confirmation.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-23-tactical-detail-escort.md",
         "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-battle-alert-audio.md",
-        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md"
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-weapon-audio.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-tactical-command-voice.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-complete-voice-bank.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-25-tactical-mixed-task-force-target.md",
+        "docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-26-tactical-recovery-withdrawal-feedback.md"
       ],
       "affected_surfaces": ["TAC-01", "TAC-02", "TAC-03", "TAC-04", "TAC-05", "TAC-06"]
     },
@@ -336,6 +340,9 @@
     "p58_b15_tactical_battle_alert_audio": "evidence/2026-09-24-tactical-battle-alert-audio.md",
     "p58_b16_tactical_weapon_audio": "evidence/2026-09-24-tactical-weapon-audio.md",
     "p58_b17_tactical_command_voice": "evidence/2026-09-24-tactical-command-voice.md",
+    "p58_b18_complete_tactical_voice_bank": "evidence/2026-09-25-tactical-complete-voice-bank.md",
+    "p58_b19_mixed_task_force_target": "evidence/2026-09-25-tactical-mixed-task-force-target.md",
+    "p58_b20_recovery_withdrawal_feedback": "evidence/2026-09-26-tactical-recovery-withdrawal-feedback.md",
     "ledger_validator": "../../../scripts/validate-interface-parity-ledgers.mjs",
     "screenshot_ledger": "screenshot-ledger.md",
     "capture_manifest": "reference-captures/SHA256SUMS"

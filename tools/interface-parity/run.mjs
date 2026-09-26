@@ -2385,8 +2385,17 @@ async function probeTacticalCommandAssignmentPresentation(
     /panel=missions event=commit order=5 tactic=0 capital_members=1 fighter_members=0/.test(line)),
   "capital mission did not commit Attack Capital Ships");
   assert.ok(orderLogs.some((line) =>
-    /panel=missions event=commit order=2 tactic=0 capital_members=0 fighter_members=1/.test(line)),
+    /panel=missions event=commit order=2 tactic=0 capital_members=0 fighter_members=2/.test(line)),
   "fighter mission did not commit Recover");
+  const expectedCapacityVoice = ready.faction === "alliance"
+    ? { event: "0x8b", wave: 14108, owner: "Alliance" }
+    : { event: "0x109", wave: 15112, owner: "Empire" };
+  const capacityVoice = consoleLines.find(({ text }) =>
+    text.includes("voice_event=FighterRecoveryCapacity")
+      && text.includes(`source_event=${expectedCapacityVoice.event}`));
+  assert.match(capacityVoice?.text || "",
+    new RegExp(`wave=${expectedCapacityVoice.wave} faction=${expectedCapacityVoice.owner} routed=true loaded=true muted=true`),
+    "fighter Recover did not route the exact muted no-capacity warning");
   probes.push({
     type: "source-traced-tactical-command-assignment",
     executable_functions: [
@@ -2406,6 +2415,7 @@ async function probeTacticalCommandAssignmentPresentation(
     },
     tactic_codes: { surround: 1, stand_off: 2 },
     logs: orderLogs,
+    capacity_voice_log: capacityVoice.text,
   });
   return probes;
 }
@@ -2484,7 +2494,9 @@ function probeTacticalCommandExecutionPresentation(viewport, folder, stable, rea
   }];
 }
 
-function probeTacticalCommandProgressionPresentation(viewport, folder, stable, ready) {
+function probeTacticalCommandProgressionPresentation(
+  viewport, folder, stable, consoleLines, ready,
+) {
   const selected = ready.selected_ship;
   assert.ok(selected, "command progression fixture omitted its turning capital");
   assert.equal(selected.order_code, 7);
@@ -2527,6 +2539,16 @@ function probeTacticalCommandProgressionPresentation(viewport, folder, stable, r
   assert.equal(recovered.order_code, 0);
   assert.equal(recovered.recovery_target, docking.recovery_target);
   assert.deepEqual(recovered.source_position, arrived.source_position);
+  assert.equal(recovered.fighter_group, 1);
+  const expectedRecoveryVoice = ready.faction === "alliance"
+    ? { event: "0x88", wave: 14105, owner: "Alliance" }
+    : { event: "0x106", wave: 15109, owner: "Empire" };
+  const recoveryVoice = consoleLines.find(({ text }) =>
+    text.includes("voice_event=FighterRecoveryComplete")
+      && text.includes(`source_event=${expectedRecoveryVoice.event}`));
+  assert.match(recoveryVoice?.text || "",
+    new RegExp(`wave=${expectedRecoveryVoice.wave} faction=${expectedRecoveryVoice.owner} routed=true loaded=true muted=true`),
+    "fighter recovery did not route the exact muted group-completion voice");
 
   fs.writeFileSync(path.join(folder, "command-progression.png"), stable.bytes);
   return [{
@@ -2553,6 +2575,7 @@ function probeTacticalCommandProgressionPresentation(viewport, folder, stable, r
       carrier: docking.recovery_target,
       docking_distance: 2,
       strategic_count_preserved: true,
+      completion_voice_log: recoveryVoice.text,
     },
   }];
 }
@@ -3364,7 +3387,30 @@ async function probeTacticalBattleOptionsPresentation(
     assert.equal(withdrawLogs.filter(({ text }) =>
       text.includes("status=withdrawal_started")).length, 1,
     "disabled withdrawal accepted another command or confirmation did not dispatch");
-    probes.push({ type: "battle-options-withdraw-route", logs: withdrawLogs.map(({ text }) => text) });
+    assert.match(withdrawLogs.find(({ text }) =>
+      text.includes("status=withdrawal_started"))?.text || "", /hyperdrive_warning=true/,
+    "withdrawal confirmation did not detect the stranded hyperdrive-disabled ship");
+    const expectedVoices = faction === "alliance" ? [
+      { name: "WithdrawalStarted", event: "0x8f", wave: 14112, owner: "Alliance" },
+      { name: "WithdrawalHyperdriveWarning", event: "0x95", wave: 14118, owner: "Alliance" },
+    ] : [
+      { name: "WithdrawalStarted", event: "0x10d", wave: 15116, owner: "Empire" },
+      { name: "WithdrawalHyperdriveWarning", event: "0x10e", wave: 15117, owner: "Empire" },
+    ];
+    const voiceLogs = expectedVoices.map((expected) => {
+      const voice = consoleLines.find(({ text }) =>
+        text.includes(`voice_event=${expected.name}`)
+          && text.includes(`source_event=${expected.event}`));
+      assert.match(voice?.text || "",
+        new RegExp(`wave=${expected.wave} faction=${expected.owner} routed=true loaded=true muted=true`),
+        `withdrawal did not route exact muted ${expected.name} voice`);
+      return voice.text;
+    });
+    probes.push({
+      type: "battle-options-withdraw-route",
+      logs: withdrawLogs.map(({ text }) => text),
+      voice_logs: voiceLogs,
+    });
     return probes;
   }
 
@@ -4105,7 +4151,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         : scenario.command_execution_presentation
         ? probeTacticalCommandExecutionPresentation(viewport, folder, stable, ready)
         : scenario.command_progression_presentation
-        ? probeTacticalCommandProgressionPresentation(viewport, folder, stable, ready)
+        ? probeTacticalCommandProgressionPresentation(
+          viewport, folder, stable, consoleLines, ready,
+        )
         : scenario.attack_targeting_presentation
         ? probeTacticalAttackTargetingPresentation(viewport, folder, stable, ready)
         : scenario.attack_target_lifecycle_presentation
@@ -4260,6 +4308,15 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         outer_negative_z: -57.5,
         inner_negative_z: -37.5,
         inner_positive_z: 37.5,
+      } : scenario.command_assignment_presentation
+        || scenario.battle_options_withdrawal ? {
+        first_active_objects: 3,
+        second_active_objects: 3,
+        battle_extent: 109,
+        outer_positive_z: 54.5,
+        outer_negative_z: -54.5,
+        inner_negative_z: -34.5,
+        inner_positive_z: 34.5,
       } : scenario.battle_results_presentation ? {
         first_active_objects: 6,
         second_active_objects: 6,
@@ -4292,7 +4349,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
             : scenario.command_progression_presentation
               || scenario.attack_targeting_presentation
               || scenario.attack_target_lifecycle_presentation ? 10
-              : scenario.battle_results_presentation ? 12 : 4);
+              : scenario.command_assignment_presentation
+                || scenario.battle_options_withdrawal ? 6
+                : scenario.battle_results_presentation ? 12 : 4);
       const expectedParticipantLanes = new Map([
         ["capital-ship:alliance", -53],
         ["capital-ship:empire", 53],
@@ -4417,7 +4476,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           assert.equal(allianceFighters[0].source_position[2], -36);
           assert.equal(empireFighters[0].source_position[2], 36);
         }
-      } else if (scenario.death_star_presentation || scenario.battle_options_presentation) {
+      } else if (scenario.death_star_presentation
+        || scenario.battle_options_presentation
+        || scenario.command_assignment_presentation) {
         const allianceShips = ready.participants.filter((participant) =>
           participant.kind === "capital-ship" && participant.faction === "alliance");
         const empireShips = ready.participants.filter((participant) =>
@@ -4426,10 +4487,12 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
           participant.kind === "fighter-group" && participant.faction === "alliance");
         const empireFighters = ready.participants.filter((participant) =>
           participant.kind === "fighter-group" && participant.faction === "empire");
-        assert.equal(allianceShips.length, 1);
-        assert.equal(empireShips.length, 1);
-        assert.equal(allianceFighters.length, 1);
-        assert.equal(empireFighters.length, 1);
+        const expectedShips = scenario.battle_options_withdrawal ? 2 : 1;
+        assert.equal(allianceShips.length, expectedShips);
+        assert.equal(empireShips.length, expectedShips);
+        const expectedFighters = scenario.command_assignment_presentation ? 2 : 1;
+        assert.equal(allianceFighters.length, expectedFighters);
+        assert.equal(empireFighters.length, expectedFighters);
         const allianceShipZ = scenario.death_star_laser_journey && faction === "empire"
           ? ready.source_layout.outer_positive_z
           : ready.source_layout.outer_negative_z;

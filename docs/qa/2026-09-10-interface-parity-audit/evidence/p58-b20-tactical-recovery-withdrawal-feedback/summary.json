@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "checkpoint": "P58-B20",
+  "status": "pass_recovery_withdrawal_feedback_strict_a0_pending",
+  "source_contract": {
+    "recovery_completion_handler": "FUN_005b8630",
+    "withdrawal_warning_handler": "FUN_005a0240",
+    "withdrawal_caller": "FUN_00596ac0",
+    "withdrawal_readiness_predicate": "FUN_005b1b70",
+    "alliance": {
+      "recovery_complete_events": "0x87-0x8a",
+      "recovery_complete_resources": "14104-14107",
+      "recovery_capacity_events": "0x8b-0x8e",
+      "recovery_capacity_resources": "14108-14111",
+      "withdrawal_warning_event": "0x95",
+      "withdrawal_warning_resource": 14118
+    },
+    "empire": {
+      "recovery_complete_events": "0x105-0x108",
+      "recovery_complete_resources": "15108-15111",
+      "recovery_capacity_events": "0x109-0x10c",
+      "recovery_capacity_resources": "15112-15115",
+      "withdrawal_warning_event": "0x10e",
+      "withdrawal_warning_resource": 15117
+    }
+  },
+  "implemented_behavior": [
+    "queue_completion_after_last_live_player_group_member_recovers",
+    "queue_one_capacity_warning_per_selected_group_without_carrier_slot",
+    "queue_hyperdrive_warning_after_confirmed_withdrawal",
+    "leave_hyperdrive_disabled_capitals_out_of_withdrawal",
+    "assert_exact_muted_voice_routes_in_browser"
+  ],
+  "browser_runs": [
+    {
+      "run_id": "2026-09-26T07-34-05-938Z-6406",
+      "scenario": "production-command-assignment-presentation",
+      "route": "fighter_recovery_capacity",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "run_id": "2026-09-26T07-34-57-421Z-8272",
+      "scenario": "production-command-progression-presentation",
+      "route": "fighter_recovery_complete",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "run_id": "2026-09-26T07-36-08-167Z-9901",
+      "scenario": "production-battle-options-withdrawal",
+      "route": "withdrawal_hyperdrive_warning",
+      "passed": 4,
+      "failed": 0
+    }
+  ],
+  "browser_totals": {
+    "passed": 12,
+    "failed": 0,
+    "muted_launches": 12,
+    "four_request_startups": 12,
+    "browser_processes_closed": 12
+  },
+  "verification": {
+    "workspace_tests": "753_passed_0_failed_34_ignored",
+    "focused_render_tests": "264_passed_0_failed_3_ignored",
+    "fixture_feature_app_test": "1_passed_0_failed",
+    "harness_tests": "26_passed_0_failed",
+    "fixture_build_validation": "38_scenarios_152_executions_production_fixture_exclusion_pass",
+    "matrix_coverage": "106_of_106_deterministic_A1",
+    "browser_probe": "12_of_12_pass_exact_faction_voice_routes",
+    "independent_browser_review": "pass_no_visible_blocker",
+    "strict_gate_run": false,
+    "tracked_proprietary_a0_paths": 0
+  },
+  "contact_sheet_sha256": "19a846fbc29570ec99b91db8f2fd3807684b29bb2bbb096a9e0aa4f413e45726",
+  "fixture_wasm_sha256": "da967eba8b3ce21297dd797152803b2640e7c99254126383b0aa059f03bdc93c",
+  "production_wasm_sha256": "557b125d41122128e00bf4456ff61663d793567f0410b3afb1cb642c8488e945",
+  "runtime_pack_sha256": "b76ed32899e1408f5433c899effb489681e8e01732e4dffca0274c9c6d355e5a",
+  "limits": [
+    "exact_recovery_capacity_original_caller_open",
+    "remaining_completion_destruction_and_warning_callers_open",
+    "ordered_trench_chatter_dispatch_open",
+    "exact_shared_rng_sequence_open",
+    "mixing_ducking_and_interruption_open",
+    "audible_native_comparison_not_run",
+    "strict_A0_gate_not_run"
+  ],
+  "proprietary_artifacts_committed": false
+}

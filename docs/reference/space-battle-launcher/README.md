@@ -193,6 +193,11 @@ and closes every process. Raw runs live under ignored
   voice resources. Remaining completion, destruction, recovery, warning, and
   ordered trench callers, mixing, audible native comparison, and strict A0
   acceptance remain open.
+- P58-B20 activates exact RGBG fighter recovery-complete and no-carrier-slot
+  feedback plus the faction disabled-hyperdrive withdrawal warning. Twelve
+  focused muted browser cases cover both factions and both viewports. Remaining
+  completion, destruction, warning, and ordered trench callers, mixing,
+  audible native comparison, and strict A0 acceptance remain open.
 - The current completion checkpoint adds recovered capital weapon
   resolution, fighter combat, collision envelopes, source group assignment,
   a separate Death Star manager, original Battle Results and Battle Options

@@ -1669,7 +1669,10 @@ pub enum TacticalVoiceEvent {
     CapitalFormation,
     CapitalMission,
     FighterMission,
+    FighterRecoveryComplete,
+    FighterRecoveryCapacity,
     WithdrawalStarted,
+    WithdrawalHyperdriveWarning,
     WithdrawalComplete,
     BattleWonWithdrawal,
     BattleWonDestroyed,
@@ -1808,6 +1811,28 @@ impl TacticalVoiceCue {
         )
     }
 
+    /// Queue the source group acknowledgement emitted when the final fighters
+    /// in a recovering group enter the carrier.
+    #[must_use]
+    pub fn fighter_recovery_complete(faction: TacticalVoiceFaction, group: u8) -> Self {
+        let source_event = match faction {
+            TacticalVoiceFaction::Alliance => 0x87,
+            TacticalVoiceFaction::Empire => 0x105,
+        } + u16::from(group.min(3));
+        Self::from_source_event(TacticalVoiceEvent::FighterRecoveryComplete, source_event)
+    }
+
+    /// Queue the source group warning used when no surviving friendly carrier
+    /// has another fighter docking slot.
+    #[must_use]
+    pub fn fighter_recovery_capacity(faction: TacticalVoiceFaction, group: u8) -> Self {
+        let source_event = match faction {
+            TacticalVoiceFaction::Alliance => 0x8b,
+            TacticalVoiceFaction::Empire => 0x109,
+        } + u16::from(group.min(3));
+        Self::from_source_event(TacticalVoiceEvent::FighterRecoveryCapacity, source_event)
+    }
+
     #[must_use]
     pub const fn withdrawal_started(faction: TacticalVoiceFaction) -> Self {
         let source_event = match faction {
@@ -1815,6 +1840,20 @@ impl TacticalVoiceCue {
             TacticalVoiceFaction::Empire => 0x10d,
         };
         Self::from_source_event(TacticalVoiceEvent::WithdrawalStarted, source_event)
+    }
+
+    /// Queue the original warning that ships without an operational
+    /// hyperdrive will be left behind by a fleet withdrawal.
+    #[must_use]
+    pub const fn withdrawal_hyperdrive_warning(faction: TacticalVoiceFaction) -> Self {
+        let source_event = match faction {
+            TacticalVoiceFaction::Alliance => 0x95,
+            TacticalVoiceFaction::Empire => 0x10e,
+        };
+        Self::from_source_event(
+            TacticalVoiceEvent::WithdrawalHyperdriveWarning,
+            source_event,
+        )
     }
 
     #[must_use]
@@ -3171,6 +3210,9 @@ impl BattleSession {
             return;
         }
         let seconds = delta_milliseconds * 0.001;
+        let player_is_attacker = self.player_is_attacker;
+        let player_faction = self.player_voice_faction();
+        let mut transitioned_groups = [false; 4];
         for fighter in &mut self.fighters {
             match fighter.recovery_state {
                 TacticalFighterRecoveryState::Returning => {
@@ -3209,12 +3251,32 @@ impl BattleSession {
                     fighter.order = TacticalOrder::None;
                     fighter.selected = false;
                     fighter.alive = false;
+                    let group = usize::from(fighter.fighter_group);
+                    if fighter.is_attacker == player_is_attacker
+                        && group < transitioned_groups.len()
+                        && !transitioned_groups[group]
+                    {
+                        transitioned_groups[group] = true;
+                    }
                 }
                 TacticalFighterRecoveryState::AwaitingCarrier
                 | TacticalFighterRecoveryState::Reserved
                 | TacticalFighterRecoveryState::Recovered => {}
             }
         }
+        let completed_groups = transitioned_groups
+            .into_iter()
+            .enumerate()
+            .filter_map(|(group, transitioned)| {
+                let group_still_active = self.fighters.iter().any(|fighter| {
+                    fighter.alive
+                        && fighter.is_attacker == player_is_attacker
+                        && usize::from(fighter.fighter_group) == group
+                });
+                (transitioned && !group_still_active).then_some(group as u8)
+            })
+            .map(|group| TacticalVoiceCue::fighter_recovery_complete(player_faction, group));
+        self.pending_voice_cues.extend(completed_groups);
     }
 
     /// Expand a fleet's composition into individual TacticalShip/TacticalFighter entries.
@@ -4750,6 +4812,27 @@ impl BattleSession {
             ));
     }
 
+    /// Queue the warning recovered from `FUN_005a0240` when a withdrawing
+    /// player fleet contains at least one live ship that cannot enter
+    /// hyperspace. The source leaves those ships behind while operational
+    /// hyperdrive ships continue the withdrawal.
+    fn queue_withdrawal_hyperdrive_warning(&mut self) -> bool {
+        let has_stranded_ship = self.ships.iter().any(|ship| {
+            ship.alive
+                && !ship.retreating
+                && ship.is_attacker == self.player_is_attacker
+                && (ship.subsystem_capacity.hyperdrive == 0
+                    || ship.subsystem_condition.hyperdrive == 0)
+        });
+        if has_stranded_ship {
+            self.pending_voice_cues
+                .push(TacticalVoiceCue::withdrawal_hyperdrive_warning(
+                    self.player_voice_faction(),
+                ));
+        }
+        has_stranded_ship
+    }
+
     const fn player_voice_faction(&self) -> TacticalVoiceFaction {
         if self.player_is_attacker == self.attacker_is_alliance {
             TacticalVoiceFaction::Alliance
@@ -5191,6 +5274,9 @@ impl TacticalState {
         };
         for ship in &mut session.ships {
             ship.selected = false;
+            if ship.alive && ship.is_attacker == session.player_is_attacker {
+                ship.fighter_capacity = 1;
+            }
         }
         for fighter in &mut session.fighters {
             fighter.selected = false;
@@ -5325,6 +5411,30 @@ impl TacticalState {
         self.battle_result_tab = BattleResultTab::Summary;
         self.battle_result_category = BattleResultCategory::CapitalShips;
         self.command_panel = TacticalCommandPanel::Display;
+    }
+
+    /// Keep one player ship withdrawal-capable while disabling another one's
+    /// hyperdrive so the production confirmation route emits the source
+    /// faction warning and leaves only the operational ship eligible.
+    #[cfg(feature = "interface-test-fixtures")]
+    pub fn configure_withdrawal_warning_fixture(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let mut player_ships = session
+            .ships
+            .iter_mut()
+            .filter(|ship| ship.alive && ship.is_attacker == session.player_is_attacker);
+        let Some(operational) = player_ships.next() else {
+            return;
+        };
+        operational.subsystem_damage.hyperdrive = 0;
+        operational.refresh_subsystem_condition();
+        let Some(stranded) = player_ships.next() else {
+            return;
+        };
+        stranded.subsystem_damage.hyperdrive = stranded.subsystem_capacity.hyperdrive;
+        stranded.refresh_subsystem_condition();
     }
 
     /// Commit one recovered capital maneuver and one fighter recovery order
@@ -5488,6 +5598,7 @@ impl TacticalState {
 
             let carrier_position = session.ships[arriving].source_position;
             let returning = player_fighters[0];
+            session.fighters[returning].fighter_group = 0;
             session.fighters[returning].source_position = TacticalWorldPosition {
                 x: carrier_position.x,
                 y: carrier_position.y,
@@ -5499,6 +5610,7 @@ impl TacticalState {
             session.fighters[returning].recovery_target = Some(arriving);
 
             let docking = player_fighters[1];
+            session.fighters[docking].fighter_group = 1;
             session.fighters[docking].source_position = carrier_position;
             session.fighters[docking].order = TacticalOrder::Recover;
             session.fighters[docking].recovery_state = TacticalFighterRecoveryState::Docking;
@@ -7672,6 +7784,10 @@ fn refresh_original_attack_targets(session: &mut BattleSession) {
 }
 
 fn begin_original_fighter_recovery(session: &mut BattleSession, selected: &[usize]) {
+    let player_is_attacker = session.player_is_attacker;
+    let player_faction = session.player_voice_faction();
+    let mut warned_groups = [false; 4];
+    let mut capacity_cues = Vec::new();
     let mut carrier_slots = session
         .ships
         .iter()
@@ -7712,8 +7828,21 @@ fn begin_original_fighter_recovery(session: &mut BattleSession, selected: &[usiz
             fighter.recovery_target = Some(*carrier);
             *remaining -= 1;
             fighter.recovery_state = TacticalFighterRecoveryState::Returning;
+        } else {
+            let group = usize::from(fighter.fighter_group);
+            if fighter.is_attacker == player_is_attacker
+                && group < warned_groups.len()
+                && !warned_groups[group]
+            {
+                warned_groups[group] = true;
+                capacity_cues.push(TacticalVoiceCue::fighter_recovery_capacity(
+                    player_faction,
+                    fighter.fighter_group,
+                ));
+            }
         }
     }
+    session.pending_voice_cues.extend(capacity_cues);
 }
 
 fn assign_selected_command(
@@ -8982,11 +9111,15 @@ fn activate_tactical_withdraw_confirmation(
     state.withdraw_confirmation_pressed = None;
     match control {
         TacticalWithdrawConfirmationControl::Confirm => {
-            if let Some(session) = state.session.as_mut() {
+            let hyperdrive_warning = if let Some(session) = state.session.as_mut() {
                 session.queue_withdrawal_started_voice();
-            }
+                session.queue_withdrawal_hyperdrive_warning()
+            } else {
+                false
+            };
             macroquad::logging::info!(
-                "[tactical_options] command=withdraw status=withdrawal_started confirmation=accepted"
+                "[tactical_options] command=withdraw status=withdrawal_started confirmation=accepted hyperdrive_warning={}",
+                hyperdrive_warning,
             );
             TacticalAction::WithdrawFromBattle
         }
@@ -12808,6 +12941,76 @@ mod tests {
         assert!(!session.fighters[0].alive);
         assert_eq!(session.fighters[0].squad_count, 12);
         assert_eq!(session.fighters[0].order, TacticalOrder::None);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::fighter_recovery_complete(
+                TacticalVoiceFaction::Alliance,
+                0,
+            )]
+        );
+    }
+
+    #[test]
+    fn fighter_recovery_warns_each_player_group_once_when_carriers_are_full() {
+        let mut carrier = test_ship(64, 0, true, true);
+        carrier.fighter_capacity = 1;
+        let mut reserved = test_fighter(1, true);
+        reserved.recovery_state = TacticalFighterRecoveryState::Returning;
+        reserved.recovery_target = Some(0);
+        let mut first = test_fighter(1, true);
+        first.fleet_squadron_index = 1;
+        first.selected = true;
+        let mut second = test_fighter(1, true);
+        second.fleet_squadron_index = 2;
+        second.selected = true;
+        let mut enemy = test_fighter(5, false);
+        enemy.selected = true;
+        let mut session = test_session(vec![carrier], vec![reserved, first, second, enemy], true);
+
+        begin_original_fighter_recovery(&mut session, &[1, 2, 3]);
+
+        assert!(session.fighters[1..].iter().all(|fighter| {
+            fighter.recovery_state == TacticalFighterRecoveryState::AwaitingCarrier
+        }));
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::fighter_recovery_capacity(
+                TacticalVoiceFaction::Alliance,
+                0,
+            )]
+        );
+    }
+
+    #[test]
+    fn fighter_recovery_completion_waits_for_the_last_live_group_member() {
+        let carrier = test_ship(64, 0, true, true);
+        let mut docking = test_fighter(1, true);
+        docking.recovery_state = TacticalFighterRecoveryState::Docking;
+        docking.recovery_target = Some(0);
+        let mut still_returning = test_fighter(1, true);
+        still_returning.fleet_squadron_index = 1;
+        still_returning.recovery_state = TacticalFighterRecoveryState::Returning;
+        still_returning.recovery_target = Some(0);
+        still_returning.source_position.z = 8.0;
+        let mut session = test_session(vec![carrier], vec![docking, still_returning], true);
+
+        session.advance_original_fighter_recovery(250.0);
+
+        assert!(!session.fighters[0].alive);
+        assert!(session.fighters[1].alive);
+        assert!(session.take_pending_voice_cues().is_empty());
+
+        session.fighters[1].recovery_state = TacticalFighterRecoveryState::Docking;
+        session.advance_original_fighter_recovery(250.0);
+
+        assert!(!session.fighters[1].alive);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::fighter_recovery_complete(
+                TacticalVoiceFaction::Alliance,
+                0,
+            )]
+        );
     }
 
     #[test]
@@ -13592,6 +13795,60 @@ mod tests {
                 faction: TacticalVoiceFaction::Alliance,
                 source_event: 0x8f,
                 resource_id: 14_112,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::fighter_recovery_complete(TacticalVoiceFaction::Alliance, 0),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::FighterRecoveryComplete,
+                faction: TacticalVoiceFaction::Alliance,
+                source_event: 0x87,
+                resource_id: 14_104,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::fighter_recovery_complete(TacticalVoiceFaction::Empire, 3),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::FighterRecoveryComplete,
+                faction: TacticalVoiceFaction::Empire,
+                source_event: 0x108,
+                resource_id: 15_111,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::fighter_recovery_capacity(TacticalVoiceFaction::Alliance, 3),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::FighterRecoveryCapacity,
+                faction: TacticalVoiceFaction::Alliance,
+                source_event: 0x8e,
+                resource_id: 14_111,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::fighter_recovery_capacity(TacticalVoiceFaction::Empire, 0),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::FighterRecoveryCapacity,
+                faction: TacticalVoiceFaction::Empire,
+                source_event: 0x109,
+                resource_id: 15_112,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::withdrawal_hyperdrive_warning(TacticalVoiceFaction::Alliance),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::WithdrawalHyperdriveWarning,
+                faction: TacticalVoiceFaction::Alliance,
+                source_event: 0x95,
+                resource_id: 14_118,
+            }
+        );
+        assert_eq!(
+            TacticalVoiceCue::withdrawal_hyperdrive_warning(TacticalVoiceFaction::Empire),
+            TacticalVoiceCue {
+                event: TacticalVoiceEvent::WithdrawalHyperdriveWarning,
+                faction: TacticalVoiceFaction::Empire,
+                source_event: 0x10e,
+                resource_id: 15_117,
             }
         );
         assert_eq!(
@@ -14449,6 +14706,39 @@ mod tests {
             vec![TacticalVoiceCue::withdrawal_started(
                 TacticalVoiceFaction::Alliance
             )]
+        );
+
+        let mut operational = test_ship(64, 0, false, true);
+        operational.is_attacker = false;
+        operational.subsystem_capacity.hyperdrive = 1;
+        operational.refresh_subsystem_condition();
+        let mut stranded = test_ship(64, 1, false, true);
+        stranded.is_attacker = false;
+        stranded.subsystem_capacity.hyperdrive = 1;
+        stranded.subsystem_damage.hyperdrive = 1;
+        stranded.refresh_subsystem_condition();
+        let mut empire_state = TacticalState {
+            session: Some(test_session(vec![operational, stranded], Vec::new(), false)),
+            withdraw_confirmation_open: true,
+            ..TacticalState::default()
+        };
+        assert_eq!(
+            activate_tactical_withdraw_confirmation(
+                &mut empire_state,
+                TacticalWithdrawConfirmationControl::Confirm,
+            ),
+            TacticalAction::WithdrawFromBattle
+        );
+        assert_eq!(
+            empire_state
+                .session
+                .as_mut()
+                .unwrap()
+                .take_pending_voice_cues(),
+            vec![
+                TacticalVoiceCue::withdrawal_started(TacticalVoiceFaction::Empire),
+                TacticalVoiceCue::withdrawal_hyperdrive_warning(TacticalVoiceFaction::Empire),
+            ]
         );
     }
 
@@ -15420,10 +15710,10 @@ mod tests {
             .all(|fighter| fighter.order == TacticalOrder::Recover));
         assert_eq!(
             state.session.as_ref().unwrap().pending_voice_cues,
-            vec![TacticalVoiceCue::fighter_mission(
-                TacticalVoiceFaction::Alliance,
-                0
-            )]
+            vec![
+                TacticalVoiceCue::fighter_recovery_capacity(TacticalVoiceFaction::Alliance, 0,),
+                TacticalVoiceCue::fighter_mission(TacticalVoiceFaction::Alliance, 0),
+            ]
         );
     }
 

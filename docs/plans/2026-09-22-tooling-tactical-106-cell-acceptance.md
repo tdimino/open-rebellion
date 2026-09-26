@@ -175,6 +175,12 @@ denominator. It selects two capitals from different task forces, proves the
 source rejection leaves their orders unchanged, and verifies exact muted
 Alliance and Imperial voice routes. Strict A0 acceptance remains 0/106.
 
+P58-B20 deepens the command-assignment, command-progression, and withdrawal
+journeys without changing the denominator. It verifies exact faction/group
+capacity and completion feedback, final-group completion gating, and the
+disabled-hyperdrive withdrawal warning in twelve fresh muted browser cases.
+Strict A0 acceptance remains 0/106.
+
 - Give every catalog scenario one or more exact `audit_cells` values.
 - Distinguish journeys from snapshots in the schema and report.
 - Drive real pointer and keyboard input for every interactive row, including

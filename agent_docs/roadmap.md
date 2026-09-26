@@ -823,6 +823,12 @@ would tune around known simulation feedback defects.
   Imperial `0x102`/WAVE `15105` feedback. The four-case muted browser gate
   passes; the remaining caller families and all strict A0 comparisons stay
   open.
+  P58-B20 restores final RGBG fighter recovery, no-carrier-capacity, and
+  disabled-hyperdrive withdrawal feedback. `FUN_005b8630` and
+  `FUN_005a0240`/`FUN_005b1b70` anchor the recovered source routes; twelve
+  muted browser cases pass across both factions and viewports. Remaining
+  completion, destruction, warning, and ordered trench callers, audible native
+  comparison, and every strict A0 comparison stay open.
 - [ ] After original parity, use a separate Fable and `/ce:plan` design pass for
   an optional X-Wing Alliance-style skirmish setup menu. It may select ship
   distribution, planet, and space background, but it must reuse the production

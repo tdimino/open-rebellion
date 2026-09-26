@@ -349,6 +349,15 @@ journey proves both faction routes and unchanged presentation. Exact shared-RNG
 sequencing, mixing, native audible comparison, and strict A0 acceptance stay
 open.
 
+P58-B20 follows `FUN_005b8630` for final RGBG fighter recovery and
+`FUN_005a0240`/`FUN_005b1b70` for a confirmed withdrawal containing a
+hyperdrive-disabled capital. It also activates the exact mapped no-carrier-slot
+feedback when Recover cannot reserve capacity. Three four-case muted browser
+journeys prove both factions and both viewports, exact event/WAVE routes, and
+clean startup and cleanup. Remaining completion, destruction, warning, and
+ordered trench callers, exact shared-RNG sequencing, mixing, native audible
+comparison, and strict A0 acceptance stay open.
+
 Asset-swap families may use exhaustive resource-identity checks only after the
 shared layout and rendering rule pass. Every unique composite topology and every
 state-changing visual variant still needs inspected screenshots.

@@ -71,8 +71,8 @@
     "resource_count": 285,
     "runtime_transport": "implemented",
     "production_dispatch": "partial",
-    "implemented_families": ["battle_ready", "capital_maneuver", "fighter_maneuver", "capital_attack", "fighter_attack", "capital_formation", "mission_assignment", "target_task_force_rejected", "withdrawal_started", "withdrawal_complete", "battle_won_opponent_withdrew", "battle_won_opponent_destroyed", "battle_lost", "death_star_fire", "death_star_ready", "death_star_attack_broken_off", "death_star_destroyed", "trench_run_group_start", "trench_run_group_outcome"],
-    "open_families": ["maneuver_complete", "orders_complete", "target_destroyed", "capital_destroyed", "fighter_losses", "fighter_launch_ready", "fighter_pilot_ejection", "capital_crew_abandonment", "fighter_recovery_complete", "fighter_recovery_capacity", "withdrawal_warnings", "remaining_death_star_warnings", "ordered_trench_run_chatter"],
+    "implemented_families": ["battle_ready", "capital_maneuver", "fighter_maneuver", "capital_attack", "fighter_attack", "capital_formation", "mission_assignment", "target_task_force_rejected", "fighter_recovery_complete", "fighter_recovery_capacity", "withdrawal_started", "withdrawal_hyperdrive_warning", "withdrawal_complete", "battle_won_opponent_withdrew", "battle_won_opponent_destroyed", "battle_lost", "death_star_fire", "death_star_ready", "death_star_attack_broken_off", "death_star_destroyed", "trench_run_group_start", "trench_run_group_outcome"],
+    "open_families": ["maneuver_complete", "orders_complete", "target_destroyed", "capital_destroyed", "fighter_losses", "fighter_launch_ready", "fighter_pilot_ejection", "capital_crew_abandonment", "remaining_withdrawal_warnings", "remaining_death_star_warnings", "ordered_trench_run_chatter"],
     "open_acceptance": ["exact_shared_rng_sequence", "mixing_ducking_interruption", "audible_native_comparison", "lossless_a0"]
   }
 }

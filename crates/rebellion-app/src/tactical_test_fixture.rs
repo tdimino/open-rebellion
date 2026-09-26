@@ -518,7 +518,9 @@ pub(crate) fn apply(
             || request.navigation_camera_presentation
             || ((request.group_presentation || request.effect_presentation)
                 && is_alliance == player_is_alliance);
-        let ship_count = if request.projectile_field_presentation
+        let ship_count = if request.battle_options_withdrawal {
+            2
+        } else if request.projectile_field_presentation
             || request.detail_escort_presentation
             || request.subsystem_field_command_presentation
             || request.live_subsystem_damage_presentation
@@ -542,7 +544,8 @@ pub(crate) fn apply(
         };
         let fighter_count = if request.battle_results_presentation {
             3
-        } else if request.command_progression_presentation
+        } else if request.command_assignment_presentation
+            || request.command_progression_presentation
             || request.attack_targeting_presentation
             || request.attack_target_lifecycle_presentation
         {
@@ -714,6 +717,10 @@ pub(crate) fn apply(
     #[cfg(feature = "interface-test-fixtures")]
     if request.battle_results_presentation {
         tactical.configure_battle_results_presentation_fixture();
+    }
+    #[cfg(feature = "interface-test-fixtures")]
+    if request.battle_options_withdrawal {
+        tactical.configure_withdrawal_warning_fixture();
     }
     #[cfg(feature = "interface-test-fixtures")]
     if request.empty_space_presentation {

@@ -49,6 +49,7 @@ the source of truth for scope, acceptance, and current work.
 | P58-B17 | [Tactical command voice bank](2026-09-24-tactical-command-voice.md) | [`p58-b17-tactical-command-voice/`](p58-b17-tactical-command-voice/) |
 | P58-B18 | [Complete tactical voice bank](2026-09-25-tactical-complete-voice-bank.md) | [`p58-b18-tactical-voice-bank/`](p58-b18-tactical-voice-bank/) |
 | P58-B19 | [Mixed-task-force target rejection](2026-09-25-tactical-mixed-task-force-target.md) | [`p58-b19-tactical-mixed-task-force-target/`](p58-b19-tactical-mixed-task-force-target/) |
+| P58-B20 | [Recovery and withdrawal feedback](2026-09-26-tactical-recovery-withdrawal-feedback.md) | [`p58-b20-tactical-recovery-withdrawal-feedback/`](p58-b20-tactical-recovery-withdrawal-feedback/) |
 
 ## Current strategic correction
 

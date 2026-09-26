@@ -5,7 +5,7 @@ This folder is the source of truth for restoring every visible surface from
 bitmap-driven interface. Replacement panels, invented controls, approximate
 geometry, and unverified asset mappings do not count as parity.
 
-The current P58-B19 space-battle checkpoint maps all 106 canonical cells to
+The current P58-B20 space-battle checkpoint maps all 106 canonical cells to
 deterministic A1 evidence through 87 journeys and 19 snapshots. Capital and
 fighter combat, tactical commands,
 original results and options panels, resource 5030 stars, empty-space
@@ -13,7 +13,9 @@ presentation, native withdrawal confirmation, destroyed-state presentation,
 selected-ship contents, direct Escort, Battle Alert entry, tactical score and
 the complete 22-variant weapon-audio bank, all 285 source-addressed faction
 tactical voices, selected withdrawal/result/Death Star/trench-run voice
-transitions, source-exact mixed-task-force target rejection, production
+transitions, source-exact mixed-task-force target rejection, exact fighter
+recovery completion and capacity feedback, disabled-hyperdrive withdrawal
+warning, production
 trench-run launch, and exact strategic loss
 persistence now work within their recorded bounds. The strict result remains
 0 of 106 accepted tactical cells until every row has authoritative A0 evidence
@@ -212,6 +214,10 @@ and passes the complete comparison contract.
   and [P58-B18 complete tactical voice-bank evidence](evidence/2026-09-25-tactical-complete-voice-bank.md)
   for command acknowledgements, the complete 285-resource source table,
   selected battle-transition dispatch, and focused muted browser proof.
+- Review the [P58-B19 mixed-task-force target evidence](evidence/2026-09-25-tactical-mixed-task-force-target.md)
+  and [P58-B20 recovery/withdrawal feedback evidence](evidence/2026-09-26-tactical-recovery-withdrawal-feedback.md)
+  for preserved focus orders, final-group recovery acknowledgement,
+  no-carrier-capacity feedback, and disabled-hyperdrive withdrawal warning.
 - Use the [evidence index](evidence/README.md) to find each durable report and
   artifact bundle. Every new bundle must include its own `README.md` inventory.
 
