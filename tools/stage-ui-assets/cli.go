@@ -21,6 +21,8 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	stringsOutput := flags.String("strings-output", "data/base/textstra.json", "runtime text string JSON file")
 	encyclopediaOutput := flags.String("encyclopedia-output", "data/base/encyclopedia/source.json", "runtime Encyclopedia source JSON file")
 	cutsceneOutput := flags.String("cutscene-output", "assets/references", "parent of ref-videos and cutscene-frames outputs")
+	encyclopediaReportOnly := flags.Bool("encyclopedia-report-only", false, "stage or verify only the encyclopedia research report")
+	encyclopediaReportOutput := flags.String("encyclopedia-report-output", "data/base/encyclopedia-research", "encyclopedia research report output directory")
 	force := flags.Bool("force", false, "replace staged assets whose contents differ")
 	verifyOnly := flags.Bool("verify", false, "verify staged assets without reading source files")
 	tactical3D := flags.Bool("tactical-3d", false, "also stage and verify original type-301/type-303 tactical resources")
@@ -34,14 +36,23 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %v", flags.Args())
 	}
+	encyclopediaReportOutputSet := false
+	flags.Visit(func(selected *flag.Flag) {
+		if selected.Name == "encyclopedia-report-output" {
+			encyclopediaReportOutputSet = true
+		}
+	})
+	if encyclopediaReportOutputSet && !*encyclopediaReportOnly {
+		return fmt.Errorf("--encyclopedia-report-output requires --encyclopedia-report-only")
+	}
 	selectedExclusiveModes := 0
-	for _, selected := range []bool{*tactical3D, *tactical3DOnly, *tactical3DConvert, *tactical3DAssimpOracle != "", *encyclopediaOnly} {
+	for _, selected := range []bool{*tactical3D, *tactical3DOnly, *tactical3DConvert, *tactical3DAssimpOracle != "", *encyclopediaOnly, *encyclopediaReportOnly} {
 		if selected {
 			selectedExclusiveModes++
 		}
 	}
 	if selectedExclusiveModes > 1 {
-		return fmt.Errorf("--tactical-3d, --tactical-3d-only, --tactical-3d-convert, --tactical-3d-assimp-oracle, and --encyclopedia-only are mutually exclusive")
+		return fmt.Errorf("--tactical-3d, --tactical-3d-only, --tactical-3d-convert, --tactical-3d-assimp-oracle, --encyclopedia-only, and --encyclopedia-report-only are mutually exclusive")
 	}
 	if *encyclopediaOnly {
 		if !*verifyOnly {
@@ -50,6 +61,14 @@ func runCLIWithMedia(args []string, stdout, stderr io.Writer, targets []dllTarge
 			}
 		}
 		return verifyEncyclopediaSource(*encyclopediaOutput, stdout)
+	}
+	if *encyclopediaReportOnly {
+		if !*verifyOnly {
+			if err := stageEncyclopediaReport(*sourceDir, "", *encyclopediaReportOutput, *force, stdout); err != nil {
+				return err
+			}
+		}
+		return verifyEncyclopediaReport(*encyclopediaReportOutput, stdout)
 	}
 	if *tactical3DAssimpOracle != "" {
 		return verifyTactical3DWithAssimp(*outputDir, *tactical3DAssimpOracle, stdout)
