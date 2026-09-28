@@ -1,0 +1,105 @@
+{
+  "kind": "encyclopedia-source-profile",
+  "schema_version": 1,
+  "profile_id": "encytext-49aea545-lang-1033-v1",
+  "sources": [
+    {
+      "role": "encyclopedia_text",
+      "basename": "ENCYTEXT.DLL",
+      "kind": "dll",
+      "raw_length": 145920,
+      "raw_sha256": "49aea545a5e09e5fe9115a22bc785690f103d2f931e08bd4a53a617a42636d8c",
+      "required_for_decoding": true
+    },
+    {
+      "role": "research_executable",
+      "basename": "REBEXE.EXE",
+      "kind": "exe",
+      "raw_length": 2822656,
+      "raw_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
+      "required_for_decoding": false
+    }
+  ],
+  "text_decoder": {
+    "source_role": "encyclopedia_text",
+    "resource_type_id": 10,
+    "language_ids": [1033],
+    "pe_code_pages": [0],
+    "encoding": "windows-1252",
+    "line_endings": "lf",
+    "allowed_controls": ["lf", "tab"],
+    "terminal_nul": {
+      "minimum_count": 1,
+      "maximum_count": 2
+    },
+    "non_ascii": {
+      "record_count": 29,
+      "occurrence_count": 32,
+      "record_set_sha256": "8f52e5969ecfc65484227ece50ec87ed02cdc39f0203f42c5dbf4b25ccd029d3",
+      "observed_byte_mappings": [
+        {
+          "byte": 146,
+          "unicode": "U+2019"
+        }
+      ]
+    }
+  },
+  "evidence": {
+    "research_executable_role": "research_executable",
+    "call_path": [
+      {
+        "address": "0x00429f30",
+        "symbol": "FUN_00429f30",
+        "observation": "constructs the encyclopedia object through FUN_0045d400"
+      },
+      {
+        "address": "0x0045d400",
+        "symbol": "FUN_0045d400",
+        "observation": "loads ENCYTEXT.DLL and stores its module handle"
+      },
+      {
+        "address": "0x0045f480",
+        "symbol": "FUN_0045f480",
+        "observation": "dispatches the text-view mode to FUN_0045fa60"
+      },
+      {
+        "address": "0x0045fa60",
+        "symbol": "FUN_0045fa60",
+        "observation": "finds type-10 text, loads and locks it, copies the narrow CString into the body object at +0xa0 through FUN_005f3090, then calls FUN_0041fc30"
+      },
+      {
+        "address": "0x005f35b0",
+        "symbol": "FUN_005f35b0",
+        "observation": "forwards the narrow byte pointer to the string copy path"
+      },
+      {
+        "address": "0x005f3630",
+        "symbol": "FUN_005f3630",
+        "observation": "scans to the first NUL before allocation and copy"
+      },
+      {
+        "address": "0x0041fc30",
+        "symbol": "FUN_0041fc30",
+        "observation": "dispatches the connected encyclopedia body text-layout and measurement path to FUN_0041fd00 after the +0xa0 assignment"
+      },
+      {
+        "address": "0x0041fd00",
+        "symbol": "FUN_0041fd00",
+        "observation": "reads the same body object +0xa0 CString through FUN_00583c40 and passes it to DrawTextA with length -1 and flags 0x2410, including DT_CALCRECT calculation behavior"
+      }
+    ],
+    "corpus": {
+      "record_count": 348,
+      "language_id": 1033,
+      "pe_code_page": 0,
+      "trailing_nul_histogram": {
+        "1": 346,
+        "2": 2
+      },
+      "lf_count": 956,
+      "tab_count": 1819,
+      "other_c0_record_count": 0,
+      "nonzero_after_first_nul_count": 0
+    }
+  }
+}
