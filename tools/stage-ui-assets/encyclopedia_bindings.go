@@ -842,7 +842,7 @@ func validateEncyclopediaBindingSchemaFit(bindings encyclopediaProfileBindings) 
 		}
 	}
 	_, hasAggregateOnlyBlocker := seen[encyclopediaBindingAggregateOnlyBlocker]
-	if hasAggregateOnlyTopic && !hasAggregateOnlyBlocker {
+	if hasAggregateOnlyTopic && !fit.ReadyForSchemaFreeze && !hasAggregateOnlyBlocker {
 		return fmt.Errorf("schema-fit requires %q blocker for aggregate-only topic membership", encyclopediaBindingAggregateOnlyBlocker)
 	}
 	if !fit.ReadyForSchemaFreeze && len(fit.Blockers) == 0 {

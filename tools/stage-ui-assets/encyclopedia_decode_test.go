@@ -313,6 +313,154 @@ func TestOwnedEncyclopediaDecoderCorroboratesProfileWithoutChangingInputs(t *tes
 	t.Logf("retained metadata-only decoder evidence under %s", evidenceDir)
 }
 
+func TestOwnedEncyclopediaCatalogBuildsDeterministicallyFromPairedSources(t *testing.T) {
+	sourceRoot := os.Getenv("REBELLION_ENCYCLOPEDIA_TEST_SOURCE")
+	if sourceRoot == "" {
+		t.Skip("set REBELLION_ENCYCLOPEDIA_TEST_SOURCE to an owned installation root")
+	}
+	absoluteRoot, err := filepath.Abs(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	textName, ok := findCaseInsensitiveFile(t, absoluteRoot, "ENCYTEXT.DLL")
+	if !ok {
+		t.Fatal("owned source missing ENCYTEXT.DLL")
+	}
+	titleName, ok := findCaseInsensitiveFile(t, absoluteRoot, "TEXTSTRA.DLL")
+	if !ok {
+		t.Fatal("owned source missing TEXTSTRA.DLL")
+	}
+	edataName, ok := findCaseInsensitiveDirectory(t, absoluteRoot, "EData")
+	if !ok {
+		t.Fatal("owned source missing EData")
+	}
+
+	inventory, err := inventoryEncyclopediaSources(encyclopediaInventoryRequest{
+		Roots: []encyclopediaSourceRoot{{Role: "install", Path: absoluteRoot}},
+		Sources: []encyclopediaSourceSpec{{
+			RootRole: "install", Basename: textName, Kind: encyclopediaSourceDLL, ResourceTypeID: rtEncyclopediaText,
+		}},
+		StartedAt: time.Unix(1, 0),
+	}, defaultEncyclopediaInventoryLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeEncyclopediaReport(inventory.Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := loadEmbeddedEncyclopediaProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := profiles[0]
+	dataRoot := absoluteRoot
+	if gdataName, found := findCaseInsensitiveDirectory(t, absoluteRoot, "GData"); found {
+		dataRoot = filepath.Join(absoluteRoot, gdataName)
+	}
+	pairingManifest := encyclopediaManifest{}
+	observedDATHashes := make(map[string]string)
+	for _, source := range profile.Sources {
+		if source.Kind != encyclopediaSourceDAT {
+			continue
+		}
+		basename, found := findCaseInsensitiveFile(t, dataRoot, source.Basename)
+		if !found {
+			basename, found = findCaseInsensitiveFile(t, absoluteRoot, source.Basename)
+		}
+		if !found {
+			t.Fatalf("owned source missing %s", source.Basename)
+		}
+		filePath := filepath.Join(dataRoot, basename)
+		if _, err := os.Stat(filePath); err != nil {
+			filePath = filepath.Join(absoluteRoot, basename)
+		}
+		digest, err := fileSHA256(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pairingManifest.BindingSources = append(pairingManifest.BindingSources, encyclopediaManifestBindingSource{Basename: source.Basename, SHA256: source.RawSHA256})
+		observedDATHashes[basename] = digest
+	}
+	if err := verifyBindingSources(pairingManifest, observedDATHashes); err != nil {
+		t.Fatalf("owned DAT source pairing failed: %v", err)
+	}
+
+	titleResources, err := readPERawResources(filepath.Join(absoluteRoot, titleName), 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles, err := decodeStringResources(titleResources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageInventory, err := inventoryEncyclopediaImages(filepath.Join(absoluteRoot, edataName), defaultEncyclopediaImageLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappings := encyclopediaCatalogMappings{
+		Titles:         make(map[encyclopediaCatalogResourceKey]string),
+		CategoryLabels: make(map[uint32]map[uint32]string),
+		Images:         make(map[string]encyclopediaCatalogImageInput),
+		SourceHashes:   make(map[string]string),
+	}
+	titleDigest, err := fileSHA256(filepath.Join(absoluteRoot, titleName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappings.SourceHashes["display_strings"] = titleDigest
+	for _, record := range profile.Bindings.Records {
+		value, exists := titles[uint16(record.Title.SelectedResourceID)]
+		if !exists {
+			t.Fatalf("selected title resource %d is absent", record.Title.SelectedResourceID)
+		}
+		mappings.Titles[encyclopediaCatalogResourceKey{SourceRole: record.Title.SourceRole, LanguageID: record.Title.LanguageID, ResourceID: record.Title.SelectedResourceID}] = value
+	}
+	for _, label := range profile.Catalog.CategoryLabels {
+		value, exists := titles[uint16(label.ResourceID)]
+		if !exists {
+			t.Fatalf("category label resource %d is absent", label.ResourceID)
+		}
+		mappings.CategoryLabels[label.Command] = map[uint32]string{label.LanguageID: value}
+	}
+	for _, image := range imageInventory.Images {
+		if image.Status != encyclopediaImageValid {
+			t.Fatalf("owned image %s is not valid: %s", image.Filename, image.Diagnostic)
+		}
+		mappings.Images[image.Filename] = encyclopediaCatalogImageInput{
+			Path: "assets/" + image.Filename, Format: "bmp", ByteLength: image.RawLength,
+			Width: image.Facts.Width, Height: image.Facts.Height, SHA256: image.RawSHA256,
+			SourceRef: "edata/" + image.Filename,
+		}
+	}
+
+	first, err := buildEncyclopediaCatalog(profile, decoded, mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := buildEncyclopediaCatalog(profile, decoded, mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstBytes, err := marshalEncyclopediaCatalog(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBytes, err := marshalEncyclopediaCatalog(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstBytes, secondBytes) {
+		t.Fatal("owned catalog construction was not byte deterministic")
+	}
+	if got, want := len(first.Topics), 347; got != want {
+		t.Fatalf("catalog topic count = %d, want %d", got, want)
+	}
+	if _, published := first.Topics[topicIDForResource(7176)]; published {
+		t.Fatal("source-proven-unused ENCYTEXT resource 7176 was published as a topic")
+	}
+}
+
 func testEncyclopediaDecodeReport(raw []byte) encyclopediaResearchReport {
 	return encyclopediaResearchReport{
 		Kind:          encyclopediaResearchKind,

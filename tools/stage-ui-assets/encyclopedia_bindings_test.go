@@ -38,8 +38,8 @@ func TestEmbeddedEncyclopediaProfileHasCombinedBindingClosure(t *testing.T) {
 	if got, want := len(bindings.ResourceAccounting.ArtFiles), 187; got != want {
 		t.Fatalf("art file accounting count = %d, want observed %d", got, want)
 	}
-	if bindings.SchemaFit.ReadyForSchemaFreeze {
-		t.Fatal("profile incorrectly claims schema-freeze readiness while source gates remain")
+	if !bindings.SchemaFit.ReadyForSchemaFreeze || len(bindings.SchemaFit.Blockers) != 0 {
+		t.Fatalf("approved profile readiness = %v with blockers %#v", bindings.SchemaFit.ReadyForSchemaFreeze, bindings.SchemaFit.Blockers)
 	}
 	wantFamilies := map[string]int{
 		"fleet_definitions":        1,
@@ -386,7 +386,7 @@ func findBindingArtFile(t *testing.T, files []encyclopediaBindingArtFile, basena
 	return encyclopediaBindingArtFile{}
 }
 
-func TestCombinedEncyclopediaProfileRequiresDesignRevisionForAggregateOnlyTopic(t *testing.T) {
+func TestCombinedEncyclopediaProfileRequiresNamedBlockerOnlyWhileAggregateShapeIsUnresolved(t *testing.T) {
 	profile := testCombinedEncyclopediaProfile(t)
 	foundAggregateOnly := false
 	for _, record := range profile.Bindings.Records {
@@ -398,17 +398,24 @@ func TestCombinedEncyclopediaProfileRequiresDesignRevisionForAggregateOnlyTopic(
 	if !foundAggregateOnly {
 		t.Fatal("profile lacks the source-proven aggregate-only topic fixture")
 	}
-	blockers := profile.Bindings.SchemaFit.Blockers[:0]
-	for _, blocker := range profile.Bindings.SchemaFit.Blockers {
-		if blocker.ID != "aggregate-only-topic-membership" {
-			blockers = append(blockers, blocker)
-		}
-	}
-	profile.Bindings.SchemaFit.Blockers = blockers
+	profile.Bindings.SchemaFit.ReadyForSchemaFreeze = false
+	profile.Bindings.SchemaFit.Blockers = []encyclopediaBindingIssue{{
+		ID: "synthetic-other-gate", Reason: "a synthetic unrelated gate remains", NextProof: "close the synthetic unrelated gate",
+	}}
 
 	err := validateEncyclopediaSourceProfile(profile)
 	if err == nil || !strings.Contains(err.Error(), "aggregate-only-topic-membership") {
-		t.Fatalf("validation error = %v, want required aggregate-only design-revision blocker", err)
+		t.Fatalf("validation error = %v, want aggregate-only blocker while the wire shape is unresolved", err)
+	}
+}
+
+func TestCombinedEncyclopediaProfileAcceptsApprovedAggregateOnlyMembershipShape(t *testing.T) {
+	profile := testCombinedEncyclopediaProfile(t)
+	if !profile.Bindings.SchemaFit.ReadyForSchemaFreeze || len(profile.Bindings.SchemaFit.Blockers) != 0 {
+		t.Fatalf("profile readiness = %v, blockers = %#v", profile.Bindings.SchemaFit.ReadyForSchemaFreeze, profile.Bindings.SchemaFit.Blockers)
+	}
+	if err := validateEncyclopediaSourceProfile(profile); err != nil {
+		t.Fatalf("approved aggregate-only membership shape was rejected: %v", err)
 	}
 }
 
@@ -674,6 +681,21 @@ func TestCombinedEncyclopediaProfileRepresentsExplicitAliasesAndSharedArt(t *tes
 			file.Reason = "synthetic alias leaves this art file unresolved"
 			file.NextProof = "supply a connected source selector"
 		}
+	}
+	// This synthetic historical-inventory shape deliberately leaves evidence
+	// unresolved, so it must not retain the approved profile's ready status.
+	profile.Bindings.SchemaFit.ReadyForSchemaFreeze = false
+	profile.Bindings.SchemaFit.Blockers = []encyclopediaBindingIssue{
+		{
+			ID:        encyclopediaBindingAggregateOnlyBlocker,
+			Reason:    "the synthetic research shape has not adopted the approved aggregate-only wire contract",
+			NextProof: "adopt the approved aggregate-only membership representation",
+		},
+		{
+			ID:        "synthetic-alias-evidence",
+			Reason:    "the synthetic alias leaves text, lookup, and art evidence unresolved",
+			NextProof: "supply connected source selectors for the displaced evidence",
+		},
 	}
 	if err := validateEncyclopediaSourceProfile(profile); err != nil {
 		t.Fatalf("explicit alias shape was rejected: %v", err)

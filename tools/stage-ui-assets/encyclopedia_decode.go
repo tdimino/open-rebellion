@@ -27,6 +27,7 @@ type encyclopediaSourceProfile struct {
 	Sources       []encyclopediaProfileSource        `json:"sources"`
 	TextDecoder   encyclopediaTextDecoderProfile     `json:"text_decoder"`
 	Evidence      encyclopediaDecoderProfileEvidence `json:"evidence"`
+	Catalog       encyclopediaCatalogProfileContract `json:"catalog"`
 	Bindings      encyclopediaProfileBindings        `json:"bindings"`
 }
 
@@ -305,6 +306,9 @@ func validateEncyclopediaSourceProfile(profile encyclopediaSourceProfile) error 
 	}
 	if err := validateEncyclopediaProfileBindings(profile, profile.Bindings); err != nil {
 		return fmt.Errorf("profile %q bindings: %w", profile.ProfileID, err)
+	}
+	if err := validateEncyclopediaCatalogProfile(profile); err != nil {
+		return fmt.Errorf("profile %q catalog: %w", profile.ProfileID, err)
 	}
 	return nil
 }
