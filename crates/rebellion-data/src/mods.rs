@@ -38,7 +38,8 @@
 //!
 //! # Load order
 //!
-//! Mods are sorted topologically by their declared `[dependencies]`.
+//! Mods are sorted topologically by their declared `[dependencies]`, with a
+//! lexicographic name tie-break whenever multiple unrelated mods are ready.
 //! A mod may only override entities that were already loaded by the base game
 //! or by a previously-loaded mod.
 //!
@@ -48,7 +49,7 @@
 //! watches the mods directory for file-system events and signals when a reload
 //! is needed. Call `ModWatcher::changed()` each frame to check.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
@@ -269,7 +270,9 @@ impl ModLoader {
     /// - There are no dependency cycles.
     ///
     /// Returns manifests in dependency-first order (a mod's dependencies always
-    /// appear before the mod itself in the returned vec).
+    /// appear before the mod itself in the returned vec). Ready mods that are
+    /// unrelated are ordered lexicographically by name, independent of
+    /// filesystem discovery order.
     ///
     /// # Errors
     /// Returns an error for invalid version requirements, missing or incompatible
@@ -329,15 +332,18 @@ impl ModLoader {
             }
         }
 
-        let mut queue: Vec<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
+        let mut ready: BTreeSet<(&str, usize)> = (0..n)
+            .filter(|&i| in_degree[i] == 0)
+            .map(|i| (manifests[i].name.as_str(), i))
+            .collect();
         let mut order: Vec<usize> = Vec::with_capacity(n);
 
-        while let Some(node) = queue.pop() {
+        while let Some((_, node)) = ready.pop_first() {
             order.push(node);
             for &dependent in &rev_adj[node] {
                 in_degree[dependent] -= 1;
                 if in_degree[dependent] == 0 {
-                    queue.push(dependent);
+                    ready.insert((manifests[dependent].name.as_str(), dependent));
                 }
             }
         }
@@ -773,10 +779,30 @@ impl ModRuntime {
     }
 
     /// Apply all enabled mods to the world (RFC 7396 merge patch).
+    ///
+    /// This is the existing-call-site wrapper: it resolves the enabled set
+    /// once, then delegates that exact order to [`Self::apply_ordered`].
     #[cfg(not(target_arch = "wasm32"))]
     pub fn apply_enabled(&self, world: &mut rebellion_core::world::GameWorld) -> Vec<ModError> {
         let sorted = self.enabled_sorted();
-        if sorted.is_empty() {
+        self.apply_ordered(world, &sorted)
+    }
+
+    /// Apply world overlays in the caller-supplied resolved order.
+    ///
+    /// Later overlays win. This method deliberately does not sort again: a
+    /// caller that also updates non-world content can pass the same resolved
+    /// order to both paths. Lexicographic ordering is only the deterministic
+    /// tie-break for unrelated ready mods; authors who require override
+    /// precedence must declare that relationship as a dependency instead of
+    /// relying on historical filesystem discovery order.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn apply_ordered(
+        &self,
+        world: &mut rebellion_core::world::GameWorld,
+        ordered: &[&ModManifest],
+    ) -> Vec<ModError> {
+        if ordered.is_empty() {
             return Vec::new();
         }
 
@@ -792,7 +818,7 @@ impl ModRuntime {
         };
 
         let mut errors = Vec::new();
-        for manifest in &sorted {
+        for manifest in ordered {
             let content = match ModContent::from_dir(&manifest.path) {
                 Ok(c) => c,
                 Err(e) => {
@@ -868,6 +894,16 @@ impl ModRuntime {
     /// WASM stub: apply_enabled (no filesystem access).
     #[cfg(target_arch = "wasm32")]
     pub fn apply_enabled(&self, _world: &mut rebellion_core::world::GameWorld) -> Vec<ModError> {
+        Vec::new()
+    }
+
+    /// WASM stub: ordered filesystem mod application is unavailable.
+    #[cfg(target_arch = "wasm32")]
+    pub fn apply_ordered(
+        &self,
+        _world: &mut rebellion_core::world::GameWorld,
+        _ordered: &[&ModManifest],
+    ) -> Vec<ModError> {
         Vec::new()
     }
 
@@ -1009,6 +1045,43 @@ version = "0.1.0"
         let a_pos = names.iter().position(|&n| n == "mod-a").unwrap();
         let b_pos = names.iter().position(|&n| n == "mod-b").unwrap();
         assert!(a_pos < b_pos, "mod-a must load before mod-b");
+    }
+
+    #[test]
+    fn unrelated_mods_resolve_lexicographically_regardless_of_discovery_order() {
+        let forward = vec![
+            make_manifest("alpha", "1.0.0", &[]),
+            make_manifest("middle", "1.0.0", &[]),
+            make_manifest("zulu", "1.0.0", &[]),
+        ];
+        let reverse = forward.iter().cloned().rev().collect();
+
+        let names = |manifests| {
+            ModLoader::resolve_load_order(manifests)
+                .unwrap()
+                .into_iter()
+                .map(|manifest| manifest.name)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(names(forward), ["alpha", "middle", "zulu"]);
+        assert_eq!(names(reverse), ["alpha", "middle", "zulu"]);
+    }
+
+    #[test]
+    fn declared_dependencies_load_before_lexically_earlier_dependents() {
+        let mods = vec![
+            make_manifest("alpha-dependent", "1.0.0", &[("zulu-base", "^1")]),
+            make_manifest("zulu-base", "1.0.0", &[]),
+        ];
+
+        let names: Vec<_> = ModLoader::resolve_load_order(mods)
+            .unwrap()
+            .into_iter()
+            .map(|manifest| manifest.name)
+            .collect();
+
+        assert_eq!(names, ["zulu-base", "alpha-dependent"]);
     }
 
     #[test]
@@ -1249,6 +1322,115 @@ version = "1.0.0"
         std::fs::write(dir.join("mod.toml"), format!("name = \"{name}\"\n{body}")).unwrap();
     }
 
+    fn write_parameter_patch(root: &Path, directory: &str, name: &str, value: i32) -> ModManifest {
+        let path = root.join(directory);
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(
+            path.join("gnprtb.json"),
+            format!(r#"[{{"id":77,"development":{value}}}]"#),
+        )
+        .unwrap();
+        let mut manifest = make_manifest(name, "1.0.0", &[]);
+        manifest.path = path;
+        manifest.enabled = true;
+        manifest
+    }
+
+    fn parameter_world() -> rebellion_core::world::GameWorld {
+        use rebellion_core::world::{GameWorld, GnprtbEntry, GnprtbParams};
+
+        let entry = |parameter_id, development| GnprtbEntry {
+            parameter_id,
+            development,
+            alliance_sp_easy: development,
+            alliance_sp_medium: development,
+            alliance_sp_hard: development,
+            empire_sp_easy: development,
+            empire_sp_medium: development,
+            empire_sp_hard: development,
+            multiplayer: development,
+        };
+        GameWorld {
+            gnprtb: GnprtbParams::new(vec![entry(77, 1), entry(78, 314)]),
+            difficulty_index: 6,
+            ..GameWorld::default()
+        }
+    }
+
+    #[test]
+    fn apply_ordered_uses_the_supplied_order_and_preserves_unrelated_world_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let alpha = write_parameter_patch(tmp.path(), "alpha-dir", "alpha", 10);
+        let zulu = write_parameter_patch(tmp.path(), "zulu-dir", "zulu", 20);
+        let runtime = ModRuntime {
+            discovered: vec![alpha.clone(), zulu.clone()],
+            config: ModConfig::default(),
+            errors: Vec::new(),
+            mods_dir: tmp.path().to_path_buf(),
+        };
+        let mut world = parameter_world();
+        let mut expected = serde_json::to_value(&world).unwrap();
+        let target = expected["gnprtb"]["entries"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["parameter_id"] == 77)
+            .unwrap();
+        target["development"] = json!(10);
+
+        let errors = runtime.apply_ordered(&mut world, &[&zulu, &alpha]);
+
+        assert!(errors.is_empty());
+        assert_eq!(serde_json::to_value(&world).unwrap(), expected);
+        assert_eq!(world.gnprtb.value(78, 0), 314);
+        assert_eq!(world.difficulty_index, 6);
+    }
+
+    #[test]
+    fn apply_enabled_has_identical_world_effects_for_reversed_discovery_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let alpha = write_parameter_patch(tmp.path(), "alpha-dir", "alpha", 10);
+        let zulu = write_parameter_patch(tmp.path(), "zulu-dir", "zulu", 20);
+        let runtime = |discovered| ModRuntime {
+            discovered,
+            config: ModConfig {
+                enabled: vec!["alpha".to_string(), "zulu".to_string()],
+            },
+            errors: Vec::new(),
+            mods_dir: tmp.path().to_path_buf(),
+        };
+        let forward = runtime(vec![alpha.clone(), zulu.clone()]);
+        let reverse = runtime(vec![zulu, alpha]);
+        let mut forward_world = parameter_world();
+        let mut reverse_world = parameter_world();
+
+        assert!(forward.apply_enabled(&mut forward_world).is_empty());
+        assert!(reverse.apply_enabled(&mut reverse_world).is_empty());
+
+        assert_eq!(forward_world.gnprtb.value(77, 0), 20);
+        assert_eq!(
+            serde_json::to_value(forward_world).unwrap(),
+            serde_json::to_value(reverse_world).unwrap()
+        );
+    }
+
+    #[test]
+    fn duplicate_enabled_names_still_block_loading_with_diagnostics() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = write_parameter_patch(tmp.path(), "first-dir", "duplicate", 10);
+        let second = write_parameter_patch(tmp.path(), "second-dir", "duplicate", 20);
+        let discovered = vec![first, second];
+
+        let errors = dependency_errors(&discovered);
+
+        assert_eq!(errors.len(), 2);
+        assert!(errors.iter().all(|error| {
+            error.mod_name() == "duplicate"
+                && matches!(error, ModError::LoadOrder { message, .. }
+                    if message.contains("duplicate mod name 'duplicate'"))
+        }));
+    }
+
     #[test]
     fn a_dependency_below_the_required_version_is_reported_as_a_mismatch() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1345,8 +1527,11 @@ version = "1.0.0"
         config.save(tmp.path()).unwrap();
 
         let mut runtime = ModRuntime::discover(tmp.path());
-        assert_eq!(runtime.errors.len(), 1);
-        assert_eq!(runtime.errors[0].mod_name(), "mod-top");
+        assert!(matches!(
+            runtime.errors.as_slice(),
+            [ModError::MissingDependency { mod_name, dep_name }]
+                if mod_name == "mod-top" && dep_name == "mod-base"
+        ));
 
         runtime.toggle_mod("mod-base");
 
