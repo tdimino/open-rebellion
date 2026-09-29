@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "source_profile": "e37-synthetic-v1",
+  "extractor_version": "fixture-generator-v1",
+  "catalog_sha256": "f1087ebf39faef3aef5b702e6ad957a910e7fa5924995d668be42b6eddbc39c9",
+  "files": {
+    "catalog.json": "f1087ebf39faef3aef5b702e6ad957a910e7fa5924995d668be42b6eddbc39c9",
+    "assets/EDATA.001": "5933033f7472f8b9d24b8106b03f0ce46e788608b6ee03018d16ec37804de579",
+    "assets/EDATA.002": "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+    "assets/EDATA.003": "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd"
+  },
+  "binding_sources": [
+    {
+      "basename": "SYNTHETIC.DAT",
+      "sha256": "39fb2c329d34fbdd94bb2a2a596b694597eb00b8b402905ec4920f560210d322"
+    }
+  ]
+}

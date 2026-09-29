@@ -1,0 +1,1145 @@
+{
+  "schema_version": 1,
+  "wire_contract": "encyclopedia-v1-coordinator-approved-2026-09-29",
+  "authorship": "Contributor-authored synthetic text, JSON, BMP, PNG, and DAT-like bytes; no original installation input is used.",
+  "limits": {
+    "topics": 10000,
+    "title_or_label_utf8_bytes": 65536,
+    "localized_body_utf8_bytes": 1048576,
+    "image_bytes": 33554432,
+    "image_pixels": 16000000,
+    "effective_image_bytes": 134217728,
+    "catalog_json_bytes": 67108864,
+    "catalog_json_depth": 16,
+    "manifest_json_bytes": 33554432,
+    "manifest_json_depth": 16,
+    "overlay_json_bytes": 16777216,
+    "overlay_json_depth": 8,
+    "overlay_patches": 10000,
+    "retained_bytes": 536870912
+  },
+  "artifacts": [
+    {
+      "path": "bundles/valid/catalog.json",
+      "sha256": "f1087ebf39faef3aef5b702e6ad957a910e7fa5924995d668be42b6eddbc39c9",
+      "byte_length": 5903,
+      "kind": "catalog"
+    },
+    {
+      "path": "bundles/valid/manifest.json",
+      "sha256": "a1ab72f409d4765de64afc8e69e89c54593d5a93a8732d5f95c367aa6b75ab5a",
+      "byte_length": 11379,
+      "kind": "manifest"
+    },
+    {
+      "path": "bundles/valid/assets/EDATA.001",
+      "sha256": "5933033f7472f8b9d24b8106b03f0ce46e788608b6ee03018d16ec37804de579",
+      "byte_length": 70,
+      "kind": "bmp",
+      "width": 2,
+      "height": 2
+    },
+    {
+      "path": "bundles/valid/assets/EDATA.002",
+      "sha256": "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+      "byte_length": 70,
+      "kind": "bmp",
+      "width": 2,
+      "height": 2
+    },
+    {
+      "path": "bundles/valid/assets/EDATA.003",
+      "sha256": "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd",
+      "byte_length": 70,
+      "kind": "bmp",
+      "width": 2,
+      "height": 2
+    },
+    {
+      "path": "images/mod-valid.png",
+      "sha256": "5b8ce344a9d7fe4bdf8780725fc2fc36dce3f297688e62f18c8848fce6fecb8b",
+      "byte_length": 70,
+      "kind": "png",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "path": "bundles/valid/sources/SYNTHETIC.DAT",
+      "sha256": "39fb2c329d34fbdd94bb2a2a596b694597eb00b8b402905ec4920f560210d322",
+      "byte_length": 45,
+      "kind": "synthetic-binding-source"
+    }
+  ],
+  "cases": [
+    {
+      "id": "catalog-valid-base",
+      "validation_layer": "schema_structure",
+      "fixture": "bundles/valid/catalog.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "manifest-valid-base",
+      "validation_layer": "schema_structure",
+      "fixture": "bundles/valid/manifest.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-aliases-unknown-v1",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-unknown-aliases.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unknown_field" }
+    },
+    {
+      "id": "catalog-topic-sort-missing",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-missing-topic-sort.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "catalog-topic-sort-wrong-constant",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-wrong-topic-sort.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "invalid_topic_sort" }
+    },
+    {
+      "id": "catalog-static-and-selector-conflict",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-mixed-static-selector.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "ambiguous_image_selector" }
+    },
+    {
+      "id": "catalog-faction-selector-missing-side",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-selector-missing-side.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "catalog-faction-selector-unknown-kind",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-selector-unknown-kind.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unsupported_selector" }
+    },
+    {
+      "id": "catalog-localized-unknown-field",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-localized-unknown-field.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unknown_field" }
+    },
+    {
+      "id": "catalog-ambiguous-language",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-bad-langid.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "invalid_language_id" }
+    },
+    {
+      "id": "catalog-unknown-version",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-unknown-version.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unsupported_version" }
+    },
+    {
+      "id": "catalog-image-byte-length-above-limit",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-image-byte-above.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "resource_limit:image_bytes" }
+    },
+    {
+      "id": "catalog-effective-image-id-forbidden",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-bad-base-image-id.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "invalid_base_image_id" }
+    },
+    {
+      "id": "catalog-image-format-unknown",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-unsupported-image-format.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unsupported_image_format" }
+    },
+    {
+      "id": "catalog-image-path-unsafe",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/catalog-unsafe-asset-path.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unsafe_asset_path" }
+    },
+    {
+      "id": "manifest-missing-schema-version",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-missing-schema-version.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "manifest-missing-source-profile",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-missing-source-profile.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "manifest-missing-extractor-version",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-missing-extractor-version.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "manifest-missing-catalog-sha256",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-missing-catalog-sha256.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "manifest-missing-files",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-missing-files.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "manifest-missing-binding-sources",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-missing-binding-sources.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "manifest-missing-source-records",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-missing-source-records.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "manifest-self-hash-forbidden",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-self-hash.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unexpected_runtime_file" }
+    },
+    {
+      "id": "manifest-unknown-field",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-unknown-field.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unknown_field" }
+    },
+    {
+      "id": "manifest-file-path-unsafe",
+      "validation_layer": "schema_structure",
+      "fixture": "schema/manifest-unsafe-path.json",
+      "executed_by": "ajv-manifest",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "unsafe_asset_path" }
+    },
+    {
+      "id": "overlay-valid-empty-array",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-empty.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-valid-image-omission",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-omitted-image.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-valid-null-image",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-null-image.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-valid-empty-body",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-empty-body.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-valid-language-delete",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-language-delete.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-valid-static-bmp",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-static-bmp.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-valid-static-png",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-static-png.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-valid-faction-pair-shape",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/valid-faction-pair.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser/capability validator",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-static-topic-faction-pair-shape",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/semantic-static-topic-faction-pair.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser/capability validator",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-faction-pair-missing-side",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/invalid-faction-pair-missing-side.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "missing_field" }
+    },
+    {
+      "id": "overlay-unsafe-image-path",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/invalid-unsafe-path.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "unsafe_asset_path" }
+    },
+    {
+      "id": "overlay-direct-generated-id-forbidden",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/invalid-generated-id.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "unknown_field" }
+    },
+    {
+      "id": "overlay-binding-edit-forbidden",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/invalid-binding-edit.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "forbidden_overlay_field" }
+    },
+    {
+      "id": "overlay-membership-edit-forbidden",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/invalid-membership-edit.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "forbidden_overlay_field" }
+    },
+    {
+      "id": "overlay-provenance-edit-forbidden",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/invalid-provenance-edit.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "forbidden_overlay_field" }
+    },
+    {
+      "id": "overlay-aliases-unknown-v1",
+      "validation_layer": "schema_structure",
+      "fixture": "overlays/invalid-aliases.json",
+      "executed_by": "ajv-overlay",
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "unknown_field" }
+    },
+    {
+      "id": "raw-valid-nested-values",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/valid-nested-values.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "raw-valid-repeated-keys-distinct-scopes",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/valid-repeated-keys-distinct-scopes.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "raw-catalog-duplicate-root-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/catalog-duplicate-root-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-catalog-escaped-equivalent-duplicate-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/catalog-escaped-equivalent-duplicate-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-catalog-duplicate-topic-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/catalog-duplicate-topic-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-catalog-duplicate-language-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/catalog-duplicate-langid-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-catalog-duplicate-localized-field",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/catalog-duplicate-localized-field.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-manifest-duplicate-file-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/manifest-duplicate-file-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-manifest-duplicate-source-record-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/manifest-duplicate-source-record-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-overlay-duplicate-selector-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/overlay-duplicate-selector-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E22 Rust raw overlay parser",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-overlay-duplicate-language-key",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/overlay-duplicate-langid-key.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E22 Rust raw overlay parser",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-overlay-duplicate-patch-field",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/overlay-duplicate-patch-field.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E22 Rust raw overlay parser",
+      "expect": { "accepted": false, "code": "duplicate_key" }
+    },
+    {
+      "id": "raw-invalid-utf8",
+      "validation_layer": "raw_parsing",
+      "fixture": "raw/catalog-invalid-utf8.json",
+      "executed_by": "raw-json-key-scanner",
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "invalid_utf8" }
+    },
+    {
+      "id": "relationship-valid-potential-membership",
+      "validation_layer": "relationships",
+      "fixture": "bundles/valid/catalog.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-valid-aggregate-only-topic",
+      "validation_layer": "relationships",
+      "fixture": "bundles/valid/catalog.json",
+      "feature": "aggregate-only",
+      "executed_by": "catalog-feature-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-valid-multiple-langids",
+      "validation_layer": "relationships",
+      "fixture": "bundles/valid/catalog.json",
+      "feature": "multiple-langids",
+      "executed_by": "catalog-feature-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-valid-shared-art",
+      "validation_layer": "relationships",
+      "fixture": "bundles/valid/catalog.json",
+      "feature": "shared-art",
+      "executed_by": "catalog-feature-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-valid-localized-no-art",
+      "validation_layer": "relationships",
+      "fixture": "bundles/valid/catalog.json",
+      "feature": "no-art",
+      "executed_by": "catalog-feature-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-valid-viewer-faction-variant",
+      "validation_layer": "relationships",
+      "fixture": "bundles/valid/catalog.json",
+      "feature": "viewer-faction",
+      "executed_by": "catalog-feature-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "relationship-family-qualified-same-dat-id",
+      "validation_layer": "relationships",
+      "fixture": "bundles/valid/catalog.json",
+      "executed_by": "family-qualified-identity-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "relationship-frozen-admitted-subset-forbidden",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-frozen-admitted-subset.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "potential_membership_mismatch" }
+    },
+    {
+      "id": "relationship-aggregate-only-invented-category",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-invented-filtered-membership.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "filtered_membership_mismatch" }
+    },
+    {
+      "id": "relationship-dangling-index-topic",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-dangling-index-topic.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "dangling_topic_reference" }
+    },
+    {
+      "id": "catalog-duplicate-index-topic-id",
+      "validation_layer": "schema_structure",
+      "fixture": "relationships/catalog-duplicate-index-topic.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "duplicate_topic_id" }
+    },
+    {
+      "id": "catalog-duplicate-category-topic-id",
+      "validation_layer": "schema_structure",
+      "fixture": "relationships/catalog-duplicate-category-topic.json",
+      "executed_by": "ajv-catalog",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "duplicate_topic_id" }
+    },
+    {
+      "id": "relationship-duplicate-category-command",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-duplicate-category-command.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "duplicate_category_command" }
+    },
+    {
+      "id": "relationship-category-order",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-wrong-category-order.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "category_order" }
+    },
+    {
+      "id": "relationship-duplicate-binding-tuple",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-duplicate-binding-tuple.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "ambiguous_binding" }
+    },
+    {
+      "id": "relationship-dangling-binding-topic",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-dangling-binding-topic.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "dangling_topic_reference" }
+    },
+    {
+      "id": "relationship-dangling-base-image",
+      "validation_layer": "relationships",
+      "fixture": "relationships/catalog-dangling-image-reference.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "dangling_image_reference" }
+    },
+    {
+      "id": "relationship-default-binding-faction-selector",
+      "validation_layer": "source_pairing",
+      "fixture": "relationships/catalog-default-binding-faction-selector.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go validate_bundle",
+      "expect": { "accepted": false, "code": "binding_selector_mismatch" }
+    },
+    {
+      "id": "relationship-faction-binding-static-selector",
+      "validation_layer": "source_pairing",
+      "fixture": "relationships/catalog-faction-binding-static-selector.json",
+      "executed_by": "catalog-relationship-probe",
+      "consuming_validator": "E10 Go validate_bundle",
+      "expect": { "accepted": false, "code": "binding_selector_mismatch" }
+    },
+    {
+      "id": "integrity-valid-base-bundle",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/valid",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "integrity-catalog-sha-contradiction",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-catalog-hash",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "catalog_digest_mismatch" }
+    },
+    {
+      "id": "integrity-files-catalog-sha-contradiction",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-files-catalog-hash",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "catalog_digest_mismatch" }
+    },
+    {
+      "id": "integrity-manifest-missing-image",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-missing-image-file-entry",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "manifest_file_set_mismatch" }
+    },
+    {
+      "id": "integrity-manifest-extra-file",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-extra-file-entry",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "manifest_file_set_mismatch" }
+    },
+    {
+      "id": "integrity-image-file-hash",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-image-file-hash",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "file_digest_mismatch" }
+    },
+    {
+      "id": "integrity-image-descriptor-hash",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-image-descriptor-hash",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "image_digest_mismatch" }
+    },
+    {
+      "id": "source-pairing-binding-source-hash",
+      "validation_layer": "source_pairing",
+      "fixture": "bundles/invalid-binding-source-hash",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "binding_source_mismatch" }
+    },
+    {
+      "id": "source-pairing-dangling-source-ref",
+      "validation_layer": "source_pairing",
+      "fixture": "bundles/invalid-dangling-source-ref",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "dangling_source_ref" }
+    },
+    {
+      "id": "integrity-base-png-forbidden-v1",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-base-png",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "unsupported_base_image_format" }
+    },
+    {
+      "id": "integrity-base-declared-format-mismatch",
+      "validation_layer": "file_integrity",
+      "fixture": "bundles/invalid-base-format-mismatch",
+      "executed_by": "bundle-integrity-probe",
+      "consuming_validator": "E10 Go and E11 Rust validate_bundle",
+      "expect": { "accepted": false, "code": "image_format_mismatch" }
+    },
+    {
+      "id": "image-valid-synthetic-bmp",
+      "validation_layer": "file_integrity",
+      "fixture": "images/base-valid.bmp",
+      "declared_format": "bmp",
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E10 Go and E12 Rust byte inspection",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "image-valid-mod-png",
+      "validation_layer": "overlay_behavior",
+      "fixture": "images/mod-valid.png",
+      "declared_format": "png",
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E22 Rust overlay adapter",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "integrity-valid-mod-png-replacement",
+      "validation_layer": "overlay_behavior",
+      "fixture": "overlays/valid-static-png.json",
+      "asset": "images/mod-valid.png",
+      "executed_by": "overlay-image-probe",
+      "consuming_validator": "E22 Rust overlay adapter",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "image-plain-text-declared-png",
+      "validation_layer": "file_integrity",
+      "fixture": "images/mod-plain-text.png",
+      "declared_format": "png",
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "invalid_image" }
+    },
+    {
+      "id": "image-magic-not-extension",
+      "validation_layer": "file_integrity",
+      "fixture": "images/mod-png-with-bmp-extension.bmp",
+      "declared_format": "bmp",
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "image_format_mismatch" }
+    },
+    {
+      "id": "image-truncated-bmp",
+      "validation_layer": "file_integrity",
+      "fixture": "images/corrupt-bmp.bmp",
+      "declared_format": "bmp",
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "invalid_image" }
+    },
+    {
+      "id": "image-truncated-png-termination",
+      "validation_layer": "file_integrity",
+      "fixture": "images/corrupt-png.png",
+      "declared_format": "png",
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "invalid_image" }
+    },
+    {
+      "id": "image-corrupt-png-terminal-crc",
+      "validation_layer": "file_integrity",
+      "fixture": "images/corrupt-png-crc.png",
+      "declared_format": "png",
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "invalid_image" }
+    },
+    {
+      "id": "image-png-oversized-ihdr-predecode-limit",
+      "validation_layer": "file_integrity",
+      "fixture": "images/oversized-ihdr.png",
+      "declared_format": "png",
+      "assert_decoder_not_called": true,
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E10 Go and E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "resource_limit:image_pixels" }
+    },
+    {
+      "id": "image-png-zero-width-ihdr",
+      "validation_layer": "file_integrity",
+      "fixture": "images/zero-width-ihdr.png",
+      "declared_format": "png",
+      "assert_decoder_not_called": true,
+      "executed_by": "image-decode-probe",
+      "consuming_validator": "E10 Go and E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "invalid_image" }
+    },
+    {
+      "id": "body-ascii-exact-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "body_ascii_bytes", "value": 1048576 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "body-ascii-one-above-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "body_ascii_bytes", "value": 1048577 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "resource_limit:body_bytes" }
+    },
+    {
+      "id": "body-multibyte-one-above-limit",
+      "validation_layer": "relationships",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "body_utf8_bytes", "value": 1048578 },
+      "consuming_validator": "E10 Go and E11 Rust semantic validation",
+      "expect": { "accepted": false, "code": "resource_limit:body_bytes" }
+    },
+    {
+      "id": "title-ascii-exact-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "title_ascii_bytes", "value": 65536 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "title-ascii-one-above-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "title_ascii_bytes", "value": 65537 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "resource_limit:title_bytes" }
+    },
+    {
+      "id": "category-label-ascii-exact-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "label_ascii_bytes", "value": 65536 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "category-label-ascii-one-above-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "label_ascii_bytes", "value": 65537 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "resource_limit:label_bytes" }
+    },
+    {
+      "id": "topics-exact-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "topic_count", "value": 10000 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "topics-one-above-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "topic_count", "value": 10001 },
+      "consuming_validator": "E10 Go and E11 Rust",
+      "expect": { "accepted": false, "code": "resource_limit:topics" }
+    },
+    {
+      "id": "overlay-patches-exact-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "overlay_patch_count", "value": 10000 },
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-patches-one-above-limit",
+      "validation_layer": "schema_structure",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "overlay_patch_count", "value": 10001 },
+      "consuming_validator": "E22 Rust overlay parser",
+      "expect": { "accepted": false, "code": "resource_limit:overlay_patches" }
+    },
+    {
+      "id": "image-bytes-exact-limit",
+      "validation_layer": "file_integrity",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "image_bytes", "value": 33554432 },
+      "consuming_validator": "E10 Go and E12 Rust byte inspection",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "image-bytes-one-above-limit",
+      "validation_layer": "file_integrity",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "image_bytes", "value": 33554433 },
+      "consuming_validator": "E10 Go and E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "resource_limit:image_bytes" }
+    },
+    {
+      "id": "image-pixels-exact-limit",
+      "validation_layer": "file_integrity",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "image_pixels", "width": 4000, "height": 4000 },
+      "consuming_validator": "E10 Go and E12 Rust byte inspection",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "image-pixels-one-row-above-limit",
+      "validation_layer": "file_integrity",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "image_pixels", "width": 4000, "height": 4001 },
+      "consuming_validator": "E10 Go and E12 Rust byte inspection",
+      "expect": { "accepted": false, "code": "resource_limit:image_pixels" }
+    },
+    {
+      "id": "effective-image-bytes-exact-limit",
+      "validation_layer": "file_integrity",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "effective_image_bytes", "values": [67108864, 67108864] },
+      "consuming_validator": "Rust effective catalog validator",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "effective-image-bytes-one-above-limit",
+      "validation_layer": "file_integrity",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "effective_image_bytes", "values": [67108864, 67108865] },
+      "consuming_validator": "Rust effective catalog validator",
+      "expect": { "accepted": false, "code": "resource_limit:effective_image_bytes" }
+    },
+    {
+      "id": "retained-bytes-exact-limit",
+      "validation_layer": "overlay_behavior",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "retained_bytes", "values": [268435456, 268435456] },
+      "consuming_validator": "Rust session candidate ledger",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "retained-bytes-one-above-limit",
+      "validation_layer": "overlay_behavior",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "retained_bytes", "values": [268435456, 268435457] },
+      "consuming_validator": "Rust session candidate ledger",
+      "expect": { "accepted": false, "code": "resource_limit:retained_bytes" }
+    },
+    {
+      "id": "catalog-json-bytes-exact-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_bytes", "document": "catalog", "value": 67108864 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-json-bytes-one-above-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_bytes", "document": "catalog", "value": 67108865 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "resource_limit:json_bytes" }
+    },
+    {
+      "id": "manifest-json-bytes-exact-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_bytes", "document": "manifest", "value": 33554432 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "manifest-json-bytes-one-above-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_bytes", "document": "manifest", "value": 33554433 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "resource_limit:json_bytes" }
+    },
+    {
+      "id": "overlay-json-bytes-exact-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_bytes", "document": "overlay", "value": 16777216 },
+      "consuming_validator": "E22 Rust raw overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-json-bytes-one-above-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_bytes", "document": "overlay", "value": 16777217 },
+      "consuming_validator": "E22 Rust raw overlay parser",
+      "expect": { "accepted": false, "code": "resource_limit:json_bytes" }
+    },
+    {
+      "id": "catalog-json-depth-exact-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_depth", "document": "catalog", "value": 16 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "catalog-json-depth-one-above-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_depth", "document": "catalog", "value": 17 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "resource_limit:json_depth" }
+    },
+    {
+      "id": "manifest-json-depth-exact-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_depth", "document": "manifest", "value": 16 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "manifest-json-depth-one-above-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_depth", "document": "manifest", "value": 17 },
+      "consuming_validator": "E10 Go and E11 Rust raw parsers",
+      "expect": { "accepted": false, "code": "resource_limit:json_depth" }
+    },
+    {
+      "id": "overlay-json-depth-exact-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_depth", "document": "overlay", "value": 8 },
+      "consuming_validator": "E22 Rust raw overlay parser",
+      "expect": { "accepted": true, "code": "ok" }
+    },
+    {
+      "id": "overlay-json-depth-one-above-limit",
+      "validation_layer": "raw_parsing",
+      "executed_by": "boundary-probe",
+      "boundary": { "kind": "json_depth", "document": "overlay", "value": 9 },
+      "consuming_validator": "E22 Rust raw overlay parser",
+      "expect": { "accepted": false, "code": "resource_limit:json_depth" }
+    }
+  ],
+  "delegated_inventory": [
+    {
+      "id": "overlay-unknown-topic",
+      "fixture": "overlays/semantic-unknown-topic.json",
+      "owner": "E22 Rust overlay semantic validator",
+      "expected_code": "unknown_topic",
+      "reason": "The author wire shape is valid; existence is an effective-catalog semantic check."
+    },
+    {
+      "id": "overlay-viewer-faction-pair-capability",
+      "fixture": "overlays/valid-faction-pair.json",
+      "owner": "E22 Rust overlay capability validator",
+      "expected_code": "ok",
+      "reason": "Topic original:60004 has immutable viewer_faction capability, so E22 must accept this structurally valid complete pair for the new 1041 record."
+    },
+    {
+      "id": "overlay-static-topic-faction-pair-capability",
+      "fixture": "overlays/semantic-static-topic-faction-pair.json",
+      "owner": "E22 Rust overlay capability validator",
+      "expected_code": "image_override_capability",
+      "reason": "The pair is structurally valid, but topic original:60001 has immutable static capability and E22 must reject it semantically."
+    },
+    {
+      "id": "catalog-mixed-language",
+      "owner": "E44 Rust content/language resolver",
+      "expected_code": "incomplete_localized_record",
+      "reason": "Whole-record fallback is deliberately not a serialized-file corpus case."
+    },
+    {
+      "id": "catalog-internal-key-as-label",
+      "owner": "E44 Rust content/language resolver",
+      "expected_code": "missing_localized_label",
+      "reason": "Presentation fallback is deliberately not a serialized-file corpus case."
+    },
+    {
+      "id": "world-admission-captured-247-not-wire",
+      "owner": "E31 admission adapter",
+      "expected_code": "missing_admission_facts",
+      "reason": "The catalog preserves 347 candidates; live world/viewer admission is not file conformance."
+    },
+    {
+      "id": "effective-mod-id-and-origin-collision",
+      "owner": "Rust overlay adapter/session validator",
+      "expected_code": "asset_identity_collision",
+      "reason": "Generated mod IDs and retained facts are in-memory DTOs, not catalog schema fields."
+    },
+    {
+      "id": "retained-candidate-rollback",
+      "owner": "Rust session candidate ledger",
+      "expected_code": "resource_limit:retained_bytes",
+      "reason": "The shared boundary arithmetic is executable here; publication rollback is a session behavior test."
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+[
+  {
+    "id": "original:60004",
+    "localized": {
+      "1041": {
+        "title": "Synthetic translated title",
+        "body": "Synthetic translated body.",
+        "image": {
+          "alliance": {
+            "path": "encyclopedia/assets/alliance.png"
+          },
+          "empire": {
+            "path": "encyclopedia/assets/empire.png"
+          }
+        }
+      }
+    }
+  }
+]

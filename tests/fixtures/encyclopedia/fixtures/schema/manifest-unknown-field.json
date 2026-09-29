@@ -1,0 +1,361 @@
+{
+  "schema_version": 1,
+  "source_profile": "e37-synthetic-v1",
+  "extractor_version": "fixture-generator-v1",
+  "catalog_sha256": "f1087ebf39faef3aef5b702e6ad957a910e7fa5924995d668be42b6eddbc39c9",
+  "files": {
+    "catalog.json": "f1087ebf39faef3aef5b702e6ad957a910e7fa5924995d668be42b6eddbc39c9",
+    "assets/EDATA.001": "5933033f7472f8b9d24b8106b03f0ce46e788608b6ee03018d16ec37804de579",
+    "assets/EDATA.002": "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+    "assets/EDATA.003": "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd"
+  },
+  "binding_sources": [
+    {
+      "basename": "SYNTHETIC.DAT",
+      "sha256": "39fb2c329d34fbdd94bb2a2a596b694597eb00b8b402905ec4920f560210d322"
+    }
+  ],
+  "source_records": {
+    "fixture/category/0x6f": {
+      "source_basename": "SYNTHETIC-TEXT.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 10
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60001
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "0b1f452c7d49aa2e0fb40896cbf18a5aba9e554a9aad25ea2df752074aa32616",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/category/0x6f"
+      ]
+    },
+    "fixture/category/0x70": {
+      "source_basename": "SYNTHETIC-TEXT.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 10
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60002
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "c81601a8d9a15615ee4ae0256a09211f878fce6c1a9b2520ca6c0ce739e71233",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/category/0x70"
+      ]
+    },
+    "fixture/category/0x71": {
+      "source_basename": "SYNTHETIC-TEXT.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 10
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60003
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "132017359dc9573ab03b8b840cc94edbd4ec5c9b33e23f1c64e199befac1b2fc",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/category/0x71"
+      ]
+    },
+    "fixture/category/0x72": {
+      "source_basename": "SYNTHETIC-TEXT.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 10
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60004
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "75d3c362cfe09dabd29b5bf6005fe5243ea1fdaee2b1310d4a53eeedad7d705e",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/category/0x72"
+      ]
+    },
+    "fixture/category/0x73": {
+      "source_basename": "SYNTHETIC-TEXT.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 10
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60005
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "190c9ce671368eede2cc45059e484f3391a190a991ddfed5d9938fe1e0c3b7d4",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/category/0x73"
+      ]
+    },
+    "fixture/category/0x74": {
+      "source_basename": "SYNTHETIC-TEXT.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 10
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60006
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "f3c64b64cea4a8cdff735ea3bcfee94188ea5d10b79e9dd902f04c67f3246bf1",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/category/0x74"
+      ]
+    },
+    "fixture/category/0x75": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60007
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "15c33cebf5320cc8c0891280270dc1b1c912b67e7b5e1e5a137e3c61a9bf6c03",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/category/0x75"
+      ]
+    },
+    "fixture/topic/60001": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60008
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "e594c45a632554855d4ae4d2d6c1b788007a5dcaf428d07e46a05c6012441791",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/topic/60001"
+      ]
+    },
+    "fixture/topic/60002": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60009
+      },
+      "language_id": 1033,
+      "raw_length": 29,
+      "raw_sha256": "a4d9452f75c99937b3c1b531beb2169e09efae0505284dd5110e125c71f2e39d",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/topic/60002"
+      ]
+    },
+    "fixture/topic/60003": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60010
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "1210097218714763f59172dbba4ce2a9e255d2eb97a81a20431909f791e83494",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/topic/60003"
+      ]
+    },
+    "fixture/topic/60004": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60011
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "7b6608d3adc3db24f8863edb3e137b2ef9e83428e8559ac4099e128e7ba074ed",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/topic/60004"
+      ]
+    },
+    "fixture/topic/60005": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60012
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "87628513f9b12930e62c516b672e536edce318d34e0ee7c59c5fb51f992d5143",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/topic/60005"
+      ]
+    },
+    "fixture/topic/60006": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60013
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "a77d441fd7797108ee199049f731f54989f064e26afb7542ed0bd799ba02e7be",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/topic/60006"
+      ]
+    },
+    "fixture/topic/60007": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60014
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "4501e80e634db384647abb0f95443897a027bd0a7ccb9f0032a31306d72092e2",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/topic/60007"
+      ]
+    },
+    "fixture/image/1": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60015
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "5239f23cc6d92143f298bfdf69de79efaf5f32976c9e3e7200c5e2cb59fecaf6",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/image/1"
+      ]
+    },
+    "fixture/image/2": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60016
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "dbdc16a4c710800a6c97d7e5ddf18a304e6e744f58b8544eeedf52e0caeb7e05",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/image/2"
+      ]
+    },
+    "fixture/image/3": {
+      "source_basename": "SYNTHETIC-UI.DLL",
+      "source_sha256": "3ed3ca5ce6af53cc945e79c5ff919d1624550ade0e85fa651626ac7074961105",
+      "resource_type": {
+        "kind": "numeric",
+        "value": 6
+      },
+      "resource_id": {
+        "kind": "numeric",
+        "value": 60017
+      },
+      "language_id": 1033,
+      "raw_length": 30,
+      "raw_sha256": "a88dc31bb60bc8975eaf320576f24a8031c36e3e565dfbbebea79dc986e690b3",
+      "decoder": "e37-synthetic-utf8-v1",
+      "encoding": "utf-8",
+      "mapping_citations": [
+        "synthetic:E37:fixture/image/3"
+      ]
+    }
+  },
+  "generated_at": "not-deterministic"
+}
