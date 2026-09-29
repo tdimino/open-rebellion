@@ -63,6 +63,7 @@ Every research record uses one of these version-1 statuses:
 | `decoded` | A later evidence-backed decoder has losslessly interpreted the raw bytes. |
 | `bound` | A later reviewed mapping binds the record to a canonical subject. |
 | `documented_alias` | A later reviewed mapping proves that the record is an alias. |
+| `source_proven_unused` | Connected source traversal proves the record has no admitted selector for this profile; it is accounted evidence, not an alias or unresolved guess. |
 | `unresolved` | A specific attempted interpretation remains open. |
 
 An `unresolved` record must contain both a nonempty `reason` and a nonempty
@@ -339,8 +340,8 @@ The seven original commands retain this order and role:
 
 | Ordinal | Command | Combined-profile result |
 |---:|---:|---|
-| 0 | `0x6f` | Complete aggregate index over 347 admitted rows; includes one source-proven family-`0x08` fleet topic with no filtered category. |
-| 1 | `0x70` | 200 context-filtered system/world-location rows. |
+| 0 | `0x6f` | Complete aggregate potential membership over 347 catalog candidates; live world/viewer admission may remove systems. Includes one source-proven family-`0x08` fleet topic with no filtered category. |
+| 1 | `0x70` | 200 potential system/world-location rows in source-proven packed-key order; live context filtering selects a subset. |
 | 2 | `0x71` | 38 capital/fighter class rows. |
 | 3 | `0x72` | 14 facility rows; the three facility tables remain one original selector. |
 | 4 | `0x73` | 15 admitted mission-definition rows from the `[0x40,0x80)` source table. |
@@ -358,10 +359,13 @@ body-key-plus-`0x1000` lookup without changing the body identity.
 
 The complete owned traversal accounts for 25 mission rows as 15 bound and 10
 source-proven unused, and for two fleet rows as one aggregate-only binding and
-one source-proven-unused placeholder. It closes 16 of E40's 17 residual text
-resources and 32 of its 34 residual lookup strings. Text resource `7176` and
-lookups `7188`/`11284` have no admitted source selector and are explicitly
-`source_proven_unused`; they carry zero references and no open next-proof gate.
+one source-proven-unused placeholder. The text accounting is exact:
+**348 decoded ENCYTEXT resources = 347 bound + 1 source-proven-unused resource
+`7176`; zero aliases and zero unresolved text records**. The traversal closes
+16 of E40's 17 residual text resources and 32 of its 34 residual lookup
+strings. Text resource `7176` and lookups `7188`/`11284` have no admitted source
+selector and are explicitly `source_proven_unused`; they carry zero references
+and no open next-proof gate.
 All 29 formerly residual EData files are selected by other bound lookup
 identities. Shared files remain art resources rather than topic aliases.
 
@@ -374,20 +378,104 @@ separately marked `publication_deferred`: it is inventory-only under
 The representation closes the source identities but exposes a schema
 contradiction: 346 bound rows have one filtered category, while source identity
 `0x08000004` is aggregate-only and `0x6f` is an index rather than topic
-membership. The approved design currently requires `category_id` and one
-category per topic. The profile therefore names
-`aggregate-only-topic-membership` as a design-revision blocker; E09 must revise
-the approved design and fixtures to represent or explicitly scope this topic
-without inventing a category. Source and canonical-topic identities remain
-separate, aliases are explicit, and character source family remains a
-discriminator.
+membership. The previously approved design requires `category_id` and one
+category per topic. The approved E09 wire contract therefore specifies separate
+aggregate and filtered membership arrays, with no membership field on the
+canonical topic. Their
+`topic_ids` retain source-proven potential membership and stable tie order and
+are not frozen display order or a claim that every system exists in a live
+world. The 147 definition candidates retain recovered registration/container
+order; the 200-system tail uses ascending packed family-qualified DatId order.
+That shape preserves the fleet topic without
+inventing a category and keeps source
+bindings, membership, and ordering independent. Runtime aliases are absent from
+the approved v1 wire contract: an `aliases` field is rejected. Historical
+research status `documented_alias` remains available, but this profile has zero
+topic/body aliases and shared artwork is not one. Future runtime alias support
+requires a new schema version. The full comparison and
+validation inventory is in
+[`encyclopedia-schema-decisions.md`](encyclopedia-schema-decisions.md).
 
-The profile deliberately records `ready_for_schema_freeze: false`. Accepted E55
-commit `9ae03be852212fa2ff031f8d2d065a20c2767575` recovers the localized category
-labels but is not integrated into this E54 tree; E09 must consume that accepted
-evidence as well as resolve the aggregate-only design blocker. Command `0x73`
-and residual resource accounting are closed. The raw-ID versus runtime-class
-adapter remains a downstream application-boundary gate.
+The same approved E09 wire contract keeps the serialized catalog/manifest an
+immutable base bundle. Base image IDs are canonical `edata:<number>` values whose descriptors
+and `source_ref` entries close through that manifest. Effective mod art is a
+Rust-only DTO, not a catalog-schema definition. Its identity reversibly encodes
+the exact original mod-name UTF-8 bytes without normalization or case folding:
+`mod:v1:<lowercase-hex-UTF8-name>:encyclopedia/assets/<path>`. Thus `demo`
+becomes `mod:v1:64656d6f:encyclopedia/assets/test.png`, while `MyMod` becomes
+`mod:v1:4d794d6f64:encyclopedia/assets/test.png`. Empty, delimiter-bearing,
+case-distinct and normalization-distinct names remain reversible. A
+`mod_snapshot` fact retains
+the original name, path and inspected bytes; it never
+fabricates a source record or changes the base manifest/file digests. The
+contract's `validate_bundle(base, manifest, files)` performs source-profile and
+base selector/binding checks. Its separate
+`validate_effective_catalog(catalog, image_facts)` checks effective reference
+closure, retained bytes/facts and budgets without reapplying base selector-shape
+proof to permitted content replacements. Protected binding tuples remain
+immutable. `validate_bundle` derives immutable source-backed topic capability
+from the binding and requires its base localized selector shapes to agree. A
+binding variant `viewer_faction` yields that exact topic capability. An overlay
+faction pair is atomic and permitted by that topic capability, even for
+a newly added language with no base localized record. It can restore a pair
+after an earlier static/null override, but no overlay can grant or remove the
+capability and a static base topic can never gain it. Rebuilding without a mod
+restores the base selector. Exact
+identity grammars, collision rules and cases are in the decision note, not the
+base catalog schema.
+
+There is no mod-name length validity rule or every-enabled-mod preflight. Only
+an actual encyclopedia identity allocation performs checked
+`7 + 2*UTF8_len(name) + 1 + path_len` arithmetic, reserves its generated ID and
+retained original name/path buffers under the one global candidate byte budget,
+then allocates. Arithmetic overflow is `identity_length_overflow`; insufficient
+budget is `resource_limit:retained_bytes`. The confined path remains at most 256
+ASCII bytes and is resolved under the already discovered `ModManifest.path`;
+the encoded name never supplies a filesystem root.
+
+IndigoCompass coordinator-approved the E09 v1 wire contract on 2026-09-29.
+Coordinator-verified E09 closure enables E37's synthetic file fixtures. The
+embedded profile deliberately remains `ready_for_schema_freeze: false`; that is
+legacy embedded profile readiness pending E10 synchronization to the approved
+contract, not a circular prerequisite for wire approval or E37. Production
+readiness remains gated by E31, E32, and E51. Accepted E55 commit
+`9ae03be852212fa2ff031f8d2d065a20c2767575` is present in this integration and
+closes the source provenance for all seven localized labels, but its fragment
+is not yet merged into the embedded root profile. That existing
+`category-label-selectors` blocker also remains until the same reviewed
+synchronization. E09 now closes the current-profile comparator decision with
+source-proven stable insertion, source-proven potential registry order, and two
+specific fresh 247-row observations; the stale embedded
+`topic-title-comparator-evidence` blocker remains only until E10 synchronizes the
+reviewed metadata. The declared high-byte/Unicode extension is not original CRT
+parity.
+Command `0x73` and residual resource accounting are closed.
+The raw-ID versus runtime-class adapter remains a downstream application-boundary
+gate, not a source/schema blocker.
+
+### Coordinator-approved v1 wire resource budgets
+
+Measured inputs for the identified profile are 347 topics; a 1,015-byte
+maximum decoded UTF-8 record and 99,113 decoded bytes across all 348 records;
+187 images totaling 15,161,638 bytes with an 81,080-byte, 400×200 / 80,000-pixel
+maximum; and metadata inputs no deeper than seven JSON containers. No complete
+catalog or manifest exists, so no output size is represented as measured.
+
+The approved E09 wire contract retains 10,000 topics, 1 MiB of UTF-8 per
+localized body, 32 MiB and 16,000,000 pixels per image, and 128 MiB aggregate staged/effective
+image bytes. It adds pre-parse limits of 64 MiB/depth 16 for a catalog,
+32 MiB/depth 16 for a manifest, and 16 MiB/depth 8 for one overlay, plus one
+512 MiB global retained-byte cap across live base/mod buffers, the single
+serialized candidate, its in-flight reads, and actual generated identity/name/
+path UTF-8 buffers. Reserve before each read/chunk/allocation using checked
+exact sizes; count an actual shared allocation once and a copy again; release failed
+candidate reservations while retaining the old live state, or publish the new
+state before releasing the old. The 128 MiB staged/effective asset-set limit
+and per-file/parser/decode limits are orthogonal rather than partitions of this
+cap. Decoded/GPU/object allocations are excluded; this is not a
+total-process-memory promise. Exact
+measurement provenance, headroom, and boundary ownership are in the E09
+decision note; these values are part of the approved v1 wire contract.
 
 The opt-in reconciliation gate reads the owned sources without modifying them
 and compares all source, text, lookup, and image identities to the profile:
@@ -427,6 +515,7 @@ The following source paths are connected dataflow, not nearby calls:
 |---|---|
 | `FUN_00421c70` → shell `+0x474`; `FUN_00422620` lines 78–272 | The shell starts with a null master topic collection. `FUN_00422620` constructs and populates it only while null; later calls do not refresh it. |
 | `FUN_0051caf0` → `FUN_00567800` → `FUN_0051cab0`; `FUN_004f31b0` / `FUN_004f6010` | Master rows come from registry definitions plus a viewer-side system iterator, not from a category-time walk of live campaign objects. |
+| `FUN_00585b70` → `FUN_005f5440` / `FUN_005f4f10`; registry vtable `0x0066a220 + 0x08` → `FUN_00585f50` → `FUN_005843d0`; `FUN_00584570` | A system container stores low-24-bit DatId at `+0x18` and family at `+0x20`. The registry comparator orders `(family << 24) | DatId`; insertion maintains `+0x10` as its in-order successor and the live iterator follows that link. Thus packed-key order, not SYSTEMSD row order, is the source-proven potential order. |
 | `FUN_0045ddc0` → `FUN_0045f100` | Builds the seven selectors at fixed x positions. Changed, nonforced family selection in index mode filters the retained master cache by source-identity high byte. |
 | `FUN_0045f100` → `FUN_00608280` | Command `0x6f` or an eligible forced change binds shell `+0x474` into the list control and refreshes it. It does not clear or manufacture an empty collection. |
 | `FUN_0060a790(..., 2)` → vtable `0x0066e148 + 4` → `FUN_0060a890` → `FUN_00626ad0`; insertion in `FUN_005f59f0` | Both master and filtered collections are ordered doubly linked lists sorted by case-insensitive narrow-byte display text. Comparator-equal rows retain source insertion order. |
@@ -448,10 +537,17 @@ Displayed selector order is fixed by control position, not map iteration:
 | 5 | `0x74` | 260 | filter `[0x10, 0x14)` |
 | 6 | `0x75` | 312 | filter `[0x30, 0x40)` |
 
-In this E54 integration base the localized selector labels remain unjoined, so
-stable keys are commands and ranges rather than guessed names. Accepted E55
-commit `9ae03be852212fa2ff031f8d2d065a20c2767575` supplies the label evidence for
-downstream integration without being part of this worktree. Master definition enumeration admits
+Stable keys remain commands and ranges rather than guessed names. Accepted E55
+commit `9ae03be852212fa2ff031f8d2d065a20c2767575` proves that all seven displayed
+labels come from language-qualified `TEXTSTRA.DLL` selectors; it also proves
+that display order differs from source construction order and that the
+recovered source has no alternate label selector. E09 consumes that evidence
+in its approved wire contract. A present empty label remains empty. If both
+requested and default labels are absent, the proposed consumer disables that category with a
+diagnostic instead of showing the original empty label; this is a deliberate
+robustness divergence, and all seven current labels are present. The root
+profile remains intentionally unsynchronized until review. Master definition
+enumeration admits
 `[0x08,0x20)`, `[0x22,0x40)`, and `[0x50,0x80)`; the last range additionally
 requires resolved definition `+0x5c == 0`. Thus the broader outer selectors do
 not make `[0x20,0x22)` or `[0x40,0x50)` rows appear in this master cache. System
@@ -464,7 +560,72 @@ key before insertion.
 case when no locale is active and otherwise maps bytes through the current CRT
 case map before byte comparison; this is not locale collation. `FUN_005f59f0`
 walks past comparator-equal rows, so ties preserve definition-registry order and
-then system-iterator order.
+then the packed-key system iterator order. The latter is independently connected:
+`FUN_00585b70` constructs keyed containers, the registry comparator
+`FUN_00585f50` gets both keys from `FUN_005843d0`, generic insertion
+`FUN_005f4f10` threads `+0x10` in order, and `FUN_00584570` advances through that
+thread. The 200-candidate packed order differs from SYSTEMSD `source_row` order
+at 180 positions. Each of the two live 100-system iterator sequences is exactly
+the packed order projected to that run's admitted membership.
+
+The approved E09 wire contract stores an explicit `topic_sort` rule and treats
+each view's `topic_ids` as membership plus registry tie-break, not display order. Runtime
+processing applies localized overlay maps in resolved mod order, validates all
+retained records as complete, selects the whole requested/default record,
+resolves that record's art, and only then sorts. Thus added/deleted translations
+and mod title changes may reorder rows while default edits never leak into a
+surviving requested record and category tab order remains fixed. E44 owns these
+consumer pipeline tests and complete conformance against the pinned lowercase
+table. The proposed deterministic port strictly
+encodes Windows-1252 titles, ASCII-lowercases `A..Z` while preserving high
+bytes, and places unrepresentable Unicode titles afterward using the pinned
+Unicode 15.1.0 full lowercase mapping independently per scalar, encoded as
+UTF-8 without normalization. A consumer must pin the mapping or prove Rust
+`char::to_lowercase` matches it; whole-string contextual lowercasing is not the
+contract. Unsigned byte comparison and stable registry tie order complete the
+rule.
+
+E51 supplied two specific fresh runs, one with raw viewer selector 1 and one
+with selector 2. Each process recorded LCID `0x0409` and code page 1252 in two
+equal complete snapshots; each cache contained 247 admitted rows—147 definition
+candidates and 100 systems—with the same canonical-key/identity sequences. The
+private selected-title join maps all 247 rows by unique canonical resource key,
+then reproduces all 247 cache positions and all six filtered projections under
+ASCII folding with zero folded ties. The runtime packed `+0x68` identity agrees
+with accepted source identity for all 100 systems, but its low bits are not a
+definition DatId: 141 of 147 definition rows differ. Preserve the original
+family-qualified `{family, DatId}` and DLL/resource identities; never renumber
+from a cache handle. Player UI continues to expose names, text, and art, not
+these evidence keys.
+
+This closes the current-profile comparator choice while retaining exact limits.
+The two runs do not prove a universal 100-of-200 admission, scenario-size cause,
+faction cause, general CP1252 folding, or original Unicode behavior. A full
+256-byte fold map, original Unicode parity, and manufactured equal-title runtime
+fixtures are not prerequisites: v1 deliberately preserves non-ASCII CP1252
+bytes, pins the documented Unicode extension, and tests renamed/equal mod titles
+synthetically. A future source profile with different original-title bytes must
+carry a separately reviewed sort rule.
+
+The immutable catalog therefore carries 347 catalog candidates and potential
+membership. The two observed runs admitted 247 rows; they are regression
+observations, not a wire invariant. Source proves the original selected-view and
+type-`0xf2` ancestry predicate, but no existing Open Rebellion mapping to world,
+viewer, exploration, population or faction fields is proven.
+
+E31 (`orlocal-818.31`) owns the source-to-world/viewer admission mapping,
+instantiated system membership, source-ancestry predicate adaptation and
+world-epoch re-evaluation. It hands E44 a typed admission snapshot containing
+the epoch/viewer plus ordered admitted `BindingKey`s and `AdmissionFact`s. An
+absent instantiated system is not admitted. With missing required source-equivalent
+facts, the original-parity surface remains unavailable with an actionable
+diagnostic; it must not show all 200 candidates or hard-code the observed 100.
+E44 (`orlocal-818.46`) consumes those admitted IDs/facts and remains a pure
+content/language/sort resolver with no world dependency. E32
+(`orlocal-818.32`) requires adapter evidence before production enablement; that
+runtime evidence is not a wire-schema freeze prerequisite. A diagnostic
+candidate inspector may be labeled separately. A0 full-matrix acceptance
+remains outside E09.
 
 ### Selection, routing, and typed application boundary
 
@@ -479,8 +640,9 @@ then system-iterator order.
 4. A changed, nonforced family command in index mode rebuilds and binds the
    sorted filtered projection.
 
-The application boundary must use closed types and pure rules. It must not
-accept expressions, scripts, or mod-supplied predicates:
+The following closed types and pure rules describe recovered **source
+semantics**, not an already implemented port mapping. They must not accept
+expressions, scripts, or mod-supplied predicates:
 
 ```text
 ViewerFaction = Alliance | Empire
@@ -497,6 +659,19 @@ next_enabled_topic(direction, current) -> Stay | Topic(TopicKey)
 art_lookup_key(cached_identity, viewer, system_picture) -> Result<EncybmapKey, UnresolvedEvidence>
 include_system(ancestry) -> ancestry == NoTypeF2
 ```
+
+E31 adapts real port state to those source-equivalent facts and publishes:
+
+```text
+BindingKey = { family, dat_id, variant }
+AdmissionFact = DefinitionPresent | InstantiatedSystem { selected_view, ancestry }
+AdmissionSnapshot = { world_epoch, viewer, admitted: [(BindingKey, AdmissionFact)] }
+```
+
+Only a complete single-epoch snapshot is valid. Absence from instantiated
+system membership means not admitted; absence of a required selected-view or
+ancestry fact is an unavailable diagnostic, not a guessed boolean. E44 accepts
+the snapshot as data and never reads `GameWorld`.
 
 Required inputs are viewer side, retained shell cache, selected/requested
 command, force, encyclopedia mode, typed class/entity identity, resolved
@@ -605,14 +780,30 @@ replacement output, compares the original DLL bytes before and after, and writes
 only metadata to ignored `.artifacts/encyclopedia/E02-owned-decoder.json`.
 Original prose and decoded text are never committed.
 
+The coordinator approved the E09 v1 wire contract on 2026-09-29.
+Coordinator-verified E09 closure enables E37 (`orlocal-818.43`) to turn the file
+cases into the shared synthetic conformance corpus. E10 (`orlocal-818.10`)
+subsequently synchronizes the embedded profile, Go validator and 347-candidate
+producer to that approved contract; the legacy
+`ready_for_schema_freeze: false` profile flag does not prevent E09-to-E37.
+E11 (`orlocal-818.11`) parses the strict wire types. E31
+(`orlocal-818.31`) owns source-to-world/viewer admission mapping and emits typed
+admitted `BindingKey`s/admission facts; E44 (`orlocal-818.46`) consumes them as a
+world-independent content/language/sort resolver with no world dependency. E32
+(`orlocal-818.32`) requires adapter evidence for production enablement, not for
+wire-contract approval. E09 does not implement or claim those gates. Production
+readiness remains gated by E31, E32, and E51. E42 publication and later
+native/browser consumers remain downstream of their verified results.
+
 ## Non-claims
 
 The profile establishes lossless byte decoding, 347 reviewed bindings, and
-complete source/resource accounting only for its exact source identities. The
-semantic checkpoint establishes only the bounded static rules named above; it
-does not integrate accepted E55 localized labels, resolve the aggregate-only
-topic's design representation, freeze a runtime schema, recover the deferred
-alternate Luke predicate, or provide original runtime/visual acceptance.
-Deferred alternate inventory is not a runtime binding. Inventory and research
-records are not a runtime catalog and do not by themselves advance P35 or
-strict RE-ENC-01 acceptance.
+complete source/resource accounting only for its exact source identities. E55
+establishes the seven label selectors, and E09 records a concrete response to
+the aggregate-only topic contradiction, but neither is merged into profile
+readiness by this wire approval. This document freezes only the v1 wire
+contract; it does not mark the embedded profile ready, recover the deferred
+alternate predicate, authorize production consumers, or provide original
+runtime/visual acceptance. Deferred alternate inventory is not a
+runtime binding. Inventory and research records are not a runtime catalog and
+do not by themselves advance P35 or strict RE-ENC-01 acceptance.
