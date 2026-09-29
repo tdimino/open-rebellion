@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -123,6 +124,195 @@ func TestEncyclopediaFocusedModeNeverInvokesMediaTools(t *testing.T) {
 	}
 }
 
+func TestCanonicalEncyclopediaFocusedVerifyNeverInvokesMediaTools(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "encyclopedia")
+	copyTestEncyclopediaRuntimeBundle(t, output)
+	mediaCalls := 0
+	failingMedia := func(string, ...string) ([]byte, error) {
+		mediaCalls++
+		return nil, io.ErrUnexpectedEOF
+	}
+	var stdout, stderr bytes.Buffer
+	if err := runCLIWithMedia([]string{
+		"--encyclopedia-canonical-only",
+		"--verify",
+		"--source", filepath.Join(t.TempDir(), "missing-install"),
+		"--edata", filepath.Join(t.TempDir(), "missing-edata"),
+		"--encyclopedia-canonical-output", output,
+	}, &stdout, &stderr, nil, nil, failingMedia); err != nil {
+		t.Fatalf("canonical verify CLI error = %v; stderr = %s", err, stderr.String())
+	}
+	if mediaCalls != 0 {
+		t.Fatalf("canonical verification invoked media tools %d times", mediaCalls)
+	}
+}
+
+func TestEncyclopediaFocusedModesAreMutuallyExclusive(t *testing.T) {
+	err := runCLIWithMedia(
+		[]string{"--encyclopedia-report-only", "--encyclopedia-canonical-only"},
+		io.Discard,
+		io.Discard,
+		nil,
+		nil,
+		func(string, ...string) ([]byte, error) { return nil, io.ErrUnexpectedEOF },
+	)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("focused mode conflict error = %v", err)
+	}
+}
+
+func TestFullStageRejectsPartialEncyclopediaBeforeMediaPrerequisites(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "ENCYTEXT.DLL"), []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mediaCalls := 0
+	var stdout bytes.Buffer
+	err := runCLIWithMedia(
+		[]string{
+			"--source", source,
+			"--edata", filepath.Join(t.TempDir(), "missing-edata"),
+			"--encyclopedia-canonical-output", filepath.Join(t.TempDir(), "encyclopedia"),
+		},
+		&stdout,
+		io.Discard,
+		nil,
+		nil,
+		func(string, ...string) ([]byte, error) {
+			mediaCalls++
+			return nil, io.ErrUnexpectedEOF
+		},
+	)
+	if err == nil {
+		t.Fatal("partial encyclopedia input was accepted")
+	}
+	if mediaCalls != 0 {
+		t.Fatalf("partial encyclopedia input invoked media tools %d times", mediaCalls)
+	}
+}
+
+func TestOwnedBuiltCanonicalToolWorksFromExternalDirectoryWithoutExecutable(t *testing.T) {
+	ownedRoot := os.Getenv("REBELLION_ENCYCLOPEDIA_TEST_SOURCE")
+	if ownedRoot == "" {
+		t.Skip("set REBELLION_ENCYCLOPEDIA_TEST_SOURCE to an owned installation root")
+	}
+	ownedRoot, err := filepath.Abs(ownedRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := testEmbeddedCatalogProfile(t)
+	flatSource := filepath.Join(t.TempDir(), "flat-source")
+	if err := os.MkdirAll(flatSource, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range profile.Sources {
+		if source.Kind == encyclopediaSourceEXE {
+			continue
+		}
+		searchRoot := ownedRoot
+		if source.Kind == encyclopediaSourceDAT {
+			if gdata, found := findCaseInsensitiveDirectory(t, ownedRoot, "GData"); found {
+				searchRoot = filepath.Join(ownedRoot, gdata)
+			}
+		}
+		name, found := findCaseInsensitiveFile(t, searchRoot, source.Basename)
+		if !found {
+			t.Fatalf("owned source missing %s", source.Basename)
+		}
+		contents, err := os.ReadFile(filepath.Join(searchRoot, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(flatSource, source.Basename), contents, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(flatSource, "REBEXE.EXE")); !os.IsNotExist(err) {
+		t.Fatalf("flattened source unexpectedly contains REBEXE.EXE: %v", err)
+	}
+	edataName, found := findCaseInsensitiveDirectory(t, ownedRoot, "EData")
+	if !found {
+		t.Fatal("owned source missing EData")
+	}
+	edataRoot := filepath.Join(ownedRoot, edataName)
+	beforeFlatSource := snapshotTestTree(t, flatSource)
+	beforeEData := snapshotTestTree(t, edataRoot)
+
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binaryPath := filepath.Join(t.TempDir(), "stage-ui-assets")
+	build := exec.Command("go", "build", "-o", binaryPath, "./tools/stage-ui-assets")
+	build.Dir = repoRoot
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build stage-ui-assets: %v\n%s", err, output)
+	}
+	externalWorkingDirectory := t.TempDir()
+	outputRoot := filepath.Join(t.TempDir(), "canonical")
+	run := func(extra ...string) []byte {
+		t.Helper()
+		args := []string{
+			"--encyclopedia-canonical-only",
+			"--source", flatSource,
+			"--edata", edataRoot,
+			"--encyclopedia-canonical-output", outputRoot,
+		}
+		args = append(args, extra...)
+		command := exec.Command(binaryPath, args...)
+		command.Dir = externalWorkingDirectory
+		combined, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("built canonical tool: %v\n%s", err, combined)
+		}
+		return combined
+	}
+	run()
+	first := snapshotTestTree(t, outputRoot)
+	manifestBytes := readTestFile(t, filepath.Join(outputRoot, encyclopediaManifestFilename))
+	manifest, err := parseEncyclopediaManifest(manifestBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := readTestEncyclopediaResearchReport(t, outputRoot)
+	if report.Artwork == nil {
+		t.Fatal("canonical output omitted local artwork evidence")
+	}
+	if len(report.Artwork.StagedAssets) != 187 {
+		t.Fatalf("staged artwork count = %d, want 187", len(report.Artwork.StagedAssets))
+	}
+	if _, runtimeFile := manifest.Files["assets/EDATA.192"]; runtimeFile {
+		t.Fatal("deferred unreferenced EDATA.192 entered the runtime manifest")
+	}
+	if _, err := os.Stat(filepath.Join(outputRoot, "assets", "EDATA.192")); err != nil {
+		t.Fatalf("unreferenced EDATA.192 was not retained as local evidence: %v", err)
+	}
+	run()
+	if diff := diffTestTree(first, snapshotTestTree(t, outputRoot)); diff != "" {
+		t.Fatalf("identical built-tool rerun changed canonical output:\n%s", diff)
+	}
+	run("--force")
+	if diff := diffTestTree(first, snapshotTestTree(t, outputRoot)); diff != "" {
+		t.Fatalf("forced identical built-tool rerun changed canonical output:\n%s", diff)
+	}
+	verify := exec.Command(binaryPath,
+		"--encyclopedia-canonical-only", "--verify",
+		"--source", filepath.Join(t.TempDir(), "missing-source"),
+		"--edata", filepath.Join(t.TempDir(), "missing-edata"),
+		"--encyclopedia-canonical-output", outputRoot,
+	)
+	verify.Dir = externalWorkingDirectory
+	if combined, err := verify.CombinedOutput(); err != nil {
+		t.Fatalf("source-free built-tool verify: %v\n%s", err, combined)
+	}
+	if diff := diffTestTree(beforeFlatSource, snapshotTestTree(t, flatSource)); diff != "" {
+		t.Fatalf("built tool changed flattened source bytes:\n%s", diff)
+	}
+	if diff := diffTestTree(beforeEData, snapshotTestTree(t, edataRoot)); diff != "" {
+		t.Fatalf("built tool changed owned EData bytes:\n%s", diff)
+	}
+}
+
 func TestEncyclopediaReportOutputFlagRequiresFocusedMode(t *testing.T) {
 	mediaCalls := 0
 	err := runCLIWithMedia(
@@ -137,24 +327,52 @@ func TestEncyclopediaReportOutputFlagRequiresFocusedMode(t *testing.T) {
 		},
 	)
 	if err == nil || !strings.Contains(err.Error(), "--encyclopedia-report-only") {
-		t.Fatalf("cross-mode encyclopedia output error = %v", err)
+		t.Fatalf("cross-mode encyclopedia report output error = %v", err)
 	}
 	if mediaCalls != 0 {
 		t.Fatalf("cross-mode rejection invoked media tools %d times", mediaCalls)
 	}
 }
 
-func TestEncyclopediaEDataFlagRequiresFocusedMode(t *testing.T) {
+func TestCanonicalEncyclopediaOutputFlagIsAvailableToFullStage(t *testing.T) {
+	mediaCalls := 0
+	err := runCLIWithMedia(
+		[]string{"--encyclopedia-canonical-output", filepath.Join(t.TempDir(), "canonical")},
+		io.Discard,
+		io.Discard,
+		nil,
+		nil,
+		func(string, ...string) ([]byte, error) {
+			mediaCalls++
+			return nil, io.ErrUnexpectedEOF
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "cutscene extraction requires ffmpeg") {
+		t.Fatalf("full-stage encyclopedia output error = %v", err)
+	}
+	if mediaCalls != 1 {
+		t.Fatalf("full stage media calls = %d, want 1 after absent encyclopedia warning", mediaCalls)
+	}
+}
+
+func TestEncyclopediaEDataFlagIsAvailableToFullStage(t *testing.T) {
+	mediaCalls := 0
 	err := runCLIWithMedia(
 		[]string{"--edata", t.TempDir()},
 		io.Discard,
 		io.Discard,
 		nil,
 		nil,
-		func(string, ...string) ([]byte, error) { return nil, io.ErrUnexpectedEOF },
+		func(string, ...string) ([]byte, error) {
+			mediaCalls++
+			return nil, io.ErrUnexpectedEOF
+		},
 	)
-	if err == nil || !strings.Contains(err.Error(), "--encyclopedia-report-only") {
-		t.Fatalf("cross-mode --edata error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "cutscene extraction requires ffmpeg") {
+		t.Fatalf("full-stage --edata error = %v", err)
+	}
+	if mediaCalls != 1 {
+		t.Fatalf("full stage media calls = %d, want 1 after absent encyclopedia warning", mediaCalls)
 	}
 }
 

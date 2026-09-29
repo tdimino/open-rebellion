@@ -752,6 +752,57 @@ func writeSyntheticEncyclopediaArtInputs(t *testing.T, sourceRoot, edataRoot str
 	}
 }
 
+func TestVerifiedCanonicalSourceSnapshotsSurviveEqualLengthPathReplacement(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	originalTitles := buildTestPE32WithResource(t, rtStringResource, 1, 1033, stringBundle(map[int]string{0: "Alpha"}))
+	replacementTitles := buildTestPE32WithResource(t, rtStringResource, 1, 1033, stringBundle(map[int]string{0: "Bravo"}))
+	originalLookups := buildTestPE32WithResource(t, rtStringResource, 1, 1033, stringBundle(map[int]string{0: "EDATA.001"}))
+	replacementLookups := buildTestPE32WithResource(t, rtStringResource, 1, 1033, stringBundle(map[int]string{0: "EDATA.002"}))
+	if len(originalTitles) != len(replacementTitles) || len(originalLookups) != len(replacementLookups) {
+		t.Fatal("test replacements must preserve source length")
+	}
+	writeTestFile(t, filepath.Join(root, "TEXTSTRA.DLL"), originalTitles)
+	writeTestFile(t, filepath.Join(root, "ENCYBMAP.DLL"), originalLookups)
+	edata := filepath.Join(root, "EData")
+	if err := os.MkdirAll(edata, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(edata, "EDATA.001"), buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24}))
+
+	verified, err := verifyCanonicalEncyclopediaSources(root, encyclopediaSourceProfile{
+		ProfileID: "synthetic-snapshot-profile",
+		Sources: []encyclopediaProfileSource{
+			{Role: "display_strings", Basename: "TEXTSTRA.DLL", Kind: encyclopediaSourceDLL, RawLength: uint64(len(originalTitles)), RawSHA256: byteSHA256(originalTitles)},
+			{Role: "encyclopedia_art_lookup", Basename: "ENCYBMAP.DLL", Kind: encyclopediaSourceDLL, RawLength: uint64(len(originalLookups)), RawSHA256: byteSHA256(originalLookups)},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(root, "TEXTSTRA.DLL"), replacementTitles)
+	writeTestFile(t, filepath.Join(root, "ENCYBMAP.DLL"), replacementLookups)
+
+	titleSnapshot := verified.snapshots["display_strings"]
+	titles, err := decodeCanonicalDisplayStrings(titleSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := titles[0]; got != "Alpha" {
+		t.Fatalf("verified title snapshot decoded %q after path replacement, want Alpha", got)
+	}
+
+	lookupSnapshot := verified.snapshots["encyclopedia_art_lookup"]
+	artwork, err := prepareEncyclopediaArtworkFromLookupSnapshot(lookupSnapshot, edata, defaultEncyclopediaImageLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := artwork.Lookup.Lookups[1033][0]; got != "EDATA.001" {
+		t.Fatalf("verified lookup snapshot decoded %q after path replacement, want EDATA.001", got)
+	}
+}
+
 func TestEncyclopediaArtStagePreservesGapsUnreferencedBytesAndLookupEvidence(t *testing.T) {
 	source := t.TempDir()
 	edata := filepath.Join(source, "EData")
@@ -1235,6 +1286,22 @@ func TestEncyclopediaArtStageProtectsResolvedSymlinkedGDataRoot(t *testing.T) {
 	before := snapshotTestTree(t, gdataTarget)
 	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err == nil || !strings.Contains(err.Error(), "path_collision") {
 		t.Fatalf("symlinked GData target accepted as output: %v", err)
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, gdataTarget)); diff != "" {
+		t.Fatalf("collision refusal changed original GData target:\n%s", diff)
+	}
+}
+
+func TestCanonicalEncyclopediaStageProtectsResolvedSymlinkedGDataRoot(t *testing.T) {
+	source := t.TempDir()
+	gdataTarget := t.TempDir()
+	if err := os.Symlink(gdataTarget, filepath.Join(source, "GData")); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTestTree(t, gdataTarget)
+	err := stageEncyclopedia(source, t.TempDir(), gdataTarget, true, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "path_collision") {
+		t.Fatalf("symlinked GData target accepted as canonical output: %v", err)
 	}
 	if diff := diffTestTree(before, snapshotTestTree(t, gdataTarget)); diff != "" {
 		t.Fatalf("collision refusal changed original GData target:\n%s", diff)

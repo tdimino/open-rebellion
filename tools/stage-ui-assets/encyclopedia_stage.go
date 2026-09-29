@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,6 +25,9 @@ const (
 	encyclopediaWriterGuardSuffix  = ".guard"
 	encyclopediaArtworkKind        = "encyclopedia-artwork-research"
 	encyclopediaArtworkVersion     = 1
+	encyclopediaCatalogFilename    = "catalog.json"
+	encyclopediaManifestFilename   = "manifest.json"
+	encyclopediaExtractorVersion   = "stage-ui-assets-v1"
 )
 
 type encyclopediaAssetUse string
@@ -49,10 +53,479 @@ type encyclopediaArtworkResearch struct {
 	StagedAssets  []encyclopediaStagedAsset   `json:"staged_assets"`
 }
 
+type preparedCanonicalEncyclopedia struct {
+	profile  encyclopediaSourceProfile
+	report   preparedEncyclopediaReport
+	catalog  encyclopediaCatalog
+	manifest encyclopediaManifest
+}
+
+type verifiedCanonicalSourceSnapshot struct {
+	basename string
+	bytes    []byte
+}
+
+type verifiedCanonicalEncyclopediaSources struct {
+	snapshots         map[string]verifiedCanonicalSourceSnapshot
+	observedDATHashes map[string]string
+}
+
+func stageEncyclopedia(sourceDir, edataDir, outputDir string, force bool, log io.Writer) error {
+	if strings.TrimSpace(edataDir) == "" {
+		edataDir = filepath.Join(sourceDir, "EData")
+	}
+	if log == nil {
+		log = io.Discard
+	}
+	resolvedSource, err := filepath.Abs(sourceDir)
+	if err != nil {
+		return fmt.Errorf("resolve encyclopedia source root: %w", err)
+	}
+	resolvedEData, err := filepath.Abs(edataDir)
+	if err != nil {
+		return fmt.Errorf("resolve encyclopedia EData root: %w", err)
+	}
+	fmt.Fprintf(log, "Encyclopedia source root: %s\nEncyclopedia EData root: %s\n", resolvedSource, resolvedEData)
+	protectedRoots := []string{"mods", edataDir}
+	if entries, err := os.ReadDir(sourceDir); err == nil {
+		for _, entry := range entries {
+			// Preserve the named path even when it is a symlink. The shared
+			// collision validator resolves it before comparing output roots.
+			if strings.EqualFold(entry.Name(), "GData") {
+				protectedRoots = append(protectedRoots, filepath.Join(sourceDir, entry.Name()))
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	_, err = stageEncyclopediaDirectory(encyclopediaDirectoryRequest{
+		OutputDir:   outputDir,
+		SourceRoots: []string{sourceDir, edataDir},
+		ModRoots:    protectedRoots,
+		Force:       force,
+		BuildCandidate: func(root string) error {
+			prepared, err := prepareCanonicalEncyclopedia(sourceDir, edataDir)
+			if err != nil {
+				return err
+			}
+			if err := writeEncyclopediaReportCandidate(root, prepared.report); err != nil {
+				return err
+			}
+			catalogBytes, err := marshalEncyclopediaCatalog(prepared.catalog)
+			if err != nil {
+				return err
+			}
+			manifestBytes, err := marshalEncyclopediaManifest(prepared.manifest)
+			if err != nil {
+				return err
+			}
+			if err := writeEncyclopediaReportFile(root, encyclopediaCatalogFilename, catalogBytes); err != nil {
+				return err
+			}
+			if err := writeEncyclopediaReportFile(root, encyclopediaManifestFilename, manifestBytes); err != nil {
+				return err
+			}
+			_, err = inspectEncyclopediaCanonicalDirectory(root)
+			return err
+		},
+		InspectOwned:    inspectEncyclopediaCanonicalDirectory,
+		RecoveryCommand: fmt.Sprintf("stage-ui-assets --encyclopedia-only --encyclopedia-output %q --force", outputDir),
+		Log:             log,
+	})
+	return err
+}
+
+func prepareCanonicalEncyclopedia(sourceDir, edataDir string) (preparedCanonicalEncyclopedia, error) {
+	textPath, err := resolveRequiredEncyclopediaFile(sourceDir, "ENCYTEXT.DLL")
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	inventory, err := inventoryEncyclopediaSources(encyclopediaInventoryRequest{
+		Roots: []encyclopediaSourceRoot{{Role: encyclopediaReportSourceRole, Path: filepath.Dir(textPath)}},
+		Sources: []encyclopediaSourceSpec{{
+			RootRole:       encyclopediaReportSourceRole,
+			Basename:       filepath.Base(textPath),
+			Kind:           encyclopediaSourceDLL,
+			ResourceTypeID: rtEncyclopediaText,
+		}},
+		StartedAt: time.Unix(0, 1).UTC(),
+	}, defaultEncyclopediaInventoryLimits())
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	decoded, err := decodeEncyclopediaReport(inventory.Report)
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	profiles, err := loadEmbeddedEncyclopediaProfiles()
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	var profile *encyclopediaSourceProfile
+	for index := range profiles {
+		if profiles[index].ProfileID == decoded.ProfileID {
+			profile = &profiles[index]
+			break
+		}
+	}
+	if profile == nil {
+		return preparedCanonicalEncyclopedia{}, fmt.Errorf("unsupported_profile: decoded profile %q is not embedded", decoded.ProfileID)
+	}
+
+	verifiedSources, err := verifyCanonicalEncyclopediaSources(sourceDir, *profile)
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	titleSnapshot, ok := verifiedSources.snapshots["display_strings"]
+	if !ok {
+		return preparedCanonicalEncyclopedia{}, fmt.Errorf("binding_source_mismatch: profile %q has no verified display_strings snapshot", profile.ProfileID)
+	}
+	titles, err := decodeCanonicalDisplayStrings(titleSnapshot)
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	lookupSnapshot, ok := verifiedSources.snapshots["encyclopedia_art_lookup"]
+	if !ok {
+		return preparedCanonicalEncyclopedia{}, fmt.Errorf("binding_source_mismatch: profile %q has no verified encyclopedia_art_lookup snapshot", profile.ProfileID)
+	}
+	artwork, err := prepareEncyclopediaArtworkFromLookupSnapshot(lookupSnapshot, edataDir, defaultEncyclopediaImageLimits())
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	preparedReport, err := prepareEncyclopediaReport(inventory.Report)
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	preparedReport.report.Artwork = &artwork
+	preparedReport.edataRoot = edataDir
+
+	mappings := encyclopediaCatalogMappings{
+		Titles:         make(map[encyclopediaCatalogResourceKey]string),
+		CategoryLabels: make(map[uint32]map[uint32]string),
+		Images:         make(map[string]encyclopediaCatalogImageInput),
+		SourceHashes:   make(map[string]string),
+	}
+	for _, source := range profile.Sources {
+		if source.Role == "display_strings" {
+			mappings.SourceHashes[source.Role] = source.RawSHA256
+		}
+	}
+	for _, record := range profile.Bindings.Records {
+		value, ok := titles[uint16(record.Title.SelectedResourceID)]
+		if !ok {
+			return preparedCanonicalEncyclopedia{}, fmt.Errorf("missing selected title resource %d", record.Title.SelectedResourceID)
+		}
+		mappings.Titles[encyclopediaCatalogResourceKey{
+			SourceRole: record.Title.SourceRole, LanguageID: record.Title.LanguageID, ResourceID: record.Title.SelectedResourceID,
+		}] = value
+	}
+	for _, label := range profile.Catalog.CategoryLabels {
+		value, ok := titles[uint16(label.ResourceID)]
+		if !ok {
+			return preparedCanonicalEncyclopedia{}, fmt.Errorf("missing category label resource %d", label.ResourceID)
+		}
+		mappings.CategoryLabels[label.Command] = map[uint32]string{label.LanguageID: value}
+	}
+	for _, image := range artwork.Images.Images {
+		if image.Status != encyclopediaImageValid {
+			return preparedCanonicalEncyclopedia{}, fmt.Errorf("EData source %s is not valid", image.Filename)
+		}
+		mappings.Images[image.Filename] = encyclopediaCatalogImageInput{
+			Path:       "assets/" + image.Filename,
+			Format:     "bmp",
+			ByteLength: image.RawLength,
+			Width:      image.Facts.Width,
+			Height:     image.Facts.Height,
+			SHA256:     image.RawSHA256,
+			SourceRef:  "edata/" + image.Filename,
+		}
+	}
+	catalog, err := buildEncyclopediaCatalog(*profile, decoded, mappings)
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	catalogBytes, err := marshalEncyclopediaCatalog(catalog)
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	manifest, err := buildCanonicalEncyclopediaManifest(*profile, catalog, catalogBytes)
+	if err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	if err := verifyBindingSources(manifest, verifiedSources.observedDATHashes); err != nil {
+		return preparedCanonicalEncyclopedia{}, err
+	}
+	return preparedCanonicalEncyclopedia{profile: *profile, report: preparedReport, catalog: catalog, manifest: manifest}, nil
+}
+
+func decodeCanonicalDisplayStrings(snapshot verifiedCanonicalSourceSnapshot) (map[uint16]string, error) {
+	inventoryLimits := defaultEncyclopediaInventoryLimits()
+	titleResources, err := readPEStrictMixedRawResourcesFromBytes(snapshot.bytes, rtStringResource, rawResourceLimits{
+		MaxCount:          inventoryLimits.MaxResourceCount,
+		MaxResourceBytes:  inventoryLimits.MaxResourceBytes,
+		MaxAggregateBytes: inventoryLimits.MaxAggregateResourceBytes,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read TEXTSTRA title resources: %w", err)
+	}
+	titles, err := decodeStringResources(titleResources)
+	if err != nil {
+		return nil, fmt.Errorf("decode TEXTSTRA title resources: %w", err)
+	}
+	return titles, nil
+}
+
+func verifyCanonicalEncyclopediaSources(sourceDir string, profile encyclopediaSourceProfile) (verifiedCanonicalEncyclopediaSources, error) {
+	verified := verifiedCanonicalEncyclopediaSources{
+		snapshots:         make(map[string]verifiedCanonicalSourceSnapshot),
+		observedDATHashes: make(map[string]string),
+	}
+	for _, source := range profile.Sources {
+		if source.Kind == encyclopediaSourceEXE {
+			continue
+		}
+		var resolved string
+		var err error
+		if source.Kind == encyclopediaSourceDAT {
+			resolved, err = resolveCanonicalDATFile(sourceDir, source.Basename)
+		} else {
+			resolved, err = resolveRequiredEncyclopediaFile(sourceDir, source.Basename)
+		}
+		if err != nil {
+			return verifiedCanonicalEncyclopediaSources{}, err
+		}
+		contents, err := readBoundedEncyclopediaSource(resolved, defaultEncyclopediaInventoryLimits().MaxSourceBytes)
+		if err != nil {
+			return verifiedCanonicalEncyclopediaSources{}, err
+		}
+		digest := byteSHA256(contents)
+		if uint64(len(contents)) != source.RawLength || digest != source.RawSHA256 {
+			return verifiedCanonicalEncyclopediaSources{}, fmt.Errorf("binding_source_mismatch: %s does not match profile %q", source.Basename, profile.ProfileID)
+		}
+		if source.Kind == encyclopediaSourceDAT {
+			verified.observedDATHashes[filepath.Base(resolved)] = digest
+		}
+		switch source.Role {
+		case "display_strings", "encyclopedia_art_lookup":
+			verified.snapshots[source.Role] = verifiedCanonicalSourceSnapshot{
+				basename: source.Basename,
+				bytes:    contents,
+			}
+		}
+	}
+	return verified, nil
+}
+
+func resolveCanonicalDATFile(sourceDir, basename string) (string, error) {
+	candidates := make([]string, 0, 2)
+	for _, root := range []string{sourceDir, filepath.Join(sourceDir, "GData")} {
+		resolved, err := resolveOptionalEncyclopediaFile(root, basename)
+		if err != nil {
+			return "", err
+		}
+		if resolved != "" {
+			candidates = append(candidates, resolved)
+		}
+	}
+	if len(candidates) != 1 {
+		return "", fmt.Errorf("binding_source_mismatch: expected exactly one %s in flattened source or GData, found %d", basename, len(candidates))
+	}
+	return candidates[0], nil
+}
+
+func resolveRequiredEncyclopediaFile(root, basename string) (string, error) {
+	path, err := resolveOptionalEncyclopediaFile(root, basename)
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		return "", fmt.Errorf("missing encyclopedia source %s under %s", basename, root)
+	}
+	return path, nil
+}
+
+func resolveOptionalEncyclopediaFile(root, basename string) (string, error) {
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var matches []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.EqualFold(entry.Name(), basename) {
+			matches = append(matches, filepath.Join(root, entry.Name()))
+		}
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("ambiguous encyclopedia source basename %s under %s", basename, root)
+	}
+	if len(matches) == 0 {
+		return "", nil
+	}
+	return matches[0], nil
+}
+
+func buildCanonicalEncyclopediaManifest(profile encyclopediaSourceProfile, catalog encyclopediaCatalog, catalogBytes []byte) (encyclopediaManifest, error) {
+	sources := make(map[string]encyclopediaProfileSource, len(profile.Sources))
+	for _, source := range profile.Sources {
+		sources[source.Role] = source
+	}
+	manifest := encyclopediaManifest{
+		SchemaVersion:    1,
+		SourceProfile:    profile.ProfileID,
+		ExtractorVersion: encyclopediaExtractorVersion,
+		CatalogSHA256:    byteSHA256(catalogBytes),
+		Files:            map[string]string{encyclopediaCatalogFilename: byteSHA256(catalogBytes)},
+		SourceRecords:    make(map[string]encyclopediaManifestSourceRecord),
+	}
+	for _, source := range profile.Sources {
+		if source.Kind == encyclopediaSourceDAT {
+			manifest.BindingSources = append(manifest.BindingSources, encyclopediaManifestBindingSource{Basename: source.Basename, SHA256: source.RawSHA256})
+		}
+	}
+	for _, record := range profile.Bindings.Records {
+		ref := sourceRefForText(record.Body.LanguageID, record.Body.ResourceID)
+		source := sources[record.Body.SourceRole]
+		manifest.SourceRecords[ref] = encyclopediaManifestSourceRecord{
+			SourceBasename: source.Basename,
+			SourceSHA256:   source.RawSHA256,
+			ResourceType:   numericManifestResourceIdentifier(rtEncyclopediaText),
+			ResourceID:     numericManifestResourceIdentifier(record.Body.ResourceID),
+			LanguageID:     record.Body.LanguageID,
+			RawLength:      record.Body.RawLength,
+			RawSHA256:      record.Body.RawSHA256,
+			Decoder:        "encytext-windows-1252-v1",
+			Encoding:       profile.TextDecoder.Encoding,
+			MappingCitations: []string{
+				fmt.Sprintf("profile:%s:binding:%s:%d", profile.ProfileID, record.Family, record.DatID),
+			},
+		}
+	}
+	for _, label := range profile.Catalog.CategoryLabels {
+		source := sources[label.SourceRole]
+		manifest.SourceRecords[label.SourceRef] = encyclopediaManifestSourceRecord{
+			SourceBasename: source.Basename,
+			SourceSHA256:   source.RawSHA256,
+			ResourceType:   numericManifestResourceIdentifier(6),
+			ResourceID:     numericManifestResourceIdentifier(label.ResourceID),
+			LanguageID:     label.LanguageID,
+			RawLength:      label.RawLength,
+			RawSHA256:      label.RawSHA256,
+			Decoder:        "windows-string-table-v1",
+			Encoding:       "utf-16le",
+			MappingCitations: []string{
+				fmt.Sprintf("profile:%s:category-command:0x%x", profile.ProfileID, label.Command),
+			},
+		}
+	}
+	artFiles := make(map[string]encyclopediaBindingArtFile, len(profile.Bindings.ResourceAccounting.ArtFiles))
+	for _, image := range profile.Bindings.ResourceAccounting.ArtFiles {
+		artFiles[image.Basename] = image
+	}
+	for imageID, image := range catalog.Images {
+		basename := filepath.Base(image.Path)
+		evidence, ok := artFiles[basename]
+		if !ok || evidence.RawLength != image.ByteLength || evidence.RawSHA256 != image.SHA256 {
+			return encyclopediaManifest{}, fmt.Errorf("image %s lacks matching profile provenance", imageID)
+		}
+		number, ok := parseEncyclopediaImageFilename(basename)
+		if !ok {
+			return encyclopediaManifest{}, fmt.Errorf("image %s has invalid EData basename", imageID)
+		}
+		manifest.Files[image.Path] = image.SHA256
+		manifest.SourceRecords[image.SourceRef] = encyclopediaManifestSourceRecord{
+			SourceBasename: basename,
+			SourceSHA256:   image.SHA256,
+			ResourceType:   namedManifestResourceIdentifier("edata-file"),
+			ResourceID:     numericManifestResourceIdentifier(number),
+			LanguageID:     0,
+			RawLength:      image.ByteLength,
+			RawSHA256:      image.SHA256,
+			Decoder:        "bounded-bmp-v1",
+			Encoding:       "binary",
+			MappingCitations: []string{
+				fmt.Sprintf("profile:%s:image:%s", profile.ProfileID, basename),
+			},
+		}
+	}
+	if err := validateEncyclopediaManifest(manifest); err != nil {
+		return encyclopediaManifest{}, err
+	}
+	return manifest, nil
+}
+
+func numericManifestResourceIdentifier(value uint32) encyclopediaManifestResourceIdentifier {
+	return encyclopediaManifestResourceIdentifier{Kind: "numeric", Value: json.RawMessage(strconv.FormatUint(uint64(value), 10))}
+}
+
+func namedManifestResourceIdentifier(value string) encyclopediaManifestResourceIdentifier {
+	encoded, _ := json.Marshal(value)
+	return encyclopediaManifestResourceIdentifier{Kind: "named", Value: encoded}
+}
+
+func encyclopediaInputsPresent(sourceDir, edataDir string) (bool, error) {
+	profiles, err := loadEmbeddedEncyclopediaProfiles()
+	if err != nil {
+		return false, err
+	}
+	wanted := make(map[string]struct{})
+	for _, profile := range profiles {
+		for _, source := range profile.Sources {
+			// TEXTSTRA and DATs are also normal game/runtime inputs. Their
+			// presence alone does not mean a canonical encyclopedia source set
+			// was supplied. ENCYTEXT/ENCYBMAP and EData are exclusive signals.
+			if source.Role == profile.TextDecoder.SourceRole || source.Role == "encyclopedia_art_lookup" {
+				wanted[strings.ToLower(source.Basename)] = struct{}{}
+			}
+		}
+	}
+	for _, root := range []string{sourceDir, filepath.Join(sourceDir, "GData"), edataDir} {
+		entries, err := os.ReadDir(root)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		for _, entry := range entries {
+			name := strings.ToLower(entry.Name())
+			if _, ok := wanted[name]; ok || strings.HasPrefix(name, "edata.") {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func prepareEncyclopediaArtwork(sourceDir, edataDir string, limits encyclopediaImageLimits) (encyclopediaArtworkResearch, error) {
+	images, err := inventoryValidEncyclopediaImages(edataDir, limits)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, err
+	}
+	lookupBytes, err := readBoundedEncyclopediaSource(filepath.Join(sourceDir, "ENCYBMAP.DLL"), maxEncyclopediaLookupSourceBytes)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("read ENCYBMAP.DLL: %w", err)
+	}
+	return prepareEncyclopediaArtworkFromVerifiedInputs(verifiedCanonicalSourceSnapshot{
+		basename: "ENCYBMAP.DLL",
+		bytes:    lookupBytes,
+	}, edataDir, images)
+}
+
+func prepareEncyclopediaArtworkFromLookupSnapshot(snapshot verifiedCanonicalSourceSnapshot, edataDir string, limits encyclopediaImageLimits) (encyclopediaArtworkResearch, error) {
+	images, err := inventoryValidEncyclopediaImages(edataDir, limits)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, err
+	}
+	return prepareEncyclopediaArtworkFromVerifiedInputs(snapshot, edataDir, images)
+}
+
+func inventoryValidEncyclopediaImages(edataDir string, limits encyclopediaImageLimits) (encyclopediaImageInventory, error) {
 	images, err := inventoryEncyclopediaImages(edataDir, limits)
 	if err != nil {
-		return encyclopediaArtworkResearch{}, fmt.Errorf("inventory encyclopedia artwork: %w", err)
+		return encyclopediaImageInventory{}, fmt.Errorf("inventory encyclopedia artwork: %w", err)
 	}
 	if images.Measurements.RejectedCount != 0 {
 		rejected := make([]string, 0, images.Measurements.RejectedCount)
@@ -61,13 +534,13 @@ func prepareEncyclopediaArtwork(sourceDir, edataDir string, limits encyclopediaI
 				rejected = append(rejected, fmt.Sprintf("%s (%s: %s)", image.Filename, image.DiagnosticCode, image.Diagnostic))
 			}
 		}
-		return encyclopediaArtworkResearch{}, fmt.Errorf("rejected EData inputs: %s", strings.Join(rejected, "; "))
+		return encyclopediaImageInventory{}, fmt.Errorf("rejected EData inputs: %s", strings.Join(rejected, "; "))
 	}
-	lookupBytes, err := readBoundedEncyclopediaSource(filepath.Join(sourceDir, "ENCYBMAP.DLL"), maxEncyclopediaLookupSourceBytes)
-	if err != nil {
-		return encyclopediaArtworkResearch{}, fmt.Errorf("read ENCYBMAP.DLL: %w", err)
-	}
-	lookup, err := inventoryEncyclopediaLookups("ENCYBMAP.DLL", lookupBytes, edataDir)
+	return images, nil
+}
+
+func prepareEncyclopediaArtworkFromVerifiedInputs(snapshot verifiedCanonicalSourceSnapshot, edataDir string, images encyclopediaImageInventory) (encyclopediaArtworkResearch, error) {
+	lookup, err := inventoryEncyclopediaLookups(snapshot.basename, snapshot.bytes, edataDir)
 	if err != nil {
 		return encyclopediaArtworkResearch{}, fmt.Errorf("inventory encyclopedia artwork lookups: %w", err)
 	}

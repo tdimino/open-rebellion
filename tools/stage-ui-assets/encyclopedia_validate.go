@@ -81,6 +81,12 @@ type encyclopediaAssetFacts struct {
 	Height     uint32
 }
 
+type encyclopediaRuntimeMetadata struct {
+	catalog   encyclopediaCatalog
+	manifest  encyclopediaManifest
+	filePaths map[string]struct{}
+}
+
 var (
 	encyclopediaLangIDPattern    = regexp.MustCompile(`^(0|[1-9][0-9]{0,4})$`)
 	encyclopediaStableIDPattern  = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,31}:[A-Za-z0-9][A-Za-z0-9._:-]{0,223}$`)
@@ -91,8 +97,12 @@ var (
 )
 
 func encyclopediaAssetFactsFromBytes(data []byte, _ string) encyclopediaAssetFacts {
+	return encyclopediaAssetFactsFromOwnedBytes(append([]byte(nil), data...), "")
+}
+
+func encyclopediaAssetFactsFromOwnedBytes(data []byte, _ string) encyclopediaAssetFacts {
 	facts := encyclopediaAssetFacts{
-		Bytes: append([]byte(nil), data...), SHA256: byteSHA256(data), ByteLength: uint64(len(data)),
+		Bytes: data, SHA256: byteSHA256(data), ByteLength: uint64(len(data)),
 	}
 	if len(data) >= 2 && data[0] == 'B' && data[1] == 'M' {
 		facts.Format = "bmp"
@@ -543,30 +553,14 @@ func marshalEncyclopediaManifest(manifest encyclopediaManifest) ([]byte, error) 
 }
 
 func validateEncyclopediaRuntime(catalogBytes, manifestBytes []byte, files map[string]encyclopediaAssetFacts) error {
-	catalog, err := parseEncyclopediaCatalog(catalogBytes)
+	metadata, err := validateEncyclopediaRuntimeMetadata(catalogBytes, manifestBytes)
 	if err != nil {
 		return err
 	}
-	manifest, err := parseEncyclopediaManifest(manifestBytes)
-	if err != nil {
-		return err
-	}
-	if err := validateEncyclopediaSourceRefClosure(catalog, manifest); err != nil {
-		return err
-	}
+	catalog := metadata.catalog
+	manifest := metadata.manifest
+	wantPaths := metadata.filePaths
 
-	wantPaths := map[string]struct{}{"catalog.json": {}}
-	for _, image := range catalog.Images {
-		wantPaths[image.Path] = struct{}{}
-	}
-	if len(manifest.Files) != len(wantPaths) {
-		return newEncyclopediaValidationError("manifest_file_set_mismatch", "manifest has %d files, catalog requires %d", len(manifest.Files), len(wantPaths))
-	}
-	for filePath := range wantPaths {
-		if _, ok := manifest.Files[filePath]; !ok {
-			return newEncyclopediaValidationError("manifest_file_set_mismatch", "manifest omits %q", filePath)
-		}
-	}
 	if len(files) != len(wantPaths) {
 		return newEncyclopediaValidationError("manifest_file_set_mismatch", "observed file set has %d files, want %d", len(files), len(wantPaths))
 	}
@@ -619,6 +613,34 @@ func validateEncyclopediaRuntime(catalogBytes, manifestBytes []byte, files map[s
 		aggregateImageBytes += facts.ByteLength
 	}
 	return nil
+}
+
+func validateEncyclopediaRuntimeMetadata(catalogBytes, manifestBytes []byte) (encyclopediaRuntimeMetadata, error) {
+	catalog, err := parseEncyclopediaCatalog(catalogBytes)
+	if err != nil {
+		return encyclopediaRuntimeMetadata{}, err
+	}
+	manifest, err := parseEncyclopediaManifest(manifestBytes)
+	if err != nil {
+		return encyclopediaRuntimeMetadata{}, err
+	}
+	if err := validateEncyclopediaSourceRefClosure(catalog, manifest); err != nil {
+		return encyclopediaRuntimeMetadata{}, err
+	}
+
+	wantPaths := map[string]struct{}{"catalog.json": {}}
+	for _, image := range catalog.Images {
+		wantPaths[image.Path] = struct{}{}
+	}
+	if len(manifest.Files) != len(wantPaths) {
+		return encyclopediaRuntimeMetadata{}, newEncyclopediaValidationError("manifest_file_set_mismatch", "manifest has %d files, catalog requires %d", len(manifest.Files), len(wantPaths))
+	}
+	for filePath := range wantPaths {
+		if _, ok := manifest.Files[filePath]; !ok {
+			return encyclopediaRuntimeMetadata{}, newEncyclopediaValidationError("manifest_file_set_mismatch", "manifest omits %q", filePath)
+		}
+	}
+	return encyclopediaRuntimeMetadata{catalog: catalog, manifest: manifest, filePaths: wantPaths}, nil
 }
 
 func verifyBindingSources(manifest encyclopediaManifest, observedDATHashes map[string]string) error {

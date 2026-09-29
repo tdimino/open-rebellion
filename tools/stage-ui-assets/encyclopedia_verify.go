@@ -10,6 +10,151 @@ import (
 	"strings"
 )
 
+type encyclopediaCanonicalInspectionLimits struct {
+	MaxImageBytes          uint64
+	MaxAggregateImageBytes uint64
+}
+
+func defaultEncyclopediaCanonicalInspectionLimits() encyclopediaCanonicalInspectionLimits {
+	return encyclopediaCanonicalInspectionLimits{
+		MaxImageBytes:          encyclopediaMaxImageBytes,
+		MaxAggregateImageBytes: encyclopediaMaxAggregateImageBytes,
+	}
+}
+
+func verifyEncyclopedia(outputDir string, log io.Writer) error {
+	if log == nil {
+		log = io.Discard
+	}
+	if err := verifyEncyclopediaDirectory(
+		outputDir,
+		inspectEncyclopediaCanonicalDirectory,
+		fmt.Sprintf("stage-ui-assets --encyclopedia-only --encyclopedia-output %q --force", outputDir),
+		log,
+	); err != nil {
+		return err
+	}
+	fmt.Fprintf(log, "Verified canonical encyclopedia %s\n", outputDir)
+	return nil
+}
+
+func inspectEncyclopediaCanonicalDirectory(root string) (encyclopediaOwnedInventory, error) {
+	return inspectEncyclopediaCanonicalDirectoryWithLimits(root, defaultEncyclopediaCanonicalInspectionLimits())
+}
+
+func inspectEncyclopediaCanonicalDirectoryWithLimits(root string, limits encyclopediaCanonicalInspectionLimits) (encyclopediaOwnedInventory, error) {
+	if limits.MaxImageBytes == 0 || limits.MaxImageBytes > encyclopediaMaxImageBytes || limits.MaxAggregateImageBytes == 0 || limits.MaxAggregateImageBytes > encyclopediaMaxAggregateImageBytes {
+		return encyclopediaOwnedInventory{}, fmt.Errorf("invalid canonical encyclopedia inspection limits")
+	}
+	catalogBytes, err := readEncyclopediaRegularFile(filepath.Join(root, encyclopediaCatalogFilename), encyclopediaMaxCatalogJSONBytes)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if _, reportErr := os.Lstat(filepath.Join(root, encyclopediaResearchReportFilename)); reportErr == nil {
+				return encyclopediaOwnedInventory{}, fmt.Errorf("output_mode_mismatch: research report cannot be used as a canonical encyclopedia")
+			}
+		}
+		return encyclopediaOwnedInventory{}, err
+	}
+	manifestBytes, err := readEncyclopediaRegularFile(filepath.Join(root, encyclopediaManifestFilename), encyclopediaMaxManifestJSONBytes)
+	if err != nil {
+		return encyclopediaOwnedInventory{}, err
+	}
+	metadata, err := validateEncyclopediaRuntimeMetadata(catalogBytes, manifestBytes)
+	if err != nil {
+		return encyclopediaOwnedInventory{}, err
+	}
+	var describedImageBytes uint64
+	for imageID, descriptor := range metadata.catalog.Images {
+		if descriptor.ByteLength > limits.MaxImageBytes {
+			return encyclopediaOwnedInventory{}, newEncyclopediaValidationError("resource_limit:image_bytes", "%s describes %d bytes, limit %d", imageID, descriptor.ByteLength, limits.MaxImageBytes)
+		}
+		if describedImageBytes > limits.MaxAggregateImageBytes-descriptor.ByteLength {
+			return encyclopediaOwnedInventory{}, newEncyclopediaValidationError("resource_limit:effective_image_bytes", "base descriptors exceed %d-byte inspection limit", limits.MaxAggregateImageBytes)
+		}
+		describedImageBytes += descriptor.ByteLength
+	}
+
+	files := make(map[string]encyclopediaAssetFacts, len(metadata.filePaths))
+	ownedSet := map[string]struct{}{encyclopediaManifestFilename: {}}
+	files[encyclopediaCatalogFilename] = encyclopediaAssetFactsFromOwnedBytes(catalogBytes, "")
+	ownedSet[encyclopediaCatalogFilename] = struct{}{}
+	imagePaths := make([]string, 0, len(metadata.filePaths)-1)
+	for name := range metadata.filePaths {
+		ownedSet[name] = struct{}{}
+		if name != encyclopediaCatalogFilename {
+			imagePaths = append(imagePaths, name)
+		}
+	}
+	sort.Strings(imagePaths)
+	remainingImageBytes := limits.MaxAggregateImageBytes
+	for _, name := range imagePaths {
+		data, err := readEncyclopediaRegularFileWithinBudget(
+			filepath.Join(root, filepath.FromSlash(name)),
+			limits.MaxImageBytes,
+			remainingImageBytes,
+		)
+		if err != nil {
+			return encyclopediaOwnedInventory{}, err
+		}
+		remainingImageBytes -= uint64(len(data))
+		files[name] = encyclopediaAssetFactsFromOwnedBytes(data, "")
+	}
+	if err := validateEncyclopediaRuntime(catalogBytes, manifestBytes, files); err != nil {
+		return encyclopediaOwnedInventory{}, err
+	}
+	if _, err := os.Lstat(filepath.Join(root, encyclopediaResearchReportFilename)); err == nil {
+		reportInventory, err := inspectEncyclopediaReportDirectory(root)
+		if err != nil {
+			return encyclopediaOwnedInventory{}, fmt.Errorf("verify canonical research ownership: %w", err)
+		}
+		for _, name := range reportInventory.Files {
+			ownedSet[name] = struct{}{}
+		}
+	} else if !os.IsNotExist(err) {
+		return encyclopediaOwnedInventory{}, err
+	}
+	owned := make([]string, 0, len(ownedSet))
+	for name := range ownedSet {
+		owned = append(owned, name)
+	}
+	sort.Strings(owned)
+	return encyclopediaOwnedInventory{Files: owned}, nil
+}
+
+func readEncyclopediaRegularFileWithinBudget(path string, maxBytes, remainingBytes uint64) ([]byte, error) {
+	file, info, err := openEncyclopediaRegularFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	if info.Size() < 0 {
+		return nil, fmt.Errorf("invalid negative file length for %s", path)
+	}
+	observedSize := uint64(info.Size())
+	if observedSize > maxBytes {
+		return nil, newEncyclopediaValidationError("resource_limit:image_bytes", "%s has %d bytes, limit %d", path, observedSize, maxBytes)
+	}
+	if observedSize > remainingBytes {
+		return nil, newEncyclopediaValidationError("resource_limit:effective_image_bytes", "%s would exceed remaining %d-byte image budget", path, remainingBytes)
+	}
+	readLimit := maxBytes
+	if remainingBytes < readLimit {
+		readLimit = remainingBytes
+	}
+	contents, err := io.ReadAll(io.LimitReader(file, int64(readLimit)+1))
+	if err != nil {
+		return nil, err
+	}
+	actualSize := uint64(len(contents))
+	if actualSize > maxBytes {
+		return nil, newEncyclopediaValidationError("resource_limit:image_bytes", "%s exceeded %d-byte limit while reading", path, maxBytes)
+	}
+	if actualSize > remainingBytes {
+		return nil, newEncyclopediaValidationError("resource_limit:effective_image_bytes", "%s exceeded remaining %d-byte image budget while reading", path, remainingBytes)
+	}
+	return contents, nil
+}
+
 func verifyEncyclopediaDirectory(output string, inspect encyclopediaOwnedInspector, recoveryCommand string, log io.Writer) error {
 	paths, err := prepareEncyclopediaPublicationPaths(output)
 	if err != nil {

@@ -56,6 +56,236 @@ func testEncyclopediaTransaction(paths encyclopediaPublicationPaths, phase encyc
 	}
 }
 
+func copyTestEncyclopediaRuntimeBundle(t *testing.T, output string) {
+	t.Helper()
+	source := filepath.Join(testEncyclopediaFixtureRoot(t), "fixtures", "bundles", "valid")
+	err := filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		if relative == "sources" || strings.HasPrefix(filepath.ToSlash(relative), "sources/") {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		destination := filepath.Join(output, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(destination, 0o755)
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(destination, contents, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyEncyclopediaAcceptsSourceFreeRuntimeBundle(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "encyclopedia")
+	copyTestEncyclopediaRuntimeBundle(t, output)
+	before := snapshotTestTree(t, output)
+
+	var log bytes.Buffer
+	if err := verifyEncyclopedia(output, &log); err != nil {
+		t.Fatalf("verifyEncyclopedia() error = %v", err)
+	}
+	if !strings.Contains(log.String(), "Verified canonical encyclopedia") {
+		t.Fatalf("verification log = %q", log.String())
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, output)); diff != "" {
+		t.Fatalf("source-free verification changed output:\n%s", diff)
+	}
+}
+
+func TestVerifyEncyclopediaRejectsMissingReferencedImageAndUnknownFile(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		do   func(t *testing.T, output string)
+		want string
+	}{
+		{
+			name: "missing referenced image",
+			do: func(t *testing.T, output string) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(output, "assets", "EDATA.001")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "EDATA.001",
+		},
+		{
+			name: "unknown file",
+			do: func(t *testing.T, output string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(output, "notes.txt"), []byte("not generated"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "notes.txt",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			output := filepath.Join(t.TempDir(), "encyclopedia")
+			copyTestEncyclopediaRuntimeBundle(t, output)
+			test.do(t, output)
+			before := snapshotTestTree(t, output)
+			err := verifyEncyclopedia(output, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("verifyEncyclopedia() error = %v, want %q", err, test.want)
+			}
+			if diff := diffTestTree(before, snapshotTestTree(t, output)); diff != "" {
+				t.Fatalf("failed verification changed output:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestCanonicalInspectionRejectsUnexpectedSparseManifestFileBeforeReadingIt(t *testing.T) {
+	t.Parallel()
+
+	output := filepath.Join(t.TempDir(), "encyclopedia")
+	copyTestEncyclopediaRuntimeBundle(t, output)
+	manifestPath := filepath.Join(output, encyclopediaManifestFilename)
+	manifestBytes := readTestFile(t, manifestPath)
+	manifest, err := parseEncyclopediaManifest(manifestBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Files["assets/unexpected.bmp"] = strings.Repeat("0", 64)
+	manifestBytes, err = marshalEncyclopediaManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unexpectedPath := filepath.Join(output, "assets", "unexpected.bmp")
+	file, err := os.OpenFile(unexpectedPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(int64(encyclopediaMaxImageBytes) + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = inspectEncyclopediaCanonicalDirectoryWithLimits(output, defaultEncyclopediaCanonicalInspectionLimits())
+	if got := encyclopediaValidationCode(err); got != "manifest_file_set_mismatch" {
+		t.Fatalf("inspection error = %v (code %q), want manifest_file_set_mismatch before sparse asset read", err, got)
+	}
+}
+
+func TestCanonicalInspectionBudgetsActualImageBytesBeforeRetention(t *testing.T) {
+	t.Parallel()
+
+	output := filepath.Join(t.TempDir(), "encyclopedia")
+	copyTestEncyclopediaRuntimeBundle(t, output)
+	limits := defaultEncyclopediaCanonicalInspectionLimits()
+	limits.MaxAggregateImageBytes = 210
+	if _, err := inspectEncyclopediaCanonicalDirectoryWithLimits(output, limits); err != nil {
+		t.Fatalf("exact 210-byte image aggregate rejected: %v", err)
+	}
+
+	catalogPath := filepath.Join(output, encyclopediaCatalogFilename)
+	catalogBytes := readTestFile(t, catalogPath)
+	catalog, err := parseEncyclopediaCatalog(catalogBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := catalog.Images["edata:1"]
+	image.ByteLength = 1
+	catalog.Images["edata:1"] = image
+	catalogBytes, err = marshalEncyclopediaCatalog(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(catalogPath, catalogBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifestPath := filepath.Join(output, encyclopediaManifestFilename)
+	manifest, err := parseEncyclopediaManifest(readTestFile(t, manifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogDigest := byteSHA256(catalogBytes)
+	manifest.CatalogSHA256 = catalogDigest
+	manifest.Files[encyclopediaCatalogFilename] = catalogDigest
+	manifestBytes, err := marshalEncyclopediaManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	limits.MaxAggregateImageBytes = 200
+	_, err = inspectEncyclopediaCanonicalDirectoryWithLimits(output, limits)
+	if got := encyclopediaValidationCode(err); got != "resource_limit:effective_image_bytes" {
+		t.Fatalf("inspection error = %v (code %q), want actual-byte aggregate rejection despite understated descriptor", err, got)
+	}
+}
+
+func TestVerifyEncyclopediaAlsoValidatesOptionalResearchOwnership(t *testing.T) {
+	source := t.TempDir()
+	output := filepath.Join(t.TempDir(), "encyclopedia")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(17), []byte("local evidence\x00"))
+	if err := stageEncyclopediaReportWithRequest(encyclopediaReportStageRequest{
+		SourceDir: source,
+		OutputDir: output,
+		Force:     false,
+		Log:       io.Discard,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	copyTestEncyclopediaRuntimeBundle(t, output)
+	if err := verifyEncyclopedia(output, io.Discard); err != nil {
+		t.Fatalf("canonical bundle with research evidence rejected: %v", err)
+	}
+	rawMatches, err := filepath.Glob(filepath.Join(output, "raw", "encytext", "*", "*.bin"))
+	if err != nil || len(rawMatches) != 1 {
+		t.Fatalf("raw evidence paths = %v, error = %v", rawMatches, err)
+	}
+	if err := os.WriteFile(rawMatches[0], []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyEncyclopedia(output, io.Discard); err == nil || !strings.Contains(err.Error(), "preserved resource") {
+		t.Fatalf("changed optional research evidence accepted: %v", err)
+	}
+}
+
+func TestVerifyEncyclopediaRejectsReportOnlyRoot(t *testing.T) {
+	source := t.TempDir()
+	output := filepath.Join(t.TempDir(), "encyclopedia-research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(18), []byte("report only\x00"))
+	if err := stageEncyclopediaReportWithRequest(encyclopediaReportStageRequest{
+		SourceDir: source,
+		OutputDir: output,
+		Log:       io.Discard,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTestTree(t, output)
+	err := verifyEncyclopedia(output, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "output_mode_mismatch") {
+		t.Fatalf("report-only root accepted as canonical: %v", err)
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, output)); diff != "" {
+		t.Fatalf("mode-confused verification changed output:\n%s", diff)
+	}
+}
+
 func TestEncyclopediaVerifyNeedsNoSourceAndCreatesNoWriterMarker(t *testing.T) {
 	parent := t.TempDir()
 	output := filepath.Join(parent, "encyclopedia-research")

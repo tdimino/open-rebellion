@@ -42,6 +42,34 @@ cargo build -p dat-dumper --release
 Both `data/base/json/` and the game data itself are gitignored — this is
 local reference material, not something to commit.
 
+### Inspecting canonical encyclopedia identities
+
+The asset staging tool can build a readable, strictly validated encyclopedia
+catalog from a supported owned installation:
+
+```bash
+go run ./tools/stage-ui-assets --encyclopedia-only \
+  --source "/path/to/Star Wars - Rebellion" \
+  --encyclopedia-output data/base/encyclopedia
+
+go run ./tools/stage-ui-assets --encyclopedia-only --verify \
+  --encyclopedia-output data/base/encyclopedia
+```
+
+Inspect `data/base/encyclopedia/catalog.json` for canonical topic IDs,
+family-qualified `{family, dat_id, variant}` bindings, potential index/category
+membership, localized text, and base image IDs. These preserve original DAT
+and DLL/resource identities; runtime handles are not replacement IDs. View
+arrays are source membership plus tie order, not frozen displayed-title order.
+
+`manifest.json` is immutable extraction provenance and hashes only the runtime
+catalog plus referenced base art. `source-report.json`, `raw/`, and
+unreferenced `assets/` files are local research evidence rather than mod inputs.
+Do not edit or distribute generated base prose/art. Author content belongs in a
+mod's separate `encyclopedia.json` and confined `encyclopedia/assets/` paths
+once the runtime overlay integration is enabled; it must never replace the
+generated base directory.
+
 ### Finding an entity's `dat_id`
 
 Open the relevant JSON file and find your entity by name, cross-referencing
