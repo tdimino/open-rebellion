@@ -165,14 +165,45 @@ impl ModConfig {
 // Content (overlay data from JSON files)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The parsed overlay content from one mod's JSON files.
+/// Reserved root filename for the encyclopedia content overlay.
+pub const ENCYCLOPEDIA_MOD_FILENAME: &str = "encyclopedia.json";
+
+/// Raw encyclopedia input discovered beside a mod's world overlays.
+///
+/// This layer deliberately does not parse the bytes. The presence-aware
+/// encyclopedia parser owns that later step, including malformed-content
+/// diagnostics. A read failure is retained independently so it cannot discard
+/// otherwise valid world patches from the same mod.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ModContentTarget {
+    /// The reserved root file is absent.
+    #[default]
+    Missing,
+    /// Exact bytes read from the reserved root file.
+    Bytes(Vec<u8>),
+    /// The reserved root path exists but could not be read.
+    ReadError {
+        /// Exact path which failed.
+        path: PathBuf,
+        /// Platform-independent I/O error category.
+        kind: std::io::ErrorKind,
+        /// Contextual diagnostic suitable for the future mod diagnostics path.
+        message: String,
+    },
+}
+
+/// The parsed world overlay content and separate encyclopedia target from one
+/// mod's root files.
 ///
 /// `patches` maps entity type name (the JSON filename stem) to a vec of
 /// patch objects. Each patch object is a JSON `Value::Object` that must
-/// contain an `"id"` field identifying the target entity.
+/// contain an `"id"` field identifying the target entity. The exact root
+/// [`ENCYCLOPEDIA_MOD_FILENAME`] is never inserted into this map.
 #[derive(Debug, Default)]
 pub struct ModContent {
     pub patches: HashMap<String, Vec<Value>>,
+    /// Raw reserved content target, kept outside world patch parsing.
+    pub encyclopedia: ModContentTarget,
 }
 
 impl ModContent {
@@ -189,6 +220,21 @@ impl ModContent {
         };
         for entry in entries.flatten() {
             let path = entry.path();
+            if path.file_name().and_then(|name| name.to_str()) == Some(ENCYCLOPEDIA_MOD_FILENAME) {
+                content.encyclopedia = match std::fs::read(&path) {
+                    Ok(bytes) => ModContentTarget::Bytes(bytes),
+                    Err(error) => ModContentTarget::ReadError {
+                        path: path.clone(),
+                        kind: error.kind(),
+                        message: format!(
+                            "reading mod content target {}: {}",
+                            path.display(),
+                            error
+                        ),
+                    },
+                };
+                continue;
+            }
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
@@ -1194,6 +1240,122 @@ version = "0.1.0"
         assert_eq!(world["sdprtb"]["entries"][0]["multiplayer_alliance"], 55);
         assert!(world["gnprtb"]["entries"][0].get("id").is_none());
         assert_eq!(world["gnprtb"]["entries"][0]["parameter_id"], 3588);
+    }
+
+    #[test]
+    fn malformed_encyclopedia_bytes_are_retained_while_world_patches_apply_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("gnprtb.json"),
+            r#"[{"id":77,"development":9}]"#,
+        )
+        .unwrap();
+        let raw = b"\xff{malformed encyclopedia";
+        std::fs::write(tmp.path().join("encyclopedia.json"), raw).unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+        assert!(matches!(
+            &content.encyclopedia,
+            ModContentTarget::Bytes(bytes) if bytes == raw
+        ));
+        assert_eq!(content.patches.len(), 1);
+        assert!(content.patches.contains_key("gnprtb"));
+        assert!(!content.patches.contains_key("encyclopedia"));
+
+        let mut manifest = make_manifest("combined", "1.0.0", &[]);
+        manifest.path = tmp.path().to_path_buf();
+        manifest.enabled = true;
+        let runtime = ModRuntime {
+            discovered: vec![manifest.clone()],
+            config: ModConfig::default(),
+            errors: Vec::new(),
+            mods_dir: tmp.path().to_path_buf(),
+        };
+        let mut world = parameter_world();
+
+        let errors = runtime.apply_ordered(&mut world, &[&manifest]);
+
+        assert!(errors.is_empty());
+        assert_eq!(world.gnprtb.value(77, 0), 9);
+        assert_eq!(world.gnprtb.value(78, 0), 314);
+    }
+
+    #[test]
+    fn a_missing_encyclopedia_target_is_allowed() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("gnprtb.json"), "[]").unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+
+        assert!(matches!(content.encyclopedia, ModContentTarget::Missing));
+        assert!(content.patches.contains_key("gnprtb"));
+    }
+
+    #[test]
+    fn an_unreadable_encyclopedia_target_is_separate_from_valid_world_patches() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("gnprtb.json"),
+            r#"[{"id":77,"development":11}]"#,
+        )
+        .unwrap();
+        let reserved_path = tmp.path().join("encyclopedia.json");
+        std::fs::create_dir(&reserved_path).unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+
+        assert!(matches!(
+            &content.encyclopedia,
+            ModContentTarget::ReadError { path, kind, message }
+                if path == &reserved_path
+                    && *kind == std::io::ErrorKind::IsADirectory
+                    && message.contains("reading mod content target")
+        ));
+        assert_eq!(content.patches["gnprtb"].len(), 1);
+
+        let mut world = json!({
+            "gnprtb": {"entries": [{"parameter_id": 77, "development": 1}]}
+        });
+        ModLoader::apply(&mut world, &content).unwrap();
+        assert_eq!(world["gnprtb"]["entries"][0]["development"], 11);
+    }
+
+    #[test]
+    fn malformed_world_json_remains_an_error_when_encyclopedia_bytes_are_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("encyclopedia.json"), b"not parsed here").unwrap();
+        std::fs::write(tmp.path().join("sdprtb.json"), b"[]").unwrap();
+        std::fs::write(tmp.path().join("gnprtb.json"), b"not valid JSON").unwrap();
+
+        let error = ModContent::from_dir(tmp.path()).unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("parsing JSON in"));
+        assert!(message.contains("gnprtb.json"));
+    }
+
+    #[test]
+    fn only_the_exact_root_encyclopedia_filename_is_reserved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root_bytes = b"root target bytes";
+        std::fs::write(tmp.path().join("encyclopedia.json"), root_bytes).unwrap();
+        std::fs::write(
+            tmp.path().join("encyclopedia-copy.json"),
+            r#"[{"id":1,"value":"world target"}]"#,
+        )
+        .unwrap();
+        let nested = tmp.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join("encyclopedia.json"), b"nested target bytes").unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+
+        assert!(matches!(
+            &content.encyclopedia,
+            ModContentTarget::Bytes(bytes) if bytes == root_bytes
+        ));
+        assert_eq!(content.patches.len(), 1);
+        assert!(content.patches.contains_key("encyclopedia-copy"));
     }
 
     // ── ModRuntime tests ────────────────────────────────────────────────────
