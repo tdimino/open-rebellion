@@ -1,4 +1,5 @@
 mod model;
+mod validate;
 
 pub use model::{
     AssetFacts, BaseImage, BaseImageId, BaseImageIdField, BindingKey, BindingSource,
@@ -6,6 +7,7 @@ pub use model::{
     ImageFacts, ImageSelector, LocalizedContent, NullableBaseImageId, ResourceIdentifier,
     SourceRecord, Topic, TopicId, TopicSort,
 };
+pub use validate::{validate_bundle, validate_effective_catalog};
 
 use std::collections::HashSet;
 use std::fmt;
@@ -25,6 +27,16 @@ const TITLE_OR_LABEL_BYTES_LIMIT: usize = 65_536;
 const BODY_BYTES_LIMIT: usize = 1_048_576;
 const IMAGE_BYTES_LIMIT: u64 = 33_554_432;
 const IMAGE_DIMENSION_LIMIT: u64 = 16_000_000;
+const TOPIC_SORT_V1: [(&str, &str); 5] = [
+    ("algorithm", "stable_display_title_v1"),
+    ("representable_encoding", "windows-1252-strict"),
+    ("representable_fold", "ascii-lowercase-only"),
+    (
+        "unrepresentable",
+        "unicode-15.1.0-scalar-lowercase-utf8-after-representable",
+    ),
+    ("tie_break", "registry-order"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncyclopediaError {
@@ -470,17 +482,7 @@ fn validate_topic_sort(value: &Value) -> Result<(), EncyclopediaError> {
         "tie_break",
     ];
     fields(object, &required, &[], "catalog", path)?;
-    let expected = [
-        ("algorithm", "stable_display_title_v1"),
-        ("representable_encoding", "windows-1252-strict"),
-        ("representable_fold", "ascii-lowercase-only"),
-        (
-            "unrepresentable",
-            "unicode-15.1.0-scalar-lowercase-utf8-after-representable",
-        ),
-        ("tie_break", "registry-order"),
-    ];
-    for (field, expected) in expected {
+    for (field, expected) in TOPIC_SORT_V1 {
         let actual = string(
             object.get(field).unwrap(),
             "catalog",
