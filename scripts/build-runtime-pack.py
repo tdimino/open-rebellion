@@ -23,6 +23,24 @@ KIND_TACTICAL_MESH = 4
 KIND_TACTICAL_TEXTURE = 5
 ENCYCLOPEDIA_PREFIX = "encyclopedia/assets/"
 
+# Source-proven STRATEGY.DLL BMPs used by the original encyclopedia shell and
+# every recovered control state. The two inner overlays are mode-specific and
+# shared by both factions. Text resources 0x1842/0x1843 and font 0x299d are not
+# bitmap identities and are intentionally absent.
+REQUIRED_ENCYCLOPEDIA_CHROME = (
+    0x285F, 0x2860, 0x2861, 0x2862, 0x2959, 0x295D,
+    0x2882, 0x2883, 0x2888, 0x2889,
+    0x288E, 0x288F, 0x2890, 0x2891, 0x2892, 0x2893,
+    0x2886, 0x2887, 0x288C, 0x288D,
+    0x2884, 0x2885, 0x288A, 0x288B,
+    0x2864, 0x2863, 0x286E, 0x286D,
+    0x286C, 0x286B, 0x2878, 0x2877,
+    0x2868, 0x2867, 0x2874, 0x2873,
+    0x2D60, 0x2D5F, 0x2D62, 0x2D61,
+    0x2870, 0x286F, 0x287A, 0x2879,
+    0x286A, 0x2869, 0x2876, 0x2875,
+)
+
 
 @dataclass(frozen=True)
 class Entry:
@@ -50,6 +68,22 @@ def validate_options_resources(ui_dir: Path) -> None:
                 raise ValueError("invalid dimensions or truncated bitmap")
         except (OSError, ValueError, struct.error) as error:
             raise ValueError(f"required options resource REBDLOG {resource}: {error}; restage UI assets") from error
+
+
+def validate_encyclopedia_chrome_resources(ui_dir: Path) -> None:
+    """Require each source-proven encyclopedia bitmap by exact runtime key."""
+    for resource in REQUIRED_ENCYCLOPEDIA_CHROME:
+        relative = Path("strategy-dll") / "BMP" / f"{resource}.bmp"
+        path = ui_dir / relative
+        try:
+            data = path.read_bytes()
+            if len(data) < 54 or data[:2] != b"BM":
+                raise ValueError("invalid BMP header")
+        except (OSError, ValueError) as error:
+            raise ValueError(
+                f"required encyclopedia chrome STRATEGY.DLL BMP resource {resource} "
+                f"at {relative.as_posix()}: {error}; restage UI assets"
+            ) from error
 
 
 def collect_entries(
@@ -341,6 +375,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         validate_options_resources(args.ui)
+        validate_encyclopedia_chrome_resources(args.ui)
     except ValueError as error:
         parser.error(str(error))
     if args.validate_ui_only:

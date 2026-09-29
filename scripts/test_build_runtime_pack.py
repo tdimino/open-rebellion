@@ -32,6 +32,71 @@ class RuntimePackBuilderTests(unittest.TestCase):
         struct.pack_into("<I", data, 34, stride * height)
         return bytes(data)
 
+    def test_encyclopedia_chrome_requires_exact_source_ids_not_just_count(self) -> None:
+        expected = (
+            0x285F, 0x2860, 0x2861, 0x2862, 0x2959, 0x295D,
+            0x2882, 0x2883, 0x2888, 0x2889,
+            0x288E, 0x288F, 0x2890, 0x2891, 0x2892, 0x2893,
+            0x2886, 0x2887, 0x288C, 0x288D,
+            0x2884, 0x2885, 0x288A, 0x288B,
+            0x2864, 0x2863, 0x286E, 0x286D,
+            0x286C, 0x286B, 0x2878, 0x2877,
+            0x2868, 0x2867, 0x2874, 0x2873,
+            0x2D60, 0x2D5F, 0x2D62, 0x2D61,
+            0x2870, 0x286F, 0x287A, 0x2879,
+            0x286A, 0x2869, 0x2876, 0x2875,
+        )
+        self.assertEqual(PACKER.REQUIRED_ENCYCLOPEDIA_CHROME, expected)
+        self.assertEqual(len(set(expected)), 48)
+        self.assertTrue({0x1842, 0x1843, 0x299D}.isdisjoint(expected))
+
+        with tempfile.TemporaryDirectory() as directory:
+            ui = Path(directory)
+            bmp_dir = ui / "strategy-dll" / "BMP"
+            bmp_dir.mkdir(parents=True)
+            payload = self._indexed_bmp(width=1, height=1)
+            for resource_id in expected:
+                (bmp_dir / f"{resource_id}.bmp").write_bytes(payload)
+            PACKER.validate_encyclopedia_chrome_resources(ui)
+
+            missing = expected[-1]
+            (bmp_dir / f"{missing}.bmp").unlink()
+            (bmp_dir / "999999.bmp").write_bytes(payload)
+            with self.assertRaisesRegex(
+                ValueError,
+                rf"STRATEGY\.DLL BMP resource {missing}.*strategy-dll/BMP/{missing}\.bmp",
+            ):
+                PACKER.validate_encyclopedia_chrome_resources(ui)
+
+    def test_encyclopedia_chrome_and_unrelated_bitmap_reach_browser_pack_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / "base"
+            ui = root / "ui"
+            bmp_dir = ui / "strategy-dll" / "BMP"
+            base.mkdir()
+            bmp_dir.mkdir(parents=True)
+            payloads = {}
+            for index, resource_id in enumerate(PACKER.REQUIRED_ENCYCLOPEDIA_CHROME):
+                payload = self._indexed_bmp(width=1 + index % 3, height=1)
+                payloads[f"strategy-dll/{resource_id}"] = payload
+                (bmp_dir / f"{resource_id}.bmp").write_bytes(payload)
+            payloads["strategy-dll/424242"] = b"unrelated bitmap bytes"
+            (bmp_dir / "424242.bmp").write_bytes(payloads["strategy-dll/424242"])
+
+            PACKER.validate_encyclopedia_chrome_resources(ui)
+            entries = PACKER.collect_entries(base, ui)
+            packed = root / "runtime.orpk"
+            PACKER.write_pack(entries, packed)
+            PACKER.verify_pack(packed, entries)
+
+            bitmap_entries = {
+                entry.key: PACKER.entry_bytes(entry)
+                for entry in entries
+                if entry.kind == PACKER.KIND_BITMAP
+            }
+            self.assertEqual(bitmap_entries, payloads)
+
     def test_options_packaging_rejects_each_missing_confirmation_bitmap(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
