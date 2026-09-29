@@ -345,6 +345,96 @@
         "source_profile": "encytext-49aea545-lang-1033-v1",
         "rebexe_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
         "scope_status": "in_scope_static_complete_runtime_capture_pending_alternates_deferred",
+        "ui_contract": {
+          "version": 1,
+          "path": "docs/reference/asset-library/encyclopedia-ui-contract.md",
+          "scope_status": "source_control_and_caller_contract_complete_a0_capture_pending",
+          "coordinate_space": "encyclopedia_client_relative_integer_pixels",
+          "client_size": [470, 330],
+          "entry_routes": [
+            {"id": "shell_f7", "source": "FUN_00422ce0", "trigger": "WM_KEYDOWN_VK_F7_0x76", "context": "empty"},
+            {"id": "shell_command", "source": "FUN_00422ce0", "trigger": "WM_COMMAND_0x131_when_FUN_004fcee0_at_least_2", "context": "empty"},
+            {"id": "selected_row_handler_00438800", "source": "0x00438800_call_0x004388ff", "trigger": "command_0x67", "context": "row_plus_0x54_from_control_this_plus_0x114_via_FUN_0041d6b0", "surface_name": "unresolved_do_not_infer_from_proximity"},
+            {"id": "guarded_context_handler_004443a0", "source": "0x004443a0_call_0x0044445d", "trigger": "command_0x66_after_nonempty_and_not_high_byte_0xf1_guards", "context": "this_plus_0x128_with_empty_companion_via_FUN_0041d6b0", "surface_name": "unresolved_do_not_infer_from_proximity"},
+            {"id": "selected_child_handler_00467f10", "source": "0x00467f10_call_0x0046886a", "trigger": "command_0x67_or_0x97_selected_child_virtual_type_4", "context": "selected_child_plus_0x60_with_prepared_companion_via_FUN_0041d6b0", "surface_name": "unresolved_do_not_infer_from_proximity"},
+            {"id": "mission_selected_row", "source": "FUN_0046c3c0", "trigger": "command_0x67", "context": "typed_selected_row_via_FUN_0041d6b0"},
+            {"id": "strategic_list_selected_row", "source": "FUN_00486fb0", "trigger": "event_0x100", "context": "typed_first_row_via_FUN_0041d6b0"}
+          ],
+          "construction": {
+            "factory": "FUN_00429f30_to_FUN_0045d400",
+            "single_child_identity": "0x19",
+            "faction_shell_resources": {"alliance": "0x285f", "empire": "0x2860"},
+            "faction_rail_resources": {"alliance": "0x2959", "empire": "0x295d"},
+            "mode_backgrounds": {
+              "topic": {"selector": 1, "shared_inner_overlay": "0x2861", "overlay_position": [12, 14], "composition": "selected_faction_shell_plus_selected_faction_rail"},
+              "index": {"selector": 2, "shared_inner_overlay": "0x2862", "overlay_position": [12, 13], "composition": "selected_faction_shell_plus_selected_faction_rail_plus_baked_static_text", "baked_static_text": {"resource": "0x1843", "origin": [36, 48], "initial_extent": [0, 0], "measurement": "FUN_00601b80_DrawTextA_0x400", "role": "static_text_rendered_into_composite_before_registration_semantic_label_unresolved"}}
+            },
+            "category_commands": ["0x6f", "0x70", "0x71", "0x72", "0x73", "0x74", "0x75"],
+            "mode_commands": {"topic": "0x67", "index": "0x68"},
+            "navigation_commands": {"backward": "0x83", "forward": "0x84"},
+            "close_command": "0xfb"
+          },
+          "button_states": {
+            "normal": "resource_slot_plus_0x94",
+            "hover": "no_separate_resource_transition_recovered",
+            "captured_press": "flag_0x1_resource_slot_plus_0x98",
+            "disabled": "flag_0x2_resource_slot_plus_0x9c_fallback_normal",
+            "selected_tab": "flag_0x4_resource_slot_plus_0xa0_copied_from_pressed"
+          },
+          "focus_and_return": {
+            "index_focus": "CoolDragList",
+            "index_return": "notification_0x309_selects_topic_mode_for_current_row",
+            "index_category_left": "mode_1_uses_FUN_005f5c60_predecessor_skips_hidden_nonnull_candidates_immediate_null_reselects_FUN_005f5060_leftmost_hidden_to_null_retains_current",
+            "index_category_right": "mode_1_uses_threaded_successor_plus_0x10_skips_hidden_nonnull_candidates_immediate_null_wraps_to_FUN_005f5060_leftmost_hidden_to_null_retains_current",
+            "index_category_immediate_fallback_visibility": "leftmost_fallback_is_selected_without_IsWindowVisible_check",
+            "index_category_selection": "FUN_0060d7e0_updates_selected_state_and_send_enabled_1_WM_COMMAND_lowword_0x6e_highword_selected_category_command",
+            "index_category_focus": "FUN_0060d7e0_sends_WM_COMMAND_then_0x0045dad0_category_branch_explicitly_SetFocuses_list_this_plus_0x12c",
+            "topic_focus": "read_only_TextScrollField",
+            "topic_return": "forwarded_to_parent_no_encyclopedia_local_action",
+            "topic_left_right": "commands_0x83_0x84",
+            "topic_up_down_page": "scroll_body",
+            "escape": "close",
+            "tab": "consumed_by_FUN_0045fe60"
+          },
+          "text_layout": {
+            "body_rect": [17, 231, 395, 80],
+            "drawtext_flags": "0x2410",
+            "wrap": "word_break_with_long_run_split_newline_and_tab_handling",
+            "scrollbar": "enabled_only_when_calculated_height_exceeds_viewport",
+            "font_resource": "0x299d"
+          },
+          "live_stat_binding": "none_recovered_in_constructor_mode_render_and_text_population_paths_stat_like_values_are_ENCYTEXT_body_until_contrary_connected_proof",
+          "screenshot_leads": [
+            {"id": "guide-018", "authority": "A3", "sha256": "0769ec7407f75133d1f85460d995ab976f0039540aec85b676381f131a0f3be8", "role": "index_composition_lead"},
+            {"id": "guide-019", "authority": "A3", "sha256": "d74940b352a5e7102e0549e727c24daf70bad3593df72c85c847cbe4bce8c6c7", "role": "character_topic_lead"},
+            {"id": "guide-027", "authority": "A3", "sha256": "1c7c7264f3b57a2d4875671c0fedf7bbde21e2ed88692f7f4cd83c1796a86e78", "role": "ship_topic_authored_text_lead"}
+          ],
+          "capture_matrix": [
+            {"id": "ENC-UI-01", "state": "alliance_context_free_index_background_2_overlay_0x2862_baked_text_0x1843", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-02", "state": "empire_context_free_index_background_2_overlay_0x2862_baked_text_0x1843", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-03", "state": "alliance_categories_0x6f_through_0x75", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-04", "state": "empire_categories_0x6f_through_0x75", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-05", "state": "normal_hover_captured_press_cancel_selected_disabled", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-06", "state": "index_click_double_click_return", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-07", "state": "class_context_topic_across_five_direct_contextual_callers", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-08", "state": "direct_entity_context_topic_across_five_direct_contextual_callers", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-09", "state": "entity_fallback_and_non_special_miss", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-10", "state": "unavailable_stale_context", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-11", "state": "same_topic_both_factions_background_1_shared_overlay_0x2861_faction_shell_rail_and_art", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-12", "state": "system_selectors_1_24_25_26", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-13", "state": "system_side_view_admitted_excluded", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-14", "state": "first_enabled_topic", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-15", "state": "middle_and_disabled_intermediate_topic", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-16", "state": "last_enabled_topic", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-17", "state": "legitimate_no_art_topic", "status": "source_branch-proven-trigger-and-runtime-pending"},
+            {"id": "ENC-UI-18", "state": "body_wrap_scroll_focus", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-19", "state": "topic_return_tab_escape_close", "status": "static-proven-runtime-pending"},
+            {"id": "ENC-UI-20", "state": "index_category_left_middle_first_and_hidden_predecessor_edges", "status": "static-proven-runtime-pending_hidden_case_requires_connected_original_configuration"},
+            {"id": "ENC-UI-21", "state": "index_category_right_middle_last_wrap_and_hidden_successor_edges", "status": "static-proven-runtime-pending_hidden_case_requires_connected_original_configuration"}
+          ],
+          "runtime_capture_required": true,
+          "alternate_art": {"status": "inventoried_unused_deferred", "task": "orlocal-2kq", "published_predicate": null}
+        },
         "typed_application_contract": {
           "closed_enums": {
             "viewer_faction": ["alliance", "empire"],
@@ -485,10 +575,10 @@
           {
             "id": "context_open",
             "status": "proven",
-            "source_addresses": ["0x00422ce0", "0x00429f30", "0x0045d400", "0x0041d6b0", "0x0046c3c0", "0x00486fb0"],
-            "call_path": "FUN_00422ce0 supplies empty wrappers to FUN_00429f30 for context-free opens; class/entity callers pass typed source context through FUN_0041d6b0 to FUN_00429f30 and FUN_0045d400, which applies canonical-key and fallback resolution before choosing index or topic mode.",
+            "source_addresses": ["0x00422ce0", "0x00429f30", "0x0045d400", "0x0041d6b0", "0x004388ff", "0x0044445d", "0x0046886a", "0x0046c4d3", "0x004870d0"],
+            "call_path": "FUN_00422ce0 supplies empty wrappers to FUN_00429f30 for context-free opens. An exhaustive direct-call scan finds five callers into FUN_0041d6b0: handlers 0x00438800, 0x004443a0, and 0x00467f10 plus FUN_0046c3c0 and FUN_00486fb0. Their selected-row, guarded retained-context, selected-child, mission-row, or first-row data flows pass typed source context through FUN_0041d6b0 to FUN_00429f30 and FUN_0045d400, which applies canonical-key and fallback resolution before choosing index or topic mode. Unresolved handler surface names are not inferred from proximity.",
             "expected_outcomes": ["Empty context opens the index.", "A class or entity context whose canonical key exists opens that cached topic.", "A context whose direct and fallback routes fail opens index mode without fabricating a raw-resource topic."],
-            "capture_needs": ["Capture context-free, resolved class/entity, fallback entity, and stale/unavailable opens for each owned family."]
+            "capture_needs": ["Capture context-free, resolved class/entity, fallback entity, and stale/unavailable opens for each owned family; retain address, originating control, command/event, and typed wrappers for each of the five direct contextual callers."]
           },
           {
             "id": "neighbor_navigation",

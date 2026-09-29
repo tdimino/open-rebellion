@@ -231,6 +231,67 @@ contract, canonical context key, exact type-`0xf2` system predicate, and bounded
 alternate evidence state: inventoried, unused, deferred to `orlocal-2kq`, with
 no predicate or runtime binding.
 
+The [original UI contract](../../reference/asset-library/encyclopedia-ui-contract.md)
+adds the E27 source checkpoint without changing those 14 semantic rules or 25
+scenarios. `FUN_00429f30` constructs at most one shell child `0x19` through
+`FUN_0045d400` with a 470 × 330 client. `FUN_0045ddc0` supplies the exact
+faction chrome, category and mode controls, header/index/list/body rectangles,
+navigation controls, and `STRATEGY.DLL` resource-state IDs. It selects the
+faction shell/rail first, then creates both mode composites from that same
+pair: topic background `1` uses shared overlay `0x2861` at `(12,14)`, while
+index background `2` uses shared overlay `0x2862` at `(12,13)` and has static
+text resource `0x1843` created at `(36,48)` with zero initial extent, measured
+by `FUN_00601b80` through `DrawTextA` flag `0x400`, and rendered into it before
+registration.
+
+`FUN_0045f480` selects `2` for index and `1` for topic; `0x1843` is proven as
+baked static text but is not assigned a guessed semantic label. The connected
+`CoolStrobeButton` path proves normal, captured-press, disabled, and selected
+bitmap slots; it exposes no separate hover-resource transition.
+
+The missing checked-in function bodies were bounded directly against the same
+identified `REBEXE.EXE`: `0x0041d6b0` obtains the active shell and forwards
+typed context to `FUN_00429f30`, while `0x0045da70` dispatches close `0xfb`,
+mode container `0x66`, category container `0x6e`, list `0x65`, and navigation
+`0x83`/`0x84`. Context-free shell paths are F7 (`0x76`) and command `0x131`.
+An exhaustive direct-call scan proves five contextual callers into
+`FUN_0041d6b0`: unrenamed handlers `0x00438800` command `0x67`, `0x004443a0`
+command `0x66`, and `0x00467f10` commands `0x67`/`0x97` with selected-child
+type `4`; `FUN_0046c3c0` command `0x67`; and `FUN_00486fb0` event `0x100`.
+Their selected-row, guarded retained-context, selected-child, mission-row, and
+first-row flows are recorded by address. No visible surface name is inferred
+from proximity.
+
+Index focus belongs to the `CoolDragList`; Return emits the same `0x309`
+activation as a double-click and enters topic mode. In index mode Left uses
+`FUN_005f5c60` predecessor traversal and Right uses the threaded successor;
+both skip hidden non-null candidates. An immediately null candidate falls back
+to the tree's leftmost child through `FUN_005f5060`, so Left at the first child
+reselects it and Right at the last child wraps to it. Running off an edge only
+after hidden candidates retains the current category. The immediate fallback
+does not visibility-test the first child. `FUN_0060d7e0` sends the category
+command, whose branch at `0x0045dad0` explicitly focuses the list after
+rebuilding/binding it. Topic focus belongs to the read-only `TextScrollField`;
+Left/Right navigate topics without wrapping, Up/Down/Page keys scroll, and
+Return is forwarded with no encyclopedia-local topic action. Body measurement
+uses `DrawTextA` flags `0x2410`, source word/newline/tab handling, and a
+conditional scrollbar. The apparent ship statistics in A3 guide capture 027
+travel through the ordinary `ENCYTEXT.DLL` body-string path: no live-stat
+control or world-field binding is present in the recovered constructor,
+mode/render, and text-population paths.
+
+The package deliberately remains `static-partial` and
+`runtime_capture_required`. The finite `ENC-UI-01..21` matrix distinguishes the
+static contract from missing A0 proof for both factions, all seven category
+commands, index Left/Right traversal and edge behavior, button states,
+click/Return behavior, typed context routes,
+unavailable context, faction/system selectors, type-`0xf2` admission, first /
+middle / last navigation, a legitimate no-art trigger, body wrap/scroll, and
+close/focus routing. Hidden-category capture remains conditional on recovering
+a connected original visibility configuration. Guide captures 018, 019, and
+027 are A3 leads only. A0 contradictions must reopen source/schema review
+before consumers change.
+
 Space battle is an explicit full mode, not a single panel. `TAC-01` through
 `TAC-07` currently define 106 baseline cells covering battle entry, both
 faction HUDs, capital ships, fighters, assignment, selection, targeting,
