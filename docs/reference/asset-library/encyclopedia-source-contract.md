@@ -1,10 +1,10 @@
 ---
 title: "Encyclopedia Source Inventory and Decoder Contract"
-description: "Deterministic ENCYTEXT observations, profile-bound decoding, and bounded source semantics"
+description: "Deterministic ENCYTEXT and ENCYBMAP observations, profile-bound decoding, and bounded source semantics"
 category: "reference"
 created: 2026-09-28
-updated: 2026-09-28
-tags: [encyclopedia, ENCYTEXT, PE, provenance, research]
+updated: 2026-09-29
+tags: [encyclopedia, ENCYTEXT, ENCYBMAP, PE, provenance, research]
 ---
 
 # Encyclopedia Source Inventory and Decoder Contract
@@ -200,6 +200,89 @@ SHA-256, resource identity, `LANGID`, and PE code page alongside the UTF-8 text,
 encoding, and profile identifier. Successful decoding advances an `inventoried`
 record to `decoded`; later `bound` or `documented_alias` states are not
 downgraded. An explicitly `unresolved` record is not silently decoded.
+
+## ENCYBMAP lookup inventory
+
+`tools/stage-ui-assets/encyclopedia_lookups.go` provides the lookup-only API for
+PE type 6 (`RT_STRING`) resources. It consumes the existing bounded PE snapshot
+reader and returns `map[uint16]map[uint32]string`: `LANGID` → logical string ID
+→ EData filename. Languages are grouped before decoding, so equal block IDs in
+two languages remain separate identities. For a numeric block the logical ID
+is exactly `(block_id - 1) * 16 + slot`; the calculation uses `uint32`, checks
+its full range, and never wraps through the older TEXTSTRA `uint16` interface.
+TEXTSTRA extraction and validation are unchanged.
+
+Each block observation retains numeric versus named identity, `LANGID`, PE code
+page, raw length, SHA-256, and an independent copy of the raw bytes. The block
+decoder reads exactly 16 length-prefixed UTF-16LE entries, validates surrogate
+pairs, and permits only up to three zero alignment bytes afterward. Truncated
+lengths, unpaired surrogates, nonzero padding, out-of-range LANGIDs, numeric
+block zero, logical-ID overflow, and duplicate `(block identity, LANGID)` rows
+are fatal instead of being overwritten. A named block is decoded and retained
+as an explicit `unresolved` observation, but contributes no logical IDs because
+the numeric block formula cannot be applied without a recovered named selector.
+
+Filename reconciliation is bounded to one declared EData root and its direct
+regular-file children. Only the source-shaped, case-insensitive
+`EDATA.` + three decimal digit basename form receives a file number; separators,
+unnumbered suffixes, and paths are rejected rather than assigned invented IDs.
+The deterministic reconciliation records:
+
+- every language-qualified logical ID and its exact lookup string;
+- exact, unique case-folded, missing, or case-ambiguous resolution;
+- duplicate filename references together with every `(LANGID, logical ID)`;
+- each supplied EData basename, derived decimal number, byte length, and
+  SHA-256; and
+- missing lookup filenames and supplied-but-unreferenced files.
+
+Case-fold collisions in the declared root are reported as ambiguous and are
+not resolved even if one candidate has the lookup's exact spelling. Every file
+in that ambiguous candidate set is nevertheless marked referenced evidence, so
+none is mislabeled as genuinely unreferenced; unrelated files remain in the
+unreferenced inventory. EData metadata is hashed as a bounded-memory stream
+after regular-file and path/open-file identity checks, without imposing a
+runtime pixel-size limit on research evidence. The lookup inventory does not
+parse BMP pixels, copy files, publish runtime assets, or infer a topic binding.
+BMP validation belongs to E41 and physical staging belongs to E06.
+
+### Inspected English ENCYBMAP observation
+
+The identified `ENCYBMAP.DLL` has SHA-256
+`fb545d19ae24b0277753494dbfaabf2dbdde660beab821287a32016c290e4560`.
+Read-only reconciliation against the explicitly declared EData root observed:
+
+| Fact | Observation |
+|---|---:|
+| Numeric RT_STRING blocks | 31 |
+| Block `LANGID` | 1033 |
+| Block PE code-page field | 0 |
+| Nonempty logical strings | 191 |
+| Distinct case-folded filenames | 186 |
+| Duplicate-reference groups / excess references | 5 / 5 |
+| Missing filenames / case ambiguities | 0 / 0 |
+| Logical ID 4736 | `EDATA.014` |
+
+These counts and the mapping are observations for this exact DLL and EData
+inventory, not universal validation rules. The separate owned EData observation
+contains 187 files; the one filename not referenced by this lookup table is
+`EDATA.192`. Under the approved first-profile scope it remains inventory-only
+and unused. That absence of a lookup is not proof that no original behavior can
+ever select the file, and it creates no alternate-art predicate or runtime
+binding.
+
+The opt-in owned check is:
+
+```bash
+REBELLION_ENCYCLOPEDIA_TEST_SOURCE=/path/to/owned-install \
+  go test ./tools/stage-ui-assets \
+  -run TestOwnedEncyclopediaLookupInventoryPreservesInputsAndRetainsIgnoredEvidence \
+  -count=1 -v
+```
+
+It compares the ENCYBMAP snapshot and all reconciled EData length/hash facts
+after inventory, then writes metadata only to ignored
+`.artifacts/encyclopedia/E05-owned-lookups.json`. It never writes original
+lookup tables, pixels, or generated packs into Git.
 
 ## Semantic research checkpoint
 
