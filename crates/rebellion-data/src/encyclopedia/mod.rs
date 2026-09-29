@@ -68,6 +68,16 @@ impl EncyclopediaError {
         self
     }
 
+    /// Constructs an app preparation error without exposing the wire parser's
+    /// internal source selection or mutable context fields.
+    pub fn for_session(
+        code: &'static str,
+        path: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self::new(code, "session", path, detail)
+    }
+
     #[must_use]
     pub const fn code(&self) -> &'static str {
         self.code

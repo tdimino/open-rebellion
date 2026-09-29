@@ -5,8 +5,14 @@ use std::io::Cursor;
 use image::{ImageFormat, ImageReader, Limits};
 use sha2::{Digest, Sha256};
 
-/// Maximum retained byte length for one encyclopedia asset.
+/// Maximum retained byte length for one encyclopedia image.
 pub const MAX_ENCYCLOPEDIA_IMAGE_BYTES: usize = 32 * 1024 * 1024;
+
+/// Maximum retained byte length hashed as non-image encyclopedia content.
+///
+/// Callers remain responsible for applying any narrower type-specific parser
+/// limit (for example, the manifest limit) before accepting the content.
+pub const MAX_ENCYCLOPEDIA_NON_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
 /// Maximum decoded pixel count for one encyclopedia image.
 pub const MAX_ENCYCLOPEDIA_IMAGE_PIXELS: u64 = 16_000_000;
@@ -26,9 +32,14 @@ pub fn inspect_encyclopedia_bytes(
     bytes: &[u8],
     format: Option<&str>,
 ) -> Result<InspectedBytes, String> {
-    if bytes.len() > MAX_ENCYCLOPEDIA_IMAGE_BYTES {
+    let byte_limit = if format.is_some() {
+        MAX_ENCYCLOPEDIA_IMAGE_BYTES
+    } else {
+        MAX_ENCYCLOPEDIA_NON_IMAGE_BYTES
+    };
+    if bytes.len() > byte_limit {
         return Err(format!(
-            "encyclopedia asset exceeds byte limit of {MAX_ENCYCLOPEDIA_IMAGE_BYTES} bytes"
+            "encyclopedia asset exceeds byte limit of {byte_limit} bytes"
         ));
     }
 
@@ -504,16 +515,35 @@ mod tests {
     }
 
     #[test]
-    fn byte_budget_accepts_the_exact_limit_and_rejects_one_byte_more() {
-        let exact = vec![0_u8; MAX_ENCYCLOPEDIA_IMAGE_BYTES];
-        let inspected = inspect_encyclopedia_bytes(&exact, None)
-            .expect("the exact byte limit should be accepted");
-        assert_eq!(inspected.byte_len, MAX_ENCYCLOPEDIA_IMAGE_BYTES as u64);
+    fn non_image_byte_budget_accepts_64_mib_and_rejects_one_byte_more() {
+        const APPROVED_NON_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+        let bytes = vec![0_u8; APPROVED_NON_IMAGE_BYTES + 1];
+        let inspected = inspect_encyclopedia_bytes(&bytes[..APPROVED_NON_IMAGE_BYTES], None)
+            .expect("the exact non-image byte limit should be accepted");
+        assert_eq!(inspected.byte_len, APPROVED_NON_IMAGE_BYTES as u64);
 
-        let above = vec![0_u8; MAX_ENCYCLOPEDIA_IMAGE_BYTES + 1];
-        let error = inspect_encyclopedia_bytes(&above, None)
-            .expect_err("one byte over the limit must be rejected");
+        let error = inspect_encyclopedia_bytes(&bytes, None)
+            .expect_err("one byte over the non-image limit must be rejected");
         assert!(error.contains("byte limit"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn image_byte_budget_remains_32_mib_before_format_detection() {
+        let bytes = vec![0_u8; MAX_ENCYCLOPEDIA_IMAGE_BYTES + 1];
+        let exact_error =
+            inspect_encyclopedia_bytes(&bytes[..MAX_ENCYCLOPEDIA_IMAGE_BYTES], Some("bmp"))
+                .expect_err("synthetic zero bytes are not a BMP");
+        assert!(
+            exact_error.contains("format detection failed"),
+            "the exact image limit must reach format validation: {exact_error}"
+        );
+
+        let above_error = inspect_encyclopedia_bytes(&bytes, Some("bmp"))
+            .expect_err("one byte over the image limit must be rejected");
+        assert!(
+            above_error.contains("byte limit"),
+            "unexpected error: {above_error}"
+        );
     }
 
     #[test]
