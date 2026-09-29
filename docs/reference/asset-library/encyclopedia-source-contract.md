@@ -1,6 +1,6 @@
 ---
 title: "Encyclopedia Source Inventory and Decoder Contract"
-description: "Deterministic ENCYTEXT source observations and profile-bound lossless decoding"
+description: "Deterministic ENCYTEXT observations, profile-bound decoding, and bounded source semantics"
 category: "reference"
 created: 2026-09-28
 updated: 2026-09-28
@@ -9,11 +9,12 @@ tags: [encyclopedia, ENCYTEXT, PE, provenance, research]
 
 # Encyclopedia Source Inventory and Decoder Contract
 
-This contract defines the first, deliberately non-semantic layer of the
-encyclopedia pipeline. It inventories source files and `ENCYTEXT.DLL` PE type-10
-resources without executing `REBEXE.EXE`, decoding prose, assigning topics, or
-publishing a runtime catalog. A successful inventory proves what bytes were
-observed; it does not prove what those bytes mean.
+This contract begins with the deliberately non-semantic source layer of the
+encyclopedia pipeline, then records a bounded semantic research checkpoint. The
+inventory covers source files and `ENCYTEXT.DLL` PE type-10 resources without
+executing `REBEXE.EXE`, decoding prose, assigning topics, or publishing a runtime
+catalog. A successful inventory proves what bytes were observed; it does not
+prove what those bytes mean.
 
 The inventory implementation is in
 `tools/stage-ui-assets/encyclopedia_profiles.go`. It reuses the bounded PE
@@ -200,6 +201,165 @@ encoding, and profile identifier. Successful decoding advances an `inventoried`
 record to `decoded`; later `bound` or `documented_alias` states are not
 downgraded. An explicitly `unresolved` record is not silently decoded.
 
+## Semantic research checkpoint
+
+This checkpoint is bounded to the same inspected `REBEXE.EXE` identity recorded
+by the decoder profile. It records source semantics needed before a catalog
+schema can freeze; it does not add runtime catalog data or claim visual
+acceptance. The accepted decoder profile remains unchanged because its strict
+machine-readable shape describes byte decoding, while these profile-bounded
+semantic decisions live in this contract and `RE-ENC-01`.
+
+The user-approved 2026-09-29 scope publishes only source-proven standard,
+faction, and system image selectors for the first profile. Unproven alternate
+art remains inventoried and unused under deferred task `orlocal-2kq`: no runtime
+binding, predicate, UI switch, or original-display claim is admitted. This
+deferral is not proof of recovery or absence and does not weaken the remaining
+identity, availability, context, navigation, or capture gates.
+
+### Master cache, selectors, and ordering
+
+The following source paths are connected dataflow, not nearby calls:
+
+| Source path | Recovered rule |
+|---|---|
+| `FUN_00421c70` → shell `+0x474`; `FUN_00422620` lines 78–272 | The shell starts with a null master topic collection. `FUN_00422620` constructs and populates it only while null; later calls do not refresh it. |
+| `FUN_0051caf0` → `FUN_00567800` → `FUN_0051cab0`; `FUN_004f31b0` / `FUN_004f6010` | Master rows come from registry definitions plus a viewer-side system iterator, not from a category-time walk of live campaign objects. |
+| `FUN_0045ddc0` → `FUN_0045f100` | Builds the seven selectors at fixed x positions. Changed, nonforced family selection in index mode filters the retained master cache by source-identity high byte. |
+| `FUN_0045f100` → `FUN_00608280` | Command `0x6f` or an eligible forced change binds shell `+0x474` into the list control and refreshes it. It does not clear or manufacture an empty collection. |
+| `FUN_0060a790(..., 2)` → vtable `0x0066e148 + 4` → `FUN_0060a890` → `FUN_00626ad0`; insertion in `FUN_005f59f0` | Both master and filtered collections are ordered doubly linked lists sorted by case-insensitive narrow-byte display text. Comparator-equal rows retain source insertion order. |
+| `FUN_00429f30` → `FUN_0045d400` → `FUN_0045fd90` | Resolves empty, class, and entity contexts to a canonical definition-derived topic key, with a connected entity fallback; raw entity identity is not automatically topic identity. |
+| `FUN_00442130` → vtable `0x00659ba0` → `FUN_004ad730` / `FUN_004ad750` | Initializes rows enabled and implements next/previous traversal that recursively skips disabled rows. |
+| `FUN_0045da70` → current-topic vtable `+0x0c` / `+0x10` → `FUN_0045fa60` | Commands `0x84` and `0x83` use the skip-disabled neighbors. A null result retains the current topic; there is no endpoint wrap. |
+| `FUN_0045fa60` → `FUN_0045f970` | Selects the EData lookup key from cached source identity, viewer side, or the system picture selector before loading topic text. |
+| `FUN_004f31b0` → `FUN_0053ef50` / `FUN_0053f090` → type-`0x90` vtable `0x00663698 + 0x10` → `FUN_004f6330` | Selects the requested side view for each system and excludes it when its `+0x1c` container-ancestry chain contains an object whose virtual type is `0xf2`. |
+
+Displayed selector order is fixed by control position, not map iteration:
+
+| Order | Command | x | Bound/filter behavior |
+|---:|---:|---:|---|
+| 0 | `0x6f` | 0 | bind the full shell `+0x474` master cache |
+| 1 | `0x70` | 52 | filter cached source high byte `[0x90, 0x98)` |
+| 2 | `0x71` | 104 | filter `[0x14, 0x20)` |
+| 3 | `0x72` | 156 | filter `[0x20, 0x30)` |
+| 4 | `0x73` | 208 | filter `[0x40, 0x80)` |
+| 5 | `0x74` | 260 | filter `[0x10, 0x14)` |
+| 6 | `0x75` | 312 | filter `[0x30, 0x40)` |
+
+The localized selector labels remain unjoined, so stable keys are commands and
+ranges rather than guessed names. Master definition enumeration admits
+`[0x08,0x20)`, `[0x22,0x40)`, and `[0x50,0x80)`; the last range additionally
+requires resolved definition `+0x5c == 0`. Thus the broader outer selectors do
+not make `[0x20,0x22)` or `[0x40,0x50)` rows appear in this master cache. System
+rows `[0x90,0x98)` come from the viewer-side iterator with its exclusion flag
+enabled. Every admitted row derives the canonical key
+`(definition +0x30 & 0x0fff) + 0x1000`, and `FUN_0060a860` deduplicates on that
+key before insertion.
+
+`FUN_0060a890` mode 2 compares row text at `+0x14`. `FUN_00626ad0` folds ASCII
+case when no locale is active and otherwise maps bytes through the current CRT
+case map before byte comparison; this is not locale collation. `FUN_005f59f0`
+walks past comparator-equal rows, so ties preserve definition-registry order and
+then system-iterator order.
+
+### Selection, routing, and typed application boundary
+
+`FUN_0045f100` applies its transition checks in this exact order:
+
+1. If the requested command already equals `this + 0x118`, return immediately,
+   even if the call is forced.
+2. If mode is topic (`this + 0x114 == 2`) and force is zero, a changed command
+   also returns immediately.
+3. Otherwise command `0x6f` or a forced change binds the full master cache.
+   Current topic clears only when force is nonzero and mode is not topic.
+4. A changed, nonforced family command in index mode rebuilds and binds the
+   sorted filtered projection.
+
+The application boundary must use closed types and pure rules. It must not
+accept expressions, scripts, or mod-supplied predicates:
+
+```text
+ViewerFaction = Alliance | Empire
+OpenContext = Index | Class(SourceIdentity) | Entity(SourceIdentity)
+Direction = Backward | Forward
+SelectionForce = Normal | Forced
+SystemSourceAncestry = ContainsTypeF2 | NoTypeF2
+
+build_master_topic_cache(definitions, viewer_side_systems) -> MasterTopicCache
+select_collection(selected, requested, force, mode, master) -> SelectionResult
+canonical_topic_key(definition_field) -> TopicKey
+resolve_open(context, master, fallback_association) -> Index | Topic(TopicKey)
+next_enabled_topic(direction, current) -> Stay | Topic(TopicKey)
+art_lookup_key(cached_identity, viewer, system_picture) -> Result<EncybmapKey, UnresolvedEvidence>
+include_system(ancestry) -> ancestry == NoTypeF2
+```
+
+Required inputs are viewer side, retained shell cache, selected/requested
+command, force, encyclopedia mode, typed class/entity identity, resolved
+definition `+0x30`, entity fallback association, current topic and enabled
+links, system picture selector, and whether the selected system side-view's
+container ancestry contains source type `0xf2`. Static asset presence is never
+an availability input. `SystemSourceAncestry` is deliberately structural: the
+inspected source proves the test but does not justify renaming type `0xf2` as a
+knowledge, destruction, or visibility state.
+
+`FUN_0045d400` resolves class context through `FUN_0051cab0` and entity context
+through `FUN_004f2d10`; both use `(definition +0x30 & 0x0fff) + 0x1000` to look
+up the deduplicated master row. On an entity-key miss, `FUN_0045fd90` retries the
+same original identity outside `[0xa0,0xb0)`, so that branch cannot introduce a
+different canonical key. Inside that range it resolves through `FUN_004f2f60`,
+then uses either `FUN_0040d760` or the associated object at `+0x1c` before
+retrying the definition-derived key. Failure leaves current topic null and
+selects index mode. Exhaustive family/DAT joins remain E07 work.
+
+For source families with identity high byte in `[0x40,0x80)` or `[0x08,0x10)`,
+`FUN_0045fa60` adds `0x1000` for source side 1 or `0x2000` for side 2 after
+masking to the low 12 bits. System families `[0x90,0x98)` follow
+`FUN_004f3220` → `FUN_00509610` → `FUN_0045f660`; selectors 1–26 map to
+ENCYBMAP keys `0x2b5c`–`0x2b75`.
+
+### Decision scenarios, remaining gates, and deferred work
+
+| Scenario | Trigger and expected source outcome | Capture need |
+|---|---|---|
+| Alliance / Empire | For applicable families, side 1 uses low12 + `0x1000`; side 2 uses low12 + `0x2000`; text identity stays fixed. | Capture the same topic for both sides. |
+| Same-command repeat | Requested command equals selected command: immediate no-op before force or mode checks. | Repeat index and family commands, including forced calls. |
+| Changed family in index mode | Changed `0x70`–`0x75`, nonforced: rebuild the sorted projection over the retained master. | Change between families and record order/membership. |
+| Changed `0x6f` | After early-return eligibility, bind the full master cache, not an empty list. | Record the full-cache view. |
+| Forced, non-topic / topic | A changed forced command binds the master; non-topic clears current, topic retains current. | Capture both modes. |
+| Nonforced topic change | A changed command returns without changing command, collection, or current topic. | Attempt category change in topic mode. |
+| Campaign change after construction | The if-null master cache does not refresh; same-shell category changes only filter it. A new shell may build from new inputs. | Compare one shell before/after a controlled change, then reconstruct it. |
+| Context-free / class / entity open | Empty context opens index. Class and entity contexts resolve through definition-derived canonical keys. A non-`[0xa0,0xb0)` miss only retries the same identity; the special range may remap through its connected association. | Capture all three, a non-special miss, and both special-range association branches. |
+| Unavailable context | Failed direct and fallback resolution leaves no current topic and enters index mode. | Capture a stale/unavailable identity. |
+| Faction / system art | Faction ranges use side keys; system topics use their 1–26 picture selector. | Capture both sides and representative system selectors. |
+| System side-view admitted | `FUN_0053f090` selects the requested side view; `FUN_004f6330` reaches the end of its `+0x1c` container ancestry without encountering virtual type `0xf2`. | Capture the same system from both sides while retaining the selected view and ancestry identities. |
+| System side-view excluded | The same ancestry walk encounters virtual type `0xf2`, returns nonzero, and the iterator continues without publishing that system row. | Capture a source-backed `0xf2` ancestry case; do not infer a friendlier gameplay label from the type code. |
+| Alternate Jedi Luke art | Owned profile maps `0x1842` to `EDATA.074`, leaves `0x2842` empty, and has zero `EDATA.192` string mappings. Recovered static evidence includes the `EDATA\` directory-literal reference at `0x0045f8d2` inside `FUN_0045f7b0` and the identified `FUN_0045f970` callers (`0x0045fbef`, `0x0046a2ff`), which consume table selectors; it does not establish a connected `EDATA.192` predicate. `EDATA.192` remains inventoried but unused for this profile. | **Deferred — `orlocal-2kq`:** publish no binding, predicate, UI switch, or original-display claim. Preserve the evidence and future paired-capture need; the deferral does not block the first profile. |
+| First / middle / last topic | Navigation follows sorted enabled rows; endpoints return null, disable their direction, retain current, and do not wrap. | Capture both endpoints and both directions from a middle row. |
+| Disabled linked row | `FUN_004ad730` / `FUN_004ad750` recursively skip `+0x6c == 0`; encyclopedia-created rows begin enabled. | Capture only after identifying a connected writer; do not name the flag as knowledge/visibility from shape alone. |
+| Unavailable entry | A row absent from master construction or removed by canonical-key deduplication cannot appear in projections or context opens. | Capture an excluded gap and a deduplicated class/entity pair. |
+
+The side-specific system filter is structurally recovered. The type-`0x90`
+factory `FUN_00566c70` calls `FUN_00566b90`, which installs vtable
+`0x00663698`; its `+0x10` slot is `FUN_004f6330`. That function follows the
+selected view's container pointer at `+0x1c`, tests each ancestor's virtual type
+at vtable `+4`, and returns nonzero on type `0xf2`. `FUN_0053f090` rejects that
+view and continues iteration when the result is nonzero. Type `0xf2` is
+constructed by `FUN_005696b0`, whose vtable `0x006639b8 + 4` resolves to
+`FUN_00569880` and returns `0xf2`. This proves the inclusion predicate without
+proving a higher-level gameplay name for that source container.
+
+Current evidence for the inspected profile does not establish a connected
+`EDATA.192` selector or predicate, so no alternate-Luke rule, runtime binding,
+or UI switch is admitted. Under the approved scope this unresolved alternate is
+inventoried and unused, deferred to `orlocal-2kq`, and does not block E08 or the
+first-profile schema/publication. That decision is not proof that original
+behavior is impossible or that the alternate was implemented. A connected
+original-runtime/load trace of this build, additional connected code/data
+evidence, or another legitimately owned profile may support future work.
+Runtime captures for both the proven selectors and any future alternate remain
+explicit corroboration gates and are not claimed as visual acceptance here.
+
 ## Owned-source check
 
 Ordinary tests use synthetic PE fixtures and require no game installation. An
@@ -244,7 +404,9 @@ Original prose and decoded text are never committed.
 ## Non-claims
 
 The profile establishes lossless byte decoding only for its exact source
-identity. It does not establish category or topic identity, title selection,
-DAT binding, EData lookup, visibility, navigation, or original UI behavior. The
-inventory and decoded research records are not a runtime catalog and do not by
-themselves advance P35 or strict RE-ENC-01 acceptance.
+identity. The semantic checkpoint establishes only the bounded static rules
+named above; it does not establish localized category labels, a complete topic
+identity/title/DAT binding, campaign visibility, the deferred alternate Luke
+predicate, or original runtime/visual acceptance. Deferred alternate inventory
+is not a runtime binding. Inventory and research records are not a runtime
+catalog and do not by themselves advance P35 or strict RE-ENC-01 acceptance.

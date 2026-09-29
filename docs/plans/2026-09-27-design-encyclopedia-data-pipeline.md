@@ -134,6 +134,24 @@ Read-only PE inspection of the owned English installation on 2026-09-27 found:
 These are installation-specific observations, not universal count constraints.
 No original descriptions or pixel data are reproduced in this document.
 
+### Approved first-profile alternate-image scope
+
+The user explicitly deferred unproven alternate-image support on 2026-09-29.
+The first supported profile publishes only standard topic images and the
+source-proven faction and system selectors. `EDATA.192` and any other unproven
+alternate artwork remain inventoried with unresolved provenance but unused: no
+catalog binding, campaign predicate, runtime switch, or alternate-image
+acceptance claim is permitted. Asset existence does not establish original
+encyclopedia display.
+
+This deferral is tracked by `orlocal-2kq`. It is not proof that an alternate was
+implemented, recovered, absent from original behavior, or accepted visually,
+and it is not a blocker for E08, schema freeze, first-profile publication, or
+first-profile UI acceptance. Retain compatible `variant` and image-identity
+fields so later source-proven work can extend the catalog without fabricating a
+current binding. All standard/faction/system selector, identity, availability,
+context, navigation, and capture requirements remain unchanged.
+
 ### Required source work before freezing schema v1
 
 1. Trace `FUN_0045d400` and its callers, using
@@ -145,8 +163,10 @@ No original descriptions or pixel data are reproduced in this document.
    against the original executable and the 29 non-ASCII records. Reject unknown
    source profiles rather than using lossy replacement characters.
 3. Recover category IDs, labels, ordering, topic titles, previous/next behavior,
-   all entity families, system mappings, and variants such as alternate Luke art.
-   Do not extrapolate the renderer's current family offsets.
+   all entity families, system mappings, and every image selector supported by
+   the first profile. Do not extrapolate the renderer's current family offsets.
+   Unproven alternate art, including the proposed alternate Luke case, follows
+   the approved deferral above rather than blocking schema v1.
 4. Account for every extracted resource: bound to a topic, a documented alias,
    or explicitly unresolved with a reason. An unresolved item may remain in the
    extraction report but cannot silently become a fabricated runtime binding.
@@ -154,10 +174,12 @@ No original descriptions or pixel data are reproduced in this document.
    present in a DLL does not establish that a topic is visible in every campaign
    state, to both factions, or from every entry point.
 
-For unsupported controls/encoding or uncertain joins, retain raw bytes in the
-local extraction report and stop publication of the affected category. Do not
-substitute externally written lore. A partial category implementation is labeled
-partial and must not claim full P35 acceptance.
+For unsupported in-scope controls/encoding or uncertain joins, retain raw bytes
+in the local extraction report and stop publication of the affected category.
+Do not substitute externally written lore. Deferred alternate images remain
+inventoried and unbound rather than stopping publication of an otherwise proven
+first-profile category. A partial category implementation is labeled partial
+and must not claim full P35 acceptance.
 
 ## 4. Proposed schema v1
 
@@ -544,7 +566,7 @@ pre-modded pack needs a separate package/mod identity contract and is deferred.
 
 | Slice | Depends on | Deliverable and proof |
 |---|---|---|
-| A: source contract and schema | Design review | Establish encoding, all identity joins, category/variant/availability rules; add schemas and synthetic valid/invalid examples. No invented mappings. |
+| A: source contract and schema | Design review | Establish encoding, all identity joins, category/proven-selector/availability rules for the first profile; retain unproven alternates as inventoried, unused deferred evidence; add schemas and synthetic valid/invalid examples. No invented mappings. |
 | B: extraction/staging | A | Go extraction, manifest verification, repeatability, safe replacement and complete resource accounting. Original files remain unmodified. |
 | C: runtime loading and native overlays | A, B | Shared parser and asset provider, separate content ownership, overlay diagnostics and atomic reload; no save-schema change. |
 | D: browser transport | B, C | Pack collector/installer and loose fallback consume identical base bytes; staging included in normal container/web builds. |
@@ -579,10 +601,12 @@ staging, a separate versioned catalog, ORPK v3 kind-0 namespaced transport,
 existing native mod ordering/merge semantics, and original-style UI consumption.
 No production dependency, save format, or DAT format change is requested.
 
-Source recovery must settle the encoding, category/alias structure, variant
-predicates and visibility rules before freezing schema v1. If those findings
-contradict the proposed model, revise this design and its fixtures before coding
-the runtime. These are evidence questions with named sources and failure gates,
-not permission to guess. Implementation scheduling and any schema expansion
-follow review of this document; this documentation contribution does not claim
-that the proposed system already exists.
+Source recovery must settle the encoding, category/alias structure, proven
+first-profile image selectors and visibility rules before freezing schema v1.
+Unproven alternate-image predicates are explicitly deferred to `orlocal-2kq`;
+their assets remain inventoried but unused and do not block the current schema.
+If in-scope findings contradict the proposed model, revise this design and its
+fixtures before coding the runtime. These are evidence questions with named
+sources and failure gates, not permission to guess. Implementation scheduling
+and any schema expansion follow review of this document; this documentation
+contribution does not claim that the proposed system already exists.

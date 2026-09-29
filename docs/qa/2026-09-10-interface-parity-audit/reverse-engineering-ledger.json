@@ -339,7 +339,244 @@
         "method": "Trace topic commands and previous/next navigation through ENCYBMAP mappings, ENCYTEXT records, EData image selection, and missing-entry handling.",
         "next_proof": "P64 recovers and browser-corroborates the exact empty index shells, category/resource table, rail states, and clipping. P65 adds the source-derived 356-entry English catalog, recovered labels and filters, stable selection, and scrolling. P66A strictly extracts 348 ENCYTEXT records and 191 ENCYBMAP mappings, reproduces ordinary, system-picture, and factional mission lookup rules, binds 346 complete topics per faction, and reports ten source-empty missions. Continue with browser transport, topic composition, interactive navigation, context-open paths, production routing, and A0 evidence."
       },
-      "runtime_capture_required": true
+      "runtime_capture_required": true,
+      "semantic_research": {
+        "version": 1,
+        "source_profile": "encytext-49aea545-lang-1033-v1",
+        "rebexe_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
+        "scope_status": "in_scope_static_complete_runtime_capture_pending_alternates_deferred",
+        "typed_application_contract": {
+          "closed_enums": {
+            "viewer_faction": ["alliance", "empire"],
+            "open_context": ["index", "class_source_identity", "entity_source_identity"],
+            "direction": ["backward", "forward"],
+            "selection_force": ["normal", "forced"],
+            "system_source_ancestry": ["contains_type_0xf2", "no_type_0xf2"]
+          },
+          "world_inputs": ["viewer_faction", "shell_master_topic_cache", "selected_category_command", "selection_force", "current_encyclopedia_mode", "class_or_entity_definition_plus_0x30", "typed_source_identity", "entity_fallback_association", "current_topic", "topic_enabled", "system_picture_selector", "system_view_has_type_0xf2_ancestor"],
+          "pure_predicates": [
+            "build_master_topic_cache(definition_registry, viewer_side_system_iterator)",
+            "category_contains(category_command, cached_source_identity)",
+            "select_collection(selected_command, requested_command, force, mode, master_cache)",
+            "canonical_topic_key(definition_plus_0x30)",
+            "resolve_open(open_context, master_cache, entity_fallback_association)",
+            "next_enabled_topic(direction, current_topic)",
+            "art_lookup_key(source_identity, viewer_faction, system_picture_selector)",
+            "include_system(system_view_has_type_0xf2_ancestor)"
+          ],
+          "prohibition": "No expression evaluator, script, mod-supplied predicate, filename inference, or static-presence visibility rule is permitted."
+        },
+        "category_command_order": [
+          {"ordinal": 0, "command": "0x6f", "x": 0, "role": "full_index_master_binding", "identity_high_byte_range": null},
+          {"ordinal": 1, "command": "0x70", "x": 52, "role": "source_family", "identity_high_byte_range": [144, 152]},
+          {"ordinal": 2, "command": "0x71", "x": 104, "role": "source_family", "identity_high_byte_range": [20, 32]},
+          {"ordinal": 3, "command": "0x72", "x": 156, "role": "source_family", "identity_high_byte_range": [32, 48]},
+          {"ordinal": 4, "command": "0x73", "x": 208, "role": "source_family", "identity_high_byte_range": [64, 128]},
+          {"ordinal": 5, "command": "0x74", "x": 260, "role": "source_family", "identity_high_byte_range": [16, 20]},
+          {"ordinal": 6, "command": "0x75", "x": 312, "role": "source_family", "identity_high_byte_range": [48, 64]}
+        ],
+        "selection_transitions": {
+          "same_command": "no_op_before_force_or_mode_checks",
+          "topic_mode_nonforced_changed": "no_op",
+          "changed_index_command": "bind_master_cache",
+          "changed_forced_non_topic": "bind_master_cache_and_clear_current_topic",
+          "changed_forced_topic": "bind_master_cache_and_retain_current_topic",
+          "changed_family_nonforced_index": "rebuild_sorted_filtered_view_from_master_cache"
+        },
+        "master_topic_cache": {
+          "owner": "shell_plus_0x474",
+          "lifecycle": "initialize_once_when_shell_plus_0x474_is_null",
+          "definition_identity_ranges": [[8, 32], [34, 64], [80, 128]],
+          "definition_conditional_range": {"range": [80, 128], "condition": "resolved_definition_plus_0x5c_equals_zero"},
+          "excluded_definition_gaps": [[32, 34], [64, 80]],
+          "system_identity_range": [144, 152],
+          "system_source": "viewer_side_iterator_excluding_views_whose_plus_0x1c_container_ancestry_contains_virtual_type_0xf2",
+          "deduplication_key": "(definition_plus_0x30 & 0x0fff) + 0x1000",
+          "ordering": {
+            "list_mode": 2,
+            "comparator": "case_insensitive_narrow_byte_ascending",
+            "locale_behavior": "ASCII_fold_without_active_locale_else_current_CRT_byte_case_map",
+            "ties": "stable_source_insertion_order"
+          }
+        },
+        "system_inclusion": {
+          "identity_family": "0x90..0x97",
+          "type_0x90_factory": "FUN_00566c70",
+          "type_0x90_constructor": "FUN_00566b90",
+          "type_0x90_vtable": "0x00663698",
+          "predicate_slot": "+0x10",
+          "predicate_function": "FUN_004f6330",
+          "ancestry_link": "+0x1c",
+          "ancestor_type_slot": "vtable+0x04",
+          "excluded_ancestor_type": "0xf2",
+          "include_when": "no_type_0xf2_ancestor",
+          "exclude_when": "contains_type_0xf2_ancestor",
+          "semantic_label": "unresolved_do_not_rename_as_knowledge_destruction_or_visibility"
+        },
+        "context_resolution": {
+          "canonical_topic_key": "(definition_plus_0x30 & 0x0fff) + 0x1000",
+          "class_context": "resolve_class_definition_then_lookup_canonical_key",
+          "entity_context": "resolve_entity_definition_then_lookup_canonical_key",
+          "entity_miss_non_a0_af": "retry_original_entity_identity_through_entity_resolver",
+          "entity_miss_a0_af": "FUN_0045fd90_resolves_range_0xa0_0xb0_through_FUN_004f2f60_then_FUN_0040d760_or_associated_plus_0x1c_identity",
+          "unresolved": "null_current_topic_and_index_mode"
+        },
+        "jedi_luke_profile_result": {
+          "normal_selector": "0x1842=EDATA.074",
+          "empire_selector": "0x2842=empty",
+          "edata_192_mapping_count": 0,
+          "edata_directory_literal_xrefs": ["0x0045f8d2"],
+          "external_loader_callers": ["0x0045fbef", "0x0046a2ff"],
+          "publication": "inventoried_unused_deferred",
+          "deferred_task": "orlocal-2kq",
+          "blocks_current_profile": false,
+          "published_predicate": null,
+          "runtime_binding": null
+        },
+        "rules": [
+          {
+            "id": "category_command_order",
+            "status": "proven",
+            "source_addresses": ["0x0045ddc0", "0x0045f100"],
+            "call_path": "FUN_0045ddc0 constructs commands 0x6f..0x75 at fixed x positions and calls FUN_0045f100; displayed order follows those positions.",
+            "expected_outcomes": ["The full-index command is first, followed left-to-right by commands 0x70, 0x71, 0x72, 0x73, 0x74, and 0x75."],
+            "capture_needs": ["Capture the seven selectors for both factions and join localized labels to command IDs."]
+          },
+          {
+            "id": "master_topic_cache",
+            "status": "proven",
+            "source_addresses": ["0x00421c70", "0x00422620", "0x0051caf0", "0x00567800", "0x004f31b0", "0x004f6010"],
+            "call_path": "FUN_00421c70 initializes shell +0x474 to null. FUN_00422620 creates it only while null, enumerates registry definitions through FUN_0051caf0/FUN_00567800, applies the recorded range and +0x5c tests, derives the low12+0x1000 key, deduplicates by key, then appends side-specific systems from FUN_004f31b0/FUN_004f6010 under the same key deduplication.",
+            "expected_outcomes": ["The cache is built at most once per shell object and later FUN_00422620 calls do not repopulate it.", "Definition-backed and system-backed rows sharing a canonical key collapse to one row.", "The cache is a registry-plus-side-system construction, not a fresh category-time campaign object snapshot."],
+            "capture_needs": ["Capture initial shell construction for both viewer sides and compare the cache-visible systems; runtime capture does not replace the static lifecycle proof."]
+          },
+          {
+            "id": "category_population_ranges",
+            "status": "proven",
+            "source_addresses": ["0x0045f100", "0x0042d170", "0x00608280"],
+            "call_path": "After the early returns and full-cache branch, FUN_0045f100 clears the reusable filtered collection, walks the already-built shell +0x474 cache, copies rows whose source-identity high byte lies in the selected half-open range, binds the filtered collection through FUN_00608280, and refreshes the control.",
+            "expected_outcomes": ["Family membership follows the recorded command ranges over cached rows.", "Command 0x6f and eligible forced changes bind the full master cache rather than an empty list.", "Definition gaps [0x20,0x22) and [0x40,0x50) do not appear in the inspected master cache despite broader outer selector ranges."],
+            "capture_needs": ["Capture each command's membership for both factions, including empty/gap cases and the 0x6f full-cache view."]
+          },
+          {
+            "id": "category_ordering",
+            "status": "proven",
+            "source_addresses": ["0x00422620", "0x0045ddc0", "0x0045f100", "0x005f59f0", "0x0060a790", "0x0060a890", "0x00626ad0"],
+            "call_path": "Both the shell +0x474 master collection and FUN_0045ddc0's filtered collection are constructed by FUN_0060a790 in mode 2. FUN_005f59f0 inserts through vtable +4, which resolves to FUN_0060a890; mode 2 compares row +0x14 text through FUN_00626ad0.",
+            "expected_outcomes": ["Rows sort ascending by case-insensitive narrow bytes, using ASCII folding without an active locale and the current CRT byte case map when locale handling is active.", "Comparator-equal rows retain registry/system source insertion order because ordered insertion advances past equals."],
+            "capture_needs": ["Capture representative mixed-case and equal-folded names under the inspected locale; retain the exact byte comparator as the portable contract rather than claiming locale collation."]
+          },
+          {
+            "id": "selection_transition",
+            "status": "proven",
+            "source_addresses": ["0x0045f100", "0x00608280"],
+            "call_path": "FUN_0045f100 checks selected-command equality first, then topic-mode/nonforced state. Only after both early returns does command 0x6f or force bind shell +0x474 through FUN_00608280; current topic clears only when force is nonzero and mode is not topic mode. The remaining changed/nonforced/index-mode family path rebuilds the sorted projection.",
+            "expected_outcomes": ["Repeating the selected command is always a no-op, even when forced.", "A changed nonforced command in topic mode is a no-op.", "A changed forced command binds the master cache; it clears current topic outside topic mode and preserves it in topic mode.", "A changed nonforced family command in index mode rebuilds the filtered view."],
+            "capture_needs": ["Capture same-command, changed-family, 0x6f, forced, and nonforced transitions in both index and topic modes."]
+          },
+          {
+            "id": "context_topic_key_resolution",
+            "status": "proven",
+            "source_addresses": ["0x0045d400", "0x0045fd90", "0x004f2d10", "0x0051cab0", "0x0060a860"],
+            "call_path": "FUN_0045d400 resolves class context through FUN_0051cab0 and entity context through FUN_004f2d10, reads definition +0x30, derives (field & 0x0fff)+0x1000, and looks up that canonical key in shell +0x474. On an entity-key miss it invokes FUN_0045fd90, whose special [0xa0,0xb0) branch resolves through FUN_004f2f60 and either FUN_0040d760 or the associated +0x1c identity before retrying.",
+            "expected_outcomes": ["Raw entity identity is routing input and does not directly equal topic identity.", "Class and entity contexts may resolve to the same deduplicated canonical topic key.", "An unresolvable direct and fallback route produces no topic."],
+            "capture_needs": ["Capture class-backed, direct entity, [0xa0,0xb0) fallback, non-special fallback, and unresolvable opens without expanding into E07's exhaustive DAT joins."]
+          },
+          {
+            "id": "context_open",
+            "status": "proven",
+            "source_addresses": ["0x00422ce0", "0x00429f30", "0x0045d400", "0x0041d6b0", "0x0046c3c0", "0x00486fb0"],
+            "call_path": "FUN_00422ce0 supplies empty wrappers to FUN_00429f30 for context-free opens; class/entity callers pass typed source context through FUN_0041d6b0 to FUN_00429f30 and FUN_0045d400, which applies canonical-key and fallback resolution before choosing index or topic mode.",
+            "expected_outcomes": ["Empty context opens the index.", "A class or entity context whose canonical key exists opens that cached topic.", "A context whose direct and fallback routes fail opens index mode without fabricating a raw-resource topic."],
+            "capture_needs": ["Capture context-free, resolved class/entity, fallback entity, and stale/unavailable opens for each owned family."]
+          },
+          {
+            "id": "neighbor_navigation",
+            "status": "proven",
+            "source_addresses": ["0x00442130", "0x004ad730", "0x004ad750", "0x0045da70", "0x0045fd20", "0x0045fe60", "0x0045fa60"],
+            "call_path": "FUN_00442130 installs vtable 0x00659ba0 and initializes row +0x6c enabled. Its +0x0c/+0x10 slots resolve to FUN_004ad730/FUN_004ad750, which walk next/previous links recursively past rows whose +0x6c is zero. FUN_0045da70 uses those slots for 0x84/0x83, and FUN_0045fd20 disables controls on null results.",
+            "expected_outcomes": ["Navigation follows the sorted bound collection and skips disabled rows.", "A non-null enabled neighbor becomes current and is rendered.", "A null result retains current topic, disables its direction, and never wraps."],
+            "capture_needs": ["Capture first, middle, disabled-intermediate, and last topics with pointer and keyboard input; verify title/body/art transitions."]
+          },
+          {
+            "id": "viewer_faction_art",
+            "status": "proven",
+            "source_addresses": ["0x0045fa60", "0x0045f970"],
+            "call_path": "FUN_0045fa60 masks the source identity to 12 bits for families [0x40,0x80) and [0x08,0x10), adds 0x1000 for source side 1 or 0x2000 for source side 2, then calls FUN_0045f970.",
+            "expected_outcomes": ["Alliance selects the 0x1000 key family.", "Empire selects the 0x2000 key family.", "The same topic text identity is retained."],
+            "capture_needs": ["Capture the same applicable identity from both factions and compare the selected original image."]
+          },
+          {
+            "id": "system_art",
+            "status": "proven",
+            "source_addresses": ["0x0045fa60", "0x004f3220", "0x00509610", "0x0045f660", "0x0045f970"],
+            "call_path": "For source families [0x90,0x98), FUN_0045fa60 resolves a system picture selector through FUN_004f3220 and FUN_00509610; FUN_0045f660 maps selectors 1..26 to ENCYBMAP keys 0x2b5c..0x2b75 before FUN_0045f970.",
+            "expected_outcomes": ["System art follows the 26-way source picture selector and is not derived from a resource-ID offset."],
+            "capture_needs": ["Capture representative selectors including the three non-sequential terminal cases."]
+          },
+          {
+            "id": "system_inclusion_predicate",
+            "status": "proven",
+            "source_addresses": ["0x00422620", "0x004f31b0", "0x004f6330", "0x0053ef50", "0x0053f090", "0x00566b90", "0x005696b0", "0x00569880"],
+            "call_path": "FUN_00422620 starts [0x90,0x98) enumeration through FUN_004f31b0/FUN_0053ef50 for shell +0x9c viewer side and advances through FUN_004f6010/FUN_0053f090 with exclusion enabled. The type-0x90 factory FUN_00566c70 calls FUN_00566b90, which installs vtable 0x00663698; its +0x10 slot resolves to FUN_004f6330. That predicate walks +0x1c container ancestry and returns nonzero when an ancestor's vtable +4 type is 0xf2. FUN_0053f090 rejects such a side view and continues. FUN_005696b0 installs the type-0xf2 vtable 0x006639b8, whose +4 slot FUN_00569880 returns 0xf2.",
+            "expected_outcomes": ["A selected system side view whose +0x1c container ancestry reaches virtual type 0xf2 is excluded.", "A selected system side view whose ancestry reaches null without type 0xf2 is eligible for canonical-key deduplication and insertion.", "The structural type-0xf2 test must not be renamed as knowledge, destruction, or visibility without separate evidence."],
+            "capture_needs": ["Capture the same systems from both sides with both ancestry outcomes, retaining the selected side-view and container identities; use the source code as the predicate name unless a higher-level meaning is separately proven."]
+          },
+          {
+            "id": "hidden_topic_treatment",
+            "status": "proven",
+            "source_addresses": ["0x00422620", "0x00442130", "0x0045f100", "0x004ad730", "0x004ad750"],
+            "call_path": "FUN_00422620 and FUN_0045f100 construct every admitted encyclopedia row through FUN_00442130 with +0x6c set to one; the encyclopedia paths have no later write that disables those rows. The neighbor vtable nevertheless skips any externally disabled row. Entries excluded from master-cache construction or absent by canonical-key deduplication cannot appear in projections or context opens.",
+            "expected_outcomes": ["Static asset presence alone does not make a topic available.", "Admitted definition rows remain enabled in the recovered encyclopedia path; system admission is separately gated by the selected view's exact type-0xf2 container-ancestry predicate.", "If a bound row is disabled by another connected owner, neighbor traversal skips it rather than stopping or wrapping."],
+            "capture_needs": ["Capture admitted, absent, and—if a connected writer can be found—disabled rows for both factions; do not label generic +0x6c as a gameplay knowledge flag without proof."]
+          },
+          {
+            "id": "campaign_change_after_cache",
+            "status": "proven",
+            "source_addresses": ["0x00421c70", "0x00422620", "0x0045f100"],
+            "call_path": "The shell constructor zeros +0x474, FUN_00422620 populates it only under an if-null guard, and FUN_0045f100 only binds or filters that retained collection. No recovered encyclopedia selection path repopulates +0x474.",
+            "expected_outcomes": ["Same-category repeat is a no-op.", "Changed-family selection rebuilds only a projection over the retained cache.", "Campaign changes after cache construction do not add or remove master-cache membership during that shell lifetime."],
+            "capture_needs": ["Capture a shell across a controlled campaign change and after shell reconstruction to distinguish retained-cache behavior from a fresh shell build."]
+          },
+          {
+            "id": "jedi_luke_alternate",
+            "status": "deferred",
+            "deferred_task": "orlocal-2kq",
+            "source_addresses": ["0x0045f970", "0x0045fbef", "0x0046a2ff"],
+            "call_path": "Owned ENCYBMAP decoding maps Luke's canonical selector 0x1842 to EDATA.074, leaves 0x2842 empty, and contains no EDATA.192 value. Recovered REBEXE static evidence identifies the EDATA directory-literal reference at 0x0045f8d2 inside FUN_0045f7b0 and identified callers 0x0045fbef and 0x0046a2ff of the associated FUN_0045f970 external loader; those callers pass selectors resolved through ENCYBMAP and do not establish a connected EDATA.192 path.",
+            "expected_outcomes": ["EDATA.192 remains inventoried but unused for this inspected profile; no alternate-Luke predicate, runtime binding, UI switch, or original-display claim is published.", "The standard source-proven mapping 0x1842 to EDATA.074 remains supported; deferral is not proof that other original behavior is impossible and does not block the first profile."],
+            "capture_needs": ["Deferred task orlocal-2kq retains the future need: after original-runtime/load tracing of this build, additional connected code/data evidence, or another legitimately owned profile establishes a selector/predicate, capture the same Luke identity before and after its proven state; current unconnected observations must not be staged as EDATA.192 proof."],
+            "next_proof": "Establish a connected EDATA.192 selector/predicate through original-runtime or load tracing of the inspected build, additional connected code/data evidence, or another legitimately owned profile/build. The current REBEXE/ENCYBMAP evidence does not establish that connection."
+          }
+        ],
+        "decision_scenarios": [
+          {"id": "faction_alliance", "status": "static-proven-runtime-pending", "source_rule": "viewer_faction_art", "trigger": "viewer side 1 opens an applicable [0x40,0x80) or [0x08,0x10) topic", "expected_outcome": "Use (identity & 0x0fff) + 0x1000 without changing text identity.", "capture_need": "Capture the same identity from side 1 and retain selected original-image identity."},
+          {"id": "faction_empire", "status": "static-proven-runtime-pending", "source_rule": "viewer_faction_art", "trigger": "viewer side 2 opens an applicable [0x40,0x80) or [0x08,0x10) topic", "expected_outcome": "Use (identity & 0x0fff) + 0x2000 without changing text identity.", "capture_need": "Capture the same identity from side 2 and retain selected original-image identity."},
+          {"id": "selection_same_command_repeat", "status": "static-proven-runtime-pending", "source_rule": "selection_transition", "trigger": "requested command equals this+0x118, with either force value and either mode", "expected_outcome": "Return immediately; do not bind, rebuild, clear current topic, or refresh title.", "capture_need": "Repeat an index and family command in both modes, including the forced API path."},
+          {"id": "selection_changed_category_index", "status": "static-proven-runtime-pending", "source_rule": "selection_transition", "trigger": "mode is index, command changes to 0x70..0x75, force is zero", "expected_outcome": "Clear and rebuild the sorted filtered projection from retained shell +0x474, bind it, and retain master membership.", "capture_need": "Change between two family commands and compare membership/order with the master cache."},
+          {"id": "selection_index_command", "status": "static-proven-runtime-pending", "source_rule": "selection_transition", "trigger": "mode permits selection, command changes to 0x6f", "expected_outcome": "Bind shell +0x474 as the list collection; do not treat it as an empty/reset collection.", "capture_need": "Select 0x6f from a different command and record the resulting full-cache membership."},
+          {"id": "selection_forced_non_topic", "status": "static-proven-runtime-pending", "source_rule": "selection_transition", "trigger": "mode is not topic, command changes, force is nonzero", "expected_outcome": "Bind shell +0x474 and clear current topic.", "capture_need": "Invoke a forced changed command in index mode and record collection/current-topic state."},
+          {"id": "selection_nonforced_topic", "status": "static-proven-runtime-pending", "source_rule": "selection_transition", "trigger": "mode is topic, command changes, force is zero", "expected_outcome": "Return immediately and retain command, collection, and current topic.", "capture_need": "Attempt a changed category while in topic mode without force."},
+          {"id": "selection_forced_topic", "status": "static-proven-runtime-pending", "source_rule": "selection_transition", "trigger": "mode is topic, command changes, force is nonzero", "expected_outcome": "Bind shell +0x474 but retain current topic.", "capture_need": "Invoke a forced changed command in topic mode and record collection/current-topic state."},
+          {"id": "campaign_change_after_cache", "status": "static-proven-runtime-pending", "source_rule": "campaign_change_after_cache", "trigger": "definition/system world state changes after shell +0x474 was initialized", "expected_outcome": "Same-shell category selections observe unchanged master membership; only a new shell cache construction can observe new source enumeration.", "capture_need": "Compare before/after campaign change in one shell, then reconstruct the shell and compare again."},
+          {"id": "context_free_open", "status": "static-proven-runtime-pending", "source_rule": "context_open", "trigger": "both class and entity context wrappers are empty", "expected_outcome": "Open index mode with no current topic.", "capture_need": "Open the encyclopedia from its context-free shell command."},
+          {"id": "class_open_resolved", "status": "static-proven-runtime-pending", "source_rule": "context_topic_key_resolution", "trigger": "class wrapper resolves and canonical key exists in shell +0x474", "expected_outcome": "Open the deduplicated canonical-key topic, not the raw class identity.", "capture_need": "Open a known class-backed topic and record wrapper identity, definition +0x30, and selected key."},
+          {"id": "entity_open_resolved", "status": "static-proven-runtime-pending", "source_rule": "context_topic_key_resolution", "trigger": "entity wrapper resolves and its definition-derived canonical key exists", "expected_outcome": "Open the deduplicated canonical-key topic in topic mode.", "capture_need": "Open a known entity-backed topic and record entity identity, definition +0x30, and selected key."},
+          {"id": "entity_open_non_special_miss", "status": "static-proven-runtime-pending", "source_rule": "context_topic_key_resolution", "trigger": "direct entity-derived key misses for an identity outside [0xa0,0xb0)", "expected_outcome": "FUN_0045fd90 copies and retries the same entity identity; it cannot introduce a different canonical key, so the miss remains unavailable.", "capture_need": "Capture a non-special direct-key miss and retain both identical resolver inputs."},
+          {"id": "entity_open_fallback", "status": "static-proven-runtime-pending", "source_rule": "context_topic_key_resolution", "trigger": "direct entity-derived key misses for an identity in [0xa0,0xb0) and FUN_0045fd90 supplies a resolvable associated identity", "expected_outcome": "Retry through the associated entity's definition-derived canonical key; do not reinterpret either raw identity as a topic key.", "capture_need": "Capture both FUN_0040d760 and associated +0x1c branches if owned fixtures contain them."},
+          {"id": "entity_open_unavailable", "status": "static-proven-runtime-pending", "source_rule": "context_open", "trigger": "direct and FUN_0045fd90 fallback resolution fail or canonical key is absent", "expected_outcome": "Set current topic null and use index mode without fabricating a topic.", "capture_need": "Open a stale/unavailable entity context and retain the source identity/result."},
+          {"id": "variant_faction_lookup", "status": "static-proven-runtime-pending", "source_rule": "viewer_faction_art", "trigger": "same applicable cached topic is opened by each viewer side", "expected_outcome": "Select side-specific art only for the two recovered family ranges; retain text identity.", "capture_need": "Capture both sides for the same applicable identity."},
+          {"id": "variant_system_picture", "status": "static-proven-runtime-pending", "source_rule": "system_art", "trigger": "cached [0x90,0x98) system topic has source picture selector 1..26", "expected_outcome": "Select the corresponding 0x2b5c..0x2b75 ENCYBMAP key independent of faction-key arithmetic.", "capture_need": "Capture representative selectors including terminal non-sequential cases."},
+          {"id": "system_side_view_admitted", "status": "static-proven-runtime-pending", "source_rule": "system_inclusion_predicate", "trigger": "the selected viewer-side type-0x90 system view has a +0x1c container-ancestry chain that reaches null without a virtual type-0xf2 ancestor", "expected_outcome": "FUN_004f6330 returns zero, so FUN_0053f090 may publish the view for canonical-key deduplication and insertion into shell +0x474.", "capture_need": "Capture the same system from both viewer sides while retaining selected-view and ancestor identities; do not assign a gameplay label to type 0xf2."},
+          {"id": "system_side_view_excluded", "status": "static-proven-runtime-pending", "source_rule": "system_inclusion_predicate", "trigger": "the selected viewer-side type-0x90 system view has a +0x1c container-ancestry chain containing an object whose vtable +4 returns type 0xf2", "expected_outcome": "FUN_004f6330 returns nonzero and FUN_0053f090 advances without publishing that system view.", "capture_need": "Capture a source-backed type-0xf2 ancestry case with the selected-view and ancestor identities; do not infer knowledge, destruction, or visibility semantics from the type code."},
+          {"id": "variant_jedi_luke_edata_192", "status": "deferred", "deferred_task": "orlocal-2kq", "source_rule": "jedi_luke_alternate", "trigger": "attempt to define an EDATA.192 state variant for the inspected profile without connected selector/predicate evidence", "expected_outcome": "Keep EDATA.192 inventoried but unused: publish no predicate, runtime binding, UI switch, or original-display claim; retain standard selector 0x1842 to EDATA.074 and do not treat deferral as proof of absence.", "capture_need": "Deferred orlocal-2kq must first establish a connected selector/predicate through original-runtime/load tracing of this build, additional connected code/data evidence, or another legitimately owned profile/build; then perform paired capture."},
+          {"id": "navigation_first_topic", "status": "static-proven-runtime-pending", "source_rule": "neighbor_navigation", "trigger": "current row has no prior enabled row", "expected_outcome": "Backward is disabled; invocation retains current topic; no wrap.", "capture_need": "Capture the first enabled row in full and filtered collections."},
+          {"id": "navigation_middle_topic", "status": "static-proven-runtime-pending", "source_rule": "neighbor_navigation", "trigger": "current row has enabled rows in both directions", "expected_outcome": "Each directional enabled neighbor becomes current and is rendered.", "capture_need": "Capture both directions and title/body/art transition."},
+          {"id": "navigation_disabled_topic", "status": "static-proven-runtime-pending", "source_rule": "neighbor_navigation", "trigger": "a linked intermediate row has +0x6c equal to zero", "expected_outcome": "Recursively skip disabled rows and return the next enabled row or null.", "capture_need": "Requires a connected writer or controlled owned-memory observation; do not infer a gameplay reason for +0x6c."},
+          {"id": "navigation_last_topic", "status": "static-proven-runtime-pending", "source_rule": "neighbor_navigation", "trigger": "current row has no next enabled row", "expected_outcome": "Forward is disabled; invocation retains current topic; no wrap.", "capture_need": "Capture the last enabled row in full and filtered collections."},
+          {"id": "navigation_unavailable_entry", "status": "static-proven-runtime-pending", "source_rule": "hidden_topic_treatment", "trigger": "identity was not admitted to shell +0x474 or was removed by canonical-key deduplication", "expected_outcome": "It is absent from category projections and cannot resolve as current topic; static asset presence does not override cache membership.", "capture_need": "Capture an excluded/gap identity and a deduplicated class/entity pair; for systems also retain whether the selected view's +0x1c ancestry contains virtual type 0xf2."}
+        ]
+      }
     },
     {
       "id": "RE-OBJ-01",
