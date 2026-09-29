@@ -13,7 +13,9 @@ const (
 	encyclopediaBindingBound                 = "bound"
 	encyclopediaBindingDocumentedAlias       = "documented_alias"
 	encyclopediaBindingUnresolved            = "unresolved"
+	encyclopediaBindingSourceProvenUnused    = "source_proven_unused"
 	encyclopediaBindingPublicationDeferred   = "publication_deferred"
+	encyclopediaBindingAggregateOnlyBlocker  = "aggregate-only-topic-membership"
 )
 
 type encyclopediaProfileBindings struct {
@@ -21,10 +23,27 @@ type encyclopediaProfileBindings struct {
 	SchemaVersion      int                                   `json:"schema_version"`
 	LanguageID         uint32                                `json:"language_id"`
 	FragmentInputs     []encyclopediaBindingFragmentInput    `json:"fragment_inputs"`
+	SourceCoverage     []encyclopediaBindingSourceCoverage   `json:"source_coverage"`
 	Categories         []encyclopediaBindingCategory         `json:"categories"`
 	Records            []encyclopediaBindingRecord           `json:"records"`
 	ResourceAccounting encyclopediaBindingResourceAccounting `json:"resource_accounting"`
 	SchemaFit          encyclopediaBindingSchemaFit          `json:"schema_fit"`
+}
+
+type encyclopediaBindingSourceCoverage struct {
+	SourceRole   string                                 `json:"source_role"`
+	HeaderBytes  uint32                                 `json:"header_bytes"`
+	RecordBytes  uint32                                 `json:"record_bytes"`
+	TotalRows    int                                    `json:"total_rows"`
+	ExcludedRows []encyclopediaBindingExcludedSourceRow `json:"excluded_rows"`
+}
+
+type encyclopediaBindingExcludedSourceRow struct {
+	SourceRow       uint32 `json:"source_row"`
+	SourceFamily    uint32 `json:"source_family"`
+	DatID           uint32 `json:"dat_id"`
+	RawRecordSHA256 string `json:"raw_record_sha256"`
+	Reason          string `json:"reason"`
 }
 
 type encyclopediaBindingFragmentInput struct {
@@ -84,14 +103,23 @@ type encyclopediaBindingBody struct {
 }
 
 type encyclopediaBindingArt struct {
-	SourceRole    string  `json:"source_role"`
-	SelectorKind  string  `json:"selector_kind"`
-	PictureID     *uint32 `json:"picture_id"`
-	LookupID      uint32  `json:"lookup_id"`
-	LanguageID    uint32  `json:"language_id"`
-	AssetBasename string  `json:"asset_basename"`
-	RawLength     uint64  `json:"raw_length"`
-	RawSHA256     string  `json:"raw_sha256"`
+	SourceRole            string                                 `json:"source_role"`
+	SelectorKind          string                                 `json:"selector_kind"`
+	PictureID             *uint32                                `json:"picture_id"`
+	LookupID              uint32                                 `json:"lookup_id"`
+	LanguageID            uint32                                 `json:"language_id"`
+	AssetBasename         string                                 `json:"asset_basename"`
+	RawLength             uint64                                 `json:"raw_length"`
+	RawSHA256             string                                 `json:"raw_sha256"`
+	ViewerFactionVariants []encyclopediaBindingArtFactionVariant `json:"viewer_faction_variants,omitempty"`
+}
+
+type encyclopediaBindingArtFactionVariant struct {
+	ViewerFaction string `json:"viewer_faction"`
+	LookupID      uint32 `json:"lookup_id"`
+	AssetBasename string `json:"asset_basename"`
+	RawLength     uint64 `json:"raw_length"`
+	RawSHA256     string `json:"raw_sha256"`
 }
 
 type encyclopediaBindingResourceAccounting struct {
@@ -105,6 +133,7 @@ type encyclopediaBindingObservations struct {
 	SourceRowCount              int `json:"source_row_count"`
 	BoundRowCount               int `json:"bound_row_count"`
 	DocumentedAliasRowCount     int `json:"documented_alias_row_count"`
+	SourceProvenUnusedRowCount  int `json:"source_proven_unused_row_count"`
 	UnresolvedSourceRowCount    int `json:"unresolved_source_row_count"`
 	TextRecordCount             int `json:"text_record_count"`
 	NonemptyLookupStringCount   int `json:"nonempty_lookup_string_count"`
@@ -180,6 +209,9 @@ func validateEncyclopediaProfileBindings(profile encyclopediaSourceProfile, bind
 		return err
 	}
 	if err := validateEncyclopediaBindingRecords(bindings, sources); err != nil {
+		return err
+	}
+	if err := validateEncyclopediaBindingSourceCoverage(bindings, sources); err != nil {
 		return err
 	}
 	if err := validateEncyclopediaBindingResourceAccounting(bindings, sources, profile.Evidence.Corpus); err != nil {
@@ -342,11 +374,22 @@ func validateEncyclopediaBindingRecords(bindings encyclopediaProfileBindings, so
 			return fmt.Errorf("record 0x%08x has invalid raw-record hash", record.SourceIdentity)
 		}
 		category, ok := categories[record.CategoryCommand]
-		if !ok || category.AggregateIndex || category.FilterFamilyStart == nil || category.FilterFamilyEndExclusive == nil {
+		if !ok {
 			return fmt.Errorf("record 0x%08x has invalid category command 0x%x", record.SourceIdentity, record.CategoryCommand)
 		}
-		if record.SourceFamily < *category.FilterFamilyStart || record.SourceFamily >= *category.FilterFamilyEndExclusive {
-			return fmt.Errorf("record 0x%08x family %d is outside category 0x%x", record.SourceIdentity, record.SourceFamily, category.Command)
+		if category.AggregateIndex {
+			for _, filtered := range bindings.Categories {
+				if filtered.AggregateIndex || filtered.FilterFamilyStart == nil || filtered.FilterFamilyEndExclusive == nil {
+					continue
+				}
+				if record.SourceFamily >= *filtered.FilterFamilyStart && record.SourceFamily < *filtered.FilterFamilyEndExclusive {
+					return fmt.Errorf("record 0x%08x uses aggregate-only membership despite matching category 0x%x", record.SourceIdentity, filtered.Command)
+				}
+			}
+		} else {
+			if category.FilterFamilyStart == nil || category.FilterFamilyEndExclusive == nil || record.SourceFamily < *category.FilterFamilyStart || record.SourceFamily >= *category.FilterFamilyEndExclusive {
+				return fmt.Errorf("record 0x%08x family %d is outside category 0x%x", record.SourceIdentity, record.SourceFamily, category.Command)
+			}
 		}
 		if err := validateEncyclopediaBindingRecordSelectors(bindings, record, sources); err != nil {
 			return fmt.Errorf("record 0x%08x: %w", record.SourceIdentity, err)
@@ -366,7 +409,14 @@ func validateEncyclopediaBindingRecords(bindings encyclopediaProfileBindings, so
 		topicKey := resourceLanguageKey(record.Body.LanguageID, record.Body.ResourceID)
 		topicOwners[topicKey] = append(topicOwners[topicKey], record)
 	}
+	coveredRoles := make(map[string]struct{}, len(bindings.SourceCoverage))
+	for _, coverage := range bindings.SourceCoverage {
+		coveredRoles[coverage.SourceRole] = struct{}{}
+	}
 	for sourceRole, rows := range sourceRows {
+		if _, covered := coveredRoles[sourceRole]; covered {
+			continue
+		}
 		for row := 0; row < len(rows); row++ {
 			if _, exists := rows[uint32(row)]; !exists {
 				return fmt.Errorf("source %q omits row %d", sourceRole, row)
@@ -407,6 +457,64 @@ func validateEncyclopediaBindingRecords(bindings encyclopediaProfileBindings, so
 	return nil
 }
 
+func validateEncyclopediaBindingSourceCoverage(bindings encyclopediaProfileBindings, sources map[string]encyclopediaProfileSource) error {
+	recordRows := make(map[string]map[uint32]encyclopediaBindingRecord)
+	for _, record := range bindings.Records {
+		if recordRows[record.SourceRole] == nil {
+			recordRows[record.SourceRole] = make(map[uint32]encyclopediaBindingRecord)
+		}
+		recordRows[record.SourceRole][record.SourceRow] = record
+	}
+	seenRoles := make(map[string]struct{}, len(bindings.SourceCoverage))
+	for _, coverage := range bindings.SourceCoverage {
+		if _, exists := seenRoles[coverage.SourceRole]; exists {
+			return fmt.Errorf("duplicate source-row coverage for %q", coverage.SourceRole)
+		}
+		seenRoles[coverage.SourceRole] = struct{}{}
+		source, exists := sources[coverage.SourceRole]
+		if !exists || source.Kind != encyclopediaSourceDAT {
+			return fmt.Errorf("source-row coverage references missing/non-DAT source role %q", coverage.SourceRole)
+		}
+		if coverage.HeaderBytes == 0 || coverage.RecordBytes == 0 || coverage.TotalRows < 1 || source.RawLength < uint64(coverage.HeaderBytes) {
+			return fmt.Errorf("source-row coverage for %q contradicts source length", coverage.SourceRole)
+		}
+		bodyBytes := source.RawLength - uint64(coverage.HeaderBytes)
+		if bodyBytes%uint64(coverage.RecordBytes) != 0 || bodyBytes/uint64(coverage.RecordBytes) != uint64(coverage.TotalRows) {
+			return fmt.Errorf("source-row coverage for %q contradicts source length", coverage.SourceRole)
+		}
+		coveredRows := make(map[uint32]struct{}, coverage.TotalRows)
+		for sourceRow, record := range recordRows[coverage.SourceRole] {
+			if sourceRow >= uint32(coverage.TotalRows) || !validSHA256(record.RawRecordSHA256) {
+				return fmt.Errorf("source-row coverage for %q has invalid bound row %d", coverage.SourceRole, sourceRow)
+			}
+			coveredRows[sourceRow] = struct{}{}
+		}
+		previous := uint32(0)
+		for index, excluded := range coverage.ExcludedRows {
+			if excluded.SourceRow >= uint32(coverage.TotalRows) || excluded.SourceFamily > 0xff || excluded.DatID > 0x00ffffff || !validSHA256(excluded.RawRecordSHA256) || strings.TrimSpace(excluded.Reason) == "" {
+				return fmt.Errorf("source-row coverage for %q has invalid excluded row %d", coverage.SourceRole, excluded.SourceRow)
+			}
+			if index > 0 && excluded.SourceRow <= previous {
+				return fmt.Errorf("source-row coverage for %q has noncanonical/duplicate excluded rows", coverage.SourceRole)
+			}
+			previous = excluded.SourceRow
+			if _, exists := coveredRows[excluded.SourceRow]; exists {
+				return fmt.Errorf("source-row coverage for %q classifies row %d more than once", coverage.SourceRole, excluded.SourceRow)
+			}
+			coveredRows[excluded.SourceRow] = struct{}{}
+		}
+		if len(coveredRows) != coverage.TotalRows {
+			return fmt.Errorf("source-row coverage for %q accounts for %d of %d rows", coverage.SourceRole, len(coveredRows), coverage.TotalRows)
+		}
+		for row := 0; row < coverage.TotalRows; row++ {
+			if _, exists := coveredRows[uint32(row)]; !exists {
+				return fmt.Errorf("source-row coverage for %q omits row %d", coverage.SourceRole, row)
+			}
+		}
+	}
+	return nil
+}
+
 func validateEncyclopediaBindingRecordSelectors(bindings encyclopediaProfileBindings, record encyclopediaBindingRecord, sources map[string]encyclopediaProfileSource) error {
 	titleSource, ok := sources[record.Title.SourceRole]
 	if !ok || titleSource.Kind != encyclopediaSourceDLL || record.Title.LanguageID != bindings.LanguageID {
@@ -417,8 +525,8 @@ func validateEncyclopediaBindingRecordSelectors(bindings encyclopediaProfileBind
 		return fmt.Errorf("invalid body source/resource evidence")
 	}
 	artSource, ok := sources[record.Art.SourceRole]
-	if !ok || artSource.Kind != encyclopediaSourceDLL || record.Art.LanguageID != bindings.LanguageID || record.Art.RawLength == 0 || !validSHA256(record.Art.RawSHA256) || !validEDataBasename(record.Art.AssetBasename) {
-		return fmt.Errorf("invalid art source/resource evidence")
+	if !ok || artSource.Kind != encyclopediaSourceDLL || record.Art.LanguageID != bindings.LanguageID {
+		return fmt.Errorf("invalid art source/language evidence")
 	}
 	wantBody := (record.Title.OriginalResourceID & 0x0fff) + 0x1000
 	if record.Body.ResourceID != wantBody {
@@ -442,12 +550,30 @@ func validateEncyclopediaBindingRecordSelectors(bindings encyclopediaProfileBind
 	}
 	switch record.Art.SelectorKind {
 	case "canonical_topic_key":
-		if record.Art.PictureID != nil || record.Art.LookupID != record.Body.ResourceID {
+		if record.Art.PictureID != nil || len(record.Art.ViewerFactionVariants) != 0 || record.Art.LookupID != record.Body.ResourceID || !validEncyclopediaBindingArtPayload(record.Art.AssetBasename, record.Art.RawLength, record.Art.RawSHA256) {
 			return fmt.Errorf("canonical-topic art selector does not match body key")
 		}
 	case "system_picture":
-		if record.Art.PictureID == nil || *record.Art.PictureID == 0 {
+		if record.Art.PictureID == nil || *record.Art.PictureID == 0 || len(record.Art.ViewerFactionVariants) != 0 || !validEncyclopediaBindingArtPayload(record.Art.AssetBasename, record.Art.RawLength, record.Art.RawSHA256) {
 			return fmt.Errorf("system-picture art selector lacks picture ID")
+		}
+	case "viewer_faction_topic_key":
+		family := record.SourceFamily
+		if !((family >= 0x40 && family < 0x80) || (family >= 0x08 && family < 0x10)) {
+			return fmt.Errorf("viewer-faction art selector is invalid for source family 0x%x", family)
+		}
+		if record.Art.PictureID != nil || record.Art.LookupID != 0 || record.Art.AssetBasename != "" || record.Art.RawLength != 0 || record.Art.RawSHA256 != "" || len(record.Art.ViewerFactionVariants) != 2 {
+			return fmt.Errorf("viewer-faction art selector must carry exactly two faction variants")
+		}
+		wantFactions := []string{"alliance", "empire"}
+		for index, variant := range record.Art.ViewerFactionVariants {
+			if variant.ViewerFaction != wantFactions[index] || !validEncyclopediaBindingArtPayload(variant.AssetBasename, variant.RawLength, variant.RawSHA256) {
+				return fmt.Errorf("viewer-faction art selector has invalid faction variants")
+			}
+			wantLookup := record.Body.ResourceID + uint32(index)*0x1000
+			if variant.LookupID != wantLookup {
+				return fmt.Errorf("%s lookup %d does not match source selector %d", variant.ViewerFaction, variant.LookupID, wantLookup)
+			}
 		}
 	default:
 		return fmt.Errorf("unsupported art selector kind %q", record.Art.SelectorKind)
@@ -455,10 +581,46 @@ func validateEncyclopediaBindingRecordSelectors(bindings encyclopediaProfileBind
 	return nil
 }
 
+func validEncyclopediaBindingArtPayload(basename string, rawLength uint64, rawSHA256 string) bool {
+	return validEDataBasename(basename) && rawLength > 0 && validSHA256(rawSHA256)
+}
+
+type encyclopediaBindingArtSelection struct {
+	LookupID      uint32
+	AssetBasename string
+	RawLength     uint64
+	RawSHA256     string
+}
+
+func encyclopediaBindingArtSelections(art encyclopediaBindingArt) []encyclopediaBindingArtSelection {
+	if art.SelectorKind != "viewer_faction_topic_key" {
+		return []encyclopediaBindingArtSelection{{
+			LookupID:      art.LookupID,
+			AssetBasename: art.AssetBasename,
+			RawLength:     art.RawLength,
+			RawSHA256:     art.RawSHA256,
+		}}
+	}
+	selections := make([]encyclopediaBindingArtSelection, 0, len(art.ViewerFactionVariants))
+	for _, variant := range art.ViewerFactionVariants {
+		selections = append(selections, encyclopediaBindingArtSelection{
+			LookupID:      variant.LookupID,
+			AssetBasename: variant.AssetBasename,
+			RawLength:     variant.RawLength,
+			RawSHA256:     variant.RawSHA256,
+		})
+	}
+	return selections
+}
+
 func validateEncyclopediaBindingResourceAccounting(bindings encyclopediaProfileBindings, sources map[string]encyclopediaProfileSource, corpus encyclopediaDecoderCorpusEvidence) error {
 	accounting := bindings.ResourceAccounting
 	observations := accounting.Observations
-	if observations.SourceRowCount != len(bindings.Records) || observations.TextRecordCount != len(accounting.TextResources) || observations.NonemptyLookupStringCount != len(accounting.ArtLookups) || observations.ImageFileCount != len(accounting.ArtFiles) {
+	sourceProvenUnusedRows := 0
+	for _, coverage := range bindings.SourceCoverage {
+		sourceProvenUnusedRows += len(coverage.ExcludedRows)
+	}
+	if observations.SourceRowCount != len(bindings.Records)+sourceProvenUnusedRows || observations.SourceProvenUnusedRowCount != sourceProvenUnusedRows || observations.TextRecordCount != len(accounting.TextResources) || observations.NonemptyLookupStringCount != len(accounting.ArtLookups) || observations.ImageFileCount != len(accounting.ArtFiles) {
 		return fmt.Errorf("resource observation counts do not match the represented inventory")
 	}
 	boundRows, aliasRows := 0, 0
@@ -475,14 +637,16 @@ func validateEncyclopediaBindingResourceAccounting(bindings encyclopediaProfileB
 
 	bodyRefs := make(map[string][]encyclopediaBindingRecord)
 	lookupRefs := make(map[string][]encyclopediaBindingRecord)
-	fileRefs := make(map[string][]encyclopediaBindingRecord)
+	fileRefs := make(map[string][]encyclopediaBindingArtSelection)
 	for _, record := range bindings.Records {
 		bodyKey := resourceLanguageKey(record.Body.LanguageID, record.Body.ResourceID)
 		bodyRefs[bodyKey] = append(bodyRefs[bodyKey], record)
-		lookupKey := resourceLanguageKey(record.Art.LanguageID, record.Art.LookupID)
-		lookupRefs[lookupKey] = append(lookupRefs[lookupKey], record)
-		fileKey := strings.ToLower(record.Art.AssetBasename)
-		fileRefs[fileKey] = append(fileRefs[fileKey], record)
+		for _, selection := range encyclopediaBindingArtSelections(record.Art) {
+			lookupKey := resourceLanguageKey(record.Art.LanguageID, selection.LookupID)
+			lookupRefs[lookupKey] = append(lookupRefs[lookupKey], record)
+			fileKey := strings.ToLower(selection.AssetBasename)
+			fileRefs[fileKey] = append(fileRefs[fileKey], selection)
+		}
 	}
 
 	seenText := make(map[string]struct{}, len(accounting.TextResources))
@@ -548,7 +712,14 @@ func validateEncyclopediaBindingResourceAccounting(bindings encyclopediaProfileB
 			return fmt.Errorf("art lookup %s: %w", key, err)
 		}
 		for _, ref := range refs {
-			if ref.Art.SourceRole != lookup.SourceRole || !strings.EqualFold(ref.Art.AssetBasename, lookup.AssetBasename) {
+			matched := false
+			for _, selection := range encyclopediaBindingArtSelections(ref.Art) {
+				if selection.LookupID == lookup.LogicalID && strings.EqualFold(selection.AssetBasename, lookup.AssetBasename) {
+					matched = true
+					break
+				}
+			}
+			if ref.Art.SourceRole != lookup.SourceRole || !matched {
 				return fmt.Errorf("art lookup %s contradicts bound record evidence", key)
 			}
 		}
@@ -580,9 +751,9 @@ func validateEncyclopediaBindingResourceAccounting(bindings encyclopediaProfileB
 		if err := validateBindingAccountingStatus(file.Status, file.BindingCount, len(refs), file.Reason, file.NextProof, allowDeferred); err != nil {
 			return fmt.Errorf("art file %q: %w", file.Basename, err)
 		}
-		for _, ref := range refs {
-			if ref.Art.RawLength != file.RawLength || ref.Art.RawSHA256 != file.RawSHA256 {
-				return fmt.Errorf("art file %q contradicts bound record evidence", file.Basename)
+		for _, selection := range refs {
+			if !strings.EqualFold(selection.AssetBasename, file.Basename) || selection.RawLength != file.RawLength || selection.RawSHA256 != file.RawSHA256 {
+				return fmt.Errorf("art selection %d/%q contradicts accounted file evidence", selection.LookupID, selection.AssetBasename)
 			}
 		}
 		if file.Status == encyclopediaBindingPublicationDeferred {
@@ -607,6 +778,9 @@ func validateEncyclopediaBindingResourceAccounting(bindings encyclopediaProfileB
 }
 
 func validateBindingAccountingStatus(status string, declaredCount, actualCount int, reason, nextProof string, allowDeferred bool) error {
+	if status == encyclopediaBindingSourceProvenUnused && (declaredCount != 0 || actualCount != 0 || strings.TrimSpace(reason) == "" || nextProof != "") {
+		return fmt.Errorf("source-proven-unused resource has a binding or incomplete closed evidence")
+	}
 	if declaredCount != actualCount {
 		return fmt.Errorf("binding count = %d, want %d", declaredCount, actualCount)
 	}
@@ -619,6 +793,9 @@ func validateBindingAccountingStatus(status string, declaredCount, actualCount i
 		if actualCount != 0 || strings.TrimSpace(reason) == "" || strings.TrimSpace(nextProof) == "" {
 			return fmt.Errorf("unresolved resource lacks zero-count reason/next proof")
 		}
+	case encyclopediaBindingSourceProvenUnused:
+		// The complete zero-reference evidence was checked before the generic
+		// declared/actual count comparison so contradictions get a useful error.
 	case encyclopediaBindingPublicationDeferred:
 		if !allowDeferred || actualCount != 0 || strings.TrimSpace(reason) == "" || strings.TrimSpace(nextProof) == "" {
 			return fmt.Errorf("publication-deferred resource lacks explicit policy/proof gate")
@@ -650,6 +827,23 @@ func validateEncyclopediaBindingSchemaFit(bindings encyclopediaProfileBindings) 
 	unresolvedEvidence := countUnresolvedEncyclopediaBindingEvidence(bindings)
 	if fit.ReadyForSchemaFreeze && unresolvedEvidence != 0 {
 		return fmt.Errorf("schema-freeze readiness contradicts unresolved evidence in %d category/resource records", unresolvedEvidence)
+	}
+	aggregateCommands := make(map[uint32]struct{})
+	for _, category := range bindings.Categories {
+		if category.AggregateIndex {
+			aggregateCommands[category.Command] = struct{}{}
+		}
+	}
+	hasAggregateOnlyTopic := false
+	for _, record := range bindings.Records {
+		if _, aggregateOnly := aggregateCommands[record.CategoryCommand]; aggregateOnly {
+			hasAggregateOnlyTopic = true
+			break
+		}
+	}
+	_, hasAggregateOnlyBlocker := seen[encyclopediaBindingAggregateOnlyBlocker]
+	if hasAggregateOnlyTopic && !hasAggregateOnlyBlocker {
+		return fmt.Errorf("schema-fit requires %q blocker for aggregate-only topic membership", encyclopediaBindingAggregateOnlyBlocker)
 	}
 	if !fit.ReadyForSchemaFreeze && len(fit.Blockers) == 0 {
 		return fmt.Errorf("schema-freeze not ready without named blockers")

@@ -286,8 +286,8 @@ lookup tables, pixels, or generated packs into Git.
 
 ## Combined family bindings and resource closure
 
-The canonical embedded profile now also contains the reviewed E07, E38, and
-E39 binding merge. The three files under
+The canonical embedded profile now also contains the reviewed E07, E38, E39,
+and E54 binding merge. The four files under
 `tools/stage-ui-assets/encyclopedia_profiles/fragments/` remain source-research
 inputs; their paths, SHA-256 digests, and observed row counts are recorded in
 the profile. A built staging binary consumes the combined representation in the
@@ -318,9 +318,11 @@ For this exact profile the accepted family fragments contain:
 | Defense facilities | 6 | `0x72` |
 | Manufacturing facilities | 6 | `0x72` |
 | Production facilities | 2 | `0x72` |
-| **Observed accepted rows** | **331** | — |
+| Mission definitions | 15 | `0x73` |
+| Aggregate-only fleet definition | 1 | `0x6f` index only |
+| **Observed bound rows** | **347** | — |
 
-All 331 rows are bound, select distinct ENCYTEXT body identities, and retain
+All 347 rows are bound, select distinct ENCYTEXT body identities, and retain
 the profile-observed empty preferred-title branch with the original selector's
 fallback selected. The 214 static rows use 40 distinct art identities because
 systems share source-proven picture selectors; this sharing is not a topic
@@ -329,54 +331,63 @@ profile, but the source family remains part of canonical identity and a future
 profile with overlap must be rejected or add a reviewed table discriminator.
 Unit bindings remain class bindings: fleet and entity instances must resolve
 their source class at the application boundary rather than use a slotmap or raw
-instance ID as a topic identity.
+instance ID as a topic identity. The additional 27 owned residual-table rows
+are completely represented as 16 bound topics and 11 source-proven exclusions;
+the latter are neither topics nor unresolved omissions.
 
 The seven original commands retain this order and role:
 
 | Ordinal | Command | Combined-profile result |
 |---:|---:|---|
-| 0 | `0x6f` | Aggregate index over admitted rows; not a second topic category. Incomplete while `0x73` is unresolved. |
+| 0 | `0x6f` | Complete aggregate index over 347 admitted rows; includes one source-proven family-`0x08` fleet topic with no filtered category. |
 | 1 | `0x70` | 200 context-filtered system/world-location rows. |
 | 2 | `0x71` | 38 capital/fighter class rows. |
 | 3 | `0x72` | 14 facility rows; the three facility tables remain one original selector. |
-| 4 | `0x73` | **Unresolved:** no accepted family fragment supplies its `[0x40,0x80)` rows. |
+| 4 | `0x73` | 15 admitted mission-definition rows from the `[0x40,0x80)` source table. |
 | 5 | `0x74` | 10 troop class rows. |
 | 6 | `0x75` | 60 character and 9 special-force rows. |
 
-The owned resource inventory makes the incomplete category concrete rather
-than filling it from numeric gaps. The 331 accepted rows account for 331 of 348
-ENCYTEXT records and 157 of 191 ENCYBMAP logical IDs. These exact residual
-identities remain `unresolved` with a next-proof requirement:
+The residual closure is source-backed rather than filled from numeric gaps.
+`FUN_005674e0` maps executable selectors `0x6b0` and `0x6b2` to `MISSNSD.DAT`
+and `FLEETSD.DAT`; `FUN_00569300` registers their family intervals;
+`0x00590bb0` and `0x0058fe20` read their records through `FUN_00584c10`; and
+`FUN_00422620` applies the master-cache admission predicates. Command `0x73`
+then filters the retained `[0x40,0x80)` rows. The connected
+`FUN_0045fa60` path selects the Alliance body-key lookup or the Empire
+body-key-plus-`0x1000` lookup without changing the body identity.
 
-```text
-ENCYTEXT: 7176, 7184, 7185, 7186, 7187, 7189, 7190, 7191, 7200,
-          7201, 7202, 7232, 7233, 7234, 7296, 7297, 7427
-ENCYBMAP: 7184, 7185, 7186, 7187, 7188, 7189, 7190, 7191, 7200,
-          7201, 7202, 7232, 7233, 7234, 7296, 7297, 7427, 11280,
-          11281, 11282, 11283, 11284, 11285, 11286, 11287, 11296,
-          11297, 11298, 11328, 11329, 11330, 11392, 11393, 11523
-EData:    132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142,
-          143, 146, 148, 149, 150, 151, 152, 153, 154, 155, 156,
-          157, 158, 160, 161, 162, 163, 164
-```
+The complete owned traversal accounts for 25 mission rows as 15 bound and 10
+source-proven unused, and for two fleet rows as one aggregate-only binding and
+one source-proven-unused placeholder. It closes 16 of E40's 17 residual text
+resources and 32 of its 34 residual lookup strings. Text resource `7176` and
+lookups `7188`/`11284` have no admitted source selector and are explicitly
+`source_proven_unused`; they carry zero references and no open next-proof gate.
+All 29 formerly residual EData files are selected by other bound lookup
+identities. Shared files remain art resources rather than topic aliases.
 
-Those 34 lookup IDs reference 29 distinct supplied files because five
-filenames have duplicate references. This numerical relationship is an
-inventory observation, not proof that the residual records form 17 topics or
-use a particular faction rule. Closure requires the connected DAT
-registration, record field writes, and title/body/art selector paths for
-command `0x73`; names, numbering gaps, and file presence are insufficient.
-`EDATA.192` is the 187th image and is separately marked
-`publication_deferred`: it remains inventory-only under `orlocal-2kq`, with no
-topic, lookup, predicate, or original-display claim.
+[`encyclopedia-residual-bindings.md`](encyclopedia-residual-bindings.md)
+records the complete source path, exact table accounting, selectors, source
+hashes, and reproduction commands. `EDATA.192` remains the 187th image and is
+separately marked `publication_deferred`: it is inventory-only under
+`orlocal-2kq`, with no topic, lookup, predicate, or original-display claim.
 
-The representation settles the schema shape for the accepted rows: one
-filtered category per bound topic, `0x6f` as an aggregate selector, separate
-source and canonical-topic identities, explicit aliases, and a retained
-character source-family discriminator. It deliberately records
-`ready_for_schema_freeze: false`. E09 remains blocked on command `0x73` source
-joins and the still-unconnected localized category-label selectors. The raw-ID
-versus runtime-class adapter remains a downstream application-boundary gate.
+The representation closes the source identities but exposes a schema
+contradiction: 346 bound rows have one filtered category, while source identity
+`0x08000004` is aggregate-only and `0x6f` is an index rather than topic
+membership. The approved design currently requires `category_id` and one
+category per topic. The profile therefore names
+`aggregate-only-topic-membership` as a design-revision blocker; E09 must revise
+the approved design and fixtures to represent or explicitly scope this topic
+without inventing a category. Source and canonical-topic identities remain
+separate, aliases are explicit, and character source family remains a
+discriminator.
+
+The profile deliberately records `ready_for_schema_freeze: false`. Accepted E55
+commit `9ae03be852212fa2ff031f8d2d065a20c2767575` recovers the localized category
+labels but is not integrated into this E54 tree; E09 must consume that accepted
+evidence as well as resolve the aggregate-only design blocker. Command `0x73`
+and residual resource accounting are closed. The raw-ID versus runtime-class
+adapter remains a downstream application-boundary gate.
 
 The opt-in reconciliation gate reads the owned sources without modifying them
 and compares all source, text, lookup, and image identities to the profile:
@@ -388,7 +399,7 @@ REBELLION_ENCYCLOPEDIA_TEST_SOURCE=/path/to/owned-install \
   -count=1 -v
 ```
 
-The 331, 348, 191, 186, and 187 values above are observations for the exact
+The 347, 358, 348, 191, 186, and 187 values above are observations for the exact
 source hashes in the profile, never universal validity rules.
 
 ## Semantic research checkpoint
@@ -437,8 +448,10 @@ Displayed selector order is fixed by control position, not map iteration:
 | 5 | `0x74` | 260 | filter `[0x10, 0x14)` |
 | 6 | `0x75` | 312 | filter `[0x30, 0x40)` |
 
-The localized selector labels remain unjoined, so stable keys are commands and
-ranges rather than guessed names. Master definition enumeration admits
+In this E54 integration base the localized selector labels remain unjoined, so
+stable keys are commands and ranges rather than guessed names. Accepted E55
+commit `9ae03be852212fa2ff031f8d2d065a20c2767575` supplies the label evidence for
+downstream integration without being part of this worktree. Master definition enumeration admits
 `[0x08,0x20)`, `[0x22,0x40)`, and `[0x50,0x80)`; the last range additionally
 requires resolved definition `+0x5c == 0`. Thus the broader outer selectors do
 not make `[0x20,0x22)` or `[0x40,0x50)` rows appear in this master cache. System
@@ -594,11 +607,12 @@ Original prose and decoded text are never committed.
 
 ## Non-claims
 
-The profile establishes lossless byte decoding and 331 reviewed family bindings
-only for its exact source identities. The semantic checkpoint establishes only
-the bounded static rules named above; it does not establish localized category
-labels, command `0x73` family joins, a complete topic inventory, the deferred
-alternate Luke predicate, or original runtime/visual acceptance. Deferred
-alternate inventory is not a runtime binding. Inventory and research records
-are not a runtime catalog and do not by themselves advance P35 or strict
-RE-ENC-01 acceptance.
+The profile establishes lossless byte decoding, 347 reviewed bindings, and
+complete source/resource accounting only for its exact source identities. The
+semantic checkpoint establishes only the bounded static rules named above; it
+does not integrate accepted E55 localized labels, resolve the aggregate-only
+topic's design representation, freeze a runtime schema, recover the deferred
+alternate Luke predicate, or provide original runtime/visual acceptance.
+Deferred alternate inventory is not a runtime binding. Inventory and research
+records are not a runtime catalog and do not by themselves advance P35 or
+strict RE-ENC-01 acceptance.
