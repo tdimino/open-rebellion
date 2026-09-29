@@ -1,9 +1,14 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
+#[cfg(not(target_arch = "wasm32"))]
 use rebellion_core::world::SeedOptions;
+#[cfg(not(target_arch = "wasm32"))]
 use rebellion_data::replay::compute_simulation_data_manifest_from_dir;
+#[cfg(not(target_arch = "wasm32"))]
 use rebellion_data::replay_fixture::{run_seed42_gate, SEED42_ARTIFACT_BYTES, SEED42_SEED};
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let data_dir = std::env::args_os()
         .nth(1)
@@ -34,4 +39,9 @@ fn main() {
     if !report.passed() {
         std::process::exit(1);
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    panic!("replay-gate is a native-only filesystem CLI and is unsupported on wasm32");
 }
