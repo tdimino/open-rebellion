@@ -1,4 +1,5 @@
 mod audio;
+pub mod encyclopedia_presenter;
 pub mod encyclopedia_session;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
