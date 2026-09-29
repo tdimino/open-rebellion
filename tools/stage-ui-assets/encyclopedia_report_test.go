@@ -25,6 +25,16 @@ func writeSyntheticEncyclopediaTextDLL(t *testing.T, sourceDir string, resourceI
 	if err := os.WriteFile(filepath.Join(sourceDir, "ENCYTEXT.DLL"), image, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	edataRoot := filepath.Join(sourceDir, "EData")
+	if err := os.MkdirAll(edataRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeTestFile(t, filepath.Join(edataRoot, "EDATA.001"), bmp)
+	lookupDLL := buildTestPE32WithResource(t, rtStringResource, 1, 1033, stringBundle(map[int]string{0: "EDATA.001"}))
+	if err := os.WriteFile(filepath.Join(sourceDir, "ENCYBMAP.DLL"), lookupDLL, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func readTestEncyclopediaResearchReport(t *testing.T, output string) encyclopediaResearchReport {

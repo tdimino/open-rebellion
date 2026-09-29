@@ -737,3 +737,521 @@ func diffTestTree(before, after map[string]string) string {
 	}
 	return diff.String()
 }
+
+func writeSyntheticEncyclopediaArtInputs(t *testing.T, sourceRoot, edataRoot string, lookups map[int]string, files map[string][]byte) {
+	t.Helper()
+	if err := os.MkdirAll(edataRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lookupDLL := buildTestPE32WithResource(t, rtStringResource, 1, 1033, stringBundle(lookups))
+	if err := os.WriteFile(filepath.Join(sourceRoot, "ENCYBMAP.DLL"), lookupDLL, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		writeTestFile(t, filepath.Join(edataRoot, name), data)
+	}
+}
+
+func TestEncyclopediaArtStagePreservesGapsUnreferencedBytesAndLookupEvidence(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(1), []byte("synthetic text\x00"))
+	first := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 2, height: 1, bitCount: 24})
+	third := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: -2, bitCount: 8, trailing: 2})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001", 4: "EDATA.004"}, map[string][]byte{
+		"EDATA.001": first,
+		"EDATA.003": third,
+	})
+
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, filepath.Join(output, "assets", "EDATA.001")); !bytes.Equal(got, first) {
+		t.Fatal("referenced EData bytes changed during staging")
+	}
+	if got := readTestFile(t, filepath.Join(output, "assets", "EDATA.003")); !bytes.Equal(got, third) {
+		t.Fatal("unreferenced EData bytes changed during staging")
+	}
+	if _, err := os.Lstat(filepath.Join(output, "assets", "EDATA.002")); !os.IsNotExist(err) {
+		t.Fatalf("gap was filled: %v", err)
+	}
+
+	report := readTestEncyclopediaResearchReport(t, output)
+	if report.Artwork == nil {
+		t.Fatal("source report omitted artwork evidence")
+	}
+	if got := report.Artwork.Lookup.Lookups[1033][0]; got != "EDATA.001" {
+		t.Fatalf("lookup 0 = %q", got)
+	}
+	if len(report.Artwork.Lookup.MissingFilenames) != 1 || report.Artwork.Lookup.MissingFilenames[0].Filename != "EDATA.004" {
+		t.Fatalf("missing lookup evidence = %+v", report.Artwork.Lookup.MissingFilenames)
+	}
+	if len(report.Artwork.Lookup.UnreferencedFiles) != 1 || report.Artwork.Lookup.UnreferencedFiles[0].Basename != "EDATA.003" {
+		t.Fatalf("unreferenced evidence = %+v", report.Artwork.Lookup.UnreferencedFiles)
+	}
+	if len(report.Artwork.StagedAssets) != 2 || report.Artwork.StagedAssets[1].Use != encyclopediaAssetUnused {
+		t.Fatalf("staged ownership = %+v", report.Artwork.StagedAssets)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range [][]byte{[]byte(`"topics"`), []byte(`"runtime_allowlist"`), []byte(source), []byte(edata)} {
+		if bytes.Contains(encoded, forbidden) {
+			t.Fatalf("research report contains forbidden runtime/path data %q", forbidden)
+		}
+	}
+	if err := os.RemoveAll(source); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyEncyclopediaReport(output, io.Discard); err != nil {
+		t.Fatalf("source-free verify: %v", err)
+	}
+}
+
+func TestEncyclopediaArtStageEnforcesAggregateBoundaryBeforePublication(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(2), []byte("aggregate\x00"))
+	first := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 8})
+	second := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{
+		"EDATA.001": first,
+		"EDATA.002": second,
+	})
+	limits := defaultEncyclopediaImageLimits()
+	limits.MaxAggregateImageBytes = uint64(len(first) + len(second))
+	request := encyclopediaReportStageRequest{SourceDir: source, EDataDir: edata, OutputDir: output, ImageLimits: limits, Log: io.Discard}
+	if err := stageEncyclopediaReportWithRequest(request); err != nil {
+		t.Fatalf("exact aggregate boundary rejected: %v", err)
+	}
+	before := snapshotTestTree(t, output)
+	request.Force = true
+	request.ImageLimits.MaxAggregateImageBytes--
+	if err := os.Remove(filepath.Join(source, "ENCYBMAP.DLL")); err != nil {
+		t.Fatal(err)
+	}
+	if err := stageEncyclopediaReportWithRequest(request); err == nil || !strings.Contains(err.Error(), "aggregate") {
+		t.Fatalf("over-budget stage error = %v", err)
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, output)); diff != "" {
+		t.Fatalf("failed aggregate check changed prior output:\n%s", diff)
+	}
+}
+
+func TestEncyclopediaArtStageCleansOwnedStaleFilesAndRefusesUnknownFiles(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(3), []byte("cleanup\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{
+		"EDATA.001": bmp,
+		"EDATA.003": bmp,
+	})
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(edata, "EDATA.003")); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(edata, "EDATA.005"), bmp)
+	if err := stageEncyclopediaReport(source, edata, output, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(output, "assets", "EDATA.003")); !os.IsNotExist(err) {
+		t.Fatalf("stale owned art survived replacement: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(output, "assets", "EDATA.005")); err != nil {
+		t.Fatalf("new unreferenced art not staged: %v", err)
+	}
+
+	unknown := filepath.Join(output, "notes.txt")
+	writeTestFile(t, unknown, []byte("keep me"))
+	writeTestFile(t, filepath.Join(edata, "EDATA.006"), bmp)
+	before := snapshotTestTree(t, output)
+	if err := stageEncyclopediaReport(source, edata, output, true, io.Discard); err == nil || !strings.Contains(err.Error(), "unknown") {
+		t.Fatalf("forced stage with unknown file error = %v", err)
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, output)); diff != "" {
+		t.Fatalf("unknown-file refusal changed output:\n%s", diff)
+	}
+}
+
+func TestEncyclopediaArtStageRejectsMalformedArtWithoutReplacingPriorOutput(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(4), []byte("rollback\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTestTree(t, output)
+	writeTestFile(t, filepath.Join(edata, "EDATA.002"), []byte("not a BMP"))
+	if err := stageEncyclopediaReport(source, edata, output, true, io.Discard); err == nil || !strings.Contains(err.Error(), "EDATA.002") {
+		t.Fatalf("malformed EData stage error = %v", err)
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, output)); diff != "" {
+		t.Fatalf("malformed-art rollback changed prior output:\n%s", diff)
+	}
+}
+
+func TestEncyclopediaArtStageDoesNotPromoteUnreferencedFilesIntoRuntimeBindings(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(5), []byte("inventory only\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	before := readTestFile(t, filepath.Join(output, encyclopediaResearchReportFilename))
+	writeTestFile(t, filepath.Join(edata, "EDATA.192"), bmp)
+	if err := stageEncyclopediaReport(source, edata, output, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	after := readTestFile(t, filepath.Join(output, encyclopediaResearchReportFilename))
+	if bytes.Equal(before, after) {
+		t.Fatal("adding unreferenced EData did not change local research inventory")
+	}
+	report := readTestEncyclopediaResearchReport(t, output)
+	if len(report.Artwork.Lookup.UnreferencedFiles) != 1 || report.Artwork.Lookup.UnreferencedFiles[0].Basename != "EDATA.192" {
+		t.Fatalf("EDATA.192 inventory policy = %+v", report.Artwork.Lookup.UnreferencedFiles)
+	}
+	for _, forbidden := range [][]byte{[]byte(`"topics"`), []byte(`"runtime_allowlist"`), []byte(`"selector"`)} {
+		if bytes.Contains(after, forbidden) {
+			t.Fatalf("unreferenced file created runtime binding field %q", forbidden)
+		}
+	}
+}
+
+func TestEncyclopediaArtStageRejectsCaseAmbiguityWithoutChoosingAWinner(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(6), []byte("ambiguous\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.014"}, map[string][]byte{
+		"EDATA.014": bmp,
+		"edata.014": bmp,
+	})
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err == nil || !strings.Contains(err.Error(), "identity_collision") {
+		t.Fatalf("case-ambiguous stage error = %v", err)
+	}
+	if _, err := os.Lstat(output); !os.IsNotExist(err) {
+		t.Fatalf("ambiguous lookup published an output: %v", err)
+	}
+}
+
+func TestEncyclopediaArtStageCanonicalizesAUniqueCaseFoldedSourcePath(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(8), []byte("case folded\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.014"}, map[string][]byte{"edata.014": bmp})
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, filepath.Join(output, "assets", "EDATA.014")); !bytes.Equal(got, bmp) {
+		t.Fatal("case-folded source did not use canonical staged path")
+	}
+	if _, err := os.Lstat(filepath.Join(output, "assets", "edata.014")); !os.IsNotExist(err) {
+		t.Fatalf("source casing leaked into staged namespace: %v", err)
+	}
+	if err := verifyEncyclopediaReport(output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEncyclopediaArtStageRejectsEDataAndModOutputCollisions(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	mods := filepath.Join(t.TempDir(), "mods")
+	if err := os.MkdirAll(mods, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(7), []byte("collisions\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
+
+	if err := stageEncyclopediaReport(source, edata, edata, true, io.Discard); err == nil || !strings.Contains(err.Error(), "path_collision") {
+		t.Fatalf("EData/output collision error = %v", err)
+	}
+	if err := stageEncyclopediaReport(source, edata, filepath.Join(edata, "generated"), true, io.Discard); err == nil || !strings.Contains(err.Error(), "path_collision") {
+		t.Fatalf("nested EData/output collision error = %v", err)
+	}
+	gdata := filepath.Join(source, "GData")
+	if err := os.Mkdir(gdata, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := stageEncyclopediaReport(source, edata, gdata, true, io.Discard); err == nil || !strings.Contains(err.Error(), "path_collision") {
+		t.Fatalf("GData/output collision error = %v", err)
+	}
+	request := encyclopediaReportStageRequest{
+		SourceDir: source, EDataDir: edata, OutputDir: filepath.Join(mods, "encyclopedia"),
+		ModRoots: []string{mods}, Force: true, ImageLimits: defaultEncyclopediaImageLimits(), Log: io.Discard,
+	}
+	if err := stageEncyclopediaReportWithRequest(request); err == nil || !strings.Contains(err.Error(), "path_collision") {
+		t.Fatalf("mod/output collision error = %v", err)
+	}
+}
+
+func TestEncyclopediaArtworkEvidenceHasCanonicalOrdering(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{
+		0: "EDATA.003",
+		1: "EDATA.001",
+	}, map[string][]byte{
+		"EDATA.001": bmp,
+		"EDATA.003": bmp,
+	})
+	artwork, err := prepareEncyclopediaArtwork(source, edata, defaultEncyclopediaImageLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := testPublishedEncyclopediaDecodeReport([]byte("canonical\x00"))
+	report.Artwork = &artwork
+	first, err := marshalEncyclopediaResearchReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverse := func(length int, swap func(int, int)) {
+		for left, right := 0, length-1; left < right; left, right = left+1, right-1 {
+			swap(left, right)
+		}
+	}
+	reverse(len(artwork.Lookup.References), func(i, j int) {
+		artwork.Lookup.References[i], artwork.Lookup.References[j] = artwork.Lookup.References[j], artwork.Lookup.References[i]
+	})
+	reverse(len(artwork.Lookup.Files), func(i, j int) {
+		artwork.Lookup.Files[i], artwork.Lookup.Files[j] = artwork.Lookup.Files[j], artwork.Lookup.Files[i]
+	})
+	reverse(len(artwork.Images.Images), func(i, j int) {
+		artwork.Images.Images[i], artwork.Images.Images[j] = artwork.Images.Images[j], artwork.Images.Images[i]
+	})
+	reverse(len(artwork.StagedAssets), func(i, j int) {
+		artwork.StagedAssets[i], artwork.StagedAssets[j] = artwork.StagedAssets[j], artwork.StagedAssets[i]
+	})
+	report.Artwork = &artwork
+	second, err := marshalEncyclopediaResearchReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("artwork research JSON depends on source slice ordering")
+	}
+}
+
+func TestOwnedEncyclopediaArtworkStageIsDeterministicAndSourceFreeVerifiable(t *testing.T) {
+	source := os.Getenv("REBELLION_ENCYCLOPEDIA_TEST_SOURCE")
+	if source == "" {
+		t.Skip("set REBELLION_ENCYCLOPEDIA_TEST_SOURCE to an owned installation root")
+	}
+	edata := filepath.Join(source, "EData")
+	first := filepath.Join(t.TempDir(), "first")
+	second := filepath.Join(t.TempDir(), "second")
+	beforeImages, err := inventoryEncyclopediaImages(edata, defaultEncyclopediaImageLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeImageJSON, err := marshalEncyclopediaImageInventory(beforeImages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, beforeTextHash, err := hashEncyclopediaLookupFile(filepath.Join(source, "ENCYTEXT.DLL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, beforeLookupHash, err := hashEncyclopediaLookupFile(filepath.Join(source, "ENCYBMAP.DLL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stageEncyclopediaReport(source, edata, first, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := stageEncyclopediaReport(source, edata, second, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if diff := diffTestTree(snapshotTestTree(t, first), snapshotTestTree(t, second)); diff != "" {
+		t.Fatalf("owned artwork stages differ:\n%s", diff)
+	}
+	if err := verifyEncyclopediaReport(first, io.Discard); err != nil {
+		t.Fatalf("source-free owned verification: %v", err)
+	}
+	afterImages, err := inventoryEncyclopediaImages(edata, defaultEncyclopediaImageLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterImageJSON, err := marshalEncyclopediaImageInventory(afterImages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, afterTextHash, err := hashEncyclopediaLookupFile(filepath.Join(source, "ENCYTEXT.DLL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, afterLookupHash, err := hashEncyclopediaLookupFile(filepath.Join(source, "ENCYBMAP.DLL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(beforeImageJSON, afterImageJSON) || beforeTextHash != afterTextHash || beforeLookupHash != afterLookupHash {
+		t.Fatal("owned source identities changed during staging")
+	}
+	report := readTestEncyclopediaResearchReport(t, first)
+	if report.Artwork == nil {
+		t.Fatal("owned report omitted artwork evidence")
+	}
+	artwork := report.Artwork
+	if artwork.Lookup.SourceRawSHA256 != identifiedEnglishEncybmapSHA256 {
+		t.Fatalf("owned lookup profile = %s", artwork.Lookup.SourceRawSHA256)
+	}
+	if got := artwork.Lookup.Lookups[1033][4736]; got != "EDATA.014" {
+		t.Fatalf("owned lookup 4736 = %q", got)
+	}
+	if got := len(artwork.Lookup.Lookups[1033]); got != 191 {
+		t.Fatalf("owned nonempty lookup count = %d", got)
+	}
+	if len(artwork.Lookup.Files) != 187 || len(artwork.Lookup.UnreferencedFiles) != 1 || !strings.EqualFold(artwork.Lookup.UnreferencedFiles[0].Basename, "EDATA.192") {
+		t.Fatalf("owned EData reconciliation = files:%d unreferenced:%+v", len(artwork.Lookup.Files), artwork.Lookup.UnreferencedFiles)
+	}
+	if artwork.Images.Measurements.SuppliedCount != 187 || artwork.Images.Measurements.ValidCount != 187 || artwork.Images.Measurements.RejectedCount != 0 {
+		t.Fatalf("owned image measurements = %+v", artwork.Images.Measurements)
+	}
+	for _, asset := range artwork.StagedAssets {
+		sourceLength, sourceHash, err := hashEncyclopediaLookupFile(filepath.Join(edata, asset.SourceBasename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		stagedLength, stagedHash, err := hashEncyclopediaLookupFile(filepath.Join(first, filepath.FromSlash(asset.StagedPath)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sourceLength != asset.RawLength || stagedLength != asset.RawLength || sourceHash != asset.RawSHA256 || stagedHash != asset.RawSHA256 {
+			t.Fatalf("owned byte identity mismatch for %s", asset.SourceBasename)
+		}
+	}
+
+	evidence := struct {
+		LookupSHA256 string                        `json:"lookup_sha256"`
+		Measurements encyclopediaImageMeasurements `json:"measurements"`
+		StagedCount  int                           `json:"staged_count"`
+		UnusedCount  int                           `json:"unused_count"`
+	}{
+		LookupSHA256: artwork.Lookup.SourceRawSHA256,
+		Measurements: artwork.Images.Measurements,
+		StagedCount:  len(artwork.StagedAssets),
+		UnusedCount:  len(artwork.Lookup.UnreferencedFiles),
+	}
+	encoded, err := json.MarshalIndent(evidence, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidencePath := filepath.Join(repoRoot, ".artifacts", "encyclopedia", "E06-owned-stage.json")
+	if err := os.MkdirAll(filepath.Dir(evidencePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, evidencePath, append(encoded, '\n'))
+	t.Logf("retained ignored E06 stage evidence at %s", evidencePath)
+}
+
+func TestEncyclopediaSourceFreeVerifyRejectsPresentFileReportedMissing(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(51), []byte("contradictory missing reference\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	report := readTestEncyclopediaResearchReport(t, output)
+	artwork := report.Artwork
+	artwork.Lookup.References[0].Resolution = encyclopediaLookupMissing
+	artwork.Lookup.References[0].MatchedBasename = ""
+	artwork.Lookup.MissingFilenames = append([]encyclopediaLookupReference(nil), artwork.Lookup.References...)
+	artwork.Lookup.UnreferencedFiles = append([]encyclopediaLookupFileRecord(nil), artwork.Lookup.Files...)
+	artwork.StagedAssets[0].Use = encyclopediaAssetUnused
+	encoded, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(output, encyclopediaResearchReportFilename)
+	if err := os.WriteFile(reportPath, append(encoded, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTestTree(t, output)
+	if err := verifyEncyclopediaReport(output, io.Discard); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("source-free verification accepted present EDATA.001 as missing: %v", err)
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, output)); diff != "" {
+		t.Fatalf("failed source-free verification changed output:\n%s", diff)
+	}
+}
+
+func TestEncyclopediaArtStagePublishesGenuinelyMissingLookupWithEmptyInventory(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(54), []byte("genuinely missing reference\x00"))
+	if err := os.Remove(filepath.Join(edata, "EDATA.001")); err != nil {
+		t.Fatal(err)
+	}
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, nil)
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatalf("empty valid artwork inventory should publish missing reference evidence: %v", err)
+	}
+	report := readTestEncyclopediaResearchReport(t, output)
+	if report.Artwork == nil || len(report.Artwork.StagedAssets) != 0 || len(report.Artwork.Lookup.MissingFilenames) != 1 {
+		t.Fatalf("empty inventory report = %+v", report.Artwork)
+	}
+	if err := verifyEncyclopediaReport(output, io.Discard); err != nil {
+		t.Fatalf("source-free verification of empty artwork inventory: %v", err)
+	}
+}
+
+func TestEncyclopediaArtStageProtectsResolvedSymlinkedGDataRoot(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	gdataTarget := t.TempDir()
+	output := filepath.Join(gdataTarget, "generated")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(52), []byte("symlinked GData\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
+	if err := os.Symlink(gdataTarget, filepath.Join(source, "GData")); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTestTree(t, gdataTarget)
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err == nil || !strings.Contains(err.Error(), "path_collision") {
+		t.Fatalf("symlinked GData target accepted as output: %v", err)
+	}
+	if diff := diffTestTree(before, snapshotTestTree(t, gdataTarget)); diff != "" {
+		t.Fatalf("collision refusal changed original GData target:\n%s", diff)
+	}
+}
+
+func TestEncyclopediaArtStageAllowsGeneratedOutputElsewhereUnderInstallRoot(t *testing.T) {
+	source := t.TempDir()
+	edata := filepath.Join(source, "EData")
+	output := filepath.Join(source, "encyclopedia-research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(53), []byte("allowed generated root\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
+	if err := stageEncyclopediaReport(source, edata, output, false, io.Discard); err != nil {
+		t.Fatalf("intended generated output under installation root was rejected: %v", err)
+	}
+	if err := verifyEncyclopediaReport(output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+}

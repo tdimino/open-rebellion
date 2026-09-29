@@ -84,7 +84,7 @@ Write and unchanged counts depend on what is already staged.
 
 ## Encyclopedia research report
 
-Generate only the early encyclopedia text research product, without checking
+Generate only the encyclopedia source-research product, without checking
 for or invoking `ffmpeg`/`ffprobe` and without staging the normal UI, audio,
 strings, or cutscenes:
 
@@ -94,7 +94,9 @@ go run ./tools/stage-ui-assets --encyclopedia-report-only \
 ```
 
 The default destination is `data/base/encyclopedia-research/`. Override it with
-`--encyclopedia-report-output`. This focused mode reads `ENCYTEXT.DLL` and publishes a
+`--encyclopedia-report-output`. Artwork defaults to `<source>/EData`; use `--edata` to
+select a different declared EData root. This focused mode reads `ENCYTEXT.DLL`
+and `ENCYBMAP.DLL`, inventories the declared EData directory, and publishes a
 validated, deterministic directory transaction containing:
 
 ```text
@@ -102,6 +104,7 @@ source-report.json
 raw/encytext/<language>/<numeric-id>.bin
 raw/encytext/<language>/<numeric-id>.txt
 raw/encytext/<language>/named/<reversible-hex-name>.bin
+assets/EDATA.NNN
 ```
 
 The JSON discriminator is `kind: "encyclopedia-research"` with
@@ -114,10 +117,22 @@ reviewed lossless decoder profile; otherwise the record is explicitly
 a separate namespace, with long encodings split across bounded path components,
 so names never become unchecked paths or collide with numeric IDs.
 
+The same report carries language-qualified RT_STRING lookup evidence, missing
+references, duplicate references, case ambiguity, supplied/unreferenced image
+identities, and measured BMP facts. Every valid supplied `EDATA.NNN` is copied
+byte-for-byte, including gaps and unreferenced files. A supplied filename never
+creates a topic, selector, or runtime allowlist entry; for example, an
+unreferenced alternate remains inventory-only. Case-ambiguous identities are
+rejected rather than selecting a spelling. Images are limited to 32 MiB each
+and 128 MiB in aggregate, with the aggregate checked before image reads or
+copies. Unsupported, corrupt, colliding, or over-budget images fail the
+transaction and leave the previously published owned set intact.
+
 The report is research evidence, not a runtime catalog. Report mode refuses a
 destination containing runtime `catalog.json` or `manifest.json`, even with
-`--force`. This checkpoint does not stage encyclopedia artwork, bind strings to
-topics, or produce a runtime-loadable catalog.
+`--force`. It also refuses source/EData and declared mod-root collisions. This
+checkpoint does not bind strings or images to topics and does not produce a
+runtime-loadable catalog.
 
 Verify an existing report without reading an original installation or writing
 anything:
@@ -128,12 +143,13 @@ go run ./tools/stage-ui-assets --encyclopedia-report-only --verify \
 ```
 
 Verification rechecks the report schema, exact generated-file ownership, raw
-lengths and hashes, and every proven text decode. Active or interrupted
-publication returns a recovery command but verification never acquires a writer
-marker or repairs, renames, or deletes transaction files. A staging rerun may
-perform validated recovery. Byte-identical reruns are no-ops, including with
-`--force`; changed owned output requires `--force`; unknown user files always
-block replacement and are never deleted.
+lengths and hashes, every proven text decode, and all staged image bytes and
+measurements. It does not need or read `--source` or `--edata`. Active or
+interrupted publication returns a recovery command but verification never
+acquires a writer marker or repairs, renames, or deletes transaction files. A
+staging rerun may perform validated recovery. Byte-identical reruns are no-ops,
+including with `--force`; changed owned output requires `--force`; unknown user
+files always block replacement and are never deleted.
 
 The default research destination is covered by `data/base/*` in `.gitignore`.
 Keep custom research destinations outside tracked paths: original prose, raw
@@ -221,10 +237,11 @@ make the final count check fail even with `--force`.
 | `--output` | `data/base/ui` | Root of the staged UI directories |
 | `--audio-output` | `data/sounds` | Audio output directory |
 | `--mdata` | `source/MDATA` | Original soundtrack and cutscene directory |
+| `--edata` | `source/EData` | Original encyclopedia artwork directory (report-only mode) |
 | `--strings-output` | `data/base/textstra.json` | Original string JSON output |
 | `--encyclopedia-output` | `data/base/encyclopedia/source.json` | Ignored ENCYTEXT/ENCYBMAP source catalog |
 | `--cutscene-output` | `assets/references` | Parent for `ref-videos` and `cutscene-frames` |
-| `--encyclopedia-report-only` | `false` | Stage or verify only the encyclopedia text research report |
+| `--encyclopedia-report-only` | `false` | Stage or verify only the encyclopedia source research report |
 | `--encyclopedia-report-output` | `data/base/encyclopedia-research` | Research report destination (requires report-only mode) |
 | `--verify` | `false` | Check existing output without extraction |
 | `--encyclopedia-only` | `false` | Stage or verify only the Encyclopedia source catalog |

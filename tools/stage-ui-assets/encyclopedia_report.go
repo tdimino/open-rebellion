@@ -24,25 +24,77 @@ const (
 var errEncyclopediaUnknownDecodeProfile = errors.New("encyclopedia source has no approved lossless decoder profile")
 
 type preparedEncyclopediaReport struct {
-	report encyclopediaResearchReport
-	texts  []string
+	report    encyclopediaResearchReport
+	texts     []string
+	edataRoot string
 }
 
 func stageEncyclopediaReport(sourceDir, edataDir, outputDir string, force bool, log io.Writer) error {
-	if err := rejectEncyclopediaReportRuntimeRoot(outputDir); err != nil {
+	if strings.TrimSpace(edataDir) == "" {
+		edataDir = filepath.Join(sourceDir, "EData")
+	}
+	return stageEncyclopediaReportWithRequest(encyclopediaReportStageRequest{
+		SourceDir:   sourceDir,
+		EDataDir:    edataDir,
+		OutputDir:   outputDir,
+		Force:       force,
+		ImageLimits: defaultEncyclopediaImageLimits(),
+		Log:         log,
+	})
+}
+
+type encyclopediaReportStageRequest struct {
+	SourceDir   string
+	EDataDir    string
+	OutputDir   string
+	ModRoots    []string
+	Force       bool
+	ImageLimits encyclopediaImageLimits
+	Log         io.Writer
+}
+
+func stageEncyclopediaReportWithRequest(request encyclopediaReportStageRequest) error {
+	if request.ImageLimits == (encyclopediaImageLimits{}) {
+		request.ImageLimits = defaultEncyclopediaImageLimits()
+	}
+	if request.Log == nil {
+		request.Log = io.Discard
+	}
+	if err := rejectEncyclopediaReportRuntimeRoot(request.OutputDir); err != nil {
 		return err
 	}
-	sourceRoots := []string{sourceDir}
-	if strings.TrimSpace(edataDir) != "" {
-		sourceRoots = append(sourceRoots, edataDir)
+	resolvedSource, err := filepath.Abs(request.SourceDir)
+	if err != nil {
+		return fmt.Errorf("resolve encyclopedia source root: %w", err)
 	}
-	_, err := stageEncyclopediaDirectory(encyclopediaDirectoryRequest{
-		OutputDir:   outputDir,
+	resolvedEData, err := filepath.Abs(request.EDataDir)
+	if err != nil {
+		return fmt.Errorf("resolve encyclopedia EData root: %w", err)
+	}
+	fmt.Fprintf(request.Log, "Encyclopedia source root: %s\nEncyclopedia EData root: %s\n", resolvedSource, resolvedEData)
+	sourceRoots := []string{request.SourceDir}
+	protectedRoots := append([]string(nil), request.ModRoots...)
+	if strings.TrimSpace(request.EDataDir) != "" {
+		sourceRoots = append(sourceRoots, request.EDataDir)
+		protectedRoots = append(protectedRoots, request.EDataDir)
+	}
+	if entries, err := os.ReadDir(request.SourceDir); err == nil {
+		for _, entry := range entries {
+			// Keep a named GData symlink in the protected set. The shared
+			// collision resolver follows it before comparing output roots.
+			if strings.EqualFold(entry.Name(), "GData") {
+				protectedRoots = append(protectedRoots, filepath.Join(request.SourceDir, entry.Name()))
+			}
+		}
+	}
+	_, err = stageEncyclopediaDirectory(encyclopediaDirectoryRequest{
+		OutputDir:   request.OutputDir,
 		SourceRoots: sourceRoots,
-		Force:       force,
+		ModRoots:    protectedRoots,
+		Force:       request.Force,
 		BuildCandidate: func(root string) error {
 			inventory, err := inventoryEncyclopediaSources(encyclopediaInventoryRequest{
-				Roots: []encyclopediaSourceRoot{{Role: encyclopediaReportSourceRole, Path: sourceDir}},
+				Roots: []encyclopediaSourceRoot{{Role: encyclopediaReportSourceRole, Path: request.SourceDir}},
 				Sources: []encyclopediaSourceSpec{{
 					RootRole:       encyclopediaReportSourceRole,
 					Basename:       "ENCYTEXT.DLL",
@@ -58,11 +110,19 @@ func stageEncyclopediaReport(sourceDir, edataDir, outputDir string, force bool, 
 			if err != nil {
 				return err
 			}
+			if strings.TrimSpace(request.EDataDir) != "" {
+				artwork, err := prepareEncyclopediaArtwork(request.SourceDir, request.EDataDir, request.ImageLimits)
+				if err != nil {
+					return err
+				}
+				prepared.report.Artwork = &artwork
+				prepared.edataRoot = request.EDataDir
+			}
 			return writeEncyclopediaReportCandidate(root, prepared)
 		},
 		InspectOwned:    inspectEncyclopediaReportDirectory,
-		RecoveryCommand: fmt.Sprintf("stage-ui-assets --encyclopedia-report-only --encyclopedia-report-output %q --force", outputDir),
-		Log:             log,
+		RecoveryCommand: fmt.Sprintf("stage-ui-assets --encyclopedia-report-only --encyclopedia-report-output %q --force", request.OutputDir),
+		Log:             request.Log,
 	})
 	return err
 }
@@ -164,6 +224,16 @@ func writeEncyclopediaReportCandidate(root string, prepared preparedEncyclopedia
 			}
 			if err := writeEncyclopediaReportFile(root, paths[index].text, []byte(prepared.texts[index])); err != nil {
 				return err
+			}
+		}
+	}
+	if prepared.report.Artwork != nil {
+		if strings.TrimSpace(prepared.edataRoot) == "" {
+			return fmt.Errorf("artwork report has no declared EData source root")
+		}
+		for _, asset := range prepared.report.Artwork.StagedAssets {
+			if err := copyEncyclopediaStagedAsset(prepared.edataRoot, root, asset); err != nil {
+				return fmt.Errorf("stage %s: %w", asset.SourceBasename, err)
 			}
 		}
 	}
@@ -324,6 +394,36 @@ func inspectEncyclopediaReportDirectory(root string) (encyclopediaOwnedInventory
 		case encyclopediaRecordUnresolved:
 		default:
 			return encyclopediaOwnedInventory{}, fmt.Errorf("research report record %s has invalid publication status %q", formatEncyclopediaResourceIdentifier(record.ResourceID), record.Status)
+		}
+	}
+	if report.Artwork != nil {
+		if len(report.Artwork.StagedAssets) != 0 {
+			assetRoot := filepath.Join(root, "assets")
+			images, err := inventoryEncyclopediaImages(assetRoot, defaultEncyclopediaImageLimits())
+			if err != nil {
+				return encyclopediaOwnedInventory{}, fmt.Errorf("verify staged encyclopedia artwork: %w", err)
+			}
+			if images.Measurements.RejectedCount != 0 {
+				return encyclopediaOwnedInventory{}, fmt.Errorf("verify staged encyclopedia artwork: %d rejected images", images.Measurements.RejectedCount)
+			}
+			actualImages, err := marshalEncyclopediaImageInventory(images)
+			if err != nil {
+				return encyclopediaOwnedInventory{}, err
+			}
+			reportedStagedImages, err := stagedEncyclopediaImageInventory(*report.Artwork)
+			if err != nil {
+				return encyclopediaOwnedInventory{}, err
+			}
+			reportedImages, err := marshalEncyclopediaImageInventory(reportedStagedImages)
+			if err != nil {
+				return encyclopediaOwnedInventory{}, err
+			}
+			if !bytes.Equal(actualImages, reportedImages) {
+				return encyclopediaOwnedInventory{}, fmt.Errorf("staged encyclopedia artwork differs from reported image inventory")
+			}
+		}
+		for _, asset := range report.Artwork.StagedAssets {
+			owned = append(owned, asset.StagedPath)
 		}
 	}
 	return encyclopediaOwnedInventory{Files: owned}, nil

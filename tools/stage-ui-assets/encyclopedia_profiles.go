@@ -84,6 +84,7 @@ type encyclopediaResearchReport struct {
 	Sources                []encyclopediaSourceRecord              `json:"sources"`
 	Records                []encyclopediaResearchRecord            `json:"records"`
 	DuplicateIdentities    []encyclopediaDuplicateResourceIdentity `json:"duplicate_identities"`
+	Artwork                *encyclopediaArtworkResearch            `json:"artwork,omitempty"`
 }
 
 type encyclopediaSourceRecord struct {
@@ -301,6 +302,13 @@ func canonicalEncyclopediaResearchReport(report encyclopediaResearchReport) (enc
 	}
 	if canonical.SchemaVersion != encyclopediaResearchSchemaVersion {
 		return encyclopediaResearchReport{}, fmt.Errorf("encyclopedia research report schema version %d is unsupported", canonical.SchemaVersion)
+	}
+	if canonical.Artwork != nil {
+		artwork, err := canonicalEncyclopediaArtworkResearch(*canonical.Artwork)
+		if err != nil {
+			return encyclopediaResearchReport{}, err
+		}
+		canonical.Artwork = &artwork
 	}
 
 	sort.Slice(canonical.Sources, func(i, j int) bool { return lessEncyclopediaSourceRecord(canonical.Sources[i], canonical.Sources[j]) })

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -9,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,7 +22,508 @@ const (
 	encyclopediaBackupPrefix       = "encyclopedia-stage-backup-"
 	encyclopediaStaleLockPrefix    = "encyclopedia-stage-stale-lock-"
 	encyclopediaWriterGuardSuffix  = ".guard"
+	encyclopediaArtworkKind        = "encyclopedia-artwork-research"
+	encyclopediaArtworkVersion     = 1
 )
+
+type encyclopediaAssetUse string
+
+const (
+	encyclopediaAssetReferenced encyclopediaAssetUse = "referenced"
+	encyclopediaAssetUnused     encyclopediaAssetUse = "unreferenced"
+)
+
+type encyclopediaStagedAsset struct {
+	SourceBasename string               `json:"source_basename"`
+	StagedPath     string               `json:"staged_path"`
+	RawLength      uint64               `json:"raw_length"`
+	RawSHA256      string               `json:"raw_sha256"`
+	Use            encyclopediaAssetUse `json:"use"`
+}
+
+type encyclopediaArtworkResearch struct {
+	Kind          string                      `json:"kind"`
+	SchemaVersion int                         `json:"schema_version"`
+	Lookup        encyclopediaLookupInventory `json:"lookup_inventory"`
+	Images        encyclopediaImageInventory  `json:"image_inventory"`
+	StagedAssets  []encyclopediaStagedAsset   `json:"staged_assets"`
+}
+
+func prepareEncyclopediaArtwork(sourceDir, edataDir string, limits encyclopediaImageLimits) (encyclopediaArtworkResearch, error) {
+	images, err := inventoryEncyclopediaImages(edataDir, limits)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("inventory encyclopedia artwork: %w", err)
+	}
+	if images.Measurements.RejectedCount != 0 {
+		rejected := make([]string, 0, images.Measurements.RejectedCount)
+		for _, image := range images.Images {
+			if image.Status == encyclopediaImageRejected {
+				rejected = append(rejected, fmt.Sprintf("%s (%s: %s)", image.Filename, image.DiagnosticCode, image.Diagnostic))
+			}
+		}
+		return encyclopediaArtworkResearch{}, fmt.Errorf("rejected EData inputs: %s", strings.Join(rejected, "; "))
+	}
+	lookupBytes, err := readBoundedEncyclopediaSource(filepath.Join(sourceDir, "ENCYBMAP.DLL"), maxEncyclopediaLookupSourceBytes)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("read ENCYBMAP.DLL: %w", err)
+	}
+	lookup, err := inventoryEncyclopediaLookups("ENCYBMAP.DLL", lookupBytes, edataDir)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("inventory encyclopedia artwork lookups: %w", err)
+	}
+	artwork := encyclopediaArtworkResearch{
+		Kind:          encyclopediaArtworkKind,
+		SchemaVersion: encyclopediaArtworkVersion,
+		Lookup:        lookup,
+		Images:        images,
+	}
+	artwork.StagedAssets, err = encyclopediaStagedAssets(lookup, images)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, err
+	}
+	return canonicalEncyclopediaArtworkResearch(artwork)
+}
+
+func encyclopediaStagedAssets(lookup encyclopediaLookupInventory, images encyclopediaImageInventory) ([]encyclopediaStagedAsset, error) {
+	referenced := make(map[string]struct{}, len(lookup.References))
+	for _, reference := range lookup.References {
+		switch reference.Resolution {
+		case encyclopediaLookupExact, encyclopediaLookupCaseFolded:
+			if reference.MatchedBasename == "" {
+				return nil, fmt.Errorf("resolved artwork lookup %d/%d has no matched basename", reference.LanguageID, reference.LogicalID)
+			}
+			referenced[reference.MatchedBasename] = struct{}{}
+		case encyclopediaLookupMissing:
+		case encyclopediaLookupAmbiguous:
+			return nil, fmt.Errorf("case-ambiguous artwork lookup %d/%d has no safe staged binding", reference.LanguageID, reference.LogicalID)
+		default:
+			return nil, fmt.Errorf("artwork lookup %d/%d has unsupported resolution %q", reference.LanguageID, reference.LogicalID, reference.Resolution)
+		}
+	}
+	lookupFiles := make(map[string]encyclopediaLookupFileRecord, len(lookup.Files))
+	for _, file := range lookup.Files {
+		lookupFiles[file.Basename] = file
+	}
+	assets := make([]encyclopediaStagedAsset, 0, len(images.Images))
+	for _, image := range images.Images {
+		if image.Status != encyclopediaImageValid {
+			return nil, fmt.Errorf("EData source %s is not valid for staging", image.Filename)
+		}
+		file, ok := lookupFiles[image.Filename]
+		if !ok || file.RawLength != image.RawLength || file.RawSHA256 != image.RawSHA256 || file.FileNumber != image.Number {
+			return nil, fmt.Errorf("EData source identity mismatch for %s", image.Filename)
+		}
+		use := encyclopediaAssetUnused
+		if _, ok := referenced[image.Filename]; ok {
+			use = encyclopediaAssetReferenced
+		}
+		assets = append(assets, encyclopediaStagedAsset{
+			SourceBasename: image.Filename,
+			StagedPath:     filepath.ToSlash(filepath.Join("assets", fmt.Sprintf("EDATA.%03d", image.Number))),
+			RawLength:      image.RawLength,
+			RawSHA256:      image.RawSHA256,
+			Use:            use,
+		})
+	}
+	if len(lookupFiles) != len(assets) {
+		return nil, fmt.Errorf("lookup inventory has %d EData files but image inventory has %d", len(lookupFiles), len(assets))
+	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].StagedPath < assets[j].StagedPath })
+	return assets, nil
+}
+
+func canonicalEncyclopediaArtworkResearch(artwork encyclopediaArtworkResearch) (encyclopediaArtworkResearch, error) {
+	if artwork.Kind != encyclopediaArtworkKind || artwork.SchemaVersion != encyclopediaArtworkVersion {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("unsupported encyclopedia artwork research contract %q/%d", artwork.Kind, artwork.SchemaVersion)
+	}
+	canonical := artwork
+	canonical.Lookup.SourceRawBytes = nil
+	canonical.Lookup.Blocks = append([]encyclopediaLookupBlockRecord(nil), artwork.Lookup.Blocks...)
+	for index := range canonical.Lookup.Blocks {
+		canonical.Lookup.Blocks[index].RawBytes = nil
+	}
+	canonical.Lookup.Lookups = cloneEncyclopediaLookups(artwork.Lookup.Lookups)
+	canonical.Lookup.References = append([]encyclopediaLookupReference(nil), artwork.Lookup.References...)
+	canonical.Lookup.Files = append([]encyclopediaLookupFileRecord(nil), artwork.Lookup.Files...)
+	canonical.Lookup.DuplicateReferences = append([]encyclopediaDuplicateLookupReference(nil), artwork.Lookup.DuplicateReferences...)
+	for index := range canonical.Lookup.DuplicateReferences {
+		canonical.Lookup.DuplicateReferences[index].References = append([]encyclopediaLookupReference(nil), artwork.Lookup.DuplicateReferences[index].References...)
+	}
+	canonical.Lookup.CaseAmbiguities = append([]encyclopediaLookupCaseAmbiguity(nil), artwork.Lookup.CaseAmbiguities...)
+	for index := range canonical.Lookup.CaseAmbiguities {
+		canonical.Lookup.CaseAmbiguities[index].Candidates = append([]string(nil), artwork.Lookup.CaseAmbiguities[index].Candidates...)
+	}
+	canonical.Lookup.MissingFilenames = append([]encyclopediaLookupReference(nil), artwork.Lookup.MissingFilenames...)
+	canonical.Lookup.UnreferencedFiles = append([]encyclopediaLookupFileRecord(nil), artwork.Lookup.UnreferencedFiles...)
+	canonical.Images.Images = append([]encyclopediaImageRecord(nil), artwork.Images.Images...)
+	canonical.StagedAssets = append([]encyclopediaStagedAsset(nil), artwork.StagedAssets...)
+
+	if canonical.Lookup.SourceBasename != "ENCYBMAP.DLL" || !validSHA256(canonical.Lookup.SourceRawSHA256) {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("artwork lookup source identity is invalid")
+	}
+	if canonical.Lookup.SourceRawLength == 0 {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("artwork lookup source length is zero")
+	}
+	if _, err := marshalEncyclopediaImageInventory(canonical.Images); err != nil {
+		return encyclopediaArtworkResearch{}, err
+	}
+	sort.Slice(canonical.Lookup.Blocks, func(i, j int) bool {
+		left, right := canonical.Lookup.Blocks[i], canonical.Lookup.Blocks[j]
+		if left.LanguageID != right.LanguageID {
+			return left.LanguageID < right.LanguageID
+		}
+		return compareEncyclopediaResourceIdentifier(left.BlockID, right.BlockID) < 0
+	})
+	sort.Slice(canonical.Lookup.References, func(i, j int) bool {
+		left, right := canonical.Lookup.References[i], canonical.Lookup.References[j]
+		if left.LanguageID != right.LanguageID {
+			return left.LanguageID < right.LanguageID
+		}
+		return left.LogicalID < right.LogicalID
+	})
+	sort.Slice(canonical.Lookup.Files, func(i, j int) bool { return canonical.Lookup.Files[i].Basename < canonical.Lookup.Files[j].Basename })
+	sort.Slice(canonical.Lookup.MissingFilenames, func(i, j int) bool {
+		left, right := canonical.Lookup.MissingFilenames[i], canonical.Lookup.MissingFilenames[j]
+		if left.LanguageID != right.LanguageID {
+			return left.LanguageID < right.LanguageID
+		}
+		return left.LogicalID < right.LogicalID
+	})
+	sort.Slice(canonical.Lookup.UnreferencedFiles, func(i, j int) bool {
+		return canonical.Lookup.UnreferencedFiles[i].Basename < canonical.Lookup.UnreferencedFiles[j].Basename
+	})
+	for index := range canonical.Lookup.DuplicateReferences {
+		sort.Slice(canonical.Lookup.DuplicateReferences[index].References, func(i, j int) bool {
+			left := canonical.Lookup.DuplicateReferences[index].References[i]
+			right := canonical.Lookup.DuplicateReferences[index].References[j]
+			if left.LanguageID != right.LanguageID {
+				return left.LanguageID < right.LanguageID
+			}
+			return left.LogicalID < right.LogicalID
+		})
+	}
+	sort.Slice(canonical.Lookup.DuplicateReferences, func(i, j int) bool {
+		left := foldEncyclopediaFilename(canonical.Lookup.DuplicateReferences[i].Filename)
+		right := foldEncyclopediaFilename(canonical.Lookup.DuplicateReferences[j].Filename)
+		if left != right {
+			return left < right
+		}
+		return canonical.Lookup.DuplicateReferences[i].Filename < canonical.Lookup.DuplicateReferences[j].Filename
+	})
+	for index := range canonical.Lookup.CaseAmbiguities {
+		sort.Strings(canonical.Lookup.CaseAmbiguities[index].Candidates)
+	}
+	sort.Slice(canonical.Lookup.CaseAmbiguities, func(i, j int) bool {
+		return canonical.Lookup.CaseAmbiguities[i].FoldedFilename < canonical.Lookup.CaseAmbiguities[j].FoldedFilename
+	})
+	sort.Slice(canonical.Images.Images, func(i, j int) bool {
+		if canonical.Images.Images[i].Number != canonical.Images.Images[j].Number {
+			return canonical.Images.Images[i].Number < canonical.Images.Images[j].Number
+		}
+		return canonical.Images.Images[i].Filename < canonical.Images.Images[j].Filename
+	})
+	sort.Slice(canonical.StagedAssets, func(i, j int) bool {
+		return canonical.StagedAssets[i].StagedPath < canonical.StagedAssets[j].StagedPath
+	})
+
+	if err := validateEncyclopediaArtworkLookupEvidence(canonical.Lookup); err != nil {
+		return encyclopediaArtworkResearch{}, err
+	}
+	wantAssets, err := encyclopediaStagedAssets(canonical.Lookup, canonical.Images)
+	if err != nil {
+		return encyclopediaArtworkResearch{}, err
+	}
+	if len(wantAssets) != len(canonical.StagedAssets) {
+		return encyclopediaArtworkResearch{}, fmt.Errorf("artwork staged ownership count is %d, want %d", len(canonical.StagedAssets), len(wantAssets))
+	}
+	for index := range wantAssets {
+		if canonical.StagedAssets[index] != wantAssets[index] {
+			return encyclopediaArtworkResearch{}, fmt.Errorf("artwork staged ownership differs for %s", wantAssets[index].SourceBasename)
+		}
+	}
+	return canonical, nil
+}
+
+func validateEncyclopediaArtworkLookupEvidence(lookup encyclopediaLookupInventory) error {
+	if lookup.SourceRawLength > maxEncyclopediaLookupSourceBytes {
+		return fmt.Errorf("artwork lookup source length %d exceeds %d-byte limit", lookup.SourceRawLength, maxEncyclopediaLookupSourceBytes)
+	}
+	if len(lookup.Blocks) == 0 {
+		return fmt.Errorf("artwork lookup evidence has no RT_STRING blocks")
+	}
+	type lookupKey struct {
+		language uint16
+		logical  uint32
+	}
+	values := make(map[lookupKey]string)
+	for language, languageLookups := range lookup.Lookups {
+		for logicalID, filename := range languageLookups {
+			if _, ok := parseEncyclopediaEDataFilename(filename); !ok {
+				return fmt.Errorf("artwork lookup %d/%d has invalid filename %q", language, logicalID, filename)
+			}
+			values[lookupKey{language: language, logical: logicalID}] = filename
+		}
+	}
+	blockKeys := make(map[encyclopediaLookupBlockKey]struct{}, len(lookup.Blocks))
+	nonempty := 0
+	for _, block := range lookup.Blocks {
+		if err := validateEncyclopediaResourceIdentifier(block.BlockID); err != nil {
+			return fmt.Errorf("invalid artwork RT_STRING block identity: %w", err)
+		}
+		if !validSHA256(block.RawSHA256) || block.RawLength == 0 || block.NonemptyEntryCount < 0 {
+			return fmt.Errorf("artwork RT_STRING block %s has invalid raw facts", formatEncyclopediaResourceIdentifier(block.BlockID))
+		}
+		key := encyclopediaLookupBlockKey{LanguageID: block.LanguageID, Kind: block.BlockID.Kind, Name: block.BlockID.Name}
+		if block.BlockID.NumericID != nil {
+			key.NumericID = *block.BlockID.NumericID
+		}
+		if _, exists := blockKeys[key]; exists {
+			return fmt.Errorf("duplicate artwork RT_STRING block %s for LANGID %d", formatEncyclopediaResourceIdentifier(block.BlockID), block.LanguageID)
+		}
+		blockKeys[key] = struct{}{}
+		switch block.BlockID.Kind {
+		case encyclopediaIdentifierNamed:
+			if block.Status != encyclopediaRecordUnresolved || block.Unresolved == nil || strings.TrimSpace(block.Unresolved.Reason) == "" || strings.TrimSpace(block.Unresolved.NextProof) == "" {
+				return fmt.Errorf("named artwork RT_STRING block must retain unresolved evidence")
+			}
+		case encyclopediaIdentifierNumeric:
+			if block.Status != encyclopediaRecordDecoded || block.Unresolved != nil || block.BlockID.NumericID == nil || *block.BlockID.NumericID == 0 {
+				return fmt.Errorf("numeric artwork RT_STRING block has invalid decode status")
+			}
+			if *block.BlockID.NumericID-1 > (^uint32(0)-15)/16 {
+				return fmt.Errorf("artwork RT_STRING block ID %d overflows logical IDs", *block.BlockID.NumericID)
+			}
+			base := (*block.BlockID.NumericID - 1) * 16
+			count := 0
+			for slot := uint32(0); slot < 16; slot++ {
+				if _, ok := values[lookupKey{language: block.LanguageID, logical: base + slot}]; ok {
+					count++
+				}
+			}
+			if count != block.NonemptyEntryCount {
+				return fmt.Errorf("artwork RT_STRING block %s reports %d nonempty entries, found %d", formatEncyclopediaResourceIdentifier(block.BlockID), block.NonemptyEntryCount, count)
+			}
+			nonempty += count
+		}
+	}
+	if nonempty != len(values) || len(lookup.References) != len(values) {
+		return fmt.Errorf("artwork lookup/reference counts do not match decoded block entries")
+	}
+
+	files := make(map[string]encyclopediaLookupFileRecord, len(lookup.Files))
+	filesByFold := make(map[string][]encyclopediaLookupFileRecord, len(lookup.Files))
+	for _, file := range lookup.Files {
+		number, ok := parseEncyclopediaEDataFilename(file.Basename)
+		if !ok || number != file.FileNumber || !validSHA256(file.RawSHA256) {
+			return fmt.Errorf("artwork file identity is invalid for %q", file.Basename)
+		}
+		if _, exists := files[file.Basename]; exists {
+			return fmt.Errorf("duplicate artwork file identity %q", file.Basename)
+		}
+		files[file.Basename] = file
+		folded := foldEncyclopediaFilename(file.Basename)
+		filesByFold[folded] = append(filesByFold[folded], file)
+	}
+	if len(lookup.CaseAmbiguities) != 0 {
+		return fmt.Errorf("case-ambiguous EData identities cannot be published as staged artwork evidence")
+	}
+	seenReferences := make(map[lookupKey]struct{}, len(lookup.References))
+	var missing []encyclopediaLookupReference
+	referencedFiles := make(map[string]struct{})
+	referencesByFold := make(map[string][]encyclopediaLookupReference)
+	for _, reference := range lookup.References {
+		key := lookupKey{language: reference.LanguageID, logical: reference.LogicalID}
+		filename, ok := values[key]
+		if !ok || filename != reference.Filename {
+			return fmt.Errorf("artwork reference %d/%d does not match decoded lookup", reference.LanguageID, reference.LogicalID)
+		}
+		if _, exists := seenReferences[key]; exists {
+			return fmt.Errorf("duplicate artwork reference %d/%d", reference.LanguageID, reference.LogicalID)
+		}
+		seenReferences[key] = struct{}{}
+		fileNumber, validFilename := parseEncyclopediaEDataFilename(reference.Filename)
+		if !validFilename || reference.FileNumber == nil || *reference.FileNumber != fileNumber {
+			return fmt.Errorf("artwork reference %d/%d has invalid file identity", reference.LanguageID, reference.LogicalID)
+		}
+		referencesByFold[foldEncyclopediaFilename(reference.Filename)] = append(referencesByFold[foldEncyclopediaFilename(reference.Filename)], reference)
+		candidates := filesByFold[foldEncyclopediaFilename(reference.Filename)]
+		switch len(candidates) {
+		case 0:
+			if reference.Resolution != encyclopediaLookupMissing {
+				return fmt.Errorf("artwork reference %d/%d resolves to %q but the file is missing", reference.LanguageID, reference.LogicalID, reference.Resolution)
+			}
+			if reference.MatchedBasename != "" {
+				return fmt.Errorf("missing artwork reference %d/%d has a matched basename", reference.LanguageID, reference.LogicalID)
+			}
+			missing = append(missing, reference)
+		case 1:
+			file := candidates[0]
+			wantResolution := encyclopediaLookupCaseFolded
+			if file.Basename == reference.Filename {
+				wantResolution = encyclopediaLookupExact
+			}
+			if reference.Resolution == encyclopediaLookupMissing {
+				return fmt.Errorf("artwork reference %d/%d is marked missing but %s exists", reference.LanguageID, reference.LogicalID, file.Basename)
+			}
+			if reference.Resolution != wantResolution || reference.MatchedBasename != file.Basename {
+				return fmt.Errorf("artwork reference %d/%d resolution %q/%q does not match file %s", reference.LanguageID, reference.LogicalID, reference.Resolution, reference.MatchedBasename, file.Basename)
+			}
+			referencedFiles[file.Basename] = struct{}{}
+		default:
+			return fmt.Errorf("artwork reference %d/%d has %d case-ambiguous file candidates", reference.LanguageID, reference.LogicalID, len(candidates))
+		}
+	}
+	if len(missing) != len(lookup.MissingFilenames) {
+		return fmt.Errorf("artwork missing-reference count is %d, want %d", len(lookup.MissingFilenames), len(missing))
+	}
+	wantMissingJSON, err := json.Marshal(missing)
+	if err != nil {
+		return err
+	}
+	gotMissingJSON, err := json.Marshal(lookup.MissingFilenames)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(wantMissingJSON, gotMissingJSON) {
+		return fmt.Errorf("artwork missing-reference evidence differs from decoded lookups")
+	}
+	var wantUnreferenced []encyclopediaLookupFileRecord
+	for _, file := range lookup.Files {
+		if _, ok := referencedFiles[file.Basename]; !ok {
+			wantUnreferenced = append(wantUnreferenced, file)
+		}
+	}
+	if len(wantUnreferenced) != len(lookup.UnreferencedFiles) {
+		return fmt.Errorf("artwork unreferenced-file count is %d, want %d", len(lookup.UnreferencedFiles), len(wantUnreferenced))
+	}
+	for index := range wantUnreferenced {
+		if wantUnreferenced[index] != lookup.UnreferencedFiles[index] {
+			return fmt.Errorf("artwork unreferenced-file evidence differs for %s", wantUnreferenced[index].Basename)
+		}
+	}
+	var wantDuplicates []encyclopediaDuplicateLookupReference
+	for _, references := range referencesByFold {
+		if len(references) > 1 {
+			wantDuplicates = append(wantDuplicates, encyclopediaDuplicateLookupReference{
+				Filename: canonicalLookupFilename(references), References: references,
+			})
+		}
+	}
+	sort.Slice(wantDuplicates, func(i, j int) bool {
+		return foldEncyclopediaFilename(wantDuplicates[i].Filename) < foldEncyclopediaFilename(wantDuplicates[j].Filename)
+	})
+	wantDuplicateJSON, err := json.Marshal(wantDuplicates)
+	if err != nil {
+		return err
+	}
+	gotDuplicateJSON, err := json.Marshal(lookup.DuplicateReferences)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(wantDuplicateJSON, gotDuplicateJSON) {
+		return fmt.Errorf("artwork duplicate-reference evidence does not match decoded lookups")
+	}
+	return nil
+}
+
+func cloneEncyclopediaLookups(source map[uint16]map[uint32]string) map[uint16]map[uint32]string {
+	result := make(map[uint16]map[uint32]string, len(source))
+	for language, values := range source {
+		copyValues := make(map[uint32]string, len(values))
+		for id, value := range values {
+			copyValues[id] = value
+		}
+		result[language] = copyValues
+	}
+	return result
+}
+
+func stagedEncyclopediaImageInventory(artwork encyclopediaArtworkResearch) (encyclopediaImageInventory, error) {
+	result := artwork.Images
+	result.Images = append([]encyclopediaImageRecord(nil), artwork.Images.Images...)
+	stagedBasenames := make(map[string]string, len(artwork.StagedAssets))
+	for _, asset := range artwork.StagedAssets {
+		stagedBasenames[asset.SourceBasename] = filepath.Base(filepath.FromSlash(asset.StagedPath))
+	}
+	for index := range result.Images {
+		staged, ok := stagedBasenames[result.Images[index].Filename]
+		if !ok {
+			return encyclopediaImageInventory{}, fmt.Errorf("image inventory source %s has no staged ownership record", result.Images[index].Filename)
+		}
+		result.Images[index].Filename = staged
+	}
+	for source, staged := range stagedBasenames {
+		if result.Measurements.MaxImageBytesFilename == source {
+			result.Measurements.MaxImageBytesFilename = staged
+		}
+		if result.Measurements.MaxPixelsFilename == source {
+			result.Measurements.MaxPixelsFilename = staged
+		}
+		if result.Measurements.MaxDecodedBytesFilename == source {
+			result.Measurements.MaxDecodedBytesFilename = staged
+		}
+	}
+	sort.Slice(result.Images, func(i, j int) bool {
+		if result.Images[i].Number != result.Images[j].Number {
+			return result.Images[i].Number < result.Images[j].Number
+		}
+		return result.Images[i].Filename < result.Images[j].Filename
+	})
+	return result, nil
+}
+
+func copyEncyclopediaStagedAsset(sourceRoot, candidateRoot string, asset encyclopediaStagedAsset) error {
+	sourcePath := filepath.Join(sourceRoot, asset.SourceBasename)
+	pathInfo, err := os.Lstat(sourcePath)
+	if err != nil {
+		return err
+	}
+	if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() || pathInfo.Size() < 0 || uint64(pathInfo.Size()) != asset.RawLength {
+		return fmt.Errorf("EData source %s changed identity or length before copy", asset.SourceBasename)
+	}
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	opened, err := source.Stat()
+	if err != nil {
+		return err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(pathInfo, opened) {
+		return fmt.Errorf("EData source %s changed identity before copy", asset.SourceBasename)
+	}
+
+	destinationPath := filepath.Join(candidateRoot, filepath.FromSlash(asset.StagedPath))
+	if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+		return err
+	}
+	destination, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	hash := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(destination, hash), io.LimitReader(source, int64(asset.RawLength)+1))
+	closeErr := destination.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if written < 0 || uint64(written) != asset.RawLength || hex.EncodeToString(hash.Sum(nil)) != asset.RawSHA256 {
+		return fmt.Errorf("EData source %s changed while copying", asset.SourceBasename)
+	}
+	var extra [1]byte
+	if count, readErr := source.Read(extra[:]); count != 0 || (readErr != nil && !errors.Is(readErr, io.EOF)) {
+		return fmt.Errorf("EData source %s grew while copying", asset.SourceBasename)
+	}
+	pathAfter, err := os.Lstat(sourcePath)
+	if err != nil || pathAfter.Mode()&os.ModeSymlink != 0 || !pathAfter.Mode().IsRegular() || !os.SameFile(opened, pathAfter) || pathAfter.Size() != opened.Size() {
+		return fmt.Errorf("EData source %s changed identity after copy", asset.SourceBasename)
+	}
+	return nil
+}
 
 var errEncyclopediaWriterGuardBusy = errors.New("encyclopedia writer guard is locked")
 

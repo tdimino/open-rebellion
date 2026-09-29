@@ -88,6 +88,8 @@ func TestEncyclopediaFocusedModeNeverInvokesMediaTools(t *testing.T) {
 	source := t.TempDir()
 	output := filepath.Join(t.TempDir(), "research")
 	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(23), []byte("focused report\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, filepath.Join(source, "EData"), map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
 	mediaCalls := 0
 	failingMedia := func(string, ...string) ([]byte, error) {
 		mediaCalls++
@@ -104,10 +106,14 @@ func TestEncyclopediaFocusedModeNeverInvokesMediaTools(t *testing.T) {
 	if mediaCalls != 0 {
 		t.Fatalf("focused report invoked media tools %d times", mediaCalls)
 	}
+	if got := readTestFile(t, filepath.Join(output, "assets", "EDATA.001")); !bytes.Equal(got, bmp) {
+		t.Fatal("focused report did not use the default source/EData root")
+	}
 	if err := runCLIWithMedia([]string{
 		"--encyclopedia-report-only",
 		"--verify",
 		"--source", filepath.Join(t.TempDir(), "missing-install"),
+		"--edata", filepath.Join(t.TempDir(), "missing-edata"),
 		"--encyclopedia-report-output", output,
 	}, &stdout, &stderr, nil, nil, failingMedia); err != nil {
 		t.Fatalf("source-free report verify CLI error = %v; stderr = %s", err, stderr.String())
@@ -138,6 +144,42 @@ func TestEncyclopediaReportOutputFlagRequiresFocusedMode(t *testing.T) {
 	}
 }
 
+func TestEncyclopediaEDataFlagRequiresFocusedMode(t *testing.T) {
+	err := runCLIWithMedia(
+		[]string{"--edata", t.TempDir()},
+		io.Discard,
+		io.Discard,
+		nil,
+		nil,
+		func(string, ...string) ([]byte, error) { return nil, io.ErrUnexpectedEOF },
+	)
+	if err == nil || !strings.Contains(err.Error(), "--encyclopedia-report-only") {
+		t.Fatalf("cross-mode --edata error = %v", err)
+	}
+}
+
+func TestEncyclopediaFocusedModeUsesExplicitEDataOverride(t *testing.T) {
+	source := t.TempDir()
+	edata := t.TempDir()
+	output := filepath.Join(t.TempDir(), "research")
+	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(29), []byte("explicit EData\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 2, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, edata, map[int]string{0: "EDATA.009"}, map[string][]byte{"EDATA.009": bmp})
+	if err := runCLIWithMedia(
+		[]string{"--encyclopedia-report-only", "--source", source, "--edata", edata, "--encyclopedia-report-output", output},
+		io.Discard,
+		io.Discard,
+		nil,
+		nil,
+		func(string, ...string) ([]byte, error) { return nil, io.ErrUnexpectedEOF },
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, filepath.Join(output, "assets", "EDATA.009")); !bytes.Equal(got, bmp) {
+		t.Fatal("explicit --edata bytes were not staged")
+	}
+}
+
 func TestEncyclopediaFocusedModeUsesDefaultResearchOutput(t *testing.T) {
 	originalWorkingDirectory, err := os.Getwd()
 	if err != nil {
@@ -154,6 +196,8 @@ func TestEncyclopediaFocusedModeUsesDefaultResearchOutput(t *testing.T) {
 	})
 	source := t.TempDir()
 	writeSyntheticEncyclopediaTextDLL(t, source, numericEncyclopediaResourceIdentifier(41), []byte("default output\x00"))
+	bmp := buildTestEncyclopediaBMP(t, testEncyclopediaBMPOptions{width: 1, height: 1, bitCount: 24})
+	writeSyntheticEncyclopediaArtInputs(t, source, filepath.Join(source, "EData"), map[int]string{0: "EDATA.001"}, map[string][]byte{"EDATA.001": bmp})
 	if err := runCLIWithMedia(
 		[]string{"--encyclopedia-report-only", "--source", source},
 		io.Discard,
