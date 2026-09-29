@@ -344,7 +344,69 @@
         "version": 1,
         "source_profile": "encytext-49aea545-lang-1033-v1",
         "rebexe_sha256": "b3fe3997cab9a6e96403d638875dcba25484e4d8601751afec748471ac0ed6ab",
-        "scope_status": "in_scope_static_complete_runtime_capture_pending_alternates_deferred",
+        "scope_status": "semantic_and_control_static_complete_family_binding_partial_e09_blocked_runtime_capture_pending_alternates_deferred",
+        "source_reconciliation": {
+          "version": 1,
+          "status": "partial_resource_closure_e09_blocked",
+          "canonical_profile": "tools/stage-ui-assets/encyclopedia_profiles/encytext-49aea545-lang-1033-v1.json",
+          "family_evidence": [
+            {"scope": "mobile_units", "document": "docs/reference/asset-library/encyclopedia-bindings-units.md", "fragment": "tools/stage-ui-assets/encyclopedia_profiles/fragments/unit-bindings.json", "fragment_sha256": "776e120987f0c480d99d421c6c4355f4856915d40cc8ba6c5634459b931638d2", "observed_rows": 57},
+            {"scope": "characters", "document": "docs/reference/asset-library/encyclopedia-bindings-characters.md", "fragment": "tools/stage-ui-assets/encyclopedia_profiles/fragments/character-bindings.json", "fragment_sha256": "5d1a7fddae9782f70bd890d03f6e80ac5131b7755d04232098323bb87d724874", "observed_rows": 60},
+            {"scope": "systems_and_facilities", "document": "docs/reference/asset-library/encyclopedia-bindings-static.md", "fragment": "tools/stage-ui-assets/encyclopedia_profiles/fragments/static-bindings.json", "fragment_sha256": "3dfacb318433fc1e906049030df66822dc1f0ee2e0450ce867b402059949e4ff", "observed_rows": 214}
+          ],
+          "family_counts": {
+            "capital_ship_classes": 30,
+            "fighter_classes": 8,
+            "troop_classes": 10,
+            "special_force_classes": 9,
+            "major_characters": 6,
+            "minor_characters": 54,
+            "systems_world_locations": 200,
+            "defense_facilities": 6,
+            "manufacturing_facilities": 6,
+            "production_facilities": 2
+          },
+          "observations_not_universal_rules": {
+            "source_rows": 331,
+            "encytext_records": 348,
+            "encybmap_nonempty_strings": 191,
+            "encybmap_distinct_filenames": 186,
+            "edata_images": 187
+          },
+          "resource_accounting": {
+            "source_rows": {"bound": 331, "documented_alias": 0, "unresolved": 0},
+            "text_resources": {"bound": 331, "unresolved": 17},
+            "art_lookup_identities": {"bound": 157, "unresolved": 34},
+            "art_files": {"bound": 157, "unresolved": 29, "publication_deferred": 1},
+            "shared_art_group_count": 17,
+            "unresolved_text_resource_ids": [7176, 7184, 7185, 7186, 7187, 7189, 7190, 7191, 7200, 7201, 7202, 7232, 7233, 7234, 7296, 7297, 7427],
+            "unresolved_art_lookup_ids": [7184, 7185, 7186, 7187, 7188, 7189, 7190, 7191, 7200, 7201, 7202, 7232, 7233, 7234, 7296, 7297, 7427, 11280, 11281, 11282, 11283, 11284, 11285, 11286, 11287, 11296, 11297, 11298, 11328, 11329, 11330, 11392, 11393, 11523],
+            "unresolved_art_files": ["EDATA.132", "EDATA.133", "EDATA.134", "EDATA.135", "EDATA.136", "EDATA.137", "EDATA.138", "EDATA.139", "EDATA.140", "EDATA.141", "EDATA.142", "EDATA.143", "EDATA.146", "EDATA.148", "EDATA.149", "EDATA.150", "EDATA.151", "EDATA.152", "EDATA.153", "EDATA.154", "EDATA.155", "EDATA.156", "EDATA.157", "EDATA.158", "EDATA.160", "EDATA.161", "EDATA.162", "EDATA.163", "EDATA.164"],
+            "publication_deferred_art_files": ["EDATA.192"]
+          },
+          "category_coverage": [
+            {"ordinal": 0, "command": "0x6f", "role": "aggregate_index_not_topic_membership", "status": "unresolved_until_all_filtered_categories_close", "bound_rows": 331},
+            {"ordinal": 1, "command": "0x70", "role": "systems_world_locations", "status": "complete", "bound_rows": 200},
+            {"ordinal": 2, "command": "0x71", "role": "capital_and_fighter_classes", "status": "complete", "bound_rows": 38},
+            {"ordinal": 3, "command": "0x72", "role": "facilities", "status": "complete", "bound_rows": 14},
+            {"ordinal": 4, "command": "0x73", "role": "source_family_range_0x40_to_0x80", "status": "unresolved", "bound_rows": 0},
+            {"ordinal": 5, "command": "0x74", "role": "troop_classes", "status": "complete", "bound_rows": 10},
+            {"ordinal": 6, "command": "0x75", "role": "characters_and_special_forces", "status": "complete", "bound_rows": 69}
+          ],
+          "schema_fit": {
+            "one_category_per_bound_topic": "compatible_for_331_rows_full_index_is_aggregate_not_membership",
+            "alias_identity": "separate_source_identity_and_canonical_body_identity_explicit_alias_of_required_no_alias_proven_among_331_rows",
+            "character_discriminator": "profile_has_60_unique_major_minor_dat_ids_but_source_family_remains_canonical_future_overlap_rejected_or_requires_reviewed_table_discriminator",
+            "class_instance_boundary": "unit_rows_bind_source_classes_entities_and_fleets_must_resolve_class_before_topic_lookup_current_raw_id_arena_mismatch_remains_application_gate",
+            "ready_for_schema_freeze": false,
+            "blockers": [
+              {"id": "command-0x73-source-join", "reason": "No accepted fragment supplies the original [0x40,0x80) category; 17 text resources, 34 lookup identities and 29 referenced files remain unresolved.", "next_proof": "Recover connected DAT registration, field writes and title/body/art selectors for every command 0x73 row; do not join by filename or numbering gap."},
+              {"id": "category-label-selectors", "reason": "Original localized category-label selectors are not connected to the recovered command identities.", "next_proof": "Trace every command button label to its language-qualified original resource before E09 freezes public labels."}
+            ]
+          },
+          "alternate_art": {"edata_192": "publication_deferred_inventory_only", "task": "orlocal-2kq", "binding": null, "predicate": null},
+          "runtime_capture_required": true
+        },
         "ui_contract": {
           "version": 1,
           "path": "docs/reference/asset-library/encyclopedia-ui-contract.md",

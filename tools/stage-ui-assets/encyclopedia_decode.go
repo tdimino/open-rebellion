@@ -27,6 +27,7 @@ type encyclopediaSourceProfile struct {
 	Sources       []encyclopediaProfileSource        `json:"sources"`
 	TextDecoder   encyclopediaTextDecoderProfile     `json:"text_decoder"`
 	Evidence      encyclopediaDecoderProfileEvidence `json:"evidence"`
+	Bindings      encyclopediaProfileBindings        `json:"bindings"`
 }
 
 type encyclopediaProfileSource struct {
@@ -202,6 +203,7 @@ func validateEncyclopediaSourceProfile(profile encyclopediaSourceProfile) error 
 		return fmt.Errorf("profile %q has no source identities", profile.ProfileID)
 	}
 	sourcesByRole := make(map[string]encyclopediaProfileSource, len(profile.Sources))
+	sourcesByBasename := make(map[string]encyclopediaProfileSource, len(profile.Sources))
 	for _, source := range profile.Sources {
 		if strings.TrimSpace(source.Role) == "" || strings.ContainsAny(source.Role, "/\\\x00\r\n") {
 			return fmt.Errorf("profile %q has invalid source role %q", profile.ProfileID, source.Role)
@@ -220,6 +222,14 @@ func validateEncyclopediaSourceProfile(profile encyclopediaSourceProfile) error 
 		if source.RawLength == 0 || !validSHA256(source.RawSHA256) {
 			return fmt.Errorf("profile %q source %q has invalid length/hash", profile.ProfileID, source.Role)
 		}
+		foldedBasename := strings.ToLower(source.Basename)
+		if previous, exists := sourcesByBasename[foldedBasename]; exists {
+			if previous.RawLength != source.RawLength || previous.RawSHA256 != source.RawSHA256 || previous.Kind != source.Kind {
+				return fmt.Errorf("profile %q has conflicting identities for source basename %q", profile.ProfileID, source.Basename)
+			}
+			return fmt.Errorf("profile %q repeats source basename %q", profile.ProfileID, source.Basename)
+		}
+		sourcesByBasename[foldedBasename] = source
 		sourcesByRole[source.Role] = source
 	}
 
@@ -227,6 +237,11 @@ func validateEncyclopediaSourceProfile(profile encyclopediaSourceProfile) error 
 	decoderSource, ok := sourcesByRole[decoder.SourceRole]
 	if !ok || !decoderSource.RequiredForDecoding || decoderSource.Kind != encyclopediaSourceDLL {
 		return fmt.Errorf("profile %q decoder source role %q is not a required DLL", profile.ProfileID, decoder.SourceRole)
+	}
+	for role, source := range sourcesByRole {
+		if role != decoder.SourceRole && source.RequiredForDecoding {
+			return fmt.Errorf("profile %q non-decoder source role %q must not be required for flattened text decoding", profile.ProfileID, role)
+		}
 	}
 	if decoder.ResourceTypeID != rtEncyclopediaText {
 		return fmt.Errorf("profile %q decoder resource type = %d, want %d", profile.ProfileID, decoder.ResourceTypeID, rtEncyclopediaText)
@@ -287,6 +302,9 @@ func validateEncyclopediaSourceProfile(profile encyclopediaSourceProfile) error 
 	}
 	if histogramRecords != corpus.RecordCount {
 		return fmt.Errorf("profile %q terminal NUL histogram accounts for %d records, want %d", profile.ProfileID, histogramRecords, corpus.RecordCount)
+	}
+	if err := validateEncyclopediaProfileBindings(profile, profile.Bindings); err != nil {
+		return fmt.Errorf("profile %q bindings: %w", profile.ProfileID, err)
 	}
 	return nil
 }

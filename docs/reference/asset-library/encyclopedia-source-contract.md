@@ -284,14 +284,122 @@ after inventory, then writes metadata only to ignored
 `.artifacts/encyclopedia/E05-owned-lookups.json`. It never writes original
 lookup tables, pixels, or generated packs into Git.
 
+## Combined family bindings and resource closure
+
+The canonical embedded profile now also contains the reviewed E07, E38, and
+E39 binding merge. The three files under
+`tools/stage-ui-assets/encyclopedia_profiles/fragments/` remain source-research
+inputs; their paths, SHA-256 digests, and observed row counts are recorded in
+the profile. A built staging binary consumes the combined representation in the
+root profile and does not need those fragments or the repository working
+directory.
+
+The merge preserves the family-qualified identity
+`(source_family << 24) | dat_id`, the original/preferred/selected title
+selectors, language-qualified body and art selectors, original resource byte
+hashes, and exact EData basenames. It rejects duplicate binding tuples,
+ambiguous source identities, conflicting source-file identities, missing
+source references, implicit duplicate body topics, inconsistent accounting,
+and silently omitted category commands. Shared art is allowed because it is
+counted independently from topic identity; a shared body requires one canonical
+record plus an explicit `documented_alias` / `alias_of` relationship.
+
+For this exact profile the accepted family fragments contain:
+
+| Source family | Rows | Original category command |
+|---|---:|---:|
+| Capital-ship classes | 30 | `0x71` |
+| Fighter classes | 8 | `0x71` |
+| Troop classes | 10 | `0x74` |
+| Special-force classes | 9 | `0x75` |
+| Major characters | 6 | `0x75` |
+| Minor characters | 54 | `0x75` |
+| Systems/world locations | 200 | `0x70` |
+| Defense facilities | 6 | `0x72` |
+| Manufacturing facilities | 6 | `0x72` |
+| Production facilities | 2 | `0x72` |
+| **Observed accepted rows** | **331** | — |
+
+All 331 rows are bound, select distinct ENCYTEXT body identities, and retain
+the profile-observed empty preferred-title branch with the original selector's
+fallback selected. The 214 static rows use 40 distinct art identities because
+systems share source-proven picture selectors; this sharing is not a topic
+alias. The 60 major/minor character `DatId` values do not overlap in this
+profile, but the source family remains part of canonical identity and a future
+profile with overlap must be rejected or add a reviewed table discriminator.
+Unit bindings remain class bindings: fleet and entity instances must resolve
+their source class at the application boundary rather than use a slotmap or raw
+instance ID as a topic identity.
+
+The seven original commands retain this order and role:
+
+| Ordinal | Command | Combined-profile result |
+|---:|---:|---|
+| 0 | `0x6f` | Aggregate index over admitted rows; not a second topic category. Incomplete while `0x73` is unresolved. |
+| 1 | `0x70` | 200 context-filtered system/world-location rows. |
+| 2 | `0x71` | 38 capital/fighter class rows. |
+| 3 | `0x72` | 14 facility rows; the three facility tables remain one original selector. |
+| 4 | `0x73` | **Unresolved:** no accepted family fragment supplies its `[0x40,0x80)` rows. |
+| 5 | `0x74` | 10 troop class rows. |
+| 6 | `0x75` | 60 character and 9 special-force rows. |
+
+The owned resource inventory makes the incomplete category concrete rather
+than filling it from numeric gaps. The 331 accepted rows account for 331 of 348
+ENCYTEXT records and 157 of 191 ENCYBMAP logical IDs. These exact residual
+identities remain `unresolved` with a next-proof requirement:
+
+```text
+ENCYTEXT: 7176, 7184, 7185, 7186, 7187, 7189, 7190, 7191, 7200,
+          7201, 7202, 7232, 7233, 7234, 7296, 7297, 7427
+ENCYBMAP: 7184, 7185, 7186, 7187, 7188, 7189, 7190, 7191, 7200,
+          7201, 7202, 7232, 7233, 7234, 7296, 7297, 7427, 11280,
+          11281, 11282, 11283, 11284, 11285, 11286, 11287, 11296,
+          11297, 11298, 11328, 11329, 11330, 11392, 11393, 11523
+EData:    132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142,
+          143, 146, 148, 149, 150, 151, 152, 153, 154, 155, 156,
+          157, 158, 160, 161, 162, 163, 164
+```
+
+Those 34 lookup IDs reference 29 distinct supplied files because five
+filenames have duplicate references. This numerical relationship is an
+inventory observation, not proof that the residual records form 17 topics or
+use a particular faction rule. Closure requires the connected DAT
+registration, record field writes, and title/body/art selector paths for
+command `0x73`; names, numbering gaps, and file presence are insufficient.
+`EDATA.192` is the 187th image and is separately marked
+`publication_deferred`: it remains inventory-only under `orlocal-2kq`, with no
+topic, lookup, predicate, or original-display claim.
+
+The representation settles the schema shape for the accepted rows: one
+filtered category per bound topic, `0x6f` as an aggregate selector, separate
+source and canonical-topic identities, explicit aliases, and a retained
+character source-family discriminator. It deliberately records
+`ready_for_schema_freeze: false`. E09 remains blocked on command `0x73` source
+joins and the still-unconnected localized category-label selectors. The raw-ID
+versus runtime-class adapter remains a downstream application-boundary gate.
+
+The opt-in reconciliation gate reads the owned sources without modifying them
+and compares all source, text, lookup, and image identities to the profile:
+
+```bash
+REBELLION_ENCYCLOPEDIA_TEST_SOURCE=/path/to/owned-install \
+  go test ./tools/stage-ui-assets \
+  -run TestOwnedEncyclopediaCombinedBindingProfileReconcilesInventories \
+  -count=1 -v
+```
+
+The 331, 348, 191, 186, and 187 values above are observations for the exact
+source hashes in the profile, never universal validity rules.
+
 ## Semantic research checkpoint
 
 This checkpoint is bounded to the same inspected `REBEXE.EXE` identity recorded
 by the decoder profile. It records source semantics needed before a catalog
 schema can freeze; it does not add runtime catalog data or claim visual
-acceptance. The accepted decoder profile remains unchanged because its strict
-machine-readable shape describes byte decoding, while these profile-bounded
-semantic decisions live in this contract and `RE-ENC-01`.
+acceptance. The strict embedded source profile now carries the combined binding
+and accounting representation above while preserving the accepted decoder
+fields. Dynamic selection, availability, navigation, and capture decisions
+remain in this contract and `RE-ENC-01`.
 
 The user-approved 2026-09-29 scope publishes only source-proven standard,
 faction, and system image selectors for the first profile. Unproven alternate
@@ -486,10 +594,11 @@ Original prose and decoded text are never committed.
 
 ## Non-claims
 
-The profile establishes lossless byte decoding only for its exact source
-identity. The semantic checkpoint establishes only the bounded static rules
-named above; it does not establish localized category labels, a complete topic
-identity/title/DAT binding, campaign visibility, the deferred alternate Luke
-predicate, or original runtime/visual acceptance. Deferred alternate inventory
-is not a runtime binding. Inventory and research records are not a runtime
-catalog and do not by themselves advance P35 or strict RE-ENC-01 acceptance.
+The profile establishes lossless byte decoding and 331 reviewed family bindings
+only for its exact source identities. The semantic checkpoint establishes only
+the bounded static rules named above; it does not establish localized category
+labels, command `0x73` family joins, a complete topic inventory, the deferred
+alternate Luke predicate, or original runtime/visual acceptance. Deferred
+alternate inventory is not a runtime binding. Inventory and research records
+are not a runtime catalog and do not by themselves advance P35 or strict
+RE-ENC-01 acceptance.
