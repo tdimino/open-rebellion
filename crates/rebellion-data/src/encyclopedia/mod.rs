@@ -1,4 +1,5 @@
 mod model;
+mod resolve;
 mod validate;
 
 pub use model::{
@@ -6,6 +7,11 @@ pub use model::{
     CatalogBinding, CatalogCategory, CatalogIndex, EncyclopediaCatalog, EncyclopediaManifest,
     ImageFacts, ImageSelector, LocalizedContent, NullableBaseImageId, ResourceIdentifier,
     SourceRecord, Topic, TopicId, TopicSort,
+};
+pub use resolve::{
+    resolve_admitted_topics, resolve_localized, resolve_localized_label, resolve_topic,
+    AdmissionFact, AdmissionSnapshot, AdmittedBinding, ResolvedTopic, ResolvedTopicView,
+    SystemSourceAncestry, TopicResolutionDiagnostic, ViewerFaction,
 };
 pub use validate::{validate_bundle, validate_effective_catalog};
 

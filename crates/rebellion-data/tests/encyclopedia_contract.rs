@@ -3,10 +3,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rebellion_data::encyclopedia::{
-    parse_catalog, parse_manifest, validate_bundle, validate_effective_catalog, AssetFacts,
-    BaseImageIdField, EncyclopediaCatalog, EncyclopediaManifest, ImageFacts,
-    CATALOG_JSON_BYTES_LIMIT, CATALOG_JSON_DEPTH_LIMIT, MANIFEST_JSON_BYTES_LIMIT,
-    MANIFEST_JSON_DEPTH_LIMIT,
+    parse_catalog, parse_manifest, resolve_admitted_topics, resolve_localized,
+    resolve_localized_label, resolve_topic, validate_bundle, validate_effective_catalog,
+    AdmissionFact, AdmissionSnapshot, AdmittedBinding, AssetFacts, BaseImageIdField, BindingKey,
+    EncyclopediaCatalog, EncyclopediaManifest, ImageFacts, LocalizedContent, SystemSourceAncestry,
+    TopicId, ViewerFaction, CATALOG_JSON_BYTES_LIMIT, CATALOG_JSON_DEPTH_LIMIT,
+    MANIFEST_JSON_BYTES_LIMIT, MANIFEST_JSON_DEPTH_LIMIT,
 };
 use serde::Deserialize;
 
@@ -161,6 +163,38 @@ fn bundle_inputs(
         "39fb2c329d34fbdd94bb2a2a596b694597eb00b8b402905ec4920f560210d322".to_owned(),
     )]);
     (catalog, manifest, files, base_dats)
+}
+
+fn valid_catalog() -> rebellion_data::encyclopedia::EncyclopediaCatalog {
+    parse_catalog(&fixture("bundles/valid/catalog.json")).unwrap()
+}
+
+fn admission_snapshot(keys: impl IntoIterator<Item = BindingKey>) -> AdmissionSnapshot {
+    AdmissionSnapshot {
+        world_epoch: 41,
+        viewer: ViewerFaction::Alliance,
+        admitted: keys
+            .into_iter()
+            .map(|key| AdmittedBinding {
+                key,
+                fact: AdmissionFact::DefinitionPresent,
+            })
+            .collect(),
+    }
+}
+
+fn resolved_topic_ids<'a>(
+    catalog: &'a rebellion_data::encyclopedia::EncyclopediaCatalog,
+    membership: &'a [TopicId],
+    admission: &'a AdmissionSnapshot,
+    language: &str,
+) -> Vec<&'a str> {
+    resolve_admitted_topics(catalog, membership, Some(admission), language)
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|topic| topic.topic_id.0.as_str())
+        .collect()
 }
 
 fn catalog_error(bytes: &[u8]) -> String {
@@ -1313,5 +1347,537 @@ fn category_id_and_command_order_are_independently_enforced() {
             .unwrap_err()
             .code(),
         "category_order"
+    );
+}
+
+#[test]
+fn topic_resolution_uses_the_complete_original_binding_identity() {
+    let mut catalog = valid_catalog();
+
+    let system = BindingKey {
+        family: "system_locations".to_owned(),
+        dat_id: 7,
+        variant: "default".to_owned(),
+    };
+    let capital_ship = BindingKey {
+        family: "capital_ship_classes".to_owned(),
+        dat_id: 7,
+        variant: "default".to_owned(),
+    };
+    let viewer_faction = BindingKey {
+        family: "missions".to_owned(),
+        dat_id: 21,
+        variant: "viewer_faction".to_owned(),
+    };
+
+    assert_eq!(
+        resolve_topic(&catalog, &system).unwrap().0,
+        "original:60001"
+    );
+    assert_eq!(
+        resolve_topic(&catalog, &capital_ship).unwrap().0,
+        "original:60002"
+    );
+    assert_eq!(
+        resolve_topic(&catalog, &viewer_faction).unwrap().0,
+        "original:60004"
+    );
+
+    let unknown_variant = BindingKey {
+        variant: "alternate".to_owned(),
+        ..viewer_faction
+    };
+    assert!(resolve_topic(&catalog, &unknown_variant).is_none());
+    assert!(resolve_topic(
+        &catalog,
+        &BindingKey {
+            family: "unknown_family".to_owned(),
+            dat_id: 7,
+            variant: "default".to_owned(),
+        }
+    )
+    .is_none());
+
+    let mut duplicate = catalog.bindings[0].clone();
+    duplicate.topic_id = TopicId("original:60002".to_owned());
+    catalog.bindings.push(duplicate);
+    assert!(resolve_topic(&catalog, &system).is_none());
+}
+
+#[test]
+fn localized_resolution_selects_one_requested_or_default_record_without_mixing() {
+    let mut catalog = valid_catalog();
+    let topic_id = TopicId("original:60001".to_owned());
+
+    let requested = resolve_localized(&catalog, &topic_id, "1036").unwrap();
+    assert_eq!(requested.title, "Système ambre");
+    assert_eq!(
+        requested.body,
+        "Description synthétique rédigée pour ce test."
+    );
+    assert_eq!(
+        requested.image_id,
+        BaseImageIdField::Value(rebellion_data::encyclopedia::BaseImageId(
+            "edata:1".to_owned()
+        ))
+    );
+
+    let fallback = resolve_localized(&catalog, &topic_id, "1041").unwrap();
+    assert_eq!(fallback.title, "Amber system");
+    assert_eq!(fallback.body, "Contributor-written system description.");
+
+    catalog.topics.get_mut(&topic_id).unwrap().localized.insert(
+        "1041".to_owned(),
+        LocalizedContent {
+            title: "Requested title".to_owned(),
+            body: "Requested body".to_owned(),
+            image_id: BaseImageIdField::Null,
+            image_selector: None,
+        },
+    );
+    let requested = resolve_localized(&catalog, &topic_id, "1041").unwrap();
+    assert_eq!(requested.title, "Requested title");
+    assert_eq!(requested.body, "Requested body");
+    assert_eq!(requested.image_id, BaseImageIdField::Null);
+
+    let default = catalog
+        .topics
+        .get_mut(&topic_id)
+        .unwrap()
+        .localized
+        .get_mut("1033")
+        .unwrap();
+    default.title = "Changed default title".to_owned();
+    default.body = "Changed default body".to_owned();
+    default.image_id = BaseImageIdField::Value(rebellion_data::encyclopedia::BaseImageId(
+        "edata:2".to_owned(),
+    ));
+    let requested = resolve_localized(&catalog, &topic_id, "1041").unwrap();
+    assert_eq!(requested.title, "Requested title");
+    assert_eq!(requested.body, "Requested body");
+    assert_eq!(requested.image_id, BaseImageIdField::Null);
+
+    catalog
+        .topics
+        .get_mut(&topic_id)
+        .unwrap()
+        .localized
+        .remove("1041");
+    let restored_fallback = resolve_localized(&catalog, &topic_id, "1041").unwrap();
+    assert_eq!(restored_fallback.title, "Changed default title");
+    assert_eq!(restored_fallback.body, "Changed default body");
+
+    catalog.topics.get_mut(&topic_id).unwrap().localized.clear();
+    let error = resolve_localized(&catalog, &topic_id, "1041").unwrap_err();
+    assert_eq!(error.code(), "missing_localized_record");
+    assert_eq!(error.topic_id(), Some(&topic_id));
+}
+
+#[test]
+fn localized_labels_preserve_present_empty_values_and_never_invent_internal_keys() {
+    let mut catalog = valid_catalog();
+    let labels = &mut catalog.categories[0].labels;
+    assert_eq!(
+        resolve_localized_label(labels, &catalog.default_language, "1041").unwrap(),
+        "Synthetic systems"
+    );
+    labels.insert("1041".to_owned(), String::new());
+
+    assert_eq!(
+        resolve_localized_label(labels, &catalog.default_language, "1041").unwrap(),
+        ""
+    );
+
+    labels.clear();
+    let error = resolve_localized_label(labels, &catalog.default_language, "1041").unwrap_err();
+    assert_eq!(error.code(), "missing_localized_label");
+    assert!(!error.to_string().contains(&catalog.categories[0].id));
+}
+
+#[test]
+fn admitted_resolution_requires_supplied_facts_and_preserves_them_without_world_inference() {
+    let catalog = valid_catalog();
+    let missing = resolve_admitted_topics(
+        &catalog,
+        &catalog.index.topic_ids,
+        None,
+        &catalog.default_language,
+    )
+    .unwrap_err();
+    assert_eq!(missing.code(), "missing_admission_facts");
+
+    let unknown_key = BindingKey {
+        family: "system_locations".to_owned(),
+        dat_id: 999_999,
+        variant: "default".to_owned(),
+    };
+    let unavailable = admission_snapshot([unknown_key]);
+    let error = resolve_admitted_topics(
+        &catalog,
+        &catalog.index.topic_ids,
+        Some(&unavailable),
+        &catalog.default_language,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "unavailable_binding");
+
+    let duplicate_key = catalog.bindings[0].key();
+    let ambiguous = admission_snapshot([duplicate_key.clone(), duplicate_key]);
+    let error = resolve_admitted_topics(
+        &catalog,
+        &catalog.index.topic_ids[..1],
+        Some(&ambiguous),
+        &catalog.default_language,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "ambiguous_admission");
+
+    let binding = catalog.bindings[0].key();
+    let admission = AdmissionSnapshot {
+        world_epoch: 77,
+        viewer: ViewerFaction::Empire,
+        admitted: vec![AdmittedBinding {
+            key: binding.clone(),
+            fact: AdmissionFact::InstantiatedSystem {
+                selected_view: ViewerFaction::Empire,
+                ancestry: SystemSourceAncestry::NoTypeF2,
+            },
+        }],
+    };
+    let view = resolve_admitted_topics(
+        &catalog,
+        &catalog.index.topic_ids,
+        Some(&admission),
+        &catalog.default_language,
+    )
+    .unwrap();
+    assert!(view.diagnostics.is_empty());
+    assert_eq!(view.rows.len(), 1);
+    assert_eq!(view.rows[0].binding, &binding);
+    assert_eq!(view.rows[0].admission_fact, &admission.admitted[0].fact);
+    assert_eq!(view.rows[0].topic_id.0, "original:60001");
+    assert_eq!(view.rows[0].image_id.unwrap().0, "edata:1");
+}
+
+#[test]
+fn unexpected_topic_lookup_failure_keeps_the_whole_view_unavailable() {
+    let mut catalog = valid_catalog();
+    let missing_topic = TopicId("original:999999".to_owned());
+    catalog.bindings[0].topic_id = missing_topic.clone();
+    let admission = admission_snapshot([catalog.bindings[0].key()]);
+
+    let error = resolve_admitted_topics(
+        &catalog,
+        std::slice::from_ref(&missing_topic),
+        Some(&admission),
+        "1041",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code(), "unknown_topic");
+    assert_eq!(error.topic_id(), Some(&missing_topic));
+}
+
+#[test]
+fn one_missing_localized_record_does_not_discard_other_resolved_topics() {
+    let mut catalog = valid_catalog();
+    let disabled_topic = TopicId("original:60001".to_owned());
+    catalog
+        .topics
+        .get_mut(&disabled_topic)
+        .unwrap()
+        .localized
+        .remove("1033");
+    let membership = catalog.index.topic_ids[..2].to_vec();
+    let admission = admission_snapshot(catalog.bindings[..2].iter().map(|binding| binding.key()));
+
+    let view = resolve_admitted_topics(&catalog, &membership, Some(&admission), "1041")
+        .expect("a topic-local language miss must not make the whole snapshot unavailable");
+
+    assert_eq!(view.rows.len(), 1);
+    assert_eq!(view.rows[0].topic_id.0, "original:60002");
+    assert_eq!(view.diagnostics.len(), 1);
+    assert_eq!(view.diagnostics[0].topic_id, &disabled_topic);
+    assert_eq!(view.diagnostics[0].error.code(), "missing_localized_record");
+    assert_eq!(view.diagnostics[0].error.topic_id(), Some(&disabled_topic));
+}
+
+#[test]
+fn all_missing_localized_records_return_an_available_empty_view_with_diagnostics() {
+    let mut catalog = valid_catalog();
+    let first = TopicId("original:60001".to_owned());
+    let second = TopicId("original:60002".to_owned());
+    catalog
+        .topics
+        .get_mut(&first)
+        .unwrap()
+        .localized
+        .remove("1033");
+    let second_french = catalog
+        .topics
+        .get_mut(&second)
+        .unwrap()
+        .localized
+        .remove("1033")
+        .unwrap();
+    catalog
+        .topics
+        .get_mut(&second)
+        .unwrap()
+        .localized
+        .insert("1036".to_owned(), second_french);
+    let membership = catalog.index.topic_ids[..2].to_vec();
+    let admission = admission_snapshot(catalog.bindings[..2].iter().map(|binding| binding.key()));
+
+    let view = resolve_admitted_topics(&catalog, &membership, Some(&admission), "1041").unwrap();
+
+    assert!(view.rows.is_empty());
+    assert_eq!(
+        view.diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.topic_id.0.as_str())
+            .collect::<Vec<_>>(),
+        vec!["original:60001", "original:60002"]
+    );
+    assert!(view
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.error.code() == "missing_localized_record"));
+}
+
+#[test]
+fn surviving_rows_keep_effective_title_order_when_another_topic_is_disabled() {
+    let mut catalog = valid_catalog();
+    let first = TopicId("original:60001".to_owned());
+    let disabled = TopicId("original:60002".to_owned());
+    let third = TopicId("original:60003".to_owned());
+    catalog
+        .topics
+        .get_mut(&first)
+        .unwrap()
+        .localized
+        .get_mut("1033")
+        .unwrap()
+        .title = "Zulu surviving".to_owned();
+    let disabled_french = catalog
+        .topics
+        .get_mut(&disabled)
+        .unwrap()
+        .localized
+        .remove("1033")
+        .unwrap();
+    catalog
+        .topics
+        .get_mut(&disabled)
+        .unwrap()
+        .localized
+        .insert("1036".to_owned(), disabled_french);
+    catalog
+        .topics
+        .get_mut(&third)
+        .unwrap()
+        .localized
+        .get_mut("1033")
+        .unwrap()
+        .title = "Alpha surviving".to_owned();
+    let membership = catalog.index.topic_ids[..3].to_vec();
+    let admission = admission_snapshot(
+        catalog.bindings[..3]
+            .iter()
+            .rev()
+            .map(|binding| binding.key()),
+    );
+
+    let view = resolve_admitted_topics(&catalog, &membership, Some(&admission), "1041").unwrap();
+
+    assert_eq!(
+        view.rows
+            .iter()
+            .map(|row| row.topic_id.0.as_str())
+            .collect::<Vec<_>>(),
+        vec!["original:60003", "original:60001"]
+    );
+    assert_eq!(view.diagnostics.len(), 1);
+    assert_eq!(view.diagnostics[0].topic_id, &disabled);
+}
+
+#[test]
+fn no_art_topics_remain_artless_after_whole_record_resolution() {
+    let catalog = valid_catalog();
+    let keys = [catalog.bindings[4].key(), catalog.bindings[5].key()];
+    let admission = admission_snapshot(keys);
+    let membership = [
+        TopicId("original:60005".to_owned()),
+        TopicId("original:60006".to_owned()),
+    ];
+
+    let view = resolve_admitted_topics(
+        &catalog,
+        &membership,
+        Some(&admission),
+        &catalog.default_language,
+    )
+    .unwrap();
+    assert!(view.diagnostics.is_empty());
+    assert_eq!(view.rows.len(), 2);
+    assert!(view.rows.iter().all(|topic| topic.image_id.is_none()));
+}
+
+#[test]
+fn viewer_faction_topics_resolve_only_the_selected_side_art() {
+    let catalog = valid_catalog();
+    let membership = [TopicId("original:60004".to_owned())];
+    let admitted = vec![AdmittedBinding {
+        key: catalog.bindings[3].key(),
+        fact: AdmissionFact::DefinitionPresent,
+    }];
+
+    for (viewer, expected_image) in [
+        (ViewerFaction::Alliance, "edata:2"),
+        (ViewerFaction::Empire, "edata:3"),
+    ] {
+        let admission = AdmissionSnapshot {
+            world_epoch: 41,
+            viewer,
+            admitted: admitted.clone(),
+        };
+        let view =
+            resolve_admitted_topics(&catalog, &membership, Some(&admission), "1033").unwrap();
+        assert!(view.diagnostics.is_empty());
+        assert_eq!(view.rows[0].image_id.unwrap().0, expected_image);
+    }
+}
+
+#[test]
+fn effective_language_records_and_renames_determine_display_order() {
+    let mut catalog = valid_catalog();
+    let admission = admission_snapshot(catalog.bindings.iter().rev().map(|binding| binding.key()));
+
+    assert_eq!(
+        resolved_topic_ids(
+            &catalog,
+            &catalog.index.topic_ids,
+            &admission,
+            &catalog.default_language,
+        ),
+        vec![
+            "original:60001",
+            "original:60002",
+            "original:60003",
+            "original:60004",
+            "original:60005",
+            "original:60006",
+            "original:60007",
+        ]
+    );
+
+    let second = TopicId("original:60002".to_owned());
+    catalog.topics.get_mut(&second).unwrap().localized.insert(
+        "1036".to_owned(),
+        LocalizedContent {
+            title: "Zulu traduit".to_owned(),
+            body: "Corps traduit synthétique.".to_owned(),
+            image_id: BaseImageIdField::Value(rebellion_data::encyclopedia::BaseImageId(
+                "edata:2".to_owned(),
+            )),
+            image_selector: None,
+        },
+    );
+    let first_two = &catalog.index.topic_ids[..2];
+    assert_eq!(
+        resolved_topic_ids(&catalog, first_two, &admission, "1036"),
+        vec!["original:60001", "original:60002"]
+    );
+
+    catalog
+        .topics
+        .get_mut(&second)
+        .unwrap()
+        .localized
+        .remove("1036");
+    assert_eq!(
+        resolved_topic_ids(&catalog, first_two, &admission, "1036"),
+        vec!["original:60002", "original:60001"]
+    );
+
+    catalog
+        .topics
+        .get_mut(&second)
+        .unwrap()
+        .localized
+        .get_mut("1033")
+        .unwrap()
+        .title = "Aardvark vessel".to_owned();
+    assert_eq!(
+        resolved_topic_ids(&catalog, first_two, &admission, "1033"),
+        vec!["original:60002", "original:60001"]
+    );
+}
+
+#[test]
+fn equal_folded_titles_retain_registry_order_not_admission_order() {
+    let mut catalog = valid_catalog();
+    let first = TopicId("original:60001".to_owned());
+    let second = TopicId("original:60002".to_owned());
+    catalog
+        .topics
+        .get_mut(&first)
+        .unwrap()
+        .localized
+        .get_mut("1033")
+        .unwrap()
+        .title = "SAME".to_owned();
+    catalog
+        .topics
+        .get_mut(&second)
+        .unwrap()
+        .localized
+        .get_mut("1033")
+        .unwrap()
+        .title = "same".to_owned();
+    let admission = admission_snapshot([catalog.bindings[1].key(), catalog.bindings[0].key()]);
+
+    assert_eq!(
+        resolved_topic_ids(&catalog, &catalog.index.topic_ids[..2], &admission, "1033"),
+        vec!["original:60001", "original:60002"]
+    );
+}
+
+#[test]
+fn title_sorting_uses_strict_cp1252_then_pinned_scalar_unicode_lowercase() {
+    let mut catalog = valid_catalog();
+    let titles = [
+        ("original:60001", "Éclair"),
+        ("original:60002", "zebra"),
+        ("original:60003", "Ωmega"),
+        ("original:60004", "ΟΣ"),
+        ("original:60005", "οσ"),
+    ];
+    for (topic_id, title) in titles {
+        catalog
+            .topics
+            .get_mut(topic_id)
+            .unwrap()
+            .localized
+            .get_mut("1033")
+            .unwrap()
+            .title = title.to_owned();
+    }
+    let admission = admission_snapshot(
+        catalog.bindings[..5]
+            .iter()
+            .rev()
+            .map(|binding| binding.key()),
+    );
+
+    assert_eq!(
+        resolved_topic_ids(&catalog, &catalog.index.topic_ids[..5], &admission, "1033"),
+        vec![
+            "original:60002",
+            "original:60001",
+            "original:60004",
+            "original:60005",
+            "original:60003",
+        ]
     );
 }
