@@ -6,6 +6,7 @@ pub mod bmp_cache;
 pub mod cockpit;
 pub mod encyclopedia;
 pub mod encyclopedia_assets;
+pub mod encyclopedia_textures;
 pub mod encyclopedia_view;
 pub mod event_screen;
 pub mod fleet_movement;
@@ -74,6 +75,11 @@ pub use encyclopedia::{
     draw_encyclopedia_index_fixture,
 };
 pub use encyclopedia_assets::{inspect_encyclopedia_bytes, InspectedBytes};
+pub use encyclopedia_textures::{
+    EguiEncyclopediaTextureBackend, EncyclopediaTextureBackend, EncyclopediaTextureCache,
+    EncyclopediaTextureEvent, EncyclopediaTextureResolution, EncyclopediaTextureSampling,
+    EncyclopediaTextureUpload,
+};
 pub use encyclopedia_view::{
     ActiveTopicView, CategoryViewItem, EncyclopediaDiagnosticScope, EncyclopediaSelection,
     EncyclopediaView, EncyclopediaViewDiagnostic, NavigationState, StatRowView,

@@ -27,6 +27,9 @@ pub struct TopicViewItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TopicImageRenderProfile {
     OriginalNearest,
+    /// Linear sampling intent for exact bytes selected by an upstream approved
+    /// profile. This DTO does not discover or approve alternate/HD assets.
+    FaithfulHdLinear,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
