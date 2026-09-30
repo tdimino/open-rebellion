@@ -13,6 +13,8 @@ mod encyclopedia_test_fixture;
     )
 )]
 mod encyclopedia_fetch;
+#[cfg(any(target_arch = "wasm32", test))]
+mod encyclopedia_loose;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
@@ -859,7 +861,7 @@ mod packed_encyclopedia_fixture_route_tests {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_legacy_wasm_assets() {
+async fn load_legacy_wasm_assets() -> Option<encyclopedia_session::EncyclopediaSession> {
     use std::collections::HashMap;
 
     let total = REQUIRED_WASM_DATA.len() + OPTIONAL_WASM_DATA.len();
@@ -894,8 +896,36 @@ async fn load_legacy_wasm_assets() {
             Ok(data) => serde_json::from_slice(&data).unwrap_or_default(),
             Err(_) => HashMap::new(),
         };
+
+    // The loose encyclopedia must inspect the exact selected DAT buffers before
+    // set_file_cache consumes them. No global cache changes until the complete
+    // catalog, manifest and declared image set has passed shared preparation.
+    let encyclopedia_session = encyclopedia_loose::prepare_browser_loose_encyclopedia(&files)
+        .await
+        .unwrap_or_else(|error| panic!("Invalid loose encyclopedia bundle: {error}"));
+    let encyclopedia_assets = encyclopedia_session
+        .as_ref()
+        .map(encyclopedia_loose::original_image_cache)
+        .transpose()
+        .unwrap_or_else(|error| panic!("Invalid loose encyclopedia publication: {error}"));
+    if let Some(session) = encyclopedia_session.as_ref() {
+        macroquad::logging::info!(
+            "loose_encyclopedia ready topics={} images={} generation={}",
+            session.base_catalog().topics.len(),
+            session.base_catalog().images.len(),
+            session.generation()
+        );
+    }
+
     rebellion_data::set_string_table(string_table);
     rebellion_data::set_file_cache(files);
+    if let Some(assets) = encyclopedia_assets {
+        rebellion_render::set_encyclopedia_asset_cache(assets);
+    } else {
+        eprintln!(
+            "WARNING: loose encyclopedia catalog and manifest are both absent; content unavailable"
+        );
+    }
 
     #[derive(serde::Deserialize)]
     struct BmpEntry {
@@ -905,7 +935,7 @@ async fn load_legacy_wasm_assets() {
 
     let Ok(manifest_bytes) = macroquad::file::load_file("data/ui/bmp-manifest.json").await else {
         eprintln!("WARNING: bmp-manifest.json not found — UI textures will be missing");
-        return;
+        return encyclopedia_session;
     };
     let entries: Vec<BmpEntry> = match serde_json::from_slice(&manifest_bytes) {
         Ok(entries) => entries,
@@ -951,6 +981,7 @@ async fn load_legacy_wasm_assets() {
         bmp_total
     );
     rebellion_render::set_bmp_cache(bmp_cache);
+    encyclopedia_session
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -976,13 +1007,15 @@ async fn load_wasm_assets(
             eprintln!(
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
-            load_legacy_wasm_assets().await;
+            let session = load_legacy_wasm_assets().await;
             BrowserStartupAssets {
                 audio_files: std::collections::HashMap::new(),
-                encyclopedia: encyclopedia_session::EncyclopediaAvailability::Unavailable(
-                    "namespace_absent: legacy loose loading has no packed encyclopedia namespace"
-                        .to_owned(),
-                ),
+                encyclopedia: match session {
+                    Some(session) => encyclopedia_session::EncyclopediaAvailability::Ready(session),
+                    None => encyclopedia_session::EncyclopediaAvailability::Unavailable(
+                        "namespace_absent: loose manifest and catalog both absent".to_owned(),
+                    ),
+                },
             }
         }
     };
@@ -995,13 +1028,15 @@ async fn load_wasm_assets(
             eprintln!(
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
-            load_legacy_wasm_assets().await;
+            let session = load_legacy_wasm_assets().await;
             BrowserStartupAssets {
                 audio_files: std::collections::HashMap::new(),
-                encyclopedia: encyclopedia_session::EncyclopediaAvailability::Unavailable(
-                    "namespace_absent: legacy loose loading has no packed encyclopedia namespace"
-                        .to_owned(),
-                ),
+                encyclopedia: match session {
+                    Some(session) => encyclopedia_session::EncyclopediaAvailability::Ready(session),
+                    None => encyclopedia_session::EncyclopediaAvailability::Unavailable(
+                        "namespace_absent: loose manifest and catalog both absent".to_owned(),
+                    ),
+                },
             }
         }
     };
@@ -1156,6 +1191,12 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     if web_replay::requested() {
         web_replay::run(&gdata_path).await;
+    }
+
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    if let Some(case) = encyclopedia_loose::browser_probe_requested() {
+        encyclopedia_loose::run_browser_probe(case).await;
+        return;
     }
 
     // ── Load game data ─────────────────────────────────────────────────────
