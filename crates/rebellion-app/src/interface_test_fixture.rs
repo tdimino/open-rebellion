@@ -1491,6 +1491,76 @@ mod tests {
     }
 
     #[test]
+    fn encyclopedia_fixture_scenarios_coexist_for_both_factions() {
+        for (code, scenario, faction) in [
+            (
+                0x0129,
+                Scenario::EncyclopediaIndexShell,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x0229,
+                Scenario::EncyclopediaIndexShell,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012a,
+                Scenario::EncyclopediaIndexCatalog,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022a,
+                Scenario::EncyclopediaIndexCatalog,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012b,
+                Scenario::MissionDialogMission,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022b,
+                Scenario::MissionDialogMission,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012c,
+                Scenario::MissionDialogAgents,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022c,
+                Scenario::MissionDialogAgents,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012d,
+                Scenario::MissionTargeting,
+                CockpitFaction::Alliance,
+            ),
+            (
+                0x022d,
+                Scenario::MissionTargeting,
+                CockpitFaction::Empire,
+            ),
+            (
+                0x012e,
+                Scenario::PackedEncyclopedia,
+                CockpitFaction::Alliance,
+            ),
+            (0x022e, Scenario::PackedEncyclopedia, CockpitFaction::Empire),
+        ] {
+            let request = decode_request(code).expect("encyclopedia fixture scenario");
+            assert_eq!(request.scenario, scenario);
+            assert_eq!(request.faction, faction);
+            assert_eq!(
+                request.is_packed_encyclopedia(),
+                scenario == Scenario::PackedEncyclopedia
+            );
+        }
+    }
+
+    #[test]
     fn fixture_fingerprint_is_stable() {
         assert_eq!(
             fnv1a64(b"gid/alliance/popular-support"),
