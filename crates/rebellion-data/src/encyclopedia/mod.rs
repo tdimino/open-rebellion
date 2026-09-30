@@ -1,4 +1,5 @@
 mod model;
+mod overlay;
 mod resolve;
 mod validate;
 
@@ -7,6 +8,11 @@ pub use model::{
     CatalogBinding, CatalogCategory, CatalogIndex, EncyclopediaCatalog, EncyclopediaManifest,
     ImageFacts, ImageSelector, LocalizedContent, NullableBaseImageId, ResourceIdentifier,
     SourceRecord, Topic, TopicId, TopicSort,
+};
+pub use overlay::{
+    apply_encyclopedia_overlay, parse_encyclopedia_overlay, FactionImagePair, FactionImagePatch,
+    ImagePatch, LocalizedPatch, OverlayImageInputs, PatchField, TopicPatch,
+    OVERLAY_JSON_BYTES_LIMIT, OVERLAY_JSON_DEPTH_LIMIT,
 };
 pub use resolve::{
     resolve_admitted_topics, resolve_localized, resolve_localized_label, resolve_topic,
@@ -54,7 +60,7 @@ pub struct EncyclopediaError {
 }
 
 impl EncyclopediaError {
-    fn new(
+    pub(crate) fn new(
         code: &'static str,
         source: &'static str,
         path: impl Into<String>,
@@ -69,7 +75,7 @@ impl EncyclopediaError {
         }
     }
 
-    fn with_topic(mut self, topic_id: &str) -> Self {
+    pub(crate) fn with_topic(mut self, topic_id: &str) -> Self {
         self.topic_id = Some(TopicId(topic_id.to_owned()));
         self
     }
@@ -153,7 +159,7 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<EncyclopediaManifest, Encyclopedia
     })
 }
 
-fn parse_raw_document(
+pub(crate) fn parse_raw_document(
     bytes: &[u8],
     source: &'static str,
     byte_limit: usize,
@@ -1234,7 +1240,7 @@ fn validate_resource_identifier(value: &Value, path: &str) -> Result<(), Encyclo
     Ok(())
 }
 
-fn fields(
+pub(crate) fn fields(
     object: &Map<String, Value>,
     required: &[&str],
     optional: &[&str],
@@ -1264,7 +1270,7 @@ fn fields(
     Ok(())
 }
 
-fn object<'a>(
+pub(crate) fn object<'a>(
     value: &'a Value,
     source: &'static str,
     path: &str,
@@ -1274,7 +1280,7 @@ fn object<'a>(
         .ok_or_else(|| EncyclopediaError::new("invalid_type", source, path, "expected object"))
 }
 
-fn array<'a>(
+pub(crate) fn array<'a>(
     value: &'a Value,
     source: &'static str,
     path: &str,
@@ -1284,7 +1290,7 @@ fn array<'a>(
         .ok_or_else(|| EncyclopediaError::new("invalid_type", source, path, "expected array"))
 }
 
-fn string<'a>(
+pub(crate) fn string<'a>(
     value: &'a Value,
     source: &'static str,
     path: &str,
@@ -1300,7 +1306,7 @@ fn unsigned(value: &Value, source: &'static str, path: &str) -> Result<u64, Ency
     })
 }
 
-fn count_range(
+pub(crate) fn count_range(
     count: usize,
     minimum: usize,
     maximum: usize,
@@ -1319,7 +1325,11 @@ fn count_range(
     Ok(())
 }
 
-fn validate_langid(value: &str, source: &'static str, path: &str) -> Result<(), EncyclopediaError> {
+pub(crate) fn validate_langid(
+    value: &str,
+    source: &'static str,
+    path: &str,
+) -> Result<(), EncyclopediaError> {
     let valid = value == "0"
         || (!value.starts_with('0')
             && value.len() <= 5
@@ -1335,7 +1345,7 @@ fn validate_langid(value: &str, source: &'static str, path: &str) -> Result<(), 
     Ok(())
 }
 
-fn validate_stable_id(
+pub(crate) fn validate_stable_id(
     value: &str,
     code: &'static str,
     source: &'static str,
@@ -1531,7 +1541,7 @@ fn valid_command(value: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
-fn error<T>(
+pub(crate) fn error<T>(
     code: &'static str,
     source: &'static str,
     path: impl Into<String>,
