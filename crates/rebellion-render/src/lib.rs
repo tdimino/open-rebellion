@@ -7,6 +7,7 @@ pub mod cockpit;
 pub mod encyclopedia;
 pub mod encyclopedia_assets;
 pub mod encyclopedia_textures;
+pub mod encyclopedia_navigation;
 pub mod encyclopedia_view;
 pub mod event_screen;
 pub mod fleet_movement;
@@ -79,6 +80,11 @@ pub use encyclopedia_textures::{
     EguiEncyclopediaTextureBackend, EncyclopediaTextureBackend, EncyclopediaTextureCache,
     EncyclopediaTextureEvent, EncyclopediaTextureResolution, EncyclopediaTextureSampling,
     EncyclopediaTextureUpload,
+};
+pub use encyclopedia_navigation::{
+    apply_encyclopedia_action, reconcile_encyclopedia_state, BodyScrollIntent, EncyclopediaAction,
+    EncyclopediaMode, EncyclopediaState as EncyclopediaNavigationState, NavigationOutcome,
+    NavigationRejection, ReconcileOutcome, SelectionForce,
 };
 pub use encyclopedia_view::{
     ActiveTopicView, CategoryViewItem, EncyclopediaDiagnosticScope, EncyclopediaSelection,
