@@ -403,6 +403,47 @@ impl EncyclopediaModEngine {
             .unwrap_or(u64::MAX)
     }
 
+    /// Admits raw targets before the caller allocates or retains their batch.
+    /// `identity_bytes` is the exact owned UTF-8/platform-path storage that the
+    /// caller will clone. `diagnostic_bytes` is the caller's bounded envelope
+    /// for retained target paths/messages. Vector slots and all current/old-live
+    /// engine storage are added here under the same global cap.
+    pub fn admit_incoming_raw_targets(
+        &self,
+        entry_count: usize,
+        identity_bytes: u64,
+        raw_capacity: u64,
+        diagnostic_bytes: u64,
+    ) -> Result<(), EncyclopediaError> {
+        let entries = u64::try_from(
+            entry_count
+                .checked_mul(std::mem::size_of::<ResolvedEncyclopediaMod>())
+                .ok_or_else(|| {
+                    session_error(
+                        "resource_limit:retained_bytes",
+                        "$",
+                        "incoming raw-target vector reservation overflowed",
+                    )
+                })?,
+        )
+        .map_err(|_| {
+            session_error(
+                "resource_limit:retained_bytes",
+                "$",
+                "incoming raw-target vector reservation does not fit u64",
+            )
+        })?;
+        let current = self.account_state(&self.accepted, &self.published)?;
+        let incoming = checked_add_u64(
+            entries,
+            checked_add_u64(
+                identity_bytes,
+                checked_add_u64(raw_capacity, diagnostic_bytes)?,
+            )?,
+        )?;
+        self.ensure_limit(checked_add_u64(current, incoming)?)
+    }
+
     #[must_use]
     pub fn accepted_mod_names(&self) -> Vec<&str> {
         self.accepted.keys().map(String::as_str).collect()
@@ -1360,32 +1401,60 @@ fn input_raw_capacity(ordered: &[ResolvedEncyclopediaMod]) -> Result<u64, Encycl
 fn input_nonbuffer_reservation(
     ordered: &[ResolvedEncyclopediaMod],
 ) -> Result<u64, EncyclopediaError> {
-    ordered.iter().try_fold(0_u64, |total, item| {
-        if !matches!(item.content, ModContentTarget::Bytes(_)) {
-            return Ok(total);
-        }
-        let identity = item
-            .name
-            .len()
-            .checked_add(item.root.as_os_str().len())
-            .ok_or_else(|| {
-                session_error(
-                    "resource_limit:retained_bytes",
-                    &item.name,
-                    "incoming mod identity accounting overflowed",
-                )
-            })?;
-        checked_add_u64(
-            total,
-            u64::try_from(identity).map_err(|_| {
-                session_error(
-                    "resource_limit:retained_bytes",
-                    &item.name,
-                    "incoming mod identity length does not fit u64",
-                )
-            })?,
-        )
-    })
+    let slots = ordered
+        .len()
+        .checked_mul(std::mem::size_of::<ResolvedEncyclopediaMod>())
+        .ok_or_else(|| {
+            session_error(
+                "resource_limit:retained_bytes",
+                "$",
+                "incoming raw-target vector reservation overflowed",
+            )
+        })?;
+    ordered.iter().try_fold(
+        u64::try_from(slots).map_err(|_| {
+            session_error(
+                "resource_limit:retained_bytes",
+                "$",
+                "incoming raw-target vector reservation does not fit u64",
+            )
+        })?,
+        |total, item| {
+            let mut identity = item
+                .name
+                .len()
+                .checked_add(item.root.as_os_str().len())
+                .ok_or_else(|| {
+                    session_error(
+                        "resource_limit:retained_bytes",
+                        &item.name,
+                        "incoming mod identity accounting overflowed",
+                    )
+                })?;
+            if let ModContentTarget::ReadError { path, message, .. } = &item.content {
+                identity = identity
+                    .checked_add(path.as_os_str().len())
+                    .and_then(|length| length.checked_add(message.len()))
+                    .ok_or_else(|| {
+                        session_error(
+                            "resource_limit:retained_bytes",
+                            &item.name,
+                            "incoming read diagnostic accounting overflowed",
+                        )
+                    })?;
+            }
+            checked_add_u64(
+                total,
+                u64::try_from(identity).map_err(|_| {
+                    session_error(
+                        "resource_limit:retained_bytes",
+                        &item.name,
+                        "incoming mod identity length does not fit u64",
+                    )
+                })?,
+            )
+        },
+    )
 }
 
 fn image_transition_reservation(length: u64) -> Result<u64, EncyclopediaError> {
@@ -2132,14 +2201,21 @@ mod tests {
         };
         assert_eq!(
             input_nonbuffer_reservation(&[content]).unwrap(),
-            ("name:Δ".len() + root.as_os_str().len()) as u64
+            (std::mem::size_of::<ResolvedEncyclopediaMod>()
+                + "name:Δ".len()
+                + root.as_os_str().len()) as u64
         );
         let missing = ResolvedEncyclopediaMod {
             name: "unrelated".to_owned(),
-            root,
+            root: root.clone(),
             content: ModContentTarget::Missing,
         };
-        assert_eq!(input_nonbuffer_reservation(&[missing]).unwrap(), 0);
+        assert_eq!(
+            input_nonbuffer_reservation(&[missing]).unwrap(),
+            (std::mem::size_of::<ResolvedEncyclopediaMod>()
+                + "unrelated".len()
+                + root.as_os_str().len()) as u64
+        );
         assert_eq!(
             image_transition_reservation(7).unwrap(),
             IMAGE_DECODE_WORKING_BYTES + 14

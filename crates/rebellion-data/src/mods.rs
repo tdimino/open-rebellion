@@ -52,6 +52,18 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+use std::cell::Cell;
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::fs::{File, OpenOptions};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::io::Read;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::os::fd::AsRawFd;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
 use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -168,6 +180,25 @@ impl ModConfig {
 /// Reserved root filename for the encyclopedia content overlay.
 pub const ENCYCLOPEDIA_MOD_FILENAME: &str = "encyclopedia.json";
 
+/// Maximum retained diagnostic message bytes emitted by the confined target
+/// reader. The separately stored target path is not repeated in the message.
+pub const ENCYCLOPEDIA_READ_ERROR_MESSAGE_BYTES_LIMIT: usize = 256;
+
+#[cfg(test)]
+thread_local! {
+    static ENCYCLOPEDIA_TARGET_READ_CALLS: Cell<u64> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_encyclopedia_target_read_calls() {
+    ENCYCLOPEDIA_TARGET_READ_CALLS.set(0);
+}
+
+#[cfg(test)]
+fn encyclopedia_target_read_calls() -> u64 {
+    ENCYCLOPEDIA_TARGET_READ_CALLS.get()
+}
+
 /// Raw encyclopedia input discovered beside a mod's world overlays.
 ///
 /// This layer deliberately does not parse the bytes. The presence-aware
@@ -192,6 +223,261 @@ pub enum ModContentTarget {
     },
 }
 
+/// Reads only the reserved encyclopedia target through a pinned, no-follow
+/// root/file handle. The caller's admission callback runs after the bounded
+/// regular-file length is known and before the byte buffer is allocated.
+///
+/// I/O and confinement failures remain a present [`ModContentTarget::ReadError`]
+/// so they cannot be confused with an absent target. A candidate-budget
+/// failure is returned directly in the caller's error type.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_encyclopedia_target_with_admission<E>(
+    dir: &Path,
+    admit: impl FnMut(u64) -> Result<(), E>,
+) -> Result<ModContentTarget, E> {
+    #[cfg(test)]
+    ENCYCLOPEDIA_TARGET_READ_CALLS.set(
+        ENCYCLOPEDIA_TARGET_READ_CALLS
+            .get()
+            .checked_add(1)
+            .expect("a finite test cannot overflow the target-read counter"),
+    );
+    read_encyclopedia_target_platform(dir, admit)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn read_encyclopedia_target_platform<E>(
+    dir: &Path,
+    mut admit: impl FnMut(u64) -> Result<(), E>,
+) -> Result<ModContentTarget, E> {
+    let target = dir.join(ENCYCLOPEDIA_MOD_FILENAME);
+    let root = match open_mod_directory_nofollow(dir) {
+        Ok(root) => root,
+        Err(error) => return Ok(target_read_error(&target, error, "pinning mod root")),
+    };
+    let pinned_path = proc_fd_child(&root, std::ffi::OsStr::new(ENCYCLOPEDIA_MOD_FILENAME));
+    let pinned = match open_mod_path_nofollow(&pinned_path) {
+        Ok(pinned) => pinned,
+        Err(error) => return Ok(classify_target_open_error(&target, error)),
+    };
+    let metadata = match pinned.metadata() {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            return Ok(target_read_error(
+                &target,
+                error,
+                "inspecting content target",
+            ))
+        }
+    };
+    if !metadata.is_file() {
+        return Ok(content_target_read_error(
+            target,
+            if metadata.is_dir() {
+                std::io::ErrorKind::IsADirectory
+            } else {
+                std::io::ErrorKind::InvalidInput
+            },
+            "reading mod content target: reserved target is not a regular file".to_owned(),
+        ));
+    }
+    let length = metadata.len();
+    if length > crate::encyclopedia::OVERLAY_JSON_BYTES_LIMIT as u64 {
+        return Ok(content_target_read_error(
+            target,
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "resource_limit:json_bytes: reserved encyclopedia target length {length} exceeds {}",
+                crate::encyclopedia::OVERLAY_JSON_BYTES_LIMIT
+            ),
+        ));
+    }
+    let length_usize = match usize::try_from(length) {
+        Ok(length) => length,
+        Err(_) => {
+            return Ok(content_target_read_error(
+                target,
+                std::io::ErrorKind::InvalidData,
+                "resource_limit:json_bytes: target length does not fit address space".to_owned(),
+            ));
+        }
+    };
+    admit(length)?;
+
+    let readable_path = proc_fd_path(&pinned);
+    let mut readable = match OpenOptions::new().read(true).open(&readable_path) {
+        Ok(readable) => readable,
+        Err(error) => {
+            return Ok(target_read_error(
+                &target,
+                error,
+                "opening pinned content target",
+            ))
+        }
+    };
+    let opened_metadata = match readable.metadata() {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            return Ok(target_read_error(
+                &target,
+                error,
+                "verifying content target",
+            ))
+        }
+    };
+    if !same_file_identity(&metadata, &opened_metadata) {
+        return Ok(content_target_read_error(
+            target,
+            std::io::ErrorKind::InvalidData,
+            "reserved encyclopedia target identity changed before read".to_owned(),
+        ));
+    }
+
+    let mut bytes = vec![0_u8; length_usize];
+    if let Err(error) = readable.read_exact(&mut bytes) {
+        return Ok(target_read_error(
+            &target,
+            error,
+            "reading pinned content target",
+        ));
+    }
+    let mut extra = [0_u8; 1];
+    match readable.read(&mut extra) {
+        Ok(0) => {}
+        Ok(_) => {
+            return Ok(content_target_read_error(
+                target,
+                std::io::ErrorKind::InvalidData,
+                "reserved encyclopedia target grew during bounded read".to_owned(),
+            ));
+        }
+        Err(error) => {
+            return Ok(target_read_error(
+                &target,
+                error,
+                "finishing bounded content read",
+            ))
+        }
+    }
+    let final_metadata = match readable.metadata() {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            return Ok(target_read_error(
+                &target,
+                error,
+                "rechecking content target",
+            ))
+        }
+    };
+    if !same_file_identity(&metadata, &final_metadata) {
+        return Ok(content_target_read_error(
+            target,
+            std::io::ErrorKind::InvalidData,
+            "reserved encyclopedia target identity changed during read".to_owned(),
+        ));
+    }
+    Ok(ModContentTarget::Bytes(bytes))
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "android"))
+))]
+fn read_encyclopedia_target_platform<E>(
+    dir: &Path,
+    _admit: impl FnMut(u64) -> Result<(), E>,
+) -> Result<ModContentTarget, E> {
+    let target = dir.join(ENCYCLOPEDIA_MOD_FILENAME);
+    match std::fs::symlink_metadata(&target) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(ModContentTarget::Missing)
+        }
+        Err(error) => Ok(target_read_error(&target, error, "inspecting content target")),
+        Ok(_) => Ok(content_target_read_error(
+            target,
+            std::io::ErrorKind::Unsupported,
+            "secure_confinement_unavailable: pinned no-follow content reads require Linux or Android"
+                .to_owned(),
+        )),
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn proc_fd_path(file: &File) -> PathBuf {
+    PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()))
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn proc_fd_child(file: &File, component: &std::ffi::OsStr) -> PathBuf {
+    let mut path = proc_fd_path(file);
+    path.push(component);
+    path
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn open_mod_directory_nofollow(path: &Path) -> std::io::Result<File> {
+    const O_NOFOLLOW: i32 = 0o400000;
+    const O_DIRECTORY: i32 = 0o200000;
+    const O_CLOEXEC: i32 = 0o2000000;
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC)
+        .open(path)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn open_mod_path_nofollow(path: &Path) -> std::io::Result<File> {
+    const O_NOFOLLOW: i32 = 0o400000;
+    const O_CLOEXEC: i32 = 0o2000000;
+    const O_PATH: i32 = 0o10000000;
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW | O_CLOEXEC | O_PATH)
+        .open(path)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn same_file_identity(before: &std::fs::Metadata, after: &std::fs::Metadata) -> bool {
+    before.dev() == after.dev() && before.ino() == after.ino() && before.len() == after.len()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn target_read_error(path: &Path, error: std::io::Error, action: &str) -> ModContentTarget {
+    let kind = error.kind();
+    let message = error.raw_os_error().map_or_else(
+        || format!("{action}: {kind:?}"),
+        |code| format!("{action}: {kind:?} (os error {code})"),
+    );
+    content_target_read_error(path.to_path_buf(), kind, message)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn content_target_read_error(
+    path: PathBuf,
+    kind: std::io::ErrorKind,
+    message: String,
+) -> ModContentTarget {
+    let message = if message.len() <= ENCYCLOPEDIA_READ_ERROR_MESSAGE_BYTES_LIMIT {
+        message
+    } else {
+        "confined target diagnostic exceeded its admitted byte envelope".to_owned()
+    };
+    ModContentTarget::ReadError {
+        path,
+        kind,
+        message,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn classify_target_open_error(path: &Path, error: std::io::Error) -> ModContentTarget {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        ModContentTarget::Missing
+    } else {
+        target_read_error(path, error, "pinning content target")
+    }
+}
+
 /// The parsed world overlay content and separate encyclopedia target from one
 /// mod's root files.
 ///
@@ -213,7 +499,29 @@ impl ModContent {
     /// # Errors
     /// Returns an error if a present content file cannot be read or parsed.
     pub fn from_dir(dir: &Path) -> anyhow::Result<Self> {
-        let mut content = ModContent::default();
+        let encyclopedia =
+            read_encyclopedia_target_with_admission(
+                dir,
+                |_| Ok::<(), std::convert::Infallible>(()),
+            )
+            .expect("the public content-loader admission callback is infallible");
+        Self::from_dir_with_encyclopedia(dir, encyclopedia)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn from_dir_world_only(dir: &Path) -> anyhow::Result<Self> {
+        Self::from_dir_with_encyclopedia(dir, ModContentTarget::Missing)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn from_dir_with_encyclopedia(
+        dir: &Path,
+        encyclopedia: ModContentTarget,
+    ) -> anyhow::Result<Self> {
+        let mut content = ModContent {
+            encyclopedia,
+            ..Self::default()
+        };
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) => bail!("cannot read mod directory {}: {}", dir.display(), e),
@@ -221,18 +529,6 @@ impl ModContent {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.file_name().and_then(|name| name.to_str()) == Some(ENCYCLOPEDIA_MOD_FILENAME) {
-                content.encyclopedia = match std::fs::read(&path) {
-                    Ok(bytes) => ModContentTarget::Bytes(bytes),
-                    Err(error) => ModContentTarget::ReadError {
-                        path: path.clone(),
-                        kind: error.kind(),
-                        message: format!(
-                            "reading mod content target {}: {}",
-                            path.display(),
-                            error
-                        ),
-                    },
-                };
                 continue;
             }
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -865,7 +1161,7 @@ impl ModRuntime {
 
         let mut errors = Vec::new();
         for manifest in ordered {
-            let content = match ModContent::from_dir(&manifest.path) {
+            let content = match ModContent::from_dir_world_only(&manifest.path) {
                 Ok(c) => c,
                 Err(e) => {
                     errors.push(ModError::ParseError {
@@ -1281,6 +1577,55 @@ version = "0.1.0"
     }
 
     #[test]
+    fn world_application_skips_a_large_valid_reserved_target_while_public_loading_reads_it_once() {
+        use std::io::Write;
+
+        const LARGE_VALID_TARGET_BYTES: u64 = 1024 * 1024;
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("gnprtb.json"),
+            r#"[{"id":77,"development":23}]"#,
+        )
+        .unwrap();
+        let mut target = std::fs::File::create(tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME)).unwrap();
+        target.write_all(b"[").unwrap();
+        std::io::copy(
+            &mut std::io::repeat(b' ').take(LARGE_VALID_TARGET_BYTES - 2),
+            &mut target,
+        )
+        .unwrap();
+        target.write_all(b"]").unwrap();
+        drop(target);
+
+        let mut manifest = make_manifest("large-content", "1.0.0", &[]);
+        manifest.path = tmp.path().to_path_buf();
+        manifest.enabled = true;
+        let runtime = ModRuntime {
+            discovered: vec![manifest.clone()],
+            config: ModConfig::default(),
+            errors: Vec::new(),
+            mods_dir: tmp.path().to_path_buf(),
+        };
+        let mut world = parameter_world();
+
+        reset_encyclopedia_target_read_calls();
+        let errors = runtime.apply_ordered(&mut world, &[&manifest]);
+
+        assert!(errors.is_empty());
+        assert_eq!(world.gnprtb.value(77, 0), 23);
+        assert_eq!(encyclopedia_target_read_calls(), 0);
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+        assert!(matches!(
+            content.encyclopedia,
+            ModContentTarget::Bytes(bytes)
+                if bytes.len() == usize::try_from(LARGE_VALID_TARGET_BYTES).unwrap()
+        ));
+        assert_eq!(encyclopedia_target_read_calls(), 1);
+    }
+
+    #[test]
     fn a_missing_encyclopedia_target_is_allowed() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("gnprtb.json"), "[]").unwrap();
@@ -1356,6 +1701,217 @@ version = "0.1.0"
         ));
         assert_eq!(content.patches.len(), 1);
         assert!(content.patches.contains_key("encyclopedia-copy"));
+    }
+
+    #[test]
+    fn an_encyclopedia_target_above_the_parser_limit_is_rejected_before_retention() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME);
+        let file = std::fs::File::create(&target).unwrap();
+        file.set_len((crate::encyclopedia::OVERLAY_JSON_BYTES_LIMIT as u64) + 1)
+            .unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+
+        assert!(matches!(
+            content.encyclopedia,
+            ModContentTarget::ReadError { kind, message, .. }
+                if kind == std::io::ErrorKind::InvalidData
+                    && message.contains("resource_limit:json_bytes")
+        ));
+    }
+
+    #[test]
+    fn an_encyclopedia_target_at_the_parser_limit_is_retained_exactly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME);
+        let file = std::fs::File::create(&target).unwrap();
+        file.set_len(crate::encyclopedia::OVERLAY_JSON_BYTES_LIMIT as u64)
+            .unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+
+        assert!(matches!(
+            content.encyclopedia,
+            ModContentTarget::Bytes(bytes)
+                if bytes.len() == crate::encyclopedia::OVERLAY_JSON_BYTES_LIMIT
+        ));
+    }
+
+    #[test]
+    fn target_admission_runs_before_the_bounded_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME),
+            b"contributor bytes",
+        )
+        .unwrap();
+        let mut observed_length = None;
+
+        let result = read_encyclopedia_target_with_admission(tmp.path(), |length| {
+            observed_length = Some(length);
+            Err("synthetic admission rejection")
+        });
+
+        assert_eq!(result, Err("synthetic admission rejection"));
+        assert_eq!(observed_length, Some(17));
+    }
+
+    #[test]
+    fn empty_target_bytes_are_retained_for_the_parser_to_diagnose() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME), b"").unwrap();
+
+        let content = ModContent::from_dir(tmp.path()).unwrap();
+
+        assert!(matches!(content.encyclopedia, ModContentTarget::Bytes(bytes) if bytes.is_empty()));
+    }
+
+    #[test]
+    fn only_not_found_is_classified_as_an_absent_target() {
+        let target = Path::new("synthetic/encyclopedia.json");
+        assert!(matches!(
+            classify_target_open_error(
+                target,
+                std::io::Error::new(std::io::ErrorKind::NotFound, "synthetic missing")
+            ),
+            ModContentTarget::Missing
+        ));
+        assert!(matches!(
+            classify_target_open_error(
+                target,
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "synthetic denied")
+            ),
+            ModContentTarget::ReadError { kind, .. }
+                if kind == std::io::ErrorKind::PermissionDenied
+        ));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn symlinked_mod_root_is_rejected_without_reading_the_outside_target() {
+        use std::os::unix::fs::symlink;
+
+        let parent = tempfile::tempdir().unwrap();
+        let outside = parent.path().join("outside");
+        let linked_root = parent.path().join("linked-root");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join(ENCYCLOPEDIA_MOD_FILENAME), b"outside sentinel").unwrap();
+        symlink(&outside, &linked_root).unwrap();
+
+        let target = read_encyclopedia_target_with_admission(&linked_root, |_| {
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .unwrap();
+
+        assert!(matches!(target, ModContentTarget::ReadError { .. }));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn symlinked_target_is_rejected_without_reading_the_outside_bytes() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside.json");
+        std::fs::write(&outside, b"outside sentinel").unwrap();
+        symlink(&outside, tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME)).unwrap();
+
+        let target = read_encyclopedia_target_with_admission(tmp.path(), |_| {
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .unwrap();
+
+        assert!(matches!(target, ModContentTarget::ReadError { .. }));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn target_and_root_replacement_after_admission_cannot_redirect_the_read() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("mod-root");
+        let pinned_root = parent.path().join("pinned-root");
+        std::fs::create_dir(&root).unwrap();
+        let original = b"original retained";
+        let replacement = b"outside sentinel!";
+        assert_eq!(original.len(), replacement.len());
+        std::fs::write(root.join(ENCYCLOPEDIA_MOD_FILENAME), original).unwrap();
+
+        let target = read_encyclopedia_target_with_admission(&root, |_| {
+            std::fs::rename(&root, &pinned_root).unwrap();
+            std::fs::create_dir(&root).unwrap();
+            std::fs::write(root.join(ENCYCLOPEDIA_MOD_FILENAME), replacement).unwrap();
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .unwrap();
+
+        assert!(matches!(
+            target,
+            ModContentTarget::Bytes(bytes) if bytes == original
+        ));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn growth_after_admission_is_rejected_before_the_exact_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME);
+        std::fs::write(&target, b"[]").unwrap();
+
+        let result = read_encyclopedia_target_with_admission(tmp.path(), |_| {
+            use std::io::Write;
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&target)
+                .unwrap()
+                .write_all(b"x")
+                .unwrap();
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            ModContentTarget::ReadError { kind, message, .. }
+                if kind == std::io::ErrorKind::InvalidData
+                    && message.contains("identity changed before read")
+        ));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_fifo_encyclopedia_target_is_rejected_without_blocking_for_a_writer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join(ENCYCLOPEDIA_MOD_FILENAME);
+        assert!(std::process::Command::new("mkfifo")
+            .arg(&target)
+            .status()
+            .unwrap()
+            .success());
+        let root = tmp.path().to_path_buf();
+        let (sent, received) = std::sync::mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            let result = ModContent::from_dir(&root);
+            let _ = sent.send(result);
+        });
+
+        let result = received.recv_timeout(std::time::Duration::from_millis(250));
+        if result.is_err() {
+            // Unblock the legacy implementation so RED evidence never strands
+            // a test thread after proving that it attempted to read the FIFO.
+            drop(std::fs::OpenOptions::new().write(true).open(&target));
+        }
+        let content = result
+            .expect("the reserved target reader must reject a FIFO before opening it")
+            .unwrap();
+        reader.join().unwrap();
+
+        assert!(matches!(
+            content.encyclopedia,
+            ModContentTarget::ReadError { kind, message, .. }
+                if kind == std::io::ErrorKind::InvalidInput
+                    && message.contains("not a regular file")
+        ));
     }
 
     // ── ModRuntime tests ────────────────────────────────────────────────────

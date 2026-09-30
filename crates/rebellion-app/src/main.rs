@@ -1,6 +1,10 @@
 mod audio;
 pub mod encyclopedia_hd;
 pub mod encyclopedia_presenter;
+#[cfg(not(target_arch = "wasm32"))]
+mod encyclopedia_lifecycle;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod encyclopedia_mods;
 pub mod encyclopedia_runtime;
 pub mod encyclopedia_session;
 #[cfg(feature = "interface-test-fixtures")]
@@ -198,6 +202,32 @@ fn window_conf() -> Conf {
         window_height: 800,
         window_resizable: true,
         ..Default::default()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn log_encyclopedia_refresh(
+    context: &str,
+    report: &encyclopedia_lifecycle::EncyclopediaContentRefresh,
+) {
+    for diagnostic in &report.diagnostics {
+        macroquad::logging::error!(
+            "[encyclopedia] context={} mod={} code={} path={} message={}",
+            context,
+            diagnostic.mod_name,
+            diagnostic.code,
+            diagnostic.path,
+            diagnostic.message
+        );
+    }
+    if report.published_changed {
+        macroquad::logging::info!(
+            "[encyclopedia] context={} generation={} changed_images={} removed_images={}",
+            context,
+            report.generation.unwrap_or_default(),
+            report.changed_image_ids.len(),
+            report.removed_image_ids.len()
+        );
     }
 }
 
@@ -1431,10 +1461,25 @@ async fn main() {
             mod_runtime.discovered.len(),
             mod_runtime.discovered.iter().filter(|m| m.enabled).count()
         );
-        let mod_errors = mod_runtime.apply_enabled(&mut world);
-        for err in &mod_errors {
-            eprintln!("Mod error: {err:?}");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_lifecycle =
+        encyclopedia_lifecycle::EncyclopediaLifecycle::from_availability(
+            encyclopedia_runtime::load_native_encyclopedia(&gdata_path, None),
+        );
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let ordered = mod_runtime.enabled_sorted();
+        let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+            encyclopedia_lifecycle::ModLifecycleTrigger::Startup,
+            &ordered,
+            |ordered| mod_runtime.apply_ordered(&mut world, ordered),
+            |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+        );
+        for error in update.world.unwrap_or_default() {
+            eprintln!("Mod error: {error:?}");
         }
+        log_encyclopedia_refresh("startup", &update.content);
     }
 
     // ── Game mode ─────────────────────────────────────────────────────────
@@ -3558,14 +3603,36 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 &gdata_path,
                                 &seed_options,
                             ) {
-                                Ok(mut w) => {
-                                    for error in mod_runtime.apply_enabled(&mut w) {
-                                        macroquad::logging::error!(
-                                            "[campaign] mod_reapply_error={:?}",
-                                            error
-                                        );
+                                Ok(w) => {
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    {
+                                        let mut w = w;
+                                        let ordered = mod_runtime.enabled_sorted();
+                                        let update =
+                                            encyclopedia_lifecycle::apply_resolved_mod_update(
+                                                encyclopedia_lifecycle::ModLifecycleTrigger::NewCampaign,
+                                                &ordered,
+                                                |ordered| {
+                                                    mod_runtime.apply_ordered(&mut w, ordered)
+                                                },
+                                                |ordered| {
+                                                    encyclopedia_lifecycle
+                                                        .refresh_resolved(ordered)
+                                                },
+                                            );
+                                        for error in update.world.unwrap_or_default() {
+                                            macroquad::logging::error!(
+                                                "[campaign] mod_reapply_error={:?}",
+                                                error
+                                            );
+                                        }
+                                        log_encyclopedia_refresh("new_campaign", &update.content);
+                                        world = w;
                                     }
-                                    world = w;
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        world = w;
+                                    }
                                     campaign_generation += 1;
                                     sim_rng = Xoshiro256PlusPlus::seed_from_u64(
                                         rng_seed.wrapping_add(u64::from(campaign_generation)),
@@ -4073,7 +4140,20 @@ Some(RailAudience::side(*faction_is_alliance)),
                         .discovered
                         .iter()
                         .map(|m| {
-                            let err = mod_runtime.errors.iter().find(|e| e.mod_name() == m.name);
+                            let errors: Vec<String> = mod_runtime
+                                .errors
+                                .iter()
+                                .filter(|error| error.mod_name() == m.name)
+                                .map(ToString::to_string)
+                                .collect();
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let mut errors = errors;
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if let Some(error) = encyclopedia_lifecycle.diagnostic_for_mod(&m.name)
+                            {
+                                errors.push(error);
+                            }
+                            let error_message = (!errors.is_empty()).then(|| errors.join("; "));
                             rebellion_render::ModInfo {
                                 name: m.name.clone(),
                                 version: m.version.clone(),
@@ -4081,8 +4161,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 description: m.description.clone(),
                                 enabled: m.enabled,
                                 dependencies: m.dependencies.keys().cloned().collect(),
-                                has_error: err.is_some(),
-                                error_message: err.map(ToString::to_string),
+                                has_error: error_message.is_some(),
+                                error_message,
                             }
                         })
                         .collect();
@@ -5066,6 +5146,22 @@ Some(RailAudience::side(*faction_is_alliance)),
                                 campaign_config: &mut campaign_config,
                             };
                             campaign.restore(state);
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                let ordered = mod_runtime.enabled_sorted();
+                                let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+                                    encyclopedia_lifecycle::ModLifecycleTrigger::SavedWorldLoad,
+                                    &ordered,
+                                    |_| {
+                                        unreachable!(
+                                            "saved-world load must not replay world mod patches"
+                                        )
+                                    },
+                                    |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+                                );
+                                debug_assert!(update.world.is_none());
+                                log_encyclopedia_refresh("saved_world_load", &update.content);
+                            }
                             let restored_fingerprint =
                                 rebellion_data::save::compute_state_fingerprint(
                                     &campaign.snapshot(),
@@ -5199,6 +5295,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         &mut blockade_state,
                         &event_state,
                         &mut mod_runtime,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        &mut encyclopedia_lifecycle,
                         #[cfg(not(target_arch = "wasm32"))]
                         &mut audio_engine,
                         #[cfg(not(target_arch = "wasm32"))]
@@ -5446,6 +5544,8 @@ fn apply_panel_action(
     blockade_state: &mut BlockadeState,
     event_state: &EventState,
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
+    #[cfg(not(target_arch = "wasm32"))]
+    encyclopedia_lifecycle: &mut encyclopedia_lifecycle::EncyclopediaLifecycle,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
@@ -5741,6 +5841,18 @@ fn apply_panel_action(
         }
         PanelAction::ToggleMod { ref name } => {
             mod_runtime.toggle_mod(name);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let ordered = mod_runtime.enabled_sorted();
+                let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+                    encyclopedia_lifecycle::ModLifecycleTrigger::Toggle,
+                    &ordered,
+                    |_| unreachable!("a mod toggle must not replay world patches"),
+                    |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+                );
+                debug_assert!(update.world.is_none());
+                log_encyclopedia_refresh("toggle", &update.content);
+            }
             msg_log.push(GameMessage::new(
                 clock.tick,
                 format!("Toggled mod: {name}"),
@@ -5749,9 +5861,19 @@ fn apply_panel_action(
         }
         PanelAction::ReloadMods => {
             mod_runtime.refresh();
-            let mod_errors = mod_runtime.apply_enabled(world);
-            for err in &mod_errors {
-                eprintln!("Mod reload error: {err:?}");
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let ordered = mod_runtime.enabled_sorted();
+                let update = encyclopedia_lifecycle::apply_resolved_mod_update(
+                    encyclopedia_lifecycle::ModLifecycleTrigger::ManualReload,
+                    &ordered,
+                    |ordered| mod_runtime.apply_ordered(world, ordered),
+                    |ordered| encyclopedia_lifecycle.refresh_resolved(ordered),
+                );
+                for error in update.world.unwrap_or_default() {
+                    eprintln!("Mod reload error: {error:?}");
+                }
+                log_encyclopedia_refresh("manual_reload", &update.content);
             }
             msg_log.push(GameMessage::new(
                 clock.tick,
