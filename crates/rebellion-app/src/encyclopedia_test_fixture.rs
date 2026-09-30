@@ -12,9 +12,13 @@ use rebellion_data::encyclopedia::{
     ViewerFaction,
 };
 use rebellion_render::{
-    EncyclopediaSelection, EncyclopediaTextureBackend, EncyclopediaTextureCache,
-    EncyclopediaTextureEvent, EncyclopediaView, TopicImageView,
+    apply_encyclopedia_action, EncyclopediaAction, EncyclopediaMode, EncyclopediaNavigationState,
+    EncyclopediaView, NavigationOutcome,
 };
+#[cfg(test)]
+use rebellion_render::{EncyclopediaTextureBackend, TopicImageView};
+#[cfg(any(test, not(target_arch = "wasm32")))]
+use rebellion_render::{EncyclopediaTextureCache, EncyclopediaTextureEvent};
 
 use crate::encyclopedia_presenter::{build_encyclopedia_view, EncyclopediaPresenter};
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,7 +26,6 @@ use crate::encyclopedia_session::EncyclopediaAvailability;
 use crate::encyclopedia_session::EncyclopediaSession;
 
 const INSPECTOR_REQUEST: &str = "REBELLION_ENCYCLOPEDIA_INSPECTOR";
-const INSPECTOR_LABEL: &str = "Encyclopedia content inspector — not parity";
 
 pub(crate) enum InspectorContent {
     Ready(Box<EncyclopediaSession>),
@@ -34,7 +37,7 @@ pub(crate) struct InspectorModel {
     presenter: EncyclopediaPresenter,
     admission: Option<AdmissionSnapshot>,
     language: String,
-    selection: EncyclopediaSelection,
+    navigation: EncyclopediaNavigationState,
 }
 
 impl InspectorModel {
@@ -50,7 +53,7 @@ impl InspectorModel {
             presenter: EncyclopediaPresenter::default(),
             admission,
             language: language.into(),
-            selection: EncyclopediaSelection::default(),
+            navigation: EncyclopediaNavigationState::default(),
         }
     }
 
@@ -63,7 +66,7 @@ impl InspectorModel {
             session,
             self.admission.as_ref(),
             &self.language,
-            &self.selection,
+            &self.navigation.selection,
         )
         .map(Some)
     }
@@ -82,23 +85,78 @@ impl InspectorModel {
         }
     }
 
-    pub(crate) fn select_category(&mut self, category_id: Option<String>) {
-        self.selection.category_id = category_id;
-        self.selection.topic_id = None;
+    pub(crate) fn apply_action(
+        &mut self,
+        view: &EncyclopediaView,
+        action: EncyclopediaAction,
+    ) -> NavigationOutcome {
+        apply_encyclopedia_action(&mut self.navigation, view, action)
     }
 
-    pub(crate) fn select_topic(&mut self, topic_id: Option<String>) {
-        self.selection.topic_id = topic_id;
+    /// Apply a finite physical-input batch while rebuilding the presenter DTO
+    /// before each dependent command. This prevents a category or mode change
+    /// from leaving later commands bound to the prior projection.
+    pub(crate) fn apply_action_batch(
+        &mut self,
+        actions: impl IntoIterator<Item = EncyclopediaAction>,
+    ) -> Result<Vec<NavigationOutcome>, EncyclopediaError> {
+        let mut outcomes = Vec::new();
+        for action in actions {
+            let Some(view) = self.build_view()? else {
+                break;
+            };
+            outcomes.push(self.apply_action(&view, action));
+        }
+        Ok(outcomes)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn select_category(
+        &mut self,
+        category_id: Option<String>,
+    ) -> Result<Option<NavigationOutcome>, EncyclopediaError> {
+        let Some(view) = self.build_view()? else {
+            return Ok(None);
+        };
+        Ok(Some(self.apply_action(
+            &view,
+            EncyclopediaAction::SelectCategory {
+                category_id,
+                force: rebellion_render::SelectionForce::Normal,
+            },
+        )))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn select_topic(
+        &mut self,
+        topic_id: String,
+    ) -> Result<Option<NavigationOutcome>, EncyclopediaError> {
+        let Some(view) = self.build_view()? else {
+            return Ok(None);
+        };
+        Ok(Some(self.apply_action(
+            &view,
+            EncyclopediaAction::SelectTopic(topic_id),
+        )))
+    }
+
+    pub(crate) fn navigation_mut(&mut self) -> &mut EncyclopediaNavigationState {
+        &mut self.navigation
     }
 
     fn ensure_initial_topic(&mut self) -> Result<(), EncyclopediaError> {
-        if self.selection.topic_id.is_some() {
+        if self.navigation.selection.topic_id.is_some() {
             return Ok(());
         }
-        let first_topic = self
-            .build_view()?
-            .and_then(|view| view.topics.first().map(|topic| topic.topic_id.clone()));
-        self.selection.topic_id = first_topic;
+        let Some(view) = self.build_view()? else {
+            return Ok(());
+        };
+        let Some(first_topic) = view.topics.first().map(|topic| topic.topic_id.clone()) else {
+            return Ok(());
+        };
+        let _ = self.apply_action(&view, EncyclopediaAction::SelectTopic(first_topic));
+        let _ = self.apply_action(&view, EncyclopediaAction::SetMode(EncyclopediaMode::Topic));
         Ok(())
     }
 }
@@ -118,6 +176,7 @@ pub(crate) fn inspection_admission(catalog: &EncyclopediaCatalog) -> AdmissionSn
     }
 }
 
+#[cfg(test)]
 pub(crate) struct InspectorTextureFrame<'a, Texture> {
     pub(crate) texture: Option<&'a Texture>,
     pub(crate) asset_id: Option<String>,
@@ -127,11 +186,13 @@ pub(crate) struct InspectorTextureFrame<'a, Texture> {
     pub(crate) events: Vec<EncyclopediaTextureEvent>,
 }
 
+#[cfg(test)]
 pub(crate) struct InspectorTextureState<Backend: EncyclopediaTextureBackend> {
     cache: EncyclopediaTextureCache<Backend>,
     last_status: String,
 }
 
+#[cfg(test)]
 impl<Backend: EncyclopediaTextureBackend> InspectorTextureState<Backend> {
     pub(crate) fn new(backend: Backend) -> Self {
         Self {
@@ -179,6 +240,7 @@ pub(crate) fn request_value_enabled(value: Option<&OsStr>) -> bool {
     value == Some(OsStr::new("1"))
 }
 
+#[cfg(test)]
 fn fitted_art_size(width: u32, height: u32) -> [f32; 2] {
     let longest_side = width.max(height) as f32;
     debug_assert!(longest_side > 0.0, "validated art has nonzero dimensions");
@@ -194,10 +256,11 @@ pub(crate) fn requested() -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn run(gdata: &std::path::Path) {
-    use macroquad::prelude::{
-        clear_background, is_key_pressed, is_quit_requested, next_frame, Color, KeyCode,
+    use macroquad::prelude::{clear_background, is_quit_requested, next_frame, Color};
+    use rebellion_render::{
+        draw_encyclopedia_surface, BmpCache, CockpitFaction, EguiEncyclopediaTextureBackend,
+        EncyclopediaSurfaceLabels, EncyclopediaSurfaceState,
     };
-    use rebellion_render::{EguiEncyclopediaTextureBackend, TopicImageRenderProfile};
 
     let override_root =
         std::env::var_os("REBELLION_ENCYCLOPEDIA_DIR").map(std::path::PathBuf::from);
@@ -211,11 +274,21 @@ pub(crate) async fn run(gdata: &std::path::Path) {
         }
     };
     let mut model = InspectorModel::new(content, "1033");
-    let mut textures = None;
+    let mut chrome = BmpCache::new();
+    chrome.set_base_path(gdata.join("ui"));
+    let missing_chrome = chrome.missing_encyclopedia_chrome_resources();
+    let mut textures: Option<EncyclopediaTextureCache<EguiEncyclopediaTextureBackend>> = None;
+    let mut surface = EncyclopediaSurfaceState::default();
+    surface.set_source_labels(EncyclopediaSurfaceLabels {
+        index_header: Some(std::sync::Arc::from("Synthetic encyclopedia index")),
+        index_static: Some(std::sync::Arc::from("Synthetic category selection")),
+    });
     let mut theme_applied = false;
+    let mut cache_status = "not selected".to_owned();
+    let mut close_requested = false;
 
-    loop {
-        if is_quit_requested() || is_key_pressed(KeyCode::Escape) {
+    while !close_requested {
+        if is_quit_requested() {
             break;
         }
         clear_background(Color::from_rgba(9, 13, 22, 255));
@@ -234,6 +307,7 @@ pub(crate) async fn run(gdata: &std::path::Path) {
             }
         };
 
+        let mut surface_frame = None;
         egui_macroquad::ui(|ctx| {
             if !theme_applied {
                 rebellion_render::theme::load_fonts(ctx);
@@ -241,146 +315,117 @@ pub(crate) async fn run(gdata: &std::path::Path) {
                 theme_applied = true;
             }
             let textures = textures.get_or_insert_with(|| {
-                InspectorTextureState::new(EguiEncyclopediaTextureBackend::new(ctx))
+                EncyclopediaTextureCache::new(EguiEncyclopediaTextureBackend::new(ctx))
             });
-            egui_macroquad::egui::CentralPanel::default().show(ctx, |ui| {
-                ui.heading(INSPECTOR_LABEL);
-                ui.label(
-                    "Temporary fixture surface for validated content transport and rendering.",
-                );
-                ui.label("Press Escape to close.");
-                ui.separator();
-
-                if let Some(diagnostic) = unavailable.as_deref() {
+            if let Some(view) = view.as_ref() {
+                surface_frame = Some(draw_encyclopedia_surface(
+                    ctx,
+                    view,
+                    model.navigation_mut(),
+                    &mut surface,
+                    &mut chrome,
+                    textures,
+                    CockpitFaction::Alliance,
+                    egui_macroquad::egui::pos2(85.0, 55.0),
+                    1.0,
+                ));
+            } else {
+                let _ = textures.resolve(None);
+                egui_macroquad::egui::CentralPanel::default().show(ctx, |ui| {
                     ui.colored_label(
                         egui_macroquad::egui::Color32::LIGHT_RED,
-                        format!("content unavailable: {diagnostic}"),
+                        format!(
+                            "encyclopedia content unavailable: {}",
+                            unavailable.as_deref().unwrap_or("unknown diagnostic")
+                        ),
                     );
-                    let _ = textures.resolve(None);
-                    return;
+                });
+            }
+
+            egui_macroquad::egui::Area::new(egui_macroquad::egui::Id::new(
+                "encyclopedia-fixture-diagnostics",
+            ))
+            .fixed_pos(egui_macroquad::egui::pos2(8.0, 392.0))
+            .movable(false)
+            .show(ctx, |ui| {
+                ui.label("fixture diagnostics — transport/render evidence only");
+                if let Some(profile) = source_profile.as_deref() {
+                    ui.label(format!("source profile: {profile}"));
                 }
-                let Some(view) = view.as_ref() else {
-                    ui.label("content unavailable");
-                    let _ = textures.resolve(None);
-                    return;
-                };
-
-                ui.horizontal_wrapped(|ui| {
-                    let index_selected = view.navigation.selected_category_id.is_none();
-                    if ui
-                        .add_enabled(
-                            view.index_enabled,
-                            egui_macroquad::egui::Button::new(
-                                view.index_label.as_deref().unwrap_or("Unavailable index"),
-                            )
-                            .selected(index_selected),
-                        )
-                        .clicked()
-                    {
-                        model.select_category(None);
-                    }
-                    for category in &view.categories {
-                        let selected = view.navigation.selected_category_id.as_deref()
-                            == Some(category.category_id.as_str());
-                        if ui
-                            .add_enabled(
-                                category.enabled,
-                                egui_macroquad::egui::Button::new(
-                                    category.label.as_deref().unwrap_or("Unavailable category"),
-                                )
-                                .selected(selected),
-                            )
-                            .clicked()
-                        {
-                            model.select_category(Some(category.category_id.clone()));
-                        }
-                    }
-                });
-                ui.separator();
-
-                ui.columns(2, |columns| {
-                    egui_macroquad::egui::ScrollArea::vertical()
-                        .id_salt("encyclopedia_fixture_topics")
-                        .show(&mut columns[0], |ui| {
-                            for topic in &view.topics {
-                                let selected = view.navigation.selected_topic_id.as_deref()
-                                    == Some(topic.topic_id.as_str());
-                                if ui
-                                    .selectable_label(selected, topic.title.as_ref())
-                                    .clicked()
-                                {
-                                    model.select_topic(Some(topic.topic_id.clone()));
-                                }
-                            }
-                        });
-
-                    egui_macroquad::egui::ScrollArea::vertical()
-                        .id_salt("encyclopedia_fixture_detail")
-                        .show(&mut columns[1], |ui| {
-                            let Some(active) = view.active_topic.as_ref() else {
-                                ui.label("Select an available topic.");
-                                let _ = textures.resolve(None);
-                                return;
-                            };
-
-                            ui.heading(active.title.as_ref());
-                            ui.label(format!("topic: {}", active.topic_id));
-                            if let Some(profile) = source_profile.as_deref() {
-                                ui.label(format!("source profile: {profile}"));
-                            }
-
-                            let texture_frame = textures.resolve(active.image.as_ref());
-                            for event in &texture_frame.events {
-                                macroquad::logging::info!(
-                                    "[encyclopedia_inspector] texture_event={:?}",
-                                    event
-                                );
-                            }
-                            if let (Some(texture), Some(image)) =
-                                (texture_frame.texture, active.image.as_ref())
-                            {
-                                let [width, height] = fitted_art_size(image.width, image.height);
-                                let size = egui_macroquad::egui::vec2(width, height);
-                                ui.add(egui_macroquad::egui::Image::new((texture.id(), size)));
-                            } else if active.image.is_none() {
-                                ui.label("art: none");
-                            }
-                            if let Some(asset_id) = texture_frame.asset_id.as_deref() {
-                                ui.label(format!("asset: {asset_id}"));
-                            }
-                            if let Some(digest) = texture_frame.digest.as_deref() {
-                                ui.label(format!("digest: {digest}"));
-                            }
-                            ui.label(format!("cache: {}", texture_frame.cache_status));
-                            if let Some(diagnostic) = texture_frame.diagnostic.as_deref() {
-                                ui.colored_label(
-                                    egui_macroquad::egui::Color32::LIGHT_RED,
-                                    diagnostic,
-                                );
-                            }
-                            if let Some(image) = active.image.as_ref() {
-                                let sampling = match image.render_profile {
-                                    TopicImageRenderProfile::OriginalNearest => "nearest",
-                                    TopicImageRenderProfile::FaithfulHdLinear => "linear",
-                                };
-                                ui.label(format!(
-                                    "image: {}x{} {} ({sampling})",
-                                    image.width, image.height, image.format
-                                ));
-                            }
-                            ui.separator();
-                            ui.label(active.body.as_ref());
-                        });
-                });
-
-                for diagnostic in &view.diagnostics {
+                if missing_chrome.is_empty() {
+                    ui.label("chrome source ids: ready");
+                } else {
+                    let ids = missing_chrome
+                        .iter()
+                        .take(4)
+                        .map(|resource| format!("0x{:x}", resource.resource_id))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    ui.colored_label(
+                        egui_macroquad::egui::Color32::LIGHT_RED,
+                        format!("chrome missing: {} ({ids})", missing_chrome.len()),
+                    );
+                }
+                if let Some(frame) = surface_frame.as_ref() {
                     ui.label(format!(
-                        "diagnostic: {} {:?}",
-                        diagnostic.code, diagnostic.scope
+                        "asset: {}",
+                        frame.active_asset_id.as_deref().unwrap_or("none")
                     ));
+                    ui.label(format!(
+                        "digest: {}",
+                        frame.active_digest.as_deref().unwrap_or("none")
+                    ));
+                    ui.label(format!("cache: {cache_status}"));
+                    if let Some(diagnostic) = frame.texture_diagnostic.as_deref() {
+                        ui.colored_label(egui_macroquad::egui::Color32::LIGHT_RED, diagnostic);
+                    }
+                    for diagnostic in &frame.surface_diagnostics {
+                        ui.colored_label(
+                            egui_macroquad::egui::Color32::LIGHT_RED,
+                            format!("surface diagnostic: {diagnostic:?}"),
+                        );
+                    }
                 }
             });
         });
+
+        if let (Some(_), Some(frame)) = (view.as_ref(), surface_frame) {
+            for event in &frame.texture_events {
+                cache_status = match event {
+                    EncyclopediaTextureEvent::Selected {
+                        cache_hit: true, ..
+                    } => "cache hit".to_owned(),
+                    EncyclopediaTextureEvent::Selected {
+                        cache_hit: false, ..
+                    } => "uploaded".to_owned(),
+                    EncyclopediaTextureEvent::Released { .. } => "released".to_owned(),
+                    EncyclopediaTextureEvent::Failed { .. } => "failed".to_owned(),
+                };
+                macroquad::logging::info!("[encyclopedia_inspector] texture_event={:?}", event);
+            }
+            if frame.active_asset_id.is_none() {
+                cache_status = "no art".to_owned();
+            }
+            match model.apply_action_batch(frame.actions) {
+                Ok(outcomes) => {
+                    for outcome in outcomes {
+                        macroquad::logging::info!(
+                            "[encyclopedia_inspector] navigation_outcome={:?}",
+                            outcome
+                        );
+                        if outcome == NavigationOutcome::CloseRequested {
+                            close_requested = true;
+                        }
+                    }
+                }
+                Err(error) => {
+                    model = InspectorModel::new(
+                        InspectorContent::Unavailable(error.to_string()),
+                        "1033",
+                    );
+                }
+            }
+        }
         egui_macroquad::draw();
         next_frame().await;
     }
@@ -396,7 +441,11 @@ mod tests {
 
     use rebellion_data::encyclopedia::{AdmissionFact, ViewerFaction};
     use rebellion_render::{
-        inspect_encyclopedia_bytes, EncyclopediaTextureBackend, EncyclopediaTextureUpload,
+        draw_encyclopedia_surface, inspect_encyclopedia_bytes, BmpCache, BodyScrollIntent,
+        CockpitFaction, EguiEncyclopediaTextureBackend, EncyclopediaAction, EncyclopediaMode,
+        EncyclopediaSurfaceState, EncyclopediaTextureBackend, EncyclopediaTextureCache,
+        EncyclopediaTextureUpload, NavigationOutcome, NavigationRejection, SelectionForce,
+        SourceKeyIntent,
     };
     use serde_json::Value;
 
@@ -515,7 +564,7 @@ mod tests {
         let expected_digest = session.observed_facts()["assets/EDATA.001"].sha256.clone();
         let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session)), "1033");
         assert_eq!(model.source_profile(), Some("e37-synthetic-v1"));
-        model.select_topic(Some("original:60001".to_owned()));
+        model.select_topic("original:60001".to_owned()).unwrap();
 
         let view = model.build_view().unwrap().unwrap();
         assert_eq!(view.index_label.as_deref(), Some("Synthetic aggregate"));
@@ -540,6 +589,7 @@ mod tests {
         assert_eq!(first.asset_id.as_deref(), Some("edata:1"));
         assert_eq!(first.digest.as_deref(), Some(expected_digest.as_str()));
         assert_eq!(first.cache_status, "uploaded");
+        assert_eq!(first.diagnostic, None);
         assert_eq!(first.events.len(), 1);
 
         let second = textures.resolve(Some(image));
@@ -563,12 +613,12 @@ mod tests {
         let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
         let (mut textures, counts) = texture_state();
 
-        model.select_topic(Some("original:60001".to_owned()));
+        model.select_topic("original:60001".to_owned()).unwrap();
         let with_art = model.build_view().unwrap().unwrap();
         let image = with_art.active_topic.as_ref().unwrap().image.as_ref();
         assert!(textures.resolve(image).texture.is_some());
 
-        model.select_topic(Some("original:60005".to_owned()));
+        model.select_topic("original:60005".to_owned()).unwrap();
         let without_art = model.build_view().unwrap().unwrap();
         assert!(without_art.active_topic.as_ref().unwrap().image.is_none());
         let absent = textures.resolve(None);
@@ -605,7 +655,7 @@ mod tests {
                 Value::from(long_body.clone());
         });
         let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session)), "1033");
-        model.select_topic(Some("original:60001".to_owned()));
+        model.select_topic("original:60001".to_owned()).unwrap();
 
         let view = model.build_view().unwrap().unwrap();
         assert_eq!(view.active_topic.as_ref().unwrap().body.as_ref(), long_body);
@@ -622,7 +672,7 @@ mod tests {
             } else {
                 "original:60002"
             };
-            model.select_topic(Some(topic.to_owned()));
+            model.select_topic(topic.to_owned()).unwrap();
             let view = model.build_view().unwrap().unwrap();
             let image = view.active_topic.as_ref().unwrap().image.as_ref();
             assert!(textures.resolve(image).texture.is_some());
@@ -694,8 +744,10 @@ mod tests {
     #[test]
     fn category_selection_changes_membership_and_clears_the_previous_topic() {
         let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
-        model.select_topic(Some("original:60002".to_owned()));
-        model.select_category(Some("command:0x70".to_owned()));
+        model.select_topic("original:60002".to_owned()).unwrap();
+        model
+            .select_category(Some("command:0x70".to_owned()))
+            .unwrap();
 
         let view = model.build_view().unwrap().unwrap();
         assert_eq!(
@@ -710,6 +762,282 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["original:60001"]
         );
+    }
+
+    #[test]
+    fn finite_batch_rebuilds_projection_before_rejecting_a_stale_topic_target() {
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        model.select_topic("original:60002".to_owned()).unwrap();
+
+        let outcomes = model
+            .apply_action_batch([
+                EncyclopediaAction::SelectCategory {
+                    category_id: Some("command:0x70".to_owned()),
+                    force: SelectionForce::Normal,
+                },
+                EncyclopediaAction::SelectTopic("original:60002".to_owned()),
+            ])
+            .unwrap();
+
+        assert_eq!(
+            outcomes,
+            vec![
+                NavigationOutcome::Applied,
+                NavigationOutcome::Rejected(NavigationRejection::UnavailableTopic),
+            ]
+        );
+        let view = model.build_view().unwrap().unwrap();
+        assert_eq!(
+            view.navigation.selected_category_id.as_deref(),
+            Some("command:0x70")
+        );
+        assert_eq!(view.navigation.selected_topic_id, None);
+        assert_eq!(
+            view.topics
+                .iter()
+                .map(|topic| topic.topic_id.as_str())
+                .collect::<Vec<_>>(),
+            ["original:60001"]
+        );
+    }
+
+    #[test]
+    fn finite_batch_rebuilds_between_repeated_next_commands() {
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        model.ensure_initial_topic().unwrap();
+        let expected = model
+            .build_view()
+            .unwrap()
+            .unwrap()
+            .topics
+            .iter()
+            .take(3)
+            .map(|topic| topic.topic_id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(expected.len(), 3);
+
+        let outcomes = model
+            .apply_action_batch([EncyclopediaAction::NextTopic, EncyclopediaAction::NextTopic])
+            .unwrap();
+
+        assert_eq!(
+            outcomes,
+            vec![NavigationOutcome::Applied, NavigationOutcome::Applied]
+        );
+        assert_eq!(
+            model.navigation.selection.topic_id.as_ref(),
+            expected.get(2)
+        );
+    }
+
+    #[test]
+    fn finite_batch_rebuilds_after_mode_change_and_preserves_ordered_scroll_intents() {
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        let topic_ids = model
+            .build_view()
+            .unwrap()
+            .unwrap()
+            .topics
+            .iter()
+            .take(2)
+            .map(|topic| topic.topic_id.clone())
+            .collect::<Vec<_>>();
+        model.select_topic(topic_ids[0].clone()).unwrap();
+
+        let outcomes = model
+            .apply_action_batch([
+                EncyclopediaAction::SetMode(EncyclopediaMode::Topic),
+                EncyclopediaAction::NextTopic,
+            ])
+            .unwrap();
+
+        assert_eq!(
+            outcomes,
+            vec![NavigationOutcome::Applied, NavigationOutcome::Applied]
+        );
+        assert_eq!(
+            model.navigation.selection.topic_id.as_ref(),
+            topic_ids.get(1)
+        );
+        assert_eq!(
+            model.navigation.pending_body_scroll_intents(),
+            [BodyScrollIntent::ResetToTop, BodyScrollIntent::ResetToTop]
+        );
+        assert_eq!(
+            model.navigation.take_body_scroll_intents(),
+            [BodyScrollIntent::ResetToTop, BodyScrollIntent::ResetToTop]
+        );
+        assert!(model.navigation.take_body_scroll_intents().is_empty());
+    }
+
+    fn apply_actual_key_batch(
+        model: &mut InspectorModel,
+        keys: impl IntoIterator<Item = egui_macroquad::egui::Key>,
+    ) -> (Vec<EncyclopediaAction>, Vec<NavigationOutcome>) {
+        let ctx = egui_macroquad::egui::Context::default();
+        let mut surface = EncyclopediaSurfaceState::default();
+        let mut chrome = BmpCache::new();
+        let mut textures = EncyclopediaTextureCache::new(EguiEncyclopediaTextureBackend::new(&ctx));
+
+        let view = model.build_view().unwrap().unwrap();
+        let _ = ctx.run(egui_macroquad::egui::RawInput::default(), |ctx| {
+            let _ = draw_encyclopedia_surface(
+                ctx,
+                &view,
+                model.navigation_mut(),
+                &mut surface,
+                &mut chrome,
+                &mut textures,
+                CockpitFaction::Alliance,
+                egui_macroquad::egui::Pos2::ZERO,
+                1.0,
+            );
+        });
+
+        let raw_input = egui_macroquad::egui::RawInput {
+            events: keys
+                .into_iter()
+                .map(|key| egui_macroquad::egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui_macroquad::egui::Modifiers::default(),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let mut frame = None;
+        let _ = ctx.run(raw_input, |ctx| {
+            frame = Some(draw_encyclopedia_surface(
+                ctx,
+                &view,
+                model.navigation_mut(),
+                &mut surface,
+                &mut chrome,
+                &mut textures,
+                CockpitFaction::Alliance,
+                egui_macroquad::egui::Pos2::ZERO,
+                1.0,
+            ));
+        });
+        let actions = frame.unwrap().actions;
+        let outcomes = model.apply_action_batch(actions.clone()).unwrap();
+        (actions, outcomes)
+    }
+
+    #[test]
+    fn actual_enter_then_right_batch_uses_the_evolving_topic_mode() {
+        use egui_macroquad::egui::Key;
+
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        let topics = model
+            .build_view()
+            .unwrap()
+            .unwrap()
+            .topics
+            .iter()
+            .take(2)
+            .map(|topic| topic.topic_id.clone())
+            .collect::<Vec<_>>();
+        model.select_topic(topics[0].clone()).unwrap();
+
+        let (actions, outcomes) = apply_actual_key_batch(&mut model, [Key::Enter, Key::ArrowRight]);
+
+        assert_eq!(
+            actions,
+            [
+                EncyclopediaAction::SourceKey(SourceKeyIntent::Enter),
+                EncyclopediaAction::SourceKey(SourceKeyIntent::Right),
+            ]
+        );
+        assert_eq!(
+            outcomes,
+            [NavigationOutcome::Applied, NavigationOutcome::Applied]
+        );
+        assert_eq!(model.navigation.mode(), EncyclopediaMode::Topic);
+        assert_eq!(model.navigation.selection.topic_id.as_ref(), topics.get(1));
+    }
+
+    #[test]
+    fn rejected_enter_keeps_following_right_key_in_index_mode() {
+        use egui_macroquad::egui::Key;
+
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        let expected_category = model
+            .build_view()
+            .unwrap()
+            .unwrap()
+            .categories
+            .iter()
+            .find(|category| category.enabled)
+            .unwrap()
+            .category_id
+            .clone();
+
+        let (_, outcomes) = apply_actual_key_batch(&mut model, [Key::Enter, Key::ArrowRight]);
+
+        assert_eq!(
+            outcomes,
+            [
+                NavigationOutcome::Rejected(NavigationRejection::NoCurrentTopic),
+                NavigationOutcome::Applied,
+            ]
+        );
+        assert_eq!(model.navigation.mode(), EncyclopediaMode::Index);
+        assert_eq!(
+            model.navigation.selected_category_id(),
+            Some(expected_category.as_str())
+        );
+    }
+
+    #[test]
+    fn evolving_key_batch_preserves_repeated_scroll_and_return_order() {
+        use egui_macroquad::egui::Key;
+
+        let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
+        let first_topic = model
+            .build_view()
+            .unwrap()
+            .unwrap()
+            .topics
+            .first()
+            .unwrap()
+            .topic_id
+            .clone();
+        model.select_topic(first_topic).unwrap();
+
+        let (_, outcomes) = apply_actual_key_batch(
+            &mut model,
+            [
+                Key::Enter,
+                Key::ArrowDown,
+                Key::ArrowDown,
+                Key::PageDown,
+                Key::Enter,
+            ],
+        );
+
+        assert_eq!(
+            outcomes,
+            [
+                NavigationOutcome::Applied,
+                NavigationOutcome::ScrollRequested(BodyScrollIntent::LineDown),
+                NavigationOutcome::ScrollRequested(BodyScrollIntent::LineDown),
+                NavigationOutcome::ScrollRequested(BodyScrollIntent::PageDown),
+                NavigationOutcome::ReturnForwarded,
+            ]
+        );
+        assert_eq!(
+            model.navigation.take_body_scroll_intents(),
+            [
+                BodyScrollIntent::ResetToTop,
+                BodyScrollIntent::LineDown,
+                BodyScrollIntent::LineDown,
+                BodyScrollIntent::PageDown,
+            ]
+        );
+        assert!(model.navigation.take_body_scroll_intents().is_empty());
     }
 
     #[test]
