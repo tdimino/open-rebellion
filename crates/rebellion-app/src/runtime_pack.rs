@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::encyclopedia_session::EncyclopediaBytes;
+
 const MAGIC: &[u8; 4] = b"ORPK";
 const VERSION: u16 = 3;
 const HEADER_LEN: usize = 12;
@@ -27,28 +29,57 @@ pub struct RuntimePack {
     pub tactical_textures: HashMap<String, Vec<u8>>,
 }
 
-/// Remove one slash-delimited namespace from a runtime-pack map.
+/// Remove the exact packed encyclopedia namespace into its immutable byte store.
 ///
-/// Returned keys have the namespace removed. This keeps presentation assets
-/// out of the basename-oriented game-data cache while preserving their
-/// original filenames for the renderer.
-pub(crate) fn take_namespace(
-    entries: &mut HashMap<String, Vec<u8>>,
-    namespace: &str,
-) -> HashMap<String, Vec<u8>> {
-    let keys: Vec<String> = entries
-        .keys()
-        .filter(|key| key.starts_with(namespace))
-        .cloned()
-        .collect();
-    let mut selected = HashMap::with_capacity(keys.len());
-    for key in keys {
-        let Some(value) = entries.remove(&key) else {
+/// Namespace spelling and member identity are checked before removal so a case
+/// collision cannot be hidden by a platform-specific path interpretation.
+pub fn take_encyclopedia_namespace(
+    game_files: &mut HashMap<String, Vec<u8>>,
+) -> Result<Option<EncyclopediaBytes>, String> {
+    const NAMESPACE: &str = "encyclopedia/";
+
+    let mut selected_keys = Vec::new();
+    let mut folded_members = std::collections::BTreeSet::new();
+    for key in game_files.keys() {
+        let folded_key = key.to_ascii_lowercase();
+        if !folded_key.starts_with(NAMESPACE) {
             continue;
-        };
-        selected.insert(key[namespace.len()..].to_owned(), value);
+        }
+        if !key.starts_with(NAMESPACE) {
+            return Err(format!(
+                "invalid_encyclopedia_bundle:namespace_collision: namespace member {key:?} does not use the exact {NAMESPACE:?} prefix"
+            ));
+        }
+        let member = &key[NAMESPACE.len()..];
+        if member.is_empty() {
+            return Err(
+                "invalid_encyclopedia_bundle:empty_namespace_member: encyclopedia/ is not a file"
+                    .to_owned(),
+            );
+        }
+        if !folded_members.insert(member.to_ascii_lowercase()) {
+            return Err(format!(
+                "invalid_encyclopedia_bundle:namespace_collision: packed encyclopedia member {member:?} is ambiguous case-insensitively"
+            ));
+        }
+        selected_keys.push(key.clone());
     }
-    selected
+
+    if selected_keys.is_empty() {
+        return Ok(None);
+    }
+
+    selected_keys.sort_unstable();
+    let mut selected = std::collections::BTreeMap::new();
+    for key in selected_keys {
+        let bytes = game_files
+            .remove(&key)
+            .expect("namespace keys were collected from this unchanged map");
+        let member = key[NAMESPACE.len()..].to_owned();
+        let previous = selected.insert(member, std::sync::Arc::from(bytes));
+        debug_assert!(previous.is_none(), "validated namespace members are unique");
+    }
+    Ok(Some(selected))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,23 +303,25 @@ mod tests {
     }
 
     #[test]
-    fn namespaced_assets_are_partitioned_without_losing_identity() {
+    fn complete_encyclopedia_namespace_is_partitioned_without_losing_identity() {
         let mut entries = HashMap::from([
             ("SYSTEMSD.DAT".to_string(), b"systems".to_vec()),
-            ("encyclopedia/assets/EDATA.042".to_string(), b"art".to_vec()),
+            ("encyclopedia/catalog.json".to_string(), b"catalog".to_vec()),
             (
-                "encyclopedia/assets/EDATA.001".to_string(),
-                b"other".to_vec(),
+                "encyclopedia/manifest.json".to_string(),
+                b"manifest".to_vec(),
             ),
+            ("encyclopedia/assets/EDATA.042".to_string(), b"art".to_vec()),
         ]);
 
-        let artwork = take_namespace(&mut entries, "encyclopedia/assets/");
+        let encyclopedia = take_encyclopedia_namespace(&mut entries).unwrap().unwrap();
 
         assert_eq!(
             entries,
             HashMap::from([("SYSTEMSD.DAT".to_string(), b"systems".to_vec())])
         );
-        assert_eq!(artwork.get("EDATA.042"), Some(&b"art".to_vec()));
-        assert_eq!(artwork.get("EDATA.001"), Some(&b"other".to_vec()));
+        assert_eq!(encyclopedia["catalog.json"].as_ref(), b"catalog");
+        assert_eq!(encyclopedia["manifest.json"].as_ref(), b"manifest");
+        assert_eq!(encyclopedia["assets/EDATA.042"].as_ref(), b"art");
     }
 }

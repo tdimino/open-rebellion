@@ -1,6 +1,5 @@
 mod audio;
 pub mod encyclopedia_presenter;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod encyclopedia_runtime;
 pub mod encyclopedia_session;
 #[cfg(feature = "interface-test-fixtures")]
@@ -28,7 +27,7 @@ mod tactical_flow;
 mod tactical_test_fixture;
 #[cfg(target_arch = "wasm32")]
 mod web_accessibility;
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 mod web_replay;
 
 use ::rand::Rng;
@@ -512,51 +511,85 @@ fn draw_loading_progress(label: &str, loaded: usize, total: usize) {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn install_runtime_pack(
-    bytes: &[u8],
-) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
-    let mut pack = runtime_pack::parse_runtime_pack(bytes).map_err(|error| error.to_string())?;
-    for required in REQUIRED_WASM_DATA {
+struct BrowserStartupAssets {
+    audio_files: std::collections::HashMap<String, Vec<u8>>,
+    encyclopedia: encyclopedia_session::EncyclopediaAvailability,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+#[derive(Debug)]
+struct PreparedRuntimePack {
+    game_files: std::collections::HashMap<String, Vec<u8>>,
+    string_table: std::collections::HashMap<u16, String>,
+    bitmaps: std::collections::HashMap<String, Vec<u8>>,
+    audio_files: std::collections::HashMap<String, Vec<u8>>,
+    advisor_frames: std::collections::HashMap<String, Vec<u8>>,
+    tactical_meshes: std::collections::HashMap<String, Vec<u8>>,
+    tactical_textures: std::collections::HashMap<String, Vec<u8>>,
+    encyclopedia: encyclopedia_session::EncyclopediaAvailability,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn prepare_runtime_pack_for_install(
+    mut pack: runtime_pack::RuntimePack,
+    required_data: &[&str],
+) -> Result<PreparedRuntimePack, String> {
+    for required in required_data {
         if !pack.game_files.contains_key(*required) {
             return Err(format!("required entry is missing: {required}"));
         }
     }
 
-    let encyclopedia_assets =
-        runtime_pack::take_namespace(&mut pack.game_files, "encyclopedia/assets/");
-    let encyclopedia_asset_count = encyclopedia_assets.len();
-    let game_file_count = pack.game_files.len();
+    let encyclopedia = encyclopedia_runtime::prepare_packed_encyclopedia(&mut pack.game_files)?;
     let string_table: std::collections::HashMap<u16, String> = pack
         .game_files
         .remove("textstra.json")
         .and_then(|data| serde_json::from_slice(&data).ok())
         .unwrap_or_default();
-    let bitmap_count = pack.bitmaps.len();
-    let audio_file_count = pack.audio_files.len();
-    let advisor_frame_count = pack.advisor_frames.len();
-    let tactical_mesh_count = pack.tactical_meshes.len();
-    let tactical_texture_count = pack.tactical_textures.len();
-    if bitmap_count == 0 {
+    if pack.bitmaps.is_empty() {
         return Err("runtime pack contains no UI bitmaps".to_string());
     }
 
-    let advisor_bitmaps = pack
+    Ok(PreparedRuntimePack {
+        game_files: pack.game_files,
+        string_table,
+        bitmaps: pack.bitmaps,
+        audio_files: pack.audio_files,
+        advisor_frames: pack.advisor_frames,
+        tactical_meshes: pack.tactical_meshes,
+        tactical_textures: pack.tactical_textures,
+        encyclopedia,
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn install_runtime_pack(bytes: &[u8]) -> Result<BrowserStartupAssets, String> {
+    let pack = runtime_pack::parse_runtime_pack(bytes).map_err(|error| error.to_string())?;
+    let prepared = prepare_runtime_pack_for_install(pack, REQUIRED_WASM_DATA)?;
+    let game_file_count = prepared.game_files.len();
+    let bitmap_count = prepared.bitmaps.len();
+    let audio_file_count = prepared.audio_files.len();
+    let advisor_frame_count = prepared.advisor_frames.len();
+    let tactical_mesh_count = prepared.tactical_meshes.len();
+    let tactical_texture_count = prepared.tactical_textures.len();
+    let advisor_bitmaps = prepared
         .bitmaps
         .iter()
         .filter(|(key, _)| key.starts_with("alsprite-dll/") || key.starts_with("emsprite-dll/"))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
 
-    rebellion_data::set_string_table(string_table);
-    rebellion_render::set_encyclopedia_asset_cache(encyclopedia_assets);
-    rebellion_data::set_file_cache(pack.game_files);
-    rebellion_render::set_advisor_asset_cache(pack.advisor_frames, advisor_bitmaps);
-    rebellion_render::set_bmp_cache(pack.bitmaps);
-    rebellion_render::set_tactical_asset_cache(pack.tactical_meshes, pack.tactical_textures);
+    rebellion_data::set_string_table(prepared.string_table);
+    rebellion_data::set_file_cache(prepared.game_files);
+    rebellion_render::set_advisor_asset_cache(prepared.advisor_frames, advisor_bitmaps);
+    rebellion_render::set_bmp_cache(prepared.bitmaps);
+    rebellion_render::set_tactical_asset_cache(
+        prepared.tactical_meshes,
+        prepared.tactical_textures,
+    );
     macroquad::logging::info!(
-        "runtime_asset_pack loaded game_files={} encyclopedia_assets={} ui_bitmaps={} advisor_frames={} audio_files={} tactical_meshes={} tactical_textures={} bytes={}",
+        "runtime_asset_pack loaded game_files={} ui_bitmaps={} advisor_frames={} audio_files={} tactical_meshes={} tactical_textures={} bytes={}",
         game_file_count,
-        encyclopedia_asset_count,
         bitmap_count,
         advisor_frame_count,
         audio_file_count,
@@ -564,7 +597,122 @@ fn install_runtime_pack(
         tactical_texture_count,
         bytes.len()
     );
-    Ok(pack.audio_files)
+    Ok(BrowserStartupAssets {
+        audio_files: prepared.audio_files,
+        encyclopedia: prepared.encyclopedia,
+    })
+}
+
+#[cfg(test)]
+mod runtime_pack_install_tests {
+    use super::*;
+    use crate::encyclopedia_session::EncyclopediaAvailability;
+
+    const VALID_CATALOG: &[u8] =
+        include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/catalog.json");
+    const VALID_MANIFEST: &[u8] =
+        include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/manifest.json");
+    const VALID_DAT: &[u8] = include_bytes!(
+        "../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/sources/SYNTHETIC.DAT"
+    );
+
+    fn startup_pack(include_namespace: bool) -> runtime_pack::RuntimePack {
+        let mut pack = runtime_pack::RuntimePack::default();
+        pack.game_files
+            .insert("SYNTHETIC.DAT".to_owned(), VALID_DAT.to_vec());
+        pack.game_files
+            .insert("textstra.json".to_owned(), b"{}".to_vec());
+        pack.bitmaps
+            .insert("common-dll/1".to_owned(), b"bitmap".to_vec());
+        pack.audio_files
+            .insert("music/main_theme.wav".to_owned(), b"audio".to_vec());
+        if include_namespace {
+            pack.game_files.insert(
+                "encyclopedia/catalog.json".to_owned(),
+                VALID_CATALOG.to_vec(),
+            );
+            pack.game_files.insert(
+                "encyclopedia/manifest.json".to_owned(),
+                VALID_MANIFEST.to_vec(),
+            );
+            for (name, bytes) in [
+                (
+                    "EDATA.001",
+                    include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.001").as_slice(),
+                ),
+                (
+                    "EDATA.002",
+                    include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.002").as_slice(),
+                ),
+                (
+                    "EDATA.003",
+                    include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.003").as_slice(),
+                ),
+            ] {
+                pack.game_files
+                    .insert(format!("encyclopedia/assets/{name}"), bytes.to_vec());
+            }
+        }
+        pack
+    }
+
+    #[test]
+    fn startup_prepares_the_complete_namespace_before_any_cache_publication() {
+        let published_cache = std::collections::HashMap::from([(
+            "sentinel.DAT".to_owned(),
+            b"previous cache".to_vec(),
+        )]);
+
+        let prepared =
+            prepare_runtime_pack_for_install(startup_pack(true), &["SYNTHETIC.DAT"]).unwrap();
+
+        assert_eq!(
+            published_cache["sentinel.DAT"], b"previous cache",
+            "pure preparation must not touch the installed cache"
+        );
+        assert!(matches!(
+            prepared.encyclopedia,
+            EncyclopediaAvailability::Ready(_)
+        ));
+        assert!(prepared
+            .game_files
+            .keys()
+            .all(|key| !key.starts_with("encyclopedia/")));
+        assert_eq!(prepared.audio_files["music/main_theme.wav"], b"audio");
+        assert!(prepared.string_table.is_empty());
+        assert_eq!(prepared.bitmaps.len(), 1);
+        assert!(prepared.advisor_frames.is_empty());
+        assert!(prepared.tactical_meshes.is_empty());
+        assert!(prepared.tactical_textures.is_empty());
+    }
+
+    #[test]
+    fn startup_rejects_partial_namespace_before_any_cache_publication() {
+        let mut pack = startup_pack(true);
+        pack.game_files.remove("encyclopedia/manifest.json");
+        let published_cache = std::collections::HashMap::from([(
+            "sentinel.DAT".to_owned(),
+            b"previous cache".to_vec(),
+        )]);
+
+        let error = prepare_runtime_pack_for_install(pack, &["SYNTHETIC.DAT"]).unwrap_err();
+
+        assert!(error.contains("invalid_encyclopedia_bundle"), "{error}");
+        assert_eq!(published_cache["sentinel.DAT"], b"previous cache");
+    }
+
+    #[test]
+    fn startup_accepts_an_old_pack_with_explicitly_unavailable_content() {
+        let prepared =
+            prepare_runtime_pack_for_install(startup_pack(false), &["SYNTHETIC.DAT"]).unwrap();
+
+        assert!(matches!(
+            prepared.encyclopedia,
+            EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic.contains("namespace_absent")
+        ));
+        assert_eq!(prepared.game_files["SYNTHETIC.DAT"], VALID_DAT);
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -663,7 +811,7 @@ async fn load_legacy_wasm_assets() {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
+async fn load_wasm_assets() -> BrowserStartupAssets {
     draw_loading_progress("Loading optimized runtime assets…", 0, 0);
     next_frame().await;
 
@@ -675,7 +823,13 @@ async fn load_wasm_assets() -> std::collections::HashMap<String, Vec<u8>> {
                 "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
             );
             load_legacy_wasm_assets().await;
-            std::collections::HashMap::new()
+            BrowserStartupAssets {
+                audio_files: std::collections::HashMap::new(),
+                encyclopedia: encyclopedia_session::EncyclopediaAvailability::Unavailable(
+                    "namespace_absent: legacy loose loading has no packed encyclopedia namespace"
+                        .to_owned(),
+                ),
+            }
         }
     }
 }
@@ -843,12 +997,29 @@ async fn main() {
     };
 
     #[cfg(target_arch = "wasm32")]
-    let (mut world, mut browser_audio_files) = {
-        let audio_files = load_wasm_assets().await;
+    let (mut world, mut browser_audio_files, encyclopedia_availability) = {
+        let startup_assets = load_wasm_assets().await;
         let world = rebellion_data::load_game_data(&gdata_path)
             .unwrap_or_else(|error| panic!("Failed to parse game data: {error}"));
-        (world, audio_files)
+        (
+            world,
+            startup_assets.audio_files,
+            startup_assets.encyclopedia,
+        )
     };
+
+    #[cfg(target_arch = "wasm32")]
+    match &encyclopedia_availability {
+        encyclopedia_session::EncyclopediaAvailability::Ready(session) => {
+            macroquad::logging::info!(
+                "[encyclopedia] installed validated packed session generation={}",
+                session.generation()
+            );
+        }
+        encyclopedia_session::EncyclopediaAvailability::Unavailable(diagnostic) => {
+            macroquad::logging::warn!("[encyclopedia] unavailable: {}", diagnostic);
+        }
+    }
 
     eprintln!(
         "Loaded: {} systems, {} sectors, {} ship classes, {} fighter classes, {} characters",
