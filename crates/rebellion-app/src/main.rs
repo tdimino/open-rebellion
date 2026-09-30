@@ -3,6 +3,8 @@ pub mod encyclopedia_presenter;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod encyclopedia_runtime;
 pub mod encyclopedia_session;
+#[cfg(feature = "interface-test-fixtures")]
+mod encyclopedia_test_fixture;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
@@ -809,6 +811,12 @@ async fn main() {
     };
     #[cfg(target_arch = "wasm32")]
     let gdata_path = PathBuf::from("data/base");
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
+    if encyclopedia_test_fixture::requested() {
+        encyclopedia_test_fixture::run(&gdata_path).await;
+        return;
+    }
 
     let asset_render_profile = configured_asset_render_profile();
     macroquad::logging::info!("[assets] render_profile={}", asset_render_profile.as_str());
