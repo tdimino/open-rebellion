@@ -21,6 +21,7 @@ cd "$ROOT"
 ORIGINAL_GAME_DIR="${ORIGINAL_GAME_DIR:-/original-game}"
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
 PREPARE_MODDING="${PREPARE_MODDING:-0}"
+REBELLION_REQUIRE_ENCYCLOPEDIA="${REBELLION_REQUIRE_ENCYCLOPEDIA:-0}"
 
 if [ ! -d "$ORIGINAL_GAME_DIR" ] || [ -z "$(ls -A "$ORIGINAL_GAME_DIR" 2>/dev/null)" ]; then
     echo "ERROR: $ORIGINAL_GAME_DIR is missing or empty." >&2
@@ -48,8 +49,20 @@ if [ ! -d "$MDATA_SRC_DIR" ]; then
     [ -n "$found_marker" ] && MDATA_SRC_DIR="$(dirname "$found_marker")"
 fi
 
+EDATA_SRC_DIR="${REBELLION_EDATA_DIR:-$ORIGINAL_GAME_DIR/EData}"
+if [ ! -d "$EDATA_SRC_DIR" ]; then
+    found_edata="$(find "$ORIGINAL_GAME_DIR" -iname 'EDATA.*' -print -quit)"
+    [ -z "$found_edata" ] || EDATA_SRC_DIR="$(dirname "$found_edata")"
+fi
+
 echo "=== [2/4] Extracting and verifying all supported assets ==="
-asset_args=(--source data/base --output data/base/ui --mdata "$MDATA_SRC_DIR")
+asset_args=(
+    --source data/base
+    --output data/base/ui
+    --mdata "$MDATA_SRC_DIR"
+    --edata "$EDATA_SRC_DIR"
+    --encyclopedia-output data/base/encyclopedia
+)
 if [ "$FORCE_REBUILD" = "1" ]; then
     asset_args+=(--force)
 fi
@@ -58,6 +71,9 @@ go run ./tools/stage-ui-assets "${asset_args[@]}"
 echo "=== [3/4] Building WASM + browser runtime pack ==="
 export REBELLION_MDATA_DIR="${MDATA_SRC_DIR:-$ORIGINAL_GAME_DIR/MDATA}"
 export REBELLION_GAME_DIR="$ROOT/data/base"
+export REBELLION_EDATA_DIR="$EDATA_SRC_DIR"
+export FORCE_REBUILD
+export REBELLION_REQUIRE_ENCYCLOPEDIA
 ./scripts/build-wasm.sh
 
 echo "=== [4/4] Preparing modding reference data ==="

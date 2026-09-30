@@ -213,6 +213,70 @@ is present, verification additionally checks its complete generated ownership
 and raw/decoded evidence. Report-only and canonical roots are never silently
 reinterpreted as one another.
 
+### Normal browser builds
+
+`scripts/build-wasm.sh` can run the focused canonical stage before compiling
+when an owned source root is supplied explicitly:
+
+```sh
+REBELLION_ENCYCLOPEDIA_SOURCE="/path/to/Star Wars - Rebellion" \
+REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
+FORCE_REBUILD=1 \
+./scripts/build-wasm.sh
+```
+
+`REBELLION_ENCYCLOPEDIA_SOURCE` identifies the reviewed DLL/DAT profile;
+`REBELLION_EDATA_DIR` is only the Go stage's explicit artwork input. The packer
+never recursively injects that EData directory. `REBEXE.EXE` is not required.
+The canonical stage defaults to `data/base/encyclopedia/` and may be overridden
+with `REBELLION_ENCYCLOPEDIA_STAGE`.
+
+The build publishes `web/data/runtime.orpk` and
+`web/data/encyclopedia/` from the same immutable, verified byte generation.
+The loose mirror contains only `catalog.json`, `manifest.json`, and the
+manifest-referenced art. It excludes the source report, raw evidence, and
+unreferenced inventory such as deferred EDATA.192. `package-web.sh` continues
+to ship the ORPK and its artifact hashes; the mirror is the ignored development
+fallback.
+
+Before the later production-route gate, a completely absent canonical stage
+warns and publishes a pack without the namespace. A report-only, partial, or
+corrupt stage always fails. Tests and downstream release tooling can select the
+future strict policy with `REBELLION_REQUIRE_ENCYCLOPEDIA=1`; it is deliberately
+not the default here.
+
+The pack and mirror use one sibling transaction record and an exclusive writer
+lock. Changed publications back up both prior artifacts, publish both
+candidates, then retire the backups only after the completed inventory is
+durable. The lock is opened without following links and its stable regular-file
+identity is checked before use. The journal binds candidates and backups to
+their exact device/inode, byte digest, and complete file/directory-tree
+inventory. Recovery validates every surviving artifact before mutation,
+reconciles operations that completed before an interruption, and can be
+restarted before or after every restore, cleanup, or journal update. Unknown
+mirror, backup, or candidate files, directories, and symlinks are never
+removed, including with `FORCE_REBUILD=1`. An interrupted writer is recovered
+by rerunning the same build command; a live writer reports a busy diagnostic.
+If recovery reports a missing or unrecognized artifact, preserve the sibling
+publication files and inspect them rather than deleting either output manually.
+Pack, mirror, source-input, lock, journal, backup, and candidate paths must be
+canonical and non-colliding; aliases and unsafe path types fail before the
+writer lock or output candidates are created.
+
+The container path performs the same stage before `build-wasm.sh`, even with
+`PREPARE_MODDING=0`:
+
+```sh
+ORIGINAL_GAME_DIR="/original-game" \
+REBELLION_EDATA_DIR="/original-game/EData" \
+PREPARE_MODDING=0 FORCE_REBUILD=1 \
+./scripts/docker-build.sh
+```
+
+It copies the existing flattened DLL/DAT inputs, passes the owned EData root
+through Go's `--edata`, and propagates the force and rollout policy flags. It
+does not depend on optional DAT JSON dumps.
+
 Normal full staging runs the same canonical stage before media prerequisites.
 For the current rollout, entirely absent encyclopedia-specific inputs emit a
 warning and let the remaining assets stage. Any partial, corrupt, mixed, or

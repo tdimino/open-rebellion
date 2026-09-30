@@ -5,13 +5,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="${1:-dev}"
+REBELLION_REQUIRE_ENCYCLOPEDIA="${REBELLION_REQUIRE_ENCYCLOPEDIA:-0}"
+if [ "$REBELLION_REQUIRE_ENCYCLOPEDIA" != "0" ] && [ "$REBELLION_REQUIRE_ENCYCLOPEDIA" != "1" ]; then
+    echo "ERROR: REBELLION_REQUIRE_ENCYCLOPEDIA must be 0 or 1."
+    exit 1
+fi
+export REBELLION_REQUIRE_ENCYCLOPEDIA
 if [[ ! "${VERSION}" =~ ^[A-Za-z0-9._-]+$ ]]; then
     echo "ERROR: version may contain only letters, numbers, dots, underscores, and hyphens."
     exit 1
 fi
 echo "Packaging Open Rebellion web build (v${VERSION})..."
 
-# Build WASM
+# Build WASM.  The encyclopedia requirement remains opt-in until its separate
+# production-route gate; build-wasm forwards the explicit policy to the packer.
 bash "$ROOT/scripts/build-wasm.sh"
 
 # Create distribution directory
@@ -54,7 +61,14 @@ fi
 ZIP="${ROOT}/dist/open-rebellion-web-${VERSION}.zip"
 rm -f "${ZIP}"
 cd dist
-zip -rq "open-rebellion-web-${VERSION}.zip" "open-rebellion-web-${VERSION}/"
+if command -v zip >/dev/null 2>&1; then
+    zip -rq "open-rebellion-web-${VERSION}.zip" "open-rebellion-web-${VERSION}/"
+else
+    echo "WARNING: zip is unavailable; using Python's standard-library zip writer."
+    python3 -m zipfile -c \
+        "open-rebellion-web-${VERSION}.zip" \
+        "open-rebellion-web-${VERSION}/"
+fi
 cd ..
 
 echo "Created: ${ZIP}"

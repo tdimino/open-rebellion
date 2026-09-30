@@ -3,22 +3,69 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TARGET_DIR="$ROOT/target/wasm32-unknown-unknown/release"
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    case "$CARGO_TARGET_DIR" in
+        /*) CARGO_OUTPUT_ROOT="$CARGO_TARGET_DIR" ;;
+        *) CARGO_OUTPUT_ROOT="$ROOT/$CARGO_TARGET_DIR" ;;
+    esac
+else
+    CARGO_OUTPUT_ROOT="$ROOT/target"
+fi
+TARGET_DIR="$CARGO_OUTPUT_ROOT/wasm32-unknown-unknown/release"
 GDATA="$ROOT/data/base"
 WEB_DATA="$ROOT/web/data/base"
 WEB_AUDIO="$ROOT/web/data/sounds"
 MDATA_DIR="${REBELLION_MDATA_DIR:-$ROOT/../star-wars-rebellion/MDATA}"
 ORIGINAL_GAME_DIR="${REBELLION_GAME_DIR:-$(dirname "$MDATA_DIR")}"
-EDATA_DIR="${REBELLION_EDATA_DIR:-$ORIGINAL_GAME_DIR/EData}"
+ENCYCLOPEDIA_SOURCE="${REBELLION_ENCYCLOPEDIA_SOURCE:-}"
+if [ -n "${REBELLION_EDATA_DIR:-}" ]; then
+    EDATA_DIR="$REBELLION_EDATA_DIR"
+elif [ -n "$ENCYCLOPEDIA_SOURCE" ]; then
+    EDATA_DIR="$ENCYCLOPEDIA_SOURCE/EData"
+else
+    EDATA_DIR="$ORIGINAL_GAME_DIR/EData"
+fi
+ENCYCLOPEDIA_STAGE="${REBELLION_ENCYCLOPEDIA_STAGE:-$ROOT/data/base/encyclopedia}"
+WEB_ENCYCLOPEDIA="$ROOT/web/data/encyclopedia"
+FORCE_REBUILD="${FORCE_REBUILD:-0}"
+REQUIRE_ENCYCLOPEDIA="${REBELLION_REQUIRE_ENCYCLOPEDIA:-0}"
+
+case "$FORCE_REBUILD:$REQUIRE_ENCYCLOPEDIA" in
+    0:0|0:1|1:0|1:1) ;;
+    *)
+        echo "ERROR: FORCE_REBUILD and REBELLION_REQUIRE_ENCYCLOPEDIA must be 0 or 1." >&2
+        exit 1
+        ;;
+esac
+
+# Standalone builds can opt into the same strict canonical stage used by the
+# container.  The container already runs the full Go stage before invoking
+# this script, so it leaves REBELLION_ENCYCLOPEDIA_SOURCE unset here.
+if [ -n "$ENCYCLOPEDIA_SOURCE" ]; then
+    echo "Staging canonical encyclopedia content from $ENCYCLOPEDIA_SOURCE…"
+    ENCYCLOPEDIA_STAGE_ARGS=(
+        --encyclopedia-only
+        --source "$ENCYCLOPEDIA_SOURCE"
+        --edata "$EDATA_DIR"
+        --encyclopedia-output "$ENCYCLOPEDIA_STAGE"
+    )
+    if [ "$FORCE_REBUILD" = "1" ]; then
+        ENCYCLOPEDIA_STAGE_ARGS+=(--force)
+    fi
+    (cd "$ROOT" && go run ./tools/stage-ui-assets "${ENCYCLOPEDIA_STAGE_ARGS[@]}")
+fi
 
 # Refuse stale UI staging before compilation; the runtime pack builder repeats this gate.
 python3 "$ROOT/scripts/build-runtime-pack.py" --ui "$GDATA/ui" --validate-ui-only
 
 echo "Building rebellion-app for wasm32…"
-PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" \
-    --target wasm32-unknown-unknown \
-    -p rebellion-app \
-    --release
+(
+    cd "$ROOT"
+    PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" \
+        --target wasm32-unknown-unknown \
+        -p rebellion-app \
+        --release
+)
 
 # The binary name may be rebellion-app or open-rebellion depending on the build
 WASM_SRC="$TARGET_DIR/open-rebellion.wasm"
@@ -78,9 +125,13 @@ cp "$GDATA"/*.DLL "$WEB_DATA/" 2>/dev/null || true
 
 # Extract TEXTSTRA strings to JSON for WASM (pelite can't target WASM)
 echo "Extracting TEXTSTRA.DLL strings to textstra.json…"
-DAT_DUMPER="${ROOT}/target/release/dat-dumper"
+DAT_DUMPER="$CARGO_OUTPUT_ROOT/release/dat-dumper"
 echo "Building dat-dumper for resource extraction…"
-PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" -p dat-dumper --release
+(
+    cd "$ROOT"
+    PATH="/usr/bin:$PATH" cargo build --manifest-path "$ROOT/Cargo.toml" \
+        -p dat-dumper --release
+)
 if [ -f "$GDATA/TEXTSTRA.DLL" ]; then
     "$DAT_DUMPER" --gdata "$GDATA" --extract-strings --output "$WEB_DATA"
 else
@@ -212,13 +263,17 @@ RUNTIME_PACK_ARGS=(
     --base "$WEB_DATA"
     --ui "$WEB_UI"
     --audio "$WEB_AUDIO"
+    --encyclopedia "$ENCYCLOPEDIA_STAGE"
+    --encyclopedia-mirror "$WEB_ENCYCLOPEDIA"
     --output "$ROOT/web/data/runtime.orpk"
 )
-if [ -d "$EDATA_DIR" ]; then
-    RUNTIME_PACK_ARGS+=(--edata "$EDATA_DIR")
-    echo "Including original encyclopedia artwork from $EDATA_DIR."
+if [ "$REQUIRE_ENCYCLOPEDIA" = "1" ]; then
+    RUNTIME_PACK_ARGS+=(--require-encyclopedia)
+fi
+if [ -d "$ENCYCLOPEDIA_STAGE" ]; then
+    echo "Packaging the validated encyclopedia stage at $ENCYCLOPEDIA_STAGE."
 else
-    echo "WARNING: EData not found at $EDATA_DIR; encyclopedia artwork will remain unavailable."
+    echo "WARNING: canonical encyclopedia stage is absent at $ENCYCLOPEDIA_STAGE; the feature remains unavailable."
 fi
 python3 "$ROOT/scripts/build-runtime-pack.py" "${RUNTIME_PACK_ARGS[@]}"
 
