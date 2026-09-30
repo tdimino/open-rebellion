@@ -1,4 +1,5 @@
 mod audio;
+pub mod encyclopedia_hd;
 pub mod encyclopedia_presenter;
 pub mod encyclopedia_runtime;
 pub mod encyclopedia_session;

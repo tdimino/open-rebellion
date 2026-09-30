@@ -55,6 +55,8 @@ pub use advisor::{
 pub use audio::{draw_audio_controls, AudioVolumeState, MusicContext, MusicTrack, SfxKind};
 #[cfg(target_arch = "wasm32")]
 pub use bmp_cache::set_bmp_cache;
+#[cfg(not(target_arch = "wasm32"))]
+pub use bmp_cache::{approved_hd_assets_from_bytes, ApprovedHdAsset};
 pub use bmp_cache::{AssetRenderProfile, BmpCache, DllSource};
 pub use cockpit::{
     draw_cockpit_background, draw_cockpit_chrome, draw_cockpit_egui_layer,
@@ -77,7 +79,7 @@ pub use encyclopedia::{
     draw_encyclopedia_artwork_fixture, draw_encyclopedia_index_catalog_fixture,
     draw_encyclopedia_index_fixture,
 };
-pub use encyclopedia_assets::{inspect_encyclopedia_bytes, InspectedBytes};
+pub use encyclopedia_assets::{inspect_encyclopedia_bytes, InspectedBytes, MAX_ENCYCLOPEDIA_IMAGE_BYTES};
 pub use encyclopedia_navigation::{
     apply_encyclopedia_action, reconcile_encyclopedia_state, BodyScrollIntent, EncyclopediaAction,
     EncyclopediaMode, EncyclopediaState as EncyclopediaNavigationState, IndexCategoryDirection,

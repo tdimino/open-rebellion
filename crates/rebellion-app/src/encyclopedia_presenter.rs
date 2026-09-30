@@ -11,6 +11,7 @@ use rebellion_render::{
     TopicImageView, TopicViewItem,
 };
 
+use crate::encyclopedia_hd::PreparedEncyclopediaImages;
 use crate::encyclopedia_session::EncyclopediaSession;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -27,14 +28,42 @@ pub struct EncyclopediaPresenter {
     cached_generation: Option<u64>,
     titles: BTreeMap<TextCacheKey, Arc<str>>,
     active_body: Option<(TextCacheKey, Arc<str>)>,
+    prepared_image_generation: Option<u64>,
+    prepared_images: PreparedEncyclopediaImages,
 }
 
 impl EncyclopediaPresenter {
+    /// Install image bytes prepared at an explicit session/profile boundary.
+    /// The caller must pass the generation of the validated session that
+    /// supplied the candidates. View construction thereafter performs only
+    /// exact in-memory selection for that same generation.
+    pub fn install_prepared_images(&mut self, generation: u64, images: PreparedEncyclopediaImages) {
+        self.prepared_image_generation = Some(generation);
+        self.prepared_images = images;
+    }
+
     fn begin_generation(&mut self, generation: u64) {
         if self.cached_generation != Some(generation) {
             self.cached_generation = Some(generation);
             self.titles.clear();
             self.active_body = None;
+        }
+        if self.prepared_image_generation != Some(generation) {
+            self.prepared_image_generation = None;
+            self.prepared_images = PreparedEncyclopediaImages::default();
+        }
+    }
+
+    fn select_prepared_image(
+        &self,
+        generation: u64,
+        topic_id: &str,
+        selected: Option<&TopicImageView>,
+    ) -> Option<TopicImageView> {
+        if self.prepared_image_generation == Some(generation) {
+            self.prepared_images.select(topic_id, selected)
+        } else {
+            selected.cloned()
         }
     }
 
@@ -246,7 +275,11 @@ impl EncyclopediaPresenter {
                 language,
                 &resolved.localized.body,
             ),
-            image: selected_image(session, resolved)?,
+            image: self.select_prepared_image(
+                session.generation(),
+                &resolved.topic_id.0,
+                selected_image(session, resolved)?.as_ref(),
+            ),
             // The reviewed UI contract identifies authored body text and no
             // connected live-stat controls. E19 therefore exposes no rows.
             stats: Vec::new(),
@@ -357,6 +390,9 @@ mod tests {
     const VALID_IMAGE_3: &[u8] = include_bytes!(
         "../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/assets/EDATA.003"
     );
+    #[cfg(not(target_arch = "wasm32"))]
+    const HD_PNG: &[u8] =
+        include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/images/mod-valid.png");
 
     fn session() -> EncyclopediaSession {
         customized_session(|_| {})
@@ -447,6 +483,65 @@ mod tests {
             .iter()
             .map(|topic| topic.title.as_ref())
             .collect()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn prepared_hd_fixture(
+        topic_id: &str,
+        original: &rebellion_render::TopicImageView,
+    ) -> (crate::encyclopedia_hd::PreparedEncyclopediaImages, String) {
+        use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        use rebellion_render::AssetRenderProfile;
+
+        use crate::encyclopedia_hd::{prepare_native_encyclopedia_hd, EncyclopediaImageCandidate};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let hd_root = std::env::temp_dir().join(format!(
+            "open-rebellion-e52-presenter-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&hd_root).unwrap();
+        fs::write(hd_root.join("replacement.png"), HD_PNG).unwrap();
+        let output_digest = inspect_encyclopedia_bytes(HD_PNG, Some("png"))
+            .unwrap()
+            .sha256;
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "profile": "faithful-hd",
+            "assets": {
+                "explicit/base-image": {
+                    "approved": true,
+                    "review": {"reviewer": "synthetic-reviewer", "evidence": "fixture"},
+                    "gates": {"human_review": "pass"},
+                    "source": {"sha256": original.digest},
+                    "output": {"sha256": output_digest}
+                }
+            }
+        });
+        fs::write(
+            hd_root.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let prepared = prepare_native_encyclopedia_hd(
+            AssetRenderProfile::FaithfulHd,
+            Some(&hd_root),
+            &[EncyclopediaImageCandidate::Base {
+                topic_id,
+                image: original,
+                approval_key: "explicit/base-image",
+                output_relative_path: std::path::Path::new("replacement.png"),
+            }],
+        );
+        fs::remove_dir_all(&hd_root).unwrap();
+        assert!(prepared.diagnostics().is_empty());
+        (prepared, output_digest)
     }
 
     #[test]
@@ -564,6 +659,126 @@ mod tests {
         assert_eq!(
             empire_view.active_topic.unwrap().image.unwrap().asset_id,
             "edata:3"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn presenter_uses_prepared_hd_bytes_without_navigation_time_file_access() {
+        let session = session();
+        let admission = snapshot(
+            1,
+            ViewerFaction::Alliance,
+            vec![definition("missions", 21, "viewer_faction")],
+        );
+        let selection = EncyclopediaSelection {
+            category_id: None,
+            topic_id: Some("original:60004".to_owned()),
+        };
+        let original = build_encyclopedia_view(
+            &mut EncyclopediaPresenter::default(),
+            &session,
+            Some(&admission),
+            "1033",
+            &selection,
+        )
+        .unwrap()
+        .active_topic
+        .unwrap()
+        .image
+        .unwrap();
+
+        let (prepared, output_digest) = prepared_hd_fixture("original:60004", &original);
+
+        let mut presenter = EncyclopediaPresenter::default();
+        presenter.install_prepared_images(session.generation(), prepared);
+        let selected = build_encyclopedia_view(
+            &mut presenter,
+            &session,
+            Some(&admission),
+            "1033",
+            &selection,
+        )
+        .unwrap()
+        .active_topic
+        .unwrap()
+        .image
+        .unwrap();
+
+        assert_eq!(selected.asset_id, original.asset_id);
+        assert_eq!(selected.digest, output_digest);
+        assert_eq!(selected.bytes.as_ref(), HD_PNG);
+        assert_eq!(
+            selected.render_profile,
+            TopicImageRenderProfile::FaithfulHdLinear
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn prepared_hd_is_generation_scoped_and_never_overrides_same_identity_mod_bytes() {
+        let session = session();
+        let admission = snapshot(
+            1,
+            ViewerFaction::Alliance,
+            vec![definition("missions", 21, "viewer_faction")],
+        );
+        let selection = EncyclopediaSelection {
+            category_id: None,
+            topic_id: Some("original:60004".to_owned()),
+        };
+        let original = build_encyclopedia_view(
+            &mut EncyclopediaPresenter::default(),
+            &session,
+            Some(&admission),
+            "1033",
+            &selection,
+        )
+        .unwrap()
+        .active_topic
+        .unwrap()
+        .image
+        .unwrap();
+        let (prepared, output_digest) = prepared_hd_fixture("original:60004", &original);
+        let generation = session.generation();
+        let mut presenter = EncyclopediaPresenter::default();
+
+        presenter.install_prepared_images(generation, prepared);
+        presenter.begin_generation(generation);
+        let installed = presenter
+            .select_prepared_image(generation, "original:60004", Some(&original))
+            .unwrap();
+        assert_eq!(installed.digest, output_digest);
+
+        let same_identity_mod = rebellion_render::TopicImageView {
+            bytes: Arc::from(original.bytes.as_ref()),
+            ..original.clone()
+        };
+        let replacement_generation = generation + 1;
+        presenter.begin_generation(replacement_generation);
+        let stale = presenter
+            .select_prepared_image(
+                replacement_generation,
+                "original:60004",
+                Some(&same_identity_mod),
+            )
+            .unwrap();
+        assert!(Arc::ptr_eq(&stale.bytes, &same_identity_mod.bytes));
+        assert_eq!(
+            stale.render_profile,
+            TopicImageRenderProfile::OriginalNearest
+        );
+
+        let (fresh_prepared, fresh_output_digest) =
+            prepared_hd_fixture("original:60004", &original);
+        presenter.install_prepared_images(replacement_generation, fresh_prepared);
+        let freshly_installed = presenter
+            .select_prepared_image(replacement_generation, "original:60004", Some(&original))
+            .unwrap();
+        assert_eq!(freshly_installed.digest, fresh_output_digest);
+        assert_eq!(
+            freshly_installed.render_profile,
+            TopicImageRenderProfile::FaithfulHdLinear
         );
     }
 

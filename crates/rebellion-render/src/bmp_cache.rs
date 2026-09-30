@@ -185,13 +185,26 @@ struct HdApprovalOutput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ApprovedHdAsset {
+pub struct ApprovedHdAsset {
     source_sha256: String,
     output_sha256: String,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn approved_hd_assets_from_bytes(
+impl ApprovedHdAsset {
+    /// Verify exact staged original bytes against the reviewed source digest.
+    pub fn validate_source_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        validate_retained_digest(bytes, &self.source_sha256, "HD source")
+    }
+
+    /// Verify exact replacement bytes against the reviewed output digest.
+    pub fn validate_output_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        validate_retained_digest(bytes, &self.output_sha256, "HD output")
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn approved_hd_assets_from_bytes(
     bytes: &[u8],
 ) -> Result<HashMap<String, ApprovedHdAsset>, String> {
     let manifest: HdApprovalManifest =
@@ -265,6 +278,18 @@ fn is_sha256(value: &str) -> bool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn validate_retained_digest(bytes: &[u8], expected: &str, label: &str) -> Result<(), String> {
+    let actual = format!("{:x}", Sha256::digest(bytes));
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} digest mismatch: expected {expected}, observed {actual}"
+        ))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn load_approved_hd_assets(hd_root: &Path) -> HashMap<String, ApprovedHdAsset> {
     let manifest_path = hd_root.join("manifest.json");
     match std::fs::read(&manifest_path) {
@@ -284,22 +309,16 @@ pub(crate) fn load_approved_hd_assets(hd_root: &Path) -> HashMap<String, Approve
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn read_verified_file(path: &Path, expected_sha256: &str) -> Option<Vec<u8>> {
-    let Ok(bytes) = std::fs::read(path) else {
-        return None;
-    };
-    let actual = format!("{:x}", Sha256::digest(&bytes));
-    (actual == expected_sha256).then_some(bytes)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn validated_hd_bytes(
     source_path: &Path,
     output_path: &Path,
     approval: &ApprovedHdAsset,
 ) -> Option<Vec<u8>> {
-    read_verified_file(source_path, &approval.source_sha256)?;
-    read_verified_file(output_path, &approval.output_sha256)
+    let source = std::fs::read(source_path).ok()?;
+    approval.validate_source_bytes(&source).ok()?;
+    let output = std::fs::read(output_path).ok()?;
+    approval.validate_output_bytes(&output).ok()?;
+    Some(output)
 }
 
 impl AssetVariant {
@@ -2276,6 +2295,22 @@ mod tests {
         }"#;
 
         assert!(approved_hd_assets_from_bytes(manifest).is_err());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn retained_hd_approval_checks_source_and_output_bytes_independently() {
+        let approval = ApprovedHdAsset {
+            source_sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+                .to_owned(),
+            output_sha256: "3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282"
+                .to_owned(),
+        };
+
+        assert!(approval.validate_source_bytes(b"abc").is_ok());
+        assert!(approval.validate_output_bytes(b"xyz").is_ok());
+        assert!(approval.validate_source_bytes(b"changed").is_err());
+        assert!(approval.validate_output_bytes(b"changed").is_err());
     }
 
     #[test]
