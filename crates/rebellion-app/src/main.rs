@@ -20,6 +20,8 @@ mod encyclopedia_test_fixture;
 mod encyclopedia_fetch;
 #[cfg(any(target_arch = "wasm32", test))]
 mod encyclopedia_loose;
+#[cfg(not(target_arch = "wasm32"))]
+mod encyclopedia_watcher;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
@@ -1468,6 +1470,15 @@ async fn main() {
             encyclopedia_runtime::load_native_encyclopedia(&gdata_path, None),
         );
     #[cfg(not(target_arch = "wasm32"))]
+    let mut encyclopedia_watcher = encyclopedia_watcher::EncyclopediaWatcher::new(&mods_dir);
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(diagnostic) = encyclopedia_watcher.diagnostic() {
+        eprintln!(
+            "[encyclopedia] watcher unavailable for {}: {diagnostic}; use Reload Mods to retry",
+            mods_dir.display()
+        );
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     {
         let ordered = mod_runtime.enabled_sorted();
         let update = encyclopedia_lifecycle::apply_resolved_mod_update(
@@ -1839,6 +1850,22 @@ async fn main() {
     loop {
         let dt = get_frame_time();
         let mut targeting_cursor_drawn = false;
+
+        // Native encyclopedia file events are drained once at this frame
+        // boundary. This adapter has no world or PanelAction access, so an
+        // automatic event can only rebuild content from the current enabled
+        // order and can never replay simulation overlays.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let outcome = encyclopedia_watcher
+                .poll_and_refresh(&mut mod_runtime, &mut encyclopedia_lifecycle);
+            for diagnostic in outcome.diagnostics {
+                eprintln!("[encyclopedia] watcher diagnostic: {diagnostic}");
+            }
+            if let Some(refresh) = outcome.refresh {
+                log_encyclopedia_refresh("watcher", &refresh);
+            }
+        }
 
         #[cfg(target_arch = "wasm32")]
         if !browser_menu_audio_requested
@@ -4136,6 +4163,11 @@ Some(RailAudience::side(*faction_is_alliance)),
                     }
 
                     // Mod Manager (floating window)
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        mod_manager_state.root_diagnostic =
+                            encyclopedia_watcher.diagnostic().map(str::to_owned);
+                    }
                     let mod_infos: Vec<rebellion_render::ModInfo> = mod_runtime
                         .discovered
                         .iter()
@@ -5298,6 +5330,8 @@ Some(RailAudience::side(*faction_is_alliance)),
                         #[cfg(not(target_arch = "wasm32"))]
                         &mut encyclopedia_lifecycle,
                         #[cfg(not(target_arch = "wasm32"))]
+                        &mut encyclopedia_watcher,
+                        #[cfg(not(target_arch = "wasm32"))]
                         &mut audio_engine,
                         #[cfg(not(target_arch = "wasm32"))]
                         &audio_vol,
@@ -5546,6 +5580,8 @@ fn apply_panel_action(
     mod_runtime: &mut rebellion_data::mods::ModRuntime,
     #[cfg(not(target_arch = "wasm32"))]
     encyclopedia_lifecycle: &mut encyclopedia_lifecycle::EncyclopediaLifecycle,
+    #[cfg(not(target_arch = "wasm32"))]
+    encyclopedia_watcher: &mut encyclopedia_watcher::EncyclopediaWatcher,
     #[cfg(not(target_arch = "wasm32"))] audio_engine: &mut audio::AudioEngine,
     #[cfg(not(target_arch = "wasm32"))] audio_vol: &AudioVolumeState,
     #[cfg(not(target_arch = "wasm32"))] _sounds_dir: &Path,
@@ -5863,6 +5899,14 @@ fn apply_panel_action(
             mod_runtime.refresh();
             #[cfg(not(target_arch = "wasm32"))]
             {
+                if !encyclopedia_watcher.rearm() {
+                    if let Some(diagnostic) = encyclopedia_watcher.diagnostic() {
+                        eprintln!(
+                            "[encyclopedia] watcher rearm failed for {}: {diagnostic}",
+                            mod_runtime.mods_dir.display()
+                        );
+                    }
+                }
                 let ordered = mod_runtime.enabled_sorted();
                 let update = encyclopedia_lifecycle::apply_resolved_mod_update(
                     encyclopedia_lifecycle::ModLifecycleTrigger::ManualReload,

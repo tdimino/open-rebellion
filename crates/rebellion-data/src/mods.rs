@@ -849,6 +849,90 @@ pub fn merge_patch(target: &mut Value, patch: &Value) {
 // Hot reload (native only)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Coalesced result of one non-blocking native watcher drain.
+///
+/// A single poll represents any number of create/modify/remove events. Watcher
+/// diagnostics are bounded so a failing backend cannot grow app state without
+/// limit while the main loop continues to use the last valid content snapshot.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModWatchPoll {
+    pub changed: bool,
+    pub diagnostics: Vec<String>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ModWatchPoll {
+    const DIAGNOSTIC_BYTES_LIMIT: usize = 256;
+    const DIAGNOSTICS_PER_POLL_LIMIT: usize = 8;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn bounded_watch_diagnostic(mut message: String) -> String {
+    if message.len() > ModWatchPoll::DIAGNOSTIC_BYTES_LIMIT {
+        let mut end = ModWatchPoll::DIAGNOSTIC_BYTES_LIMIT;
+        while !message.is_char_boundary(end) {
+            end -= 1;
+        }
+        message.truncate(end);
+    }
+    message
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn coalesce_watch_results(
+    events: impl IntoIterator<Item = Result<notify::Event, notify::Error>>,
+) -> ModWatchPoll {
+    let mut poll = ModWatchPoll::default();
+    for event in events {
+        match event {
+            Ok(event) => {
+                use notify::EventKind::{Create, Modify, Remove};
+                poll.changed |= matches!(event.kind, Create(_) | Modify(_) | Remove(_));
+            }
+            Err(error) if poll.diagnostics.len() < ModWatchPoll::DIAGNOSTICS_PER_POLL_LIMIT => {
+                poll.diagnostics
+                    .push(bounded_watch_diagnostic(error.to_string()));
+            }
+            Err(_) => {}
+        }
+    }
+    poll
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WatchedRootIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn watched_root_identity(path: &Path) -> anyhow::Result<WatchedRootIdentity> {
+    let metadata = std::fs::symlink_metadata(path)
+        .with_context(|| format!("inspecting mods watch root {}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        bail!(
+            "mods watch root {} is not a confined regular directory",
+            path.display()
+        );
+    }
+    Ok(WatchedRootIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "android"))
+))]
+fn watched_root_identity(path: &Path) -> anyhow::Result<WatchedRootIdentity> {
+    let _ = path;
+    bail!(
+        "secure watch-root identity validation is unavailable on this native platform; use explicit Reload Mods"
+    )
+}
+
 /// A file-system watcher for the mods directory.
 ///
 /// Only available on non-WASM targets. Use `changed()` to poll for events.
@@ -856,6 +940,8 @@ pub fn merge_patch(target: &mut Value, patch: &Value) {
 pub struct ModWatcher {
     _watcher: notify::RecommendedWatcher,
     receiver: std::sync::mpsc::Receiver<Result<notify::Event, notify::Error>>,
+    root: PathBuf,
+    root_identity: WatchedRootIdentity,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -866,6 +952,8 @@ impl ModWatcher {
     /// Returns an error if mod discovery, dependency resolution, or content loading fails.
     pub fn new(mods_dir: &Path) -> anyhow::Result<Self> {
         use notify::Watcher;
+        let root_identity = watched_root_identity(mods_dir)
+            .with_context(|| format!("watching mods directory {}", mods_dir.display()))?;
         let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher = notify::RecommendedWatcher::new(
             move |event| {
@@ -879,32 +967,53 @@ impl ModWatcher {
             .watch(mods_dir, notify::RecursiveMode::Recursive)
             .with_context(|| format!("watching mods directory {}", mods_dir.display()))?;
 
+        let identity_after_arm = watched_root_identity(mods_dir)?;
+        if identity_after_arm != root_identity {
+            bail!(
+                "mods watch root {} changed identity while the watcher was armed",
+                mods_dir.display()
+            );
+        }
+
         Ok(Self {
             _watcher: watcher,
             receiver: rx,
+            root: mods_dir.to_path_buf(),
+            root_identity,
         })
     }
 
-    /// Returns `true` if any relevant file-system event has occurred since the
-    /// last call to `changed()`. Drains all pending events.
+    /// Confirms that the path still names the exact directory inode against
+    /// which this watcher was armed. A removed or replaced root invalidates the
+    /// watcher even when the backend emits only an ordinary remove event.
+    pub fn validate_root(&self) -> anyhow::Result<()> {
+        let current = watched_root_identity(&self.root)?;
+        if current != self.root_identity {
+            bail!(
+                "mods watch root {} was replaced after the watcher was armed",
+                self.root.display()
+            );
+        }
+        Ok(())
+    }
+
+    /// Drains all pending events without blocking. Create, modify (including
+    /// rename), and remove events coalesce to one content-change signal. Access
+    /// events are deliberately ignored.
+    #[must_use]
+    pub fn poll(&self) -> ModWatchPoll {
+        coalesce_watch_results(self.receiver.try_iter())
+    }
+
+    /// Compatibility boolean for existing callers. New app integration should
+    /// use [`Self::poll`] so bounded backend diagnostics are not discarded.
     #[must_use]
     pub fn changed(&self) -> bool {
-        let mut any = false;
-        // Drain all pending messages without blocking.
-        while let Ok(event) = self.receiver.try_recv() {
-            match event {
-                Ok(e) => {
-                    // Only react to modifications and creations — not access events.
-                    use notify::EventKind::{Create, Modify, Remove};
-                    match e.kind {
-                        Modify(_) | Create(_) | Remove(_) => any = true,
-                        _ => {}
-                    }
-                }
-                Err(e) => eprintln!("[mod-watcher] watch error: {e}"),
-            }
+        let poll = self.poll();
+        for diagnostic in &poll.diagnostics {
+            eprintln!("[mod-watcher] watch error: {diagnostic}");
         }
-        any
+        poll.changed
     }
 }
 
@@ -922,6 +1031,16 @@ impl ModWatcher {
     /// Always returns `false` on WASM — no filesystem events.
     pub fn changed(&self) -> bool {
         false
+    }
+
+    /// WASM has no watch root to validate.
+    pub fn validate_root(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// WASM has no filesystem watcher and therefore never reports events.
+    pub fn poll(&self) -> ModWatchPoll {
+        ModWatchPoll::default()
     }
 }
 
@@ -1271,6 +1390,116 @@ impl ModRuntime {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn watcher_drain_coalesces_create_modify_rename_and_remove_but_ignores_access() {
+        use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind, RenameMode};
+        use notify::{Event, EventKind};
+
+        let event = |kind| {
+            Ok(Event {
+                kind,
+                ..Event::default()
+            })
+        };
+        let access_only = coalesce_watch_results([event(EventKind::Access(AccessKind::Read))]);
+        assert!(!access_only.changed);
+        assert!(access_only.diagnostics.is_empty());
+
+        let burst = coalesce_watch_results([
+            event(EventKind::Create(CreateKind::File)),
+            event(EventKind::Modify(ModifyKind::Data(
+                notify::event::DataChange::Content,
+            ))),
+            event(EventKind::Modify(ModifyKind::Name(RenameMode::From))),
+            event(EventKind::Modify(ModifyKind::Name(RenameMode::To))),
+            event(EventKind::Modify(ModifyKind::Name(RenameMode::Both))),
+            event(EventKind::Remove(RemoveKind::File)),
+            event(EventKind::Access(AccessKind::Read)),
+        ]);
+        assert!(
+            burst.changed,
+            "the entire burst must become one boolean signal"
+        );
+        assert!(burst.diagnostics.is_empty());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn watcher_drain_bounds_error_count_and_each_diagnostic() {
+        let errors =
+            (0..32).map(|_| Err::<notify::Event, _>(notify::Error::generic(&"x".repeat(2048))));
+
+        let poll = coalesce_watch_results(errors);
+
+        assert!(!poll.changed);
+        assert_eq!(poll.diagnostics.len(), 8);
+        assert!(poll.diagnostics.iter().all(|message| message.len() == 256));
+
+        let unicode_boundary = format!("{}é{}", "x".repeat(255), "z".repeat(16));
+        let bounded = bounded_watch_diagnostic(unicode_boundary);
+        assert_eq!(bounded.len(), 255);
+        assert!(bounded.chars().all(|character| character == 'x'));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_watcher_poll_reports_an_atomic_rename() {
+        use std::time::{Duration, Instant};
+
+        let root = tempfile::tempdir().unwrap();
+        let watcher = ModWatcher::new(root.path()).unwrap();
+        let candidate = root.path().join("encyclopedia.json.new");
+        let published = root.path().join("encyclopedia.json");
+        std::fs::write(&candidate, b"[]").unwrap();
+        std::fs::rename(candidate, published).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if watcher.poll().changed {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the native watcher did not report the atomic rename"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn native_watcher_rejects_a_root_path_rebound_to_a_new_directory() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("mods");
+        let displaced = parent.path().join("mods.displaced");
+        std::fs::create_dir(&root).unwrap();
+        let watcher = ModWatcher::new(&root).unwrap();
+        watcher.validate_root().unwrap();
+
+        std::fs::rename(&root, &displaced).unwrap();
+        std::fs::create_dir(&root).unwrap();
+
+        let error = watcher.validate_root().unwrap_err().to_string();
+        assert!(error.contains("replaced after the watcher was armed"));
+        ModWatcher::new(&root).unwrap().validate_root().unwrap();
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn native_watcher_rejects_a_non_directory_root_before_arming() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("mods");
+        std::fs::write(&root, b"not a directory").unwrap();
+
+        let error = match ModWatcher::new(&root) {
+            Ok(_) => panic!("a regular file must never become a recursive watch root"),
+            Err(error) => format!("{error:#}"),
+        };
+
+        assert!(error.contains("not a confined regular directory"));
+    }
 
     // ── merge_patch ──────────────────────────────────────────────────────────
 
