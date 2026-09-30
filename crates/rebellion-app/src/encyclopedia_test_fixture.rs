@@ -12,8 +12,9 @@ use rebellion_data::encyclopedia::{
     ViewerFaction,
 };
 use rebellion_render::{
-    apply_encyclopedia_action, EncyclopediaAction, EncyclopediaMode, EncyclopediaNavigationState,
-    EncyclopediaTextureCache, EncyclopediaTextureEvent, EncyclopediaView, NavigationOutcome,
+    apply_encyclopedia_action, BodyScrollIntent, EncyclopediaAction, EncyclopediaMode,
+    EncyclopediaNavigationState, EncyclopediaTextureCache, EncyclopediaTextureEvent,
+    EncyclopediaView, NavigationOutcome,
 };
 #[cfg(test)]
 use rebellion_render::{EncyclopediaTextureBackend, TopicImageView};
@@ -25,6 +26,7 @@ use crate::encyclopedia_presenter::{build_encyclopedia_view, EncyclopediaPresent
 use crate::encyclopedia_session::{EncyclopediaAvailability, EncyclopediaSession};
 
 const INSPECTOR_REQUEST: &str = "REBELLION_ENCYCLOPEDIA_INSPECTOR";
+const INSPECTOR_FACTION: &str = "REBELLION_ENCYCLOPEDIA_VIEWER_FACTION";
 
 pub(crate) enum InspectorContent {
     Ready(Box<EncyclopediaSession>),
@@ -98,7 +100,6 @@ impl InspectorModel {
         Self::from_availability_for_viewer(availability, language, viewer)
     }
 
-    #[cfg(test)]
     pub(crate) fn viewer(&self) -> Option<ViewerFaction> {
         self.admission.as_ref().map(|admission| admission.viewer)
     }
@@ -129,6 +130,22 @@ impl InspectorModel {
             InspectorContent::Ready(session) => Some(&session.base_manifest().source_profile),
             InspectorContent::Unavailable(_) => None,
         }
+    }
+
+    fn binding_for_topic(
+        &self,
+        topic_id: &str,
+    ) -> Option<&rebellion_data::encyclopedia::BindingKey> {
+        let InspectorContent::Ready(session) = &self.content else {
+            return None;
+        };
+        let admission = self.admission.as_ref()?;
+        let mut matches = admission.admitted.iter().filter(|admitted| {
+            rebellion_data::encyclopedia::resolve_topic(session.effective_catalog(), &admitted.key)
+                .is_some_and(|resolved| resolved.0 == topic_id)
+        });
+        let binding = &matches.next()?.key;
+        matches.next().is_none().then_some(binding)
     }
 
     pub(crate) fn apply_action(
@@ -219,13 +236,105 @@ pub(crate) struct PackedFixtureReport {
     source_profile: Option<String>,
     pub(crate) topic_id: Option<String>,
     pub(crate) title: Option<String>,
+    pub(crate) title_sha256: Option<String>,
+    pub(crate) body_sha256: Option<String>,
     pub(crate) body_chars: Option<usize>,
+    pub(crate) binding_family: Option<String>,
+    pub(crate) binding_dat_id: Option<u32>,
+    pub(crate) binding_variant: Option<String>,
     pub(crate) asset_id: Option<String>,
     pub(crate) digest: Option<String>,
     pub(crate) cache_status: String,
     pub(crate) navigation_requests: Option<u32>,
     diagnostic: Option<String>,
     stable_frames: u32,
+}
+
+#[derive(Debug, serde::Serialize, PartialEq, Eq)]
+struct SelectionEvidence {
+    source_profile: Option<String>,
+    pub(crate) viewer: &'static str,
+    pub(crate) topic_id: String,
+    pub(crate) binding_family: String,
+    pub(crate) binding_dat_id: u32,
+    pub(crate) binding_variant: String,
+    pub(crate) title_sha256: String,
+    pub(crate) body_sha256: String,
+    body_chars: usize,
+    pub(crate) asset_id: Option<String>,
+    digest: Option<String>,
+    pub(crate) cache_status: String,
+}
+
+#[derive(Debug, serde::Serialize, PartialEq)]
+struct ViewportEvidence {
+    source_profile: Option<String>,
+    viewer: &'static str,
+    pub(crate) topic_id: String,
+    pub(crate) body_sha256: String,
+    pub(crate) scroll_offset: f32,
+    pub(crate) consumed_scroll_intents: Vec<&'static str>,
+}
+
+fn content_sha256(value: &str) -> String {
+    rebellion_render::inspect_encyclopedia_bytes(value.as_bytes(), None)
+        .expect("validated localized content fits the shared byte-inspection budget")
+        .sha256
+}
+
+fn selection_evidence(
+    model: &InspectorModel,
+    view: &EncyclopediaView,
+    cache_status: &str,
+) -> Option<SelectionEvidence> {
+    let active = view.active_topic.as_ref()?;
+    let binding = model.binding_for_topic(&active.topic_id)?;
+    Some(SelectionEvidence {
+        source_profile: model.source_profile().map(str::to_owned),
+        viewer: match model.viewer()? {
+            ViewerFaction::Alliance => "alliance",
+            ViewerFaction::Empire => "empire",
+        },
+        topic_id: active.topic_id.clone(),
+        binding_family: binding.family.clone(),
+        binding_dat_id: binding.dat_id,
+        binding_variant: binding.variant.clone(),
+        title_sha256: content_sha256(&active.title),
+        body_sha256: content_sha256(&active.body),
+        body_chars: active.body.chars().count(),
+        asset_id: active.image.as_ref().map(|image| image.asset_id.clone()),
+        digest: active.image.as_ref().map(|image| image.digest.clone()),
+        cache_status: cache_status.to_owned(),
+    })
+}
+
+fn viewport_evidence(
+    model: &InspectorModel,
+    view: &EncyclopediaView,
+    scroll_offset: f32,
+    consumed_scroll_intents: &[BodyScrollIntent],
+) -> Option<ViewportEvidence> {
+    let active = view.active_topic.as_ref()?;
+    Some(ViewportEvidence {
+        source_profile: model.source_profile().map(str::to_owned),
+        viewer: match model.viewer()? {
+            ViewerFaction::Alliance => "alliance",
+            ViewerFaction::Empire => "empire",
+        },
+        topic_id: active.topic_id.clone(),
+        body_sha256: content_sha256(&active.body),
+        scroll_offset,
+        consumed_scroll_intents: consumed_scroll_intents
+            .iter()
+            .map(|intent| match intent {
+                BodyScrollIntent::LineUp => "line_up",
+                BodyScrollIntent::LineDown => "line_down",
+                BodyScrollIntent::PageUp => "page_up",
+                BodyScrollIntent::PageDown => "page_down",
+                BodyScrollIntent::ResetToTop => "reset_to_top",
+            })
+            .collect(),
+    })
 }
 
 #[cfg(test)]
@@ -250,6 +359,7 @@ pub(crate) fn packed_fixture_report(
     diagnostic: Option<&str>,
 ) -> PackedFixtureReport {
     let active = view.and_then(|view| view.active_topic.as_ref());
+    let binding = active.and_then(|topic| model.binding_for_topic(&topic.topic_id));
     let unavailable = diagnostic.or_else(|| model.unavailable_diagnostic());
     PackedFixtureReport {
         schema_version: 1,
@@ -268,7 +378,12 @@ pub(crate) fn packed_fixture_report(
         source_profile: model.source_profile().map(str::to_owned),
         topic_id: active.map(|topic| topic.topic_id.clone()),
         title: active.map(|topic| topic.title.to_string()),
+        title_sha256: active.map(|topic| content_sha256(&topic.title)),
+        body_sha256: active.map(|topic| content_sha256(&topic.body)),
         body_chars: active.map(|topic| topic.body.chars().count()),
+        binding_family: binding.map(|binding| binding.family.clone()),
+        binding_dat_id: binding.map(|binding| binding.dat_id),
+        binding_variant: binding.map(|binding| binding.variant.clone()),
         asset_id: asset_id.map(str::to_owned),
         digest: digest.map(str::to_owned),
         cache_status: cache_status.to_owned(),
@@ -362,6 +477,29 @@ pub(crate) fn request_value_enabled(value: Option<&OsStr>) -> bool {
     value == Some(OsStr::new("1"))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn native_viewer_faction(
+    value: Option<&OsStr>,
+) -> Result<(ViewerFaction, rebellion_render::CockpitFaction), String> {
+    match value.map(OsStr::to_str) {
+        None => Ok((
+            ViewerFaction::Alliance,
+            rebellion_render::CockpitFaction::Alliance,
+        )),
+        Some(Some("alliance")) => Ok((
+            ViewerFaction::Alliance,
+            rebellion_render::CockpitFaction::Alliance,
+        )),
+        Some(Some("empire")) => Ok((
+            ViewerFaction::Empire,
+            rebellion_render::CockpitFaction::Empire,
+        )),
+        Some(_) => Err(format!(
+            "invalid {INSPECTOR_FACTION} value; expected alliance or empire"
+        )),
+    }
+}
+
 #[cfg(test)]
 fn fitted_art_size(width: u32, height: u32) -> [f32; 2] {
     let longest_side = width.max(height) as f32;
@@ -378,14 +516,22 @@ pub(crate) fn requested() -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn run(gdata: &std::path::Path) {
+    let (viewer, faction) =
+        match native_viewer_faction(std::env::var_os(INSPECTOR_FACTION).as_deref()) {
+            Ok(selection) => selection,
+            Err(error) => {
+                macroquad::logging::error!("[encyclopedia_inspector] {error}");
+                return;
+            }
+        };
     let override_root =
         std::env::var_os("REBELLION_ENCYCLOPEDIA_DIR").map(std::path::PathBuf::from);
     let availability =
         crate::encyclopedia_runtime::load_native_encyclopedia(gdata, override_root.as_deref());
-    let model = InspectorModel::from_availability(availability, "1033");
+    let model = InspectorModel::from_availability_for_viewer(availability, "1033", viewer);
     let mut chrome = rebellion_render::BmpCache::new();
     chrome.set_base_path(gdata.join("ui"));
-    run_surface(model, chrome, rebellion_render::CockpitFaction::Alliance).await;
+    run_surface(model, chrome, faction).await;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -421,6 +567,7 @@ async fn run_surface(
     });
     let mut theme_applied = false;
     let mut cache_status = "not selected".to_owned();
+    let mut last_evidence_topic = None;
     let mut close_requested = false;
     #[cfg(target_arch = "wasm32")]
     let mut stable_frames = 0_u32;
@@ -546,6 +693,37 @@ async fn run_surface(
             if frame.active_asset_id.is_none() {
                 cache_status = "no art".to_owned();
             }
+            if !frame.consumed_scroll_intents.is_empty() {
+                if let Some(evidence) = viewport_evidence(
+                    &model,
+                    view.as_ref().unwrap(),
+                    surface.body_scroll_offset(),
+                    &frame.consumed_scroll_intents,
+                ) {
+                    macroquad::logging::info!(
+                        "[encyclopedia_inspector] viewport_evidence={}",
+                        serde_json::to_string(&evidence)
+                            .expect("viewport evidence contains only serializable DTO fields")
+                    );
+                }
+            }
+            if let Some(active) = view
+                .as_ref()
+                .and_then(|current| current.active_topic.as_ref())
+            {
+                if last_evidence_topic.as_deref() != Some(active.topic_id.as_str()) {
+                    if let Some(evidence) =
+                        selection_evidence(&model, view.as_ref().unwrap(), &cache_status)
+                    {
+                        macroquad::logging::info!(
+                            "[encyclopedia_inspector] selection_evidence={}",
+                            serde_json::to_string(&evidence)
+                                .expect("selection evidence contains only serializable DTO fields")
+                        );
+                        last_evidence_topic = Some(active.topic_id.clone());
+                    }
+                }
+            }
             match model.apply_action_batch(std::mem::take(&mut frame.actions)) {
                 Ok(outcomes) => {
                     for outcome in outcomes {
@@ -615,8 +793,9 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        fitted_art_size, inspection_admission, packed_fixture_report, request_value_enabled,
-        requested, InspectorContent, InspectorModel, InspectorTextureState, INSPECTOR_REQUEST,
+        fitted_art_size, inspection_admission, native_viewer_faction, packed_fixture_report,
+        request_value_enabled, requested, selection_evidence, viewport_evidence, InspectorContent,
+        InspectorModel, InspectorTextureState, INSPECTOR_REQUEST,
     };
     use crate::encyclopedia_session::{
         prepare_encyclopedia_session, EncyclopediaAvailability, EncyclopediaBytes,
@@ -808,6 +987,72 @@ mod tests {
     }
 
     #[test]
+    fn native_faction_selector_defaults_to_alliance_and_accepts_both_named_viewers() {
+        assert_eq!(
+            native_viewer_faction(None).unwrap(),
+            (ViewerFaction::Alliance, CockpitFaction::Alliance)
+        );
+        assert_eq!(
+            native_viewer_faction(Some(OsStr::new("alliance"))).unwrap(),
+            (ViewerFaction::Alliance, CockpitFaction::Alliance)
+        );
+        assert_eq!(
+            native_viewer_faction(Some(OsStr::new("empire"))).unwrap(),
+            (ViewerFaction::Empire, CockpitFaction::Empire)
+        );
+    }
+
+    #[test]
+    fn native_faction_selector_rejects_invalid_or_non_unicode_values() {
+        assert_eq!(
+            native_viewer_faction(Some(OsStr::new("Alliance"))).unwrap_err(),
+            "invalid REBELLION_ENCYCLOPEDIA_VIEWER_FACTION value; expected alliance or empire"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            assert_eq!(
+                native_viewer_faction(Some(OsStr::from_bytes(b"empire\xff"))).unwrap_err(),
+                "invalid REBELLION_ENCYCLOPEDIA_VIEWER_FACTION value; expected alliance or empire"
+            );
+        }
+    }
+
+    #[test]
+    fn native_faction_selection_drives_the_existing_viewer_sensitive_selector() {
+        for (name, expected_viewer, expected_faction, expected_asset, expected_digest) in [
+            (
+                "alliance",
+                ViewerFaction::Alliance,
+                CockpitFaction::Alliance,
+                "edata:2",
+                "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+            ),
+            (
+                "empire",
+                ViewerFaction::Empire,
+                CockpitFaction::Empire,
+                "edata:3",
+                "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd",
+            ),
+        ] {
+            let (viewer, faction) = native_viewer_faction(Some(OsStr::new(name))).unwrap();
+            assert_eq!(viewer, expected_viewer);
+            assert_eq!(faction, expected_faction);
+            let mut model = InspectorModel::new_for_viewer(
+                InspectorContent::Ready(Box::new(session())),
+                "1033",
+                viewer,
+            );
+            model.select_topic("original:60004".to_owned()).unwrap();
+            let view = model.build_view().unwrap().unwrap();
+            let image = view.active_topic.as_ref().unwrap().image.as_ref().unwrap();
+            assert_eq!(image.asset_id, expected_asset);
+            assert_eq!(image.digest, expected_digest);
+        }
+    }
+
+    #[test]
     fn packed_report_does_not_fabricate_unmeasured_navigation_requests() {
         let mut model =
             InspectorModel::from_availability(EncyclopediaAvailability::Ready(session()), "1033");
@@ -833,6 +1078,17 @@ mod tests {
         assert_eq!(report.status, "ready");
         assert_eq!(report.surface, "packed-encyclopedia-fixture");
         assert_eq!(report.topic_id.as_deref(), Some("original:60001"));
+        assert_eq!(
+            report.title_sha256.as_deref(),
+            Some("ba528fb133a6a24d3746cf33432d0365ffd9b0cda0c166079b2861ce9e5a0faf")
+        );
+        assert_eq!(
+            report.body_sha256.as_deref(),
+            Some("51332a039e28b4d1a1496dce0248964ff6303a57d4fd8c07aa8a038f19d674ca")
+        );
+        assert_eq!(report.binding_family.as_deref(), Some("system_locations"));
+        assert_eq!(report.binding_dat_id, Some(7));
+        assert_eq!(report.binding_variant.as_deref(), Some("default"));
         assert_eq!(report.asset_id.as_deref(), Some("edata:1"));
         assert_eq!(report.digest.as_deref(), Some(image.digest.as_str()));
         assert_eq!(report.cache_status, "cache hit");
@@ -852,6 +1108,65 @@ mod tests {
             failed_upload.diagnostic.as_deref(),
             Some("asset edata:1 upload failed")
         );
+    }
+
+    #[test]
+    fn selection_evidence_uses_admitted_binding_and_hashes_without_copying_text() {
+        let mut model = InspectorModel::new_for_viewer(
+            InspectorContent::Ready(Box::new(session())),
+            "1033",
+            ViewerFaction::Empire,
+        );
+        model.select_topic("original:60004".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let evidence = selection_evidence(&model, &view, "uploaded").unwrap();
+
+        assert_eq!(evidence.viewer, "empire");
+        assert_eq!(evidence.topic_id, "original:60004");
+        assert_eq!(evidence.binding_family, "missions");
+        assert_eq!(evidence.binding_dat_id, 21);
+        assert_eq!(evidence.binding_variant, "viewer_faction");
+        assert_eq!(
+            evidence.title_sha256,
+            "869fd5c18ec158a9268aeaba1bfc7d3cd40ffda34cc69678c30be1962020b0be"
+        );
+        assert_eq!(
+            evidence.body_sha256,
+            "c7f8d63cf357218979234ef834cab8f7e0c64c0777f8b80a1a08d33fc0056baa"
+        );
+        assert_eq!(evidence.asset_id.as_deref(), Some("edata:3"));
+        assert_eq!(evidence.cache_status, "uploaded");
+        let serialized = serde_json::to_string(&evidence).unwrap();
+        assert!(!serialized.contains("Dual beacon"));
+        assert!(!serialized.contains("Synthetic faction-sensitive art text."));
+    }
+
+    #[test]
+    fn viewport_evidence_reports_ordered_scroll_without_copying_owned_text() {
+        let mut model = InspectorModel::new_for_viewer(
+            InspectorContent::Ready(Box::new(session())),
+            "1033",
+            ViewerFaction::Alliance,
+        );
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let evidence = viewport_evidence(
+            &model,
+            &view,
+            160.0,
+            &[BodyScrollIntent::PageDown, BodyScrollIntent::LineDown],
+        )
+        .unwrap();
+
+        assert_eq!(evidence.topic_id, "original:60001");
+        assert_eq!(
+            evidence.body_sha256,
+            "51332a039e28b4d1a1496dce0248964ff6303a57d4fd8c07aa8a038f19d674ca"
+        );
+        assert_eq!(evidence.scroll_offset, 160.0);
+        assert_eq!(evidence.consumed_scroll_intents, ["page_down", "line_down"]);
+        let serialized = serde_json::to_string(&evidence).unwrap();
+        assert!(!serialized.contains("Synthetic system body."));
     }
 
     #[test]

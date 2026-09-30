@@ -830,5 +830,256 @@ class RuntimePackBuilderTests(unittest.TestCase):
                 PACKER.collect_entries(base, ui)
 
 
+class EncyclopediaOwnedParityHarnessTests(unittest.TestCase):
+    @staticmethod
+    def _sha256(payload: bytes) -> str:
+        return hashlib.sha256(payload).hexdigest()
+
+    @staticmethod
+    def _runtime_pack(entries: list[tuple[int, str, bytes]]) -> bytes:
+        payload = bytearray(PACKER.HEADER.pack(PACKER.MAGIC, PACKER.VERSION, 0, len(entries)))
+        for kind, key, contents in entries:
+            encoded_key = key.encode("utf-8")
+            payload.extend(PACKER.ENTRY_HEADER.pack(kind, len(encoded_key), len(contents)))
+            payload.extend(encoded_key)
+            payload.extend(contents)
+        return bytes(payload)
+
+    def test_encyclopedia_smoke_verifier_matches_pack_loose_and_dat_provenance(self) -> None:
+        verifier = REPO_ROOT / "tools" / "interface-parity" / "encyclopedia-smoke.mjs"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            site = root / "site"
+            encyclopedia = source / "encyclopedia"
+            assets = encyclopedia / "assets"
+            base = source
+            assets.mkdir(parents=True)
+            (site / "data").mkdir(parents=True)
+
+            dat_bytes = b"synthetic systems provenance"
+            image_bytes = b"synthetic image bytes"
+            title = "Synthetic title"
+            body = "ab\u2019cd " + ("synthetic viewport line " * 80)
+            catalog = {
+                "schema_version": 1,
+                "default_language": "1033",
+                "topic_sort": {
+                    "algorithm": "synthetic",
+                    "representable_encoding": "synthetic",
+                    "representable_fold": "synthetic",
+                    "unrepresentable": "synthetic",
+                    "tie_break": "registry_order",
+                },
+                "index": {
+                    "command": "aggregate",
+                    "labels": {"1033": "Synthetic index"},
+                    "topic_ids": ["original:1"],
+                    "source_ref": "synthetic",
+                },
+                "categories": [],
+                "topics": {
+                    "original:1": {
+                        "localized": {
+                            "1033": {
+                                "title": title,
+                                "body": body,
+                                "image_id": "edata:1",
+                            }
+                        },
+                        "source_ref": "synthetic",
+                    }
+                },
+                "images": {
+                    "edata:1": {
+                        "path": "assets/EDATA.001",
+                        "format": "bmp",
+                        "byte_length": len(image_bytes),
+                        "width": 1,
+                        "height": 1,
+                        "sha256": self._sha256(image_bytes),
+                        "source_ref": "synthetic",
+                    }
+                },
+                "bindings": [
+                    {
+                        "family": "system_locations",
+                        "dat_id": 7,
+                        "variant": "default",
+                        "topic_id": "original:1",
+                    }
+                ],
+            }
+            catalog_bytes = json.dumps(catalog, separators=(",", ":")).encode()
+            manifest = {
+                "schema_version": 1,
+                "source_profile": "synthetic-owned-parity-v1",
+                "catalog_sha256": self._sha256(catalog_bytes),
+                "files": {
+                    "catalog.json": self._sha256(catalog_bytes),
+                    "assets/EDATA.001": self._sha256(image_bytes),
+                },
+                "binding_sources": [
+                    {"basename": "SYSTEMSD.DAT", "sha256": self._sha256(dat_bytes)}
+                ],
+                "source_records": {},
+            }
+            manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
+            pack_bytes = self._runtime_pack(
+                [
+                    (PACKER.KIND_GAME_DATA, "encyclopedia/catalog.json", catalog_bytes),
+                    (PACKER.KIND_GAME_DATA, "encyclopedia/manifest.json", manifest_bytes),
+                    (PACKER.KIND_GAME_DATA, "encyclopedia/assets/EDATA.001", image_bytes),
+                ]
+            )
+            (encyclopedia / "catalog.json").write_bytes(catalog_bytes)
+            (encyclopedia / "manifest.json").write_bytes(manifest_bytes)
+            (assets / "EDATA.001").write_bytes(image_bytes)
+            (base / "SYSTEMSD.DAT").write_bytes(dat_bytes)
+            (site / "data" / "runtime.orpk").write_bytes(pack_bytes)
+
+            scenario = {
+                "schema_version": 1,
+                "family": "encyclopedia-base-parity",
+                "source_profile": "synthetic-owned-parity-v1",
+                "artifacts": {
+                    "pack_sha256": self._sha256(pack_bytes),
+                    "pack_byte_length": len(pack_bytes),
+                    "catalog_sha256": self._sha256(catalog_bytes),
+                    "manifest_sha256": self._sha256(manifest_bytes),
+                    "encyclopedia_namespace_entries": 3,
+                },
+                "fixture_codes": {"alliance": 298, "empire": 554},
+                "owned_no_art_topic_count": 0,
+                "body_viewport": {"x": 102, "y": 286, "width": 395, "height": 80},
+                "visible_text_checks": [
+                    {
+                        "topic_id": "original:1",
+                        "purpose": "long_body_scroll",
+                        "input_sequence": ["PageDown", "PageDown", "PageDown"],
+                        "expected_distinct_viewports": 4,
+                    },
+                    {
+                        "topic_id": "original:1",
+                        "purpose": "owned_non_ascii",
+                        "input_sequence": [],
+                        "codepoint": {
+                            "scalar": "U+2019",
+                            "char_index": 2,
+                            "utf8_byte_offset": 2,
+                            "utf8_hex": "e28099",
+                            "context_char_start": 0,
+                            "context_char_end_exclusive": 5,
+                            "context_sha256": self._sha256("ab\u2019cd".encode()),
+                        },
+                        "expected_capture": "initial_body_viewport",
+                    },
+                ],
+                "probes": [
+                    {
+                        "topic_id": "original:1",
+                        "binding": {
+                            "family": "system_locations",
+                            "dat_id": 7,
+                            "variant": "default",
+                        },
+                        "title_sha256": self._sha256(title.encode()),
+                        "body_sha256": self._sha256(body.encode()),
+                        "sort_index": 0,
+                        "images": {
+                            "alliance": {
+                                "asset_id": "edata:1",
+                                "sha256": self._sha256(image_bytes),
+                            },
+                            "empire": {
+                                "asset_id": "edata:1",
+                                "sha256": self._sha256(image_bytes),
+                            },
+                        },
+                    }
+                ],
+            }
+            scenario_path = root / "scenario.json"
+            scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
+            result_path = root / "verification.json"
+
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(verifier),
+                    "--verify-artifacts-only",
+                    "--scenario",
+                    str(scenario_path),
+                    "--source-root",
+                    str(source),
+                    "--site",
+                    str(site),
+                    "--output",
+                    str(result_path),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["encyclopedia_namespace_entries"], 3)
+            self.assertEqual(result["binding_sources_verified"], 1)
+            self.assertEqual(result["probes_verified"], 1)
+            self.assertEqual(result["visible_text_checks_verified"], 2)
+
+    @unittest.skipUnless(
+        os.environ.get("REBELLION_ENCYCLOPEDIA_TEST_SOURCE"),
+        "owned encyclopedia parity requires REBELLION_ENCYCLOPEDIA_TEST_SOURCE",
+    )
+    def test_owned_encyclopedia_publication_matches_the_packed_browser_artifact(self) -> None:
+        source = Path(os.environ["REBELLION_ENCYCLOPEDIA_TEST_SOURCE"])
+        site_value = os.environ.get("REBELLION_ENCYCLOPEDIA_TEST_SITE")
+        if site_value is None:
+            self.fail("owned encyclopedia parity requires REBELLION_ENCYCLOPEDIA_TEST_SITE")
+        site = Path(site_value)
+        scenario = (
+            REPO_ROOT
+            / "tools"
+            / "interface-parity"
+            / "scenarios"
+            / "encyclopedia-base.json"
+        )
+        verifier = REPO_ROOT / "tools" / "interface-parity" / "encyclopedia-smoke.mjs"
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "verification.json"
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(verifier),
+                    "--verify-artifacts-only",
+                    "--scenario",
+                    str(scenario),
+                    "--source-root",
+                    str(source),
+                    "--site",
+                    str(site),
+                    "--output",
+                    str(result_path),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                result["runtime_pack_sha256"],
+                "e9ae76b50a43d811c01d8634f9099809ec6c144f9fbcd93f364b6879001fb57b",
+            )
+            self.assertEqual(result["encyclopedia_namespace_entries"], 188)
+            self.assertEqual(result["binding_sources_verified"], 12)
+            self.assertEqual(result["probes_verified"], 4)
+            self.assertEqual(result["owned_no_art_topic_count"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

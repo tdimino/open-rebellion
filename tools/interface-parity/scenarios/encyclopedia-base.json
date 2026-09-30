@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "family": "encyclopedia-base-parity",
+  "scope": "Owned E18 base bytes on native and packed feature fixtures; not original-surface acceptance.",
+  "source_profile": "encytext-49aea545-lang-1033-v1",
+  "artifacts": {
+    "pack_sha256": "e9ae76b50a43d811c01d8634f9099809ec6c144f9fbcd93f364b6879001fb57b",
+    "pack_byte_length": 63214933,
+    "catalog_sha256": "bed589f707fa18274c5c06c72e010f6735e98519f04bc6d9260caf5160fd4fb3",
+    "manifest_sha256": "df0ef0b7da7fb966cb80164092278acc81d359ba1976ceabfa7cb8813ed5d0a0",
+    "encyclopedia_namespace_entries": 188
+  },
+  "fixture_codes": {
+    "alliance": 298,
+    "empire": 554
+  },
+  "owned_no_art_topic_count": 0,
+  "body_viewport": {
+    "x": 102,
+    "y": 286,
+    "width": 395,
+    "height": 80
+  },
+  "visible_text_checks": [
+    {
+      "topic_id": "original:6024",
+      "purpose": "long_body_scroll",
+      "input_sequence": ["PageDown", "PageDown", "PageDown"],
+      "expected_distinct_viewports": 4
+    },
+    {
+      "topic_id": "original:7187",
+      "purpose": "owned_non_ascii",
+      "input_sequence": [],
+      "codepoint": {
+        "scalar": "U+2019",
+        "char_index": 57,
+        "utf8_byte_offset": 57,
+        "utf8_hex": "e28099",
+        "context_char_start": 40,
+        "context_char_end_exclusive": 80,
+        "context_sha256": "b56db2b7b02afa83d328f5b6eb4fdb72c1387579b8c7e90db28f61637be45fb1"
+      },
+      "expected_capture": "initial_body_viewport"
+    }
+  ],
+  "synthetic_supplements": [
+    "explicit_no_art",
+    "long_non_ascii_text"
+  ],
+  "probes": [
+    {
+      "topic_id": "original:5696",
+      "binding": {
+        "family": "fighter_classes",
+        "dat_id": 1,
+        "variant": "default"
+      },
+      "title_sha256": "fa58ca018d98d20946d08d780ac961b1ebb2dcbdc995ad9ca691f3e14a385e73",
+      "body_sha256": "d56c0de5782ee20754f08a5490627f3340cd97d9bd5942511a153adbd1bbfe22",
+      "body_byte_length": 482,
+      "sort_index": 0,
+      "coverage": ["initial_selection", "nonlinear_original_id"],
+      "images": {
+        "alliance": {
+          "asset_id": "edata:34",
+          "sha256": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f"
+        },
+        "empire": {
+          "asset_id": "edata:34",
+          "sha256": "14695e60336dbf2cf76f53525d0efa1100ae0b0c97cb33030c1873dcf5da7d5f"
+        }
+      }
+    },
+    {
+      "topic_id": "original:7191",
+      "binding": {
+        "family": "mission_definitions",
+        "dat_id": 23,
+        "variant": "viewer_faction"
+      },
+      "title_sha256": "208b2389c3eaf6d8482a491adb7793cfce41d6d9692ecd7e92be9ebc9bda1816",
+      "body_sha256": "b2730598e98145e33b3ea73a4795360cde657fa6beb95cb10b638a13b1af8252",
+      "body_byte_length": 279,
+      "sort_index": 1,
+      "coverage": ["viewer_faction_variant", "nonlinear_original_id"],
+      "images": {
+        "alliance": {
+          "asset_id": "edata:154",
+          "sha256": "c1f9b9366f9edb4d21329173c6ad39547e25e560cde5a344ffddbac2952bcf26"
+        },
+        "empire": {
+          "asset_id": "edata:155",
+          "sha256": "985a6c5d13a7c0463e906eb8eb3f58f3feb492ddd9404ec01bda818e8c86a150"
+        }
+      }
+    },
+    {
+      "topic_id": "original:6024",
+      "binding": {
+        "family": "capital_ship_classes",
+        "dat_id": 136,
+        "variant": "default"
+      },
+      "title_sha256": "fe3b8cb4a6146920705283b6d9f0451507ad06a3f6cc442706831d16f0ab6be7",
+      "body_sha256": "1db1d13e3a5019e22965067a8da643f0ba48d7cb1ac66de5521519f2d15b7585",
+      "body_byte_length": 1015,
+      "sort_index": 95,
+      "coverage": ["long_owned_body", "nonlinear_original_id"],
+      "images": {
+        "alliance": {
+          "asset_id": "edata:65",
+          "sha256": "0a3d278a19e7faf56ea5f57b63d4744d8aadab4ec385523107826c67fc58f5c9"
+        },
+        "empire": {
+          "asset_id": "edata:65",
+          "sha256": "0a3d278a19e7faf56ea5f57b63d4744d8aadab4ec385523107826c67fc58f5c9"
+        }
+      }
+    },
+    {
+      "topic_id": "original:7187",
+      "binding": {
+        "family": "mission_definitions",
+        "dat_id": 19,
+        "variant": "viewer_faction"
+      },
+      "title_sha256": "b49531118b6ea0427dfce0fddad98dc0d7831c7e87c5ebe86e9facbb0c9378c5",
+      "body_sha256": "4a0956c0798ec2ddbd00190b4ca9be0eb0bc5a7a709dfed3eccf66694a4f3f70",
+      "body_byte_length": 300,
+      "sort_index": 113,
+      "coverage": ["owned_non_ascii", "viewer_faction_variant", "nonlinear_original_id"],
+      "images": {
+        "alliance": {
+          "asset_id": "edata:140",
+          "sha256": "5ac59e0f42d95e21edd7e170e882250de0186447fc23d5f8701a216215d9de68"
+        },
+        "empire": {
+          "asset_id": "edata:141",
+          "sha256": "c0d3f346164c6f48d2267cd9d2137b42816a329aaa90e0f9677a9754e09369bd"
+        }
+      }
+    }
+  ]
+}
