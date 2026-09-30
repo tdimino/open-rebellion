@@ -13,17 +13,16 @@ use rebellion_data::encyclopedia::{
 };
 use rebellion_render::{
     apply_encyclopedia_action, EncyclopediaAction, EncyclopediaMode, EncyclopediaNavigationState,
-    EncyclopediaView, NavigationOutcome,
+    EncyclopediaTextureCache, EncyclopediaTextureEvent, EncyclopediaView, NavigationOutcome,
 };
 #[cfg(test)]
 use rebellion_render::{EncyclopediaTextureBackend, TopicImageView};
-#[cfg(any(test, not(target_arch = "wasm32")))]
-use rebellion_render::{EncyclopediaTextureCache, EncyclopediaTextureEvent};
+
+#[cfg(any(test, target_arch = "wasm32"))]
+use crate::interface_test_fixture::FixtureRequest;
 
 use crate::encyclopedia_presenter::{build_encyclopedia_view, EncyclopediaPresenter};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::encyclopedia_session::EncyclopediaAvailability;
-use crate::encyclopedia_session::EncyclopediaSession;
+use crate::encyclopedia_session::{EncyclopediaAvailability, EncyclopediaSession};
 
 const INSPECTOR_REQUEST: &str = "REBELLION_ENCYCLOPEDIA_INSPECTOR";
 
@@ -42,9 +41,17 @@ pub(crate) struct InspectorModel {
 
 impl InspectorModel {
     pub(crate) fn new(content: InspectorContent, language: impl Into<String>) -> Self {
+        Self::new_for_viewer(content, language, ViewerFaction::Alliance)
+    }
+
+    fn new_for_viewer(
+        content: InspectorContent,
+        language: impl Into<String>,
+        viewer: ViewerFaction,
+    ) -> Self {
         let admission = match &content {
             InspectorContent::Ready(session) => {
-                Some(inspection_admission(session.effective_catalog()))
+                Some(inspection_admission(session.effective_catalog(), viewer))
             }
             InspectorContent::Unavailable(_) => None,
         };
@@ -55,6 +62,45 @@ impl InspectorModel {
             language: language.into(),
             navigation: EncyclopediaNavigationState::default(),
         }
+    }
+
+    pub(crate) fn from_availability(
+        availability: EncyclopediaAvailability,
+        language: impl Into<String>,
+    ) -> Self {
+        Self::from_availability_for_viewer(availability, language, ViewerFaction::Alliance)
+    }
+
+    fn from_availability_for_viewer(
+        availability: EncyclopediaAvailability,
+        language: impl Into<String>,
+        viewer: ViewerFaction,
+    ) -> Self {
+        let content = match availability {
+            EncyclopediaAvailability::Ready(session) => InspectorContent::Ready(Box::new(session)),
+            EncyclopediaAvailability::Unavailable(diagnostic) => {
+                InspectorContent::Unavailable(diagnostic)
+            }
+        };
+        Self::new_for_viewer(content, language, viewer)
+    }
+
+    #[cfg(any(test, target_arch = "wasm32"))]
+    pub(crate) fn from_packed_request(
+        availability: EncyclopediaAvailability,
+        language: impl Into<String>,
+        request: FixtureRequest,
+    ) -> Self {
+        let viewer = match request.faction {
+            rebellion_render::CockpitFaction::Alliance => ViewerFaction::Alliance,
+            rebellion_render::CockpitFaction::Empire => ViewerFaction::Empire,
+        };
+        Self::from_availability_for_viewer(availability, language, viewer)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn viewer(&self) -> Option<ViewerFaction> {
+        self.admission.as_ref().map(|admission| admission.viewer)
     }
 
     pub(crate) fn build_view(&mut self) -> Result<Option<EncyclopediaView>, EncyclopediaError> {
@@ -161,10 +207,86 @@ impl InspectorModel {
     }
 }
 
-pub(crate) fn inspection_admission(catalog: &EncyclopediaCatalog) -> AdmissionSnapshot {
+#[cfg(any(test, target_arch = "wasm32"))]
+#[derive(Debug, serde::Serialize, PartialEq, Eq)]
+pub(crate) struct PackedFixtureReport {
+    schema_version: u32,
+    pub(crate) status: &'static str,
+    code: u32,
+    scenario: u8,
+    faction: &'static str,
+    pub(crate) surface: &'static str,
+    source_profile: Option<String>,
+    pub(crate) topic_id: Option<String>,
+    pub(crate) title: Option<String>,
+    pub(crate) body_chars: Option<usize>,
+    pub(crate) asset_id: Option<String>,
+    pub(crate) digest: Option<String>,
+    pub(crate) cache_status: String,
+    pub(crate) navigation_requests: Option<u32>,
+    diagnostic: Option<String>,
+    stable_frames: u32,
+}
+
+#[cfg(test)]
+impl PackedFixtureReport {
+    pub(crate) fn faction(&self) -> &str {
+        self.faction
+    }
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The report records independent presentation evidence without retaining renderer state."
+)]
+pub(crate) fn packed_fixture_report(
+    request: FixtureRequest,
+    model: &InspectorModel,
+    view: Option<&EncyclopediaView>,
+    asset_id: Option<&str>,
+    digest: Option<&str>,
+    cache_status: &str,
+    diagnostic: Option<&str>,
+) -> PackedFixtureReport {
+    let active = view.and_then(|view| view.active_topic.as_ref());
+    let unavailable = diagnostic.or_else(|| model.unavailable_diagnostic());
+    PackedFixtureReport {
+        schema_version: 1,
+        status: if view.is_some() && unavailable.is_none() {
+            "ready"
+        } else {
+            "unavailable"
+        },
+        code: request.code,
+        scenario: request.scenario as u8,
+        faction: match request.faction {
+            rebellion_render::CockpitFaction::Alliance => "alliance",
+            rebellion_render::CockpitFaction::Empire => "empire",
+        },
+        surface: "packed-encyclopedia-fixture",
+        source_profile: model.source_profile().map(str::to_owned),
+        topic_id: active.map(|topic| topic.topic_id.clone()),
+        title: active.map(|topic| topic.title.to_string()),
+        body_chars: active.map(|topic| topic.body.chars().count()),
+        asset_id: asset_id.map(str::to_owned),
+        digest: digest.map(str::to_owned),
+        cache_status: cache_status.to_owned(),
+        // Network request counts are browser-observer evidence, not an
+        // in-process fact. The coordinator's browser gate supplies them.
+        navigation_requests: None,
+        diagnostic: unavailable.map(str::to_owned),
+        stable_frames: 3,
+    }
+}
+
+pub(crate) fn inspection_admission(
+    catalog: &EncyclopediaCatalog,
+    viewer: ViewerFaction,
+) -> AdmissionSnapshot {
     AdmissionSnapshot {
         world_epoch: 0,
-        viewer: ViewerFaction::Alliance,
+        viewer,
         admitted: catalog
             .bindings
             .iter()
@@ -256,26 +378,40 @@ pub(crate) fn requested() -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn run(gdata: &std::path::Path) {
-    use macroquad::prelude::{clear_background, is_quit_requested, next_frame, Color};
-    use rebellion_render::{
-        draw_encyclopedia_surface, BmpCache, CockpitFaction, EguiEncyclopediaTextureBackend,
-        EncyclopediaSurfaceLabels, EncyclopediaSurfaceState,
-    };
-
     let override_root =
         std::env::var_os("REBELLION_ENCYCLOPEDIA_DIR").map(std::path::PathBuf::from);
-    let content = match crate::encyclopedia_runtime::load_native_encyclopedia(
-        gdata,
-        override_root.as_deref(),
-    ) {
-        EncyclopediaAvailability::Ready(session) => InspectorContent::Ready(Box::new(session)),
-        EncyclopediaAvailability::Unavailable(diagnostic) => {
-            InspectorContent::Unavailable(diagnostic)
-        }
-    };
-    let mut model = InspectorModel::new(content, "1033");
-    let mut chrome = BmpCache::new();
+    let availability =
+        crate::encyclopedia_runtime::load_native_encyclopedia(gdata, override_root.as_deref());
+    let model = InspectorModel::from_availability(availability, "1033");
+    let mut chrome = rebellion_render::BmpCache::new();
     chrome.set_base_path(gdata.join("ui"));
+    run_surface(model, chrome, rebellion_render::CockpitFaction::Alliance).await;
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn run_packed(availability: EncyclopediaAvailability, request: FixtureRequest) {
+    let model = InspectorModel::from_packed_request(availability, "1033", request);
+    run_surface(
+        model,
+        rebellion_render::BmpCache::new(),
+        request.faction,
+        request,
+    )
+    .await;
+}
+
+async fn run_surface(
+    mut model: InspectorModel,
+    mut chrome: rebellion_render::BmpCache,
+    faction: rebellion_render::CockpitFaction,
+    #[cfg(target_arch = "wasm32")] browser_request: FixtureRequest,
+) {
+    use macroquad::prelude::{clear_background, is_quit_requested, next_frame, Color};
+    use rebellion_render::{
+        draw_encyclopedia_surface, EguiEncyclopediaTextureBackend, EncyclopediaSurfaceLabels,
+        EncyclopediaSurfaceState,
+    };
+
     let missing_chrome = chrome.missing_encyclopedia_chrome_resources();
     let mut textures: Option<EncyclopediaTextureCache<EguiEncyclopediaTextureBackend>> = None;
     let mut surface = EncyclopediaSurfaceState::default();
@@ -286,6 +422,10 @@ pub(crate) async fn run(gdata: &std::path::Path) {
     let mut theme_applied = false;
     let mut cache_status = "not selected".to_owned();
     let mut close_requested = false;
+    #[cfg(target_arch = "wasm32")]
+    let mut stable_frames = 0_u32;
+    #[cfg(target_arch = "wasm32")]
+    let mut report_emitted = false;
 
     while !close_requested {
         if is_quit_requested() {
@@ -325,7 +465,7 @@ pub(crate) async fn run(gdata: &std::path::Path) {
                     &mut surface,
                     &mut chrome,
                     textures,
-                    CockpitFaction::Alliance,
+                    faction,
                     egui_macroquad::egui::pos2(85.0, 55.0),
                     1.0,
                 ));
@@ -389,7 +529,7 @@ pub(crate) async fn run(gdata: &std::path::Path) {
             });
         });
 
-        if let (Some(_), Some(frame)) = (view.as_ref(), surface_frame) {
+        if let (Some(_), Some(frame)) = (view.as_ref(), surface_frame.as_mut()) {
             for event in &frame.texture_events {
                 cache_status = match event {
                     EncyclopediaTextureEvent::Selected {
@@ -406,7 +546,7 @@ pub(crate) async fn run(gdata: &std::path::Path) {
             if frame.active_asset_id.is_none() {
                 cache_status = "no art".to_owned();
             }
-            match model.apply_action_batch(frame.actions) {
+            match model.apply_action_batch(std::mem::take(&mut frame.actions)) {
                 Ok(outcomes) => {
                     for outcome in outcomes {
                         macroquad::logging::info!(
@@ -424,6 +564,31 @@ pub(crate) async fn run(gdata: &std::path::Path) {
                         "1033",
                     );
                 }
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        if !report_emitted {
+            stable_frames += 1;
+            if stable_frames >= 3 {
+                let (asset_id, digest, surface_diagnostic) =
+                    surface_frame.as_ref().map_or((None, None, None), |frame| {
+                        (
+                            frame.active_asset_id.as_deref(),
+                            frame.active_digest.as_deref(),
+                            frame.texture_diagnostic.as_deref(),
+                        )
+                    });
+                let report = packed_fixture_report(
+                    browser_request,
+                    &model,
+                    view.as_ref(),
+                    asset_id,
+                    digest,
+                    &cache_status,
+                    surface_diagnostic,
+                );
+                crate::interface_test_fixture::emit_report(&report);
+                report_emitted = true;
             }
         }
         egui_macroquad::draw();
@@ -450,12 +615,14 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        fitted_art_size, inspection_admission, request_value_enabled, requested, InspectorContent,
-        InspectorModel, InspectorTextureState, INSPECTOR_REQUEST,
+        fitted_art_size, inspection_admission, packed_fixture_report, request_value_enabled,
+        requested, InspectorContent, InspectorModel, InspectorTextureState, INSPECTOR_REQUEST,
     };
     use crate::encyclopedia_session::{
-        prepare_encyclopedia_session, EncyclopediaBytes, EncyclopediaSession,
+        prepare_encyclopedia_session, EncyclopediaAvailability, EncyclopediaBytes,
+        EncyclopediaSession,
     };
+    use crate::interface_test_fixture::{FixtureRequest, Scenario};
 
     const VALID_CATALOG: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/fixtures/bundles/valid/catalog.json");
@@ -609,6 +776,140 @@ mod tests {
     }
 
     #[test]
+    fn packed_availability_feeds_the_existing_inspector_without_reparsing() {
+        let prepared = EncyclopediaAvailability::Ready(session());
+        let mut model = InspectorModel::from_availability(prepared, "1033");
+
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+
+        assert_eq!(model.source_profile(), Some("e37-synthetic-v1"));
+        assert_eq!(
+            view.active_topic.as_ref().unwrap().title.as_ref(),
+            "Amber system"
+        );
+    }
+
+    #[test]
+    fn native_inspector_default_remains_alliance_for_viewer_sensitive_art() {
+        let mut model =
+            InspectorModel::from_availability(EncyclopediaAvailability::Ready(session()), "1033");
+
+        assert_eq!(model.viewer(), Some(ViewerFaction::Alliance));
+        model.select_topic("original:60004".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let image = view.active_topic.as_ref().unwrap().image.as_ref().unwrap();
+
+        assert_eq!(image.asset_id, "edata:2");
+        assert_eq!(
+            image.digest,
+            "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592"
+        );
+    }
+
+    #[test]
+    fn packed_report_does_not_fabricate_unmeasured_navigation_requests() {
+        let mut model =
+            InspectorModel::from_availability(EncyclopediaAvailability::Ready(session()), "1033");
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let image = view.active_topic.as_ref().unwrap().image.as_ref().unwrap();
+        let request = FixtureRequest {
+            scenario: Scenario::PackedEncyclopedia,
+            faction: CockpitFaction::Alliance,
+            code: 0x0130,
+        };
+
+        let report = packed_fixture_report(
+            request,
+            &model,
+            Some(&view),
+            Some(image.asset_id.as_str()),
+            Some(image.digest.as_str()),
+            "cache hit",
+            None,
+        );
+
+        assert_eq!(report.status, "ready");
+        assert_eq!(report.surface, "packed-encyclopedia-fixture");
+        assert_eq!(report.topic_id.as_deref(), Some("original:60001"));
+        assert_eq!(report.asset_id.as_deref(), Some("edata:1"));
+        assert_eq!(report.digest.as_deref(), Some(image.digest.as_str()));
+        assert_eq!(report.cache_status, "cache hit");
+        assert_eq!(report.navigation_requests, None);
+
+        let failed_upload = packed_fixture_report(
+            request,
+            &model,
+            Some(&view),
+            Some(image.asset_id.as_str()),
+            Some(image.digest.as_str()),
+            "failed",
+            Some("asset edata:1 upload failed"),
+        );
+        assert_eq!(failed_upload.status, "unavailable");
+        assert_eq!(
+            failed_upload.diagnostic.as_deref(),
+            Some("asset edata:1 upload failed")
+        );
+    }
+
+    #[test]
+    fn packed_report_preserves_long_unicode_text_and_explicit_no_art() {
+        let long_body = format!("Συνθετικό σώμα 🚀 {}", "λ".repeat(8_192));
+        let session = customized_session(|catalog| {
+            catalog["topics"]["original:60005"]["localized"]["1033"]["title"] =
+                Value::from("Χωρίς εικόνα");
+            catalog["topics"]["original:60005"]["localized"]["1033"]["body"] =
+                Value::from(long_body.clone());
+        });
+        let mut model =
+            InspectorModel::from_availability(EncyclopediaAvailability::Ready(session), "1033");
+        model.select_topic("original:60005".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let request = FixtureRequest {
+            scenario: Scenario::PackedEncyclopedia,
+            faction: CockpitFaction::Empire,
+            code: 0x0230,
+        };
+
+        let report =
+            packed_fixture_report(request, &model, Some(&view), None, None, "no art", None);
+
+        assert_eq!(report.title.as_deref(), Some("Χωρίς εικόνα"));
+        assert_eq!(report.body_chars, Some(long_body.chars().count()));
+        assert_eq!(report.asset_id, None);
+        assert_eq!(report.digest, None);
+        assert_eq!(report.cache_status, "no art");
+    }
+
+    #[test]
+    fn packed_report_keeps_missing_content_unavailable_without_an_approximate_view() {
+        let model = InspectorModel::from_availability(
+            EncyclopediaAvailability::Unavailable(
+                "invalid_encyclopedia_bundle:catalog_hash_mismatch".to_owned(),
+            ),
+            "1033",
+        );
+        let request = FixtureRequest {
+            scenario: Scenario::PackedEncyclopedia,
+            faction: CockpitFaction::Alliance,
+            code: 0x0130,
+        };
+
+        let report = packed_fixture_report(request, &model, None, None, None, "not selected", None);
+
+        assert_eq!(report.status, "unavailable");
+        assert_eq!(report.topic_id, None);
+        assert_eq!(report.asset_id, None);
+        assert_eq!(report.navigation_requests, None);
+        assert_eq!(
+            report.diagnostic.as_deref(),
+            Some("invalid_encyclopedia_bundle:catalog_hash_mismatch")
+        );
+    }
+
+    #[test]
     fn absent_art_allocates_nothing_and_releases_the_previous_selection() {
         let mut model = InspectorModel::new(InspectorContent::Ready(Box::new(session())), "1033");
         let (mut textures, counts) = texture_state();
@@ -689,7 +990,7 @@ mod tests {
     #[test]
     fn inspection_snapshot_is_explicitly_catalog_scoped_and_world_independent() {
         let session = session();
-        let admission = inspection_admission(session.effective_catalog());
+        let admission = inspection_admission(session.effective_catalog(), ViewerFaction::Alliance);
 
         assert_eq!(admission.viewer, ViewerFaction::Alliance);
         assert_eq!(admission.world_epoch, 0);

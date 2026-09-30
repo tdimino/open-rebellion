@@ -510,10 +510,20 @@ fn draw_loading_progress(label: &str, loaded: usize, total: usize) {
     draw_rectangle(bar_x, bar_y, bar_w * ratio, bar_h, GREEN);
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 struct BrowserStartupAssets {
     audio_files: std::collections::HashMap<String, Vec<u8>>,
     encyclopedia: encyclopedia_session::EncyclopediaAvailability,
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn packed_fixture_startup_failure(detail: impl std::fmt::Display) -> BrowserStartupAssets {
+    BrowserStartupAssets {
+        audio_files: std::collections::HashMap::new(),
+        encyclopedia: encyclopedia_session::EncyclopediaAvailability::Unavailable(format!(
+            "packed_fixture_runtime_pack_unavailable: {detail}"
+        )),
+    }
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -601,6 +611,13 @@ fn install_runtime_pack(bytes: &[u8]) -> Result<BrowserStartupAssets, String> {
         audio_files: prepared.audio_files,
         encyclopedia: prepared.encyclopedia,
     })
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn packed_encyclopedia_fixture_request(
+    request: Option<interface_test_fixture::FixtureRequest>,
+) -> Option<interface_test_fixture::FixtureRequest> {
+    request.filter(|request| request.is_packed_encyclopedia())
 }
 
 #[cfg(test)]
@@ -713,6 +730,123 @@ mod runtime_pack_install_tests {
         ));
         assert_eq!(prepared.game_files["SYNTHETIC.DAT"], VALID_DAT);
     }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn packed_browser_fixture_consumes_the_prepared_session_after_namespace_removal() {
+        let prepared =
+            prepare_runtime_pack_for_install(startup_pack(true), &["SYNTHETIC.DAT"]).unwrap();
+        assert!(prepared
+            .game_files
+            .keys()
+            .all(|key| !key.starts_with("encyclopedia/")));
+
+        let mut model = crate::encyclopedia_test_fixture::InspectorModel::from_availability(
+            prepared.encyclopedia,
+            "1033",
+        );
+        model.select_topic("original:60001".to_owned()).unwrap();
+        let view = model.build_view().unwrap().unwrap();
+        let active = view.active_topic.as_ref().unwrap();
+
+        assert_eq!(active.title.as_ref(), "Amber system");
+        assert_eq!(active.image.as_ref().unwrap().asset_id, "edata:1");
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn packed_request_faction_selects_matching_viewer_art_digest_and_report() {
+        use rebellion_data::encyclopedia::ViewerFaction;
+
+        for (code, viewer, asset_id, digest, faction) in [
+            (
+                0x0130,
+                ViewerFaction::Alliance,
+                "edata:2",
+                "a93a4e651a970119d8da0386846785163291b7cfd67edaac7f6fc37b719fe592",
+                "alliance",
+            ),
+            (
+                0x0230,
+                ViewerFaction::Empire,
+                "edata:3",
+                "8746c347d4cf14daa2e0cc9d41d1f9abebbbb1aae997f31a172610e9ecdbe2dd",
+                "empire",
+            ),
+        ] {
+            let request = crate::interface_test_fixture::decode_request(code).unwrap();
+            let prepared =
+                prepare_runtime_pack_for_install(startup_pack(true), &["SYNTHETIC.DAT"]).unwrap();
+            let mut model = crate::encyclopedia_test_fixture::InspectorModel::from_packed_request(
+                prepared.encyclopedia,
+                "1033",
+                request,
+            );
+
+            assert_eq!(model.viewer(), Some(viewer));
+            model.select_topic("original:60004".to_owned()).unwrap();
+            let view = model.build_view().unwrap().unwrap();
+            let image = view.active_topic.as_ref().unwrap().image.as_ref().unwrap();
+            assert_eq!(image.asset_id, asset_id);
+            assert_eq!(image.digest, digest);
+
+            let report = crate::encyclopedia_test_fixture::packed_fixture_report(
+                request,
+                &model,
+                Some(&view),
+                Some(image.asset_id.as_str()),
+                Some(image.digest.as_str()),
+                "cache hit",
+                None,
+            );
+            assert_eq!(report.faction(), faction);
+            assert_eq!(report.asset_id.as_deref(), Some(asset_id));
+            assert_eq!(report.digest.as_deref(), Some(digest));
+        }
+    }
+}
+
+#[cfg(test)]
+mod packed_encyclopedia_fixture_route_tests {
+    use super::*;
+
+    #[test]
+    fn only_the_distinct_packed_request_takes_the_early_fixture_route() {
+        use crate::interface_test_fixture::{FixtureRequest, Scenario};
+
+        let packed = FixtureRequest {
+            scenario: Scenario::PackedEncyclopedia,
+            faction: rebellion_render::CockpitFaction::Alliance,
+            code: 0x0130,
+        };
+        let legacy_art_probe = FixtureRequest {
+            scenario: Scenario::EncyclopediaArtwork,
+            faction: rebellion_render::CockpitFaction::Alliance,
+            code: 0x0127,
+        };
+
+        assert_eq!(
+            packed_encyclopedia_fixture_request(Some(packed)),
+            Some(packed)
+        );
+        assert_eq!(
+            packed_encyclopedia_fixture_request(Some(legacy_art_probe)),
+            None
+        );
+        assert_eq!(packed_encyclopedia_fixture_request(None), None);
+    }
+
+    #[test]
+    fn packed_runtime_pack_failure_stays_unavailable_without_loose_assets() {
+        let startup = packed_fixture_startup_failure("invalid runtime pack: truncated header");
+
+        assert!(startup.audio_files.is_empty());
+        assert!(matches!(
+            startup.encyclopedia,
+            encyclopedia_session::EncyclopediaAvailability::Unavailable(ref diagnostic)
+                if diagnostic == "packed_fixture_runtime_pack_unavailable: invalid runtime pack: truncated header"
+        ));
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -811,11 +945,41 @@ async fn load_legacy_wasm_assets() {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn load_wasm_assets() -> BrowserStartupAssets {
+async fn load_wasm_assets(
+    #[cfg(feature = "interface-test-fixtures")] packed_fixture_requested: bool,
+) -> BrowserStartupAssets {
     draw_loading_progress("Loading optimized runtime assets…", 0, 0);
     next_frame().await;
 
-    match macroquad::file::load_file("data/runtime.orpk").await {
+    #[cfg(feature = "interface-test-fixtures")]
+    let startup = match macroquad::file::load_file("data/runtime.orpk").await {
+        Ok(bytes) => match install_runtime_pack(&bytes) {
+            Ok(startup) => startup,
+            Err(error) if packed_fixture_requested => {
+                packed_fixture_startup_failure(format_args!("invalid data/runtime.orpk: {error}"))
+            }
+            Err(error) => panic!("Invalid data/runtime.orpk: {error}"),
+        },
+        Err(error) if packed_fixture_requested => packed_fixture_startup_failure(format_args!(
+            "data/runtime.orpk failed to load: {error:?}"
+        )),
+        Err(error) => {
+            eprintln!(
+                "WARNING: data/runtime.orpk unavailable ({error:?}); using legacy per-file loading"
+            );
+            load_legacy_wasm_assets().await;
+            BrowserStartupAssets {
+                audio_files: std::collections::HashMap::new(),
+                encyclopedia: encyclopedia_session::EncyclopediaAvailability::Unavailable(
+                    "namespace_absent: legacy loose loading has no packed encyclopedia namespace"
+                        .to_owned(),
+                ),
+            }
+        }
+    };
+
+    #[cfg(not(feature = "interface-test-fixtures"))]
+    let startup = match macroquad::file::load_file("data/runtime.orpk").await {
         Ok(bytes) => install_runtime_pack(&bytes)
             .unwrap_or_else(|error| panic!("Invalid data/runtime.orpk: {error}")),
         Err(error) => {
@@ -831,7 +995,9 @@ async fn load_wasm_assets() -> BrowserStartupAssets {
                 ),
             }
         }
-    }
+    };
+
+    startup
 }
 
 /// Cache every glyph the Macroquad layers can draw in the current Galaxy view
@@ -966,6 +1132,9 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let gdata_path = PathBuf::from("data/base");
 
+    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+    let interface_fixture_request = interface_test_fixture::requested();
+
     #[cfg(all(not(target_arch = "wasm32"), feature = "interface-test-fixtures"))]
     if encyclopedia_test_fixture::requested() {
         encyclopedia_test_fixture::run(&gdata_path).await;
@@ -998,7 +1167,18 @@ async fn main() {
 
     #[cfg(target_arch = "wasm32")]
     let (mut world, mut browser_audio_files, encyclopedia_availability) = {
+        #[cfg(feature = "interface-test-fixtures")]
+        let packed_fixture_request =
+            packed_encyclopedia_fixture_request(interface_fixture_request);
+        #[cfg(feature = "interface-test-fixtures")]
+        let startup_assets = load_wasm_assets(packed_fixture_request.is_some()).await;
+        #[cfg(not(feature = "interface-test-fixtures"))]
         let startup_assets = load_wasm_assets().await;
+        #[cfg(feature = "interface-test-fixtures")]
+        if let Some(request) = packed_fixture_request {
+            encyclopedia_test_fixture::run_packed(startup_assets.encyclopedia, request).await;
+            return;
+        }
         let world = rebellion_data::load_game_data(&gdata_path)
             .unwrap_or_else(|error| panic!("Failed to parse game data: {error}"));
         (
@@ -1382,8 +1562,6 @@ async fn main() {
         };
     }
 
-    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-    let interface_fixture_request = interface_test_fixture::requested();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     if let Some(request) = interface_fixture_request {
         cutscene_player = None;
